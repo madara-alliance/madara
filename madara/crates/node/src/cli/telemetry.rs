@@ -1,7 +1,8 @@
 use clap::Args;
+use serde::{Deserialize, Serialize};
 
 /// Parameters used to config telemetry.
-#[derive(Debug, Clone, Args)]
+#[derive(Debug, Clone, Args, Deserialize, Serialize)]
 pub struct TelemetryParams {
     /// Enable connecting to the Madara telemetry server.
     #[arg(env = "MADARA_TELEMETRY", long)]

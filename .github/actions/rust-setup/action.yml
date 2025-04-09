@@ -1,0 +1,167 @@
+name: "Rust Environment Setup"
+description: "Sets up the Rust environment with configurable toolchain, cache, and dependencies"
+
+inputs:
+  rust-version:
+    description: "Rust toolchain version to use"
+    required: true
+  cache-key:
+    description: "Cache key used to retrieve built data. Usually matches the profile of the build"
+    required: false
+    default: "cache"
+  install-mold:
+    description: "Whether to install mold linker"
+    required: true
+  install-scarb:
+    description: "Whether to install Scarb"
+    required: true
+  scarb-version:
+    description: "Scarb version to install"
+    required: true
+  install-foundry:
+    description: "Whether to install Foundry"
+    required: false
+    default: "false"
+  foundry-version:
+    description: "Foundry version to install"
+    required: false
+  python-version:
+    description: "Python version to use for Cairo 0/SNOS"
+    default: "3.9"
+    required: false
+  build-snos:
+    description: "Whether to build SNOS files"
+    required: true
+    default: "false"
+
+runs:
+  using: "composite"
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        submodules: true
+
+    # Install ubuntu packages (using cache if available)
+    - uses: awalsh128/cache-apt-pkgs-action@latest
+      with:
+        packages: clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
+        version: 1.0
+        execute_install_scripts: true
+    - shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
+
+    # SCCACHE is disabled due to https://github.com/mozilla/sccache/issues/2359
+    # TODO: re-enable when fixed
+    # - uses: actions/cache@v4
+    #   id: cache-sscache
+    #   with:
+    #     path: |
+    #       ~/.cache/sccache
+    #     key: ${{ runner.os }}-${{ inputs.rust-version }}-${{ inputs.cache-key }}-sccache
+    # - name: Run sccache-cache
+    #   uses: mozilla-actions/sccache-action@v0.0.8
+    # - name: Set Rust caching env vars
+    #   if: github.event_name != 'release' && github.event_name != 'workflow_dispatch'
+    #   shell: bash
+    #   run: |
+    #     echo "SCCACHE_GHA_ENABLED=true" >> $GITHUB_ENV
+    #     echo "RUSTC_WRAPPER=sccache" >> $GITHUB_ENV
+    #     sccache --show-stats
+
+    # Cache everything that is needed/produced for cargo build
+    - uses: actions/cache@v4
+      id: cache-cargo
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}
+          ${{ runner.os }}-cargo-registry-
+
+    - uses: actions/cache@v4
+      id: cache-build-deps
+      with:
+        path: |
+          target/release/deps
+          target/release/build
+          target/release/.fingerprint
+        key: ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-${{ env.BUILD_RUST_VERSION }}-build-deps-${{ inputs.cache-key }}
+
+    - name: Setup Rust toolchain
+      uses: dtolnay/rust-toolchain@stable
+      with:
+        toolchain: ${{ inputs.rust-version }}
+        components: rustfmt, clippy
+
+    - name: Setup Rust cache
+      uses: Swatinem/rust-cache@v2
+      with:
+        shared-key: ${{ inputs.cache-key }}
+
+    - uses: rui314/setup-mold@v1
+
+    - name: Setup Scarb
+      if: ${{ inputs.install-scarb == 'true' }}
+      uses: software-mansion/setup-scarb@v1
+      with:
+        scarb-version: ${{ inputs.scarb-version }}
+
+    - name: Setup Foundry
+      if: ${{ inputs.install-foundry == 'true' }}
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: ${{ inputs.foundry-version }}
+
+    - name: Setup Python for Cairo 0
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Retrieve SNOS Commit
+      id: retrieve-snos-commit
+      if: ${{ inputs.build-snos == 'true' }}
+      shell: bash
+      run: |
+        CAIRO_LANG_COMMIT=$(git submodule status orchestrator/cairo-lang | tr -s ' ' | cut -d' ' -f2)
+        echo "SNOS Cache hash: $CAIRO_LANG_COMMIT"
+        echo "CAIRO_LANG_COMMIT=$CAIRO_LANG_COMMIT" >> $GITHUB_ENV
+
+    - name: Cache SNOS packages
+      id: cache-snos
+      if: ${{ inputs.build-snos == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: orchestrator/build
+        key: snos-${{ inputs.python-version }}-${{ env.CAIRO_LANG_COMMIT }}
+
+    - name: Cache Python packages
+      id: cache-python
+      if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ~/.cache/pip
+        key: pip-${{ runner.os }}-python-${{ inputs.python-version }}
+
+    - name: Install Cairo 0
+      if: ${{ inputs.build-snos == 'true'  && steps.cache-snos.outputs.cache-hit != 'true' && steps.cache-python.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: |
+        # Installing deps
+        pip3 install ecdsa fastecdsa sympy
+
+        # Installing cairo lang
+        pip3 install cairo-lang
+
+    - name: Build SNOS files
+      if: ${{ inputs.build-snos == 'true' && steps.cache-snos.outputs.cache-hit != 'true' }}
+      shell: bash
+      run: |
+        make snos

@@ -1,7 +1,8 @@
 use anyhow::Context;
 use clap::ArgGroup;
-use l2::L2SyncParams;
 use mp_chain_config::ChainConfig;
+use mp_utils::crypto::ZeroingPrivateKey;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -22,6 +23,7 @@ pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
 pub use l1::*;
+pub use l2::*;
 pub use rpc::*;
 pub use telemetry::*;
 
@@ -60,7 +62,7 @@ pub use telemetry::*;
 /// works (we still want good auto-generated docs and derive api support!).
 ///
 /// [#285]: https://github.com/madara-alliance/madara/issues/285
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Parser, Serialize, Deserialize)]
 #[clap(
     group(
         ArgGroup::new("args-preset")
@@ -115,12 +117,11 @@ impl ArgsPresetParams {
 }
 
 /// Madara: High performance Starknet sequencer/full-node.
-#[derive(Clone, Debug, clap::Parser)]
+#[derive(Clone, Debug, clap::Parser, Serialize, Deserialize)]
 #[clap(
     group(
         ArgGroup::new("mode")
             .args(&["sequencer", "full", "devnet"])
-            .required(true)
             .multiple(false)
     ),
     group(
@@ -135,6 +136,11 @@ impl ArgsPresetParams {
     ),
 )]
 pub struct RunCmd {
+    /// A path to a config file.
+    /// The accepted file formats are yaml, json and toml.
+    #[clap(env = "MADARA_CONFIG_FILE", long, value_name = "NAME")]
+    pub config_file: Option<PathBuf>,
+
     /// The human-readable name for this node.
     /// It is used as the network node name.
     #[arg(env = "MADARA_NAME", long, value_name = "NAME")]
@@ -208,6 +214,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub chain_config_override: ChainConfigOverrideParams,
+
+    /// The private key used to sign the blocks.
+    #[clap(env = "MADARA_PRIVATE_KEY", long, value_name = "PRIVATE KEY")]
+    pub private_key: Option<String>,
 }
 
 impl RunCmd {
@@ -246,7 +256,15 @@ impl RunCmd {
         self.name.as_ref().expect("Name was just set")
     }
 
-    pub fn chain_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
+    pub fn check_mode(&self) -> anyhow::Result<()> {
+        if !self.sequencer && !self.full && !self.devnet {
+            let error_message = "One of the modes is required:\n- 'sequencer'\n- 'full'\n- 'devnet' ";
+            return Err(anyhow::anyhow!("{}", error_message));
+        }
+        Ok(())
+    }
+
+    pub fn chain_config(&mut self) -> anyhow::Result<Arc<ChainConfig>> {
         let mut chain_config = match (self.preset.as_ref(), self.chain_config_path.as_ref(), self.devnet) {
             // Read from the preset if provided
             (Some(preset), _, _) => ChainConfig::from(preset),
@@ -268,6 +286,11 @@ impl RunCmd {
 
         if !self.chain_config_override.overrides.is_empty() {
             chain_config = self.chain_config_override.override_chain_config(chain_config)?;
+        };
+
+        chain_config.private_key = match self.private_key.take() {
+            Some(s) => s.try_into().context("Failed to parse private key")?,
+            None => ZeroingPrivateKey::default(),
         };
 
         Ok(Arc::new(chain_config))
@@ -303,7 +326,7 @@ impl RunCmd {
 }
 
 /// Starknet network types.
-#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum NetworkType {
     /// The main network (mainnet). Alias: mainnet
     #[value(alias("mainnet"))]
@@ -318,7 +341,7 @@ pub enum NetworkType {
     Devnet,
 }
 
-#[derive(Debug, Clone, clap::ValueEnum)]
+#[derive(Debug, Clone, clap::ValueEnum, Deserialize, Serialize)]
 #[value(rename_all = "kebab-case")]
 pub enum ChainPreset {
     Mainnet,

@@ -1,0 +1,139 @@
+name: Manual Release with Binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: tag (ex. v0.8.0) to generate release note from (must exist already)
+        required: true
+      base:
+        description: base branch (ex. main) to push changelog PR to
+        required: true
+        default: main
+      fake-build:
+        description: FAKE build. (only for testing the release workflow
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # Build binaries (rely on docker build for a clean build)
+  build-binaries:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        cpu: ["x86-64"]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Build production madara*
+        if: ${{ github.event.inputs.fake-build == 'true' }}
+        shell: bash
+        run: |
+          mkdir -p build
+          echo 'fake-binary' > build/madara-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+          echo 'fake-binary' > build/orchestrator-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+
+      - name: Build production madara
+        if: ${{ github.event.inputs.fake-build != 'true' }}
+        shell: bash
+        run: |
+          # We don't use volumes because of ownership/permissions issues
+          docker build \
+            --tag prod --no-cache \
+            --build-arg="COMMIT=${{ github.event.inputs.sha }}" \
+            --build-arg="SCARB_VERSION=${{ env.BUILD_SCARB_VERSION }}" \
+            --build-arg="PYTHON_VERSION=${{ env.BUILD_PYTHON_VERSION }}" \
+            --build-arg="FOUNDRY_VERSION=${{ env.BUILD_FOUNDRY_VERSION }}" \
+            --build-arg="RUSTFLAGS=-C target-cpu=${{ matrix.cpu }}" \
+            - < docker/madara-production.Dockerfile
+          # Copy madara/orchestrator binary
+          mkdir -p build
+          docker rm -f dummy 2> /dev/null | true
+          docker create -ti --name dummy prod bash
+          docker cp dummy:/madara/madara build/madara-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+          docker cp dummy:/madara/orchestrator build/orchestrator-${{ github.event.inputs.tag || github.ref_name }}-${{ matrix.cpu }}
+          docker rm -f dummy
+          # Cleanup
+          docker rmi prod
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaries-${{ matrix.cpu }}
+          path: build
+
+  create-release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    needs: build-binaries
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref_name }}
+
+      # We check if the release already exist
+      # This prevents conflit with branches and release drafts
+      - name: Check if release already exists
+        id: check_release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          BRANCH_NAME="release/changelog-${{ github.event.inputs.tag || github.ref_name }}"
+          BRANCH_EXISTS=$(git branch -r | grep "/$BRANCH_NAME$" || true)
+          if [[ "$BRANCH_EXISTS" != "" ]]; then
+            echo "Branch release/changelog-${{ github.event.inputs.tag || github.ref_name }} already exists"
+            exit 1
+          else
+            echo "Branch release/changelog-${{ github.event.inputs.tag || github.ref_name }} does not exist"
+          fi
+
+          gh release view ${{ github.event.inputs.tag || github.ref_name }} || true
+          RELEASE_EXISTS=$(gh release view ${{ github.event.inputs.tag || github.ref_name }} --json name 2>/dev/null || echo "false")
+          if [[ "$RELEASE_EXISTS" != "false" ]]; then
+            echo "Release ${{ github.event.inputs.tag || github.ref_name }} already exists"
+            exit 1
+          else
+            echo "Release ${{ github.event.inputs.tag || github.ref_name }} does not exist"
+          fi
+
+      - name: Update CHANGELOG
+        id: changelog
+        uses: requarks/changelog-action@v1
+        with:
+          token: ${{ github.token }}
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: binaries-*
+          merge-multiple: true
+          path: build
+
+      - name: Display structure of downloaded files
+        run: ls -R build
+
+      - name: Create GitHub Release
+        uses: ncipollo/release-action@v1
+        with:
+          tag: ${{ github.event.inputs.tag || github.ref_name }}
+          name: Release ${{ github.event.inputs.tag || github.ref_name }}
+          artifacts: build/*
+          commit: ${{ github.sha }}
+          draft: true
+          prerelease: false
+          body: ${{ steps.changelog.outputs.changes }}
+
+      - name: Create Pull Request
+        uses: peter-evans/create-pull-request@v7
+        with:
+          title: "docs: update CHANGELOG.md for ${{ github.event.inputs.tag || github.ref_name }} [skip ci]"
+          body: "This PR is automatically created by the release workflow."
+          branch: release/changelog-${{ github.event.inputs.tag || github.ref_name }}
+          base: ${{ github.event.inputs.base }}

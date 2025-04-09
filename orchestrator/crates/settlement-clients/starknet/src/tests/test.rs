@@ -31,7 +31,7 @@ pub async fn spin_up_madara() -> MadaraCmd {
             "--no-sync-polling",
             "--devnet",
             "--no-l1-sync",
-            "--chain-config-path=./src/tests/preset.yml",
+            "--chain-config-path=./src/tests/devnet.yaml",
             "--rpc-cors",
             "all",
         ])
@@ -186,7 +186,6 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     )
     .await;
     assert!(is_success, "Update state transaction failed/reverted");
-
     let call_result = account
         .provider()
         .call(
@@ -195,7 +194,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
                 entry_point_selector: selector!("get_is_updated"),
                 calldata: vec![Felt::from_bytes_be_slice(&onchain_data_hash)],
             },
-            BlockId::Tag(BlockTag::Latest),
+            BlockId::Tag(BlockTag::Pending),
         )
         .await
         .expect("failed to call the contract");

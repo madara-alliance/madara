@@ -9,8 +9,11 @@ export PROPTEST_CASES=10
 export ETH_FORK_URL=https://eth.merkle.io
 export COVERAGE_BIN=$(realpath target/debug/madara)
 
+# We need to build madara first so that we can launch it in mc-e2e-tests.
+cargo build --profile dev
+
 # Run the tests
-if RUST_LOG=debug cargo test --profile dev "${@:-"--workspace"}"; then
+if cargo nextest run "${@:-"--workspace"}"; then
   echo "✅ All tests passed successfully!"
 else
   echo "❌ Some tests failed."

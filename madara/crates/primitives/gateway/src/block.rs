@@ -42,7 +42,6 @@ fn protocol_version(
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockHeader {
     pub block_number: u64,
@@ -95,7 +94,7 @@ impl ProviderBlockPendingMaybe {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlock {
     pub block_hash: Felt,
@@ -222,7 +221,7 @@ impl ProviderBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockPending {
     pub parent_block_hash: Felt,
@@ -301,7 +300,7 @@ impl ProviderBlockPending {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockSignature {
     pub block_hash: Felt,
@@ -310,7 +309,7 @@ pub struct ProviderBlockSignature {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
 pub struct ResourcePrice {
     #[serde_as(as = "U128AsHex")]
@@ -321,7 +320,7 @@ pub struct ResourcePrice {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 pub enum BlockStatus {
     Pending,
     Aborted,

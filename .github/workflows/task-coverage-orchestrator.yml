@@ -1,0 +1,126 @@
+name: Task - Orchestrator Coverage
+
+# This workflow runs tests and generates code coverage reports
+# for the Orchestrator component
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+    secrets:
+      ETHEREUM_SEPOLIA_BLAST_RPC:
+        required: true
+      RPC_FOR_SNOS:
+        required: true
+
+jobs:
+  orchestrator_coverage:
+    runs-on: karnot-arc-runner-set
+
+    services:
+      localstack:
+        image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        env:
+          SERVICES: s3, sqs, sns
+          DEFAULT_REGION: us-east-1
+          AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
+          AWS_SECRET_ACCESS_KEY: "AWS_SECRET_ACCESS_KEY"
+        ports:
+          - 4566:4566
+      mongodb:
+        image: mongo:latest
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+        ports:
+          - 27017:27017
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - uses: ./.github/actions/rust-setup
+        with:
+          # Uses the testing cache key as we are using the --profile dev later
+          cache-key: coverage-orchestrator
+          rust-version: ${{ env.TESTING_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
+          install-mold: true
+
+      - name: Install cargo-llvm-cov & nextest
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Build Mock Contracts using Scarb
+        working-directory: orchestrator
+        run: |
+          cd crates/settlement-clients/starknet/src/tests/mock_contracts
+          scarb fmt --check
+          scarb build
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
+
+      - name: Prepare Madara Environment (Orchestrator)
+        run: |
+          mv target/release/madara ./madara-binary          
+          echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
+
+          # Copy the devnet.yaml file to the test directory
+          cp ./configs/presets/devnet.yaml ./orchestrator/crates/settlement-clients/starknet/src/tests/devnet.yaml
+
+      - name: Getting necessary files for testing
+        working-directory: orchestrator
+        run: |
+          wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
+          # TODO: this can be optimised
+          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./crates/orchestrator/src/tests/artifacts/238996-SN.zip
+
+      - name: Check rust version
+        run: rustup show
+
+      - name: Run llvm-cov tests
+        continue-on-error: false
+        env:
+          MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
+          MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
+        run: |
+          echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
+          RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
+            --release \
+            --features testing \
+            --lcov \
+            --output-path lcov.info \
+            --test-threads=1 \
+            --package "orchestrator-*" \
+            --no-fail-fast
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info

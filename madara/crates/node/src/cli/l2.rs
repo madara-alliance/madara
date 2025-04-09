@@ -4,13 +4,14 @@ use http::HeaderValue;
 use mc_gateway_client::GatewayProvider;
 use mp_chain_config::ChainConfig;
 use mp_utils::parsers::parse_url;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use url::Url;
 
 use super::FGW_DEFAULT_PORT;
 use super::RPC_DEFAULT_PORT_ADMIN;
 
-#[derive(Clone, Debug, clap::Args)]
+#[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
 pub struct L2SyncParams {
     /// Disable the sync service. The sync service is responsible for listening for new blocks on starknet and ethereum.
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]

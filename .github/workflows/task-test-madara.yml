@@ -1,0 +1,95 @@
+---
+name: Task - Test Rust
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+      proptest-cases:
+        description: "Number of test cases for property testing"
+        required: false
+        type: string
+        default: "10"
+    secrets:
+      ETH_FORK_URL:
+        required: true
+
+jobs:
+  test-madara:
+    runs-on: karnot-arc-runner-set
+    env:
+      ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+      PROPTEST_CASES: ${{ inputs.proptest-cases }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # Setup the environment with all necessary dependencies
+      - uses: ./.github/actions/load-env
+
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: test-madara
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: stable
+          build-snos: true
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - run: chmod +x target/release/madara
+
+      - name: Start Anvil with fork
+        run: |
+          nohup anvil \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
+            --fork-block-number ${{ env.ANVIL_FORK_BLOCK_NUMBER }} \
+            --timeout 300000 \
+            --port ${{ env.ANVIL_DEFAULT_PORT }} \
+            --fork-retry-backoff 30000 &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          echo "Waiting for Anvil to start..."
+          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+
+          if [ $? -eq 0 ]; then
+            echo "Anvil is running in url: ${{ env.ANVIL_DEFAULT_URL }}"
+          else
+            echo "Failed to connect to Anvil within timeout"
+            exit 1
+          fi
+
+      - name: Run madara tests
+        env:
+          PROPTEST_CASES: 2
+          ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
+        run: |
+          export COVERAGE_BIN=$(realpath target/release/madara)
+          cargo nextest run --release --package "mp-*" --package "m-proc-*" --package "mc-*" --no-fail-fast --tests
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
