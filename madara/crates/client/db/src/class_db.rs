@@ -214,7 +214,7 @@ impl MadaraBackend {
         Ok(())
     }
 
-    pub(crate) fn classes_db_revert(
+    pub(crate) fn class_db_revert(
         &self,
         _revert_to: u64,
         state_diffs: &Vec<StateDiff>,
