@@ -213,6 +213,8 @@ impl MadaraBackend {
         let contract_to_nonces_col = self.db.get_column(Column::ContractToNonces);
         let contract_storage_col = self.db.get_column(Column::ContractStorage);
 
+        // We collect all keys we encounter in the state diffs below into a hash set which allows
+        // us to dedupe them. More details below.
         let mut contract_to_class_hashes_keys = HashSet::new();
         let mut contract_to_nonce_keys = HashSet::new();
         let mut contract_storage_keys = HashSet::new();
