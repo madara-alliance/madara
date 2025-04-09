@@ -39,7 +39,7 @@ impl CompressedLegacyContractClass {
         // NOTE: that the `type` field is already present in each ABI entry
         // struct so we do not need to add it manually.
 
-        // we should actually change that, it would be better to have a concrete type here.
+        // TODO: we should actually change that, it would be cleaner to have a concrete type here.
 
         let abi = self
             .abi

@@ -1,5 +1,5 @@
 target
-madara/crates/client/sync/test-data/*.json
+madara/crates/resources/*
 infra/Signoz
 cairo-artifacts
 dashboards

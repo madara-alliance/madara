@@ -410,7 +410,6 @@ impl BlockImporterCtx {
                     }
 
                     if !self.config.no_check && class_hash != expected {
-                        // tracing::info!("Mismatched class_hash={class_hash:#x} expected={expected:#x} block_n={block_n:?}");
                         return Err(BlockImportError::ClassHash { got: class_hash, expected });
                     }
                 }
@@ -518,6 +517,7 @@ impl BlockImporterCtx {
 
     // GLOBAL TRIE
 
+    /// Called in a rayon-pool context.
     pub fn apply_to_global_trie(
         &self,
         mut block_range: Range<u64>,
