@@ -240,15 +240,16 @@ impl SettlementClientTrait for StarknetClient {
     }
 
     async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
+        // function name taken from: https://github.com/keep-starknet-strange/piltover/blob/main/src/messaging/interface.cairo#L56
         let call_res = self
             .provider
             .call(
                 FunctionCall {
                     contract_address: self.l2_core_contract,
-                    entry_point_selector: get_selector_from_name("l1_to_l2_message_cancellations").map_err(
+                    entry_point_selector: get_selector_from_name("sn_to_appchain_messages").map_err(
                         |e| -> SettlementClientError {
                             StarknetClientError::L1ToL2Messaging {
-                                message: format!("Failed to get l1_to_l2_message_cancellations selector: {}", e),
+                                message: format!("Failed to get sn_to_appchain_messages selector: {}", e),
                             }
                             .into()
                         },
@@ -265,12 +266,30 @@ impl SettlementClientTrait for StarknetClient {
                 .into()
             })?;
 
-        if call_res.len() != 2 {
+        // here is the output of the call: https://github.com/keep-starknet-strange/piltover/blob/161cb3f66d256e4d1211c6b50e5d353afb713a3e/src/messaging/types.cairo#L5
+        // pub enum MessageToAppchainStatus {
+        //     #[default]
+        //     NotSent,
+        //     Sealed,
+        //     Cancelled,
+        //     Pending: Nonce
+        // }
+        // so we expect the output to be 1 value.
+        if call_res.len() != 1 {
             return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
-                message: "l1_to_l2_message_cancellations should return exactly 2 values".to_string(),
+                message: "sn_to_appchain_messages should return exactly 1 value".to_string(),
             }));
         }
-        Ok(call_res[0])
+
+        // Map the response: return 1 if Sealed (status == 1), otherwise return 0
+        let status = call_res[0];
+        let result = if status == Felt::ONE {
+            Felt::ONE // Sealed case
+        } else {
+            Felt::ZERO // Any other status (NotSent, Cancelled, Pending)
+        };
+
+        Ok(result)
     }
 
     async fn get_messaging_stream(
