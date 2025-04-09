@@ -376,7 +376,7 @@ impl MadaraBackend {
 
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
         let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
-        for block_n in (revert_to + 1..latest_block_n + 1).rev() {
+        for block_n in (revert_to + 1..=latest_block_n).rev() {
             let block_n_encoded = bincode::serialize(&block_n)?;
 
             let res = self.db.get_cf(&block_n_to_block, &block_n_encoded)?;

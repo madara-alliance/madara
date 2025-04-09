@@ -249,7 +249,7 @@ impl MadaraBackend {
             });
         }
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap - Option here probably relates to genesis block
-        for block_n in (revert_to + 1..latest_block_n + 1).rev() {
+        for block_n in (revert_to + 1..=latest_block_n).rev() {
             // for each entry in the keys we collected above, create a db key with that entry and the block number and delete it
             // TODO: we may be able to leverage RocksDb's tree-based iterator here to avoid looping over each block
 
