@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
 use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
 use crate::{MadaraStorageError, DB};
@@ -394,7 +396,10 @@ impl MadaraBackend {
             let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
 
             // get state diff for this block before removing it
-            let state_diff_serialized = self.db.get_cf(&block_n_to_state_diff, block_n_encoded.clone())?.unwrap(); // TODO: unwrap, should we expect an entry for every single block here, or will some be None?
+            let state_diff_serialized =
+                self.db.get_cf(&block_n_to_state_diff, block_n_encoded.clone())?.ok_or_else(|| {
+                    MadaraStorageError::InconsistentStorage(Cow::Owned(format!("Block {block_n} has no StateDiff")))
+                })?;
             let state_diff: StateDiff = bincode::deserialize(&state_diff_serialized)?;
             state_diffs.push((block_n, state_diff));
 

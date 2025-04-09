@@ -337,19 +337,20 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
         .ok_or_else(|| {
             BlockImportError::Internal(format!("no block found for requested tip {new_tip_block_hash:#x}").into())
         })?;
+    let target_block_info =
+        target_block_info.as_nonpending().ok_or(BlockImportError::Internal("target block cannot be pending".into()))?;
 
     let previous_tip_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting current tip block info"))?
         .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("on blockchain tip in storage")))?;
 
-    let target_block_number = target_block_info
-        .block_n()
-        .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("Target block must have a block number")))?;
+    let target_block_number = target_block_info.header.block_number;
     let target_block_id = BasicId::new(target_block_number);
 
-    let previous_tip_block_number =
-        previous_tip_block_info.block_n().expect("Previous tip block must have a block number");
+    let previous_tip_block_number = previous_tip_block_info
+        .block_n()
+        .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("Previous tip block must have a block number")))?;
     let previous_tip_block_id = BasicId::new(previous_tip_block_number);
 
     backend
@@ -375,12 +376,14 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting latest block info"))?
         .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("no latest block after reorg")))?;
+    let latest_block_info =
+        latest_block_info.as_nonpending().ok_or(BlockImportError::Internal("latest block cannot be pending".into()))?;
 
     Ok(ReorgData {
         starting_block_hash: *new_tip_block_hash,
         starting_block_number: target_block_number,
-        ending_block_hash: latest_block_info.block_hash().expect("how would a block not have a hash?"), // TODO: better error message, but srsly, how?
-        ending_block_number: latest_block_info.block_n().expect("how would a block not have a block number?"), // TODO
+        ending_block_hash: latest_block_info.block_hash,
+        ending_block_number: latest_block_info.header.block_number,
     })
 }
 
