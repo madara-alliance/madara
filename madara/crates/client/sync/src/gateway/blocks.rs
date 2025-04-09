@@ -161,7 +161,7 @@ pub fn gateway_pending_block_sync(
                     Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
                     Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
                         tracing::debug!("Pending block not found.");
-                        return Ok(None)
+                        return Ok(None);
                     }
                     Err(other) => {
                         // non-compliant gateway?

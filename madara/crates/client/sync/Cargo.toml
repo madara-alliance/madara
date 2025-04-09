@@ -18,6 +18,7 @@ tempfile.workspace = true
 rstest.workspace = true
 regex.workspace = true
 tracing-test.workspace = true
+assert_matches.workspace = true
 
 mc-db = { workspace = true, features = ["testing"] }
 # Compile the test contracts in test cfg.

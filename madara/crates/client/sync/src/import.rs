@@ -560,11 +560,15 @@ impl BlockImporterCtx {
 
 #[cfg(test)]
 mod tests {
-    use super::{BlockImportError, BlockImporter, BlockValidationConfig};
+    use super::{BlockImportError, BlockImporter, BlockImporterCtx, BlockValidationConfig};
+    use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
-    use mp_block::{BlockHeaderWithSignatures, Header};
+    use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
     use mp_chain_config::ChainConfig;
+    use mp_gateway::state_update::ProviderStateUpdateWithBlock;
+    use mp_receipt::{ExecutionResult, TransactionReceipt};
     use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
+    use mp_transactions::{InvokeTransaction, Transaction};
     use rstest::*;
     use starknet_api::felt;
     use starknet_core::types::Felt;
@@ -632,4 +636,210 @@ mod tests {
 
         assert_eq!(expected_result.map_err(|e| format!("{e:#}")), result.map_err(|e| format!("{e:#}")),)
     }
+
+    struct Ctx {
+        importer: BlockImporterCtx,
+        block_n: u64,
+        block: FullBlock,
+        allow_pre_v0_13_2: bool,
+    }
+
+    #[fixture]
+    fn ctx() -> Ctx {
+        // version of this block is v0.13.2. https://sepolia.voyager.online/block/100000
+        let block = serde_json::from_str::<ProviderStateUpdateWithBlock>(include_str!(
+            "../../../resources/sepolia.block_100000.json"
+        ))
+        .unwrap();
+
+        let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::starknet_sepolia()));
+        let validation = BlockValidationConfig::default();
+        let importer = BlockImporter::new(backend.clone(), validation).ctx();
+
+        let block: FullBlock = block.into_full_block().unwrap();
+
+        let block_n = 100000;
+        let allow_pre_v0_13_2 = false;
+        Ctx { block, importer, block_n, allow_pre_v0_13_2 }
+    }
+
+    #[rstest]
+    fn full_block_import_works(ctx: Ctx) {
+        ctx.importer
+            .verify_state_diff(ctx.block_n, &ctx.block.state_diff, &ctx.block.header, ctx.allow_pre_v0_13_2)
+            .unwrap();
+        ctx.importer
+            .verify_transactions(ctx.block_n, &ctx.block.transactions, &ctx.block.header, ctx.allow_pre_v0_13_2)
+            .unwrap();
+        ctx.importer.verify_events(ctx.block_n, &ctx.block.events, &ctx.block.header, ctx.allow_pre_v0_13_2).unwrap();
+        ctx.importer
+            .verify_header(
+                ctx.block_n,
+                &BlockHeaderWithSignatures::new_unsigned(ctx.block.header, ctx.block.block_hash),
+            )
+            .unwrap();
+    }
+
+    // Negative tests: we insert some errors and see if we correctly catch them.
+
+    #[rstest]
+    fn test_error_transaction_count(mut ctx: Ctx) {
+        ctx.block.header.transaction_count = 123123;
+        assert_matches!(
+            ctx.importer.verify_transactions(
+                ctx.block_n,
+                &ctx.block.transactions,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::TransactionCount { got: 2, expected: 123123 })
+        );
+    }
+    #[rstest]
+    fn test_error_transaction_commitment(mut ctx: Ctx) {
+        ctx.block.header.transaction_commitment = Felt::ONE;
+        assert_matches!(
+            ctx.importer.verify_transactions(
+                ctx.block_n,
+                &ctx.block.transactions,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::TransactionCommitment { got, expected }) => {
+                assert_eq!((got, expected), (felt!("0x7ec7010a4e1f8e531b138be74cce89b52e6de35aea6514ccf951fb021dd00e0"), Felt::ONE))
+            }
+        );
+    }
+    #[rstest]
+    fn test_error_transaction_commitment2(mut ctx: Ctx) {
+        let Transaction::Invoke(InvokeTransaction::V3(tx)) = &mut ctx.block.transactions[0].transaction else {
+            unreachable!()
+        };
+        tx.nonce += Felt::ONE;
+        assert_matches!(
+            ctx.importer.verify_transactions(
+                ctx.block_n,
+                &ctx.block.transactions,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::TransactionCommitment { .. })
+        );
+    }
+    #[rstest]
+    fn test_error_event_count(mut ctx: Ctx) {
+        ctx.block.header.event_count = 123123;
+        assert_matches!(
+            ctx.importer.verify_events(ctx.block_n, &ctx.block.events, &ctx.block.header, ctx.allow_pre_v0_13_2),
+            Err(BlockImportError::EventCount { got: 8, expected: 123123 })
+        );
+    }
+    #[rstest]
+    fn test_error_event_commitment(mut ctx: Ctx) {
+        ctx.block.header.event_commitment = Felt::ONE;
+        assert_matches!(
+            ctx.importer.verify_events(
+                ctx.block_n,
+                &ctx.block.events,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::EventCommitment { got, expected }) => {
+                assert_eq!((got, expected), (felt!("0x6b957a9475bd6b6702b2cb59a63fc52880671a15327b6a1e0a5d0652f77edd6"), Felt::ONE))
+            }
+        );
+    }
+    #[rstest]
+    fn test_error_event_commitment2(mut ctx: Ctx) {
+        ctx.block.events[0].event.data = vec![Felt::ZERO];
+        assert_matches!(
+            ctx.importer.verify_events(ctx.block_n, &ctx.block.events, &ctx.block.header, ctx.allow_pre_v0_13_2),
+            Err(BlockImportError::EventCommitment { .. })
+        );
+    }
+    #[rstest]
+    fn test_error_state_diff_length(mut ctx: Ctx) {
+        ctx.block.header.state_diff_length = Some(123123);
+        assert_matches!(
+            ctx.importer.verify_state_diff(
+                ctx.block_n,
+                &ctx.block.state_diff,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::StateDiffLength { got: 17, expected: 123123 })
+        );
+    }
+    #[rstest]
+    fn test_error_state_diff_commitment(mut ctx: Ctx) {
+        ctx.block.header.state_diff_commitment = Some(Felt::ONE);
+        assert_matches!(
+            ctx.importer.verify_state_diff(
+                ctx.block_n,
+                &ctx.block.state_diff,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::StateDiffCommitment { got, expected }) => {
+                assert_eq!((got, expected), (felt!("0x706b16bf086a55cefb50ec974c310d4cfa3b954a4fe08e895f0a2220df73eae"), Felt::ONE))
+            }
+        );
+    }
+    #[rstest]
+    fn test_error_state_diff_commitment2(mut ctx: Ctx) {
+        ctx.block.state_diff.storage_diffs.remove(1);
+        assert_matches!(
+            ctx.importer.verify_state_diff(
+                ctx.block_n,
+                &ctx.block.state_diff,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::StateDiffLength { .. })
+        );
+    }
+    #[rstest]
+    fn test_error_state_diff_commitment3(mut ctx: Ctx) {
+        ctx.block.state_diff.storage_diffs[0].address += Felt::ONE;
+        assert_matches!(
+            ctx.importer.verify_state_diff(
+                ctx.block_n,
+                &ctx.block.state_diff,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::StateDiffCommitment { .. })
+        );
+    }
+    #[rstest]
+    fn test_error_receipt_commitment(mut ctx: Ctx) {
+        ctx.block.header.receipt_commitment = Some(Felt::ONE);
+        assert_matches!(
+            ctx.importer.verify_transactions(
+                ctx.block_n,
+                &ctx.block.transactions,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::ReceiptCommitment { got, expected }) => {
+                assert_eq!((got, expected), (felt!("0x114c26f2049e6c74d8608f0a6d3bd85b522518add669b1c6ae40e7d0384c3ee"), Felt::ONE))
+            }
+        );
+    }
+    #[rstest]
+    fn test_error_receipt_commitment2(mut ctx: Ctx) {
+        let TransactionReceipt::Invoke(r) = &mut ctx.block.transactions[0].receipt else { unreachable!() };
+        r.execution_result = ExecutionResult::Reverted { reason: "dfdf".into() };
+        assert_matches!(
+            ctx.importer.verify_transactions(
+                ctx.block_n,
+                &ctx.block.transactions,
+                &ctx.block.header,
+                ctx.allow_pre_v0_13_2
+            ),
+            Err(BlockImportError::ReceiptCommitment { .. })
+        );
+    }
+
+    // TODO: do those checks for classes and block hashes too.
 }

@@ -38,6 +38,12 @@ pub struct BlockHeaderWithSignatures {
     pub consensus_signatures: Vec<ConsensusSignature>,
 }
 
+impl BlockHeaderWithSignatures {
+    pub fn new_unsigned(header: Header, block_hash: Felt) -> Self {
+        Self { header, block_hash, consensus_signatures: vec![] }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
 pub enum MadaraMaybePendingBlockInfo {
@@ -328,7 +334,7 @@ pub struct VisitedSegmentEntry {
     pub segments: Vec<usize>,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct FullBlock {
     pub block_hash: Felt,
     pub header: Header,

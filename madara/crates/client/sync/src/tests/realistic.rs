@@ -39,24 +39,24 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::starknet_sepolia()));
     let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
 
-    gateway_mock.mock_block_from_json(0, include_str!("../../resources/sepolia.block_0.json"));
+    gateway_mock.mock_block_from_json(0, include_str!("../../../../resources/sepolia.block_0.json"));
     gateway_mock.mock_class_from_json(
         "0xd0e183745e9dae3e4e78a8ffedcce0903fc4900beace4e0abf192d4c202da3",
-        include_str!("../../resources/sepolia.block_0_class_0.json"),
+        include_str!("../../../../resources/sepolia.block_0_class_0.json"),
     );
     gateway_mock.mock_class_from_json(
         "0x5c478ee27f2112411f86f207605b2e2c58cdb647bac0df27f660ef2252359c6",
-        include_str!("../../resources/sepolia.block_0_class_1.json"),
+        include_str!("../../../../resources/sepolia.block_0_class_1.json"),
     );
-    gateway_mock.mock_block_from_json(1, include_str!("../../resources/sepolia.block_1.json"));
+    gateway_mock.mock_block_from_json(1, include_str!("../../../../resources/sepolia.block_1.json"));
     gateway_mock.mock_class_from_json(
         "0x1b661756bf7d16210fc611626e1af4569baa1781ffc964bd018f4585ae241c1",
-        include_str!("../../resources/sepolia.block_1_class_0.json"),
+        include_str!("../../../../resources/sepolia.block_1_class_0.json"),
     );
-    gateway_mock.mock_block_from_json(2, include_str!("../../resources/sepolia.block_2.json"));
+    gateway_mock.mock_block_from_json(2, include_str!("../../../../resources/sepolia.block_2.json"));
     gateway_mock.mock_class_from_json(
         "0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1",
-        include_str!("../../resources/sepolia.block_2_class_0.json"),
+        include_str!("../../../../resources/sepolia.block_2_class_0.json"),
     );
     gateway_mock.mock_block_pending_not_found();
     gateway_mock.mock_header_latest(2, felt!("0x7a906dfd1ff77a121b8048e6f750cda9e949d341c4487d4c6a449f183f0e61d"));
@@ -205,10 +205,10 @@ fn ctx_mainnet(gateway_mock: GatewayMock) -> TestContext {
     let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::starknet_mainnet()));
     let importer = Arc::new(BlockImporter::new(backend.clone(), BlockValidationConfig::default()));
 
-    gateway_mock.mock_block_from_json(0, include_str!("../../resources/mainnet.block_0.json"));
+    gateway_mock.mock_block_from_json(0, include_str!("../../../../resources/mainnet.block_0.json"));
     gateway_mock.mock_class_from_json(
         "0x10455c752b86932ce552f2b0fe81a880746649b9aee7e0d842bf3f52378f9f8",
-        include_str!("../../resources/mainnet.block_0_class_0.json"),
+        include_str!("../../../../resources/mainnet.block_0_class_0.json"),
     );
     gateway_mock.mock_block_pending_not_found();
     gateway_mock.mock_header_latest(0, felt!("0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943"));
