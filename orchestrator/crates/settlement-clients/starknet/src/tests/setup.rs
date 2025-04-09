@@ -163,8 +163,6 @@ impl MadaraCmdBuilder {
         let process = Command::new(target_bin)
             .envs(self.env)
             .args(self.args.into_iter().chain([
-                "--telemetry-disabled".into(), // important: disable telemetry!!
-                "--no-prometheus".into(),
                 "--base-path".into(),
                 format!("{}", self.tempdir.as_ref().display()),
                 "--rpc-port".into(),
