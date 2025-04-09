@@ -90,8 +90,8 @@ impl MadaraBackend {
 
     pub fn revert_to(&self, revert_to: u64) -> Result<(), MadaraStorageError> {
         let state_diffs = self.block_db_revert(revert_to)?;
-        self.contract_db_revert(revert_to, &state_diffs)?;
-        self.class_db_revert(revert_to, &state_diffs)?;
+        self.contract_db_revert(&state_diffs)?;
+        self.class_db_revert(&state_diffs)?;
         Ok(())
     }
 

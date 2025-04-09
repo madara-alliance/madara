@@ -358,8 +358,11 @@ impl MadaraBackend {
     /// Reverts the tip of the chain back to the given block.
     ///
     /// In addition, this removes all historical data (chain state, transactions, state diffs,
-    /// etc.) from the database. ROW_SYNC_TIP is set to the new tip.
-    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<Vec<StateDiff>> {
+    /// etc.) from the database. `ROW_SYNC_TIP` is set to the new tip.
+    /// 
+    /// Returns a Vec of `(block_number, state_diff)` where the Vec is in reverse order (the first
+    /// element is the current tip of the chain and the last is `revert_to`).
+    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
         let mut tx = WriteBatchWithTransaction::default();
 
         let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
@@ -393,7 +396,7 @@ impl MadaraBackend {
             // get state diff for this block before removing it
             let state_diff_serialized = self.db.get_cf(&block_n_to_state_diff, block_n_encoded.clone())?.unwrap(); // TODO: unwrap, should we expect an entry for every single block here, or will some be None?
             let state_diff: StateDiff = bincode::deserialize(&state_diff_serialized)?;
-            state_diffs.push(state_diff);
+            state_diffs.push((block_n, state_diff));
 
             tx.delete_cf(&block_n_to_block, &block_n_encoded);
             tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
