@@ -375,7 +375,7 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
     let latest_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting latest block info"))?
-        .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("no latest block after reorg")))?;
+        .ok_or(BlockImportError::Internal(Cow::Borrowed("no latest block after reorg")))?;
     let latest_block_info =
         latest_block_info.as_nonpending().ok_or(BlockImportError::Internal("latest block cannot be pending".into()))?;
 
