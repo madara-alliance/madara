@@ -48,7 +48,7 @@ pub const MADARA_CONFIG_PATH: &str = "../../../../configs/presets/devnet.yaml";
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/appchain_test.casm.json
 pub const APPCHAIN_CONTRACT_CASM_HASH: &str = "0x07f36e830605ddeb7c4c094639b628de297cbf61f45385b1fc3231029922b30b";
 // starkli class-hash crates/client/settlement_client/src/starknet/test_contracts/messaging_test.casm.json
-pub const MESSAGING_CONTRACT_CASM_HASH: &str = "0x077de37b708f9abe01c1a797856398c5e1e5dfde8213f884668fa37b13d77e30";
+pub const MESSAGING_CONTRACT_CASM_HASH: &str = "0x061c2b45bdf4a22c88faa4afa43835b2f8ca826742d7ef849416952709d340b9";
 
 /// Type alias for a Starknet account used in tests
 pub type StarknetAccount = SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>;

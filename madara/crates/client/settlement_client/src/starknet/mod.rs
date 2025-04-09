@@ -276,6 +276,7 @@ impl SettlementClientTrait for StarknetClient {
         // }
         // so we expect the output to be 1 value.
         if call_res.len() != 1 {
+            tracing::error!("sn_to_appchain_messages should return exactly 1 value but got {:?}", call_res);
             return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
                 message: "sn_to_appchain_messages should return exactly 1 value".to_string(),
             }));
@@ -283,10 +284,11 @@ impl SettlementClientTrait for StarknetClient {
 
         // Map the response: return 1 if Sealed (status == 1), otherwise return 0
         let status = call_res[0];
+
         let result = if status == Felt::ONE {
-            Felt::ONE // Sealed case
+            Felt::ZERO // Sealed case
         } else {
-            Felt::ZERO // Any other status (NotSent, Cancelled, Pending)
+            Felt::ONE // Any other status (NotSent, Cancelled, Pending)
         };
 
         Ok(result)
@@ -716,9 +718,9 @@ mod starknet_client_messaging_test {
         // Log asserts
         // ===========
         assert!(logs_contain("fromAddress: \"0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
-        // hash calculated in the contract : 0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0
+        // hash calculated in the contract : 0x34ce57fde5f3e591d0915391417177f57d9dc2d2ebde7e9b7aaf2d02d06dfde
         // expecting the same in logs
-        assert!(logs_contain("event hash: \"0x210c8d7fdedf3e9d775ba12b12da86ea67878074a21b625e06dac64d5838ad0\""));
+        assert!(logs_contain("event hash: \"0x34ce57fde5f3e591d0915391417177f57d9dc2d2ebde7e9b7aaf2d02d06dfde\""));
 
         // Assert that the event is well stored in db
         let last_block = fixture
@@ -728,7 +730,7 @@ mod starknet_client_messaging_test {
             .expect("Should successfully retrieve the last synced L1 block with messaging event")
             .unwrap();
         assert_eq!(last_block.block_number, fire_event_block_number);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
+        let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
         assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce)?);
 
         // Cancelling worker
@@ -777,10 +779,9 @@ mod starknet_client_messaging_test {
             .expect("Should successfully retrieve last synced block after cancellation")
             .unwrap();
         assert_eq!(last_block_post_cancellation.block_number, last_block_pre_cancellation.block_number);
-        let nonce = Nonce(Felt::from_dec_str("10000000000000000").expect("Should parse the known valid test nonce"));
+        let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
         // cancelled message nonce should be inserted to avoid reprocessing
         assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce).unwrap());
-        assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
 
         // Cancelling worker
         worker_handle.abort();

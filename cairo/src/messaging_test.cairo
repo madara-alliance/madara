@@ -23,7 +23,7 @@ struct StorageMessageData {
 trait IMessagingContract<TContractState> {
     fn get_message_data(self: @TContractState) -> MessageData;
     fn fire_event(ref self: TContractState);
-    fn l1_to_l2_message_cancellations(self: @TContractState, msg_hash: felt252) -> u256;
+    fn sn_to_appchain_messages(self: @TContractState, msg_hash: felt252) -> felt252;
     fn set_is_canceled(ref self: TContractState, value: bool);
     fn get_l1_to_l2_msg_hash(self: @TContractState) -> felt252;
 }
@@ -90,7 +90,7 @@ mod MessagingContract {
                 selector: 232670485425082704932579856502088130646006032362877466777181098476241604910
                     .into(),
                 payload,
-                nonce: 10000000000000000.into(),
+                nonce: 0.into(),
             }
         }
 
@@ -112,11 +112,21 @@ mod MessagingContract {
                 );
         }
 
-        fn l1_to_l2_message_cancellations(self: @ContractState, msg_hash: felt252) -> u256 {
+        // here is the output of the call:
+        // https://github.com/keep-starknet-strange/piltover/blob/161cb3f66d256e4d1211c6b50e5d353afb713a3e/src/messaging/types.cairo#L5
+        // pub enum MessageToAppchainStatus {
+        //     #[default]
+        //     NotSent,
+        //     Sealed,
+        //     Cancelled,
+        //     Pending: Nonce
+        // }
+        // so we are return 2 when the message is cancelled and 1 when it is not
+        fn sn_to_appchain_messages(self: @ContractState, msg_hash: felt252) -> felt252 {
             if self.is_canceled.read() {
-                1723134213.into()
+                2.into()
             } else {
-                0.into()
+                1.into()
             }
         }
 
