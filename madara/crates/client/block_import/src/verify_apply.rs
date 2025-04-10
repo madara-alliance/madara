@@ -879,11 +879,52 @@ mod verify_apply_tests {
 
     #[cfg(test)]
     mod reorg_tests {
-        use mc_block_production::test_utils::{converted_class_legacy, converted_class_sierra};
         use mp_class::ConvertedClass;
         use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
 
         use super::*;
+
+        #[rstest::fixture]
+        pub fn converted_class_sierra(
+            #[default(Felt::ZERO)] class_hash: Felt,
+            #[default(Felt::ZERO)] compiled_class_hash: Felt,
+        ) -> mp_class::ConvertedClass {
+            mp_class::ConvertedClass::Sierra(mp_class::SierraConvertedClass {
+                class_hash,
+                info: mp_class::SierraClassInfo {
+                    contract_class: Arc::new(mp_class::FlattenedSierraClass {
+                        sierra_program: vec![],
+                        contract_class_version: "".to_string(),
+                        entry_points_by_type: mp_class::EntryPointsByType {
+                            constructor: vec![],
+                            external: vec![],
+                            l1_handler: vec![],
+                        },
+                        abi: "".to_string(),
+                    }),
+                    compiled_class_hash,
+                },
+                compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
+            })
+        }
+
+        #[rstest::fixture]
+        pub fn converted_class_legacy(#[default(Felt::ZERO)] class_hash: Felt) -> mp_class::ConvertedClass {
+            mp_class::ConvertedClass::Legacy(mp_class::LegacyConvertedClass {
+                class_hash,
+                info: mp_class::LegacyClassInfo {
+                    contract_class: Arc::new(mp_class::CompressedLegacyContractClass {
+                        program: vec![],
+                        entry_points_by_type: mp_class::LegacyEntryPointsByType {
+                            constructor: vec![],
+                            external: vec![],
+                            l1_handler: vec![],
+                        },
+                        abi: None,
+                    }),
+                },
+            })
+        }
 
         #[rstest]
         #[tokio::test]
