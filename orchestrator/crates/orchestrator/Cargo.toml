@@ -99,12 +99,12 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time", "default", "env-filter", "fmt"] }
-tracing-error = "0.2"
-tracing-log = "0.2.0"
+tracing-error = { workspace = true }
+tracing-log = { workspace = true }
 
-jemallocator = "0.5.4"
-tokio-util = "0.7.12"
-anyhow = "1.0.97"
+jemallocator = { workspace = true }
+tokio-util = { workspace = true }
+anyhow = { workspace = true }
 
 [features]
 default = ["ethereum"]
@@ -115,4 +115,4 @@ testing = []
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
-httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
+httpmock = { workspace = true }
