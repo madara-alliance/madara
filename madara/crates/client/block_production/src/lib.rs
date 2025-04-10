@@ -661,7 +661,6 @@ mod tests {
     use crate::{
         finalize_execution_state::state_map_to_state_diff,
         metrics::BlockProductionMetrics,
-        test_utils::{converted_class_legacy, converted_class_sierra},
         BlockProductionTask,
     };
 
