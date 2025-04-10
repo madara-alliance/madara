@@ -16,4 +16,7 @@ pub enum OrchestratorCoreError {
 
     #[error("Database error: {0}")]
     DatabaseError(#[from] DatabaseError),
+
+    #[error("Invalid provider: {0}")]
+    InvalidProvider(String),
 }

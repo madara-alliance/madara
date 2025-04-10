@@ -1,5 +1,8 @@
-use crate::error::OrchestratorResult;
+use crate::{cli::RunCmd, error::OrchestratorResult, types::params::cloud_provider::AWSCredentials};
 use aws_config::SdkConfig;
+use futures::executor::block_on;
+
+use super::error::OrchestratorCoreError;
 
 /// Cloud provider
 /// This enum represents the different cloud providers that the Orchestrator can interact with.
@@ -47,5 +50,20 @@ impl std::fmt::Display for CloudProvider {
         match self {
             CloudProvider::AWS(_) => write!(f, "AWS"),
         }
+    }
+}
+
+impl TryFrom<RunCmd> for CloudProvider {
+    type Error = OrchestratorCoreError;
+
+    fn try_from(cmd: RunCmd) -> Result<Self, Self::Error> {
+        if cmd.aws_config_args.aws {
+            let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
+            let config = block_on(aws_cred.get_aws_config());
+            Ok(CloudProvider::AWS(Box::new(config)))
+        } else {
+            Err(OrchestratorCoreError::InvalidProvider("AWS".to_string()))
+        }
+
     }
 }
