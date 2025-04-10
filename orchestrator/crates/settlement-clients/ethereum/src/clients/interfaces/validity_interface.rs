@@ -1,16 +1,14 @@
 use std::sync::Arc;
 
 use alloy::network::Ethereum;
-use alloy::primitives::{I256, U256};
+use alloy::primitives::{Bytes, I256, U256};
 use alloy::providers::Provider;
 use alloy::rpc::types::eth::TransactionReceipt;
 use alloy::sol;
 use alloy::transports::http::Http;
 use alloy::transports::{RpcError, TransportErrorKind};
-use alloy_primitives::Bytes;
 use async_trait::async_trait;
 
-// use bytes::Bytes;
 use crate::types::LocalWalletSignerMiddleware;
 
 // TODO: should be moved to Zaun:
@@ -64,6 +62,8 @@ pub enum StarknetValidityContractError {
     RpcError(#[from] RpcError<TransportErrorKind>),
     #[error("Failed to estimate gas: {0}")]
     EstimateGasError(#[from] alloy::contract::Error),
+    #[error("Pending transaction error: {0}")]
+    PendingTransactionError(#[from] alloy::providers::PendingTransactionError),
 }
 
 #[async_trait]
@@ -126,7 +126,7 @@ where
             .await?
             .get_receipt()
             .await
-            .map_err(StarknetValidityContractError::RpcError)
+            .map_err(StarknetValidityContractError::PendingTransactionError)
     }
 
     async fn update_state_kzg(
@@ -153,6 +153,6 @@ where
             .await?
             .get_receipt()
             .await
-            .map_err(StarknetValidityContractError::RpcError)
+            .map_err(StarknetValidityContractError::PendingTransactionError)
     }
 }
