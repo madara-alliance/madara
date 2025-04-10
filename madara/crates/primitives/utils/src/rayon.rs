@@ -62,5 +62,8 @@ where
         let _result = tx.send(std::panic::catch_unwind(AssertUnwindSafe(func)));
     });
 
-    rx.await.expect("Tokio channel closed").expect("Rayon task panicked")
+    match rx.await.expect("Tokio channel closed") {
+        Ok(r) => r,
+        Err(panic) => std::panic::resume_unwind(panic),
+    }
 }

@@ -112,7 +112,8 @@ impl PipelineSteps for ClassesSyncSteps {
                     .run_in_rayon_pool(move |importer| {
                         importer.verify_compile_classes(Some(block_n), declared_classes, &classes)
                     })
-                    .await?;
+                    .await
+                    .with_context(|| format!("Verifying and compiling classes for block_n={block_n:?}"))?;
 
                 out.push(ret);
             }
@@ -140,7 +141,8 @@ impl PipelineSteps for ClassesSyncSteps {
                 }
                 anyhow::Ok(())
             })
-            .await?;
+            .await
+            .with_context(|| format!("Saving classes for block_range={block_range:?}"))?;
         if let Some(block_n) = block_range.last() {
             self.backend.head_status().classes.set_current(Some(block_n));
             self.backend.save_head_status_to_db()?;

@@ -2,6 +2,7 @@
 
 ## Next release
 
+- cli: removed `--n-blocks-to-sync <number of blocks>`, replaced by `--sync-stop-at <height>`
 - refactor: refactor mc-sync crate, and remove mc-block-import crate
 - fix(gateway-client): fix v0.13.4 gateway deserialization
 - chore: Merge entire madara-orchestrator project into this one

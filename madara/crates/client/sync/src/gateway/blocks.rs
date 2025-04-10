@@ -118,7 +118,8 @@ impl PipelineSteps for GatewaySyncSteps {
 
                         anyhow::Ok(gateway_block.state_diff)
                     })
-                    .await?;
+                    .await
+                    .with_context(|| format!("Verifying block for block_n={block_n:?}"))?;
                 out.push(state_diff);
             }
             Ok(out)

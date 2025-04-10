@@ -2,28 +2,23 @@ use crate::{
     import::BlockImporter,
     pipeline::{ApplyOutcome, PipelineController, PipelineSteps},
 };
+use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_state_update::StateDiff;
 use std::{ops::Range, sync::Arc};
 
 pub type ApplyStateSync = PipelineController<ApplyStateSteps>;
 pub fn apply_state_pipeline(
-    backend: Arc<MadaraBackend>,
+    _backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     starting_block_n: u64,
     parallelization: usize,
     batch_size: usize,
     disable_tries: bool,
 ) -> ApplyStateSync {
-    PipelineController::new(
-        ApplyStateSteps { backend, importer, disable_tries },
-        parallelization,
-        batch_size,
-        starting_block_n,
-    )
+    PipelineController::new(ApplyStateSteps { importer, disable_tries }, parallelization, batch_size, starting_block_n)
 }
 pub struct ApplyStateSteps {
-    backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     disable_tries: bool,
 }
@@ -49,15 +44,14 @@ impl PipelineSteps for ApplyStateSteps {
         if self.disable_tries {
             return Ok(ApplyOutcome::Success(()));
         }
-        if let Some(last_block_n) = block_range.clone().last() {
-            tracing::debug!("Apply state sequential step {block_range:?}");
+        tracing::debug!("Apply state sequential step {block_range:?}");
 
-            self.importer
-                .run_in_rayon_pool_global(|importer| importer.apply_to_global_trie(block_range, input))
-                .await?;
-            self.backend.head_status().global_trie.set_current(Some(last_block_n));
-            self.backend.save_head_status_to_db()?;
-        }
+        let block_range_ = block_range.clone();
+        // Importer is in charge of setting the head status.
+        self.importer
+            .run_in_rayon_pool_global(move |importer| importer.apply_to_global_trie(block_range_, input))
+            .await
+            .with_context(|| format!("Applying global trie step for block_range={block_range:?}"))?;
         Ok(ApplyOutcome::Success(()))
     }
 }

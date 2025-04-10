@@ -1,10 +1,9 @@
+use crate::{MadaraBackend, MadaraStorageError};
 use mp_state_update::StateDiff;
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-
-use crate::{MadaraBackend, MadaraStorageError};
 
 pub mod classes;
 pub mod contracts;
@@ -22,6 +21,7 @@ impl MadaraBackend {
         let mut state_root = None;
         for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
             tracing::debug!("applying state_diff block_n={block_n}");
+
             let (contract_trie_root, class_trie_root) = rayon::join(
                 || {
                     crate::update_global_trie::contracts::contract_trie_root(
@@ -37,6 +37,9 @@ impl MadaraBackend {
             );
 
             state_root = Some(crate::update_global_trie::calculate_state_root(contract_trie_root?, class_trie_root?));
+
+            self.head_status().global_trie.set_current(Some(block_n));
+            self.save_head_status_to_db()?;
         }
         state_root.ok_or(MadaraStorageError::EmptyBatch)
     }

@@ -1,14 +1,21 @@
 use crate::{Column, MadaraBackend, MadaraStorageError};
 use crate::{DatabaseExt, DB};
+use std::fmt;
 use std::sync::atomic::{AtomicU64, Ordering::SeqCst};
 
-#[derive(serde::Serialize, serde::Deserialize, Debug, Default)]
+#[derive(serde::Serialize, serde::Deserialize, Default)]
 #[serde(transparent)]
 pub struct BlockNStatus(AtomicU64);
 
+impl fmt::Debug for BlockNStatus {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{:?}", self.current())
+    }
+}
+
 impl BlockNStatus {
     pub fn current(&self) -> Option<u64> {
-        self.0.load(SeqCst).checked_sub(1)
+        self.next().checked_sub(1)
     }
     pub fn next(&self) -> u64 {
         self.0.load(SeqCst)

@@ -16,7 +16,7 @@ use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
-use std::{borrow::Cow, cmp, collections::HashMap, ops::Range, sync::Arc};
+use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {
@@ -518,30 +518,34 @@ impl BlockImporterCtx {
     // GLOBAL TRIE
 
     /// Called in a rayon-pool context.
+    /// This function also changes the global trie head status.
     pub fn apply_to_global_trie(
         &self,
         mut block_range: Range<u64>,
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
+        // don't re-import the blocks we've already imported.
         let next_to_import = self.db.head_status().global_trie.next();
-        block_range.start = cmp::max(block_range.start, next_to_import); // don't re-import the blocks we've already imported.
-        if block_range.is_empty() {
-            return Ok(());
-        }
+        let already_imported_count = next_to_import.saturating_sub(block_range.start);
+        let state_diffs = state_diffs.iter().skip(already_imported_count as _);
+        block_range.start += already_imported_count;
 
-        let got = self.db.apply_to_global_trie(block_range.start, state_diffs.iter()).map_err(|error| {
+        let Some(last_block_n) = block_range.clone().last() else {
+            return Ok(()); // range is empty
+        };
+
+        let got = self.db.apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
             BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
         })?;
 
         // Sanity check: verify state root.
         if !self.config.no_check {
-            let block_n = block_range.last().expect("Range checked for empty earlier.");
             let expected = self
                 .db
-                .get_block_info(&RawDbBlockId::Number(block_n))
+                .get_block_info(&RawDbBlockId::Number(last_block_n))
                 .map_err(|error| BlockImportError::InternalDb {
                     error,
-                    context: format!("Cannot find block info for block #{block_n}").into(),
+                    context: format!("Cannot find block info for block #{last_block_n}").into(),
                 })?
                 .context("Block header cannot be found")?
                 .as_nonpending_owned()
