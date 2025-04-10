@@ -343,7 +343,7 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
     let previous_tip_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting current tip block info"))?
-        .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("on blockchain tip in storage")))?;
+        .ok_or_else(|| BlockImportError::Internal(Cow::Borrowed("There are no blocks in the database")))?;
 
     let target_block_number = target_block_info.header.block_number;
     let target_block_id = BasicId::new(target_block_number);
