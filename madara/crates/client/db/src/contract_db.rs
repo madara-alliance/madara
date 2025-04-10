@@ -214,6 +214,8 @@ impl MadaraBackend {
     ///  * that range should end with the current blockchain tip
     ///
     /// If this isn't the case, the blockchain will store inconsistent state for some blocks.
+    /// 
+    /// Does not clear pending info; caller should do this if needed.
     pub(crate) fn contract_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<(), MadaraStorageError> {
         if state_diffs.is_empty() {
             return Ok(());

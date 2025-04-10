@@ -226,6 +226,8 @@ impl MadaraBackend {
     ///
     /// If this isn't the case, the db could end up storing classes that aren't canonically
     /// deployed.
+    /// 
+    /// Does not clear pending info; caller should do this if needed.
     pub(crate) fn class_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<(), MadaraStorageError> {
         let classes_info_col = self.db.get_column(Column::ClassInfo);
         let classes_compiled_col = self.db.get_column(Column::ClassCompiled);

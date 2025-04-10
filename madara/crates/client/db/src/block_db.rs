@@ -361,6 +361,8 @@ impl MadaraBackend {
     ///
     /// In addition, this removes all historical data (chain state, transactions, state diffs,
     /// etc.) from the database. `ROW_SYNC_TIP` is set to the new tip.
+    /// 
+    /// Does not clear pending info; caller should do this if needed.
     ///
     /// Returns a Vec of `(block_number, state_diff)` where the Vec is in reverse order (the first
     /// element is the current tip of the chain and the last is `revert_to`).
@@ -373,11 +375,6 @@ impl MadaraBackend {
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
         let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
         let meta = self.db.get_column(Column::BlockStorageMeta);
-
-        // clear pending
-        tx.delete_cf(&meta, ROW_PENDING_INFO);
-        tx.delete_cf(&meta, ROW_PENDING_INNER);
-        tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
 
         let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
         let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
