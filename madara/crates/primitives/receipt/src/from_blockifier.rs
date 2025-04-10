@@ -56,10 +56,16 @@ pub struct MsgToL2 {
     pub nonce: Option<Felt>,
 }
 
+// Specification reference: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#hashing_l1-l2
+// Example implementation in starknet-rs: https://github.com/xJonathanLEI/starknet-rs/blob/master/starknet-core/src/types/msg.rs#L28
+//
+// Key Differences:
+// - In starknet-rs, padding is applied to the `from_address` and `nonce` fields. This is necessary because the `from_address` is an Ethereum address (20 bytes) and the `nonce` is a u64 (8 bytes).
+// - In this implementation, padding for `from_address` and `nonce` is not required. Both fields are converted to `felt252`, which naturally fits the required size.
+// - Padding is only applied to the payload length, which is a u64 (8 bytes), to ensure proper alignment.
 impl MsgToL2 {
     pub fn compute_hash(&self) -> H256 {
         let mut hasher = Keccak256::new();
-        hasher.update([0u8; 12]); // Padding
         hasher.update(self.from_address.to_bytes_be());
         hasher.update(self.to_address.to_bytes_be());
         hasher.update(self.nonce.unwrap_or_default().to_bytes_be());
@@ -311,7 +317,6 @@ mod test {
     use std::str::FromStr;
 
     #[test]
-    #[ignore] // TODO: waiting for response on how to handle the MsgToL2
     fn test_compute_hash_msg_to_l2() {
         let msg = MsgToL2 {
             from_address: Felt::from(1),

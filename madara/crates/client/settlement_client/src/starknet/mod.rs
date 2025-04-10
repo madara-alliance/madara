@@ -401,8 +401,8 @@ impl StarknetClient {
     fn event_to_felt_array(&self, event: &L1toL2MessagingEventData) -> Vec<Felt> {
         std::iter::once(event.from)
             .chain(std::iter::once(event.to))
-            .chain(std::iter::once(event.selector))
             .chain(std::iter::once(event.nonce))
+            .chain(std::iter::once(event.selector))
             .chain(std::iter::once(Felt::from(event.payload.len())))
             .chain(event.payload.iter().cloned())
             .collect()
@@ -447,6 +447,7 @@ impl StarknetClient {
 
 #[cfg(test)]
 pub mod starknet_client_tests {
+    use super::*;
     use crate::client::SettlementClientTrait;
     use crate::starknet::utils::{
         get_state_update_lock, get_test_context, init_test_context, send_state_update, TestGuard,
@@ -521,6 +522,64 @@ pub mod starknet_client_tests {
 
         assert!(fixture.client.get_latest_block_number().await.is_ok(), "Should not fail to create a new client");
 
+        Ok(())
+    }
+
+    // data taken from: https://sepolia.voyager.online/event/667945_6_3
+    #[rstest]
+    #[tokio::test]
+    async fn test_get_messaging_hash<'a>(
+        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
+    ) -> anyhow::Result<()> {
+        let fixture = test_fixture.await?;
+        let event = L1toL2MessagingEventData {
+            from: Felt::from_hex("0x422dd5fe05931e677c0dcbb74ea057874ba4035c5d5784ea626200b7cfc702")
+                .expect("Failed to parse from_address"),
+            to: Felt::from_hex("0x8ff0d8c01af0b9e5ab904f0299e6ae3a94b28c680b821ab02b978447d2da67")
+                .expect("Failed to parse to_address"),
+            selector: Felt::from_hex("0x8bce41827dd5484d80312a2e43bc42a896e3fcf75bf84c2b49339168dfa00a")
+                .expect("Failed to parse selector"),
+            payload: vec![
+                Felt::from_hex("0x36a44c6cfb107de7ec925d22cb549b7a881439b70d1fc30209728c5340d46f8")
+                    .expect("Failed to parse payload"),
+                Felt::from_hex("0x463a5a7d814c754e6c3c10f9de8024b2bdf20eb56ad5168076636a858402d7e")
+                    .expect("Failed to parse payload"),
+                Felt::from_hex("0x23b0052e5e47b8d94ef37350a02dba867cef6b2ee2bee6eea363103df04dc18")
+                    .expect("Failed to parse payload"),
+                Felt::from_hex("0x98a7d9b8314c0000").expect("Failed to parse payload"),
+                Felt::from_hex("0x0").expect("Failed to parse payload"),
+                Felt::from_hex("0x2").expect("Failed to parse payload"),
+                Felt::from_hex("0x463a5a7d814c754e6c3c10f9de8024b2bdf20eb56ad5168076636a858402d7e")
+                    .expect("Failed to parse payload"),
+                Felt::from_hex("0x2b2822").expect("Failed to parse payload"),
+            ],
+            nonce: Felt::from_hex("0x2ea").expect("Failed to parse nonce"),
+            block_number: 100,    // temp data because it's not required for the hashing
+            event_index: Some(0), // temp data because it's not required for the hashing
+            fee: Some(1),         // temp data because it's not required for the hashing
+            message_hash: Some(
+                Felt::from_hex("0x600b974add9d5406d3d5602b6b2f8beae3b3708a69968f37fa7739524253d8c")
+                    .expect("Failed to parse message hash"),
+            ), // temp data because it's not required for the hashing
+            transaction_hash: Felt::from_hex("0x600b974add9d5406d3d5602b6b2f8beae3b3708a69968f37fa7739524253d8c")
+                .expect("Failed to parse transaction hash"), // temp data because it's not required for the hashing
+        };
+
+        // Create an instance of the struct containing the get_messaging_hash method
+        let client = fixture.client;
+
+        // Call the function and check the result
+        match client.get_messaging_hash(&event) {
+            Ok(hash) => {
+                // Replace with the expected hash value
+                let event_hash = Felt::from_bytes_be_slice(hash.as_slice()).to_hex_string();
+                assert_eq!(
+                    event_hash, "0x600b974add9d5406d3d5602b6b2f8beae3b3708a69968f37fa7739524253d8c",
+                    "Hash does not match expected value"
+                );
+            }
+            Err(e) => panic!("Function returned an error: {:?}", e),
+        }
         Ok(())
     }
 
