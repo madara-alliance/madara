@@ -85,6 +85,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 default = []
 
 [dev-dependencies]
+rand.workspace = true
 rstest.workspace = true
 tempfile.workspace = true
 dotenv.workspace = true

@@ -10,6 +10,7 @@
 use crate::state_update::StateUpdate;
 use assert_matches::assert_matches;
 use lazy_static::lazy_static;
+use rand::Rng;
 use starknet_accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet_core::types::contract::SierraClass;
 use starknet_core::types::{BlockId, BlockTag, Call, TransactionReceipt, TransactionReceiptWithBlockInfo};
@@ -26,6 +27,7 @@ use std::str::FromStr;
 use std::sync::Arc;
 use std::sync::Once;
 use std::thread;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tokio::sync::Mutex;
 use url::Url;
 
@@ -82,14 +84,15 @@ impl MadaraProcess {
     /// # Returns
     /// A Result containing the MadaraProcess or an IO error
     pub fn new(binary_path: PathBuf) -> Result<Self, std::io::Error> {
-        // Generate a unique port based on process ID instead of OS allocation
-        // This ensures different test processes use different ports
+        // Generate a unique port using timestamp, random number, and process ID
         let base_port = 30000;
-        let offset = (std::process::id() % 10000) as u16;
-        let port = base_port + offset;
+        let timestamp = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as u16;
+        let random_offset: u16 = rand::thread_rng().gen_range(0..1000);
+        let process_offset = (std::process::id() % 1000) as u16;
+        let port = base_port + (timestamp % 10000) + random_offset + process_offset;
 
         // Gateway port with a different offset
-        let gateway_port = base_port + 10000 + offset;
+        let gateway_port = base_port + 10000 + (timestamp % 10000) + random_offset + process_offset;
 
         // Create a unique database path
         let unique_db_path = format!("../madara-db-{}-{}", port, std::process::id());
