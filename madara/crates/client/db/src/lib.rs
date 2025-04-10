@@ -522,7 +522,7 @@ impl MadaraBackend {
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
             snapshots,
-            trie_log_config: Default::default(),
+            trie_log_config: TrieLogConfig { max_saved_trie_logs: 128, ..Default::default() },
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
             write_opt_no_wal: make_write_opt_no_wal(),

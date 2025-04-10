@@ -879,6 +879,7 @@ mod verify_apply_tests {
 
     #[cfg(test)]
     mod reorg_tests {
+        use mc_db::bonsai_identifier;
         use mp_class::ConvertedClass;
         use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
 
@@ -940,6 +941,9 @@ mod verify_apply_tests {
             let backend = setup_test_backend;
             let validation = create_validation_context(false);
 
+            // fresh trie, should be empty
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+
             let mut genesis = create_dummy_block();
             genesis.unverified_block_number = Some(0);
             genesis.unverified_global_state_root = Some(felt!("0x0"));
@@ -947,6 +951,9 @@ mod verify_apply_tests {
             let block_import = verify_apply_inner(&backend, genesis, validation.clone())
                 .expect("verify_apply_inner failed on genesis");
             let parent_hash = block_import.block_hash;
+
+            // no class state in the genesis block, should still be empty
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
 
             let mut block = create_dummy_block();
             block.unverified_block_number = Some(1);
@@ -971,6 +978,9 @@ mod verify_apply_tests {
             // declared classes should have been pruned during revert_to()
             assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
             assert!(!backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
+
+            // TODO: this should be empty
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
         }
 
         #[rstest]
@@ -1103,6 +1113,8 @@ mod verify_apply_tests {
             assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), None);
             assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), None);
             assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), None);
+
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO,);
         }
 
         /// This struct provides the inputs to the reorg tests. It does so based on integers
@@ -1202,8 +1214,13 @@ mod verify_apply_tests {
         )]
         #[tokio::test]
         async fn test_reorg(setup_test_backend: Arc<MadaraBackend>, #[case] args: ReorgTestArgs) {
+            use mc_db::bonsai_identifier;
+
             let backend = setup_test_backend;
             let validation = create_validation_context(false);
+
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO);
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
 
             // utility fn to append an empty block to the given parent block, returning the new block's hash
             let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> Felt {
@@ -1219,10 +1236,14 @@ mod verify_apply_tests {
 
             // create the original chain
             let mut parent_hash = None;
+            let mut genesis_hash = None;
             assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
             for i in 0..args.original_chain_length {
                 let new_block_hash = append_empty_block(i, parent_hash);
                 parent_hash = Some(new_block_hash);
+                if genesis_hash.is_none() {
+                    genesis_hash = Some(new_block_hash);
+                }
             }
             let mut reorg_parent_hash =
                 parent_hash.expect("logic error: we should have created at least one block which is our parent");
@@ -1257,6 +1278,18 @@ mod verify_apply_tests {
                     .expect("get_block_hash failed after reorg");
                 assert_eq!(latest_block_hash, parent_hash);
             }
+
+            // finally, reorg back to 0 and ensure everything is empty.
+            let _ = revert_to(
+                &backend,
+                &genesis_hash.expect(
+                    "Genesis hash should be set to the first block created, and we always create a genesis block",
+                ),
+            )
+            .expect("reorg to genesis failed");
+
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO);
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
         }
     }
 }
