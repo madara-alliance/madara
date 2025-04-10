@@ -118,7 +118,7 @@ impl MadaraProcess {
             .arg("--chain-config-override=block_time=5s,pending_block_update_time=1s")
             .spawn()?;
 
-        wait_for_port(port, 2, 10);
+        wait_for_port(port, 5, 10);
 
         Ok(Self { process, binary_path, port, db_path: unique_db_path })
     }
