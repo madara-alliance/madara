@@ -234,6 +234,9 @@ impl MadaraBackend {
         // We could use e.g. batch.delete_range_cf() and perhaps fewer db calls, but this isn't
         // guaranteed to perform better and is more complex.
         for (block_n, diff) in state_diffs {
+            // important: `block_n` needs to be 4 bytes when serialized into part of the db key
+            let block_n = *block_n as u32;
+
             diff.deployed_contracts
                 .iter()
                 .map(|item| item.address)
