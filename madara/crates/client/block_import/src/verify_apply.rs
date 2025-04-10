@@ -373,7 +373,6 @@ pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<R
         .revert_to(target_block_number)
         .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
 
-    // TODO: ensure there is no race condition here...? (e.g. we reverted and someone else appends a block before this next call)
     let latest_block_info = backend
         .get_block_info(&BlockId::Tag(BlockTag::Latest))
         .map_err(make_db_error("getting latest block info"))?
@@ -879,7 +878,7 @@ mod verify_apply_tests {
 
     #[cfg(test)]
     mod reorg_tests {
-        use mc_db::bonsai_identifier;
+        use mc_db::{bonsai_identifier, Column};
         use mp_class::ConvertedClass;
         use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
 
@@ -941,8 +940,10 @@ mod verify_apply_tests {
             let backend = setup_test_backend;
             let validation = create_validation_context(false);
 
-            // fresh trie, should be empty
+            // fresh tries and dbs, should be empty
             assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+            assert_eq!(backend.query_column_count(Column::ClassInfo), 0);
+            assert_eq!(backend.query_column_count(Column::ClassCompiled), 0);
 
             let mut genesis = create_dummy_block();
             genesis.unverified_block_number = Some(0);
@@ -969,6 +970,11 @@ mod verify_apply_tests {
             block.converted_classes = vec![converted_class_sierra, converted_class_legacy];
             let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
 
+            // both the sierra and the deprecated classes should give us an entry in ClassInfo (so 2)
+            assert_eq!(backend.query_column_count(Column::ClassInfo), 2);
+            // only the sierra gives us an entry in ClassCompiled (so 1)
+            assert_eq!(backend.query_column_count(Column::ClassCompiled), 1);
+
             // declared classes should exist now
             assert!(backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
             assert!(backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
@@ -979,14 +985,21 @@ mod verify_apply_tests {
             assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
             assert!(!backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
 
-            // TODO: this should be empty
+            // should all be empty again
             assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+            assert_eq!(backend.query_column_count(Column::ClassInfo), 0);
+            assert_eq!(backend.query_column_count(Column::ClassCompiled), 0);
         }
 
         #[rstest]
         #[tokio::test]
         async fn test_revert_contract_state(setup_test_backend: Arc<MadaraBackend>) {
             let backend = setup_test_backend;
+
+            // should start with fresh databases
+            assert_eq!(backend.query_column_count(Column::ContractToClassHashes), 0);
+            assert_eq!(backend.query_column_count(Column::ContractToNonces), 0);
+            assert_eq!(backend.query_column_count(Column::ContractStorage), 0);
 
             // some helper functions to keep this test code concise.
             // related: https://github.com/madara-alliance/madara/issues/570
@@ -1081,6 +1094,12 @@ mod verify_apply_tests {
             assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), Some(Felt::TWO));
             assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), Some(Felt::ONE));
 
+            // should have 4 entries for each of these
+            // remember that these databases store an entry for each update (they are historical)
+            assert_eq!(backend.query_column_count(Column::ContractToClassHashes), 4);
+            assert_eq!(backend.query_column_count(Column::ContractToNonces), 4);
+            assert_eq!(backend.query_column_count(Column::ContractStorage), 4);
+
             // revert back to block 1
             // TODO: reorg back one block, assert we go back to block 1 state
             let _ = revert_to(&backend, &block_import_1.block_hash).expect("reorg to block 1 failed");
@@ -1114,7 +1133,12 @@ mod verify_apply_tests {
             assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), None);
             assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), None);
 
-            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO,);
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO);
+
+            // we should have cleared up all contract state
+            assert_eq!(backend.query_column_count(Column::ContractToClassHashes), 0);
+            assert_eq!(backend.query_column_count(Column::ContractToNonces), 0);
+            assert_eq!(backend.query_column_count(Column::ContractStorage), 0);
         }
 
         /// This struct provides the inputs to the reorg tests. It does so based on integers

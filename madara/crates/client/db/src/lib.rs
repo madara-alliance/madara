@@ -667,6 +667,15 @@ impl MadaraBackend {
     pub fn update_metrics(&self) -> u64 {
         self.db_metrics.update(&self.db)
     }
+
+    /// A testing-only fn to query the number of k:v pairs in a column.
+    /// This iterates through all entries, so it does not scale well.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn query_column_count(&self, column: Column) -> usize {
+        use rocksdb::IteratorMode;
+
+        self.db.iterator_cf(&self.db.get_column(column), IteratorMode::Start).count()
+    }
 }
 
 pub mod bonsai_identifier {
