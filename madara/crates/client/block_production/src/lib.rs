@@ -839,7 +839,6 @@ mod tests {
         })
     }
 
-
     #[rstest::fixture]
     fn visited_segments() -> mp_block::VisitedSegments {
         mp_block::VisitedSegments(vec![

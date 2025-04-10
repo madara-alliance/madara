@@ -328,7 +328,7 @@ fn block_hash(
 
 /// Reorgs the blockchain from its current tip back to `new_tip` from which a new fork can then be
 /// played on top.
-/// 
+///
 /// This rolls back all bonsai-tries as well as the db state, including historical state.
 ///
 /// Returns the result of the reorg, which describes the part of the chain that was orphaned.

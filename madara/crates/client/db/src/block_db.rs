@@ -361,7 +361,7 @@ impl MadaraBackend {
     ///
     /// In addition, this removes all historical data (chain state, transactions, state diffs,
     /// etc.) from the database. `ROW_SYNC_TIP` is set to the new tip.
-    /// 
+    ///
     /// Does not clear pending info; caller should do this if needed.
     ///
     /// Returns a Vec of `(block_number, state_diff)` where the Vec is in reverse order (the first
