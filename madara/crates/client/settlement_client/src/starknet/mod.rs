@@ -822,10 +822,11 @@ mod starknet_client_messaging_test {
 
         // Log asserts
         // ===========
-        assert!(logs_contain("fromAddress: \"0x7484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493\""));
-        // hash calculated in the contract : 0x34ce57fde5f3e591d0915391417177f57d9dc2d2ebde7e9b7aaf2d02d06dfde
+        assert!(logs_contain("fromAddress: \"0x422dd5fe05931e677c0dcbb74ea057874ba4035c5d5784ea626200b7cfc702\""));
+        // hash is taken from: https://sepolia.voyager.online/event/604902_2_0
+        // hash calculated in the contract : 0x4131512d24390745d7fddd6e7230f6a5e4a386238af62655c0d625a60b2943c
         // expecting the same in logs
-        assert!(logs_contain("event hash: \"0x34ce57fde5f3e591d0915391417177f57d9dc2d2ebde7e9b7aaf2d02d06dfde\""));
+        assert!(logs_contain("event hash: \"0x4131512d24390745d7fddd6e7230f6a5e4a386238af62655c0d625a60b2943c\""));
 
         // Assert that the event is well stored in db
         let last_block = fixture

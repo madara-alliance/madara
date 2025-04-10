@@ -75,6 +75,7 @@ mod MessagingContract {
 
     #[abi(embed_v0)]
     impl MessagingContract of super::IMessagingContract<ContractState> {
+        // data taken from: https://sepolia.voyager.online/event/604902_2_0
         fn get_message_data(self: @ContractState) -> MessageData {
             let mut payload: Array<felt252> = ArrayTrait::new();
             // Transfer L2 ---> L3
@@ -84,19 +85,24 @@ mod MessagingContract {
             // payload : [ <madara devnet address #9> , 30 ETH ]
             payload
                 .append(
-                    1745450722268439108899567493174320056804647958314420522290024379112230030194
+                    196052332073534950981109812936197997210225762447282671667548285438697329327
                         .into()
                 );
-            payload.append(30000000000000000000.into());
             payload.append(0.into());
+            payload.append(86374027119666973454853486.into());
+            payload.append(11.into());
+            payload.append(0.into());
+            payload.append(4674116.into());
+            payload.append(3.into());
+            payload.append(18.into());
 
             MessageData {
-                from_address: 3293945099482077566294620753663887236810230524774221047563633702975851058323
+                from_address: 116928254081234419462378178529324579584489887065328772660517990334005757698
                     .try_into()
                     .unwrap(),
-                to_address: 2087021424722619777119509474943472645767659996348769578120564519014510906823
+                to_address: 254321392966061410989098621660241596001676783615828345549730562518690224743
                     .into(),
-                selector: 232670485425082704932579856502088130646006032362877466777181098476241604910
+                selector: 1737780302748468118210503507461757847859991634169290761669750067796330642876
                     .into(),
                 payload,
                 nonce: 0.into(),
@@ -150,8 +156,8 @@ mod MessagingContract {
             let mut hash_data: Array<felt252> = ArrayTrait::new();
             hash_data.append(data.from_address.into());
             hash_data.append(data.to_address);
-            hash_data.append(data.selector);
             hash_data.append(data.nonce);
+            hash_data.append(data.selector);
             let len: felt252 = data.payload.len().into();
             hash_data.append(len);
 
