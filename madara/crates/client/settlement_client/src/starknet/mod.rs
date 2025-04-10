@@ -272,25 +272,71 @@ impl SettlementClientTrait for StarknetClient {
         //     NotSent,
         //     Sealed,
         //     Cancelled,
-        //     Pending: Nonce
+        //     Pending: Nonce // In Pending case, we get [3, nonce]
         // }
-        // so we expect the output to be 1 value.
-        if call_res.len() != 1 {
-            tracing::error!("sn_to_appchain_messages should return exactly 1 value but got {:?}", call_res);
-            return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
-                message: "sn_to_appchain_messages should return exactly 1 value".to_string(),
-            }));
-        }
 
-        // Map the response: return 1 if Sealed (status == 1), otherwise return 0
-        let status = call_res[0];
+        tracing::debug!("Message status response length: {}, content: {:?}", call_res.len(), call_res);
 
-        let result = if status == Felt::ONE {
-            Felt::ZERO // Sealed case
-        } else {
-            Felt::ONE // Any other status (NotSent, Cancelled, Pending)
+        // Handle cases based on response length
+        let result = match call_res.len() {
+            1 => {
+                // For NotSent, Sealed, or Cancelled cases (should return a single value)
+                let status = call_res[0];
+                match status.to_string().as_str() {
+                    "0" => {
+                        tracing::info!(
+                            "Message status: NotSent (0) - Message was never sent to Starknet. Returning ONE."
+                        );
+                        Felt::ONE
+                    }
+                    "1" => {
+                        tracing::info!(
+                            "Message status: Sealed (1) - Message was already processed successfully. Returning ONE."
+                        );
+                        Felt::ONE
+                    }
+                    "2" => {
+                        tracing::info!("Message status: Cancelled (2) - Message was cancelled. Returning ONE.");
+                        Felt::ONE
+                    }
+                    _ => {
+                        tracing::error!("Invalid status value: {} for response length 1. Expected 0, 1, or 2.", status);
+                        return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
+                            message: format!("Invalid status value: {} for response length 1", status),
+                        }));
+                    }
+                }
+            }
+            2 => {
+                // For Pending case (should return [3, nonce])
+                let status = call_res[0];
+                let nonce = call_res[1];
+
+                if status.to_string() == "3" {
+                    tracing::info!(
+                        "Message status: Pending (3) with nonce {} - Message is pending processing. Returning ZERO.",
+                        nonce
+                    );
+                    Felt::ZERO
+                } else {
+                    tracing::error!("Expected status 3 (Pending) for response length 2, but got status: {}", status);
+                    return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
+                        message: format!(
+                            "Expected status 3 (Pending) for response length 2, but got status: {}",
+                            status
+                        ),
+                    }));
+                }
+            }
+            _ => {
+                tracing::error!("Unexpected response length: {}, content: {:?}", call_res.len(), call_res);
+                return Err(SettlementClientError::Starknet(StarknetClientError::InvalidResponseFormat {
+                    message: format!("Unexpected response length: {}", call_res.len()),
+                }));
+            }
         };
 
+        tracing::debug!("Final result value: {}", result);
         Ok(result)
     }
 

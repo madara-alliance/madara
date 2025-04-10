@@ -18,11 +18,22 @@ struct StorageMessageData {
     nonce: felt252,
 }
 
+pub type Nonce = felt252;
+
+#[derive(Serde, Drop, PartialEq, starknet::Store, Default)]
+pub enum MessageToAppchainStatus {
+    #[default]
+    NotSent,
+    Sealed,
+    Cancelled,
+    Pending: Nonce, // sn->appc: The nonce > 0.
+}
+
 #[starknet::interface]
 trait IMessagingContract<TContractState> {
     fn get_message_data(self: @TContractState) -> MessageData;
     fn fire_event(ref self: TContractState);
-    fn sn_to_appchain_messages(self: @TContractState, msg_hash: felt252) -> felt252;
+    fn sn_to_appchain_messages(self: @TContractState, msg_hash: felt252) -> MessageToAppchainStatus;
     fn set_is_canceled(ref self: TContractState, value: bool);
     fn get_l1_to_l2_msg_hash(self: @TContractState) -> felt252;
 }
@@ -30,7 +41,7 @@ trait IMessagingContract<TContractState> {
 #[starknet::contract]
 mod MessagingContract {
     use super::IMessagingContract;
-    use super::MessageData;
+    use super::{MessageData, MessageToAppchainStatus};
     use core::array::SpanTrait;
     use core::option::OptionTrait;
     use core::traits::Into;
@@ -119,12 +130,14 @@ mod MessagingContract {
         //     Cancelled,
         //     Pending: Nonce
         // }
-        // so we are return 2 when the message is cancelled and 1 when it is not
-        fn sn_to_appchain_messages(self: @ContractState, msg_hash: felt252) -> felt252 {
+        // so we are returning 2 when the message is cancelled and 3 when it is not
+        fn sn_to_appchain_messages(
+            self: @ContractState, msg_hash: felt252
+        ) -> MessageToAppchainStatus {
             if self.is_canceled.read() {
-                2.into()
+                MessageToAppchainStatus::Cancelled
             } else {
-                1.into()
+                MessageToAppchainStatus::Pending(0.into())
             }
         }
 
