@@ -8,7 +8,7 @@ use crate::config::Config;
 use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::database::MockDatabase;
 use crate::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
     StateUpdateMetadata,
 };
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
@@ -111,7 +111,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number,
-                input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
+                input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
                 ensure_on_chain_registration: None,
                 download_proof: None,
             }),
@@ -203,7 +203,7 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut M
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number,
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
             ensure_on_chain_registration: Some(format!("0x{:064x}", block_number)), // Add the SNOS fact
             download_proof: None,
         }),

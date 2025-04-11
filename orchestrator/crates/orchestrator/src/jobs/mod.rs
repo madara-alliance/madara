@@ -713,6 +713,7 @@ pub async fn retry_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
 
     // Increment the retry counter in common metadata
     job.metadata.common.process_retry_attempt_no += 1;
+    // Reset the process attempt counter to 0, to ensure a fresh start
     job.metadata.common.process_attempt_no = 0;
 
     tracing::debug!(

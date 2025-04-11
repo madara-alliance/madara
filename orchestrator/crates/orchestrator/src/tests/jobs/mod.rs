@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use crate::constants::CAIRO_PIE_FILE_NAME;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::metadata::{
-    CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
+    CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
 };
 use crate::jobs::types::{ExternalId, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::{create_job, handle_job_failure, process_job, retry_job, verify_job, Job, JobError, MockJob};
@@ -107,7 +107,7 @@ async fn create_job_job_exists_in_db_works() {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number: 0,
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
             ensure_on_chain_registration: None,
             download_proof: None,
         }),
@@ -151,7 +151,7 @@ async fn create_job_job_handler_is_not_implemented_panics() {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number: 0,
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
             ensure_on_chain_registration: None,
             download_proof: None,
         }),
