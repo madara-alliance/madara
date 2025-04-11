@@ -450,7 +450,7 @@ async fn verify_job_with_verified_status_works() {
     database_client.create_job(job_item.clone()).await.unwrap();
     // expecting process job function in job processor to return the external ID
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Verified));
-    job_handler.expect_max_process_attempts().returning(move || 2u64);
+    job_handler.expect_max_process_attempts().returning(move || 2u16);
 
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
@@ -495,7 +495,7 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     // creating job in database
     database_client.create_job(job_item.clone()).await.unwrap();
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
-    job_handler.expect_max_process_attempts().returning(move || 2u64);
+    job_handler.expect_max_process_attempts().returning(move || 2u16);
 
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
@@ -545,7 +545,7 @@ async fn verify_job_with_rejected_status_works() {
     let mut job_handler = MockJob::new();
     // Expecting verify_job function to return Rejected status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
-    job_handler.expect_max_process_attempts().returning(move || 1u64);
+    job_handler.expect_max_process_attempts().returning(move || 1u16);
 
     // Mocking the `get_job_handler` call
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
@@ -593,7 +593,7 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     let mut job_handler = MockJob::new();
     // Expecting verify_job function to return Pending status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Pending));
-    job_handler.expect_max_verification_attempts().returning(move || 2u64);
+    job_handler.expect_max_verification_attempts().returning(move || 2u16);
     job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
 
     // Mocking the `get_job_handler` call
@@ -648,7 +648,7 @@ async fn verify_job_with_pending_status_works() {
     let mut job_handler = MockJob::new();
     // Expecting verify_job function to return Pending status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Pending));
-    job_handler.expect_max_verification_attempts().returning(move || 1u64);
+    job_handler.expect_max_verification_attempts().returning(move || 1u16);
     job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
 
     // Mocking the `get_job_handler` call

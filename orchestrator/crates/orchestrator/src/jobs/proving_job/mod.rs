@@ -216,11 +216,11 @@ impl Job for ProvingJob {
         }
     }
 
-    fn max_process_attempts(&self) -> u64 {
+    fn max_process_attempts(&self) -> u16 {
         2
     }
 
-    fn max_verification_attempts(&self) -> u64 {
+    fn max_verification_attempts(&self) -> u16 {
         300
     }
 

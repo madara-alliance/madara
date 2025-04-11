@@ -235,11 +235,11 @@ impl Job for DaJob {
         Ok(verification_status)
     }
 
-    fn max_process_attempts(&self) -> u64 {
+    fn max_process_attempts(&self) -> u16 {
         1
     }
 
-    fn max_verification_attempts(&self) -> u64 {
+    fn max_verification_attempts(&self) -> u16 {
         3
     }
 

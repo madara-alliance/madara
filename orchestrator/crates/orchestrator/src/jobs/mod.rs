@@ -192,11 +192,11 @@ pub trait Job: Send + Sync {
 
     /// Should return the maximum number of attempts to process the job. A new attempt is made
     /// every time the verification returns `JobVerificationStatus::Rejected`
-    fn max_process_attempts(&self) -> u64;
+    fn max_process_attempts(&self) -> u16;
 
     /// Should return the maximum number of attempts to verify the job. A new attempt is made
     /// every few seconds depending on the result `verification_polling_delay_seconds`
-    fn max_verification_attempts(&self) -> u64;
+    fn max_verification_attempts(&self) -> u16;
 
     /// Should return the number of seconds to wait before polling for verification
     fn verification_polling_delay_seconds(&self) -> u64;
@@ -457,7 +457,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
 
     if let Some(permit) = permit {
         if let Some(ref processing_locks) = job_processing_locks {
-            processing_locks.try_release_lock(permit, &job.id).await?;
+            processing_locks.try_release_lock(permit).await?;
         }
     }
 
