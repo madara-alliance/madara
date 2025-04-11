@@ -1,4 +1,5 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
+use crate::core::client::cron::CronClient;
 use crate::types::jobs::WorkerTriggerType;
 use crate::types::params::CronArgs;
 use anyhow::Error;
@@ -151,8 +152,11 @@ impl EventBridgeClient {
             format!("rate({} second{})", total_secs, if total_secs == 1 { "" } else { "s" })
         }
     }
+}
 
-    pub async fn add_cron_target_queue(
+#[async_trait::async_trait]
+impl CronClient for EventBridgeClient {
+    async fn add_cron_target_queue(
         &self,
         trigger_type: &WorkerTriggerType,
         trigger_arns: &TriggerArns,

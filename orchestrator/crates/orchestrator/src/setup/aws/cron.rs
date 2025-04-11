@@ -1,4 +1,5 @@
 use crate::core::client::cron::event_bridge::EventBridgeClient;
+use crate::core::client::cron::CronClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;

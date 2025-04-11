@@ -3,9 +3,9 @@ pub mod sss;
 
 use async_trait::async_trait;
 use bytes::Bytes;
-use std::collections::HashMap;
-
 pub use error::StorageError;
+use mockall::automock;
+use std::collections::HashMap;
 
 /// Object metadata
 #[derive(Debug, Clone)]
@@ -30,6 +30,7 @@ pub struct ObjectMetadata {
 }
 
 /// Trait defining object storage operations
+#[automock]
 #[async_trait]
 pub trait StorageClient: Send + Sync {
     /// Initialize the storage client
