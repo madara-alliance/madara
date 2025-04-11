@@ -59,7 +59,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     let max_blob_per_txn = services.config.da_client().max_blob_per_txn().await;
 
     // Create proper metadata structure
-    let block_number = internal_id.parse::<u64>().unwrap_or(0);
+    let block_number = internal_id.parse::<u64>().unwrap();
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Da(DaMetadata {
@@ -133,7 +133,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
     });
 
     // Create proper metadata structure
-    let block_number = internal_id.parse::<u64>().unwrap_or(0);
+    let block_number = internal_id.parse::<u64>().unwrap();
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Da(DaMetadata {
@@ -227,7 +227,7 @@ async fn test_da_job_process_job_success(
     });
 
     // Create proper metadata structure
-    let block_number = internal_id.parse::<u64>().unwrap_or(0);
+    let block_number = internal_id.parse::<u64>().unwrap();
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Da(DaMetadata {

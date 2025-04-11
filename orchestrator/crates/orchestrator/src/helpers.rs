@@ -23,10 +23,6 @@ impl JobProcessingState {
         JobProcessingState { semaphore: Semaphore::new(max_parallel_jobs), active_jobs: Mutex::new(HashSet::new()) }
     }
 
-    pub async fn get_active_jobs(&self) -> HashSet<Uuid> {
-        self.active_jobs.lock().await.clone()
-    }
-
     pub fn get_available_permits(&self) -> usize {
         self.semaphore.available_permits()
     }
