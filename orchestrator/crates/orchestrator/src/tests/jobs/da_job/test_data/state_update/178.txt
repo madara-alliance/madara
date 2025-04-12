@@ -1,0 +1,68 @@
+{
+    "block_hash": "0x385bbbcaada37fbd2be407d02479a86faf632294161451159433f1687afa80a",
+    "old_root": "0x39cc0b3f01d1b4b06a57f1e77d0be8093b9be560380a5b88bc2fefd9932d129",
+    "new_root": "0x249a0f2b937b67ec50021fe7520937d3b8f94564e6d1f935d3b009bbbc45645",
+    "state_diff": {
+        "storage_diffs": [
+            {
+                "address": "0x49d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
+                "storage_entries": [
+                    {
+                        "key": "0x68803f24598877e0945e64be0baadefff792986d2c5a2b6e7c8aa334d1c0e52",
+                        "value": "0xf43fc2c03458b02"
+                    },
+                    {
+                        "key": "0x709c6298f62a9011c05499b9f5ccce4ecc3e0753e48096edef484c409c25181",
+                        "value": "0x189f07e"
+                    }
+                ]
+            },
+            {
+                "address": "0x4ec8ffda0fb4db938740a4fa54b3962852b8af5cf323b3d5f6f7ee102258e95",
+                "storage_entries": [
+                    {
+                        "key": "0x2b1577440dd7bedf920cb6de2f9fc6bf7ba98c78c85a3fa1f8311aac95e1759",
+                        "value": "0x7c"
+                    },
+                    {
+                        "key": "0x3b56d7f084d750efc42861fede4548333aff235c695a18e4747698157962a0b",
+                        "value": "0x3c3af083273bcb2bedc6d7f38055d79a"
+                    },
+                    {
+                        "key": "0x3b56d7f084d750efc42861fede4548333aff235c695a18e4747698157962a0a",
+                        "value": "0x3a4ab88085f30eb952f488e972dc0035"
+                    }
+                ]
+            },
+            {
+                "address": "0x1",
+                "storage_entries": [
+                    {
+                        "key": "0xa8",
+                        "value": "0x2ba8421b4e16ae6c77ba5d61446527e4320d2a57465f11147386a3b2f5f7758"
+                    }
+                ]
+            }
+        ],
+        "deprecated_declared_classes": [],
+        "declared_classes": [
+            {
+                "class_hash": "0x29ed6994318833535323c098faa060a20120dc763c281dbe5fb9541a7eaf6c5",
+                "compiled_class_hash": "0xb0ea1eb7b2bbd82380f7b1237ea2fb047719137bf2a7d019dd5e468accc007"
+            }
+        ],
+        "deployed_contracts": [
+            {
+                "address": "0x4220016ed41491dce777cc24efc06a1e88722c3e70506313f504573bce64627",
+                "class_hash": "0x29ed6994318833535323c098faa060a20120dc763c281dbe5fb9541a7eaf6c5"
+            }
+        ],
+        "replaced_classes": [],
+        "nonces": [
+            {
+                "contract_address": "0x4fe5eea46caa0a1f344fafce82b39d66b552f00d3cd12e89073ef4b4ab37860",
+                "nonce": "0xd0"
+            }
+        ]
+    }
+}
