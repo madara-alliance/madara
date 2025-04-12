@@ -49,7 +49,14 @@ impl TryFrom<RunCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            bucket_name: format!("{}-{}", run_cmd.aws_config_args.aws_prefix, run_cmd.aws_s3_args.bucket_name.ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?),
+            bucket_name: format!(
+                "{}-{}",
+                run_cmd.aws_config_args.aws_prefix,
+                run_cmd
+                    .aws_s3_args
+                    .bucket_name
+                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
+            ),
             bucket_location_constraint: run_cmd.aws_s3_args.bucket_location_constraint,
         })
     }
@@ -62,7 +69,10 @@ impl TryFrom<SetupCmd> for StorageArgs {
             bucket_name: format!(
                 "{}-{}",
                 setup_cmd.aws_config_args.aws_prefix,
-                setup_cmd.aws_s3_args.bucket_name.ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
+                setup_cmd
+                    .aws_s3_args
+                    .bucket_name
+                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
             ),
             bucket_location_constraint: setup_cmd.aws_s3_args.bucket_location_constraint,
         })
@@ -81,12 +91,19 @@ impl TryFrom<AWSSNSCliArgs> for AlertArgs {
 impl TryFrom<SetupCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        Ok(Self {
-            endpoint: setup_cmd
-                .aws_sns_args
-                .sns_arn
-                .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?,
-        })
+        let sns_arn = setup_cmd
+            .aws_sns_args
+            .sns_arn
+            .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
+        // let prefix = setup_cmd.aws_config_args.aws_prefix.clone();
+        // let mut parts: Vec<&str> = sns_arn.split(':').collect();
+        //
+        // if let Some(last) = parts.last_mut() {
+        //     // Replace the last part with prefix + "-" + original last part
+        //     *last = format!("{}-{}", prefix.clone(), last).as_str();
+        // }
+        // let result_sns_arn = parts.join(":");
+        Ok(Self { endpoint: sns_arn })
     }
 }
 

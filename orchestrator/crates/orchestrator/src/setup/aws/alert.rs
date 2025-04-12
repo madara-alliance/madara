@@ -11,11 +11,11 @@ use std::sync::Arc;
 #[async_trait]
 impl Resource for SNS {
     type SetupResult = ();
-    type CheckResult = ();
+    type CheckResult = bool;
     type TeardownResult = ();
     type Error = ();
     type SetupArgs = AlertArgs;
-    type CheckArgs = ();
+    type CheckArgs = AlertArgs;
 
     async fn new(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
@@ -30,9 +30,13 @@ impl Resource for SNS {
     }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        tracing::info!("Setting up SNS topic");
-        tracing::info!("Topic ARN: {}", args.endpoint);
         let topic_name = args.endpoint.clone();
+        tracing::info!("Topic ARN: {}", args.endpoint);
+        if self.check(args.clone()).await? {
+            tracing::warn!("SNS topic already exists. Topic ARN: {}", args.endpoint);
+            return Ok(());
+        }
+
         let response = self
             .client
             .create_topic()
@@ -42,11 +46,12 @@ impl Resource for SNS {
             .context("Failed to create topic")
             .expect("Failed to create topic");
         let topic_arn = response.topic_arn().context("Failed to create topic").expect("Topic Not found");
+        tracing::info!("SNS topic created. Topic ARN: {}", topic_arn);
         Ok(())
     }
 
     async fn check(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
-        Ok(())
+        Ok(self.client.get_topic_attributes().topic_arn(args.endpoint).send().await.is_ok())
     }
 
     async fn teardown(&self) -> OrchestratorResult<()> {

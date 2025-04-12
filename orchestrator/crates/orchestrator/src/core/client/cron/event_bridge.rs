@@ -67,10 +67,14 @@ impl EventBridgeClient {
         }
     }
 
-    pub async fn create_cron(&self) -> Result<TriggerArns, Error> {
+    pub async fn create_cron(
+        &self,
+        target_queue_name: String,
+        trigger_role_name: String,
+        trigger_policy_name: String,
+    ) -> Result<TriggerArns, Error> {
         // Get Queue Info
-        let queue_url =
-            self.queue_client.get_queue_url().queue_name(&self.target_queue_name.clone().unwrap()).send().await?;
+        let queue_url = self.queue_client.get_queue_url().queue_name(target_queue_name.clone()).send().await?;
 
         let queue_attributes = self
             .queue_client
@@ -82,7 +86,7 @@ impl EventBridgeClient {
         let queue_arn = queue_attributes.attributes().unwrap().get(&QueueAttributeName::QueueArn).unwrap();
 
         // Create IAM role for EventBridge
-        let role_name = format!("{}-{}", self.trigger_role_name.clone().unwrap(), uuid::Uuid::new_v4());
+        let role_name = format!("{}-{}", trigger_role_name.clone(), uuid::Uuid::new_v4());
         // TODO: might need to change this accordingly to support rule, skipping for now
         let assume_role_policy = r#"{
             "Version": "2012-10-17",
@@ -120,7 +124,7 @@ impl EventBridgeClient {
             queue_arn
         );
 
-        let policy_name = format!("{}-{}", self.trigger_policy_name.clone().unwrap(), uuid::Uuid::new_v4());
+        let policy_name = format!("{}-{}", trigger_policy_name.clone(), uuid::Uuid::new_v4());
 
         // Create and attach the policy
         let policy_resp =
@@ -160,11 +164,14 @@ impl CronClient for EventBridgeClient {
         &self,
         trigger_type: &WorkerTriggerType,
         trigger_arns: &TriggerArns,
+        trigger_rule_name: String,
+        event_bridge_type: EventBridgeType,
+        cron_time: Duration,
     ) -> color_eyre::Result<()> {
         let message = trigger_type.clone().to_string();
-        let trigger_name = format!("{}-{}", self.trigger_rule_name.clone().unwrap(), trigger_type);
+        let trigger_name = format!("{}-{}", trigger_rule_name.clone(), trigger_type);
 
-        match self.event_bridge_type.clone().unwrap() {
+        match event_bridge_type.clone() {
             EventBridgeType::Rule => {
                 let input_transformer =
                     InputTransformer::builder().input_paths_map("time", "$.time").input_template(message).build()?;
@@ -209,7 +216,7 @@ impl CronClient for EventBridgeClient {
                     .name(trigger_name)
                     .schedule_expression_timezone("UTC")
                     .flexible_time_window(flexible_time_window)
-                    .schedule_expression(Self::duration_to_rate_string(self.cron_time.clone().unwrap()))
+                    .schedule_expression(Self::duration_to_rate_string(cron_time))
                     .target(target)
                     .send()
                     .await?;

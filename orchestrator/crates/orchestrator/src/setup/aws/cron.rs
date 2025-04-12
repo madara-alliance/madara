@@ -50,11 +50,28 @@ impl Resource for EventBridgeClient {
     }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let trigger_arns = self.create_cron().await.expect("Failed to create cron");
+        let trigger_arns = self
+            .create_cron(
+                args.target_queue_name.clone(),
+                args.trigger_role_name.clone(),
+                args.trigger_policy_name.clone(),
+            )
+            .await
+            .map_err(|e| OrchestratorError::SetupCommandError(format!("Failed to create cron: {:?}", e)))?;
         sleep(Duration::from_secs(15)).await;
 
         for trigger in WORKER_TRIGGERS.iter() {
-            self.add_cron_target_queue(trigger, &trigger_arns).await.expect("Failed to add cron target queue");
+            self.add_cron_target_queue(
+                trigger,
+                &trigger_arns,
+                args.trigger_rule_name.clone(),
+                args.event_bridge_type.clone(),
+                Duration::from_secs(args.cron_time.clone().parse::<u64>().map_err(|e| {
+                    OrchestratorError::SetupCommandError(format!("Failed to parse the cron time: {:?}", e))
+                })?),
+            )
+            .await
+            .expect("Failed to add cron target queue");
         }
         Ok(())
     }
