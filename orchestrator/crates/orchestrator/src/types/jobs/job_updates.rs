@@ -8,7 +8,6 @@ use serde::Serialize;
 // version and updated_at will always be updated when this object updates the job
 #[derive(Serialize, Debug)]
 pub struct JobItemUpdates {
-    pub internal_id: Option<String>,
     pub job_type: Option<JobType>,
     pub status: Option<JobStatus>,
     pub external_id: Option<ExternalId>,
@@ -24,12 +23,7 @@ impl Default for JobItemUpdates {
 
 impl JobItemUpdates {
     pub fn new() -> Self {
-        JobItemUpdates { internal_id: None, job_type: None, status: None, external_id: None, metadata: None }
-    }
-
-    pub fn update_internal_id(mut self, internal_id: String) -> JobItemUpdates {
-        self.internal_id = Some(internal_id);
-        self
+        JobItemUpdates { job_type: None, status: None, external_id: None, metadata: None }
     }
 
     pub fn update_job_type(mut self, job_type: JobType) -> JobItemUpdates {

@@ -1,4 +1,6 @@
+#[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
+
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
@@ -16,17 +18,15 @@ use url::Url;
 use crate::core::error::OrchestratorCoreResult;
 use crate::{
     cli::RunCmd,
-    cli::ServiceParams,
     core::client::{
         queue::QueueClient, storage::sss::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
         SNS, SQS,
     },
     core::cloud::CloudProvider,
-    types::params::cloud_provider::AWSCredentials,
     types::params::da::DAConfig,
     types::params::database::MongoConfig,
     types::params::prover::ProverConfig,
-    types::params::service::ServerParams,
+    types::params::service::{ServerParams, ServiceParams},
     types::params::settlement::SettlementConfig,
     types::params::snos::SNOSParams,
     types::params::{AlertArgs, QueueArgs, StorageArgs},
@@ -73,9 +73,10 @@ pub struct Config {
 impl Config {
     /// Setup the orchestrator
     pub async fn setup(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
-        let aws_cred = AWSCredentials::from(run_cmd.aws_config_args.clone());
-        let cloud_provider = aws_cred.get_aws_config().await;
-        let provider_config = Arc::new(CloudProvider::AWS(Box::new(cloud_provider)));
+        // let aws_cred = AWSCredentials::from(run_cmd.aws_config_args.clone());
+        // let cloud_provider = aws_cred.get_aws_config().await;
+        let cloud_provider = CloudProvider::try_from(run_cmd.clone())?;
+        let provider_config = Arc::new(cloud_provider);
 
         let db: MongoConfig = run_cmd.mongodb_args.clone().into();
         let storage_args: StorageArgs = StorageArgs::try_from(run_cmd.clone())?;
@@ -89,7 +90,7 @@ impl Config {
         let orchestrator_params = OrchestratorParams {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             snos_config: run_cmd.snos_args.clone().into(),
-            service_config: run_cmd.service_args.clone().into(),
+            service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
             snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())?,
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())?,
