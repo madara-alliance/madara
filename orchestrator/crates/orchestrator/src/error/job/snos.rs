@@ -1,3 +1,4 @@
+use crate::error::job::fact::FactError;
 use crate::error::other::OtherError;
 use thiserror::Error;
 
@@ -28,6 +29,9 @@ pub enum SnosError {
     // Instead, we convert it to string & pass it into the [SnosExecutionError] error.
     #[error("Error while running SNOS (snos job #{internal_id:?}): {message}")]
     SnosExecutionError { internal_id: String, message: String },
+
+    #[error("Error when calculating fact info: {0}")]
+    FactCalculationError(#[from] FactError),
 
     #[error("Other error: {0}")]
     Other(#[from] OtherError),
