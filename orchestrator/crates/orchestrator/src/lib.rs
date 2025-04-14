@@ -38,4 +38,8 @@ pub mod types;
 
 pub mod error;
 
+pub mod core;
+
+pub mod utils;
+
 pub use error::{OrchestratorError, OrchestratorResult};

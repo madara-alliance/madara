@@ -13,8 +13,8 @@ use snos::SNOSParams;
 use storage::StorageValidatedArgs;
 use url::Url;
 
-use crate::config::ServiceParams;
-use crate::routes::ServerParams;
+pub use crate::config::ServiceParams;
+pub use crate::routes::ServerParams;
 use crate::telemetry::InstrumentationParams;
 
 pub mod alert;
