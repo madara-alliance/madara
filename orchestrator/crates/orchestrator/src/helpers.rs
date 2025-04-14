@@ -17,7 +17,7 @@ pub struct JobProcessingState {
 }
 impl JobProcessingState {
     pub fn new(max_parallel_jobs: usize) -> Self {
-        JobProcessingState { semaphore: Semaphore::new(max_parallel_jobs)}
+        JobProcessingState { semaphore: Semaphore::new(max_parallel_jobs) }
     }
 
     pub fn get_available_permits(&self) -> usize {
