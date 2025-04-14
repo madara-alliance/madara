@@ -1,11 +1,15 @@
 use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
-use orchestrator::config::init_config;
-use orchestrator::queue::init_consumers;
-use orchestrator::routes::setup_server;
-use orchestrator::setup::old::setup_cloud;
-use orchestrator::telemetry::{setup_analytics, shutdown_analytics};
+use orchestrator::core::config::Config;
+use orchestrator::server::setup_server;
+use orchestrator::setup::setup;
+use orchestrator::types::params::OTELConfig;
+use orchestrator::utils::instrument::OrchestratorInstrumentation;
+use orchestrator::utils::logging::init_logging;
+use orchestrator::{OrchestratorError, OrchestratorResult};
+use std::sync::Arc;
+use tracing::{debug, info};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -17,7 +21,8 @@ static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[allow(clippy::needless_return)]
 async fn main() {
     dotenv().ok();
-
+    init_logging("orchestrator");
+    info!("Starting orchestrator");
     let cli = Cli::parse();
 
     match &cli.command {
@@ -30,42 +35,37 @@ async fn main() {
     }
 }
 
-async fn run_orchestrator(run_cmd: &RunCmd) -> color_eyre::Result<()> {
-    // Analytics Setup
-    let instrumentation_params = run_cmd.validate_instrumentation_params().expect("Invalid instrumentation params");
-    let meter_provider = setup_analytics(&instrumentation_params);
-    tracing::info!(service = "orchestrator", "Starting orchestrator service");
+async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
+    let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
+    let orchestrator_instrumentation = OrchestratorInstrumentation::setup(&config)?;
+    info!("Starting orchestrator service");
 
-    color_eyre::install().expect("Unable to install color_eyre");
-
-    // initial config setup
-    let config = init_config(run_cmd).await.expect("Config instantiation failed");
-    tracing::debug!(service = "orchestrator", "Configuration initialized");
+    let config = Arc::new(Config::setup(run_cmd).await?);
+    debug!("Configuration initialized");
 
     // initialize the server
     let _ = setup_server(config.clone()).await;
 
-    tracing::debug!(service = "orchestrator", "Application router initialized");
+    debug!("Application router initialized");
 
-    // init consumer
-    match init_consumers(config).await {
-        Ok(_) => tracing::info!(service = "orchestrator", "Consumers initialized successfully"),
-        Err(e) => {
-            tracing::error!(service = "orchestrator", error = %e, "Failed to initialize consumers");
-            panic!("Failed to init consumers: {}", e);
-        }
-    }
+    // // init consumer
+    // match init_consumers(old_config).await {
+    //     Ok(_) => info!("Consumers initialized successfully"),
+    //     Err(e) => {
+    //         error!(error = %e, "Failed to initialize consumers");
+    //         panic!("Failed to init consumers: {}", e);
+    //     }
+    // }
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
 
     // Analytics Shutdown
-    shutdown_analytics(meter_provider, &instrumentation_params);
-    tracing::info!(service = "orchestrator", "Orchestrator service shutting down");
-
+    orchestrator_instrumentation.shutdown()?;
+    info!("Orchestrator service shutting down");
     Ok(())
 }
 
-async fn setup_orchestrator(setup_cmd: &SetupCmd) -> color_eyre::Result<()> {
-    setup_cloud(setup_cmd).await.expect("Failed to setup cloud");
-    Ok(())
+/// setup_orchestrator - Initializes the orchestrator with the provided configuration
+async fn setup_orchestrator(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
+    setup(setup_cmd).await
 }

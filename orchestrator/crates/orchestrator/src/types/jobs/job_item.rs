@@ -8,6 +8,7 @@ use uuid::Uuid;
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct JobItem {
     /// an uuid to identify a job
+    #[cfg_attr(feature = "with_mongodb", serde(with = "uuid_1_as_binary"))]
     pub id: Uuid,
     /// a meaningful id used to track a job internally, ex: block_no, txn_hash
     pub internal_id: String,
@@ -23,8 +24,10 @@ pub struct JobItem {
     /// helps to keep track of the version of the item for optimistic locking
     pub version: i32,
     /// timestamp when the job was created
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub created_at: DateTime<Utc>,
     /// timestamp when the job was last updated
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
 }
 

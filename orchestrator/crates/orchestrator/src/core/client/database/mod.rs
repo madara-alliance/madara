@@ -6,10 +6,12 @@ use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use async_trait::async_trait;
 pub use error::DatabaseError;
+use mockall::automock;
 use serde::{de::DeserializeOwned, Serialize};
 use uuid::Uuid;
 
 /// Trait defining database operations
+#[automock]
 #[async_trait]
 pub trait DatabaseClient: Send + Sync {
     /// switch_database - switch to a different database

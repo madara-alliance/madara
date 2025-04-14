@@ -53,7 +53,7 @@ impl ResourceFactory {
         let mut creators = HashMap::new();
         creators.insert(ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>);
         creators.insert(ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>);
-        // creators.insert(ResourceType::Cron, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
+        creators.insert(ResourceType::Cron, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
         // creators.insert(ResourceType::Notification, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>);
 
         ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
