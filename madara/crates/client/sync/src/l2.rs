@@ -14,7 +14,6 @@ use mc_gateway_client::GatewayProvider;
 use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
 use mp_block::BlockTag;
-use mp_gateway::block::ProviderBlockPendingMaybe;
 use mp_gateway::error::SequencerError;
 use mp_sync::SyncStatusProvider;
 use mp_utils::service::ServiceContext;
@@ -30,7 +29,6 @@ use tokio::time::Duration;
 
 // Module-level constants
 // Maximum number of consecutive failures allowed in the highest block fetch task before terminating
-const MAX_HIGHEST_BLOCK_FETCH_FAILURES: usize = 5;
 // Delay after encountering an error when fetching the highest block
 const HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS: u64 = 1;
 
@@ -242,52 +240,23 @@ async fn l2_highest_block_fetch(
     let mut interval = tokio::time::interval(Duration::from_secs(10));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    // Track consecutive failures to prevent endless loops
-    let mut consecutive_failures = 0;
-
-    // Keep running until cancelled
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
-        tracing::debug!("Getting highest block...");
-
-        // Try to get the latest block
-        match provider.get_block(BlockId::Tag(BlockTag::Latest)).await {
+        match provider.get_block_with_header_only().await {
             Ok(block) => {
-                match &block {
-                    ProviderBlockPendingMaybe::NonPending(block_info) => {
-                        // For a regular block, we have both number and hash
-                        let block_number = block_info.block_number;
-                        let block_hash = block_info.block_hash;
+                // For a regular block, we have both number and hash
+                let block_number = block.block_number;
+                let block_hash = block.block_hash;
 
-                        // Update the sync status provider with the highest block info
-                        sync_status_provider.set_highest_block_num(block_number).await;
-                        sync_status_provider.set_highest_block_hash(block_hash).await;
+                // Update the sync status provider with the highest block info
+                sync_status_provider.set_highest_block_num(block_number).await;
+                sync_status_provider.set_highest_block_hash(block_hash).await;
 
-                        tracing::debug!("Updated highest block: number={}, hash={}", block_number, block_hash);
-
-                        // Reset failure counter after successful processing
-                        consecutive_failures = 0;
-                    }
-                    _ => {
-                        let error_msg = "Got unexpected block type from provider that wasn't handled";
-                        tracing::error!(error_msg);
-                        return Err(anyhow::anyhow!(error_msg));
-                    }
-                }
+                tracing::debug!("Updated highest block: number={}, hash={}", block_number, block_hash);
             }
             Err(e) => {
                 tracing::error!("Error getting latest block: {:?}", e);
-                consecutive_failures += 1;
                 tokio::time::sleep(Duration::from_secs(HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS)).await;
             }
-        }
-
-        // If we've had too many consecutive failures, break out of the loop
-        if consecutive_failures >= MAX_HIGHEST_BLOCK_FETCH_FAILURES {
-            let error_msg = format!(
-                "Received unexpected block types or errors for {MAX_HIGHEST_BLOCK_FETCH_FAILURES} consecutive attempts"
-            );
-            tracing::error!("{}", error_msg);
-            return Err(anyhow::anyhow!(error_msg));
         }
     }
 
@@ -314,7 +283,9 @@ pub struct L2SyncConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-#[tracing::instrument(skip(backend, provider, ctx, config, sync_status_provider), fields(module = "Sync"))]
+#[tracing::instrument(skip(backend, provider, ctx, config, sync_status_provider), fields(
+    module = "Sync"
+))]
 pub async fn sync(
     backend: Arc<MadaraBackend>,
     provider: GatewayProvider,

@@ -18,6 +18,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
+use mp_gateway::block::{ ProviderBlockHeaderOnly};
 
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
@@ -34,6 +35,16 @@ impl GatewayProvider {
             }
             _ => Ok(ProviderBlockPendingMaybe::NonPending(request.send_get::<ProviderBlock>().await?)),
         }
+    }
+
+    pub async fn get_block_with_header_only(&self) -> Result<ProviderBlockHeaderOnly, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_param(Cow::from("headerOnly"), "true")
+            .add_uri_segment("get_block")
+            .expect("Failed to add URI segment. This should not fail in prod.")
+            .with_block_id(&BlockId::Tag(BlockTag::Latest));
+        
+        Ok(request.send_get::<ProviderBlockHeaderOnly>().await?)
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {

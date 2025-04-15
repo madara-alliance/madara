@@ -6,10 +6,6 @@ use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 
-// Constants for sync status retry logic
-const MAX_RETRIES: u32 = 3;
-const INITIAL_TIMEOUT_MS: u64 = 1000;
-
 /// Returns an object about the sync status, or false if the node is not syncing
 ///
 /// ### Arguments
@@ -38,7 +34,7 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
             let current_block_hash = current_block_info.block_hash;
             (current_block_num, current_block_hash)
         },
-        Err(err) => (0u64, Felt::ZERO),
+        Err(_err) => (0u64, Felt::ZERO),
     };
     
 
