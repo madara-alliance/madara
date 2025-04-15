@@ -31,7 +31,7 @@ pub async fn l2_sync_worker(
     ctx: ServiceContext,
     fetch_config: FetchConfig,
     sync_config: SyncConfig,
-    sync_status_provider: Arc<SyncStatusProvider>,
+    sync_status_provider: SyncStatusProvider,
 ) -> anyhow::Result<()> {
     let (starting_block, ignore_block_order) = if let Some(starting_block) = sync_config.starting_block {
         tracing::warn!("Forcing unordered state. This will most probably break your database.");

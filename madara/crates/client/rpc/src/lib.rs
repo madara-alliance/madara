@@ -51,7 +51,7 @@ pub struct Starknet {
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
     storage_proof_config: StorageProofConfig,
     pub ctx: ServiceContext,
-    sync_status_provider: Option<Arc<SyncStatusProvider>>,
+    sync_status_provider: Option<SyncStatusProvider>,
 }
 
 impl Starknet {
@@ -60,7 +60,7 @@ impl Starknet {
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
         storage_proof_config: StorageProofConfig,
         ctx: ServiceContext,
-        sync_status_provider: Option<Arc<SyncStatusProvider>>,
+        sync_status_provider: Option<SyncStatusProvider>,
     ) -> Self {
         Self { backend, add_transaction_provider, storage_proof_config, ctx, sync_status_provider }
     }
@@ -117,7 +117,7 @@ impl Starknet {
         Ok(self
             .sync_status_provider
             .as_ref()
-            .ok_or(StarknetRpcApiError::SyncStatusNotAvailable)?
+            .ok_or(StarknetRpcApiError::InternalServerError)?
             .get_sync_status()
             .await)
     }

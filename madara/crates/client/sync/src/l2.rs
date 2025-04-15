@@ -235,7 +235,7 @@ async fn l2_pending_block_task(
 async fn l2_highest_block_fetch(
     provider: Arc<GatewayProvider>,
     mut ctx: ServiceContext,
-    sync_status_provider: Arc<SyncStatusProvider>,
+    sync_status_provider: SyncStatusProvider,
 ) -> anyhow::Result<()> {
     tracing::debug!("Start highest block poll");
 
@@ -268,9 +268,9 @@ async fn l2_highest_block_fetch(
                         consecutive_failures = 0;
                     }
                     _ => {
-                        tracing::error!("Got unexpected block type from provider that wasn't handled");
-                        consecutive_failures += 1;
-                        tokio::time::sleep(Duration::from_secs(HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS)).await;
+                        let error_msg = "Got unexpected block type from provider that wasn't handled";
+                        tracing::error!(error_msg);
+                        return Err(anyhow::anyhow!(error_msg));
                     }
                 }
             }
@@ -320,7 +320,7 @@ pub async fn sync(
     provider: GatewayProvider,
     ctx: ServiceContext,
     config: L2SyncConfig,
-    sync_status_provider: Arc<SyncStatusProvider>,
+    sync_status_provider: SyncStatusProvider,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 
 /// Provider for synchronization status
+#[derive(Clone)]
 pub struct SyncStatusProvider {
     sync_status: Arc<RwLock<SyncStatus>>,
 }

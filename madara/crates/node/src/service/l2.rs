@@ -19,7 +19,7 @@ pub struct L2SyncService {
     starting_block: Option<u64>,
     telemetry: Arc<TelemetryHandle>,
     pending_block_poll_interval: Duration,
-    sync_status_provider: Arc<SyncStatusProvider>,
+    sync_status_provider: SyncStatusProvider,
 }
 
 impl L2SyncService {
@@ -30,7 +30,7 @@ impl L2SyncService {
         block_importer: Arc<BlockImporter>,
         telemetry: TelemetryHandle,
         warp_update: Option<WarpUpdateConfig>,
-        sync_status_provider: Arc<SyncStatusProvider>,
+        sync_status_provider: SyncStatusProvider,
     ) -> anyhow::Result<Self> {
         let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone(), warp_update);
 
@@ -64,7 +64,6 @@ impl Service for L2SyncService {
         } = self.clone();
         let telemetry = Arc::clone(&telemetry);
 
-        // fix: pass down the sync status to this worker
         runner.service_loop(move |ctx| {
             mc_sync::l2_sync_worker(
                 db_backend,

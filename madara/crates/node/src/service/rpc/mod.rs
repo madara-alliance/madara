@@ -32,7 +32,7 @@ pub struct RpcService {
     backend: Arc<MadaraBackend>,
     add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
     add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
-    sync_status_provider: Arc<SyncStatusProvider>,
+    sync_status_provider: SyncStatusProvider,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
 }
@@ -43,7 +43,7 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
         add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
-        sync_status_provider: Arc<SyncStatusProvider>,
+        sync_status_provider: SyncStatusProvider,
     ) -> Self {
         Self {
             config,
@@ -61,7 +61,7 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
         add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
-        sync_status_provider: Arc<SyncStatusProvider>,
+        sync_status_provider: SyncStatusProvider,
     ) -> Self {
         Self {
             config,
@@ -82,7 +82,7 @@ impl Service for RpcService {
         let backend = Arc::clone(&self.backend);
         let add_tx_provider_l2_sync = Arc::clone(&self.add_txs_provider_l2_sync);
         let add_tx_provider_mempool = Arc::clone(&self.add_txs_provider_mempool);
-        let sync_status_provider = Arc::clone(&self.sync_status_provider);
+        let sync_status_provider = self.sync_status_provider.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
