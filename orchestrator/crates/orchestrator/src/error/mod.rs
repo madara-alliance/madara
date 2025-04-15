@@ -45,9 +45,14 @@ pub enum OrchestratorError {
     /// Setup Command error
     #[error("Setup Command Error: {0}")]
     SetupCommandError(String),
+
     /// Setup Command error
     #[error("Error While Downcasting from object: {0}")]
     FromDownstreamError(String),
+
+    #[error("Orchestrator Error: {0}")]
+    OrchestratorAnyHowError(#[from] anyhow::Error),
+
     /// Error while instrumenting the logger
     #[error("OTL Logger Error: {0}")]
     OTLogError(#[from] opentelemetry::logs::LogError),
