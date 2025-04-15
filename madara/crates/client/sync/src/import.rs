@@ -700,7 +700,7 @@ mod tests {
         );
     }
     #[rstest]
-    fn test_error_transaction_commitment(mut ctx: Ctx) {
+    fn test_error_transaction_commitment1(mut ctx: Ctx) {
         ctx.block.header.transaction_commitment = Felt::ONE;
         assert_matches!(
             ctx.importer.verify_transactions(
@@ -739,7 +739,7 @@ mod tests {
         );
     }
     #[rstest]
-    fn test_error_event_commitment(mut ctx: Ctx) {
+    fn test_error_event_commitment1(mut ctx: Ctx) {
         ctx.block.header.event_commitment = Felt::ONE;
         assert_matches!(
             ctx.importer.verify_events(
@@ -775,7 +775,7 @@ mod tests {
         );
     }
     #[rstest]
-    fn test_error_state_diff_commitment(mut ctx: Ctx) {
+    fn test_error_state_diff_commitment1(mut ctx: Ctx) {
         ctx.block.header.state_diff_commitment = Some(Felt::ONE);
         assert_matches!(
             ctx.importer.verify_state_diff(
@@ -816,7 +816,7 @@ mod tests {
         );
     }
     #[rstest]
-    fn test_error_receipt_commitment(mut ctx: Ctx) {
+    fn test_error_receipt_commitment1(mut ctx: Ctx) {
         ctx.block.header.receipt_commitment = Some(Felt::ONE);
         assert_matches!(
             ctx.importer.verify_transactions(
