@@ -50,7 +50,7 @@ async fn test_trigger_process_job(#[future] setup_trigger: (SocketAddr, Arc<Conf
     let job_type = JobType::DataSubmission;
 
     let job_item = build_job_item(job_type.clone(), JobStatus::Created, 1);
-    config.database().create_job(job_item.clone()).await.unwrap();
+    config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
     let client = hyper::Client::new();
@@ -95,7 +95,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     job_item.metadata.common.verification_retry_attempt_no = 0;
     job_item.metadata.common.verification_attempt_no = 10;
 
-    config.database().create_job(job_item.clone()).await.unwrap();
+    config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
     // Set up mock job handler
@@ -144,7 +144,7 @@ async fn test_trigger_retry_job_when_failed(#[future] setup_trigger: (SocketAddr
     let job_type = JobType::DataSubmission;
 
     let job_item = build_job_item(job_type.clone(), JobStatus::Failed, 1);
-    config.database().create_job(job_item.clone()).await.unwrap();
+    config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
     let client = hyper::Client::new();
@@ -185,7 +185,7 @@ async fn test_trigger_retry_job_not_allowed(
     let job_type = JobType::DataSubmission;
 
     let job_item = build_job_item(job_type.clone(), initial_status.clone(), 1);
-    config.database().create_job(job_item.clone()).await.unwrap();
+    config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.clone().id;
 
     let client = hyper::Client::new();

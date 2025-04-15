@@ -187,8 +187,8 @@ pub async fn create_and_store_prerequisite_jobs(
     };
 
     // Store jobs in database
-    config.database().create_job(snos_job).await?;
-    config.database().create_job(da_job).await?;
+    config.database().create_job_item(snos_job).await?;
+    config.database().create_job_item(da_job).await?;
 
     Ok((snos_uuid, da_uuid))
 }

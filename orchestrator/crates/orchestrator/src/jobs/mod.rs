@@ -260,7 +260,7 @@ pub async fn create_job(
 
     let job_handler = factory::get_job_handler(&job_type).await;
     let job_item = job_handler.create_job(config.clone(), internal_id.clone(), metadata).await?;
-    config.database().create_job(job_item.clone()).await?;
+    config.database().create_job_item(job_item.clone()).await?;
     println!("Job item inside the create job function: {:?}", job_item);
     add_job_to_process_queue(job_item.id, &job_type, config.clone())
         .await

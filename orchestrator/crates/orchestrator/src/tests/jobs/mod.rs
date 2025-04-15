@@ -799,7 +799,7 @@ async fn test_retry_job_adds_to_process_queue() {
 
     // Create a failed job
     let job_item = build_job_item(JobType::DataSubmission, JobStatus::Failed, 1);
-    services.config.database().create_job(job_item.clone()).await.unwrap();
+    services.config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
     // Retry the job
@@ -834,7 +834,7 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
 
     // Create a job with non-Failed status
     let job_item = build_job_item(JobType::DataSubmission, initial_status.clone(), 1);
-    services.config.database().create_job(job_item.clone()).await.unwrap();
+    services.config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
     // Attempt to retry the job
