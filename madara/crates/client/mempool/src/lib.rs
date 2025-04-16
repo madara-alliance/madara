@@ -1651,6 +1651,7 @@ mod test {
                 vec![],
                 None,
                 None,
+                None,
             )
             .expect("Failed to store block");
 
@@ -1690,6 +1691,7 @@ mod test {
                     ..Default::default()
                 },
                 vec![],
+                None,
                 None,
                 None,
             )
