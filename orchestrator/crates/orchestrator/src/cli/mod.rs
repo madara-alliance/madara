@@ -604,20 +604,9 @@ pub mod validate_params {
     pub(crate) fn validate_service_params(service_args: &ServiceCliArgs) -> Result<ServiceParams, String> {
         Ok(ServiceParams {
             // return None if the value is empty string
-            max_block_to_process: service_args.max_block_to_process.clone().and_then(|s| {
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s.parse::<u64>().expect("Failed to parse max block to process"))
-                }
-            }),
-            min_block_to_process: service_args.min_block_to_process.clone().and_then(|s| {
-                if s.is_empty() {
-                    None
-                } else {
-                    Some(s.parse::<u64>().expect("Failed to parse min block to process"))
-                }
-            }),
+            max_block_to_process: service_args.max_block_to_process,
+            min_block_to_process: service_args.min_block_to_process,
+            max_concurrent_snos_jobs: service_args.max_concurrent_snos_jobs,
         })
     }
 
@@ -896,14 +885,16 @@ pub mod validate_params {
         #[rstest]
         fn test_validate_service_params() {
             let service_args: ServiceCliArgs = ServiceCliArgs {
-                max_block_to_process: Some("66645".to_string()),
-                min_block_to_process: Some("100".to_string()),
+                max_block_to_process: Some(66645),
+                min_block_to_process: Some(100),
+                max_concurrent_snos_jobs: Some(10),
             };
             let service_params = validate_service_params(&service_args);
             assert!(service_params.is_ok());
             let service_params = service_params.unwrap();
             assert_eq!(service_params.max_block_to_process, Some(66645));
             assert_eq!(service_params.min_block_to_process, Some(100));
+            assert_eq!(service_params.max_concurrent_snos_jobs, Some(10));
         }
     }
 }

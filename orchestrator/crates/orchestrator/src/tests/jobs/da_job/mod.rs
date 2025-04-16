@@ -1,5 +1,3 @@
-use std::collections::HashMap;
-
 use assert_matches::assert_matches;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
@@ -10,12 +8,13 @@ use serde_json::json;
 use starknet::core::types::{Felt, MaybePendingStateUpdate, PendingStateUpdate, StateDiff};
 use uuid::Uuid;
 
+use crate::constants::BLOB_DATA_FILE_NAME;
 use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
 use crate::jobs::da_job::{DaError, DaJob};
+use crate::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::jobs::{Job, JobError};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-
 /// Tests the DA Job's handling of a blob length exceeding the supported size.
 /// It mocks the DA client to simulate the environment and expects an error on job processing.
 /// Validates the error message for exceeding blob limits against the expected output.
@@ -39,16 +38,13 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
     // dummy state will have more than 1200 bytes
     da_client.expect_max_blob_per_txn().with().returning(|| 1);
     da_client.expect_max_bytes_per_blob().with().returning(|| 1200);
-
     let services = TestConfigBuilder::new()
         .configure_starknet_client(ConfigType::Actual)
         .configure_storage_client(ConfigType::Actual)
         .configure_da_client(da_client.into())
         .build()
         .await;
-
     let state_update = read_state_update_from_file(state_update_file.as_str()).expect("issue while reading");
-
     let state_update = MaybePendingStateUpdate::Update(state_update);
     let state_update = serde_json::to_value(&state_update).unwrap();
     let response = json!({ "id": 640641,"jsonrpc":"2.0","result": state_update });
@@ -62,6 +58,17 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
 
     let max_blob_per_txn = services.config.da_client().max_blob_per_txn().await;
 
+    // Create proper metadata structure
+    let block_number = internal_id.parse::<u64>().unwrap();
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Da(DaMetadata {
+            block_number,
+            blob_data_path: Some(format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)),
+            tx_hash: None,
+        }),
+    };
+
     let response = DaJob
         .process_job(
             services.config,
@@ -71,14 +78,13 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
                 job_type: JobType::DataSubmission,
                 status: JobStatus::Created,
                 external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
-                metadata: HashMap::default(),
+                metadata,
                 version: 0,
                 created_at: Utc::now().round_subsecs(0),
                 updated_at: Utc::now().round_subsecs(0),
             },
         )
         .await;
-
     assert_matches!(response,
         Err(e) => {
             let err = DaError::MaxBlobsLimitExceeded { max_blob_per_txn, current_blob_length, block_no: internal_id.to_string(), job_id: Uuid::default() };
@@ -126,6 +132,17 @@ async fn test_da_job_process_job_failure_on_pending_block() {
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
+    // Create proper metadata structure
+    let block_number = internal_id.parse::<u64>().unwrap();
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Da(DaMetadata {
+            block_number,
+            blob_data_path: Some(format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)),
+            tx_hash: None,
+        }),
+    };
+
     let response = DaJob
         .process_job(
             services.config,
@@ -135,7 +152,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
                 job_type: JobType::DataSubmission,
                 status: JobStatus::Created,
                 external_id: ExternalId::String("1".to_string().into_boxed_str()),
-                metadata: HashMap::default(),
+                metadata,
                 version: 0,
                 created_at: Utc::now().round_subsecs(0),
                 updated_at: Utc::now().round_subsecs(0),
@@ -209,6 +226,17 @@ async fn test_da_job_process_job_success(
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
+    // Create proper metadata structure
+    let block_number = internal_id.parse::<u64>().unwrap();
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Da(DaMetadata {
+            block_number,
+            blob_data_path: Some(format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)),
+            tx_hash: None,
+        }),
+    };
+
     let response = DaJob
         .process_job(
             services.config,
@@ -218,7 +246,7 @@ async fn test_da_job_process_job_success(
                 job_type: JobType::DataSubmission,
                 status: JobStatus::Created,
                 external_id: ExternalId::String(internal_id.to_string().into_boxed_str()),
-                metadata: HashMap::default(),
+                metadata,
                 version: 0,
                 created_at: Utc::now().round_subsecs(0),
                 updated_at: Utc::now().round_subsecs(0),
