@@ -18,7 +18,6 @@ use blockifier::bouncer::{BouncerWeights, BuiltinCount};
 use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
-use primitive_types::H160;
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
@@ -114,11 +113,11 @@ pub struct ChainConfig {
     pub sequencer_address: ContractAddress,
 
     /// The Starknet core contract address for the L1 watcher.
-    pub eth_core_contract_address: H160,
+    pub eth_core_contract_address: String,
 
     /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
-    pub eth_gps_statement_verifier: H160,
+    pub eth_gps_statement_verifier: String,
 
     /// Private key used by the node to sign blocks provided through the
     /// feeder gateway. This serves as a proof of origin and in the future
@@ -549,10 +548,7 @@ mod tests {
             )
             .unwrap()
         );
-        assert_eq!(
-            chain_config.eth_core_contract_address,
-            H160::from_str("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4").unwrap()
-        );
+        assert_eq!(chain_config.eth_core_contract_address, "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4");
     }
 
     #[rstest]

@@ -4,7 +4,7 @@ members = [
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
-  "madara/crates/client/eth",
+  "madara/crates/client/settlement_client",
   "madara/crates/client/rpc",
   "madara/crates/client/gateway/client",
   "madara/crates/client/gateway/server",
@@ -53,7 +53,7 @@ default-members = [
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
-  "madara/crates/client/eth",
+  "madara/crates/client/settlement_client",
   "madara/crates/client/gateway/client",
   "madara/crates/client/gateway/server",
   "madara/crates/client/rpc",
@@ -164,7 +164,7 @@ mc-rpc = { path = "madara/crates/client/rpc" }
 mc-gateway-client = { path = "madara/crates/client/gateway/client" }
 mc-gateway-server = { path = "madara/crates/client/gateway/server" }
 mc-sync = { path = "madara/crates/client/sync" }
-mc-eth = { path = "madara/crates/client/eth" }
+mc-settlement-client = { path = "madara/crates/client/settlement_client" }
 mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
 mc-block-import = { path = "madara/crates/client/block_import" }
@@ -175,6 +175,8 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+starknet-accounts = "0.11.0"
+starknet-contract = "0.11.0"
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -192,7 +194,6 @@ starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
-# alloy = { version = "0.8.3", features = [
 alloy = { version = "0.8.3", features = [
   "node-bindings",
   "rpc-types",
@@ -363,6 +364,7 @@ orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator-core = { path = "orchestrator/crates/orchestrator" }
+base64ct = "=1.6.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -374,5 +376,4 @@ starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "m
   "testing",
 ] }
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
