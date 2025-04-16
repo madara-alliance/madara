@@ -58,11 +58,11 @@ impl Job for RegisterProofJob {
         todo!()
     }
 
-    fn max_process_attempts(&self) -> u64 {
+    fn max_process_attempts(&self) -> u16 {
         todo!()
     }
 
-    fn max_verification_attempts(&self) -> u64 {
+    fn max_verification_attempts(&self) -> u16 {
         todo!()
     }
 

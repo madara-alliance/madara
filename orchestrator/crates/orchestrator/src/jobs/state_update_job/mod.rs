@@ -348,11 +348,11 @@ impl Job for StateUpdateJob {
         Ok(block_status.into())
     }
 
-    fn max_process_attempts(&self) -> u64 {
+    fn max_process_attempts(&self) -> u16 {
         1
     }
 
-    fn max_verification_attempts(&self) -> u64 {
+    fn max_verification_attempts(&self) -> u16 {
         10
     }
 

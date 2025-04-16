@@ -94,6 +94,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - fixed JOB_METADATA_PROCESSING_FINISHED_AT usage
 - add jemallocator to fix memory leak
+- linting and formatting in http-client
 - refactor: instrumentation
 - `is_worker_enabled` status check moved from `VerificationFailed` to `Failed`
 - refactor: static attributes for telemetry

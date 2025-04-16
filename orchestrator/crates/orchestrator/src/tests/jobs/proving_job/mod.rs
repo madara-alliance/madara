@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::super::common::default_job_item;
 use crate::constants::CAIRO_PIE_FILE_NAME;
 use crate::data_storage::MockDataStorage;
-use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata};
+use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata};
 use crate::jobs::proving_job::ProvingJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
 use crate::jobs::Job;
@@ -100,7 +100,7 @@ async fn test_process_job() {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number: 0,
-            input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
+            input_path: Some(ProvingInputTypePath::CairoPie(cairo_pie_path)),
             ensure_on_chain_registration: Some("fact".to_string()),
             download_proof: None,
         }),

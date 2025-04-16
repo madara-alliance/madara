@@ -13,6 +13,7 @@ alloy = { workspace = true, features = [
   "transport-http",
   "reqwest",
 ] }
+alloy-primitives = { workspace = true, default-features = false }
 async-trait.workspace = true
 aws-config = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }

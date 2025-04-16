@@ -192,16 +192,15 @@ pub trait Job: Send + Sync {
 
     /// Should return the maximum number of attempts to process the job. A new attempt is made
     /// every time the verification returns `JobVerificationStatus::Rejected`
-    fn max_process_attempts(&self) -> u64;
+    fn max_process_attempts(&self) -> u16;
 
     /// Should return the maximum number of attempts to verify the job. A new attempt is made
     /// every few seconds depending on the result `verification_polling_delay_seconds`
-    fn max_verification_attempts(&self) -> u64;
+    fn max_verification_attempts(&self) -> u16;
 
     /// Should return the number of seconds to wait before polling for verification
     fn verification_polling_delay_seconds(&self) -> u64;
 
-    /// This lock is used to ensure that only specified amount of jobs are processed at a time.
     fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>>;
 }
 
@@ -261,7 +260,7 @@ pub async fn create_job(
 
     let job_handler = factory::get_job_handler(&job_type).await;
     let job_item = job_handler.create_job(config.clone(), internal_id.clone(), metadata).await?;
-    config.database().create_job(job_item.clone()).await?;
+    config.database().create_job_item(job_item.clone()).await?;
     println!("Job item inside the create job function: {:?}", job_item);
     add_job_to_process_queue(job_item.id, &job_type, config.clone())
         .await
@@ -458,7 +457,7 @@ pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> 
 
     if let Some(permit) = permit {
         if let Some(ref processing_locks) = job_processing_locks {
-            processing_locks.try_release_lock(permit, &job.id).await?;
+            processing_locks.try_release_lock(permit).await?;
         }
     }
 
@@ -714,6 +713,7 @@ pub async fn retry_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
 
     // Increment the retry counter in common metadata
     job.metadata.common.process_retry_attempt_no += 1;
+    // Reset the process attempt counter to 0, to ensure a fresh start
     job.metadata.common.process_attempt_no = 0;
 
     tracing::debug!(

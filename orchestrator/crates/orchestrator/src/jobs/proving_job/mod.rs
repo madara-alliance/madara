@@ -12,7 +12,7 @@ use super::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use super::{Job, JobError, OtherError};
 use crate::config::Config;
 use crate::helpers;
-use crate::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
+use crate::jobs::metadata::{JobMetadata, ProvingInputTypePath, ProvingMetadata};
 
 #[derive(Error, Debug, PartialEq)]
 pub enum ProvingError {
@@ -76,8 +76,8 @@ impl Job for ProvingJob {
 
         // Get input path from metadata
         let input_path = match proving_metadata.input_path {
-            Some(ProvingInputType::CairoPie(path)) => path,
-            Some(ProvingInputType::Proof(_)) => {
+            Some(ProvingInputTypePath::CairoPie(path)) => path,
+            Some(ProvingInputTypePath::Proof(_)) => {
                 return Err(JobError::Other(OtherError(eyre!("Expected CairoPie input, got Proof"))));
             }
             None => return Err(JobError::Other(OtherError(eyre!("Input path not found in job metadata")))),
@@ -216,11 +216,11 @@ impl Job for ProvingJob {
         }
     }
 
-    fn max_process_attempts(&self) -> u64 {
+    fn max_process_attempts(&self) -> u16 {
         2
     }
 
-    fn max_verification_attempts(&self) -> u64 {
+    fn max_verification_attempts(&self) -> u16 {
         300
     }
 
@@ -228,7 +228,10 @@ impl Job for ProvingJob {
         30
     }
 
-    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<helpers::JobProcessingState>> {
-        config.processing_locks().proving_job_processing_lock.clone()
+    fn job_processing_lock(
+        &self,
+        _config: Arc<Config>,
+    ) -> std::option::Option<std::sync::Arc<helpers::JobProcessingState>> {
+        None
     }
 }
