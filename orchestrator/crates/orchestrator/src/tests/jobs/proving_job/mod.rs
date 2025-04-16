@@ -92,7 +92,7 @@ async fn test_process_job() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
+            input_path: Some(ProvingInputTypePath::CairoPie(cairo_pie_path)),
             ensure_on_chain_registration: Some("fact".to_string()),
             ..Default::default()
         }),

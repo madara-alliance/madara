@@ -38,7 +38,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: internal_id,
-                input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
+                input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
                 ..Default::default()
             }),
         },

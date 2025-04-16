@@ -97,7 +97,7 @@ async fn create_job_job_exists_in_db_works() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
             ..Default::default()
         }),
     };
@@ -139,7 +139,7 @@ async fn create_job_job_handler_is_not_implemented_panics() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
             ..Default::default()
         }),
     };
