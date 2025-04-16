@@ -15,6 +15,7 @@ use mc_telemetry::{TelemetryHandle, VerbosityLevel};
 use mp_block::BlockId;
 use mp_block::BlockTag;
 use mp_gateway::error::SequencerError;
+use mp_sync::SyncStatusProvider;
 use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
 use mp_utils::PerfStopwatch;
@@ -25,6 +26,11 @@ use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
 use tokio::task::JoinSet;
 use tokio::time::Duration;
+
+// Module-level constants
+// Maximum number of consecutive failures allowed in the highest block fetch task before terminating
+// Delay after encountering an error when fetching the highest block
+const HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS: u64 = 1;
 
 // TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]
@@ -224,6 +230,40 @@ async fn l2_pending_block_task(
     Ok(())
 }
 
+async fn l2_highest_block_fetch(
+    provider: Arc<GatewayProvider>,
+    mut ctx: ServiceContext,
+    sync_status_provider: SyncStatusProvider,
+) -> anyhow::Result<()> {
+    tracing::debug!("Start highest block poll");
+
+    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+
+    while ctx.run_until_cancelled(interval.tick()).await.is_some() {
+        match provider.get_block_with_header_only().await {
+            Ok(block) => {
+                // For a regular block, we have both number and hash
+                let block_number = block.block_number;
+                let block_hash = block.block_hash;
+
+                // Update the sync status provider with the highest block info
+                sync_status_provider.set_highest_block_num(block_number).await;
+                sync_status_provider.set_highest_block_hash(block_hash).await;
+
+                tracing::debug!("Updated highest block: number={}, hash={}", block_number, block_hash);
+            }
+            Err(e) => {
+                tracing::error!("Error getting latest block: {:?}", e);
+                tokio::time::sleep(Duration::from_secs(HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS)).await;
+            }
+        }
+    }
+
+    tracing::debug!("Highest block fetch service stopped");
+    Ok(())
+}
+
 pub struct L2SyncConfig {
     pub first_block: u64,
     pub n_blocks_to_sync: Option<u64>,
@@ -243,12 +283,15 @@ pub struct L2SyncConfig {
 }
 
 /// Spawns workers to fetch blocks and state updates from the feeder.
-#[tracing::instrument(skip(backend, provider, ctx, config), fields(module = "Sync"))]
+#[tracing::instrument(skip(backend, provider, ctx, config, sync_status_provider), fields(
+    module = "Sync"
+))]
 pub async fn sync(
     backend: Arc<MadaraBackend>,
     provider: GatewayProvider,
     ctx: ServiceContext,
     config: L2SyncConfig,
+    sync_status_provider: SyncStatusProvider,
 ) -> anyhow::Result<()> {
     let (fetch_stream_sender, fetch_stream_receiver) = mpsc::channel(8);
     let (block_conv_sender, block_conv_receiver) = mpsc::channel(4);
@@ -275,6 +318,8 @@ pub async fn sync(
     let mut join_set = JoinSet::new();
     let warp_update_shutdown_sender =
         config.warp_update.as_ref().map(|w| w.warp_update_shutdown_receiver).unwrap_or(false);
+
+    join_set.spawn(l2_highest_block_fetch(Arc::clone(&provider), ctx.clone(), sync_status_provider));
 
     join_set.spawn(l2_fetch_task(
         Arc::clone(&backend),
