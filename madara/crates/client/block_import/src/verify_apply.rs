@@ -1,7 +1,8 @@
 use crate::{
     global_spawn_rayon_task, BlockImportError, BlockImportResult, BlockValidationContext, PendingBlockImportResult,
-    PreValidatedBlock, PreValidatedPendingBlock, UnverifiedHeader, ValidatedCommitments,
+    PreValidatedBlock, PreValidatedPendingBlock, ReorgData, UnverifiedHeader, ValidatedCommitments,
 };
+use bonsai_trie::id::BasicId;
 use itertools::Itertools;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::BlockTag;
@@ -323,6 +324,68 @@ fn block_hash(
     }
 
     Ok((block_hash, header))
+}
+
+/// Reorgs the blockchain from its current tip back to `new_tip` from which a new fork can then be
+/// played on top.
+///
+/// This rolls back all bonsai-tries as well as the db state, including historical state.
+///
+/// Returns the result of the reorg, which describes the part of the chain that was orphaned.
+pub fn revert_to(backend: &MadaraBackend, new_tip_block_hash: &Felt) -> Result<ReorgData, BlockImportError> {
+    let target_block_info = backend
+        .get_block_info(&BlockId::Hash(*new_tip_block_hash))
+        .map_err(make_db_error("getting block info for new tip"))?
+        .ok_or_else(|| {
+            BlockImportError::Internal(format!("no block found for requested tip {new_tip_block_hash:#x}").into())
+        })?;
+    let target_block_info =
+        target_block_info.as_nonpending().ok_or(BlockImportError::Internal("target block cannot be pending".into()))?;
+
+    let previous_tip_block_info = backend
+        .get_block_info(&BlockId::Tag(BlockTag::Latest))
+        .map_err(make_db_error("getting current tip block info"))?
+        .ok_or(BlockImportError::Internal(Cow::Borrowed("There are no blocks in the database")))?;
+
+    let target_block_number = target_block_info.header.block_number;
+    let target_block_id = BasicId::new(target_block_number);
+
+    let previous_tip_block_number = previous_tip_block_info
+        .block_n()
+        .ok_or(BlockImportError::Internal(Cow::Borrowed("Previous tip block must have a block number")))?;
+    let previous_tip_block_id = BasicId::new(previous_tip_block_number);
+
+    backend
+        .contract_trie()
+        .revert_to(target_block_id, previous_tip_block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting contract trie: {}", error))))?;
+
+    backend.contract_storage_trie().revert_to(target_block_id, previous_tip_block_id).map_err(|error| {
+        BlockImportError::Internal(Cow::Owned(format!("error reverting contract storage trie: {}", error)))
+    })?;
+
+    backend
+        .class_trie()
+        .revert_to(target_block_id, previous_tip_block_id)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting class trie: {}", error))))?;
+
+    backend
+        .revert_to(target_block_number)
+        .map_err(|error| BlockImportError::Internal(Cow::Owned(format!("error reverting block db: {}", error))))?;
+
+    let latest_block_info = backend
+        .get_block_info(&BlockId::Tag(BlockTag::Latest))
+        .map_err(make_db_error("getting latest block info"))?
+        .ok_or(BlockImportError::Internal(Cow::Borrowed("no latest block after reorg")))?;
+    let latest_block_info =
+        latest_block_info.as_nonpending().ok_or(BlockImportError::Internal("latest block cannot be pending".into()))?;
+
+    Ok(ReorgData {
+        starting_block_hash: *new_tip_block_hash,
+        starting_block_number: target_block_number,
+        ending_block_hash: latest_block_info.block_hash,
+        ending_block_number: latest_block_info.header.block_number,
+    })
 }
 
 #[cfg(test)]
@@ -810,6 +873,447 @@ mod verify_apply_tests {
                 Some(unexpected_pending_info),
                 "Unexpected pending block should not be stored"
             );
+        }
+    }
+
+    #[cfg(test)]
+    mod reorg_tests {
+        use mc_db::{bonsai_identifier, Column};
+        use mp_class::ConvertedClass;
+        use mp_state_update::{DeclaredClassItem, NonceUpdate, ReplacedClassItem};
+
+        use super::*;
+
+        #[rstest::fixture]
+        pub fn converted_class_sierra(
+            #[default(Felt::ZERO)] class_hash: Felt,
+            #[default(Felt::ZERO)] compiled_class_hash: Felt,
+        ) -> mp_class::ConvertedClass {
+            mp_class::ConvertedClass::Sierra(mp_class::SierraConvertedClass {
+                class_hash,
+                info: mp_class::SierraClassInfo {
+                    contract_class: Arc::new(mp_class::FlattenedSierraClass {
+                        sierra_program: vec![],
+                        contract_class_version: "".to_string(),
+                        entry_points_by_type: mp_class::EntryPointsByType {
+                            constructor: vec![],
+                            external: vec![],
+                            l1_handler: vec![],
+                        },
+                        abi: "".to_string(),
+                    }),
+                    compiled_class_hash,
+                },
+                compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
+            })
+        }
+
+        #[rstest::fixture]
+        pub fn converted_class_legacy(#[default(Felt::ZERO)] class_hash: Felt) -> mp_class::ConvertedClass {
+            mp_class::ConvertedClass::Legacy(mp_class::LegacyConvertedClass {
+                class_hash,
+                info: mp_class::LegacyClassInfo {
+                    contract_class: Arc::new(mp_class::CompressedLegacyContractClass {
+                        program: vec![],
+                        entry_points_by_type: mp_class::LegacyEntryPointsByType {
+                            constructor: vec![],
+                            external: vec![],
+                            l1_handler: vec![],
+                        },
+                        abi: None,
+                    }),
+                },
+            })
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_revert_declared_class(
+            setup_test_backend: Arc<MadaraBackend>,
+            #[from(converted_class_sierra)]
+            #[with(Felt::TWO, Felt::THREE)]
+            converted_class_sierra: ConvertedClass,
+            #[from(converted_class_legacy)]
+            #[with(Felt::THREE)]
+            converted_class_legacy: ConvertedClass,
+        ) {
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            // fresh tries and dbs, should be empty
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+            assert_eq!(backend.query_column_count(Column::ClassInfo), 0);
+            assert_eq!(backend.query_column_count(Column::ClassCompiled), 0);
+
+            let mut genesis = create_dummy_block();
+            genesis.unverified_block_number = Some(0);
+            genesis.unverified_global_state_root = Some(felt!("0x0"));
+            genesis.header.parent_block_hash = None;
+            let block_import = verify_apply_inner(&backend, genesis, validation.clone())
+                .expect("verify_apply_inner failed on genesis");
+            let parent_hash = block_import.block_hash;
+
+            // no class state in the genesis block, should still be empty
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+
+            let mut block = create_dummy_block();
+            block.unverified_block_number = Some(1);
+            block.unverified_global_state_root = None;
+            block.header.parent_block_hash = Some(parent_hash);
+            // TODO: this StateDiff reflects the `converted_class` that we get from our fixture
+            //       is there a way to generate this? what ensures that these are consistent in production? the prover?
+            block.state_diff = StateDiff {
+                declared_classes: vec![DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::THREE }],
+                deprecated_declared_classes: vec![Felt::THREE],
+                ..Default::default()
+            };
+            block.converted_classes = vec![converted_class_sierra, converted_class_legacy];
+            let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+            // both the sierra and the deprecated classes should give us an entry in ClassInfo (so 2)
+            assert_eq!(backend.query_column_count(Column::ClassInfo), 2);
+            // only the sierra gives us an entry in ClassCompiled (so 1)
+            assert_eq!(backend.query_column_count(Column::ClassCompiled), 1);
+
+            // declared classes should exist now
+            assert!(backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
+            assert!(backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
+
+            let _ = revert_to(&backend, &parent_hash).expect("reorg failed");
+
+            // declared classes should have been pruned during revert_to()
+            assert!(!backend.contains_class(&Felt::TWO).expect("contains_class() failed"));
+            assert!(!backend.contains_class(&Felt::THREE).expect("contains_class() failed"));
+
+            // should all be empty again
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+            assert_eq!(backend.query_column_count(Column::ClassInfo), 0);
+            assert_eq!(backend.query_column_count(Column::ClassCompiled), 0);
+        }
+
+        #[rstest]
+        #[tokio::test]
+        async fn test_revert_contract_state(setup_test_backend: Arc<MadaraBackend>) {
+            let backend = setup_test_backend;
+
+            // should start with fresh databases
+            assert_eq!(backend.query_column_count(Column::ContractToClassHashes), 0);
+            assert_eq!(backend.query_column_count(Column::ContractToNonces), 0);
+            assert_eq!(backend.query_column_count(Column::ContractStorage), 0);
+
+            // some helper functions to keep this test code concise.
+            // related: https://github.com/madara-alliance/madara/issues/570
+            let get_latest_contract_class_hash = |contract_address: &Felt| -> Option<Felt> {
+                backend
+                    .get_contract_class_hash_at(&BlockId::Tag(BlockTag::Latest), contract_address)
+                    .expect("failed to query contract class hash")
+            };
+            let get_latest_nonce = |contract_address: &Felt| -> Option<Felt> {
+                backend
+                    .get_contract_nonce_at(&BlockId::Tag(BlockTag::Latest), contract_address)
+                    .expect("failed to query nonce")
+            };
+            let get_latest_contract_storage = |contract_address: &Felt, key: &Felt| -> Option<Felt> {
+                backend
+                    .get_contract_storage_at(&BlockId::Tag(BlockTag::Latest), contract_address, key)
+                    .expect("failed to query contract storage")
+            };
+
+            let validation = create_validation_context(false);
+
+            let mut genesis = create_dummy_block();
+            genesis.unverified_block_number = Some(0);
+            genesis.unverified_global_state_root = Some(felt!("0x0"));
+            genesis.header.parent_block_hash = None;
+            let genesis_block_import = verify_apply_inner(&backend, genesis, validation.clone())
+                .expect("verify_apply_inner failed on genesis");
+
+            // push block one which contains a first round of storage changes
+            let mut block = create_dummy_block();
+            block.unverified_block_number = Some(1);
+            block.unverified_global_state_root = None;
+            block.header.parent_block_hash = Some(genesis_block_import.block_hash);
+            block.state_diff = StateDiff {
+                nonces: vec![
+                    NonceUpdate { contract_address: Felt::ONE, nonce: Felt::ONE },
+                    NonceUpdate { contract_address: Felt::TWO, nonce: Felt::TWO },
+                ],
+                replaced_classes: Default::default(),
+                deployed_contracts: vec![
+                    DeployedContractItem { address: Felt::ONE, class_hash: Felt::ONE },
+                    DeployedContractItem { address: Felt::TWO, class_hash: Felt::ONE },
+                ],
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: Felt::ONE,
+                    storage_entries: vec![
+                        StorageEntry { key: Felt::ONE, value: Felt::ONE },
+                        StorageEntry { key: Felt::TWO, value: Felt::TWO },
+                    ],
+                }],
+                ..Default::default()
+            };
+            let block_import_1 =
+                verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+            // push block one which contains a first round of storage changes
+            let mut block = create_dummy_block();
+            block.unverified_block_number = Some(2);
+            block.unverified_global_state_root = None;
+            block.header.parent_block_hash = Some(block_import_1.block_hash);
+            block.state_diff = StateDiff {
+                nonces: vec![
+                    NonceUpdate { contract_address: Felt::ONE, nonce: Felt::TWO },
+                    NonceUpdate { contract_address: Felt::THREE, nonce: Felt::ONE },
+                ],
+                replaced_classes: vec![ReplacedClassItem { contract_address: Felt::ONE, class_hash: Felt::TWO }],
+                deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
+                storage_diffs: vec![
+                    ContractStorageDiffItem {
+                        address: Felt::ONE,
+                        storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::ZERO }],
+                    },
+                    ContractStorageDiffItem {
+                        address: Felt::TWO,
+                        storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::ONE }],
+                    },
+                ],
+                ..Default::default()
+            };
+            let _ = verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+            // block 2 assertions
+            assert_eq!(get_latest_nonce(&Felt::ONE), Some(Felt::TWO));
+            assert_eq!(get_latest_nonce(&Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_nonce(&Felt::THREE), Some(Felt::ONE));
+
+            assert_eq!(get_latest_contract_class_hash(&Felt::ONE), Some(Felt::TWO));
+            assert_eq!(get_latest_contract_class_hash(&Felt::TWO), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_class_hash(&Felt::THREE), Some(Felt::THREE));
+
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), Some(Felt::ZERO));
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), Some(Felt::ONE));
+
+            // should have 4 entries for each of these
+            // remember that these databases store an entry for each update (they are historical)
+            assert_eq!(backend.query_column_count(Column::ContractToClassHashes), 4);
+            assert_eq!(backend.query_column_count(Column::ContractToNonces), 4);
+            assert_eq!(backend.query_column_count(Column::ContractStorage), 4);
+
+            // revert back to block 1
+            // TODO: reorg back one block, assert we go back to block 1 state
+            let _ = revert_to(&backend, &block_import_1.block_hash).expect("reorg to block 1 failed");
+
+            // block 1 assertions
+            assert_eq!(get_latest_nonce(&Felt::ONE), Some(Felt::ONE));
+            assert_eq!(get_latest_nonce(&Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_nonce(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_class_hash(&Felt::ONE), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_class_hash(&Felt::TWO), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_class_hash(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), Some(Felt::ONE));
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), Some(Felt::TWO));
+            assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), None);
+
+            // revert back to block 0
+            let _ = revert_to(&backend, &genesis_block_import.block_hash).expect("reorg to block 0 failed");
+
+            // block 0 assertions -- nothing should have any state
+            assert_eq!(get_latest_nonce(&Felt::ONE), None);
+            assert_eq!(get_latest_nonce(&Felt::TWO), None);
+            assert_eq!(get_latest_nonce(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_class_hash(&Felt::ONE), None);
+            assert_eq!(get_latest_contract_class_hash(&Felt::TWO), None);
+            assert_eq!(get_latest_contract_class_hash(&Felt::THREE), None);
+
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::ONE), None);
+            assert_eq!(get_latest_contract_storage(&Felt::ONE, &Felt::TWO), None);
+            assert_eq!(get_latest_contract_storage(&Felt::TWO, &Felt::ONE), None);
+
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO);
+
+            // we should have cleared up all contract state
+            assert_eq!(backend.query_column_count(Column::ContractToClassHashes), 0);
+            assert_eq!(backend.query_column_count(Column::ContractToNonces), 0);
+            assert_eq!(backend.query_column_count(Column::ContractStorage), 0);
+        }
+
+        /// This struct provides the inputs to the reorg tests. It does so based on integers
+        /// representing a few different lengths of different parts of a forked chain, where one
+        /// side of the fork is first created, a reorg occurs, and then the other side of the fork
+        /// is created.
+        ///
+        /// Consider this diagram:
+        ///
+        ///         O        ---
+        ///         |          | "original_chain_length"
+        ///         O          | This part of the chain is not reorged, the last block is the parent
+        ///         |          | of the fork that we reorg across
+        ///         O        ---
+        ///        / \
+        ///       /   \
+        ///      N     X
+        ///      |     |
+        ///      N     X     --- the "X" chain is added and later removed when we reorg, its length
+        ///      |               is "orphaned_chain_length"
+        ///      N
+        ///      |
+        ///      N           --- the "N" chain is the new chain which is created after we reorg back
+        ///                      to the end of the "O" part of the chain, its length is
+        ///                      "new_chain_length"
+        struct ReorgTestArgs {
+            /// original chain length, including block 0 (e.g. "1" means only genesis block).
+            /// must be > 0.
+            original_chain_length: u64,
+            /// the length of the orphaned chain
+            orphaned_chain_length: u64,
+            /// the length of the new chain
+            new_chain_length: u64,
+            /// how many passes of reorgs to make. each pass does:
+            /// * append `orphaned_chain_length` blocks to the tip
+            /// * revert back to tip
+            /// * append `new_chain_length` blocks
+            passes: u64,
+        }
+
+        #[rstest]
+        #[case::reorg_from_genesis(
+            ReorgTestArgs{
+                original_chain_length: 1,
+                orphaned_chain_length: 2,
+                new_chain_length: 1,
+                passes: 1,
+            },
+        )]
+        #[case::empty_orphan_reorg(
+            ReorgTestArgs{
+                original_chain_length: 1,
+                orphaned_chain_length: 0,
+                new_chain_length: 1,
+                passes: 1,
+            },
+        )]
+        #[case::success(
+            ReorgTestArgs{
+                original_chain_length: 6,
+                orphaned_chain_length: 3,
+                new_chain_length: 2,
+                passes: 1,
+            },
+        )]
+        #[case::multiple_passes(
+            ReorgTestArgs{
+                original_chain_length: 6,
+                orphaned_chain_length: 3,
+                new_chain_length: 2,
+                passes: 5,
+            },
+        )]
+        #[case::multiple_passes_no_new_chain(
+            ReorgTestArgs{
+                original_chain_length: 6,
+                orphaned_chain_length: 3,
+                new_chain_length: 0,
+                passes: 5,
+            },
+        )]
+        #[case::multiple_passes_repetitive_fork(
+            ReorgTestArgs{
+                original_chain_length: 2,
+                orphaned_chain_length: 2,
+                new_chain_length: 2,
+                passes: 5,
+            },
+        )]
+        #[case::deep_reorg(
+            ReorgTestArgs{
+                original_chain_length: 32,
+                orphaned_chain_length: 32,
+                new_chain_length: 32,
+                passes: 1,
+            },
+        )]
+        #[tokio::test]
+        async fn test_reorg(setup_test_backend: Arc<MadaraBackend>, #[case] args: ReorgTestArgs) {
+            use mc_db::bonsai_identifier;
+
+            let backend = setup_test_backend;
+            let validation = create_validation_context(false);
+
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO);
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
+
+            // utility fn to append an empty block to the given parent block, returning the new block's hash
+            let append_empty_block = |new_block_height: u64, parent_hash: Option<Felt>| -> Felt {
+                let mut block = create_dummy_block();
+                block.unverified_block_number = Some(new_block_height);
+                block.unverified_global_state_root = Some(felt!("0x0"));
+                block.header.parent_block_hash = parent_hash;
+                let block_import =
+                    verify_apply_inner(&backend, block.clone(), validation.clone()).expect("verify_apply_inner failed");
+
+                block_import.block_hash
+            };
+
+            // create the original chain
+            let mut parent_hash = None;
+            let mut genesis_hash = None;
+            assert!(args.original_chain_length > 0, "Cannot create an empty chain, we always need at least genesis");
+            for i in 0..args.original_chain_length {
+                let new_block_hash = append_empty_block(i, parent_hash);
+                parent_hash = Some(new_block_hash);
+                if genesis_hash.is_none() {
+                    genesis_hash = Some(new_block_hash);
+                }
+            }
+            let mut reorg_parent_hash =
+                parent_hash.expect("logic error: we should have created at least one block which is our parent");
+
+            let mut parent_height = args.original_chain_length;
+            assert!(args.passes > 0);
+            for _ in 0..args.passes {
+                // build a soon-to-be-orphaned chain on top of the original
+                for _ in 0..args.orphaned_chain_length {
+                    let new_block_hash = append_empty_block(parent_height, parent_hash);
+                    parent_hash = Some(new_block_hash);
+                    parent_height += 1;
+                }
+
+                let _ = revert_to(&backend, &reorg_parent_hash).expect("reorg failed");
+                parent_height -= args.orphaned_chain_length;
+
+                // reorg after given parent (start with 1 since we already added our reorg block)
+                parent_hash = Some(reorg_parent_hash);
+                for _ in 0..args.new_chain_length {
+                    let new_block_hash = append_empty_block(parent_height, parent_hash);
+                    parent_hash = Some(new_block_hash);
+                    parent_height += 1;
+                }
+                reorg_parent_hash = parent_hash.expect("parent_hash should be set by now");
+
+                let latest_block_n =
+                    backend.get_latest_block_n().expect("get_latest_block_n() failed").expect("latest_block_n is None");
+                // assert_eq!(args.original_chain_length + args.new_chain_length - 1, latest_block_n); // doesn't make sense with multiple passes
+                let latest_block_hash = backend
+                    .get_block_hash(&BlockId::Number(latest_block_n))
+                    .expect("get_block_hash failed after reorg");
+                assert_eq!(latest_block_hash, parent_hash);
+            }
+
+            // finally, reorg back to 0 and ensure everything is empty.
+            let _ = revert_to(
+                &backend,
+                &genesis_hash.expect(
+                    "Genesis hash should be set to the first block created, and we always create a genesis block",
+                ),
+            )
+            .expect("reorg to genesis failed");
+
+            assert_eq!(backend.contract_trie().root_hash(bonsai_identifier::CONTRACT).unwrap(), Felt::ZERO);
+            assert_eq!(backend.class_trie().root_hash(bonsai_identifier::CLASS).unwrap(), Felt::ZERO);
         }
     }
 }

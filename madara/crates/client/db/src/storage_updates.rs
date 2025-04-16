@@ -88,6 +88,14 @@ impl MadaraBackend {
         Ok(())
     }
 
+    pub fn revert_to(&self, revert_to: u64) -> Result<(), MadaraStorageError> {
+        self.clear_pending_block()?;
+        let state_diffs = self.block_db_revert(revert_to)?;
+        self.contract_db_revert(&state_diffs)?;
+        self.class_db_revert(&state_diffs)?;
+        Ok(())
+    }
+
     pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {
         self.block_db_clear_pending()?;
         self.contract_db_clear_pending()?;

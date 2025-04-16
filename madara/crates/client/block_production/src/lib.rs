@@ -622,7 +622,6 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         self.executor.block_context.block_info().block_number.0
     }
 }
-
 #[cfg(test)]
 mod tests {
     use std::{collections::HashMap, sync::Arc, time::Duration};
@@ -796,25 +795,7 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn converted_class_legacy(#[default(Felt::ZERO)] class_hash: Felt) -> mp_class::ConvertedClass {
-        mp_class::ConvertedClass::Legacy(mp_class::LegacyConvertedClass {
-            class_hash,
-            info: mp_class::LegacyClassInfo {
-                contract_class: Arc::new(mp_class::CompressedLegacyContractClass {
-                    program: vec![],
-                    entry_points_by_type: mp_class::LegacyEntryPointsByType {
-                        constructor: vec![],
-                        external: vec![],
-                        l1_handler: vec![],
-                    },
-                    abi: None,
-                }),
-            },
-        })
-    }
-
-    #[rstest::fixture]
-    fn converted_class_sierra(
+    pub fn converted_class_sierra(
         #[default(Felt::ZERO)] class_hash: Felt,
         #[default(Felt::ZERO)] compiled_class_hash: Felt,
     ) -> mp_class::ConvertedClass {
@@ -834,6 +815,24 @@ mod tests {
                 compiled_class_hash,
             },
             compiled: Arc::new(mp_class::CompiledSierra("".to_string())),
+        })
+    }
+
+    #[rstest::fixture]
+    pub fn converted_class_legacy(#[default(Felt::ZERO)] class_hash: Felt) -> mp_class::ConvertedClass {
+        mp_class::ConvertedClass::Legacy(mp_class::LegacyConvertedClass {
+            class_hash,
+            info: mp_class::LegacyClassInfo {
+                contract_class: Arc::new(mp_class::CompressedLegacyContractClass {
+                    program: vec![],
+                    entry_points_by_type: mp_class::LegacyEntryPointsByType {
+                        constructor: vec![],
+                        external: vec![],
+                        l1_handler: vec![],
+                    },
+                    abi: None,
+                }),
+            },
         })
     }
 

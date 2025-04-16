@@ -522,7 +522,7 @@ impl MadaraBackend {
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
             snapshots,
-            trie_log_config: Default::default(),
+            trie_log_config: TrieLogConfig { max_saved_trie_logs: 128, ..Default::default() },
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
             write_opt_no_wal: make_write_opt_no_wal(),
@@ -666,6 +666,15 @@ impl MadaraBackend {
     /// Returns the total storage size
     pub fn update_metrics(&self) -> u64 {
         self.db_metrics.update(&self.db)
+    }
+
+    /// A testing-only fn to query the number of k:v pairs in a column.
+    /// This iterates through all entries, so it does not scale well.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn query_column_count(&self, column: Column) -> usize {
+        use rocksdb::IteratorMode;
+
+        self.db.iterator_cf(&self.db.get_column(column), IteratorMode::Start).count()
     }
 }
 
