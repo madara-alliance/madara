@@ -42,6 +42,9 @@ members = [
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
   "e2e-tests",
+
+  # bootstrapper
+  "bootstrapper/crates/bootstrapper",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -83,6 +86,9 @@ default-members = [
   "orchestrator/crates/settlement-clients/settlement-client-interface",
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
+
+  # bootstrapper
+  "bootstrapper/crates/bootstrapper",
 ]
 
 [workspace.lints.rust]
