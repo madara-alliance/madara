@@ -233,7 +233,7 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut M
     mock_job.expect_create_job().times(1).returning(move |_, _, _| Ok(job_item.clone()));
 
     // Store the job in the database
-    db.expect_create_job()
+    db.expect_create_job_item()
         .times(1)
         .withf(move |item| item.internal_id == id.clone().to_string())
         .returning(move |_| Ok(job_item_cloned.clone()));
