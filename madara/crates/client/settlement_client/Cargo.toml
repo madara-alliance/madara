@@ -1,6 +1,6 @@
 [package]
 description = "This crate is responsible to handle l1 communication"
-name = "mc-eth"
+name = "mc-settlement-client"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -36,15 +36,21 @@ starknet_api.workspace = true
 # Other
 alloy.workspace = true
 anyhow.workspace = true
+assert_matches.workspace = true
 bigdecimal.workspace = true
 bitvec.workspace = true
 futures = { workspace = true, default-features = true }
-
-regex = "1.10.5"
+mockall.workspace = true
+regex.workspace = true
 serde = { workspace = true, default-features = true }
-serde_json = "1"
+serde_json.workspace = true
+starknet-accounts.workspace = true
+starknet-contract.workspace = true
+starknet-core.workspace = true
+starknet-crypto.workspace = true
+starknet-providers.workspace = true
+starknet-signers.workspace = true
 thiserror.workspace = true
-time = "0.3.36"
 tokio = { workspace = true, features = [
   "macros",
   "parking_lot",
@@ -57,6 +63,7 @@ url.workspace = true
 
 
 #Instrumentation
+async-trait = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
@@ -67,6 +74,7 @@ opentelemetry-otlp = { workspace = true, features = [
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+reqwest.workspace = true
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
@@ -76,14 +84,15 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [features]
 default = []
 
-
 [dev-dependencies]
+rand.workspace = true
 rstest.workspace = true
-once_cell.workspace = true
 tempfile.workspace = true
 dotenv.workspace = true
 httpmock.workspace = true
-tracing-test = "0.2.5"
+tracing-test.workspace = true
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
+# Compile the test contracts in test cfg.
+m-cairo-test-contracts.workspace = true
