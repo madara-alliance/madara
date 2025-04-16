@@ -14,13 +14,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
 pub struct CommonMetadata {
     /// Number of times the job has been processed
-    pub process_attempt_no: u64,
+    pub process_attempt_no: u16,
     /// Number of times the job has been retried after processing failures
-    pub process_retry_attempt_no: u64,
+    pub process_retry_attempt_no: u16,
     /// Number of times the job has been verified
-    pub verification_attempt_no: u64,
+    pub verification_attempt_no: u16,
     /// Number of times the job has been retried after verification failures
-    pub verification_retry_attempt_no: u64,
+    pub verification_retry_attempt_no: u16,
     /// Timestamp when job processing started
     #[serde(with = "chrono::serde::ts_seconds_option")]
     pub process_started_at: Option<DateTime<Utc>>,

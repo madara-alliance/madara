@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
     account_transaction::AccountTransaction,
@@ -7,8 +8,10 @@ use blockifier::transaction::{
 };
 use cairo_vm::types::builtin_name::BuiltinName;
 use primitive_types::H256;
-use starknet_core::types::MsgToL2;
+use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 use starknet_types_core::felt::Felt;
+use std::convert::TryFrom;
 use thiserror::Error;
 
 use crate::{
@@ -43,21 +46,66 @@ pub enum L1HandlerMessageError {
     InvalidNonce,
 }
 
+#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MsgToL2 {
+    pub from_address: Felt,
+    pub to_address: Felt,
+    pub selector: Felt,
+    pub payload: Vec<Felt>,
+    pub nonce: Option<Felt>,
+}
+
+// Specification reference: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#hashing_l1-l2
+// Example implementation in starknet-rs: https://github.com/xJonathanLEI/starknet-rs/blob/master/starknet-core/src/types/msg.rs#L28
+//
+// Key Differences:
+// - In starknet-rs, padding is applied to the `from_address` and `nonce` fields. This is necessary because the `from_address` is an Ethereum address (20 bytes) and the `nonce` is a u64 (8 bytes).
+// - In this implementation, padding for `from_address` and `nonce` is not required. Both fields are converted to `felt252`, which naturally fits the required size.
+// - Padding is only applied to the payload length, which is a u64 (8 bytes), to ensure proper alignment.
+impl MsgToL2 {
+    pub fn compute_hash(&self) -> H256 {
+        let mut hasher = Keccak256::new();
+        hasher.update(self.from_address.to_bytes_be());
+        hasher.update(self.to_address.to_bytes_be());
+        hasher.update(self.nonce.unwrap_or_default().to_bytes_be());
+        hasher.update(self.selector.to_bytes_be());
+        hasher.update([0u8; 24]); // Padding
+        hasher.update((self.payload.len() as u64).to_be_bytes());
+        self.payload.iter().for_each(|felt| hasher.update(felt.to_bytes_be()));
+        H256::from_slice(&hasher.finalize())
+    }
+}
+
+impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
+    type Error = anyhow::Error;
+
+    fn try_from(tx: &mp_transactions::L1HandlerTransaction) -> Result<Self, Self::Error> {
+        let (from_address, payload) = tx.calldata.split_first().ok_or_else(|| anyhow!("Empty calldata"))?;
+
+        Ok(Self {
+            from_address: *from_address,
+            to_address: tx.contract_address,
+            selector: tx.entry_point_selector,
+            payload: payload.to_vec(),
+            nonce: Some(tx.nonce.into()),
+        })
+    }
+}
+
 fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1HandlerMessageError> {
     let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
-    let from_address = (*from_address).try_into().map_err(|_| L1HandlerMessageError::FromAddressOutOfRange)?;
-
-    let nonce = tx.tx.nonce.0.to_bigint().try_into().map_err(|_| L1HandlerMessageError::InvalidNonce)?;
+    let nonce = Some(tx.tx.nonce.0);
 
     let message = MsgToL2 {
-        from_address,
+        from_address: *from_address,
         to_address: tx.tx.contract_address.into(),
         selector: tx.tx.entry_point_selector.0,
         payload: payload.into(),
         nonce,
     };
-    Ok(H256::from_slice(message.hash().as_bytes()))
+    Ok(H256::from_slice(message.compute_hash().as_bytes()))
 }
 
 fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Item = &CallInfo> {
@@ -260,5 +308,29 @@ mod events_logic_tests {
 
     fn event(order: usize) -> Event {
         Event { from_address: Default::default(), keys: vec![Felt::ZERO; order], data: vec![Felt::ZERO; order] }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use std::str::FromStr;
+
+    #[test]
+    fn test_compute_hash_msg_to_l2() {
+        let msg = MsgToL2 {
+            from_address: Felt::from(1),
+            to_address: Felt::from(2),
+            selector: Felt::from(3),
+            payload: vec![Felt::from(4), Felt::from(5), Felt::from(6)],
+            nonce: Some(Felt::from(7)),
+        };
+
+        let hash = msg.compute_hash();
+
+        let expected_hash =
+            H256::from_str("0xeec1e25e91757d5e9c8a11cf6e84ddf078dbfbee23382ee979234fc86a8608a5").unwrap();
+
+        assert_eq!(hash, expected_hash);
     }
 }

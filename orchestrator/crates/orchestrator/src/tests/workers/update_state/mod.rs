@@ -27,7 +27,7 @@ async fn update_state_worker_with_pending_jobs() {
     let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
     job_item.status = JobStatus::PendingVerification;
     job_item.job_type = JobType::StateTransition;
-    services.config.database().create_job(job_item).await.unwrap();
+    services.config.database().create_job_item(job_item).await.unwrap();
 
     let update_state_worker = UpdateStateWorker {};
     assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
@@ -169,7 +169,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
     job_item.metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::StateUpdate(state_metadata) };
 
-    services.config.database().create_job(job_item).await.unwrap();
+    services.config.database().create_job_item(job_item).await.unwrap();
 
     let ctx = mock_factory::get_job_handler_context();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
@@ -238,7 +238,7 @@ async fn update_state_worker_next_block_missing() {
     job_item.metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::StateUpdate(state_metadata) };
 
-    services.config.database().create_job(job_item).await.unwrap();
+    services.config.database().create_job_item(job_item).await.unwrap();
 
     let ctx = mock_factory::get_job_handler_context();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));

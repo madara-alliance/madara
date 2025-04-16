@@ -1,6 +1,6 @@
-mod from_blockifier;
+pub mod from_blockifier;
 mod to_starknet_types;
-pub use from_blockifier::from_blockifier_execution_info;
+pub use from_blockifier::{from_blockifier_execution_info, MsgToL2};
 
 use primitive_types::H256;
 use serde::{Deserialize, Serialize};
@@ -299,7 +299,8 @@ pub struct ExecutionResources {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+// TODO: Extend this to include latest fields
+// #[serde(deny_unknown_fields)]
 pub struct L1Gas {
     pub l1_gas: u128,
     pub l1_data_gas: u128,

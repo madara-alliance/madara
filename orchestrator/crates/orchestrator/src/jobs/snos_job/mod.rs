@@ -179,11 +179,11 @@ impl Job for SnosJob {
         Ok(JobVerificationStatus::Verified)
     }
 
-    fn max_process_attempts(&self) -> u64 {
+    fn max_process_attempts(&self) -> u16 {
         1
     }
 
-    fn max_verification_attempts(&self) -> u64 {
+    fn max_verification_attempts(&self) -> u16 {
         1
     }
 

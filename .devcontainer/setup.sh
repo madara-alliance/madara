@@ -8,6 +8,9 @@ echo ">> Starting setup.sh script execution."
 echo ">> Rust version:"
 rustup show
 
+
+npm install -g prettier
+
 echo ">> Node version:"
 node --version
 

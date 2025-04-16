@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 
 /// Input type specification for proving jobs.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-pub enum ProvingInputType {
+pub enum ProvingInputTypePath {
     /// Path to an existing proof
     Proof(String),
     /// Path to a Cairo PIE file
@@ -20,7 +20,7 @@ pub struct ProvingMetadata {
     /// Block number to prove
     pub block_number: u64,
     /// Path to the input file (proof or Cairo PIE)
-    pub input_path: Option<ProvingInputType>,
+    pub input_path: Option<ProvingInputTypePath>,
     /// SNOS fact to check for on-chain registration. If `None`, no on-chain check is performed. If
     /// `Some(value)`, it checks for `value` on the chain.
     pub ensure_on_chain_registration: Option<String>,

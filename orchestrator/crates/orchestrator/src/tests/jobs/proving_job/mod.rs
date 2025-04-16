@@ -16,7 +16,7 @@ use uuid::Uuid;
 use super::super::common::default_job_item;
 use crate::constants::CAIRO_PIE_FILE_NAME;
 use crate::data_storage::MockDataStorage;
-use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata};
+use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata};
 use crate::jobs::proving_job::ProvingJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType};
 use crate::jobs::Job;

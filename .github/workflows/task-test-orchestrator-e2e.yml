@@ -10,6 +10,10 @@ on:
         description: "Hash used to retrieve the artifact"
         required: true
         type: string
+      bootstrapper-artifacts-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
     secrets:
       ETHEREUM_SEPOLIA_BLAST_RPC:
         required: true
@@ -23,6 +27,9 @@ jobs:
     services:
       localstack:
         image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         env:
           DEFAULT_REGION: us-east-1
           AWS_ACCESS_KEY_ID: "AWS_ACCESS_KEY_ID"
@@ -31,6 +38,9 @@ jobs:
           - 4566:4566
       mongodb:
         image: mongo:latest
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
         ports:
           - 27017:27017
 
@@ -55,14 +65,27 @@ jobs:
       # Setup the rust environment
       - uses: ./.github/actions/rust-setup
         with:
-          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
+          cache-key: orchestrator-e2e
           rust-version: ${{ env.TESTING_RUST_VERSION }}
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
           install-scarb: true
           install-foundry: true
+          install-mold: true
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          install-node: true
+          node-version: ${{ env.BUILD_NODE_VERSION }}
+          install-ganache: true
+          ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
+          install-solc: true
+          solc-version: ${{ env.BUILD_SOLC_VERSION }}
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
+
+      - name: Download Bootstrapper artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
+          path: artifacts
 
       - name: Check Anvil Installation & run Anvil
         run: |

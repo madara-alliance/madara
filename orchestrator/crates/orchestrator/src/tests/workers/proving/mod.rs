@@ -27,6 +27,10 @@ use crate::workers::proving::ProvingWorker;
 async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dyn Error>> {
     use crate::queue::QueueType;
 
+    let num_jobs = 5;
+    // Choosing a random incomplete job ID out of the total number of jobs
+    let random_incomplete_job_id: u64 = 3;
+
     let server = MockServer::start();
     let da_client = MockDaClient::new();
     let mut db = MockDatabase::new();
@@ -39,11 +43,10 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
 
     // Create mock SNOS jobs with snos_fact field set
     let mut snos_jobs = Vec::new();
-    let num_jobs = 5;
 
     for i in 1..=num_jobs {
         // Skip job with ID 3 if incomplete_runs is true
-        if incomplete_runs && i == 3 {
+        if incomplete_runs && i == random_incomplete_job_id {
             continue;
         }
 
@@ -70,7 +73,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
 
     // Set up expectations for each job
     for i in 1..=num_jobs {
-        if incomplete_runs && i == 3 {
+        if incomplete_runs && i == random_incomplete_job_id {
             continue;
         }
         db_checks_proving_worker(i as i32, &mut db, &mut job_handler);
