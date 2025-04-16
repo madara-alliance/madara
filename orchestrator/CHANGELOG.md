@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Added
 
+- added metadata serialization and deserialization
+- Limits on SNOS job concurrency
+- Added JOB_METADATA_PROCESSING_STARTED_AT
+- Added retry job endpoint for failed jobs
 - ci: linters added
 - readme: setup instructions added
 - Added : Grafana dashboard
@@ -51,6 +55,9 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Changed
 
+- refactor: job isolation added, each job will have needed information from it's worker
+- Increased interval time for spawn_consumer
+- verify_job now handles VerificationTimeout status
 - refactor: expect removed and added error wraps
 - refactor: Readme and .env.example
 - refactor: http_mock version updated
@@ -85,6 +92,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ## Fixed
 
+- fixed JOB_METADATA_PROCESSING_FINISHED_AT usage
+- add jemallocator to fix memory leak
 - linting and formatting in http-client
 - refactor: instrumentation
 - `is_worker_enabled` status check moved from `VerificationFailed` to `Failed`

@@ -15,7 +15,7 @@
 //!
 //! # Examples
 //! ```
-//! use utils::http_client::HttpClient;
+//! use orchestrator_utils::http_client::HttpClient;
 //!
 //! let client = HttpClient::builder("https://api.example.com")
 //!     .default_header("Authorization", "Bearer token")

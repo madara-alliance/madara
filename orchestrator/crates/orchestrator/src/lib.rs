@@ -11,6 +11,7 @@ pub mod cron;
 pub mod data_storage;
 /// Contains the trait that all database clients must implement
 pub mod database;
+pub mod helpers;
 /// Contains the trait that all jobs must implement. Also
 /// contains the root level functions for which detect the job
 /// type and call the corresponding job

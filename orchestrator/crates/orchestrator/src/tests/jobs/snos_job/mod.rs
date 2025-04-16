@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
@@ -8,8 +7,8 @@ use starknet_os::io::output::StarknetOsOutput;
 use url::Url;
 use uuid::Uuid;
 
-use crate::constants::{CAIRO_PIE_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::jobs::constants::JOB_METADATA_SNOS_BLOCK;
+use crate::constants::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::jobs::snos_job::SnosJob;
 use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::Job;
@@ -22,7 +21,20 @@ use crate::tests::jobs::ConfigType;
 async fn test_create_job() {
     let services = TestConfigBuilder::new().build().await;
 
-    let job = SnosJob.create_job(services.config.clone(), String::from("0"), HashMap::new()).await;
+    // Create proper metadata structure
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Snos(SnosMetadata {
+            block_number: 0,
+            full_output: false,
+            cairo_pie_path: None,
+            snos_output_path: None,
+            program_output_path: None,
+            snos_fact: None,
+        }),
+    };
+
+    let job = SnosJob.create_job(services.config.clone(), String::from("0"), metadata).await;
 
     assert!(job.is_ok());
     let job = job.unwrap();
@@ -39,6 +51,17 @@ async fn test_create_job() {
 #[tokio::test]
 async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let services = TestConfigBuilder::new().build().await;
+
+    // Update job_item to use the proper metadata structure for SNOS jobs
+    job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata {
+        block_number: 0,
+        full_output: false,
+        cairo_pie_path: None,
+        snos_output_path: None,
+        program_output_path: None,
+        snos_fact: None,
+    });
+
     let job_status = SnosJob.verify_job(services.config.clone(), &mut job_item).await;
 
     // Should always be [Verified] for the moment.
@@ -69,13 +92,27 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     let storage_client = services.config.storage();
 
+    // Create proper metadata structure
+    let block_number = 76793;
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Snos(SnosMetadata {
+            block_number,
+            full_output: false,
+            cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
+            snos_fact: None,
+        }),
+    };
+
     let mut job_item = JobItem {
         id: Uuid::new_v4(),
         internal_id: "1".into(),
         job_type: JobType::SnosRun,
         status: JobStatus::Created,
         external_id: String::new().into(),
-        metadata: HashMap::from([(JOB_METADATA_SNOS_BLOCK.to_string(), "76793".to_string())]),
+        metadata,
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
