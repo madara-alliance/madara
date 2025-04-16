@@ -224,6 +224,7 @@ impl Mempool {
     /// state of the mempool to see if previous transactions are marked as
     /// ready.
     fn retrieve_nonce_info(&self, sender_address: Felt, nonce: Felt) -> Result<NonceInfo, MempoolError> {
+        println!("Sender address: {:x} | Nonce: {:x}", sender_address, nonce);
         let nonce = Nonce(nonce);
         let nonce_next = nonce.try_increment()?;
 
@@ -251,10 +252,14 @@ impl Mempool {
         // the nonces of contracts which have not yet been included in the
         // block but are scheduled to.
         let nonce_cached = self.nonce_cache.read().expect("Poisoned lock").get(&sender_address).cloned();
+        println!("Nonce cached: {:?}", nonce_cached);
 
         if let Some(nonce_cached) = nonce_cached {
             match nonce.cmp(&nonce_cached) {
-                std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+                std::cmp::Ordering::Less => {
+                    println!("Invalid nonce first: cached nonce is {:?}, but got {:?}", nonce_cached, nonce);
+                    Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
+                }
                 std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
                 std::cmp::Ordering::Greater => nonce_prev_check(),
             }
@@ -268,7 +273,10 @@ impl Mempool {
                 .unwrap_or_default(); // Defaults to Felt::ZERO if no nonce in db
 
             match nonce.cmp(&nonce_target) {
-                std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+                std::cmp::Ordering::Less => {
+                    println!("Invalid nonce second: target nonce is {:?}, but got {:?}", nonce_target, nonce);
+                    Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
+                }
                 std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
                 std::cmp::Ordering::Greater => nonce_prev_check(),
             }
@@ -298,7 +306,10 @@ impl Mempool {
         };
 
         match nonce.cmp(&target_nonce) {
-            std::cmp::Ordering::Less => Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce)),
+            std::cmp::Ordering::Less => {
+                println!("Invalid nonce for L1 handler: target nonce is {:?}, but got {:?}", target_nonce, nonce);
+                Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
+            }
             std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
             std::cmp::Ordering::Greater => Ok(NonceInfo::pending(nonce, nonce_next)),
         }
