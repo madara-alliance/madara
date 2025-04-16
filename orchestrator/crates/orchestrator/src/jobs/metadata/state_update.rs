@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// # Field Management
 /// - Worker-initialized fields: blocks and paths configurations
 /// - Job-populated fields: last_failed_block_no and tx_hashes (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
     /// Block numbers that need to be settled

@@ -289,6 +289,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
         snos_output_path: Some(format!("{}/{}", l2_block_number.clone(), SNOS_OUTPUT_FILE_NAME)),
         program_output_path: Some(format!("{}/{}", l2_block_number.clone(), PROGRAM_OUTPUT_FILE_NAME)),
         snos_fact: None,
+        snos_n_steps: None,
     };
 
     // Create the common metadata with default values
@@ -507,10 +508,7 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
     let block_number = l2_block_number.parse::<u64>().unwrap() - 1;
 
     // Create the Proving-specific metadata
-    let proving_metadata =
-        ProvingMetadata { block_number, input_path: None, ensure_on_chain_registration: None, download_proof: None };
-
-    // Create the common metadata with default values
+    let proving_metadata = ProvingMetadata { block_number, ..Default::default() };
     let common_metadata = CommonMetadata::default();
 
     // Combine into JobMetadata

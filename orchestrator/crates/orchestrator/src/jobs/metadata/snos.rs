@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 /// # Field Management
 /// - Worker-initialized fields: block_number, full_output, and path configurations
 /// - Job-populated fields: snos_fact (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SnosMetadata {
     // Worker-initialized fields
     /// Block number to process
@@ -24,4 +24,6 @@ pub struct SnosMetadata {
     // Job-populated fields
     /// SNOS fact generated during processing
     pub snos_fact: Option<String>,
+    /// SNOS total steps taken
+    pub snos_n_steps: Option<usize>,
 }
