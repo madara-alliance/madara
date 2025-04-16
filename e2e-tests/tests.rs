@@ -509,7 +509,7 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
 
     // Create the Proving-specific metadata
     let proving_metadata = ProvingMetadata { block_number, ..Default::default() };
-    ProvingMetadata { block_number, input_path: None, ensure_on_chain_registration: None, download_proof: None };
+    let common_metadata = CommonMetadata::default();
 
     // Combine into JobMetadata
     let metadata = JobMetadata { common: common_metadata, specific: JobSpecificMetadata::Proving(proving_metadata) };
