@@ -5,6 +5,8 @@ mod cli;
 mod service;
 mod util;
 
+use crate::cli::l1::MadaraSettlementLayer;
+use crate::service::L1SyncConfig;
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::RunCmd;
@@ -19,6 +21,11 @@ use mc_db::{DatabaseService, TrieLogConfig};
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
 use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
+use mc_settlement_client::eth::event::EthereumEventStream;
+use mc_settlement_client::eth::EthereumClientConfig;
+use mc_settlement_client::gas_price::L1BlockMetrics;
+use mc_settlement_client::starknet::event::StarknetEventStream;
+use mc_settlement_client::starknet::StarknetClientConfig;
 use mc_sync::fetch::fetchers::WarpUpdateConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
@@ -201,18 +208,37 @@ async fn main() -> anyhow::Result<()> {
     mempool.load_txs_from_db().context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 
-    let service_l1_sync = L1SyncService::new(
-        &run_cmd.l1_sync_params,
-        &service_db,
-        l1_gas_setter,
-        chain_config.chain_id.clone(),
-        chain_config.eth_core_contract_address,
-        run_cmd.is_sequencer(),
-        run_cmd.is_devnet(),
-        Arc::clone(&mempool),
-    )
-    .await
-    .context("Initializing the l1 sync service")?;
+    let l1_block_metrics = L1BlockMetrics::register().context("Initializing L1 Block Metrics")?;
+    let service_l1_sync = match &run_cmd.l1_sync_params.settlement_layer {
+        MadaraSettlementLayer::Eth => L1SyncService::<EthereumClientConfig, EthereumEventStream>::create(
+            &run_cmd.l1_sync_params,
+            L1SyncConfig {
+                db: &service_db,
+                l1_gas_provider: l1_gas_setter,
+                l1_core_address: chain_config.eth_core_contract_address.clone(),
+                authority: run_cmd.is_sequencer(),
+                devnet: run_cmd.is_devnet(),
+                mempool: Arc::clone(&mempool),
+                l1_block_metrics: Arc::new(l1_block_metrics),
+            },
+        )
+        .await
+        .context("Initializing the l1 sync service")?,
+        MadaraSettlementLayer::Starknet => L1SyncService::<StarknetClientConfig, StarknetEventStream>::create(
+            &run_cmd.l1_sync_params,
+            L1SyncConfig {
+                db: &service_db,
+                l1_gas_provider: l1_gas_setter,
+                l1_core_address: chain_config.eth_core_contract_address.clone(),
+                authority: run_cmd.is_sequencer(),
+                devnet: run_cmd.is_devnet(),
+                mempool: Arc::clone(&mempool),
+                l1_block_metrics: Arc::new(l1_block_metrics),
+            },
+        )
+        .await
+        .context("Initializing the l1 sync service")?,
+    };
 
     // L2 Sync
 
