@@ -12,8 +12,9 @@ use omniqueue::{Delivery, QueueError};
 use serde::Serialize;
 use url::Url;
 
-use super::QueueType;
+use super::{QueueType, QUEUES};
 use crate::queue::{QueueConfig, QueueProvider};
+use crate::setup::ResourceStatus;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct AWSSQSValidatedArgs {
@@ -96,6 +97,27 @@ impl QueueProvider for SqsQueue {
         self.client.set_queue_attributes().queue_url(queue_url).set_attributes(Some(attributes)).send().await?;
 
         Ok(())
+    }
+
+    async fn exists(&self, queue_config: &QueueConfig) -> bool {
+        let queue_url = self.get_queue_url(queue_config.name.clone());
+        match self.client.get_queue_attributes().queue_url(queue_url).send().await {
+            Ok(_) => true,
+            Err(_) => false
+        }
+    }
+}
+
+#[allow(unreachable_patterns)]
+#[async_trait]
+impl ResourceStatus for SqsQueue {
+    async fn are_all_ready(&self) -> bool {
+        for queue in QUEUES.iter() {
+            if !self.exists(queue).await {
+                return false;
+            }
+        }
+        true
     }
 }
 

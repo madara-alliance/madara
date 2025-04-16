@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use async_trait::async_trait;
+use async_std::task::sleep;
 use aws_config::SdkConfig;
 use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target as EventBridgeTarget};
 use aws_sdk_scheduler::types::{FlexibleTimeWindow, FlexibleTimeWindowMode, Target};
@@ -102,6 +103,8 @@ impl Cron for AWSEventBridge {
             .assume_role_policy_document(assume_role_policy)
             .send()
             .await?;
+
+        sleep(Duration::from_secs(10)).await;
 
         let role_arn = create_role_resp.role().unwrap().arn();
 

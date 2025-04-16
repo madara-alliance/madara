@@ -10,6 +10,7 @@ use color_eyre::eyre::Context;
 use color_eyre::Result;
 
 use crate::data_storage::DataStorage;
+use crate::setup::ResourceStatus;
 
 pub const S3_SETTINGS_NAME: &str = "s3";
 
@@ -128,5 +129,17 @@ impl DataStorage for AWSS3 {
             ))?;
 
         Ok(())
+    }
+
+    async fn exists(&self, bucket_name: &str) -> Result<bool> {
+        Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
+    }
+}
+
+#[allow(unreachable_patterns)]
+#[async_trait]
+impl ResourceStatus for AWSS3 {
+    async fn are_all_ready(&self) -> bool {
+        self.exists(self.bucket.as_str()).await.is_ok()
     }
 }

@@ -115,10 +115,15 @@ pub trait QueueProvider: Send + Sync {
         -> EyreResult<()>;
     async fn consume_message_from_queue(&self, queue: QueueType) -> std::result::Result<Delivery, QueueError>;
     async fn create_queue(&self, queue_config: &QueueConfig) -> EyreResult<()>;
+    async fn exists(&self, queue_config: &QueueConfig) -> bool;
     async fn setup(&self) -> EyreResult<()> {
-        // Creating the queues :
+        // Creating the queues
         for queue in QUEUES.iter() {
-            self.create_queue(queue).await?;
+            if !self.exists(queue).await {
+                self.create_queue(queue).await?;
+            } else {
+                println!("Queue {} already exists, skipping", queue.name);
+            }
         }
         Ok(())
     }

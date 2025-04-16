@@ -3,6 +3,7 @@ use aws_config::SdkConfig;
 use aws_sdk_sns::Client;
 
 use crate::alerts::Alerts;
+use crate::setup::ResourceStatus;
 
 #[derive(Debug, Clone)]
 pub struct AWSSNSValidatedArgs {
@@ -38,5 +39,18 @@ impl Alerts for AWSSNS {
 
     async fn get_topic_name(&self) -> String {
         self.topic_arn.split(":").last().expect("Failed to get last part of topic ARN").to_string()
+    }
+
+    async fn exists(&self) -> color_eyre::Result<bool> {
+        let topic_name = self.get_topic_name().await;
+        Ok(self.client.get_topic_attributes().topic_arn(topic_name).send().await.is_ok())
+    }
+}
+
+#[allow(unreachable_patterns)]
+#[async_trait]
+impl ResourceStatus for AWSSNS {
+    async fn are_all_ready(&self) -> bool {
+        self.exists().await.is_ok()
     }
 }
