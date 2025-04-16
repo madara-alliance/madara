@@ -257,7 +257,7 @@ impl Mempool {
         if let Some(nonce_cached) = nonce_cached {
             match nonce.cmp(&nonce_cached) {
                 std::cmp::Ordering::Less => {
-                    println!("Invalid nonce first: cached nonce is {:?}, but got {:?}", nonce_cached, nonce);
+                    tracing::warn!("Invalid nonce first: cached nonce is {:?}, but got {:?}", nonce_cached, nonce);
                     Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
                 }
                 std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
@@ -274,7 +274,7 @@ impl Mempool {
 
             match nonce.cmp(&nonce_target) {
                 std::cmp::Ordering::Less => {
-                    println!("Invalid nonce second: target nonce is {:?}, but got {:?}", nonce_target, nonce);
+                    tracing::warn!("Invalid nonce second: target nonce is {:?}, but got {:?}", nonce_target, nonce);
                     Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
                 }
                 std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
@@ -307,7 +307,7 @@ impl Mempool {
 
         match nonce.cmp(&target_nonce) {
             std::cmp::Ordering::Less => {
-                println!("Invalid nonce for L1 handler: target nonce is {:?}, but got {:?}", target_nonce, nonce);
+                tracing::warn!("Invalid nonce for L1 handler: target nonce is {:?}, but got {:?}", target_nonce, nonce);
                 Err(MempoolError::StorageError(MadaraStorageError::InvalidNonce))
             }
             std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
