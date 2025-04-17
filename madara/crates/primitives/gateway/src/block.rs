@@ -1,7 +1,4 @@
-use super::{
-    receipt::{ConfirmedReceipt, MsgToL2},
-    transaction::Transaction,
-};
+use super::{receipt::ConfirmedReceipt, transaction::Transaction};
 use mp_block::{
     header::{L1DataAvailabilityMode, PendingHeader},
     FullBlock, PendingFullBlock, TransactionWithReceipt,
@@ -342,8 +339,11 @@ fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transa
         .zip(transaction.iter())
         .enumerate()
         .map(|(index, (receipt, tx))| {
-            let l1_to_l2_consumed_message: Option<MsgToL2> = match tx {
-                Transaction::L1Handler(l1_handler) => MsgToL2::try_from(l1_handler).ok(),
+            let l1_to_l2_consumed_message = match tx {
+                Transaction::L1Handler(l1_handler) => {
+                    let mp_l1_handler: mp_transactions::L1HandlerTransaction = l1_handler.clone().into();
+                    mp_receipt::MsgToL2::try_from(&mp_l1_handler).ok()
+                }
                 _ => None,
             };
             ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)

@@ -54,7 +54,8 @@
     "gas_price_poll": {
       "secs": 10,
       "nanos": 0
-    }
+    },
+    "settlement_layer": "Eth"
   },
   "analytics_params": {
     "analytics_service_name": "madara_analytics",

@@ -1,11 +1,12 @@
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 
 use crate::config::Config;
+use crate::constants::BLOB_DATA_FILE_NAME;
 use crate::jobs::create_job;
+use crate::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::jobs::types::{JobStatus, JobType};
 use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
@@ -25,11 +26,42 @@ impl Worker for DataSubmissionWorker {
             .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::DataSubmission)
             .await?;
 
-        for job in successful_proving_jobs {
-            match create_job(JobType::DataSubmission, job.internal_id.clone(), HashMap::new(), config.clone()).await {
-                Ok(_) => tracing::info!(block_id = %job.internal_id, "Successfully created new data submission job"),
+        for proving_job in successful_proving_jobs {
+            // Extract proving metadata
+            let proving_metadata: ProvingMetadata = proving_job.metadata.specific.try_into().map_err(|e| {
+                tracing::error!(
+                    job_id = %proving_job.internal_id,
+                    error = %e,
+                    "Invalid metadata type for proving job"
+                );
+                e
+            })?;
+
+            // Create DA metadata
+            let da_metadata = JobMetadata {
+                common: CommonMetadata::default(),
+                specific: JobSpecificMetadata::Da(DaMetadata {
+                    block_number: proving_metadata.block_number,
+                    // Set the blob data path using block number
+                    blob_data_path: Some(format!("{}/{BLOB_DATA_FILE_NAME}", proving_metadata.block_number)),
+                    // These will be populated during processing
+                    tx_hash: None,
+                }),
+            };
+
+            match create_job(JobType::DataSubmission, proving_job.internal_id.clone(), da_metadata, config.clone())
+                .await
+            {
+                Ok(_) => tracing::info!(
+                    block_id = %proving_job.internal_id,
+                    "Successfully created new data submission job"
+                ),
                 Err(e) => {
-                    tracing::warn!(block_id = %job.internal_id, error = %e, "Failed to create new data submission job");
+                    tracing::warn!(
+                        block_id = %proving_job.internal_id,
+                        error = %e,
+                        "Failed to create new data submission job"
+                    );
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::DataSubmission)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),

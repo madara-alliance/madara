@@ -1,5 +1,4 @@
 use std::cmp::{max, min};
-use std::collections::HashMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -8,7 +7,9 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 
 use crate::config::Config;
+use crate::constants::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::jobs::create_job;
+use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::jobs::types::JobType;
 use crate::metrics::ORCHESTRATOR_METRICS;
 use crate::workers::Worker;
@@ -26,11 +27,10 @@ impl Worker for SnosWorker {
         let provider = config.starknet_client();
         let block_number_provider = provider.block_number().await?;
 
-        let latest_block_number = if let Some(max_block_to_process) = config.service_config().max_block_to_process {
-            min(max_block_to_process, block_number_provider)
-        } else {
-            block_number_provider
-        };
+        let latest_block_number = config
+            .service_config()
+            .max_block_to_process
+            .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
         tracing::debug!(latest_block_number = %latest_block_number, "Fetched latest block number from starknet");
 
@@ -45,14 +45,27 @@ impl Worker for SnosWorker {
             .unwrap_or(Ok(0))?;
 
         // To be used when testing in specific block range
-        let block_start = if let Some(min_block_to_process) = config.service_config().min_block_to_process {
-            max(min_block_to_process, latest_job_id)
-        } else {
-            latest_job_id
-        };
+        let block_start = config
+            .service_config()
+            .min_block_to_process
+            .map_or(latest_job_id, |min_block| max(min_block, latest_job_id));
 
         for block_num in block_start..latest_block_number + 1 {
-            match create_job(JobType::SnosRun, block_num.to_string(), HashMap::new(), config.clone()).await {
+            // Create typed metadata structure with predefined paths
+            let metadata = JobMetadata {
+                common: CommonMetadata::default(),
+                specific: JobSpecificMetadata::Snos(SnosMetadata {
+                    block_number: block_num,
+                    full_output: false,
+                    // Set the storage paths using block number
+                    cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
+                    snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
+                    program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
+                    snos_fact: None,
+                }),
+            };
+
+            match create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
                 Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
                 Err(e) => {
                     tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");

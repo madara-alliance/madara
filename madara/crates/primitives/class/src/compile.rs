@@ -85,7 +85,10 @@ impl CompressedLegacyContractClass {
 
     pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
         let class_json = self.serialize_to_json()?;
-        Ok(BContractClass::V0(BContractClassV0::try_from_json_string(&class_json)?))
+        match BContractClassV0::try_from_json_string(&class_json) {
+            Ok(class) => Ok(BContractClass::V0(class)),
+            Err(e) => Err(ClassCompilationError::BlockifierClassConstructionFailed(e)),
+        }
     }
 }
 
@@ -122,7 +125,10 @@ impl FlattenedSierraClass {
 
 impl CompiledSierra {
     pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
-        Ok(BContractClass::V1(BContractClassV1::try_from_json_string(&self.0)?))
+        match BContractClassV1::try_from_json_string(&self.0) {
+            Ok(class) => Ok(BContractClass::V1(class)),
+            Err(e) => Err(ClassCompilationError::BlockifierClassConstructionFailed(e)),
+        }
     }
 }
 

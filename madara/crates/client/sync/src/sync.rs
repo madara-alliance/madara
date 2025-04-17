@@ -1,6 +1,6 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
-use mc_eth::state_update::{L1HeadReceiver, L1StateUpdate};
+use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use std::{cmp, time::Duration};
 use tokio::time::Instant;
 
@@ -85,7 +85,7 @@ impl Default for SyncControllerConfig {
 pub struct SyncController<P: ForwardPipeline> {
     forward_pipeline: P,
     config: SyncControllerConfig,
-    current_l1_head: Option<L1StateUpdate>,
+    current_l1_head: Option<StateUpdate>,
     probe: ThrottledRepeatedFuture<u64>,
     sync_metrics: SyncMetrics,
     status: Option<ServiceEvent>,

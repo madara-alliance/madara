@@ -12,7 +12,7 @@ name = "orchestrator"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { version = "0.2.1", features = [
+alloy = { workspace = true, features = [
   "full",
   "node-bindings",
   "rpc-types-debug",
@@ -99,6 +99,8 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+jemallocator = "0.5.4"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]

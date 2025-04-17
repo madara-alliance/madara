@@ -6,10 +6,11 @@ use starknet_types_core::{
     hash::{Pedersen, Poseidon, StarkHash},
 };
 
-mod from_blockifier;
+pub mod from_blockifier;
+
 mod to_starknet_types;
 
-pub use from_blockifier::from_blockifier_execution_info;
+pub use from_blockifier::{from_blockifier_execution_info, MsgToL2};
 pub use starknet_core::types::Hash256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

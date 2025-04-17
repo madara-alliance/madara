@@ -1,3 +1,4 @@
+use alloy::primitives::U256;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 
@@ -33,11 +34,18 @@ fn felt_to_h160(felt: &Felt) -> Result<H160, FeltToH160Error> {
     Ok(H160::from(h160_bytes))
 }
 
+pub fn felt_to_u256(felt: Felt) -> Result<U256, String> {
+    let bytes = felt.to_bytes_be();
+    if bytes.len() > 32 {
+        return Err("Felt value too large for U256".into());
+    }
+    Ok(U256::from_be_bytes(bytes))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-
     #[test]
     fn test_felt_tu_h160() {
         const MAX_H160: [u8; 20] = [0xff; 20];

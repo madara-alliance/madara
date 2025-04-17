@@ -4,6 +4,7 @@
 
 - cli: removed `--n-blocks-to-sync <number of blocks>`, replaced by `--sync-stop-at <height>`
 - refactor: refactor mc-sync crate, and remove mc-block-import crate
+- feat: settlement client introduced instead of just ethereum, starknet client added for settlement
 - fix(gateway-client): fix v0.13.4 gateway deserialization
 - chore: Merge entire madara-orchestrator project into this one
 - fix(primitives): limit legacy class sizes

@@ -1,8 +1,37 @@
+use alloy::primitives::private::derive_more::FromStr;
 use serde::{Deserialize, Serialize};
+use std::fmt;
 use std::time::Duration;
 use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub enum MadaraSettlementLayer {
+    Eth,
+    Starknet,
+}
+
+impl FromStr for MadaraSettlementLayer {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_uppercase().as_str() {
+            "ETH" => Ok(MadaraSettlementLayer::Eth),
+            "STARKNET" => Ok(MadaraSettlementLayer::Starknet),
+            _ => Err(format!("Invalid settlement layer: {}", s)),
+        }
+    }
+}
+
+impl fmt::Display for MadaraSettlementLayer {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            MadaraSettlementLayer::Eth => write!(f, "ETH"),
+            MadaraSettlementLayer::Starknet => write!(f, "STARKNET"),
+        }
+    }
+}
 
 #[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
 pub struct L1SyncParams {
@@ -46,4 +75,11 @@ pub struct L1SyncParams {
         value_parser = parse_duration,
     )]
     pub gas_price_poll: Duration,
+
+    #[clap(
+        env = "MADARA_SETTLEMENT_LAYER",
+        long,
+        default_value_t = MadaraSettlementLayer::Eth,
+    )]
+    pub settlement_layer: MadaraSettlementLayer,
 }

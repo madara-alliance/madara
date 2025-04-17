@@ -17,8 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 # Madara
 mp-rpc = { workspace = true }
-
-# Madara
+mp-transactions = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true }
 
@@ -29,13 +28,18 @@ starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
+
 # Other
+anyhow.workspace = true
 primitive-types = { workspace = true }
 rstest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_with.workspace = true
 thiserror = { workspace = true }
 tracing.workspace = true
+sha3.workspace = true
+
 
 [dev-dependencies]
+rstest.workspace = true
 bincode = { workspace = true }

@@ -4,7 +4,7 @@ mod types;
 
 use std::str::FromStr;
 
-use alloy::primitives::B256;
+use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
@@ -63,7 +63,12 @@ impl ProverClient for SharpProverService {
     }
 
     #[tracing::instrument(skip(self), ret, err)]
-    async fn get_task_status(&self, job_key: &str, fact: &str) -> Result<TaskStatus, ProverClientError> {
+    async fn get_task_status(
+        &self,
+        job_key: &str,
+        fact: Option<String>,
+        _cross_verify: bool,
+    ) -> Result<TaskStatus, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "get_task_status",
@@ -117,26 +122,34 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(TaskStatus::Processing)
             }
-            CairoJobStatus::ONCHAIN => {
-                let fact = B256::from_str(fact).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-                if self.fact_checker.is_valid(&fact).await? {
-                    tracing::info!(
-                        log_type = "onchain",
-                        category = "get_task_status",
-                        function_type = "cairo_pie",
-                        "Cairo PIE task status: ONCHAIN and fact is valid."
-                    );
-                    Ok(TaskStatus::Succeeded)
-                } else {
-                    tracing::error!(
-                        log_type = "onchain_failed",
-                        category = "get_task_status",
-                        function_type = "cairo_pie",
-                        "Cairo PIE task status: ONCHAIN and fact is not valid."
-                    );
-                    Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
+            CairoJobStatus::ONCHAIN => match fact {
+                Some(fact_str) => {
+                    let fact =
+                        B256::from_str(&fact_str).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+
+                    if self.fact_checker.is_valid(&fact).await? {
+                        tracing::info!(
+                            log_type = "onchain",
+                            category = "get_task_status",
+                            function_type = "cairo_pie",
+                            "Cairo PIE task status: ONCHAIN and fact is valid."
+                        );
+                        Ok(TaskStatus::Succeeded)
+                    } else {
+                        tracing::error!(
+                            log_type = "onchain_failed",
+                            category = "get_task_status",
+                            function_type = "cairo_pie",
+                            "Cairo PIE task status: ONCHAIN and fact is not valid."
+                        );
+                        Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
+                    }
                 }
-            }
+                None => {
+                    tracing::debug!("No fact provided for verification, considering job successful");
+                    Ok(TaskStatus::Succeeded)
+                }
+            },
         }
     }
 }

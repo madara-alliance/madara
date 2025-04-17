@@ -15,7 +15,7 @@
 //!
 //! # Examples
 //! ```
-//! use utils::http_client::HttpClient;
+//! use orchestrator_utils::http_client::HttpClient;
 //!
 //! let client = HttpClient::builder("https://api.example.com")
 //!     .default_header("Authorization", "Bearer token")
@@ -387,6 +387,7 @@ mod http_client_tests {
     }
 
     /// # Request Builder Tests
+    ///
     /// Verifies that all HTTP methods (GET, POST, PUT, DELETE, etc.)
     /// can be correctly set and are properly sent in requests
     #[test]
@@ -484,6 +485,7 @@ mod http_client_tests {
     }
 
     /// # Form Data Tests
+    ///
     /// Validates multipart form text field handling:
     /// - Single field addition
     /// - Multiple fields
@@ -618,6 +620,7 @@ mod http_client_tests {
     }
 
     /// # Integration Tests
+    ///
     /// Tests complete request flow including:
     /// - URL construction
     /// - Header merging

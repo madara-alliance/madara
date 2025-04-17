@@ -31,7 +31,7 @@ bonsai-trie.workspace = true
 
 mc-analytics.workspace = true
 mc-db.workspace = true
-mc-eth.workspace = true
+mc-settlement-client.workspace = true
 mc-gateway-client.workspace = true
 mc-telemetry.workspace = true
 
