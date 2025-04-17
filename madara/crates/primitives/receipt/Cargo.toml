@@ -16,10 +16,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara
-mp-rpc = { workspace = true }
-mp-transactions = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true }
+mp-rpc = { workspace = true }
+mp-transactions = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
@@ -34,10 +34,9 @@ primitive-types = { workspace = true }
 rstest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_with.workspace = true
+sha3.workspace = true
 thiserror = { workspace = true }
 tracing.workspace = true
-sha3.workspace = true
-
 
 [dev-dependencies]
 bincode = { workspace = true }
