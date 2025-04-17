@@ -69,8 +69,8 @@ pub struct L2SyncParams {
 
     /// Compute post-v0.13.2 hashes. This means that the feeder gateway will display different block commitments
     /// for blocks that were created before v0.13.2. When p2p sync will be merged, this option will become the
-    /// default, as post-v0.13.2 commitments are mendatory for checking the integrity of these old blocks.
-    /// Madara cannot yet check whether the post-v0.13.2 commiments are correct. Thus, for now, enabling this setting
+    /// default, as post-v0.13.2 commitments are mandatory for checking the integrity of these old blocks.
+    /// Madara cannot yet check whether the post-v0.13.2 commitments are correct. Thus, for now, enabling this setting
     /// will mean that block hashes are trusted for these legacy blocks.
     #[clap(env = "MADARA_POST_V0_13_2_HASHES", long)]
     pub post_v0_13_2_hashes: bool,

@@ -25,7 +25,6 @@ impl ContractDbBlockUpdate {
         let nonces_from_updates =
             state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
 
-        // let nonce_map: HashMap<Felt, Felt> = nonces_from_deployed.chain(nonces_from_updates).collect(); // set nonce to zero when contract deployed
         let nonce_map: HashMap<Felt, Felt> = nonces_from_updates.collect();
 
         let contract_class_updates_replaced = state_diff

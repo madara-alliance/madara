@@ -59,7 +59,7 @@ impl MadaraBackend {
     /// This function takes a PendingFullBlock because the commitments can only be computed once we applied the state to the global
     /// tries. This function will close the block and compute the commitments.
     ///
-    /// The function returnes the new computed block_hash.
+    /// The function returns the new computed block_hash.
     ///
     /// `pre_v0_13_2_hash_override`: when true, we will compute the post-v0.13.2 commitments when given a pre-v0.13.2 block.
     pub async fn add_full_block_with_classes(
