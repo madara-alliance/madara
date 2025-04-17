@@ -178,7 +178,6 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
             Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
     }
 
-
     Ok(Arc::new(Config::new(
         orchestrator_params,
         Arc::new(rpc_client),
