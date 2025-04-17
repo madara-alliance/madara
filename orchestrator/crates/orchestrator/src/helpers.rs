@@ -8,8 +8,10 @@ use crate::jobs::types::JobItem;
 use crate::jobs::JobError;
 use crate::queue::job_queue::add_job_to_process_queue;
 
+#[derive(Default)]
 pub struct ProcessingLocks {
-    pub snos_job_processing_lock: Arc<JobProcessingState>,
+    pub snos_job_processing_lock: Option<Arc<JobProcessingState>>,
+    pub proving_job_processing_lock: Option<Arc<JobProcessingState>>,
 }
 
 pub struct JobProcessingState {

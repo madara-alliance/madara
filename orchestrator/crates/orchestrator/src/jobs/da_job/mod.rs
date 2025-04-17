@@ -391,6 +391,7 @@ pub async fn state_update_to_blob_data(
     Ok(blob_data)
 }
 
+/// To store the blob data using the storage client with path <block_number>/blob_data.txt
 async fn store_blob_data(blob_data: Vec<BigUint>, blob_data_path: &str, config: Arc<Config>) -> Result<(), JobError> {
     let storage_client = config.storage();
 
