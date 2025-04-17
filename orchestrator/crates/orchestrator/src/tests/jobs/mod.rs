@@ -10,7 +10,7 @@ use tokio::time::sleep;
 use crate::constants::CAIRO_PIE_FILE_NAME;
 use crate::jobs::job_handler_factory::mock_factory;
 use crate::jobs::metadata::{
-    CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
+    CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
 };
 use crate::jobs::types::{ExternalId, JobStatus, JobType, JobVerificationStatus};
 use crate::jobs::{create_job, handle_job_failure, process_job, retry_job, verify_job, Job, JobError, MockJob};
@@ -100,14 +100,14 @@ async fn create_job_job_exists_in_db_works() {
         .await;
 
     let database_client = services.config.database();
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
 
     // Create a proper JobMetadata for the test
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number: 0,
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
             ensure_on_chain_registration: None,
             download_proof: None,
         }),
@@ -151,7 +151,7 @@ async fn create_job_job_handler_is_not_implemented_panics() {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
             block_number: 0,
-            input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
+            input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", "0", CAIRO_PIE_FILE_NAME))),
             ensure_on_chain_registration: None,
             download_proof: None,
         }),
@@ -192,7 +192,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     let mut job_handler = MockJob::new();
 
     // Creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
@@ -244,7 +244,7 @@ async fn process_job_handles_panic() {
     let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
 
     // Creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
 
     let mut job_handler = MockJob::new();
     // Setting up mock to panic when process_job is called
@@ -292,7 +292,7 @@ async fn process_job_with_job_exists_in_db_with_invalid_job_processing_status_er
     let database_client = services.config.database();
 
     // creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
 
     assert!(process_job(job_item.id, services.config.clone()).await.is_err());
 
@@ -364,7 +364,7 @@ async fn process_job_two_workers_process_same_job_works() {
     let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
 
     // Creating the job in the db
-    db_client.create_job(job_item.clone()).await.unwrap();
+    db_client.create_job_item(job_item.clone()).await.unwrap();
 
     let config_1 = services.config.clone();
     let config_2 = services.config.clone();
@@ -420,7 +420,7 @@ async fn process_job_job_handler_returns_error_works() {
     let job_item = build_job_item(JobType::SnosRun, JobStatus::Created, 1);
 
     // Creating the job in the db
-    db_client.create_job(job_item.clone()).await.unwrap();
+    db_client.create_job_item(job_item.clone()).await.unwrap();
 
     assert!(process_job(job_item.id, services.config.clone()).await.is_ok());
 
@@ -447,10 +447,10 @@ async fn verify_job_with_verified_status_works() {
     let mut job_handler = MockJob::new();
 
     // creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
     // expecting process job function in job processor to return the external ID
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Verified));
-    job_handler.expect_max_process_attempts().returning(move || 2u64);
+    job_handler.expect_max_process_attempts().returning(move || 2u16);
 
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
@@ -493,9 +493,9 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     let mut job_handler = MockJob::new();
 
     // creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
-    job_handler.expect_max_process_attempts().returning(move || 2u64);
+    job_handler.expect_max_process_attempts().returning(move || 2u16);
 
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
@@ -540,12 +540,12 @@ async fn verify_job_with_rejected_status_works() {
     job_item.metadata.common.process_attempt_no = 1;
 
     // Creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
 
     let mut job_handler = MockJob::new();
     // Expecting verify_job function to return Rejected status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Rejected("".to_string())));
-    job_handler.expect_max_process_attempts().returning(move || 1u64);
+    job_handler.expect_max_process_attempts().returning(move || 1u16);
 
     // Mocking the `get_job_handler` call
     let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
@@ -588,12 +588,12 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
     let job_item = build_job_item(JobType::DataSubmission, JobStatus::PendingVerification, 1);
 
     // Creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
 
     let mut job_handler = MockJob::new();
     // Expecting verify_job function to return Pending status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Pending));
-    job_handler.expect_max_verification_attempts().returning(move || 2u64);
+    job_handler.expect_max_verification_attempts().returning(move || 2u16);
     job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
 
     // Mocking the `get_job_handler` call
@@ -643,12 +643,12 @@ async fn verify_job_with_pending_status_works() {
     job_item.metadata.common.verification_attempt_no = 1;
 
     // Creating job in database
-    database_client.create_job(job_item.clone()).await.unwrap();
+    database_client.create_job_item(job_item.clone()).await.unwrap();
 
     let mut job_handler = MockJob::new();
     // Expecting verify_job function to return Pending status
     job_handler.expect_verify_job().times(1).returning(move |_, _| Ok(JobVerificationStatus::Pending));
-    job_handler.expect_max_verification_attempts().returning(move || 1u64);
+    job_handler.expect_max_verification_attempts().returning(move || 1u16);
     job_handler.expect_verification_polling_delay_seconds().returning(move || 2u64);
 
     // Mocking the `get_job_handler` call
@@ -703,7 +703,7 @@ async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobTy
     let job_id = job_expected.id;
 
     // Feeding the job to DB
-    database_client.create_job(job_expected.clone()).await.unwrap();
+    database_client.create_job_item(job_expected.clone()).await.unwrap();
 
     // Calling handle_job_failure
     handle_job_failure(job_id, services.config.clone()).await.expect("handle_job_failure failed to run");
@@ -734,7 +734,7 @@ async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobT
     let job_id = job.id;
 
     // Feeding the job to DB
-    database_client.create_job(job.clone()).await.unwrap();
+    database_client.create_job_item(job.clone()).await.unwrap();
 
     // Calling handle_job_failure
     handle_job_failure(job_id, services.config.clone()).await.expect("handle_job_failure failed to run");
@@ -774,7 +774,7 @@ async fn handle_job_failure_job_status_completed_works(#[case] job_type: JobType
     let job_id = job_expected.id;
 
     // Feeding the job to DB
-    database_client.create_job(job_expected.clone()).await.unwrap();
+    database_client.create_job_item(job_expected.clone()).await.unwrap();
 
     // Calling handle_job_failure
     handle_job_failure(job_id, services.config.clone())
@@ -799,7 +799,7 @@ async fn test_retry_job_adds_to_process_queue() {
 
     // Create a failed job
     let job_item = build_job_item(JobType::DataSubmission, JobStatus::Failed, 1);
-    services.config.database().create_job(job_item.clone()).await.unwrap();
+    services.config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
     // Retry the job
@@ -834,7 +834,7 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
 
     // Create a job with non-Failed status
     let job_item = build_job_item(JobType::DataSubmission, initial_status.clone(), 1);
-    services.config.database().create_job(job_item.clone()).await.unwrap();
+    services.config.database().create_job_item(job_item.clone()).await.unwrap();
     let job_id = job_item.id;
 
     // Attempt to retry the job

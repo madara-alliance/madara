@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
     StateUpdateMetadata,
 };
 use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
@@ -39,7 +39,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: internal_id,
-                input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
+                input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
                 ensure_on_chain_registration: None,
                 download_proof: None,
             }),

@@ -1,12 +1,14 @@
 use alloy::network::{Ethereum, EthereumWallet};
-use alloy::providers::fillers::{ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller};
+use alloy::providers::fillers::{
+    BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
+};
 use alloy::providers::{Identity, RootProvider};
 use alloy::transports::http::{Client, Http};
 use alloy_primitives::U256;
 
 pub type LocalWalletSignerMiddleware = FillProvider<
     JoinFill<
-        JoinFill<JoinFill<JoinFill<Identity, GasFiller>, NonceFiller>, ChainIdFiller>,
+        JoinFill<Identity, JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>>,
         WalletFiller<EthereumWallet>,
     >,
     RootProvider<Http<Client>>,

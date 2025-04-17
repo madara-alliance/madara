@@ -6,7 +6,7 @@ use mc_exec::execution_result_to_tx_trace;
 use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::ExecutionContext;
 use mp_chain_config::StarknetVersion;
-use mp_rpc::TraceBlockTransactionsResult;
+use mp_rpc::TraceTransactionResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -17,7 +17,7 @@ pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion
 pub async fn trace_transaction(
     starknet: &Starknet,
     transaction_hash: Felt,
-) -> StarknetRpcResult<TraceBlockTransactionsResult> {
+) -> StarknetRpcResult<TraceTransactionResult> {
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)
@@ -51,5 +51,5 @@ pub async fn trace_transaction(
     let trace = execution_result_to_tx_trace(&execution_result)
         .or_internal_server_error("Converting execution infos to tx trace")?;
 
-    Ok(TraceBlockTransactionsResult { transaction_hash, trace_root: trace })
+    Ok(TraceTransactionResult { trace })
 }

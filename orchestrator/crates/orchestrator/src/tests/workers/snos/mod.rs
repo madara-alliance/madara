@@ -79,7 +79,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
         job_handler.expect_create_job().returning(move |_, _, _| Ok(job_item_cloned.clone()));
 
         // creating jobs call expectations
-        db.expect_create_job()
+        db.expect_create_job_item()
             .withf(move |item| item.internal_id == i.clone().to_string())
             .returning(move |_| Ok(job_item.clone()));
     }

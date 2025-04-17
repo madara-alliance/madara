@@ -3,7 +3,7 @@ pub mod error;
 mod types;
 use std::str::FromStr;
 
-use alloy::primitives::B256;
+use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;

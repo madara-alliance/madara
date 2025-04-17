@@ -15,6 +15,7 @@ pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
 pub use l2::*;
+use mp_utils::crypto::ZeroingPrivateKey;
 pub use rpc::*;
 use serde::{Deserialize, Serialize};
 use std::str::FromStr;
@@ -212,6 +213,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub chain_config_override: ChainConfigOverrideParams,
+
+    /// The private key used to sign the blocks.
+    #[clap(env = "MADARA_PRIVATE_KEY", long, value_name = "PRIVATE KEY")]
+    pub private_key: Option<String>,
 }
 
 impl RunCmd {
@@ -258,7 +263,7 @@ impl RunCmd {
         Ok(())
     }
 
-    pub fn chain_config(&self) -> anyhow::Result<Arc<ChainConfig>> {
+    pub fn chain_config(&mut self) -> anyhow::Result<Arc<ChainConfig>> {
         let mut chain_config = match (self.preset.as_ref(), self.chain_config_path.as_ref(), self.devnet) {
             // Read from the preset if provided
             (Some(preset), _, _) => ChainConfig::from(preset),
@@ -280,6 +285,11 @@ impl RunCmd {
 
         if !self.chain_config_override.overrides.is_empty() {
             chain_config = self.chain_config_override.override_chain_config(chain_config)?;
+        };
+
+        chain_config.private_key = match self.private_key.take() {
+            Some(s) => s.try_into().context("Failed to parse private key")?,
+            None => ZeroingPrivateKey::default(),
         };
 
         Ok(Arc::new(chain_config))

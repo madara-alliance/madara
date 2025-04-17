@@ -1,3 +1,4 @@
+use alloy::primitives::U256;
 use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 
@@ -54,6 +55,12 @@ impl ToFelt for &ContractAddress {
 impl ToFelt for H160 {
     fn to_felt(self) -> Felt {
         Felt::from_bytes_be_slice(&self.0)
+    }
+}
+
+impl ToFelt for U256 {
+    fn to_felt(self) -> Felt {
+        Felt::from_bytes_be(&self.to_be_bytes())
     }
 }
 
@@ -124,6 +131,7 @@ impl fmt::Debug for DisplayFeltAsHex {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rstest::*;
     use starknet_core::types::EthAddress;
 
     #[test]
@@ -177,5 +185,27 @@ mod tests {
         let other_chain_id = ChainId::Other("SN_OTHER".to_string());
         let expected_chain_id = Felt::from_hex_unchecked("0x534e5f4f54484552");
         assert_eq!(other_chain_id.to_felt(), expected_chain_id);
+    }
+
+    #[rstest]
+    #[case(
+        "12345678123456789",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x2b, 0xdc, 0x54, 0x2f, 0x0f, 0x59, 0x15]
+    )]
+    #[case(
+        "340282366920938463463374607431768211455",
+        [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+    )]
+    #[case(
+        "7237005577332262213973186563042994240829374041602535252466099000494570602495",
+        [0x0f, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]
+    )]
+    fn u256_to_felt_works(#[case] input: &str, #[case] expected_bytes: [u8; 32]) {
+        let u256_value = U256::from_str_radix(input, 10).expect("Failed to parse U256");
+        let expected = Felt::from_bytes_be(&expected_bytes);
+
+        let result = u256_value.to_felt();
+
+        assert_eq!(result, expected, "u256_to_felt failed for input: {}", input);
     }
 }
