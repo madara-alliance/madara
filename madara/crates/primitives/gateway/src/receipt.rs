@@ -1,15 +1,13 @@
-use mp_receipt::{Event, L1Gas, MsgToL1, MsgToL2};
-use primitive_types::H256;
-use serde::{Deserialize, Serialize};
-use starknet_types_core::felt::Felt;
-
 use crate::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
     Transaction,
 };
+use mp_receipt::{Event, L1Gas, MsgToL1, MsgToL2};
+use serde::{Deserialize, Serialize};
+use starknet_types_core::felt::Felt;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct ConfirmedReceipt {
     pub transaction_hash: Felt,
     pub transaction_index: u64,
@@ -86,7 +84,7 @@ impl ConfirmedReceipt {
         let message_hash = message_to_l2.hash();
 
         mp_receipt::L1HandlerTransactionReceipt {
-            message_hash: H256::from_slice(message_hash.as_bytes()),
+            message_hash,
             transaction_hash: self.transaction_hash,
             actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
@@ -143,7 +141,7 @@ fn execution_result(status: ExecutionStatus, reason: Option<String>) -> mp_recei
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct ExecutionResources {
     pub builtin_instance_counter: BuiltinCounters,
     pub n_steps: u64,

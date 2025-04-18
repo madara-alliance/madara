@@ -1,3 +1,4 @@
+use mc_db::{MadaraBackendConfig, TrieLogConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
@@ -35,4 +36,34 @@ pub struct DbParams {
     /// See `--db-max-kept-snapshots` to understand what snapshots are used for.
     #[clap(env = "MADARA_DB_SNAPSHOT_INTERVAL", long, default_value_t = 5)]
     pub db_snapshot_interval: u64,
+
+    /// Periodically create a backup, for debugging purposes. Use it with `--backup-dir <PATH>`.
+    #[clap(env = "MADARA_BACKUP_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
+    pub backup_every_n_blocks: Option<u64>,
+
+    /// Periodically flushes the database from ram to disk based on the number
+    /// of blocks synchronized since the last flush. You can set this to a
+    /// higher number depending on how fast your machine is at synchronizing
+    /// blocks and how much ram it has available.
+    ///
+    /// Note that keeping this value high could lead to blocks being stored in
+    /// ram for longer periods of time before they are written to disk. This
+    /// might be an issue for chains which synchronize slowly.
+    #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
+    pub flush_every_n_blocks: Option<u64>,
+}
+
+impl DbParams {
+    pub fn backend_config(&self) -> MadaraBackendConfig {
+        MadaraBackendConfig::new(&self.base_path)
+            .restore_from_latest_backup(self.restore_from_latest_backup)
+            .backup_dir(self.backup_dir.clone())
+            .trie_log(TrieLogConfig {
+                max_saved_trie_logs: self.db_max_saved_trie_logs,
+                max_kept_snapshots: self.db_max_kept_snapshots,
+                snapshot_interval: self.db_snapshot_interval,
+            })
+            .backup_every_n_blocks(self.backup_every_n_blocks)
+            .flush_every_n_blocks(self.flush_every_n_blocks)
+    }
 }

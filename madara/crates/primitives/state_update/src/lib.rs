@@ -1,9 +1,10 @@
-mod into_starknet_types;
-
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
+use std::collections::HashMap;
+
+mod into_starknet_types;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
@@ -19,13 +20,25 @@ pub struct PendingStateUpdate {
     pub state_diff: StateDiff,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DeclaredClassCompiledClass {
+    Sierra(/* compiled_class_hash */ Felt),
+    Legacy,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
+    /// Changed storage values. Mapping (contract_address, storage_key) => value.
     pub storage_diffs: Vec<ContractStorageDiffItem>,
+    /// New declared classes. List of class hashes.
     pub deprecated_declared_classes: Vec<Felt>,
+    /// New declared classes. Mapping class_hash => compiled_class_hash.
     pub declared_classes: Vec<DeclaredClassItem>,
+    /// New contract. Mapping contract_address => class_hash.
     pub deployed_contracts: Vec<DeployedContractItem>,
+    /// Contract has changed class. Mapping contract_address => class_hash.
     pub replaced_classes: Vec<ReplacedClassItem>,
+    /// New contract nonce. Mapping contract_address => nonce.
     pub nonces: Vec<NonceUpdate>,
 }
 
@@ -139,6 +152,18 @@ impl StateDiff {
             .collect();
 
         Poseidon::hash_array(&elements)
+    }
+
+    pub fn all_declared_classes(&self) -> HashMap<Felt, DeclaredClassCompiledClass> {
+        self.declared_classes
+            .iter()
+            .map(|class| (class.class_hash, DeclaredClassCompiledClass::Sierra(class.compiled_class_hash)))
+            .chain(
+                self.deprecated_declared_classes
+                    .iter()
+                    .map(|class_hash| (*class_hash, DeclaredClassCompiledClass::Legacy)),
+            )
+            .collect()
     }
 }
 

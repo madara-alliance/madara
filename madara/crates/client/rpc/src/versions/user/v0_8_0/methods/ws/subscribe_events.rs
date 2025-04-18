@@ -1,11 +1,10 @@
-use mp_block::BlockId;
-use starknet_types_core::felt::Felt;
-
 use crate::{
     errors::{ErrorExtWs, StarknetWsApiError},
     utils::event_match_filter,
     versions::user::v0_7_1::methods::read::get_events::drain_block_events,
 };
+use mp_block::BlockId;
+use starknet_types_core::felt::Felt;
 
 use super::BLOCK_PAST_LIMIT;
 
@@ -148,8 +147,6 @@ mod test {
                     },
                     mp_state_update::StateDiff::default(),
                     vec![],
-                    None,
-                    None,
                 )
                 .expect("Storing block");
 

@@ -5,11 +5,10 @@ use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
 use crate::eth::event::EthereumEventStream;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
-use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
-use crate::state_update::{update_l1, StateUpdate};
+use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
-use alloy::eips::BlockNumberOrTag;
+use alloy::eips::{BlockId, BlockNumberOrTag};
 use alloy::primitives::{keccak256, Address, B256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
 use alloy::rpc::types::Filter;
@@ -21,7 +20,6 @@ use bitvec::macros::internal::funty::Fundamental;
 use error::EthereumClientError;
 use futures::StreamExt;
 use mc_db::l1_db::LastSyncedEventBlock;
-use mc_db::MadaraBackend;
 use mp_convert::{felt_to_u256, ToFelt};
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
@@ -84,7 +82,7 @@ impl SettlementClientTrait for EthereumClient {
     type Config = EthereumClientConfig;
     type StreamType = EthereumEventStream;
     fn get_client_type(&self) -> ClientType {
-        ClientType::ETH
+        ClientType::Eth
     }
 
     /// Retrieves the latest Ethereum block number
@@ -130,37 +128,33 @@ impl SettlementClientTrait for EthereumClient {
         }
     }
 
-    /// Get the last Starknet block number verified on L1
-    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError> {
-        self.l1_core_contract.stateBlockNumber().call().await.map(|block_number| block_number._0.as_u64()).map_err(
-            |e| -> SettlementClientError {
-                EthereumClientError::Contract(format!("Failed to get state block number: {}", e)).into()
-            },
-        )
-    }
-
-    /// Get the last Starknet state root verified on L1
-    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError> {
-        let state_root = self.l1_core_contract.stateRoot().call().await.map_err(|e| -> SettlementClientError {
-            EthereumClientError::Contract(format!("Failed to get state root from L1: {}", e)).into()
-        })?;
-
-        Ok(state_root._0.to_felt())
-    }
-
-    /// Get the last Starknet block hash verified on L1
-    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError> {
-        let block_hash = self.l1_core_contract.stateBlockHash().call().await.map_err(|e| -> SettlementClientError {
-            EthereumClientError::Contract(format!("Failed to get state block hash from L1: {}", e)).into()
-        })?;
-
-        Ok(block_hash._0.to_felt())
-    }
-
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
-        let block_number = self.get_last_verified_block_number().await?;
-        let block_hash = self.get_last_verified_block_hash().await?;
-        let global_root = self.get_last_verified_state_root().await?;
+        // Get the latest block_n first, to guard against the case when the contract state changed in between the calls following calls.
+        let latest_block_n = self.get_latest_block_number().await?;
+
+        let block_number =
+            self.l1_core_contract.stateBlockNumber().block(BlockId::number(latest_block_n)).call().await.map_err(
+                |e| -> SettlementClientError {
+                    EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
+                },
+            )?;
+        let block_number: u64 = block_number._0.as_u64();
+
+        let global_root =
+            self.l1_core_contract.stateRoot().block(BlockId::number(latest_block_n)).call().await.map_err(
+                |e| -> SettlementClientError {
+                    EthereumClientError::Contract(format!("Failed to get state root: {e:#}")).into()
+                },
+            )?;
+        let global_root = global_root._0.to_felt();
+
+        let block_hash =
+            self.l1_core_contract.stateBlockHash().block(BlockId::number(latest_block_n)).call().await.map_err(
+                |e| -> SettlementClientError {
+                    EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
+                },
+            )?;
+        let block_hash = block_hash._0.to_felt();
 
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
@@ -175,9 +169,8 @@ impl SettlementClientTrait for EthereumClient {
     /// This is a long-running function that blocks the current task until cancelled.
     async fn listen_for_update_state_events(
         &self,
-        backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
-        l1_block_metrics: Arc<L1BlockMetrics>,
+        worker: StateUpdateWorker,
     ) -> Result<(), SettlementClientError> {
         let event_filter = self.l1_core_contract.event_filter::<StarknetCoreContract::LogStateUpdate>();
 
@@ -202,16 +195,16 @@ impl SettlementClientTrait for EthereumClient {
             .await
         {
             let log = event_result.map_err(|e| -> SettlementClientError {
-                EthereumClientError::EventStream { message: format!("Failed to process event: {}", e) }.into()
+                EthereumClientError::EventStream { message: format!("Failed to process event: {e:#}") }.into()
             })?;
 
             let format_event = convert_log_state_update(log.0.clone()).map_err(|e| -> SettlementClientError {
-                EthereumClientError::StateUpdate { message: format!("Failed to convert log state update: {}", e) }
+                EthereumClientError::StateUpdate { message: format!("Failed to convert log state update: {e:#}") }
                     .into()
             })?;
 
-            update_l1(&backend, format_event, l1_block_metrics.clone()).map_err(|e| -> SettlementClientError {
-                EthereumClientError::StateUpdate { message: format!("Failed to update L1 state: {}", e) }.into()
+            worker.update_state(format_event).map_err(|e| -> SettlementClientError {
+                EthereumClientError::StateUpdate { message: format!("Failed to update L1 state: {e:#}") }.into()
             })?;
         }
 
@@ -395,29 +388,21 @@ pub mod eth_client_getter_test {
     }
 
     #[tokio::test]
-    async fn get_last_verified_block_hash_works() {
+    async fn get_current_core_contract_state_works() {
         let eth_client = create_ethereum_client(get_anvil_url());
-        let block_hash =
-            eth_client.get_last_verified_block_hash().await.expect("issue while getting the last verified block hash");
-        let expected =
-            U256::from_str_radix(L2_BLOCK_HASH, 10).expect("Should parse the predefined L2 block hash").to_felt();
-        assert_eq!(block_hash, expected, "latest block hash not matching");
-    }
-
-    #[tokio::test]
-    async fn get_last_state_root_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
-        let state_root = eth_client.get_last_verified_state_root().await.expect("issue while getting the state root");
-        let expected =
-            U256::from_str_radix(L2_STATE_ROOT, 10).expect("Should parse the predefined L2 state root").to_felt();
-        assert_eq!(state_root, expected, "latest block state root not matching");
-    }
-
-    #[tokio::test]
-    async fn get_last_verified_block_number_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
-        let block_number = eth_client.get_last_verified_block_number().await.expect("issue");
-        assert_eq!(block_number, L2_BLOCK_NUMBER, "verified block number not matching");
+        let state_update = eth_client.get_current_core_contract_state().await.expect("issue while getting the state");
+        assert_eq!(
+            state_update,
+            StateUpdate {
+                block_number: L2_BLOCK_NUMBER,
+                global_root: U256::from_str_radix(L2_STATE_ROOT, 10)
+                    .expect("Should parse the predefined L2 state root")
+                    .to_felt(),
+                block_hash: U256::from_str_radix(L2_BLOCK_HASH, 10)
+                    .expect("Should parse the predefined L2 block hash")
+                    .to_felt()
+            }
+        )
     }
 }
 
@@ -821,20 +806,24 @@ mod l1_messaging_tests {
 #[cfg(test)]
 mod eth_client_event_subscription_test {
     use super::*;
-    use std::{sync::Arc, time::Duration};
-
     use crate::eth::event::EthereumEventStream;
     use crate::eth::{EthereumClient, EthereumClientConfig, StarknetCoreContract};
+    use crate::gas_price::L1BlockMetrics;
     use crate::state_update::state_update_worker;
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
-    use mc_db::DatabaseService;
+    use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use rstest::*;
+    use tracing_test::traced_test;
     use url::Url;
 
     sol!(
-        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b506101618061001c5f395ff3fe608060405234801561000f575f80fd5b5060043610610029575f3560e01c80634185df151461002d575b5f80fd5b610035610037565b005b5f7f0639349b21e886487cd6b341de2050db8ab202d9c6b0e7a2666d598e5fcf81a690505f620a1caf90505f7f0279b69383ea92624c1ae4378ac7fae6428f47bbd21047ea0290c3653064188590507fd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c8383836040516100b9939291906100f6565b60405180910390a1505050565b5f819050919050565b6100d8816100c6565b82525050565b5f819050919050565b6100f0816100de565b82525050565b5f6060820190506101095f8301866100cf565b61011660208301856100e7565b61012360408301846100cf565b94935050505056fea2646970667358221220fbc6fd165c86ed9af0c5fcab2830d4a72894fd6a98e9c16dbf9101c4c22e2f7d64736f6c634300081a0033")]
+        #[sol(rpc, bytecode="60806040526c2387986f739797d912cba45da05f55620a1cae6001556d373446be73aadaaea327cd6fe8886002553480156037575f80fd5b50610228806100455f395ff3fe608060405234801561000f575f80fd5b506004361061004a575f3560e01c806335befa5d1461004e578063382d83e31461006c5780634185df151461008a5780639588eca214610094575b5f80fd5b6100566100b2565b6040516100639190610173565b60405180910390f35b6100746100bb565b60405161008191906101a4565b60405180910390f35b6100926100c4565b005b61009c610153565b6040516100a991906101a4565b60405180910390f35b5f600154905090565b5f600254905090565b5f7f0639349b21e886487cd6b341de2050db8ab202d9c6b0e7a2666d598e5fcf81a690505f620a1caf90505f7f0279b69383ea92624c1ae4378ac7fae6428f47bbd21047ea0290c3653064188590507fd342ddf7a308dec111745b00315c14b7efb2bdae570a6856e088ed0c65a3576c838383604051610146939291906101bd565b60405180910390a1505050565b5f8054905090565b5f819050919050565b61016d8161015b565b82525050565b5f6020820190506101865f830184610164565b92915050565b5f819050919050565b61019e8161018c565b82525050565b5f6020820190506101b75f830184610195565b92915050565b5f6060820190506101d05f830186610195565b6101dd6020830185610164565b6101ea6040830184610195565b94935050505056fea264697066735822122016ed1b830e3661c2614ea337cf14026ade61676af633399ebbaae6397f773d3564736f6c634300081a0033")]
         contract DummyContract {
+            uint256 _globalRoot = 2814950447364693428789615812000;
+            int256 _blockNumber = 662702;
+            uint256 _blockHash = 1119674286844400689540394420005000;
+
             event LogStateUpdate(uint256 globalRoot, int256 blockNumber, uint256 blockHash);
 
             function fireEvent() public {
@@ -845,11 +834,21 @@ mod eth_client_event_subscription_test {
                 emit LogStateUpdate(globalRoot, blockNumber, blockHash);
             }
         }
+
+        function stateBlockNumber() public view returns (int256) {
+            return _blockNumber;
+        }
+
+        function stateRoot() public view returns (uint256) {
+            return _globalRoot;
+        }
+
+        function stateBlockHash() public view returns (uint256) {
+            return _blockHash;
+        }
     );
 
-    const L2_BLOCK_NUMBER: u64 = 662703;
     const ANOTHER_ANVIL_PORT: u16 = 8548;
-    const EVENT_PROCESSING_TIME: u64 = 2; // Time to allow for event processing in seconds
 
     /// Test the event subscription and state update functionality
     ///
@@ -860,6 +859,7 @@ mod eth_client_event_subscription_test {
     /// 4. Starts listening for state updates
     /// 5. Fires an event from the dummy contract
     /// 6. Waits for event processing and verifies the block number
+    #[traced_test]
     #[rstest]
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_works() {
@@ -872,10 +872,7 @@ mod eth_client_event_subscription_test {
             .expect("failed to spawn anvil instance");
 
         // Set up chain info
-        let chain_config = Arc::new(ChainConfig::madara_test());
-
-        // Initialize database service
-        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
 
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);
@@ -886,15 +883,17 @@ mod eth_client_event_subscription_test {
         let eth_client =
             EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
         let l1_block_metrics = L1BlockMetrics::register().unwrap();
+        let (snd, mut recv) = tokio::sync::watch::channel(None);
 
         // Start listening for state updates
         let listen_handle = {
-            let db = Arc::clone(&db);
+            let db = backend.clone();
             tokio::spawn(async move {
                 state_update_worker::<EthereumClientConfig, EthereumEventStream>(
-                    Arc::clone(db.backend()),
+                    db,
                     Arc::new(eth_client),
                     ServiceContext::new_for_testing(),
+                    snd,
                     Arc::new(l1_block_metrics),
                 )
                 .await
@@ -902,19 +901,25 @@ mod eth_client_event_subscription_test {
             })
         };
 
+        // Wait for get_initial_state
+        recv.changed().await.unwrap();
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 662702);
+
+        let block_in_db = backend.get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
+        assert_eq!(block_in_db, Some(662702), "Block in DB does not match expected L2 block number");
+
         let _ = contract.fireEvent().send().await.expect("Should successfully fire state update event");
 
-        // Wait for event processing
-        tokio::time::sleep(Duration::from_secs(EVENT_PROCESSING_TIME)).await;
+        recv.changed().await.unwrap();
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 662703);
 
         // Verify the block number
-        let block_in_db = db
-            .backend()
+        let block_in_db = backend
             .get_l1_last_confirmed_block()
             .expect("Should successfully retrieve the last confirmed block number from the database");
 
         // Explicitly cancel the listen task, else it would be running in the background
         listen_handle.abort();
-        assert_eq!(block_in_db, Some(L2_BLOCK_NUMBER), "Block in DB does not match expected L2 block number");
+        assert_eq!(block_in_db, Some(662703), "Block in DB does not match expected L2 block number");
     }
 }

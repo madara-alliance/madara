@@ -1,8 +1,10 @@
 use anyhow::Context;
-use mc_block_import::{DeclaredClass, LegacyDeclaredClass, SierraDeclaredClass};
-use mp_class::{CompressedLegacyContractClass, FlattenedSierraClass};
+use mp_class::{
+    ClassInfo, ClassInfoWithHash, CompressedLegacyContractClass, FlattenedSierraClass, LegacyClassInfo,
+    LegacyContractClass, SierraClassInfo,
+};
 use mp_state_update::DeclaredClassItem;
-use starknet_core::types::contract::{legacy::LegacyContractClass, SierraClass};
+use starknet_core::types::contract::SierraClass;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 
@@ -92,20 +94,21 @@ impl InitiallyDeclaredClasses {
             .collect()
     }
 
-    /// Load the classes into `DeclaredClass`es.
-    pub fn into_loaded_classes(self) -> Vec<DeclaredClass> {
+    pub fn into_class_infos(self) -> Vec<ClassInfoWithHash> {
         self.0
             .into_values()
             .map(|class| match class {
-                InitiallyDeclaredClass::Sierra(c) => DeclaredClass::Sierra(SierraDeclaredClass {
+                InitiallyDeclaredClass::Sierra(c) => ClassInfoWithHash {
                     class_hash: c.class_hash,
-                    contract_class: c.contract_class,
-                    compiled_class_hash: c.compiled_class_hash,
-                }),
-                InitiallyDeclaredClass::Legacy(c) => DeclaredClass::Legacy(LegacyDeclaredClass {
+                    class_info: ClassInfo::Sierra(SierraClassInfo {
+                        contract_class: c.contract_class.into(),
+                        compiled_class_hash: c.compiled_class_hash,
+                    }),
+                },
+                InitiallyDeclaredClass::Legacy(c) => ClassInfoWithHash {
                     class_hash: c.class_hash,
-                    contract_class: c.contract_class,
-                }),
+                    class_info: ClassInfo::Legacy(LegacyClassInfo { contract_class: c.contract_class.into() }),
+                },
             })
             .collect()
     }

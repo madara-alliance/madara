@@ -1,11 +1,12 @@
 use std::collections::HashMap;
 
+use mp_block::{FullBlock, PendingFullBlock};
 use mp_state_update::{DeclaredClassItem, DeployedContractItem, StorageEntry};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
 
-use crate::block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe};
+use crate::block::{FromGatewayError, ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe};
 
 #[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
 #[serde(untagged)]
@@ -194,9 +195,21 @@ pub struct ProviderStateUpdateWithBlock {
     pub block: ProviderBlock,
 }
 
+impl ProviderStateUpdateWithBlock {
+    pub fn into_full_block(self) -> Result<FullBlock, FromGatewayError> {
+        self.block.into_full_block(self.state_update.state_diff.into())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderStateUpdateWithBlockPending {
     pub state_update: ProviderStateUpdatePending,
     pub block: ProviderBlockPending,
+}
+
+impl ProviderStateUpdateWithBlockPending {
+    pub fn into_full_block(self) -> Result<PendingFullBlock, FromGatewayError> {
+        self.block.into_full_block(self.state_update.state_diff.into())
+    }
 }

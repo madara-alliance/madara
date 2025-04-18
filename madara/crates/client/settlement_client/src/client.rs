@@ -1,20 +1,17 @@
 use crate::error::SettlementClientError;
-use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
-use crate::state_update::StateUpdate;
+use crate::state_update::{StateUpdate, StateUpdateWorker};
 use async_trait::async_trait;
 use futures::Stream;
 use mc_db::l1_db::LastSyncedEventBlock;
-use mc_db::MadaraBackend;
 #[cfg(test)]
 use mockall::automock;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
 
 pub enum ClientType {
-    ETH,
-    STARKNET,
+    Eth,
+    Starknet,
 }
 
 // Test types in a separate module
@@ -88,19 +85,14 @@ pub trait SettlementClientTrait: Send + Sync {
     fn get_client_type(&self) -> ClientType;
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError>;
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError>;
-    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError>;
-
-    /// Retrieves the last state root from the settlement layer
-    ///
-    /// TODO: Implementations should convert their native types to Felt.
-    /// TODO: Add tests to verify this conversion is correct.
-    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError>;
-    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError>;
 
     /// Retrieves the initial state from the settlement layer
     ///
     /// This is called once during node startup to synchronize the initial state,
     /// except during testing where it may cause issues with test environments.
+    ///
+    // TODO: Implementations should convert their native types to Felt.
+    // TODO: Add tests to verify this conversion is correct.
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError>;
 
     /// Listens for and processes state update events from the settlement layer
@@ -111,9 +103,8 @@ pub trait SettlementClientTrait: Send + Sync {
     /// * `l1_block_metrics` - Metrics for tracking L1 block processing
     async fn listen_for_update_state_events(
         &self,
-        backend: Arc<MadaraBackend>,
         ctx: ServiceContext,
-        l1_block_metrics: Arc<L1BlockMetrics>,
+        worker: StateUpdateWorker,
     ) -> Result<(), SettlementClientError>;
 
     /// Returns the current gas prices from the settlement layer

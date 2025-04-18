@@ -3,10 +3,24 @@ use primitive_types::H160;
 use starknet_types_core::felt::Felt;
 
 #[derive(Debug, thiserror::Error)]
+#[error("Malformated field element.")]
+pub struct MalformatedFelt;
+
+pub trait FeltExt {
+    fn to_h160(&self) -> Result<H160, FeltToH160Error>;
+}
+
+impl FeltExt for Felt {
+    fn to_h160(&self) -> Result<H160, FeltToH160Error> {
+        felt_to_h160(self)
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
 #[error("Felt is too big to convert to H160.")]
 pub struct FeltToH160Error;
 
-pub fn felt_to_h160(felt: &Felt) -> Result<H160, FeltToH160Error> {
+fn felt_to_h160(felt: &Felt) -> Result<H160, FeltToH160Error> {
     const MAX_H160: Felt = Felt::from_hex_unchecked("0xffffffffffffffffffffffffffffffffffffffff");
 
     if felt > &MAX_H160 {

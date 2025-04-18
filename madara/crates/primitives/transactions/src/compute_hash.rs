@@ -26,31 +26,31 @@ const PEDERSEN_EMPTY: Felt =
     Felt::from_hex_unchecked("0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804");
 
 impl Transaction {
-    pub fn compute_hash(&self, chain_id: Felt, version: StarknetVersion, offset_version: bool) -> Felt {
+    pub fn compute_hash(&self, chain_id: Felt, version: StarknetVersion, is_query: bool) -> Felt {
         let legacy = version.is_legacy();
         let is_pre_v0_7 = version.is_pre_v0_7();
 
         if is_pre_v0_7 {
-            self.compute_hash_pre_v0_7(chain_id, offset_version)
+            self.compute_hash_pre_v0_7(chain_id, is_query)
         } else {
-            self.compute_hash_inner(chain_id, offset_version, legacy)
+            self.compute_hash_inner(chain_id, is_query, legacy)
         }
     }
 
-    fn compute_hash_inner(&self, chain_id: Felt, offset_version: bool, legacy: bool) -> Felt {
+    fn compute_hash_inner(&self, chain_id: Felt, is_query: bool, legacy: bool) -> Felt {
         match self {
-            crate::Transaction::Invoke(tx) => tx.compute_hash(chain_id, offset_version, legacy),
-            crate::Transaction::L1Handler(tx) => tx.compute_hash(chain_id, offset_version, legacy),
-            crate::Transaction::Declare(tx) => tx.compute_hash(chain_id, offset_version),
+            crate::Transaction::Invoke(tx) => tx.compute_hash(chain_id, is_query, legacy),
+            crate::Transaction::L1Handler(tx) => tx.compute_hash(chain_id, is_query, legacy),
+            crate::Transaction::Declare(tx) => tx.compute_hash(chain_id, is_query),
             crate::Transaction::Deploy(tx) => tx.compute_hash(chain_id, legacy),
-            crate::Transaction::DeployAccount(tx) => tx.compute_hash(chain_id, offset_version),
+            crate::Transaction::DeployAccount(tx) => tx.compute_hash(chain_id, is_query),
         }
     }
 
-    pub fn compute_hash_pre_v0_7(&self, chain_id: Felt, offset_version: bool) -> Felt {
+    pub fn compute_hash_pre_v0_7(&self, chain_id: Felt, is_query: bool) -> Felt {
         match self {
             crate::Transaction::L1Handler(tx) => tx.compute_hash_pre_v0_7(chain_id),
-            _ => self.compute_hash_inner(chain_id, offset_version, true),
+            _ => self.compute_hash_inner(chain_id, is_query, true),
         }
     }
 

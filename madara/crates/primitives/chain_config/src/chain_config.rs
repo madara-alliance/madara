@@ -115,7 +115,7 @@ pub struct ChainConfig {
     /// The Starknet core contract address for the L1 watcher.
     pub eth_core_contract_address: String,
 
-    /// The Starknet SHARP verifier La address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
+    /// The Starknet SHARP verifier L1 address. Check out the [docs](https://docs.starknet.io/architecture-and-concepts/solidity-verifier/)
     /// for more information
     pub eth_gps_statement_verifier: String,
 

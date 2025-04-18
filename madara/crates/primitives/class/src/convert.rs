@@ -1,12 +1,13 @@
 use flate2::read::GzDecoder;
+use starknet_core::types::contract::legacy::LegacyContractClass as SnCoreLegacyContractClass;
 use starknet_core::types::LegacyContractEntryPoint;
 use starknet_core::types::{
-    contract::legacy::{
-        LegacyContractClass, LegacyEntrypointOffset, LegacyProgram, RawLegacyEntryPoint, RawLegacyEntryPoints,
-    },
+    contract::legacy::{LegacyEntrypointOffset, LegacyProgram, RawLegacyEntryPoint, RawLegacyEntryPoints},
     CompressedLegacyContractClass,
 };
 use std::io::{self, Read};
+
+use crate::LegacyContractClass;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ParseCompressedLegacyClassError {
@@ -28,9 +29,9 @@ pub fn gz_decompress_stream(r: impl io::Read) -> impl io::Read {
 }
 
 /// Attempts to recover a compressed legacy program.
-pub fn parse_compressed_legacy_class(
+pub(crate) fn parse_compressed_legacy_class(
     class: CompressedLegacyContractClass,
-) -> Result<LegacyContractClass, ParseCompressedLegacyClassError> {
+) -> Result<SnCoreLegacyContractClass, ParseCompressedLegacyClassError> {
     // decompress and parse as a single [`Read`] pipeline to avoid having an intermediary buffer here.
     let program: LegacyProgram = serde_json::from_reader(gz_decompress_stream(class.program.as_slice()))?;
 
@@ -50,7 +51,7 @@ pub fn parse_compressed_legacy_class(
         None => vec![],
     };
 
-    Ok(LegacyContractClass {
+    Ok(SnCoreLegacyContractClass {
         abi,
         entry_points_by_type: RawLegacyEntryPoints {
             constructor: class
@@ -74,6 +75,18 @@ pub fn parse_compressed_legacy_class(
         },
         program,
     })
+}
+
+impl LegacyContractClass {
+    pub fn compress(
+        &self,
+    ) -> Result<CompressedLegacyContractClass, starknet_core::types::contract::CompressProgramError> {
+        Ok(CompressedLegacyContractClass {
+            program: self.program.compress()?,
+            entry_points_by_type: self.entry_points_by_type.clone().into(),
+            abi: self.abi.clone().map(|abi| abi.into_iter().map(Into::into).collect()),
+        })
+    }
 }
 
 fn parse_legacy_entrypoint(entrypoint: &LegacyContractEntryPoint, pre_0_11_0: bool) -> RawLegacyEntryPoint {
