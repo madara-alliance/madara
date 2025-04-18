@@ -49,7 +49,14 @@ impl TryFrom<RunCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            bucket_name: format!("{}-{}", run_cmd.aws_config_args.aws_prefix, run_cmd.aws_s3_args.bucket_name.ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?),
+            bucket_name: format!(
+                "{}-{}",
+                run_cmd.aws_config_args.aws_prefix,
+                run_cmd
+                    .aws_s3_args
+                    .bucket_name
+                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
+            ),
             bucket_location_constraint: run_cmd.aws_s3_args.bucket_location_constraint,
         })
     }
@@ -62,7 +69,10 @@ impl TryFrom<SetupCmd> for StorageArgs {
             bucket_name: format!(
                 "{}-{}",
                 setup_cmd.aws_config_args.aws_prefix,
-                setup_cmd.aws_s3_args.bucket_name.ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
+                setup_cmd
+                    .aws_s3_args
+                    .bucket_name
+                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
             ),
             bucket_location_constraint: setup_cmd.aws_s3_args.bucket_location_constraint,
         })
