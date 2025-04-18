@@ -847,7 +847,6 @@ mod starknet_client_event_subscription_test {
     use mp_utils::service::ServiceContext;
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
-    use std::time::Duration;
 
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
@@ -856,7 +855,6 @@ mod starknet_client_event_subscription_test {
         // Initialize test context and keep the TestGuard
         let _test_guard = init_test_context().await?;
         let context = get_test_context().await?;
-
 
         // Setting up the DB and l1 block metrics
         // ================================================
@@ -901,25 +899,19 @@ mod starknet_client_event_subscription_test {
         )
         .await?;
 
-        // Wait for this update to be registered in the DB
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        // Wait for get_initial_state
+        recv.changed().await.unwrap();
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 100);
 
         // Verify the block number
         let block_in_db = db
             .backend()
             .get_l1_last_confirmed_block()
             .expect("Should successfully retrieve the last confirmed block number from the database");
+        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L2 block number");
 
         // Abort the worker before ending the test
         listen_handle.abort();
-
-        // Wait for get_initial_state
-        recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 100);
-
-        let block_in_db =
-            db.backend().get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
-        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L2 block number");
 
         Ok(())
     }
