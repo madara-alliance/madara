@@ -6,7 +6,6 @@ use mc_block_import::BlockImporter;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_telemetry::TelemetryHandle;
-use mp_block::{BlockId, BlockTag};
 use mp_sync::SyncStatusProvider;
 use mp_utils::service::ServiceContext;
 use std::{sync::Arc, time::Duration};
@@ -33,22 +32,9 @@ pub async fn l2_sync_worker(
     sync_config: SyncConfig,
     sync_status_provider: SyncStatusProvider,
 ) -> anyhow::Result<()> {
-    let (starting_block, ignore_block_order) = if let Some(starting_block) = sync_config.starting_block {
-        tracing::warn!("Forcing unordered state. This will most probably break your database.");
-        (starting_block, true)
-    } else {
-        (
-            backend
-                .get_block_n(&BlockId::Tag(BlockTag::Latest))
-                .context("getting sync tip")?
-                .map(|block_id| block_id + 1) // next block after the tip
-                .unwrap_or_default() as _, // or genesis
-            false,
-        )
-    };
-    // update the sync status with the starting block info
-    sync_status_provider.set_starting_block_num(starting_block).await;
-    tracing::info!("⛓️  Starting L2 sync from block {}", starting_block);
+    let starting_block_info = backend.get_starting_block_info()?;
+    let starting_block = starting_block_info.starting_block_num.unwrap_or_default();
+    let ignore_block_order = starting_block_info.ignore_block_order;
 
     let mut provider = GatewayProvider::new(fetch_config.gateway, fetch_config.feeder_gateway);
     if let Some(api_key) = fetch_config.api_key {

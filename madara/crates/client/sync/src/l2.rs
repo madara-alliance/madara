@@ -31,6 +31,7 @@ use tokio::time::Duration;
 // Maximum number of consecutive failures allowed in the highest block fetch task before terminating
 // Delay after encountering an error when fetching the highest block
 const HIGHEST_BLOCK_FETCH_ERROR_DELAY_SECS: u64 = 1;
+const HIGHES_BLOCK_FETCH_INTERVAL: u64 = 10;
 
 // TODO: add more explicit error variants
 #[derive(thiserror::Error, Debug)]
@@ -237,7 +238,7 @@ async fn l2_highest_block_fetch(
 ) -> anyhow::Result<()> {
     tracing::debug!("Start highest block poll");
 
-    let mut interval = tokio::time::interval(Duration::from_secs(10));
+    let mut interval = tokio::time::interval(Duration::from_secs(HIGHES_BLOCK_FETCH_INTERVAL));
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
@@ -248,8 +249,7 @@ async fn l2_highest_block_fetch(
                 let block_hash = block.block_hash;
 
                 // Update the sync status provider with the highest block info
-                sync_status_provider.set_highest_block_num(block_number).await;
-                sync_status_provider.set_highest_block_hash(block_hash).await;
+                sync_status_provider.set_highest_block(block_number, block_hash).await;
 
                 tracing::debug!("Updated highest block: number={}, hash={}", block_number, block_hash);
             }

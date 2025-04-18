@@ -1,5 +1,5 @@
 use crate::db_block_id::{DbBlockId, DbBlockIdResolvable};
-use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
+use crate::{Column, DatabaseExt, MadaraBackend, StartingBlockInfo, WriteBatchWithTransaction};
 use crate::{MadaraStorageError, DB};
 use anyhow::Context;
 use blockifier::bouncer::BouncerWeights;
@@ -485,5 +485,9 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
         }
+    }
+
+    pub fn get_starting_block_info(&self) -> Result<StartingBlockInfo> {
+        Ok(self.starting_block_info.clone())
     }
 }

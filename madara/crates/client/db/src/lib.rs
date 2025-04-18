@@ -409,6 +409,12 @@ impl EventChannels {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct StartingBlockInfo {
+    pub starting_block_num: Option<u64>,
+    pub ignore_block_order: bool,
+}
+
 /// Madara client database backend singleton.
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
@@ -420,6 +426,7 @@ pub struct MadaraBackend {
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     sender_event: EventChannels,
     write_opt_no_wal: WriteOptions,
+    starting_block_info: StartingBlockInfo,
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
 }
@@ -460,6 +467,7 @@ impl DatabaseService {
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
         trie_log_config: TrieLogConfig,
+        starting_block: Option<u64>,
     ) -> anyhow::Result<Self> {
         tracing::info!("💾 Opening database at: {}", base_path.display());
 
@@ -469,6 +477,7 @@ impl DatabaseService {
             restore_from_latest_backup,
             chain_config,
             trie_log_config,
+            starting_block,
         )
         .await?;
 
@@ -518,6 +527,7 @@ impl MadaraBackend {
         let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), None, Some(0), 5));
         Arc::new(Self {
             backup_handle: None,
+            starting_block_info: StartingBlockInfo { starting_block_num: None, ignore_block_order: false },
             db,
             chain_config,
             db_metrics: DbMetrics::register().unwrap(),
@@ -537,6 +547,7 @@ impl MadaraBackend {
         restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
         trie_log_config: TrieLogConfig,
+        starting_block: Option<u64>,
     ) -> anyhow::Result<Arc<MadaraBackend>> {
         // check if the db version is compatible with the current binary
         tracing::debug!("checking db version");
@@ -576,6 +587,13 @@ impl MadaraBackend {
             trie_log_config.snapshot_interval,
         ));
 
+        let (sb, ignore_block_order) = if starting_block.is_some() {
+            tracing::warn!("Forcing unordered state. This will most probably break your database.");
+            (starting_block, true)
+        } else {
+            (current_block_n.map(|block_id| block_id + 1), false)
+        };
+
         let backend = Arc::new(Self {
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
             backup_handle,
@@ -586,6 +604,7 @@ impl MadaraBackend {
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
             write_opt_no_wal: make_write_opt_no_wal(),
+            starting_block_info: StartingBlockInfo { starting_block_num: sb, ignore_block_order },
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
         });

@@ -148,6 +148,7 @@ async fn main() -> anyhow::Result<()> {
             max_kept_snapshots: run_cmd.db_params.db_max_kept_snapshots,
             snapshot_interval: run_cmd.db_params.db_snapshot_interval,
         },
+        run_cmd.l2_sync_params.unsafe_starting_block,
     )
     .await
     .context("Initializing db service")?;
