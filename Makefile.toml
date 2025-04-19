@@ -1,6 +1,6 @@
 [config]
 default_to_workspace = false # by default, we run cargo commands on top level instead of per member
-skip_core_tasks = true       # we are not using the predefined cargo-make flows, instead redefine here for more clarity
+skip_core_tasks = true # we are not using the predefined cargo-make flows, instead redefine here for more clarity
 
 [env]
 # Define the Docker image variables at the top level so they're available in all profiles
@@ -10,23 +10,22 @@ DOCKER_GZ = "image.tar.gz"
 
 # env local is the profile for the local task
 [env.local]
-JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
+JEMALLOC_SYS_WITH_MALLOC_CONF = "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
 SECRETS = ".secrets/rpc_api.secret"
 DB_PATH = "/var/lib/madara"
 DOCKER_COMPOSE = "docker compose -f compose.yaml"
 
 [env.development]
-JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
+JEMALLOC_SYS_WITH_MALLOC_CONF = "background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
 SECRETS = ".secrets/rpc_api.secret"
 DB_PATH = "/var/lib/madara"
 DOCKER_COMPOSE = "docker compose -f compose.yaml"
 
 [env.CI]
-JEMALLOC_SYS_WITH_MALLOC_CONF=""
+JEMALLOC_SYS_WITH_MALLOC_CONF = ""
 SECRETS = ".secrets/rpc_api.secret"
 DB_PATH = "/var/lib/madara"
 DOCKER_COMPOSE = "docker compose -f compose.yaml"
-
 
 [tasks.install-tools]
 description = "Install development tools only"
@@ -57,6 +56,14 @@ if rustup component list | grep -q "rustfmt"; then
 else
     echo "Installing rustfmt..."
     rustup component add rustfmt
+fi
+
+# Check if taplo is installed
+if command -v taplo >/dev/null 2>&1; then
+    echo "✓ taplo is already installed"
+else
+    echo "Installing taplo-cli..."
+    cargo install taplo-cli --locked
 fi
 
 # Check if Scarb is installed (required for Cairo contracts)
@@ -94,6 +101,13 @@ category = "PreCommit"
 command = "cargo"
 args = ["fmt", "--all", "--", "--check"]
 
+[tasks.taplo-check]
+description = "Check TOML file formatting without making changes"
+category = "PreCommit"
+install_crate = { crate_name = "taplo-cli", binary = "taplo", test_arg = "--help" }
+command = "taplo"
+args = ["fmt", "--check", "--config-path=taplo/taplo.toml"]
+
 [tasks.clippy-check]
 description = "Runs clippy checks without applying any fix"
 category = "PreCommit"
@@ -115,43 +129,54 @@ install_crate = "clippy"
 command = "cargo"
 args = ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--", "--no-deps", "-Dwarnings"]
 
-[tasks.fix]
-description = "Runs rustfmt and clippy checks and applies fixes"
+[tasks.fix-taplo]
+description = "Formats TOML files using taplo"
 category = "PreCommit"
-dependencies = ["fix-clippy", "fix-rustfmt"]
+install_crate = { crate_name = "taplo-cli", binary = "taplo", test_arg = "--help" }
+command = "taplo"
+args = ["fmt", "--config-path=taplo/taplo.toml"]
 
+[tasks.fix]
+description = "Runs all formatters and linters and applies fixes"
+category = "PreCommit"
+dependencies = ["fix-clippy", "fix-rustfmt", "fix-taplo"]
+
+[tasks.pre-commit]
+description = "Run all pre-commit checks"
+category = "PreCommit"
+dependencies = ["fmt-check", "taplo-check", "clippy-check"]
 
 [tasks.default]
 description = "This is the task that gets executed by 'cargo make' when no task is specified"
-# run_task = "dev-"
+# run_task = "pre-commit"
 
 [tasks.start]
 description = "Starts the Madara node"
 dependencies = ["images", "pre-requisites"]
 script = [
-"echo -e '\\033[2;3;37mrunning\\033[0m \\033[1;32mmadara\\033[0m'",
-"${DOCKER_COMPOSE} up -d"
+  "echo -e '\\033[2;3;37mrunning\\033[0m \\033[1;32mmadara\\033[0m'",
+  "${DOCKER_COMPOSE} up -d"
 ]
 
 [tasks.pre-requisites]
 description = "Check required secrets and pre-requisites"
 dependencies = []
 script = [
-"[ -f ${SECRETS} ] || (echo 'Missing secrets file: ${SECRETS}' && exit 1)"
+  "[ -f ${SECRETS} ] || (echo 'Missing secrets file: ${SECRETS}' && exit 1)"
 ]
 
 [tasks.stop]
 description = "Stops the Madara node"
 script = [
-"echo -e '\\033[2;3;37mstopping\\033[0m \\033[1;31mmadara\\033[0m'",
-"${DOCKER_COMPOSE} stop"
+  "echo -e '\\033[2;3;37mstopping\\033[0m \\033[1;31mmadara\\033[0m'",
+  "${DOCKER_COMPOSE} stop"
 ]
 
 [tasks.logs]
 description = "View logs for Madara"
 script = [
-"echo -e '\\033[2;3;37mlogs for\\033[0m \\033[1;36mmadara\\033[0m'",
-"${DOCKER_COMPOSE} logs -f -n 100 madara"
+  "echo -e '\\033[2;3;37mlogs for\\033[0m \\033[1;36mmadara\\033[0m'",
+  "${DOCKER_COMPOSE} logs -f -n 100 madara"
 ]
 
 [tasks.images]
@@ -161,73 +186,103 @@ dependencies = ["pull-image"]
 [tasks.pull-image]
 description = "Pull and save docker image"
 condition_script = [
-    "echo DOCKER_IMAGE=${DOCKER_IMAGE}",
-    "echo DOCKER_TAG=${DOCKER_TAG}",
-    "echo DOCKER_GZ=${DOCKER_GZ}"
+  "echo DOCKER_IMAGE=${DOCKER_IMAGE}",
+  "echo DOCKER_TAG=${DOCKER_TAG}",
+  "echo DOCKER_GZ=${DOCKER_GZ}"
 ]
 script = [
-    "docker pull ${DOCKER_IMAGE}",
-    "docker tag ${DOCKER_IMAGE} ${DOCKER_TAG}",
-    "docker rmi ${DOCKER_IMAGE}",
-    "docker image save -o ${DOCKER_GZ} ${DOCKER_TAG}"
+  "docker pull ${DOCKER_IMAGE}",
+  "docker tag ${DOCKER_IMAGE} ${DOCKER_TAG}",
+  "docker rmi ${DOCKER_IMAGE}",
+  "docker image save -o ${DOCKER_GZ} ${DOCKER_TAG}"
 ]
 
 [tasks.clean]
 description = "Stop containers and prune images"
 dependencies = ["stop"]
 script = [
-"echo -e '\\033[2;3;37mpruning containers\\033[0m'",
-"docker container prune -f",
-"echo -e '\\033[2;3;37mpruning images\\033[0m'",
-"docker image prune -f",
-"echo -e '\\033[1;31mimages cleaned\\033[0m'"
+  "echo -e '\\033[2;3;37mpruning containers\\033[0m'",
+  "docker container prune -f",
+  "echo -e '\\033[2;3;37mpruning images\\033[0m'",
+  "docker image prune -f",
+  "echo -e '\\033[1;31mimages cleaned\\033[0m'"
 ]
 
 [tasks.clean-db]
 description = "Perform clean and remove local database"
 script = [
-"echo -e '\\033[1;31mThis action will result in irrecoverable loss of data!\\033[0m'",
-"echo -e '\\033[2;3;37mAre you sure you want to proceed?\\033[0m \\033[1;32m[y/N] \\033[0m'",
-"read ans && case \"$ans\" in [yY]*) true;; *) false;; esac",
-"make clean --silent",
-"echo -e '\\033[2;3;37mremoving madara database on host\\033[0m'",
-"rm -rf ${DB_PATH}"
+  "echo -e '\\033[1;31mThis action will result in irrecoverable loss of data!\\033[0m'",
+  "echo -e '\\033[2;3;37mAre you sure you want to proceed?\\033[0m \\033[1;32m[y/N] \\033[0m'",
+  "read ans && case \"$ans\" in [yY]*) true;; *) false;; esac",
+  "make clean --silent",
+  "echo -e '\\033[2;3;37mremoving madara database on host\\033[0m'",
+  "rm -rf ${DB_PATH}"
 ]
 
 [tasks.fclean]
 description = "Perform clean-db and remove local images"
 dependencies = ["clean-db"]
 script = [
-"echo -e '\\033[2;3;37mremoving local images tar.gz\\033[0m'",
-"rm -rf ${DOCKER_GZ}",
-"echo -e '\\033[1;31martefacts cleaned\\033[0m'"
+  "echo -e '\\033[2;3;37mremoving local images tar.gz\\033[0m'",
+  "rm -rf ${DOCKER_GZ}",
+  "echo -e '\\033[1;31martefacts cleaned\\033[0m'"
 ]
 
 [tasks.restart]
 description = "Restarts the Madara node"
 dependencies = ["clean"]
 script = [
-"make start --silent"
+  "make start --silent"
 ]
 
 [tasks.frestart]
 description = "Perform a full clean and restarts the Madara node"
 dependencies = ["fclean"]
 script = [
-"make start --silent"
+  "make start --silent"
 ]
 
 [tasks.snos]
 description = "Setup snos environment"
 script = [
-"rm -rf orchestrator_venv && python3.9 -m venv orchestrator_venv && . ./orchestrator_venv/bin/activate && pip install cairo-lang==0.13.2 'sympy<1.13.0' && mkdir -p orchestrator/build && git submodule update --init --recursive && cd orchestrator/cairo-lang && git checkout ${CAIRO_LANG_COMMIT} && cd ../.. && cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src"
+  "rm -rf orchestrator_venv && python3.9 -m venv orchestrator_venv && . ./orchestrator_venv/bin/activate && pip install cairo-lang==0.13.2 'sympy<1.13.0' && mkdir -p orchestrator/build && git submodule update --init --recursive && cd orchestrator/cairo-lang && git checkout ${CAIRO_LANG_COMMIT} && cd ../.. && cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src"
 ]
 
 [tasks.help]
-description = "Display available commands"
+description = "Display available commands with additional usage information"
 category = "Help"
-command = "cargo"
-args = ["make", "--list-all-steps"]
+script_runner = "@shell"
+script = '''
+echo "Madara Development Workflow"
+echo "=========================="
+echo ""
+echo "Setup:"
+echo "  cargo make install          # Install all tools and dependencies"
+echo "  cargo make local-setup      # Setup with local profile"
+echo ""
+echo "Code Quality:"
+echo "  cargo make pre-commit       # Run all checks (Rust, TOML, Clippy)"
+echo "  cargo make fix              # Fix all issues automatically"
+echo "  cargo make fix-taplo        # Format TOML files only"
+echo "  cargo make fix-rustfmt      # Format Rust files only"
+echo "  cargo make fix-clippy       # Fix Clippy warnings"
+echo ""
+echo "Running:"
+echo "  cargo make start            # Start Madara node"
+echo "  cargo make --profile local start  # Start with local profile"
+echo "  cargo make logs             # View logs"
+echo "  cargo make stop             # Stop node"
+echo ""
+echo "Cleanup:"
+echo "  cargo make clean            # Clean containers"
+echo "  cargo make clean-db         # Clean database"
+echo "  cargo make fclean           # Full cleanup"
+echo ""
+echo "For complete list of tasks:"
+echo ""
+
+cargo make --list-all-steps
+'''
 
 [tasks.local-setup]
 description = "Setup and start Madara with the local profile"
