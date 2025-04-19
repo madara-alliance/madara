@@ -1,0 +1,242 @@
+[config]
+default_to_workspace = false # by default, we run cargo commands on top level instead of per member
+skip_core_tasks = true       # we are not using the predefined cargo-make flows, instead redefine here for more clarity
+
+[env]
+# Define the Docker image variables at the top level so they're available in all profiles
+DOCKER_TAG = "madara:latest"
+DOCKER_IMAGE = "ghcr.io/madara-alliance/madara:latest"
+DOCKER_GZ = "image.tar.gz"
+
+# env local is the profile for the local task
+[env.local]
+JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
+SECRETS = ".secrets/rpc_api.secret"
+DB_PATH = "/var/lib/madara"
+DOCKER_COMPOSE = "docker compose -f compose.yaml"
+
+[env.development]
+JEMALLOC_SYS_WITH_MALLOC_CONF="background_thread:true,narenas:1,tcache:false,dirty_decay_ms:0,muzzy_decay_ms:0,abort_conf:true"
+SECRETS = ".secrets/rpc_api.secret"
+DB_PATH = "/var/lib/madara"
+DOCKER_COMPOSE = "docker compose -f compose.yaml"
+
+[env.CI]
+JEMALLOC_SYS_WITH_MALLOC_CONF=""
+SECRETS = ".secrets/rpc_api.secret"
+DB_PATH = "/var/lib/madara"
+DOCKER_COMPOSE = "docker compose -f compose.yaml"
+
+
+[tasks.install-tools]
+description = "Install development tools only"
+category = "Setup"
+script_runner = "@shell"
+script = '''
+echo "Installing development tools..."
+
+# Check if cargo-make is installed
+if command -v cargo-make >/dev/null 2>&1; then
+    echo "✓ cargo-make is already installed"
+else
+    echo "Installing cargo-make..."
+    cargo install cargo-make
+fi
+
+# Check if clippy is installed (it's usually included with rustup)
+if rustup component list | grep -q "clippy"; then
+    echo "✓ clippy is already installed"
+else
+    echo "Installing clippy..."
+    rustup component add clippy
+fi
+
+# Check if rustfmt is installed (it's usually included with rustup)
+if rustup component list | grep -q "rustfmt"; then
+    echo "✓ rustfmt is already installed"
+else
+    echo "Installing rustfmt..."
+    rustup component add rustfmt
+fi
+
+# Check if Scarb is installed (required for Cairo contracts)
+if command -v scarb >/dev/null 2>&1; then
+    echo "✓ scarb is already installed"
+else
+    echo "Installing scarb..."
+    curl --proto '=https' --tlsv1.2 -sSf https://docs.swmansion.com/scarb/install.sh | sh
+fi
+
+echo "Development tools installation complete!"
+'''
+
+[tasks.install-deps]
+description = "Install workspace dependencies"
+category = "Setup"
+script_runner = "@shell"
+script = '''
+echo "Installing workspace dependencies..."
+# Download dependencies without building (faster)
+cargo fetch --verbose
+# Check core crates that don't require Scarb to build
+RUSTFLAGS="--cfg skip_scarb_build" cargo check --workspace --exclude m-cairo-test-contracts || echo "Some dependency checks failed, but continuing."
+echo "Core workspace dependencies installed successfully!"
+'''
+
+[tasks.install]
+description = "Install development tools and workspace dependencies"
+category = "Setup"
+dependencies = ["install-tools", "install-deps"]
+
+[tasks.fmt-check]
+description = "Check Rust code formatting without making changes"
+category = "PreCommit"
+command = "cargo"
+args = ["fmt", "--all", "--", "--check"]
+
+[tasks.clippy-check]
+description = "Runs clippy checks without applying any fix"
+category = "PreCommit"
+install_crate = "clippy"
+command = "cargo"
+args = ["clippy", "--all-targets", "--", "--no-deps", "-Dwarnings"]
+
+[tasks.fix-rustfmt]
+description = "Runs rustfmt checks and applies fixes"
+category = "PreCommit"
+install_crate = "rustfmt"
+command = "cargo"
+args = ["fmt", "--all"]
+
+[tasks.fix-clippy]
+description = "Runs clippy checks and applies fixes"
+category = "PreCommit"
+install_crate = "clippy"
+command = "cargo"
+args = ["clippy", "--fix", "--allow-dirty", "--allow-staged", "--", "--no-deps", "-Dwarnings"]
+
+[tasks.fix]
+description = "Runs rustfmt and clippy checks and applies fixes"
+category = "PreCommit"
+dependencies = ["fix-clippy", "fix-rustfmt"]
+
+
+[tasks.default]
+description = "This is the task that gets executed by 'cargo make' when no task is specified"
+# run_task = "dev-"
+
+[tasks.start]
+description = "Starts the Madara node"
+dependencies = ["images", "pre-requisites"]
+script = [
+"echo -e '\\033[2;3;37mrunning\\033[0m \\033[1;32mmadara\\033[0m'",
+"${DOCKER_COMPOSE} up -d"
+]
+
+[tasks.pre-requisites]
+description = "Check required secrets and pre-requisites"
+dependencies = []
+script = [
+"[ -f ${SECRETS} ] || (echo 'Missing secrets file: ${SECRETS}' && exit 1)"
+]
+
+[tasks.stop]
+description = "Stops the Madara node"
+script = [
+"echo -e '\\033[2;3;37mstopping\\033[0m \\033[1;31mmadara\\033[0m'",
+"${DOCKER_COMPOSE} stop"
+]
+
+[tasks.logs]
+description = "View logs for Madara"
+script = [
+"echo -e '\\033[2;3;37mlogs for\\033[0m \\033[1;36mmadara\\033[0m'",
+"${DOCKER_COMPOSE} logs -f -n 100 madara"
+]
+
+[tasks.images]
+description = "Downloads the Madara Docker image"
+dependencies = ["pull-image"]
+
+[tasks.pull-image]
+description = "Pull and save docker image"
+condition_script = [
+    "echo DOCKER_IMAGE=${DOCKER_IMAGE}",
+    "echo DOCKER_TAG=${DOCKER_TAG}",
+    "echo DOCKER_GZ=${DOCKER_GZ}"
+]
+script = [
+    "docker pull ${DOCKER_IMAGE}",
+    "docker tag ${DOCKER_IMAGE} ${DOCKER_TAG}",
+    "docker rmi ${DOCKER_IMAGE}",
+    "docker image save -o ${DOCKER_GZ} ${DOCKER_TAG}"
+]
+
+[tasks.clean]
+description = "Stop containers and prune images"
+dependencies = ["stop"]
+script = [
+"echo -e '\\033[2;3;37mpruning containers\\033[0m'",
+"docker container prune -f",
+"echo -e '\\033[2;3;37mpruning images\\033[0m'",
+"docker image prune -f",
+"echo -e '\\033[1;31mimages cleaned\\033[0m'"
+]
+
+[tasks.clean-db]
+description = "Perform clean and remove local database"
+script = [
+"echo -e '\\033[1;31mThis action will result in irrecoverable loss of data!\\033[0m'",
+"echo -e '\\033[2;3;37mAre you sure you want to proceed?\\033[0m \\033[1;32m[y/N] \\033[0m'",
+"read ans && case \"$ans\" in [yY]*) true;; *) false;; esac",
+"make clean --silent",
+"echo -e '\\033[2;3;37mremoving madara database on host\\033[0m'",
+"rm -rf ${DB_PATH}"
+]
+
+[tasks.fclean]
+description = "Perform clean-db and remove local images"
+dependencies = ["clean-db"]
+script = [
+"echo -e '\\033[2;3;37mremoving local images tar.gz\\033[0m'",
+"rm -rf ${DOCKER_GZ}",
+"echo -e '\\033[1;31martefacts cleaned\\033[0m'"
+]
+
+[tasks.restart]
+description = "Restarts the Madara node"
+dependencies = ["clean"]
+script = [
+"make start --silent"
+]
+
+[tasks.frestart]
+description = "Perform a full clean and restarts the Madara node"
+dependencies = ["fclean"]
+script = [
+"make start --silent"
+]
+
+[tasks.snos]
+description = "Setup snos environment"
+script = [
+"rm -rf orchestrator_venv && python3.9 -m venv orchestrator_venv && . ./orchestrator_venv/bin/activate && pip install cairo-lang==0.13.2 'sympy<1.13.0' && mkdir -p orchestrator/build && git submodule update --init --recursive && cd orchestrator/cairo-lang && git checkout ${CAIRO_LANG_COMMIT} && cd ../.. && cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src"
+]
+
+[tasks.help]
+description = "Display available commands"
+category = "Help"
+command = "cargo"
+args = ["make", "--list-all-steps"]
+
+[tasks.local-setup]
+description = "Setup and start Madara with the local profile"
+category = "Setup"
+script_runner = "@shell"
+script = '''
+echo "Setting up Madara with local profile..."
+cargo make --profile local install
+cargo make --profile local pull-image
+cargo make --profile local start
+echo "Madara setup complete with local profile!"
+'''
