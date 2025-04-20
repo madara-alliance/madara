@@ -6,6 +6,8 @@ use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 
+const SYNC_THRESHOLD_BLOCKS: u64 = 6;
+
 /// Returns an object about the sync status, or false if the node is not syncing
 ///
 /// ### Arguments
@@ -70,7 +72,7 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     let highest_block_hash = sync_status.highest_block_hash;
 
     // If the highest block number is 0 or less than current, we're not syncing
-    if highest_block_num == 0 || highest_block_num - 6 <= current_block_num {
+    if highest_block_num == 0 || highest_block_num - SYNC_THRESHOLD_BLOCKS <= current_block_num {
         return Ok(SyncingStatus::NotSyncing);
     }
 
