@@ -322,7 +322,7 @@ mod messaging_module_tests {
     };
     use futures::stream;
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, Mempool, MempoolConfig};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
     use rstest::{fixture, rstest};
     use starknet_types_core::felt::Felt;
@@ -358,8 +358,6 @@ mod messaging_module_tests {
 
         // Initialize database service
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
-
-        let l1_gas_setter = GasPriceProvider::new();
 
         let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 

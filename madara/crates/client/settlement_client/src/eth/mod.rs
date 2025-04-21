@@ -423,7 +423,7 @@ mod l1_messaging_tests {
     };
     use blockifier::transaction::transaction_execution::Transaction;
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+    use mc_mempool::Mempool;
     use mc_mempool::{MempoolConfig, MempoolProvider};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
@@ -539,9 +539,6 @@ mod l1_messaging_tests {
         let chain_config = Arc::new(ChainConfig::madara_test());
         // Initialize database service
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
-
-        let l1_gas_setter = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
         let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 

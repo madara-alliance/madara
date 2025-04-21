@@ -221,15 +221,6 @@ fn make_transfer_call(recipient: Felt, amount: u128) -> Vec<Call> {
     }]
 }
 
-fn make_multicall(calls: Vec<Call>) -> Vec<Felt> {
-    [Felt::from(calls.len())]
-        .into_iter()
-        .chain(
-            calls.into_iter().flat_map(|c| [c.to, c.selector, c.calldata.len().into()].into_iter().chain(c.calldata)),
-        )
-        .collect()
-}
-
 #[tokio::test]
 #[rstest]
 #[case::full_node(FullNodeAndSequencer)]
