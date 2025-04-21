@@ -3,8 +3,8 @@
 
 mod devnet;
 mod rpc;
-mod sequencing;
 mod storage_proof;
+mod transaction_flow;
 
 use anyhow::bail;
 use rstest::rstest;
@@ -18,7 +18,7 @@ use std::{
     env,
     future::Future,
     path::{Path, PathBuf},
-    process::{Child, Command, Output, Stdio},
+    process::{Child, Command, Output},
     str::FromStr,
     time::Duration,
 };

@@ -339,9 +339,7 @@ pub async fn handle_add_validated_transaction(
     let transaction: ValidatedMempoolTx = bincode::deserialize_from(whole_body.reader())
         .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
 
-    submit_validated
-        .submit_validated_transaction(transaction)
-        .await?;
+    submit_validated.submit_validated_transaction(transaction).await?;
 
     Response::builder()
         .status(StatusCode::OK)

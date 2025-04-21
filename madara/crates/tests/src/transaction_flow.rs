@@ -4,21 +4,20 @@ use crate::{
 };
 use assert_matches::assert_matches;
 use rstest::rstest;
-use starknet::accounts::{Account, AccountError, ConnectedAccount, RawExecutionV3};
+use starknet::accounts::{Account, AccountError, ConnectedAccount};
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     signers::{LocalWallet, SigningKey},
 };
 use starknet_core::{
     types::{
-        BlockId, BlockTag, BroadcastedDeclareTransactionV3, BroadcastedInvokeTransactionV3, Call, ExecutionResult,
-        Felt, FunctionCall, ResourceBounds, ResourceBoundsMapping, StarknetError, TransactionReceipt,
+        BlockId, BlockTag, Call, ExecutionResult, Felt, FunctionCall, StarknetError, TransactionReceipt,
         TransactionReceiptWithBlockInfo,
     },
     utils::starknet_keccak,
 };
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, SequencerGatewayProvider};
-use std::{iter, time::Duration};
+use std::time::Duration;
 
 enum TestSetup {
     /// Sequencer only, offering a jsonrpc and gateway interface. Transactions are validated and executed on the same node.
@@ -223,8 +222,11 @@ fn make_transfer_call(recipient: Felt, amount: u128) -> Vec<Call> {
 }
 
 fn make_multicall(calls: Vec<Call>) -> Vec<Felt> {
-    [Felt::from(calls.len())].into_iter()
-        .chain(calls.into_iter().flat_map(|c| [c.to, c.selector, c.calldata.len().into()].into_iter().chain(c.calldata)))
+    [Felt::from(calls.len())]
+        .into_iter()
+        .chain(
+            calls.into_iter().flat_map(|c| [c.to, c.selector, c.calldata.len().into()].into_iter().chain(c.calldata)),
+        )
         .collect()
 }
 
@@ -330,28 +332,3 @@ async fn invalid_nonce(#[case] setup: TestSetup, #[case] wait_for_initial_transf
     // via rpc
     perform_test(&setup, setup.json_rpc(), init_nonce).await;
 }
-
-// Test list:
-// - [x] working invoke
-// - [ ] working deploy_account
-// - [ ] working declare
-// - [x] invalid nonce: nonce too low [validation]
-// - [x] invalid nonce: nonce too low - error caught at mempool and not gateway [validation]
-// - [ ] invalid nonce: nonce too high [todo: current behavior is known to be incorrect here]
-// - [ ] duplicate tx in mempool (can only happen when nonce too high)
-// - [ ] gas checks - InsufficientMaxFee (todo: elaborate on tests here, would that include InsufficientAccountBalance? check blockifier's code)
-// - [ ] __validate__ failure (eg. invalid signature) [validation]
-// - [ ] execution failure [execution - tx is reverted]
-// - [ ] deploy_account: class hash not found [validation]
-// - [ ] declare: invalid program / contract class [validation]
-// - [ ] declare: class compilation error [validation]
-// - [ ] declare: compiled class hash mismatch [validation]
-// - [ ] declare: class too big [validation]
-// - [ ] declare: class too big but only after decompression (DoS vector) [validation]
-// - [ ] declare: class already declared [validation]
-// - [ ] declare: UnsupportedContractClassVersion [validation]
-// - [ ] invoke: contract not found [validation]
-// - [ ] invoke: contract is not an account [validation] StarknetError::NonAccount
-// - [ ] mempool tx limit [validation]
-// - [ ] deprecated tx [validation]
-// - [ ] StarknetError::NoBlocks (genesis is not imported yet) [validation]
