@@ -8465,6 +8465,7 @@ dependencies = [
  "mp-block",
  "mp-chain-config",
  "mp-oracle",
+ "mp-rpc",
  "mp-sync",
  "mp-utils",
  "opentelemetry",
