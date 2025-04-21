@@ -887,6 +887,17 @@ mod starknet_client_event_subscription_test {
             })
         };
 
+        // Wait for get_initial_state
+        recv.changed().await.unwrap();
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 0);
+
+        // Verify the block number
+        let block_in_db = db
+            .backend()
+            .get_l1_last_confirmed_block()
+            .expect("Should successfully retrieve the last confirmed block number from the database");
+        assert_eq!(block_in_db, Some(0), "Block in DB does not match expected L2 block number");
+
         // Firing the state update event
         send_state_update(
             &context.account,
@@ -899,7 +910,7 @@ mod starknet_client_event_subscription_test {
         )
         .await?;
 
-        // Wait for get_initial_state
+        // Wait for changed
         recv.changed().await.unwrap();
         assert_eq!(recv.borrow().as_ref().unwrap().block_number, 100);
 
