@@ -1,3 +1,7 @@
+use crate::{
+    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
+    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
+};
 use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
@@ -7,17 +11,12 @@ use blockifier::transaction::{
     transactions::L1HandlerTransaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
-use primitive_types::H256;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
+use starknet_core::types::Hash256;
 use starknet_types_core::felt::Felt;
 use std::convert::TryFrom;
 use thiserror::Error;
-
-use crate::{
-    DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
-    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
-};
 
 fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
     match tx {
@@ -46,7 +45,7 @@ pub enum L1HandlerMessageError {
     InvalidNonce,
 }
 
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct MsgToL2 {
     pub from_address: Felt,
@@ -64,7 +63,7 @@ pub struct MsgToL2 {
 // - In this implementation, padding for `from_address` and `nonce` is not required. Both fields are converted to `felt252`, which naturally fits the required size.
 // - Padding is only applied to the payload length, which is a u64 (8 bytes), to ensure proper alignment.
 impl MsgToL2 {
-    pub fn compute_hash(&self) -> H256 {
+    pub fn compute_hash(&self) -> Hash256 {
         let mut hasher = Keccak256::new();
         hasher.update(self.from_address.to_bytes_be());
         hasher.update(self.to_address.to_bytes_be());
@@ -73,7 +72,8 @@ impl MsgToL2 {
         hasher.update([0u8; 24]); // Padding
         hasher.update((self.payload.len() as u64).to_be_bytes());
         self.payload.iter().for_each(|felt| hasher.update(felt.to_bytes_be()));
-        H256::from_slice(&hasher.finalize())
+        let bytes = hasher.finalize().as_slice().try_into().expect("Byte array length mismatch");
+        Hash256::from_bytes(bytes)
     }
 }
 
@@ -93,7 +93,7 @@ impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
     }
 }
 
-fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1HandlerMessageError> {
+fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Hash256, L1HandlerMessageError> {
     let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
     let nonce = Some(tx.tx.nonce.0);
@@ -105,7 +105,7 @@ fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<H256, L1Hand
         payload: payload.into(),
         nonce,
     };
-    Ok(H256::from_slice(message.compute_hash().as_bytes()))
+    Ok(message.compute_hash())
 }
 
 fn recursive_call_info_iter(res: &TransactionExecutionInfo) -> impl Iterator<Item = &CallInfo> {
@@ -122,17 +122,6 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
 
     let actual_fee = FeePayment { amount: res.transaction_receipt.fee.into(), unit: price_unit };
     let transaction_hash = blockifier_tx_hash(tx);
-
-    let message_hash = match tx {
-        Transaction::L1HandlerTransaction(tx) => match get_l1_handler_message_hash(tx) {
-            Ok(hash) => Some(hash),
-            Err(err) => {
-                tracing::error!("Error getting l1 handler message hash: {:?}", err);
-                None
-            }
-        },
-        _ => None,
-    };
 
     let messages_sent = recursive_call_info_iter(res)
         .flat_map(|call| {
@@ -220,14 +209,16 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 execution_result,
             })
         }
-        Transaction::L1HandlerTransaction(_tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+        Transaction::L1HandlerTransaction(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,
             events,
             execution_resources,
             execution_result,
-            message_hash: message_hash.unwrap(), // it's a safe unwrap because it would've panicked earlier if it was Err
+            // This should not panic unless blockifier gives a garbage receipt.
+            // TODO: we should have a soft error here just in case.
+            message_hash: get_l1_handler_message_hash(tx).expect("Error getting l1 handler message hash"),
         }),
     }
 }
@@ -329,7 +320,7 @@ mod test {
         let hash = msg.compute_hash();
 
         let expected_hash =
-            H256::from_str("0xeec1e25e91757d5e9c8a11cf6e84ddf078dbfbee23382ee979234fc86a8608a5").unwrap();
+            Hash256::from_str("0xeec1e25e91757d5e9c8a11cf6e84ddf078dbfbee23382ee979234fc86a8608a5").unwrap();
 
         assert_eq!(hash, expected_hash);
     }

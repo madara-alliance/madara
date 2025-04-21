@@ -12,6 +12,7 @@ use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_settlement_client::messaging::L1toL2MessagingEventData;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
+use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_core::types::Felt;
@@ -28,6 +29,7 @@ pub struct L1SyncConfig<'a> {
     pub devnet: bool,
     pub mempool: Arc<Mempool>,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
+    pub l1_head_snd: L1HeadSender,
 }
 
 pub struct L1SyncService<C: 'static, S: 'static>
@@ -36,6 +38,7 @@ where
     S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
 {
     db_backend: Arc<MadaraBackend>,
+    l1_head_snd: Option<L1HeadSender>,
     settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     l1_gas_provider: GasPriceProvider,
     gas_price_sync_disabled: bool,
@@ -131,6 +134,7 @@ where
             gas_price_poll,
             mempool: sync_config.mempool,
             l1_block_metrics: sync_config.l1_block_metrics,
+            l1_head_snd: Some(sync_config.l1_head_snd),
         })
     }
 
@@ -158,6 +162,7 @@ where
             let gas_price_poll = self.gas_price_poll;
             let mempool = Arc::clone(&self.mempool);
             let l1_block_metrics = self.l1_block_metrics.clone();
+            let l1_head_sender = self.l1_head_snd.take().expect("Service already starteds");
 
             runner.service_loop(move |ctx| {
                 mc_settlement_client::sync::sync_worker(SyncWorkerConfig {
@@ -167,6 +172,7 @@ where
                     gas_price_sync_disabled,
                     gas_price_poll_ms: gas_price_poll,
                     mempool,
+                    l1_head_sender,
                     ctx,
                     l1_block_metrics,
                 })

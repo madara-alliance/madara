@@ -34,15 +34,7 @@ mod test_rpc_read_calls {
         MADARA_INSTANCE
             .get_or_init(|| async {
                 let mut madara = MadaraCmdBuilder::new()
-                    .args([
-                        "--full",
-                        "--network",
-                        "sepolia",
-                        "--no-sync-polling",
-                        "--n-blocks-to-sync",
-                        "20",
-                        "--no-l1-sync",
-                    ])
+                    .args(["--full", "--network", "sepolia", "--sync-stop-at", "19", "--no-l1-sync"])
                     .run();
 
                 madara.wait_for_ready().await;

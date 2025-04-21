@@ -22,9 +22,8 @@ async fn test_storage_proof_snapshots() {
         "--full",
         "-n",
         "sepolia",
-        "--no-sync-polling",
-        "--n-blocks-to-sync",
-        "20",
+        "--sync-stop-at",
+        "19",
         "--no-l1-sync",
         // trie log config
         "--db-max-saved-trie-logs",
@@ -53,9 +52,8 @@ async fn test_storage_proof_trie_log() {
         "--full",
         "-n",
         "sepolia",
-        "--no-sync-polling",
-        "--n-blocks-to-sync",
-        "20",
+        "--sync-stop-at",
+        "19",
         "--no-l1-sync",
         // trie log config
         "--db-max-saved-trie-logs",
