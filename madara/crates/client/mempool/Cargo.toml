@@ -25,15 +25,16 @@ proptest-state-machine.workspace = true
 bitvec.workspace = true
 tracing = { workspace = true, features = ["log"] }
 tracing-test.workspace = true
-blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
 serde_json.workspace = true
 starknet-types-core = { workspace = true, features = ["arbitrary"] }
+mc-devnet.workspace = true
+futures.workspace = true
 
 [features]
-testing = ["blockifier/testing", "mc-db/testing", "mockall"]
+testing = ["mc-db/testing", "mockall"]
 
 [dependencies]
 
@@ -41,6 +42,7 @@ testing = ["blockifier/testing", "mc-db/testing", "mockall"]
 mc-analytics.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
+mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -59,12 +61,13 @@ starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 mockall = { workspace = true, optional = true }
 reqwest.workspace = true
 serde.workspace = true
 thiserror.workspace = true
-tokio.workspace = true
 tokio-util.workspace = true
+tokio.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

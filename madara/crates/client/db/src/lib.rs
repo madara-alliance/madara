@@ -23,7 +23,7 @@
 //! - Each of those functions can be called in parallel, however, [`MadaraBackend::apply_to_global_trie`] needs to be called
 //!   sequentially. This is because we cannot support updating the global trie in an inter-block parallelism fashion. However,
 //!   parallelism is still used inside of that function - intra-block parallelism.
-//! - Each of these block parts has a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
+//! - Each of these block parts have a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
 //!   which the block importer service can use however it wants. However, [`ChainHead::full_block`] is special,
 //!   as it is updated by this crate.
 //! - The block importer service needs to call [`MadaraBackend::on_block`] to mark a block as fully imported. This function
@@ -40,7 +40,10 @@ use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use chain_head::ChainHead;
 use db_metrics::DbMetrics;
+use events::EventChannels;
+use mp_block::MadaraBlockInfo;
 use mp_chain_config::ChainConfig;
+use mp_receipt::EventWithTransactionHash;
 use mp_rpc::EmittedEvent;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
@@ -49,19 +52,21 @@ use rocksdb::{
 };
 use rocksdb_options::rocksdb_global_options;
 use snapshots::Snapshots;
-use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot};
+use watch::BlockWatch;
 
 mod chain_head;
 mod db_version;
 mod error;
+mod events;
 mod rocksdb_options;
 mod rocksdb_snapshot;
 mod snapshots;
+mod watch;
 
 pub mod block_db;
 pub mod bonsai_db;
@@ -80,19 +85,21 @@ mod update_global_trie;
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
 pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
+pub use rocksdb_options::{RocksDBConfig, StatsLevel};
+pub use watch::{ClosedBlocksReceiver, PendingBlockReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
-pub fn open_rocksdb(path: &Path) -> anyhow::Result<Arc<DB>> {
-    let opts = rocksdb_global_options()?;
+fn open_rocksdb(path: &Path, config: &RocksDBConfig) -> anyhow::Result<Arc<DB>> {
+    let opts = rocksdb_global_options(config)?;
     tracing::debug!("opening db at {:?}", path.display());
     let db = DB::open_cf_descriptors(
         &opts,
         path,
-        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options())),
+        Column::ALL.iter().map(|col| ColumnFamilyDescriptor::new(col.rocksdb_name(), col.rocksdb_options(config))),
     )?;
 
     Ok(Arc::new(db))
@@ -312,150 +319,15 @@ impl Default for TrieLogConfig {
     }
 }
 
-/// EventChannels manages a highly efficient and scalable pub/sub system for events with 16 specific channels
-/// plus one "all" channel. This architecture provides several key benefits:
-///
-/// Benefits:
-/// - Selective Subscription: Subscribers can choose between receiving all events or filtering for specific
-///   senders, optimizing network and processing resources
-/// - Memory Efficiency: The fixed number of channels (16) provides a good balance between granularity
-///   and memory overhead
-/// - Predictable Routing: The XOR-based hash function ensures consistent and fast mapping of sender
-///   addresses to channels
-///
-/// Events are distributed based on the sender's address in the event, where each sender address
-/// is mapped to one of the 16 specific channels using a simple XOR-based hash function.
-/// Subscribers can choose to either receive all events or only events from specific senders
-/// by subscribing to the corresponding channel.
-pub struct EventChannels {
-    /// Broadcast channel that receives all events regardless of their sender's address
-    all_channels: tokio::sync::broadcast::Sender<EmittedEvent>,
-    /// Array of 16 broadcast channels, each handling events from a subset of sender addresses
-    /// The target channel for an event is determined by the sender's address mapping
-    specific_channels: [tokio::sync::broadcast::Sender<EmittedEvent>; 16],
-}
-
-impl EventChannels {
-    /// Creates a new EventChannels instance with the specified buffer capacity for each channel.
-    /// Each channel (both all_channels and specific channels) will be able to buffer up to
-    /// `capacity` events before older events are dropped.
-    ///
-    /// # Arguments
-    /// * `capacity` - The maximum number of events that can be buffered in each channel
-    ///
-    /// # Returns
-    /// A new EventChannels instance with initialized broadcast channels
-    pub fn new(capacity: usize) -> Self {
-        let (all_channels, _) = tokio::sync::broadcast::channel(capacity);
-
-        let mut specific_channels = Vec::with_capacity(16);
-        for _ in 0..16 {
-            let (sender, _) = tokio::sync::broadcast::channel(capacity);
-            specific_channels.push(sender);
-        }
-
-        Self { all_channels, specific_channels: specific_channels.try_into().unwrap() }
-    }
-
-    /// Subscribes to events based on an optional sender address filter
-    ///
-    /// # Arguments
-    /// * `from_address` - Optional sender address to filter events:
-    ///   * If `Some(address)`, subscribes only to events from senders whose addresses map
-    ///     to the same channel as the provided address (address % 16)
-    ///   * If `None`, subscribes to all events regardless of sender address
-    ///
-    /// # Returns
-    /// A broadcast::Receiver that will receive either:
-    /// * All events (if from_address is None)
-    /// * Only events from senders whose addresses map to the same channel as the provided address
-    ///
-    /// # Warning
-    /// This method only provides a coarse filtering mechanism based on address mapping.
-    /// You will still need to implement additional filtering in your receiver logic because:
-    /// * Multiple sender addresses map to the same channel
-    /// * You may want to match the exact sender address rather than just its channel mapping
-    ///
-    /// # Implementation Details
-    /// When a specific address is provided, the method:
-    /// 1. Calculates the channel index using the sender's address
-    /// 2. Subscribes to the corresponding specific channel
-    ///
-    /// This means you'll receive events from all senders whose addresses map to the same channel
-    pub fn subscribe(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
-        match from_address {
-            Some(address) => {
-                let channel_index = self.calculate_channel_index(&address);
-                self.specific_channels[channel_index].subscribe()
-            }
-            None => self.all_channels.subscribe(),
-        }
-    }
-
-    /// Publishes an event to both the all_channels and the specific channel determined by the sender's address.
-    /// The event will only be sent to channels that have active subscribers.
-    ///
-    /// # Arguments
-    /// * `event` - The event to publish, containing the sender's address that determines the target specific channel
-    ///
-    /// # Returns
-    /// * `Ok(usize)` - The sum of the number of subscribers that received the event across both channels
-    /// * `Ok(0)` - If no subscribers exist in any channel
-    /// * `Err` - If the event couldn't be sent
-    pub fn publish(
-        &self,
-        event: EmittedEvent,
-    ) -> Result<usize, Box<tokio::sync::broadcast::error::SendError<EmittedEvent>>> {
-        let channel_index = self.calculate_channel_index(&event.event.from_address);
-        let specific_channel = &self.specific_channels[channel_index];
-
-        let mut total = 0;
-        if self.all_channels.receiver_count() > 0 {
-            total += self.all_channels.send(event.clone())?;
-        }
-        if specific_channel.receiver_count() > 0 {
-            total += specific_channel.send(event)?;
-        }
-        Ok(total)
-    }
-
-    pub fn receiver_count(&self) -> usize {
-        self.all_channels.receiver_count() + self.specific_channels.iter().map(|c| c.receiver_count()).sum::<usize>()
-    }
-
-    /// Calculates the target channel index for a given sender's address
-    ///
-    /// # Arguments
-    /// * `address` - The Felt address of the event sender to calculate the channel index for
-    ///
-    /// # Returns
-    /// A channel index between 0 and 15, calculated by XORing the two highest limbs of the address
-    /// and taking the lowest 4 bits of the result.
-    ///
-    /// # Implementation Details
-    /// Rather than using the last byte of the address, this function:
-    /// 1. Gets the raw limbs representation of the address
-    /// 2. XORs limbs[0] and limbs[1] (the two lowest limbs)
-    /// 3. Uses the lowest 4 bits of the XOR result to determine the channel
-    ///
-    /// This provides a balanced distribution of addresses across channels by
-    /// incorporating entropy from the address
-    fn calculate_channel_index(&self, address: &Felt) -> usize {
-        let limbs = address.to_raw();
-        let hash = limbs[0] ^ limbs[1];
-        (hash & 0x0f) as usize
-    }
-}
-
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     snapshots: Arc<Snapshots>,
-    sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
     head_status: ChainHead,
-    sender_event: EventChannels,
+    events_watch: EventChannels,
+    watch: BlockWatch,
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
@@ -468,7 +340,6 @@ impl fmt::Debug for MadaraBackend {
             .field("db", &self.db)
             .field("chain_config", &self.chain_config)
             .field("db_metrics", &self.db_metrics)
-            .field("sender_block_info", &self.sender_block_info)
             .field("config", &self.config)
             .finish()
     }
@@ -543,8 +414,11 @@ pub struct MadaraBackendConfig {
     pub trie_log: TrieLogConfig,
     pub backup_every_n_blocks: Option<u64>,
     pub flush_every_n_blocks: Option<u64>,
+    pub rocksdb: RocksDBConfig,
     #[cfg(any(test, feature = "testing"))]
-    pub _temp_dir: Option<tempfile::TempDir>,
+    pub temp_dir: Option<tempfile::TempDir>,
+    #[cfg(not(any(test, feature = "testing")))]
+    pub temp_dir: Option<()>,
 }
 
 impl MadaraBackendConfig {
@@ -556,14 +430,14 @@ impl MadaraBackendConfig {
             trie_log: Default::default(),
             backup_every_n_blocks: None,
             flush_every_n_blocks: None,
-            #[cfg(any(test, feature = "testing"))]
-            _temp_dir: None,
+            rocksdb: Default::default(),
+            temp_dir: None,
         }
     }
     #[cfg(any(test, feature = "testing"))]
     pub fn new_temp_dir(temp_dir: tempfile::TempDir) -> Self {
         let config = Self::new(temp_dir.as_ref());
-        Self { _temp_dir: Some(temp_dir), ..config }
+        Self { temp_dir: Some(temp_dir), ..config }
     }
     pub fn backup_dir(self, backup_dir: Option<PathBuf>) -> Self {
         Self { backup_dir, ..self }
@@ -599,25 +473,28 @@ impl MadaraBackend {
             Some(config.trie_log.max_kept_snapshots),
             config.trie_log.snapshot_interval,
         ));
-        Ok(Self {
+        let backend = Self {
             writeopts_no_wal: make_write_opt_no_wal(),
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
             backup_handle,
             db,
             chain_config,
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            sender_event: EventChannels::new(100),
+            events_watch: EventChannels::new(100),
             config,
             head_status: ChainHead::default(),
             snapshots,
-        })
+            watch: BlockWatch::new(),
+        };
+        backend.watch.init_initial_values(&backend).context("Initializing watch channels initial values")?;
+        Ok(backend)
     }
 
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        let db = open_rocksdb(temp_dir.as_ref()).unwrap();
-        Arc::new(Self::new(None, db, chain_config, MadaraBackendConfig::new_temp_dir(temp_dir)).unwrap())
+        let config = MadaraBackendConfig::new_temp_dir(temp_dir);
+        let db = open_rocksdb(config.temp_dir.as_ref().unwrap().path(), &config.rocksdb).unwrap();
+        Arc::new(Self::new(None, db, chain_config, config).unwrap())
     }
 
     /// Open the db.
@@ -662,7 +539,7 @@ impl MadaraBackend {
             None
         };
 
-        let db = open_rocksdb(&db_path)?;
+        let db = open_rocksdb(&db_path, &config.rocksdb)?;
 
         let mut backend = Self::new(backup_handle, db, chain_config, config)?;
         backend.check_configuration()?;
@@ -673,9 +550,29 @@ impl MadaraBackend {
 
     /// This function needs to be called by the downstream block importer consumer service to mark a
     /// new block as fully imported. See the [module documentation](self) to get details on what this exactly means.
-    pub async fn on_block(&self, block_n: u64) -> anyhow::Result<()> {
+    pub async fn on_full_block_imported(
+        &self,
+        block_info: Arc<MadaraBlockInfo>,
+        events: impl IntoIterator<Item = EventWithTransactionHash>,
+    ) -> anyhow::Result<()> {
+        let block_n = block_info.header.block_number;
         self.head_status.set_latest_full_block_n(Some(block_n));
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
+
+        for event in events {
+            if let Err(e) = self.events_watch.publish(EmittedEvent {
+                event: event.event.into(),
+                block_hash: Some(block_info.block_hash),
+                block_number: Some(block_info.header.block_number),
+                transaction_hash: event.transaction_hash,
+            }) {
+                tracing::debug!("Failed to send event to subscribers: {e}");
+            }
+        }
+        self.watch.on_new_block(block_info);
+
+        self.save_head_status_to_db()?;
+
         if self
             .config
             .flush_every_n_blocks
@@ -691,7 +588,6 @@ impl MadaraBackend {
         {
             self.backup().await.context("Making DB backup")?;
         }
-        self.save_head_status_to_db()?;
         Ok(())
     }
 

@@ -30,7 +30,7 @@ pub async fn estimate_fee(
     let starknet_version = *block_info.protocol_version();
 
     if starknet_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+        return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
@@ -51,13 +51,15 @@ pub async fn estimate_fee(
             if result.execution_info.is_reverted() {
                 return Err(StarknetRpcApiError::TxnExecutionError {
                     tx_index: index,
-                    error: result.execution_info.revert_error.clone().unwrap_or_default(),
+                    error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
                 });
             }
             acc.push(exec_context.execution_result_to_fee_estimate(result));
             Ok(acc)
         },
     )?;
+
+    tracing::debug!("fee_estimates = {fee_estimates:?}");
 
     Ok(fee_estimates)
 }

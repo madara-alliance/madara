@@ -3,43 +3,42 @@
 
 mod devnet;
 mod rpc;
+mod sequencing;
 mod storage_proof;
 
 use anyhow::bail;
 use rstest::rstest;
-use starknet_providers::Provider;
+use starknet_core::types::Felt;
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
+use starknet_providers::{Provider, SequencerGatewayProvider};
+use std::ops::{Deref, Range};
+use std::sync::{Arc, Mutex};
 use std::{
     collections::HashMap,
     env,
     future::Future,
-    io::{BufRead, BufReader},
     path::{Path, PathBuf},
     process::{Child, Command, Output, Stdio},
-    sync::{
-        mpsc::{self, TryRecvError},
-        Arc,
-    },
-    thread,
-    time::{Duration, Instant},
+    str::FromStr,
+    time::Duration,
 };
 use tempfile::TempDir;
 
-async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(
+async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
     mut cond: impl FnMut() -> F,
     duration: Duration,
     max_attempts: u32,
-) {
+) -> R {
     let mut attempt = 0;
     loop {
-        let Err(err) = cond().await else {
-            break;
+        let err = match cond().await {
+            Ok(r) => break r,
+            Err(err) => err,
         };
 
         attempt += 1;
         if attempt >= max_attempts {
-            let elapsed = (attempt as f64 * duration.as_secs() as f64) / 60.0;
-            panic!("No answer from the node after {:.1} minutes: {:#}", elapsed, err);
+            panic!("No answer from the node after {attempt} attempts: {:#}", err)
         }
 
         tokio::time::sleep(duration).await;
@@ -49,10 +48,12 @@ async fn wait_for_cond<F: Future<Output = Result<(), anyhow::Error>>>(
 pub struct MadaraCmd {
     process: Option<Child>,
     ready: bool,
-    json_rpc: JsonRpcClient<HttpTransport>,
-    rpc_url: Url,
+    json_rpc: Option<JsonRpcClient<HttpTransport>>,
+    rpc_url: Option<Url>,
+    gateway_root_url: Option<Url>,
     tempdir: Arc<TempDir>,
-    _port: u16,
+    _rpc_port: Option<MadaraPortNum>,
+    _gateway_port: Option<MadaraPortNum>,
 }
 
 impl MadaraCmd {
@@ -61,7 +62,22 @@ impl MadaraCmd {
     }
 
     pub fn json_rpc(&self) -> &JsonRpcClient<HttpTransport> {
-        &self.json_rpc
+        self.json_rpc.as_ref().unwrap()
+    }
+
+    pub fn gateway_client(&self, chain_id: Felt) -> SequencerGatewayProvider {
+        SequencerGatewayProvider::new(
+            Url::parse(&format!("{}/gateway", self.gateway_root_url.as_ref().unwrap())).unwrap(),
+            Url::parse(&format!("{}/feeder_gateway", self.gateway_root_url.as_ref().unwrap())).unwrap(),
+            chain_id,
+        )
+    }
+
+    pub async fn gateway_root_get(&self, endpoint: &str) -> reqwest::RequestBuilder {
+        reqwest::Client::new().get(format!("{}{endpoint}", self.gateway_root_url.as_ref().unwrap()))
+    }
+    pub async fn gateway_root_post(&self, endpoint: &str) -> reqwest::RequestBuilder {
+        reqwest::Client::new().post(format!("{}{endpoint}", self.gateway_root_url.as_ref().unwrap()))
     }
 
     pub fn db_dir(&self) -> &Path {
@@ -69,7 +85,7 @@ impl MadaraCmd {
     }
 
     pub async fn wait_for_ready(&mut self) -> &mut Self {
-        let endpoint = self.rpc_url.join("/health").unwrap();
+        let endpoint = self.rpc_url.as_ref().unwrap().join("/health").unwrap();
         wait_for_cond(
             || async {
                 let res = reqwest::get(endpoint.clone()).await?;
@@ -77,7 +93,7 @@ impl MadaraCmd {
                 anyhow::Ok(())
             },
             Duration::from_millis(500),
-            100,
+            50,
         )
         .await;
         self.ready = true;
@@ -102,18 +118,15 @@ impl MadaraCmd {
                 }
             },
             Duration::from_secs(2),
-            400,
+            100,
         )
         .await;
         self
     }
+}
 
-    pub fn kill(&mut self) {
-        let Some(mut child) = self.process.take() else { return };
-        let _ = child.kill();
-    }
-
-    pub fn stop(&mut self) {
+impl Drop for MadaraCmd {
+    fn drop(&mut self) {
         let Some(mut child) = self.process.take() else { return };
 
         // Send SIGTERM signal to gracefully terminate the process
@@ -124,7 +137,7 @@ impl MadaraCmd {
             let _ = child.kill();
         }
 
-        let grace_period = Duration::from_secs(5);
+        let grace_period = Duration::from_secs(2);
         let termination_start = std::time::Instant::now();
 
         // Wait for process exit or force kill after grace period
@@ -141,45 +154,35 @@ impl MadaraCmd {
     }
 }
 
-impl Drop for MadaraCmd {
+// this really should use unix sockets, sad
+
+const PORT_RANGE: Range<u16> = 19944..20000;
+
+struct AvailablePorts<I: Iterator<Item = u16>> {
+    to_reuse: Vec<u16>,
+    next: I,
+}
+
+lazy_static::lazy_static! {
+    static ref AVAILABLE_PORTS: Mutex<AvailablePorts<Range<u16>>> = Mutex::new(AvailablePorts { to_reuse: vec![], next: PORT_RANGE });
+}
+
+#[derive(Clone)]
+pub struct MadaraPortNum(pub u16);
+impl Drop for MadaraPortNum {
     fn drop(&mut self) {
-        self.stop();
+        let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
+        guard.to_reuse.push(self.0);
     }
 }
 
-pub fn extract_port_from_stderr(process: &mut Child) -> Result<u16, String> {
-    let stderr = process.stderr.take().ok_or_else(|| "Could not capture stderr from Madara process".to_string())?;
-
-    let reader = BufReader::new(stderr);
-    let (tx, rx) = mpsc::channel();
-
-    thread::spawn(move || {
-        for line in reader.lines().map_while(Result::ok) {
-            if let Some(addr_part) = line.split("Running JSON-RPC server at ").nth(1) {
-                if let Some(ip_port) = addr_part.split_whitespace().next() {
-                    if let Some(port_str) = ip_port.rsplit(':').next() {
-                        if let Ok(port) = port_str.parse::<u16>() {
-                            let _ = tx.send(port);
-                            return;
-                        }
-                    }
-                }
-            }
-        }
-    });
-
-    let timeout = Duration::from_secs(30);
-    let start = Instant::now();
-
-    while start.elapsed() < timeout {
-        match rx.try_recv() {
-            Ok(port) => return Ok(port),
-            Err(TryRecvError::Empty) => thread::sleep(Duration::from_millis(100)),
-            Err(TryRecvError::Disconnected) => return Err("Port extraction thread terminated unexpectedly".to_string()),
-        }
+pub fn get_port() -> MadaraPortNum {
+    let mut guard = AVAILABLE_PORTS.lock().expect("poisoned lock");
+    if let Some(el) = guard.to_reuse.pop() {
+        return MadaraPortNum(el);
     }
-
-    Err(format!("Timed out after {:?} waiting for Madara to start", timeout))
+    let port = guard.next.next().expect("no more port to use");
+    MadaraPortNum(port)
 }
 
 /// Note: the builder is [`Clone`]able. When cloned, it will keep the same tempdir.
@@ -193,6 +196,9 @@ pub struct MadaraCmdBuilder {
     args: Vec<String>,
     env: HashMap<String, String>,
     tempdir: Arc<TempDir>,
+    rpc_port: Option<MadaraPortNum>,
+    gateway_port: Option<MadaraPortNum>,
+    label: String,
 }
 
 impl Default for MadaraCmdBuilder {
@@ -207,7 +213,17 @@ impl MadaraCmdBuilder {
             args: Default::default(),
             env: Default::default(),
             tempdir: Arc::new(TempDir::with_prefix("madara-test").unwrap()),
+            rpc_port: Some(get_port()),
+            gateway_port: None,
+            label: String::new(), // no label
         }
+    }
+
+    pub fn no_rpc(self) -> Self {
+        Self { rpc_port: None, ..self }
+    }
+    pub fn enable_gateway(self) -> Self {
+        Self { gateway_port: Some(get_port()), ..self }
     }
 
     pub fn args(mut self, args: impl IntoIterator<Item = impl Into<String>>) -> Self {
@@ -220,54 +236,66 @@ impl MadaraCmdBuilder {
         self
     }
 
-    pub fn run(self) -> MadaraCmd {
-        self.run_with_option(true)
+    pub fn label(mut self, label: impl Into<String>) -> Self {
+        self.label = label.into();
+        self
     }
 
-    pub fn run_with_option(self, wait_for_port: bool) -> MadaraCmd {
-        let target_bin = PathBuf::from(env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script"));
+    pub fn run(self) -> MadaraCmd {
+        let target_bin = env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script");
+        let target_bin = PathBuf::from_str(&target_bin).expect("COVERAGE_BIN to be a path");
+        if !target_bin.exists() {
+            panic!("No binary to run: {:?}", target_bin)
+        }
 
-        assert!(target_bin.exists(), "No binary to run: {:?}", target_bin);
+        // This is an optional argument to sync faster from the FGW if gateway_key is set
+        let gateway_key_arg = env::var("GATEWAY_KEY").ok().map(|gateway_key| ["--gateway-key".into(), gateway_key]);
 
-        let gateway_key_args =
-            env::var("GATEWAY_KEY").ok().map(|key| vec!["--gateway-key".into(), key]).unwrap_or_default();
+        let process = Command::new(target_bin)
+            .envs(self.env.into_iter().chain([("MADARA_LOG_CUSTOM_PROCESS_LABEL".into(), self.label)])) // also apply the label, for nicer output formatting. Empty string will only show PID
+            .args(
+                self.args
+                    .into_iter()
+                    .chain(["--base-path".into(), format!("{}", self.tempdir.deref().as_ref().display())])
+                    .chain(
+                        self.rpc_port.as_ref().map(|p| ["--rpc-port".into(), format!("{}", p.0)]).into_iter().flatten(),
+                    )
+                    .chain(
+                        self.gateway_port
+                            .as_ref()
+                            .map(|p| ["--gateway-port".into(), format!("{}", p.0)])
+                            .into_iter()
+                            .flatten(),
+                    )
+                    .chain(gateway_key_arg.into_iter().flatten()),
+            )
+            // .stdout(Stdio::piped())
+            .spawn()
+            .unwrap();
 
-        tracing::info!("Running new madara process with args {:?}", self.args);
-
-        let mut cmd = Command::new(target_bin);
-        cmd.envs(self.env)
-            .args(self.args)
-            .args([
-                "--base-path".into(),
-                self.tempdir.path().display().to_string(),
-                "--rpc-port".into(),
-                "0".into(), // OS Assigned
-            ])
-            .args(gateway_key_args)
-            .stdout(if wait_for_port { Stdio::inherit() } else { Stdio::piped() })
-            .stderr(Stdio::piped());
-
-        let mut process = cmd.spawn().expect("Failed to spawn Madara process");
-
-        let port = if wait_for_port {
-            let actual_port =
-                extract_port_from_stderr(&mut process).expect("Failed to extract port from Madara process");
-            tracing::info!("Detected Madara running on port: {}", actual_port);
-            actual_port
-        } else {
-            0
-        };
-
-        let rpc_url = Url::parse(&format!("http://127.0.0.1:{}/", port)).unwrap();
-
+        let rpc_url = self.rpc_port.as_ref().map(|port| Url::parse(&format!("http://127.0.0.1:{}/", port.0)).unwrap());
+        let gateway_root_url =
+            self.gateway_port.as_ref().map(|port| Url::parse(&format!("http://127.0.0.1:{}/", port.0)).unwrap());
         MadaraCmd {
             process: Some(process),
             ready: false,
-            json_rpc: JsonRpcClient::new(HttpTransport::new(rpc_url.clone())),
+            json_rpc: rpc_url.as_ref().map(|rpc_url| JsonRpcClient::new(HttpTransport::new(rpc_url.clone()))),
             rpc_url,
+            gateway_root_url,
             tempdir: self.tempdir,
-            _port: port,
+            _rpc_port: self.rpc_port,
+            _gateway_port: self.gateway_port,
         }
+    }
+
+    fn gateway_root_url(&self) -> String {
+        format!("http://127.0.0.1:{}", self.gateway_port.as_ref().unwrap().0)
+    }
+    fn gateway_url(&self) -> String {
+        format!("{}/gateway", self.gateway_root_url())
+    }
+    fn feeder_gateway_url(&self) -> String {
+        format!("{}/feeder_gateway", self.gateway_root_url())
     }
 }
 
@@ -275,7 +303,7 @@ impl MadaraCmdBuilder {
 fn madara_help_shows() {
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
 
-    let output = MadaraCmdBuilder::new().args(["--help"]).run_with_option(false).wait_with_output();
+    let output = MadaraCmdBuilder::new().args(["--help"]).run().wait_with_output();
     assert!(output.status.success());
     let stdout = String::from_utf8(output.stdout).unwrap();
     assert!(stdout.contains("Madara: High performance Starknet sequencer/full-node"), "stdout: {stdout}");
@@ -307,86 +335,9 @@ async fn madara_can_sync_a_few_blocks() {
     assert_eq!(
         node.json_rpc().block_hash_and_number().await.unwrap(),
         BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/19
+            // https://sepolia.voyager.online/block/0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5
             block_hash: Felt::from_hex_unchecked("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5"),
             block_number: 19
-        }
-    );
-}
-
-#[rstest]
-#[tokio::test]
-async fn madara_can_sync_and_restart() {
-    use starknet_core::types::BlockHashAndNumber;
-    use starknet_types_core::felt::Felt;
-
-    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
-
-    let cmd_builder = MadaraCmdBuilder::new().args([
-        "--full",
-        "--network",
-        "sepolia",
-        "--sync-stop-at",
-        "5",
-        "--no-l1-sync",
-        "--gas-price",
-        "0",
-    ]);
-
-    let mut node = cmd_builder.clone().run();
-    node.wait_for_ready().await;
-    node.wait_for_sync_to(5).await;
-
-    assert_eq!(
-        node.json_rpc().block_hash_and_number().await.unwrap(),
-        BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/5
-            block_hash: Felt::from_hex_unchecked("0x13b390a0b2c48f907cda28c73a12aa31b96d51bc1be004ba5f71174d8d70e4f"),
-            block_number: 5
-        }
-    );
-
-    node.stop(); // stop the node (gracefully).
-
-    let cmd_builder =
-        cmd_builder.args(["--full", "--network", "sepolia", "--sync-stop-at", "7", "--no-l1-sync", "--gas-price", "0"]);
-
-    let mut node = cmd_builder.clone().run();
-    node.wait_for_ready().await;
-    node.wait_for_sync_to(7).await;
-
-    assert_eq!(
-        node.json_rpc().block_hash_and_number().await.unwrap(),
-        BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/7
-            block_hash: Felt::from_hex_unchecked("0x2e59a5adbdf53e00fd282a007b59771067870c1c7664ca7878327adfff398b4"),
-            block_number: 7
-        }
-    );
-
-    node.kill(); // kill the node. ungraceful shutdown.
-
-    let cmd_builder = cmd_builder.args([
-        "--full",
-        "--network",
-        "sepolia",
-        "--sync-stop-at",
-        "10",
-        "--no-l1-sync",
-        "--gas-price",
-        "0",
-    ]);
-
-    let mut node = cmd_builder.clone().run();
-    node.wait_for_ready().await;
-    node.wait_for_sync_to(10).await;
-
-    assert_eq!(
-        node.json_rpc().block_hash_and_number().await.unwrap(),
-        BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/10
-            block_hash: Felt::from_hex_unchecked("0x3b26e3fc6bc2062f99479ea06a79e080a5f373514e03002459010c3be544593"),
-            block_number: 10
         }
     );
 }

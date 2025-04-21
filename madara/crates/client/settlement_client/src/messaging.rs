@@ -8,7 +8,7 @@ use alloy::rpc::types::Log;
 use futures::{Stream, StreamExt};
 use mc_db::l1_db::LastSyncedEventBlock;
 use mc_db::MadaraBackend;
-use mc_mempool::{Mempool, MempoolProvider};
+use mc_submit_tx::SubmitL1HandlerTransaction;
 use mp_convert::ToFelt;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
@@ -135,7 +135,7 @@ impl TryFrom<EmittedEvent> for L1toL2MessagingEventData {
 pub async fn sync<C, S>(
     settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
     backend: Arc<MadaraBackend>,
-    mempool: Arc<Mempool>,
+    submit_tx: Arc<dyn SubmitL1HandlerTransaction>,
     mut ctx: ServiceContext,
 ) -> Result<(), SettlementClientError>
 where
@@ -201,7 +201,7 @@ where
             }
 
             // Process message
-            match process_message(&backend, &event_data, mempool.clone()).await {
+            match process_message(&backend, &event_data, submit_tx.clone()).await {
                 Ok(Some(tx_hash)) => {
                     tracing::info!(
                         "Message from block: {:?} submitted, transaction hash: {:?}",
@@ -281,7 +281,7 @@ pub fn parse_handle_message_transaction(
 async fn process_message(
     backend: &MadaraBackend,
     event: &L1toL2MessagingEventData,
-    mempool: Arc<Mempool>,
+    submit_tx: Arc<dyn SubmitL1HandlerTransaction>,
 ) -> Result<Option<Felt>, SettlementClientError> {
     let transaction = parse_handle_message_transaction(event)?;
     let tx_nonce = transaction.nonce;
@@ -302,9 +302,10 @@ async fn process_message(
         }
         _ => {}
     };
-    let res = mempool
-        .tx_accept_l1_handler(transaction.into(), fees.unwrap_or(0))
-        .map_err(|e| SettlementClientError::Mempool(format!("Failed to accept transaction in mempool: {}", e)))?;
+    let res = submit_tx
+        .submit_l1_handler_transaction(transaction.into(), fees.unwrap_or(0))
+        .await
+        .map_err(|e| SettlementClientError::SubmitTx(format!("Failed to accept transaction in mempool: {e:#}")))?;
     // HERMAN TODO: Actually this should be updated after the tx l1 handler is executed
     backend
         .set_l1_messaging_nonce(tx_nonce)
@@ -321,7 +322,7 @@ mod messaging_module_tests {
     };
     use futures::stream;
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, MempoolLimits};
+    use mc_mempool::{GasPriceProvider, Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
     use rstest::{fixture, rstest};
     use starknet_types_core::felt::Felt;
@@ -359,13 +360,8 @@ mod messaging_module_tests {
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
         let l1_gas_setter = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
-        let mempool = Arc::new(Mempool::new(
-            Arc::clone(db.backend()),
-            Arc::clone(&l1_data_provider),
-            MempoolLimits::for_testing(),
-        ));
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 
         // Create a mock client directly
         let mut mock_client = MockSettlementClientTrait::default();

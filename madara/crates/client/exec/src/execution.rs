@@ -1,3 +1,4 @@
+use crate::{Error, ExecutionContext, ExecutionResult, TxExecError, TxFeeEstimationError};
 use blockifier::fee::fee_utils::get_fee_by_gas_vector;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
@@ -6,10 +7,13 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{FeeType, HasRelatedFeeType, TransactionExecutionInfo};
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transaction_types::TransactionType;
-use blockifier::transaction::transactions::{ExecutableTransaction, ExecutionFlags};
+use blockifier::transaction::transactions::{
+    DeclareTransaction, DeployAccountTransaction, ExecutableTransaction, ExecutionFlags, InvokeTransaction,
+    L1HandlerTransaction,
+};
+use starknet_api::core::{ClassHash, ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
-
-use crate::{Error, ExecutionContext, ExecutionResult, TxExecError, TxFeeEstimationError};
+use mp_convert::ToFelt;
 
 impl ExecutionContext {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
@@ -26,7 +30,7 @@ impl ExecutionContext {
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
-            tracing::debug!("executing {hash:#}");
+            tracing::debug!("executing {:#x}", hash.to_felt());
             tx.execute(&mut cached_state, &self.block_context, charge_fee, validate).map_err(|err| TxExecError {
                 block_n: self.latest_visible_block.into(),
                 hash,
@@ -41,7 +45,7 @@ impl ExecutionContext {
             .enumerate()
             .map(|(index, tx): (_, Transaction)| {
                 let hash = tx.tx_hash();
-                tracing::debug!("executing {hash:#} (trace)");
+                tracing::debug!("executing {:#x} (trace)", hash.to_felt());
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
 
@@ -107,9 +111,15 @@ impl ExecutionContext {
 }
 
 pub trait TxInfo {
+    fn contract_address(&self) -> ContractAddress;
+    fn clone_blockifier_transaction(&self) -> Self;
     fn tx_hash(&self) -> TransactionHash;
+    fn nonce(&self) -> Nonce;
     fn tx_type(&self) -> TransactionType;
     fn fee_type(&self) -> FeeType;
+    fn is_only_query(&self) -> bool;
+    fn deployed_contract_address(&self) -> Option<ContractAddress>;
+    fn declared_class_hash(&self) -> Option<ClassHash>;
 }
 
 impl TxInfo for Transaction {
@@ -124,6 +134,40 @@ impl TxInfo for Transaction {
         }
     }
 
+    // FIXME: fix this, this is wrong for L1HandlerTxs.
+    fn nonce(&self) -> Nonce {
+        match self {
+            Transaction::AccountTransaction(tx) => match tx {
+                AccountTransaction::Declare(tx) => tx.tx.nonce(),
+                AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
+                AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+            },
+            Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
+        }
+    }
+
+    fn contract_address(&self) -> ContractAddress {
+        match self {
+            Transaction::AccountTransaction(tx) => match tx {
+                AccountTransaction::Declare(tx) => tx.tx.sender_address(),
+                AccountTransaction::DeployAccount(tx) => tx.contract_address,
+                AccountTransaction::Invoke(tx) => tx.tx.sender_address(),
+            },
+            Transaction::L1HandlerTransaction(tx) => tx.tx.contract_address,
+        }
+    }
+
+    fn is_only_query(&self) -> bool {
+        match self {
+            Transaction::AccountTransaction(tx) => match tx {
+                AccountTransaction::Declare(tx) => tx.only_query(),
+                AccountTransaction::DeployAccount(tx) => tx.only_query,
+                AccountTransaction::Invoke(tx) => tx.only_query,
+            },
+            Transaction::L1HandlerTransaction(_) => false,
+        }
+    }
+
     fn tx_type(&self) -> TransactionType {
         match self {
             Self::AccountTransaction(tx) => tx.tx_type(),
@@ -135,6 +179,49 @@ impl TxInfo for Transaction {
         match self {
             Self::AccountTransaction(tx) => tx.fee_type(),
             Self::L1HandlerTransaction(tx) => tx.fee_type(),
+        }
+    }
+
+    fn declared_class_hash(&self) -> Option<ClassHash> {
+        match self {
+            Self::AccountTransaction(AccountTransaction::Declare(tx)) => Some(tx.class_hash()),
+            _ => None,
+        }
+    }
+
+    fn deployed_contract_address(&self) -> Option<ContractAddress> {
+        match self {
+            Self::AccountTransaction(AccountTransaction::DeployAccount(tx)) => Some(tx.contract_address),
+            _ => None,
+        }
+    }
+
+    fn clone_blockifier_transaction(&self) -> Transaction {
+        match self {
+            Self::AccountTransaction(account_tx) => Self::AccountTransaction(match account_tx {
+                AccountTransaction::Declare(tx) => AccountTransaction::Declare(match tx.only_query() {
+                    true => DeclareTransaction::new_for_query(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                        .expect("Making blockifier transaction for query"),
+                    false => DeclareTransaction::new(tx.tx.clone(), tx.tx_hash, tx.class_info.clone())
+                        .expect("Making blockifier transaction"),
+                }),
+                AccountTransaction::DeployAccount(tx) => AccountTransaction::DeployAccount(DeployAccountTransaction {
+                    tx: tx.tx.clone(),
+                    tx_hash: tx.tx_hash,
+                    contract_address: tx.contract_address,
+                    only_query: tx.only_query,
+                }),
+                AccountTransaction::Invoke(tx) => AccountTransaction::Invoke(InvokeTransaction {
+                    tx: tx.tx.clone(),
+                    tx_hash: tx.tx_hash,
+                    only_query: tx.only_query,
+                }),
+            }),
+            Self::L1HandlerTransaction(tx) => Self::L1HandlerTransaction(L1HandlerTransaction {
+                tx: tx.tx.clone(),
+                tx_hash: tx.tx_hash,
+                paid_fee_on_l1: tx.paid_fee_on_l1,
+            }),
         }
     }
 }

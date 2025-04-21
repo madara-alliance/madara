@@ -128,6 +128,20 @@ impl GatewayProvider {
         request.send_post(transaction).await
     }
 
+    #[cfg(feature = "add_validated_transaction")]
+    pub async fn add_validated_transaction(
+        &self,
+        transaction: mp_transactions::validated::ValidatedMempoolTx,
+    ) -> Result<(), SequencerError> {
+        let url = self.madara_specific_url.as_ref().ok_or(SequencerError::NoUrl)?;
+
+        let request = RequestBuilder::new(&self.client, url.clone(), self.headers.clone())
+            .add_uri_segment("trusted_add_validated_transaction")
+            .expect("Failed to add URI segment. This should not fail in prod.");
+
+        request.send_post_bincode(transaction).await
+    }
+
     pub async fn add_invoke_transaction(
         &self,
         transaction: UserInvokeFunctionTransaction,

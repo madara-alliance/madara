@@ -1,20 +1,18 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::borrow_interior_mutable_const)]
 
+use super::metrics::RpcMetrics;
+use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
+use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
+use anyhow::Context;
+use mp_utils::service::ServiceContext;
 use std::convert::Infallible;
 use std::net::SocketAddr;
 use std::time::Duration;
-
-use anyhow::Context;
-use mp_utils::service::ServiceContext;
 use tower::Service;
 
-use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
-
-use super::metrics::RpcMetrics;
-use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
-
-const MEGABYTE: u32 = 1024 * 1024;
+#[allow(non_upper_case_globals)]
+const MiB: u32 = 1024 * 1024;
 
 /// RPC server configuration.
 #[derive(Debug, Clone)]
@@ -25,8 +23,8 @@ pub struct ServerConfig {
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
-    pub max_payload_in_mb: u32,
-    pub max_payload_out_mb: u32,
+    pub max_payload_in_mib: u32,
+    pub max_payload_out_mib: u32,
     pub metrics: RpcMetrics,
     pub message_buffer_capacity: u32,
     pub methods: jsonrpsee::Methods,
@@ -57,8 +55,8 @@ pub async fn start_server(
         rpc_version_default,
         max_connections,
         max_subs_per_conn,
-        max_payload_in_mb,
-        max_payload_out_mb,
+        max_payload_in_mib,
+        max_payload_out_mib,
         metrics,
         message_buffer_capacity,
         methods,
@@ -80,8 +78,8 @@ pub async fn start_server(
         .layer(try_into_cors(cors.as_ref())?);
 
     let builder = jsonrpsee::server::Server::builder()
-        .max_request_body_size(max_payload_in_mb.saturating_mul(MEGABYTE))
-        .max_response_body_size(max_payload_out_mb.saturating_mul(MEGABYTE))
+        .max_request_body_size(max_payload_in_mib.saturating_mul(MiB))
+        .max_response_body_size(max_payload_out_mib.saturating_mul(MiB))
         .max_connections(max_connections)
         .max_subscriptions_per_connection(max_subs_per_conn)
         .enable_ws_ping(ping_config)

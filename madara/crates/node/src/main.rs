@@ -3,6 +3,7 @@
 
 mod cli;
 mod service;
+mod submit_tx;
 mod util;
 
 use crate::cli::l1::MadaraSettlementLayer;
@@ -18,13 +19,13 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
-use mc_rpc::providers::{AddTransactionProvider, ForwardToProvider, MempoolAddTxProvider};
+use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolConfig, MempoolLimits};
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::EthereumClientConfig;
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::StarknetClientConfig;
+use mc_submit_tx::{SubmitTransaction, TransactionValidator};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
@@ -32,6 +33,7 @@ use service::{BlockProductionService, GatewayService, L1SyncService, RpcService,
 use starknet_api::core::ChainId;
 use std::sync::Arc;
 use std::{env, path::Path};
+use submit_tx::{MakeSubmitTransactionSwitch, MakeSubmitValidatedTransactionSwitch};
 
 const GREET_IMPL_NAME: &str = "Madara";
 const GREET_SUPPORT_URL: &str = "https://github.com/madara-alliance/madara/issues";
@@ -190,8 +192,8 @@ async fn main() -> anyhow::Result<()> {
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mut mempool = Mempool::new(
         Arc::clone(service_db.backend()),
-        Arc::clone(&l1_data_provider),
-        MempoolLimits::new(&chain_config),
+        MempoolConfig::new(MempoolLimits::new(&chain_config))
+            .with_no_saving(run_cmd.validator_params.no_mempool_saving),
     );
     mempool.load_txs_from_db().context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
@@ -245,7 +247,7 @@ async fn main() -> anyhow::Result<()> {
             deferred_service_start.push(MadaraServiceId::RpcAdmin);
         }
 
-        if run_cmd.gateway_params.feeder_gateway_enable {
+        if run_cmd.gateway_params.any_enabled() {
             deferred_service_start.push(MadaraServiceId::Gateway);
         }
 
@@ -284,6 +286,8 @@ async fn main() -> anyhow::Result<()> {
         )
     }
 
+    let gateway_client = Arc::new(provider);
+
     // Block production
 
     let service_block_production = BlockProductionService::new(
@@ -294,34 +298,45 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     // Add transaction provider
-    let add_tx_provider_l2_sync: Arc<dyn AddTransactionProvider> = Arc::new(ForwardToProvider::new(provider));
-    let add_tx_provider_mempool: Arc<dyn AddTransactionProvider> = Arc::new(MempoolAddTxProvider::new(mempool));
+
+    let mempool_tx_validator = Arc::new(TransactionValidator::new(
+        Arc::clone(&mempool) as _,
+        Arc::clone(service_db.backend()),
+        run_cmd.validator_params.as_validator_config(),
+    ));
+
+    let gateway_submit_tx: Arc<dyn SubmitTransaction> = if run_cmd.validator_params.validate_then_forward_txs {
+        Arc::new(TransactionValidator::new(
+            Arc::clone(&gateway_client) as _,
+            Arc::clone(service_db.backend()),
+            run_cmd.validator_params.as_validator_config(),
+        ))
+    } else {
+        Arc::clone(&gateway_client) as _
+    };
+
+    let tx_submit =
+        MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx) as _, Arc::clone(&mempool_tx_validator) as _);
+    let validated_tx_submit =
+        MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, Arc::clone(&mempool) as _);
 
     // User-facing RPC
 
-    let service_rpc_user = RpcService::user(
-        run_cmd.rpc_params.clone(),
-        Arc::clone(service_db.backend()),
-        Arc::clone(&add_tx_provider_l2_sync),
-        Arc::clone(&add_tx_provider_mempool),
-    );
+    let service_rpc_user =
+        RpcService::user(run_cmd.rpc_params.clone(), Arc::clone(service_db.backend()), tx_submit.clone());
 
     // Admin-facing RPC (for node operators)
 
-    let service_rpc_admin = RpcService::admin(
-        run_cmd.rpc_params.clone(),
-        Arc::clone(service_db.backend()),
-        Arc::clone(&add_tx_provider_l2_sync),
-        Arc::clone(&add_tx_provider_mempool),
-    );
+    let service_rpc_admin =
+        RpcService::admin(run_cmd.rpc_params.clone(), Arc::clone(service_db.backend()), tx_submit.clone());
 
     // Feeder gateway
 
     let service_gateway = GatewayService::new(
         run_cmd.gateway_params.clone(),
         Arc::clone(service_db.backend()),
-        Arc::clone(&add_tx_provider_l2_sync),
-        Arc::clone(&add_tx_provider_mempool),
+        tx_submit.clone(),
+        Some(validated_tx_submit.clone()),
     )
     .await
     .context("Initializing gateway service")?;
@@ -375,7 +390,7 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::RpcAdmin);
     }
 
-    if run_cmd.gateway_params.feeder_gateway_enable && !warp_update_receiver {
+    if run_cmd.gateway_params.any_enabled() && !warp_update_receiver {
         app.activate(MadaraServiceId::Gateway);
     }
 
@@ -383,9 +398,5 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::Telemetry);
     }
 
-    app.start().await?;
-
-    let _ = analytics.shutdown();
-
-    anyhow::Ok(())
+    Ok(())
 }

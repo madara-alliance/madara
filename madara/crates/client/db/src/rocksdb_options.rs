@@ -9,7 +9,34 @@ const KiB: usize = 1024;
 const MiB: usize = 1024 * KiB;
 const GiB: usize = 1024 * MiB;
 
-pub fn rocksdb_global_options() -> Result<Options> {
+pub use rocksdb::statistics::StatsLevel;
+
+#[derive(Debug, Clone)]
+pub struct RocksDBConfig {
+    pub enable_statistics: bool,
+    pub statistics_period_sec: u32,
+    pub statistics_level: StatsLevel,
+    pub memtable_blocks_budget_mib: usize,
+    pub memtable_contracts_budget_mib: usize,
+    pub memtable_other_budget_mib: usize,
+    pub memtable_prefix_bloom_filter_ratio: f64,
+}
+
+impl Default for RocksDBConfig {
+    fn default() -> Self {
+        Self {
+            enable_statistics: false,
+            statistics_period_sec: 60,
+            statistics_level: StatsLevel::All,
+            memtable_blocks_budget_mib: 1 * GiB,
+            memtable_contracts_budget_mib: 128 * MiB,
+            memtable_other_budget_mib: 128 * MiB,
+            memtable_prefix_bloom_filter_ratio: 0.0,
+        }
+    }
+}
+
+pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     let mut options = Options::default();
     options.create_if_missing(true);
     options.create_missing_column_families(true);
@@ -25,6 +52,14 @@ pub fn rocksdb_global_options() -> Result<Options> {
     options.set_keep_log_file_num(3);
     options.set_log_level(rocksdb::LogLevel::Warn);
 
+    // I think this one if a column-specific option, but I'm not entirely sure. So let's just also set it here.
+    options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
+    if config.enable_statistics {
+        options.enable_statistics();
+        options.set_statistics_level(config.statistics_level);
+    }
+    options.set_stats_dump_period_sec(config.statistics_period_sec);
+
     let mut env = Env::new().context("Creating rocksdb env")?;
     // env.set_high_priority_background_threads(cores); // flushes
     env.set_low_priority_background_threads(cores); // compaction
@@ -37,35 +72,34 @@ pub fn rocksdb_global_options() -> Result<Options> {
 impl Column {
     /// Per column rocksdb options, like memory budget, compaction profiles, block sizes for hdd/sdd
     /// etc.
-    pub(crate) fn rocksdb_options(&self) -> Options {
+    pub(crate) fn rocksdb_options(&self, config: &RocksDBConfig) -> Options {
         let mut options = Options::default();
 
-        match self {
-            Column::ContractStorage => {
-                options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    contract_db::CONTRACT_STORAGE_PREFIX_EXTRACTOR,
-                ));
-            }
-            Column::ContractToClassHashes => {
-                options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    contract_db::CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR,
-                ));
-            }
-            Column::ContractToNonces => {
-                options.set_prefix_extractor(SliceTransform::create_fixed_prefix(
-                    contract_db::CONTRACT_NONCES_PREFIX_EXTRACTOR,
-                ));
-            }
-            _ => {}
+        let prefix_extractor_len = match self {
+            Column::ContractStorage => Some(contract_db::CONTRACT_STORAGE_PREFIX_LEN),
+            Column::ContractToClassHashes => Some(contract_db::CONTRACT_CLASS_HASH_PREFIX_LEN),
+            Column::ContractToNonces => Some(contract_db::CONTRACT_NONCES_PREFIX_LEN),
+            _ => None,
+        };
+
+        if let Some(prefix_extractor_len) = prefix_extractor_len {
+            options.set_prefix_extractor(SliceTransform::create_fixed_prefix(prefix_extractor_len));
+            options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
         }
 
         options.set_compression_type(DBCompressionType::Zstd);
         match self {
             Column::BlockNToBlockInfo | Column::BlockNToBlockInner => {
-                options.optimize_universal_style_compaction(1 * GiB);
+                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
+                options.optimize_universal_style_compaction(config.memtable_blocks_budget_mib);
+            }
+            Column::ContractStorage | Column::ContractToClassHashes | Column::ContractToNonces => {
+                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
+                options.optimize_universal_style_compaction(config.memtable_contracts_budget_mib);
             }
             _ => {
-                options.optimize_universal_style_compaction(100 * MiB);
+                options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
+                options.optimize_universal_style_compaction(config.memtable_other_budget_mib);
             }
         }
         options

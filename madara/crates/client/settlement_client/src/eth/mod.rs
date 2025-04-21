@@ -423,8 +423,8 @@ mod l1_messaging_tests {
     };
     use blockifier::transaction::transaction_execution::Transaction;
     use mc_db::DatabaseService;
-    use mc_mempool::MempoolProvider;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool};
+    use mc_mempool::{MempoolConfig, MempoolProvider};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::*;
@@ -543,11 +543,7 @@ mod l1_messaging_tests {
         let l1_gas_setter = GasPriceProvider::new();
         let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
-        let mempool = Arc::new(Mempool::new(
-            Arc::clone(db.backend()),
-            Arc::clone(&l1_data_provider),
-            MempoolLimits::for_testing(),
-        ));
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
@@ -601,7 +597,7 @@ mod l1_messaging_tests {
 
         let expected_nonce = Nonce(Felt::from_dec_str("0").expect("failed to parse nonce string"));
 
-        let current_nonce = mempool.backend.get_l1_messaging_nonce_latest().unwrap().unwrap();
+        let current_nonce = db.backend().get_l1_messaging_nonce_latest().unwrap().unwrap();
         assert_eq!(current_nonce, expected_nonce);
 
         // Check that the L1 message correctly trigger an L1 handler tx, which is accepted in Mempool

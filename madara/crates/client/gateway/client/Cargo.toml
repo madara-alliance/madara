@@ -14,13 +14,23 @@ workspace = true
 [package.metadata.docs.rs]
 targets = ["x86_64-unknown-linux-gnu"]
 
+[features]
+default = []
+add_validated_transaction = ["mc-db", "bincode"]
+
 [dependencies]
 
+# add_validated_transaction feature
+bincode = { workspace = true, optional = true }
+mc-db = { workspace = true, optional = true }
+
 # Madara
+mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
 mp-gateway.workspace = true
 mp-rpc.workspace = true
+mp-transactions.workspace = true
 
 # Starknet
 starknet-core.workspace = true
@@ -28,10 +38,11 @@ starknet-types-core.workspace = true
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 bytes.workspace = true
 futures.workspace = true
-http.workspace = true
 http-body-util.workspace = true
+http.workspace = true
 hyper = { workspace = true, features = ["full"] }
 hyper-tls.workspace = true
 hyper-util.workspace = true

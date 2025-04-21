@@ -39,14 +39,13 @@
 //! [by_timestamp]: TransactionIntentPendingByNonce::by_timestamp
 //! [by_nonce]: TransactionIntentPendingByTimestamp::by_nonce
 
+use mp_transactions::validated::TxTimestamp;
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 use std::{cmp, marker::PhantomData};
 
 #[cfg(any(test, feature = "testing"))]
 use crate::CheckInvariants;
-
-use super::ArrivedAtTimestamp;
 
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
@@ -204,7 +203,7 @@ pub(crate) struct TransactionIntent<K> {
     /// The contract responsible for sending the transaction.
     pub(crate) contract_address: Felt,
     /// Time at which the transaction was received by the mempool.
-    pub(crate) timestamp: ArrivedAtTimestamp,
+    pub(crate) timestamp: TxTimestamp,
     /// The [Nonce] of the transaction associated to this intent. We use this
     /// for retrieval purposes later on.
     pub(crate) nonce: Nonce,

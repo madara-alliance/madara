@@ -19,7 +19,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
-async-std = { workspace = true }
 
 [dependencies]
 
@@ -27,8 +26,11 @@ async-std = { workspace = true }
 m-proc-macros = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
-mc-gateway-client = { workspace = true }
+mc-gateway-client = { workspace = true, features = [
+  "add_validated_transaction",
+] }
 mc-mempool = { workspace = true }
+mc-submit-tx = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }

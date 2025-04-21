@@ -26,11 +26,10 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     };
 
     let current_block_info =
-        current_block_info.as_nonpending().ok_or_internal_server_error("Latest block cannot be pending")?;
+        current_block_info.as_closed().ok_or_internal_server_error("Latest block cannot be pending")?;
     let starting_block_num = 0; // TODO(rpc): fix this // starknet.starting_block;
     let starting_block_info = starknet.get_block_info(&BlockId::Number(starting_block_num))?;
-    let starting_block_info =
-        starting_block_info.as_nonpending().ok_or_internal_server_error("Block cannot be pending")?;
+    let starting_block_info = starting_block_info.as_closed().ok_or_internal_server_error("Block cannot be pending")?;
     let starting_block_hash = starting_block_info.block_hash;
     let current_block_num = current_block_info.header.block_number;
     let current_block_hash = current_block_info.block_hash;
