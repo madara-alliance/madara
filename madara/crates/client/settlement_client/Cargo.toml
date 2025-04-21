@@ -21,8 +21,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Madara
 mc-analytics.workspace = true
 mc-db.workspace = true
-mc-submit-tx.workspace = true
 mc-mempool.workspace = true
+mc-submit-tx.workspace = true
 mp-chain-config.workspace = true
 mp-convert.workspace = true
 mp-transactions.workspace = true
