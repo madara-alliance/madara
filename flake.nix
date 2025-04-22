@@ -58,10 +58,12 @@
             ];
 
           shellHook = ''
-            # Workaround: the starkgate-contracts setup script attempts to globally install npm packages
-            # (ganache, prettier, etc.), which fails in a Nix environment due to read-only /nix/store.
-            # To fix this, we redirect npm's global prefix to a writable local directory (.npm-global),
-            # making global installs succeed and allowing `npm list -g` checks to pass.
+            # --- NPM Global Installation Workaround for Nix Shell ---
+            # The starkgate-contracts setup script tries to install npm packages globally.
+            # In a Nix environment, global installs to /nix/store fail due to its read-only nature.
+            # This workaround redirects npm's global prefix to a local writable directory (`.npm-global`),
+            # enabling global-like installs and allowing tools like `npm list -g` to function as expected.
+            # Reference: https://nixos.wiki/wiki/Node.js#Install_to_your_home
 
             export NPM_GLOBAL_PREFIX="$PWD/.npm-global"
             export PATH="$NPM_GLOBAL_PREFIX/bin:$PATH"
