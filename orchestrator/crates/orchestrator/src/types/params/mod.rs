@@ -157,32 +157,26 @@ impl TryFrom<SetupCmd> for CronArgs {
             event_bridge_type: setup_cmd
                 .aws_event_bridge_args
                 .event_bridge_type
-                .clone()
                 .ok_or(OrchestratorError::SetupCommandError("Event Bridge type is required".to_string()))?,
             target_queue_name: setup_cmd
                 .aws_event_bridge_args
                 .target_queue_name
-                .clone()
                 .ok_or(OrchestratorError::SetupCommandError("Target queue name is required".to_string()))?,
             cron_time: setup_cmd
                 .aws_event_bridge_args
                 .cron_time
-                .clone()
                 .ok_or(OrchestratorError::SetupCommandError("Cron time is required".to_string()))?,
             trigger_rule_name: setup_cmd
                 .aws_event_bridge_args
                 .trigger_rule_name
-                .clone()
                 .ok_or(OrchestratorError::SetupCommandError("Trigger rule name is required".to_string()))?,
             trigger_role_name: setup_cmd
                 .aws_event_bridge_args
                 .trigger_role_name
-                .clone()
                 .ok_or(OrchestratorError::SetupCommandError("Trigger role name is required".to_string()))?,
             trigger_policy_name: setup_cmd
                 .aws_event_bridge_args
                 .trigger_policy_name
-                .clone()
                 .ok_or(OrchestratorError::SetupCommandError("Trigger policy name is required".to_string()))?,
         })
     }
