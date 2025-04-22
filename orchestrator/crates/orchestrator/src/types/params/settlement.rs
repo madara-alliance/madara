@@ -28,7 +28,7 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     })?)?;
                 let ethereum_operator_address = Address::from_slice(
                     &hex::decode(
-                        &run_cmd
+                        run_cmd
                             .ethereum_args
                             .starknet_operator_address
                             .clone()

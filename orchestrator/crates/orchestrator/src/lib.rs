@@ -34,8 +34,11 @@ pub mod workers;
 /// Contains the CLI arguments for the service
 pub mod cli;
 
+#[allow(dead_code)]
 pub mod types;
 
+#[allow(dead_code)]
 pub mod error;
 
+#[allow(dead_code)]
 pub use error::{OrchestratorError, OrchestratorResult};
