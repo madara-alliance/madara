@@ -2973,9 +2973,9 @@ checksum = "c3ac9f8b63eca6fd385229b3675f6cc0dc5c8a5c8a54a59d4f52ffd670d87b0c"
 
 [[package]]
 name = "bytemuck"
-version = "1.21.0"
+version = "1.22.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ef657dfab802224e671f5818e9a4935f9b1957ed18e58292690cc39e7a4092a3"
+checksum = "b6b1fc10dbac614ebc03540c9dbd60e83887fda27794998c6528f1782047d540"
 
 [[package]]
 name = "byteorder"
@@ -7412,9 +7412,9 @@ checksum = "6fe2267d4ed49bc07b63801559be28c718ea06c4738b7a03c94df7386d2cde46"
 
 [[package]]
 name = "hickory-proto"
-version = "0.24.2"
+version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "447afdcdb8afb9d0a852af6dc65d9b285ce720ed7a59e42a8bf2e931c67bc1b5"
+checksum = "92652067c9ce6f66ce53cc38d1169daa36e6e7eb7dd3b63b5103bd9d97117248"
 dependencies = [
  "async-trait",
  "cfg-if",
@@ -7436,9 +7436,9 @@ dependencies = [
 
 [[package]]
 name = "hickory-resolver"
-version = "0.24.2"
+version = "0.24.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0a2e2aba9c389ce5267d31cf1e4dace82390ae276b0b364ea55630b1fa1b44b4"
+checksum = "cbb117a1ca520e111743ab2f6688eddee69db4e0ea242545a604dce8a66fd22e"
 dependencies = [
  "cfg-if",
  "futures-util",
@@ -8807,9 +8807,9 @@ checksum = "78b3ae25bc7c8c38cec158d1f2757ee79e9b3740fbc7ccf0e59e4b08d793fa89"
 
 [[package]]
 name = "litemap"
-version = "0.7.4"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ee93343901ab17bd981295f2cf0026d4ad018c7c31ba84549a4ddbb47a45104"
+checksum = "23fb14cb19457329c82206317a5663005a4d404783dc74f4252769b0d5f42856"
 
 [[package]]
 name = "lock_api"
@@ -8889,7 +8889,6 @@ dependencies = [
  "hyper 0.14.31",
  "jsonrpsee",
  "mc-analytics",
- "mc-block-import",
  "mc-block-production",
  "mc-db",
  "mc-devnet",
@@ -9081,45 +9080,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "mc-block-import"
-version = "0.8.0"
-dependencies = [
- "anyhow",
- "bitvec",
- "bonsai-trie",
- "itertools 0.13.0",
- "mc-analytics",
- "mc-db",
- "mp-block",
- "mp-bloom-filter",
- "mp-chain-config",
- "mp-class",
- "mp-convert",
- "mp-receipt",
- "mp-state-update",
- "mp-transactions",
- "num-traits 0.2.19",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry-stdout",
- "opentelemetry_sdk",
- "rayon",
- "rstest 0.18.2",
- "serde",
- "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
- "tempfile",
- "thiserror 2.0.3",
- "tokio",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
 name = "mc-block-production"
 version = "0.8.0"
 dependencies = [
@@ -9130,7 +9090,6 @@ dependencies = [
  "lazy_static",
  "m-cairo-test-contracts",
  "mc-analytics",
- "mc-block-import",
  "mc-db",
  "mc-devnet",
  "mc-exec",
@@ -9173,8 +9132,10 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
+ "bitvec",
  "blockifier",
  "bonsai-trie",
+ "futures",
  "lazy_static",
  "librocksdb-sys",
  "mc-analytics",
@@ -9182,6 +9143,7 @@ dependencies = [
  "mp-bloom-filter",
  "mp-chain-config",
  "mp-class",
+ "mp-convert",
  "mp-receipt",
  "mp-rpc",
  "mp-state-update",
@@ -9195,6 +9157,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rayon",
  "rocksdb",
+ "rstest 0.18.2",
  "serde",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
@@ -9214,8 +9177,8 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "blockifier",
+ "futures",
  "m-cairo-test-contracts",
- "mc-block-import",
  "mc-block-production",
  "mc-db",
  "mc-mempool",
@@ -9366,7 +9329,6 @@ dependencies = [
  "blockifier",
  "lazy_static",
  "mc-analytics",
- "mc-block-import",
  "mc-db",
  "mc-exec",
  "mockall",
@@ -9415,7 +9377,6 @@ dependencies = [
  "blockifier",
  "jsonrpsee",
  "m-proc-macros",
- "mc-block-import",
  "mc-db",
  "mc-exec",
  "mc-gateway-client",
@@ -9501,41 +9462,52 @@ name = "mc-sync"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
+ "async-trait",
+ "bitvec",
+ "bonsai-trie",
  "futures",
  "httpmock 0.7.0",
  "hyper 1.5.0",
- "jsonrpsee",
  "m-cairo-test-contracts",
  "mc-analytics",
- "mc-block-import",
  "mc-db",
  "mc-gateway-client",
- "mc-rpc",
+ "mc-settlement-client",
  "mc-telemetry",
  "mp-block",
+ "mp-bloom-filter",
  "mp-chain-config",
  "mp-class",
+ "mp-convert",
  "mp-gateway",
+ "mp-receipt",
+ "mp-state-update",
+ "mp-transactions",
  "mp-utils",
+ "num-traits 0.2.19",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
+ "rand",
+ "rayon",
  "regex",
  "rstest 0.18.2",
  "serde_json",
+ "starknet-core 0.12.0",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
- "tokio-util",
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
+ "tracing-test",
  "url",
 ]
 
@@ -9756,10 +9728,15 @@ dependencies = [
 name = "mp-block"
 version = "0.8.0"
 dependencies = [
+ "bitvec",
  "blockifier",
+ "bonsai-trie",
  "mp-chain-config",
+ "mp-class",
+ "mp-convert",
  "mp-receipt",
  "mp-rpc",
+ "mp-state-update",
  "mp-transactions",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -9768,8 +9745,11 @@ dependencies = [
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "primitive-types",
+ "rayon",
+ "rstest 0.18.2",
  "serde",
  "starknet-types-core",
+ "starknet_api 0.13.0-rc.1",
  "thiserror 2.0.3",
  "tracing",
  "tracing-core",
@@ -9870,7 +9850,6 @@ dependencies = [
  "base64 0.22.1",
  "http 1.1.0",
  "hyper 1.5.0",
- "mc-block-import",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -9909,11 +9888,14 @@ dependencies = [
  "bincode 1.3.3",
  "blockifier",
  "cairo-vm",
+ "mp-chain-config",
+ "mp-convert",
  "mp-rpc",
  "mp-transactions",
  "primitive-types",
  "rstest 0.18.2",
  "serde",
+ "serde_with 3.11.0",
  "sha3",
  "starknet-core 0.12.0",
  "starknet-types-core",
@@ -13066,9 +13048,9 @@ dependencies = [
 
 [[package]]
 name = "serde_repr"
-version = "0.1.19"
+version = "0.1.20"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c64451ba24fc7a6a2d60fc75dd9c83c90903b19028d4eff35e88fc1e86564e9"
+checksum = "175ee3e80ae9982737ca543e96133087cbd9a485eecc3bc4de9c1a37b47ea59c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -16263,18 +16245,18 @@ dependencies = [
 
 [[package]]
 name = "zerofrom"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cff3ee08c995dee1859d998dea82f7374f2826091dd9cd47def953cae446cd2e"
+checksum = "50cc42e0333e05660c3587f3bf9d0478688e15d870fab3346451ce7f8c9fbea5"
 dependencies = [
  "zerofrom-derive",
 ]
 
 [[package]]
 name = "zerofrom-derive"
-version = "0.1.5"
+version = "0.1.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "595eed982f7d355beb85837f651fa22e90b3c044842dc7f2c2842c086f295808"
+checksum = "d71e5d6e06ab090c67b5e44993ec16b72dcbaabc526db883a360057678b48502"
 dependencies = [
  "proc-macro2",
  "quote",

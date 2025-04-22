@@ -12,7 +12,7 @@ members = [
   "madara/crates/client/telemetry",
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
-  "madara/crates/client/block_import",
+  "madara/crates/client/block_production",
   "madara/crates/node",
   "madara/crates/primitives/block",
   "madara/crates/primitives/bloom_filter",
@@ -29,7 +29,6 @@ members = [
   "madara/crates/proc-macros",
   "madara/crates/tests",
   "madara/crates/cairo-test-contracts",
-  "madara/crates/client/block_production",
 
   # orchestrator
   "orchestrator/crates/orchestrator",
@@ -55,14 +54,19 @@ default-members = [
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
+  "madara/crates/client/rpc",
   "madara/crates/client/settlement_client",
   "madara/crates/client/gateway/client",
   "madara/crates/client/gateway/server",
+  "madara/crates/client/analytics",
+  "madara/crates/client/telemetry",
+  "madara/crates/client/devnet",
+  "madara/crates/client/mempool",
+  "madara/crates/client/block_production",
   "madara/crates/client/rpc",
   "madara/crates/client/telemetry",
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
-  "madara/crates/client/block_import",
   "madara/crates/client/analytics",
   "madara/crates/node",
   "madara/crates/primitives/block",
@@ -172,7 +176,6 @@ mc-sync = { path = "madara/crates/client/sync" }
 mc-settlement-client = { path = "madara/crates/client/settlement_client" }
 mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
-mc-block-import = { path = "madara/crates/client/block_import" }
 mc-devnet = { path = "madara/crates/client/devnet" }
 
 # Madara misc
@@ -383,5 +386,6 @@ starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branc
 starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
   "testing",
 ] }
+
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }

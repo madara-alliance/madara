@@ -34,7 +34,7 @@ use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
 use crate::data_storage::{DataStorage, MockDataStorage};
 use crate::database::mongodb::MongoDBValidatedArgs;
 use crate::database::{Database, MockDatabase};
-use crate::helpers::{JobProcessingState, ProcessingLocks};
+use crate::helpers::ProcessingLocks;
 use crate::queue::sqs::AWSSQSValidatedArgs;
 use crate::queue::{MockQueueProvider, QueueProvider};
 use crate::routes::{get_server_url, setup_server, ServerParams};
@@ -248,9 +248,7 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let snos_processing_lock =
-            JobProcessingState::new(params.orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
-        let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
+        let processing_locks = ProcessingLocks::default();
 
         let config = Arc::new(Config::new(
             params.orchestrator_params,
@@ -550,8 +548,17 @@ fn get_env_params() -> EnvParams {
     let max_concurrent_snos_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
-    let service_config =
-        ServiceParams { max_block_to_process: max_block, min_block_to_process: min_block, max_concurrent_snos_jobs };
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS")
+        .expect("Couldn't get max concurrent proving jobs");
+    let max_concurrent_proving_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
+    let service_config = ServiceParams {
+        max_block_to_process: max_block,
+        min_block_to_process: min_block,
+        max_concurrent_snos_jobs,
+        max_concurrent_proving_jobs,
+    };
 
     let server_config = ServerParams {
         host: get_env_var_or_panic("MADARA_ORCHESTRATOR_HOST"),

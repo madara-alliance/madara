@@ -320,7 +320,7 @@ mod tests {
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
         let pending_block = finalized_block_one();
-        starknet.backend.store_block(pending_block, StateDiff::default(), vec![], None, None, None).unwrap();
+        starknet.backend.store_block(pending_block, StateDiff::default(), vec![]).unwrap();
 
         // convert contract_storage_keys to vec of ContractStorageKeyItems now that we have all keys
         let contract_storage_keys_items = contract_storage_keys
@@ -427,7 +427,7 @@ mod tests {
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
         let block = finalized_block_one();
-        starknet.backend.store_block(block, StateDiff::default(), vec![], None, None, None).unwrap();
+        starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
 
         let storage_proof_result =
             get_storage_proof(&starknet, BlockId::Tag(BlockTag::Latest), Some(class_keys.clone()), None, None).unwrap();
@@ -484,7 +484,7 @@ mod tests {
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
         let block = finalized_block_one();
-        starknet.backend.store_block(block, StateDiff::default(), vec![], None, None, None).unwrap();
+        starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
 
         let storage_proof_result =
             get_storage_proof(&starknet, BlockId::Tag(BlockTag::Latest), None, Some(contract_addresses.clone()), None)

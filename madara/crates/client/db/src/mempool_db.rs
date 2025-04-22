@@ -101,7 +101,7 @@ impl MadaraBackend {
         // atomically.
 
         let col = self.db.get_column(Column::MempoolTransactions);
-        self.db.delete_cf_opt(&col, bincode::serialize(tx_hash)?, &self.write_opt_no_wal)?;
+        self.db.delete_cf_opt(&col, bincode::serialize(tx_hash)?, &self.writeopts_no_wal)?;
         tracing::debug!("remove_mempool_tx {:?}", tx_hash);
         Ok(())
     }

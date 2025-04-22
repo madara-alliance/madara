@@ -21,6 +21,7 @@ rustc-ice-*.txt
 
 # direnv cache
 .direnv
+.cairo
 
 # Javascript dependencies
 **/node_modules/

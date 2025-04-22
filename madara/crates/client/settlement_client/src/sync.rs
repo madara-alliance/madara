@@ -2,7 +2,7 @@ use crate::client::SettlementClientTrait;
 use crate::error::SettlementClientError;
 use crate::gas_price::{gas_price_worker, L1BlockMetrics};
 use crate::messaging::{sync, L1toL2MessagingEventData};
-use crate::state_update::state_update_worker;
+use crate::state_update::{state_update_worker, L1HeadSender};
 use futures::Stream;
 use mc_db::MadaraBackend;
 use mc_mempool::{GasPriceProvider, Mempool};
@@ -19,6 +19,7 @@ pub struct SyncWorkerConfig<C: 'static, S> {
     pub mempool: Arc<Mempool>,
     pub ctx: ServiceContext,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
+    pub l1_head_sender: L1HeadSender,
 }
 
 pub async fn sync_worker<C: 'static, S>(config: SyncWorkerConfig<C, S>) -> anyhow::Result<()>
@@ -31,6 +32,7 @@ where
         Arc::clone(&config.backend),
         config.settlement_client.clone(),
         config.ctx.clone(),
+        config.l1_head_sender,
         config.l1_block_metrics.clone(),
     ));
 

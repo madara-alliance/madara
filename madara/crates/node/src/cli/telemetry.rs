@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Args, Deserialize, Serialize)]
 pub struct TelemetryParams {
     /// Enable connecting to the Madara telemetry server.
-    #[arg(env = "MADARA_TELEMETRY", long, alias = "telemetry")]
+    #[arg(env = "MADARA_TELEMETRY", long)]
     pub telemetry: bool,
 
     /// The URL of the telemetry server.
