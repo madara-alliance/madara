@@ -19,8 +19,10 @@ rustc-ice-*.txt
 # The cache for chain data in container
 .local
 .cairo
+
 # direnv cache
 .direnv
+.cairo
 
 # Javascript dependencies
 **/node_modules/

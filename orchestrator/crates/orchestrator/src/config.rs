@@ -70,6 +70,7 @@ pub struct ServiceParams {
     pub max_block_to_process: Option<u64>,
     pub min_block_to_process: Option<u64>,
     pub max_concurrent_snos_jobs: Option<usize>,
+    pub max_concurrent_proving_jobs: Option<usize>,
 }
 
 pub struct OrchestratorParams {
@@ -147,7 +148,7 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
 
     // init prover
     let prover_params = run_cmd.validate_prover_params().map_err(|e| eyre!("Failed to validate prover params: {e}"))?;
-    let prover_client = build_prover_service(&prover_params);
+    let prover_client = build_prover_service(&prover_params, &orchestrator_params);
 
     // init storage
     let data_storage_params =
@@ -166,9 +167,16 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
     let queue_params = run_cmd.validate_queue_params().map_err(|e| eyre!("Failed to validate queue params: {e}"))?;
     let queue = build_queue_client(&queue_params, provider_config.clone()).await;
 
-    let snos_processing_lock =
-        JobProcessingState::new(orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
-    let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
+    let mut processing_locks = ProcessingLocks::default();
+
+    if let Some(max_concurrent_snos_jobs) = orchestrator_params.service_config.max_concurrent_snos_jobs {
+        processing_locks.snos_job_processing_lock = Some(Arc::new(JobProcessingState::new(max_concurrent_snos_jobs)));
+    }
+
+    if let Some(max_concurrent_proving_jobs) = orchestrator_params.service_config.max_concurrent_proving_jobs {
+        processing_locks.proving_job_processing_lock =
+            Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
+    }
 
     Ok(Arc::new(Config::new(
         orchestrator_params,
@@ -308,11 +316,16 @@ pub async fn build_da_client(da_params: &DaValidatedArgs) -> Box<dyn DaClient + 
 }
 
 /// Builds the prover service based on the environment variable PROVER_SERVICE
-pub fn build_prover_service(prover_params: &ProverValidatedArgs) -> Box<dyn ProverClient> {
+pub fn build_prover_service(
+    prover_params: &ProverValidatedArgs,
+    orchestrator_params: &OrchestratorParams,
+) -> Box<dyn ProverClient> {
     match prover_params {
-        ProverValidatedArgs::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+        ProverValidatedArgs::Sharp(sharp_params) => {
+            Box::new(SharpProverService::new_with_args(sharp_params, &orchestrator_params.prover_layout_name))
+        }
         ProverValidatedArgs::Atlantic(atlantic_params) => {
-            Box::new(AtlanticProverService::new_with_args(atlantic_params))
+            Box::new(AtlanticProverService::new_with_args(atlantic_params, &orchestrator_params.prover_layout_name))
         }
     }
 }

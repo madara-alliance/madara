@@ -34,7 +34,7 @@ use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
 use crate::data_storage::{DataStorage, MockDataStorage};
 use crate::database::mongodb::MongoDBValidatedArgs;
 use crate::database::{Database, MockDatabase};
-use crate::helpers::{JobProcessingState, ProcessingLocks};
+use crate::helpers::ProcessingLocks;
 use crate::queue::sqs::AWSSQSValidatedArgs;
 use crate::queue::{MockQueueProvider, QueueProvider};
 use crate::routes::{get_server_url, setup_server, ServerParams};
@@ -230,7 +230,7 @@ impl TestConfigBuilder {
         let settlement_client =
             implement_client::init_settlement_client(settlement_client_type, &params.settlement_params).await;
 
-        let prover_client = implement_client::init_prover_client(prover_client_type, &params.prover_params).await;
+        let prover_client = implement_client::init_prover_client(prover_client_type, &params);
         // Delete the Storage before use
         delete_storage(provider_config.clone(), &params.storage_params).await.expect("Could not delete storage");
         // External Dependencies
@@ -248,9 +248,7 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let snos_processing_lock =
-            JobProcessingState::new(params.orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
-        let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
+        let processing_locks = ProcessingLocks::default();
 
         let config = Arc::new(Config::new(
             params.orchestrator_params,
@@ -307,12 +305,11 @@ pub mod implement_client {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::{JsonRpcClient, Url};
 
-    use super::{ConfigType, MockType};
+    use super::{ConfigType, EnvParams, MockType};
     use crate::alerts::{Alerts, MockAlerts};
     use crate::cli::alert::AlertValidatedArgs;
     use crate::cli::da::DaValidatedArgs;
     use crate::cli::database::DatabaseValidatedArgs;
-    use crate::cli::prover::ProverValidatedArgs;
     use crate::cli::queue::QueueValidatedArgs;
     use crate::cli::settlement::SettlementValidatedArgs;
     use crate::cli::storage::StorageValidatedArgs;
@@ -368,13 +365,10 @@ pub mod implement_client {
         }
     }
 
-    pub(crate) async fn init_prover_client(
-        service: ConfigType,
-        prover_params: &ProverValidatedArgs,
-    ) -> Box<dyn ProverClient> {
+    pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => build_prover_service(prover_params),
+            ConfigType::Actual => build_prover_service(&params.prover_params, &params.orchestrator_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -473,7 +467,7 @@ pub mod implement_client {
     }
 }
 
-struct EnvParams {
+pub struct EnvParams {
     aws_params: AWSConfigValidatedArgs,
     alert_params: AlertValidatedArgs,
     queue_params: QueueValidatedArgs,
@@ -550,8 +544,17 @@ fn get_env_params() -> EnvParams {
     let max_concurrent_snos_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
-    let service_config =
-        ServiceParams { max_block_to_process: max_block, min_block_to_process: min_block, max_concurrent_snos_jobs };
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS")
+        .expect("Couldn't get max concurrent proving jobs");
+    let max_concurrent_proving_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
+    let service_config = ServiceParams {
+        max_block_to_process: max_block,
+        min_block_to_process: min_block,
+        max_concurrent_snos_jobs,
+        max_concurrent_proving_jobs,
+    };
 
     let server_config = ServerParams {
         host: get_env_var_or_panic("MADARA_ORCHESTRATOR_HOST"),

@@ -206,10 +206,16 @@ impl Header {
     }
 
     /// Compute the hash of the header.
-    pub fn compute_hash(&self, chain_id: Felt) -> Felt {
-        if self.protocol_version.is_pre_v0_7() {
+    pub fn compute_hash(&self, chain_id: Felt, pre_v0_13_2_override: bool) -> Felt {
+        let hash_version = if self.protocol_version < StarknetVersion::V0_13_2 && pre_v0_13_2_override {
+            StarknetVersion::V0_13_2
+        } else {
+            self.protocol_version
+        };
+
+        if hash_version.is_pre_v0_7() {
             self.compute_hash_inner_pre_v0_7(chain_id)
-        } else if self.protocol_version < StarknetVersion::V0_13_2 {
+        } else if hash_version < StarknetVersion::V0_13_2 {
             Pedersen::hash_array(&[
                 Felt::from(self.block_number),
                 self.global_state_root,
@@ -336,7 +342,7 @@ mod tests {
     #[test]
     fn test_header_hash_v0_13_2() {
         let header = dummy_header(StarknetVersion::V0_13_2);
-        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"CHAIN_ID"));
+        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"CHAIN_ID"), false);
         let expected_hash =
             Felt::from_hex_unchecked("0x545dd9ef652b07cebb3c8b6d43b6c477998f124e75df970dfee300fb32a698b");
         assert_eq!(hash, expected_hash);
@@ -345,7 +351,7 @@ mod tests {
     #[test]
     fn test_header_hash_v0_11_1() {
         let header = dummy_header(StarknetVersion::V0_11_1);
-        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"CHAIN_ID"));
+        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"CHAIN_ID"), false);
         let expected_hash =
             Felt::from_hex_unchecked("0x42ec5792c165e0235d7576dc9b4a56140b217faba0b2f57c0a48b850ea5999c");
         assert_eq!(hash, expected_hash);
@@ -354,7 +360,7 @@ mod tests {
     #[test]
     fn test_header_hash_pre_v0_7() {
         let header = dummy_header(StarknetVersion::V_0_0_0);
-        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"SN_MAIN"));
+        let hash = header.compute_hash(Felt::from_bytes_be_slice(b"SN_MAIN"), false);
         let expected_hash =
             Felt::from_hex_unchecked("0x6028bf0975e1d4c95713e021a0f0217e74d5a748a20691d881c86d9d62d1432");
         assert_eq!(hash, expected_hash);

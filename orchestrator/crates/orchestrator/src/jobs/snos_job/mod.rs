@@ -147,14 +147,15 @@ impl Job for SnosJob {
         let program_output = fact_info.program_output;
         tracing::debug!(job_id = %job.internal_id, "Fact info calculated successfully");
 
-        tracing::debug!(job_id = %job.internal_id, "Storing SNOS outputs");
-        self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
-            .await?;
-
         // Update the metadata with new paths and fact info
         if let JobSpecificMetadata::Snos(metadata) = &mut job.metadata.specific {
             metadata.snos_fact = Some(fact_info.fact.to_string());
+            metadata.snos_n_steps = Some(cairo_pie.execution_resources.n_steps);
         }
+
+        tracing::debug!(job_id = %job.internal_id, "Storing SNOS outputs");
+        self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
+            .await?;
 
         tracing::info!(
             log_type = "completed",
@@ -190,8 +191,8 @@ impl Job for SnosJob {
         1
     }
 
-    fn job_processing_lock(&self, config: Arc<Config>) -> std::option::Option<Arc<helpers::JobProcessingState>> {
-        Some(config.processing_locks().snos_job_processing_lock.clone())
+    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<helpers::JobProcessingState>> {
+        config.processing_locks().snos_job_processing_lock.clone()
     }
 }
 
