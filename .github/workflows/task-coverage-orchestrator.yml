@@ -85,7 +85,7 @@ jobs:
 
       - name: Prepare Madara Environment (Orchestrator)
         run: |
-          mv target/release/madara ./madara-binary          
+          mv target/release/madara ./madara-binary
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
 
           # Copy the devnet.yaml file to the test directory
@@ -106,6 +106,7 @@ jobs:
         env:
           MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL: ${{ secrets.ETHEREUM_SEPOLIA_BLAST_RPC }}
           MADARA_ORCHESTRATOR_RPC_FOR_SNOS: ${{ secrets.RPC_FOR_SNOS }}
+          MADARA_ORCHESTRATOR_ATLANTIC_API_KEY: ${{ secrets.MADARA_ORCHESTRATOR_ATLANTIC_API_KEY }}
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |

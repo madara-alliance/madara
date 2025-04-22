@@ -36,6 +36,14 @@ pub struct AtlanticCliArgs {
     /// The verifier contract address for the Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS", long)]
     pub atlantic_verifier_contract_address: Option<String>,
+
+    /// Network being used for the prover.
+    #[arg(
+        env = "MADARA_ORCHESTRATOR_ATLANTIC_NETWORK", 
+        long,
+        value_parser = ["MAINNET", "TESTNET"]
+    )]
+    pub atlantic_network: Option<String>,
 }
 
 #[derive(Debug, Clone)]

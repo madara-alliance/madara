@@ -148,7 +148,7 @@ pub async fn init_config(run_cmd: &RunCmd) -> color_eyre::Result<Arc<Config>> {
 
     // init prover
     let prover_params = run_cmd.validate_prover_params().map_err(|e| eyre!("Failed to validate prover params: {e}"))?;
-    let prover_client = build_prover_service(&prover_params);
+    let prover_client = build_prover_service(&prover_params, &orchestrator_params);
 
     // init storage
     let data_storage_params =
@@ -316,11 +316,16 @@ pub async fn build_da_client(da_params: &DaValidatedArgs) -> Box<dyn DaClient + 
 }
 
 /// Builds the prover service based on the environment variable PROVER_SERVICE
-pub fn build_prover_service(prover_params: &ProverValidatedArgs) -> Box<dyn ProverClient> {
+pub fn build_prover_service(
+    prover_params: &ProverValidatedArgs,
+    orchestrator_params: &OrchestratorParams,
+) -> Box<dyn ProverClient> {
     match prover_params {
-        ProverValidatedArgs::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+        ProverValidatedArgs::Sharp(sharp_params) => {
+            Box::new(SharpProverService::new_with_args(sharp_params, &orchestrator_params.prover_layout_name))
+        }
         ProverValidatedArgs::Atlantic(atlantic_params) => {
-            Box::new(AtlanticProverService::new_with_args(atlantic_params))
+            Box::new(AtlanticProverService::new_with_args(atlantic_params, &orchestrator_params.prover_layout_name))
         }
     }
 }

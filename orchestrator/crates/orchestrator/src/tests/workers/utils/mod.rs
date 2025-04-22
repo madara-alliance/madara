@@ -23,11 +23,10 @@ pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
             block_number,
-            full_output: false,
             cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
-            snos_fact: None,
+            ..Default::default()
         }),
     };
 
@@ -92,11 +91,11 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Snos(SnosMetadata {
                 block_number,
-                full_output: false,
                 cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
                 snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
                 program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
                 snos_fact: Some(String::from("0xdeadbeef")),
+                ..Default::default()
             }),
         },
         JobType::DataSubmission => JobMetadata {
@@ -112,8 +111,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number,
                 input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
-                ensure_on_chain_registration: None,
-                download_proof: None,
+                ..Default::default()
             }),
         },
         JobType::StateTransition => JobMetadata {
@@ -130,14 +128,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         // For any other job types, use a default metadata structure
         _ => JobMetadata {
             common: CommonMetadata::default(),
-            specific: JobSpecificMetadata::Snos(SnosMetadata {
-                block_number,
-                full_output: false,
-                cairo_pie_path: None,
-                snos_output_path: None,
-                program_output_path: None,
-                snos_fact: None,
-            }),
+            specific: JobSpecificMetadata::Snos(SnosMetadata { block_number, ..Default::default() }),
         },
     }
 }
@@ -205,7 +196,7 @@ pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabase, mock_job: &mut M
             block_number,
             input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
             ensure_on_chain_registration: Some(format!("0x{:064x}", block_number)), // Add the SNOS fact
-            download_proof: None,
+            ..Default::default()
         }),
     };
 
