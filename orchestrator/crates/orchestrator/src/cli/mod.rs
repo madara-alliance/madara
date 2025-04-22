@@ -297,16 +297,15 @@ impl SetupCmd {
 }
 
 pub mod validate_params {
-    use std::str::FromStr as _;
     use std::time::Duration;
 
-    use alloy::primitives::Address;
     use cairo_vm::types::layout_name::LayoutName;
     use orchestrator_atlantic_service::AtlanticValidatedArgs;
     use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
     use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
     use orchestrator_sharp_service::SharpValidatedArgs;
     use orchestrator_starknet_settlement_client::StarknetSettlementValidatedArgs;
+    use orchestrator_utils::address_try_from_str;
     use url::Url;
 
     use super::alert::aws_sns::AWSSNSCliArgs;
@@ -472,14 +471,13 @@ pub mod validate_params {
         match (ethereum_args.settle_on_ethereum, starknet_args.settle_on_starknet) {
             (true, true) => Err("Cannot settle on both Ethereum and Starknet".to_string()),
             (true, false) => {
-                let l1_core_contract_address = Address::from_str(
+                let l1_core_contract_address = address_try_from_str(
                     &ethereum_args.l1_core_contract_address.clone().expect("L1 core contract address is required"),
-                )
-                .expect("Invalid L1 core contract address");
-                let starknet_operator_address = Address::from_str(
+                )?;
+
+                let starknet_operator_address = address_try_from_str(
                     &ethereum_args.starknet_operator_address.clone().expect("Starknet operator address is required"),
-                )
-                .expect("Invalid Starknet operator address");
+                )?;
 
                 let ethereum_params = EthereumSettlementValidatedArgs {
                     ethereum_rpc_url: ethereum_args.ethereum_rpc_url.clone().expect("Ethereum RPC URL is required"),
@@ -609,6 +607,7 @@ pub mod validate_params {
             max_block_to_process: service_args.max_block_to_process,
             min_block_to_process: service_args.min_block_to_process,
             max_concurrent_snos_jobs: service_args.max_concurrent_snos_jobs,
+            max_concurrent_proving_jobs: service_args.max_concurrent_proving_jobs,
         })
     }
 
@@ -894,6 +893,7 @@ pub mod validate_params {
                 max_block_to_process: Some(66645),
                 min_block_to_process: Some(100),
                 max_concurrent_snos_jobs: Some(10),
+                max_concurrent_proving_jobs: Some(5),
             };
             let service_params = validate_service_params(&service_args);
             assert!(service_params.is_ok());

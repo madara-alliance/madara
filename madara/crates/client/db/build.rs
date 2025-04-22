@@ -85,7 +85,7 @@ fn get_db_version() -> Result<(), BuildError> {
 
     let current_version = parse_version(&content)?;
 
-    println!("cargo:rerun-if-changed={}", DB_VERSION_FILE);
+    println!("cargo:rerun-if-changed={}", file_path.display());
     println!("cargo:rustc-env=DB_VERSION={}", current_version);
 
     Ok(())

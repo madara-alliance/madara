@@ -6,7 +6,7 @@ use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 #[cfg_attr(test, derive(Eq))]
 pub enum Transaction {
     #[serde(rename = "INVOKE_FUNCTION")]
@@ -125,7 +125,7 @@ impl From<InvokeTransaction> for mp_transactions::InvokeTransaction {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct InvokeTransactionV0 {
     #[serde(alias = "contract_address")]
     pub sender_address: Felt,
@@ -162,7 +162,7 @@ impl From<InvokeTransactionV0> for mp_transactions::InvokeTransactionV0 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
     pub calldata: Vec<Felt>,
@@ -199,7 +199,7 @@ impl From<InvokeTransactionV1> for mp_transactions::InvokeTransactionV1 {
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct InvokeTransactionV3 {
     pub nonce: Felt,
     pub nonce_data_availability_mode: DataAvailabilityMode,
@@ -251,7 +251,7 @@ impl From<InvokeTransactionV3> for mp_transactions::InvokeTransactionV3 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct L1HandlerTransaction {
     pub contract_address: Felt,
     pub entry_point_selector: Felt,
@@ -330,7 +330,7 @@ impl From<DeclareTransaction> for mp_transactions::DeclareTransaction {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeclareTransactionV0 {
     pub class_hash: Felt,
     pub max_fee: Felt,
@@ -366,7 +366,7 @@ impl From<DeclareTransactionV0> for mp_transactions::DeclareTransactionV0 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeclareTransactionV1 {
     pub class_hash: Felt,
     pub max_fee: Felt,
@@ -403,7 +403,7 @@ impl From<DeclareTransactionV1> for mp_transactions::DeclareTransactionV1 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeclareTransactionV2 {
     pub class_hash: Felt,
     pub max_fee: Felt,
@@ -444,7 +444,7 @@ impl From<DeclareTransactionV2> for mp_transactions::DeclareTransactionV2 {
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeclareTransactionV3 {
     pub class_hash: Felt,
     pub nonce: Felt,
@@ -500,7 +500,7 @@ impl From<DeclareTransactionV3> for mp_transactions::DeclareTransactionV3 {
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeployTransaction {
     pub constructor_calldata: Vec<Felt>,
     pub contract_address: Felt,
@@ -568,7 +568,7 @@ impl From<DeployAccountTransaction> for mp_transactions::DeployAccountTransactio
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeployAccountTransactionV1 {
     pub contract_address: Felt,
     pub transaction_hash: Felt,
@@ -612,7 +612,7 @@ impl From<DeployAccountTransactionV1> for mp_transactions::DeployAccountTransact
 
 #[serde_as]
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct DeployAccountTransactionV3 {
     pub nonce: Felt,
     pub nonce_data_availability_mode: DataAvailabilityMode,

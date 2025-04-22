@@ -3,20 +3,17 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use blockifier::bouncer::BouncerConfig;
 use clap::Parser;
-use mp_utils::crypto::ZeroingPrivateKey;
 use serde::{Deserialize, Serialize};
 use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
 
-use mp_block::H160;
 use mp_chain_config::{
     deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
     ChainConfig, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
-    deserialize_duration, deserialize_optional_duration, deserialize_private_key, serialize_duration,
-    serialize_optional_duration,
+    deserialize_duration, deserialize_optional_duration, serialize_duration, serialize_optional_duration,
 };
 use url::Url;
 
@@ -101,12 +98,8 @@ pub struct ChainConfigOverridesInner {
     #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
-    pub eth_core_contract_address: H160,
-    pub eth_gps_statement_verifier: H160,
-    #[serde(default)]
-    #[serde(skip_serializing)]
-    #[serde(deserialize_with = "deserialize_private_key")]
-    pub private_key: ZeroingPrivateKey,
+    pub eth_core_contract_address: String,
+    pub eth_gps_statement_verifier: String,
     pub mempool_tx_limit: usize,
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
@@ -130,7 +123,6 @@ impl ChainConfigOverrideParams {
             sequencer_address: chain_config.sequencer_address,
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
-            private_key: chain_config.private_key,
             mempool_tx_limit: chain_config.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config.mempool_tx_max_age,
@@ -184,7 +176,7 @@ impl ChainConfigOverrideParams {
             eth_core_contract_address: chain_config_overrides.eth_core_contract_address,
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
-            private_key: chain_config_overrides.private_key,
+            private_key: chain_config.private_key,
             mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,

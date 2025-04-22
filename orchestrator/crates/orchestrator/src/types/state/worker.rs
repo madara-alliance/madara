@@ -1,5 +1,3 @@
-
-
 #[derive(Debug, Clone, Default)]
 pub struct WorkerState {
     pub is_running: bool,
@@ -9,11 +7,7 @@ pub struct WorkerState {
 
 impl WorkerState {
     pub fn new() -> Self {
-        Self {
-            is_running: false,
-            last_execution: None,
-            consecutive_failures: 0,
-        }
+        Self { is_running: false, last_execution: None, consecutive_failures: 0 }
     }
     pub fn is_running(&self) -> bool {
         self.is_running
@@ -29,5 +23,4 @@ impl WorkerState {
     pub fn set_last_execution(&mut self, last_execution: chrono::DateTime<chrono::Utc>) {
         self.last_execution = Some(last_execution);
     }
-
 }

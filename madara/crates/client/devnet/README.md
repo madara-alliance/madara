@@ -1,7 +1,7 @@
 # Devnet predeployed contract addresses
 
 The devnet always has the predeployed contract addresses at these addresses, with these private keys.
-They are OpenZeppelin contracts, see [cairo-artifacts](../../../cairo-artifacts/README.md).
+They are OpenZeppelin contracts, see [cairo-artifacts](../../../../cairo-artifacts/README.md).
 They are also shown on node startup.
 
 ```sh

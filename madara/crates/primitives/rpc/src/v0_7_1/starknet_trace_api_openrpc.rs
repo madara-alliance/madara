@@ -180,6 +180,13 @@ pub struct TraceBlockTransactionsResult {
     pub transaction_hash: Felt,
 }
 
+/// Trace of a single transaction returned by `starknet_traceTransaction`
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct TraceTransactionResult {
+    #[serde(flatten)]
+    pub trace: TransactionTrace,
+}
+
 /// Parameters of the `starknet_traceTransaction` method.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraceTransactionParams {

@@ -56,7 +56,6 @@ impl ExternalId {
     }
 }
 
-
 /// Returns an error indicating that the provided external id coulnd't be unwrapped.
 fn unwrap_external_id_failed(expected: &str, got: &ExternalId) -> color_eyre::eyre::Error {
     eyre!("wrong ExternalId type: expected {}, got {:?}", expected, got)

@@ -1,60 +1,46 @@
-use mc_block_import::{
-    BlockImportError, BlockImportResult, BlockImporter, BlockValidationContext, UnverifiedFullBlock, UnverifiedHeader,
-};
-use mp_block::{header::PendingHeader, MadaraPendingBlock, MadaraPendingBlockInfo, VisitedSegments};
+use mc_db::MadaraBackend;
+use mp_block::{MadaraPendingBlock, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
+use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
-use starknet_api::core::ChainId;
+use starknet_core::types::Felt;
 
-/// Close the block (convert from pending to closed), and store to db. This is delegated to the block import module.
-#[tracing::instrument(skip(importer, state_diff, declared_classes), fields(module = "BlockProductionTask"))]
-pub async fn close_block(
-    importer: &BlockImporter,
+/// Returns the block_hash of the saved block.
+#[tracing::instrument(skip(backend, state_diff, declared_classes), fields(module = "BlockProductionTask"))]
+pub async fn close_and_save_block(
+    backend: &MadaraBackend,
     block: MadaraPendingBlock,
-    state_diff: &StateDiff,
-    chain_id: ChainId,
+    state_diff: StateDiff,
     block_number: u64,
     declared_classes: Vec<ConvertedClass>,
-    visited_segments: VisitedSegments,
-) -> Result<BlockImportResult, BlockImportError> {
-    let validation = BlockValidationContext::new(chain_id).trust_transaction_hashes(true);
+) -> anyhow::Result<Felt> {
+    let block = PendingFullBlock {
+        header: block.info.header,
+        state_diff,
+        events: block
+            .inner
+            .receipts
+            .iter()
+            .flat_map(|receipt| {
+                receipt
+                    .events()
+                    .iter()
+                    .cloned()
+                    .map(|event| EventWithTransactionHash { transaction_hash: receipt.transaction_hash(), event })
+            })
+            .collect(),
+        transactions: block
+            .inner
+            .transactions
+            .into_iter()
+            .zip(block.inner.receipts)
+            .map(|(transaction, receipt)| TransactionWithReceipt { receipt, transaction })
+            .collect(),
+    };
 
-    let MadaraPendingBlock { info, inner } = block;
-    let MadaraPendingBlockInfo { header, tx_hashes: _tx_hashes } = info;
-
-    // Header
-    let PendingHeader {
-        parent_block_hash,
-        sequencer_address,
-        block_timestamp,
-        protocol_version,
-        l1_gas_price,
-        l1_da_mode,
-    } = header;
-
-    let block = importer
-        .pre_validate(
-            UnverifiedFullBlock {
-                unverified_block_number: Some(block_number),
-                header: UnverifiedHeader {
-                    parent_block_hash: Some(parent_block_hash),
-                    sequencer_address,
-                    block_timestamp,
-                    protocol_version,
-                    l1_gas_price,
-                    l1_da_mode,
-                },
-                state_diff: state_diff.clone(),
-                transactions: inner.transactions,
-                receipts: inner.receipts,
-                trusted_converted_classes: declared_classes,
-                commitments: Default::default(), // the block importer will compute the commitments for us
-                visited_segments: Some(visited_segments),
-                ..Default::default()
-            },
-            validation.clone(),
-        )
+    let block_hash = backend
+        .add_full_block_with_classes(block, block_number, &declared_classes, /* pre_v0_13_2_hash_override */ true)
         .await?;
 
-    importer.verify_apply(block, validation.clone()).await
+    Ok(block_hash)
 }

@@ -2,8 +2,7 @@ use std::fmt::Write;
 
 use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
-use alloy::primitives::U256;
-use alloy_primitives::FixedBytes;
+use alloy::primitives::{FixedBytes, U256};
 use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
 use color_eyre::eyre::ContextCompat;
 use color_eyre::Result as EyreResult;
