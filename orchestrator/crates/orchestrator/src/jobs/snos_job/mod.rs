@@ -190,8 +190,8 @@ impl Job for SnosJob {
         1
     }
 
-    fn job_processing_lock(&self, config: Arc<Config>) -> std::option::Option<Arc<helpers::JobProcessingState>> {
-        Some(config.processing_locks().snos_job_processing_lock.clone())
+    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<helpers::JobProcessingState>> {
+        config.processing_locks().snos_job_processing_lock.clone()
     }
 }
 

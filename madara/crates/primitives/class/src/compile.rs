@@ -25,25 +25,22 @@ pub enum ClassCompilationError {
     ParsingSierraVersion(Cow<'static, str>),
     #[error("Failed to construct a blockifier class: {0}")]
     BlockifierClassConstructionFailed(#[from] cairo_vm::types::errors::program_errors::ProgramError),
+    #[error("Compiled class hash mismatch, expected {expected:#x} got {got:#x}")]
+    CompiledClassHashMismatch { expected: Felt, got: Felt },
 }
 
 impl CompressedLegacyContractClass {
-    pub fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
-        let mut program: serde_json::Value =
-            serde_json::from_reader(crate::convert::gz_decompress_stream(self.program.as_slice()))?;
-
-        let program_object = program.as_object_mut().ok_or(ClassCompilationError::ProgramIsNotAnObject)?;
-
-        if !program_object.contains_key("debug_info") {
-            program_object.insert("debug_info".to_owned(), serde_json::json!(""));
-        }
-
+    // Returns `impl serde::Serialize` because the fact that it returns a serde_json::Value is an impl detail
+    pub fn abi(&self) -> Result<impl serde::Serialize, ClassCompilationError> {
         // This convoluted JSON serialization is a way to get around bincode's
         // lack of support for #[serde(tag = "type")]. Abi entries should be
         // serialized as typed JSON structs, so we have to do this manually.
         //
         // NOTE: that the `type` field is already present in each ABI entry
         // struct so we do not need to add it manually.
+
+        // TODO: we should actually change that, it would be cleaner to have a concrete type here.
+
         let abi = self
             .abi
             .as_ref()
@@ -64,10 +61,23 @@ impl CompressedLegacyContractClass {
             })
             .transpose()?;
 
+        Ok(abi)
+    }
+
+    pub fn serialize_to_json(&self) -> Result<String, ClassCompilationError> {
+        let mut program: serde_json::Value =
+            serde_json::from_reader(crate::convert::gz_decompress_stream(self.program.as_slice()))?;
+
+        let program_object = program.as_object_mut().ok_or(ClassCompilationError::ProgramIsNotAnObject)?;
+
+        if !program_object.contains_key("debug_info") {
+            program_object.insert("debug_info".to_owned(), serde_json::json!(""));
+        }
+
         let json = serde_json::json!({
             "program": program,
             "entry_points_by_type": self.entry_points_by_type,
-            "abi": abi
+            "abi": self.abi()?,
         });
 
         Ok(serde_json::to_string(&json)?)

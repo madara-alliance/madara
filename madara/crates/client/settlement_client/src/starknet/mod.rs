@@ -1,14 +1,12 @@
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
-use crate::gas_price::L1BlockMetrics;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::starknet::error::StarknetClientError;
 use crate::starknet::event::StarknetEventStream;
-use crate::state_update::{update_l1, StateUpdate};
+use crate::state_update::{StateUpdate, StateUpdateWorker};
 use async_trait::async_trait;
 use bigdecimal::ToPrimitive;
 use mc_db::l1_db::LastSyncedEventBlock;
-use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall};
 use starknet_core::utils::get_selector_from_name;
@@ -79,7 +77,7 @@ impl SettlementClientTrait for StarknetClient {
     type StreamType = StarknetEventStream;
 
     fn get_client_type(&self) -> ClientType {
-        ClientType::STARKNET
+        ClientType::Starknet
     }
 
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError> {
@@ -137,34 +135,21 @@ impl SettlementClientTrait for StarknetClient {
         }
     }
 
-    async fn get_last_verified_block_number(&self) -> Result<u64, SettlementClientError> {
-        let state = self.get_state_call().await?;
-        u64::try_from(state[1]).map_err(|e| -> SettlementClientError {
-            StarknetClientError::Conversion(format!("Failed to convert state[1] to block number u64: {}", e)).into()
-        })
-    }
-
-    async fn get_last_verified_state_root(&self) -> Result<Felt, SettlementClientError> {
-        Ok(self.get_state_call().await?[0])
-    }
-
-    async fn get_last_verified_block_hash(&self) -> Result<Felt, SettlementClientError> {
-        Ok(self.get_state_call().await?[2])
-    }
-
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
-        let block_number = self.get_last_verified_block_number().await?;
-        let block_hash = self.get_last_verified_block_hash().await?;
-        let global_root = self.get_last_verified_state_root().await?;
+        let state = self.get_state_call().await?; // Returns (StateRoot, BlockNumber, BlockHash).
+        let global_root = state[0];
+        let block_number = u64::try_from(state[1]).map_err(|e| -> SettlementClientError {
+            StarknetClientError::Conversion(format!("Failed to convert state[1] to block number u64: {e:#}")).into()
+        })?;
+        let block_hash = state[2];
 
         Ok(StateUpdate { global_root, block_number, block_hash })
     }
 
     async fn listen_for_update_state_events(
         &self,
-        backend: Arc<MadaraBackend>,
         mut ctx: ServiceContext,
-        l1_block_metrics: Arc<L1BlockMetrics>,
+        worker: StateUpdateWorker,
     ) -> Result<(), SettlementClientError> {
         while let Some(events) = ctx
             .run_until_cancelled(async {
@@ -212,11 +197,9 @@ impl SettlementClientTrait for StarknetClient {
                     let formatted_event =
                         StateUpdate { block_number, global_root: *global_root, block_hash: *block_hash };
 
-                    update_l1(&backend, formatted_event, l1_block_metrics.clone()).map_err(
-                        |e| -> SettlementClientError {
-                            StarknetClientError::StateSync { message: e.to_string(), block_number }.into()
-                        },
-                    )?;
+                    worker.update_state(formatted_event).map_err(|e| -> SettlementClientError {
+                        StarknetClientError::StateSync { message: e.to_string(), block_number }.into()
+                    })?;
 
                     self.processed_update_state_block.store(block_number, Ordering::Relaxed);
                 }
@@ -623,7 +606,7 @@ pub mod starknet_client_tests {
 
     #[rstest]
     #[tokio::test]
-    async fn get_last_verified_block_hash_works_starknet_client<'a>(
+    async fn get_current_core_contract_state_works_starknet_client<'a>(
         #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
@@ -639,56 +622,12 @@ pub mod starknet_client_tests {
         .await?;
         poll_on_block_completion(block_number, fixture.context.account.provider(), 100).await?;
 
-        let last_verified_block_hash = fixture.client.get_last_verified_block_hash().await?;
-        assert_eq!(last_verified_block_hash, block_hash_event, "Block hash should match");
-
-        Ok(())
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn get_last_state_root_works_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
-    ) -> anyhow::Result<()> {
-        let fixture = test_fixture.await?;
-
-        // sending state updates:
-        let block_hash_event = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
-        let global_root_event = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
-        let block_number = send_state_update(
-            &fixture.context.account,
-            fixture.context.deployed_appchain_contract_address,
-            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
-        )
-        .await?;
-        poll_on_block_completion(block_number, fixture.context.account.provider(), 100).await?;
-
-        let last_verified_state_root = fixture.client.get_last_verified_state_root().await?;
-        assert_eq!(last_verified_state_root, global_root_event, "Last state root should match");
-
-        Ok(())
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn get_last_verified_block_number_works_starknet_client<'a>(
-        #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
-    ) -> anyhow::Result<()> {
-        let fixture = test_fixture.await?;
-
-        // sending state updates:
-        let data_felt = Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value");
-        let block_number = 100;
-        let event_block_number = send_state_update(
-            &fixture.context.account,
-            fixture.context.deployed_appchain_contract_address,
-            StateUpdate { block_number, global_root: data_felt, block_hash: data_felt },
-        )
-        .await?;
-        poll_on_block_completion(event_block_number, fixture.context.account.provider(), 100).await?;
-
-        let last_verified_block_number = fixture.client.get_last_verified_block_number().await?;
-        assert_eq!(last_verified_block_number, block_number, "Last verified block should match");
+        let state_update =
+            fixture.client.get_current_core_contract_state().await.expect("issue while getting the state");
+        assert_eq!(
+            state_update,
+            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event }
+        );
 
         Ok(())
     }
@@ -908,7 +847,6 @@ mod starknet_client_event_subscription_test {
     use mp_utils::service::ServiceContext;
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
-    use std::time::Duration;
 
     #[tokio::test]
     async fn listen_and_update_state_when_event_fired_starknet_client() -> anyhow::Result<()> {
@@ -932,6 +870,7 @@ mod starknet_client_event_subscription_test {
         .await?;
 
         let l1_block_metrics = L1BlockMetrics::register()?;
+        let (snd, mut recv) = tokio::sync::watch::channel(None);
 
         let listen_handle = {
             let db = Arc::clone(&db);
@@ -940,12 +879,24 @@ mod starknet_client_event_subscription_test {
                     Arc::clone(db.backend()),
                     Arc::new(starknet_client),
                     ServiceContext::new_for_testing(),
+                    snd,
                     Arc::new(l1_block_metrics),
                 )
                 .await
                 .expect("Should successfully init state update worker.")
             })
         };
+
+        // Wait for get_initial_state
+        recv.changed().await.unwrap();
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 0);
+
+        // Verify the block number
+        let block_in_db = db
+            .backend()
+            .get_l1_last_confirmed_block()
+            .expect("Should successfully retrieve the last confirmed block number from the database");
+        assert_eq!(block_in_db, Some(0), "Block in DB does not match expected L2 block number");
 
         // Firing the state update event
         send_state_update(
@@ -959,19 +910,19 @@ mod starknet_client_event_subscription_test {
         )
         .await?;
 
-        // Wait for this update to be registered in the DB
-        tokio::time::sleep(Duration::from_secs(10)).await;
+        // Wait for changed
+        recv.changed().await.unwrap();
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 100);
 
         // Verify the block number
         let block_in_db = db
             .backend()
             .get_l1_last_confirmed_block()
             .expect("Should successfully retrieve the last confirmed block number from the database");
+        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L2 block number");
 
         // Abort the worker before ending the test
         listen_handle.abort();
-
-        assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L3 block number");
 
         Ok(())
     }

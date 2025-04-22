@@ -183,8 +183,8 @@ where
             // Check message hash and cancellation
             let event_hash = settlement_client.get_messaging_hash(&event_data)?;
             let converted_event_hash = match settlement_client.get_client_type() {
-                ClientType::ETH => B256::from_slice(event_hash.as_slice()).to_string(),
-                ClientType::STARKNET => Felt::from_bytes_be_slice(event_hash.as_slice()).to_hex_string(),
+                ClientType::Eth => B256::from_slice(event_hash.as_slice()).to_string(),
+                ClientType::Starknet => Felt::from_bytes_be_slice(event_hash.as_slice()).to_hex_string(),
             };
             tracing::info!("Checking for cancellation, event hash: {:?}", converted_event_hash);
 
@@ -371,7 +371,7 @@ mod messaging_module_tests {
         let mut mock_client = MockSettlementClientTrait::default();
 
         // Configure basic mock expectations that all tests will need
-        mock_client.expect_get_client_type().returning(|| ClientType::ETH);
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
 
         // Create a new service context for testing
         let ctx = ServiceContext::new_for_testing();
@@ -407,7 +407,7 @@ mod messaging_module_tests {
         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::ZERO));
 
         // Mock get_client_type
-        client.expect_get_client_type().returning(|| ClientType::ETH);
+        client.expect_get_client_type().returning(|| ClientType::Eth);
 
         // Wrap the client in Arc
         let client = Arc::new(client) as Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>;
