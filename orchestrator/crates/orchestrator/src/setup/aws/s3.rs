@@ -66,8 +66,7 @@ impl Resource for AWSS3 {
     }
 
     async fn check(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
-        self
-            .client
+        self.client
             .list_objects_v2()
             .bucket(&bucket_name)
             .send()

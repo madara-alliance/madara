@@ -24,6 +24,8 @@ pub trait Resource: Send + Sync {
     async fn new(provider: Arc<CloudProvider>) -> OrchestratorResult<Self>
     where
         Self: Sized;
+    // async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult>;
+    // async fn wait_until_ready(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult>;
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
     async fn check(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult>;
