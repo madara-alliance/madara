@@ -23,6 +23,7 @@ mc-analytics = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
+mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
 mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
@@ -38,6 +39,8 @@ starknet_api = { workspace = true }
 # Other
 anyhow.workspace = true
 bincode = { workspace = true }
+bitvec = { workspace = true }
+futures = { workspace = true }
 librocksdb-sys = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
@@ -72,7 +75,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 tempfile = "3.10"
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
-
+rstest = { workspace = true }
 
 [features]
 default = []

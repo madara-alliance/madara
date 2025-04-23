@@ -1,18 +1,13 @@
-use mp_block::H160;
-use mp_convert::felt_to_h160;
-use mp_receipt::{Event, L1Gas, MsgToL1};
-use primitive_types::H256;
-use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
-use starknet_types_core::felt::Felt;
-
 use crate::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
     Transaction,
 };
+use mp_receipt::{Event, L1Gas, MsgToL1, MsgToL2};
+use serde::{Deserialize, Serialize};
+use starknet_types_core::felt::Felt;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct ConfirmedReceipt {
     pub transaction_hash: Felt,
     pub transaction_index: u64,
@@ -89,7 +84,7 @@ impl ConfirmedReceipt {
         let message_hash = message_to_l2.hash();
 
         mp_receipt::L1HandlerTransactionReceipt {
-            message_hash: H256::from_slice(message_hash.as_bytes()),
+            message_hash,
             transaction_hash: self.transaction_hash,
             actual_fee: fee_payment(self.actual_fee, tx.version()),
             messages_sent: self.l2_to_l1_messages,
@@ -146,7 +141,7 @@ fn execution_result(status: ExecutionStatus, reason: Option<String>) -> mp_recei
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
+// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
 pub struct ExecutionResources {
     pub builtin_instance_counter: BuiltinCounters,
     pub n_steps: u64,
@@ -256,46 +251,6 @@ fn is_zero(value: &u64) -> bool {
 }
 
 #[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct MsgToL2 {
-    pub from_address: H160,
-    pub to_address: Felt,
-    pub selector: Felt,
-    pub payload: Vec<Felt>,
-    pub nonce: Option<Felt>,
-}
-
-impl MsgToL2 {
-    pub fn compute_hash(&self) -> H256 {
-        let mut hasher = Keccak256::new();
-        hasher.update([0u8; 12]); // Padding
-        hasher.update(self.from_address.as_bytes());
-        hasher.update(self.to_address.to_bytes_be());
-        hasher.update(self.nonce.unwrap_or_default().to_bytes_be());
-        hasher.update(self.selector.to_bytes_be());
-        hasher.update([0u8; 24]); // Padding
-        hasher.update((self.payload.len() as u64).to_be_bytes());
-        self.payload.iter().for_each(|felt| hasher.update(felt.to_bytes_be()));
-        H256::from_slice(&hasher.finalize())
-    }
-}
-
-impl TryFrom<&L1HandlerTransaction> for MsgToL2 {
-    type Error = ();
-
-    fn try_from(l1_handler: &L1HandlerTransaction) -> Result<Self, Self::Error> {
-        let (l1_address, payload) = l1_handler.calldata.split_first().ok_or(())?;
-        Ok(Self {
-            from_address: felt_to_h160(l1_address).map_err(|_| ())?,
-            to_address: l1_handler.contract_address,
-            selector: l1_handler.entry_point_selector,
-            payload: payload.to_vec(),
-            nonce: Some(l1_handler.nonce),
-        })
-    }
-}
-
-#[derive(Clone, Default, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum ExecutionStatus {
     #[default]
@@ -307,29 +262,5 @@ fn fee_payment(fee: Felt, tx_version: u8) -> mp_receipt::FeePayment {
     mp_receipt::FeePayment {
         amount: fee,
         unit: if tx_version < 3 { mp_receipt::PriceUnit::Wei } else { mp_receipt::PriceUnit::Fri },
-    }
-}
-
-#[cfg(test)]
-mod test {
-    use super::*;
-    use std::str::FromStr;
-
-    #[test]
-    fn test_compute_hash_msg_to_l2() {
-        let msg = MsgToL2 {
-            from_address: H160::from_str("0x0000000000000000000000000000000000000001").unwrap(),
-            to_address: Felt::from(2),
-            selector: Felt::from(3),
-            payload: vec![Felt::from(4), Felt::from(5), Felt::from(6)],
-            nonce: Some(Felt::from(7)),
-        };
-
-        let hash = msg.compute_hash();
-
-        let expected_hash =
-            H256::from_str("0xeec1e25e91757d5e9c8a11cf6e84ddf078dbfbee23382ee979234fc86a8608a5").unwrap();
-
-        assert_eq!(hash, expected_hash);
     }
 }

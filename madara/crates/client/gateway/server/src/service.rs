@@ -58,7 +58,7 @@ pub async fn start_server(
                 });
 
                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {
-                    tracing::error!("Error serving connection: {:?}", err);
+                    tracing::error!("Error serving connection: {:#}", err);
                 }
             });
         }

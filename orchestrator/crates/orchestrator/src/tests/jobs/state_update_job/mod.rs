@@ -1,4 +1,3 @@
-use std::collections::HashMap;
 use std::fs;
 use std::fs::read_to_string;
 use std::path::PathBuf;
@@ -18,10 +17,7 @@ use url::Url;
 
 use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::data_storage::MockDataStorage;
-use crate::jobs::constants::{
-    JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY, JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS,
-    JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO, JOB_PROCESS_ATTEMPT_METADATA_KEY,
-};
+use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
 use crate::jobs::state_update_job::utils::hex_string_to_u8_vec;
 use crate::jobs::state_update_job::{StateUpdateError, StateUpdateJob};
 use crate::jobs::types::{JobStatus, JobType};
@@ -44,9 +40,19 @@ async fn test_process_job_attempt_not_present_fails() {
 
     let mut job = default_job_item();
 
+    // Update job metadata to use the proper structure
+    job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+        blocks_to_settle: vec![],
+        snos_output_paths: vec![],
+        program_output_paths: vec![],
+        blob_data_paths: vec![],
+        last_failed_block_no: None,
+        tx_hashes: vec![],
+    });
+
     let state_update_job = StateUpdateJob {};
     let res = state_update_job.process_job(services.config, &mut job).await.unwrap_err();
-    assert_eq!(res, JobError::StateUpdateJobError(StateUpdateError::AttemptNumberNotFound));
+    assert_eq!(res, JobError::StateUpdateJobError(StateUpdateError::BlockNumberNotFound));
 }
 
 // TODO : make this test work
@@ -54,7 +60,6 @@ async fn test_process_job_attempt_not_present_fails() {
 #[case(None, String::from("651053,651054,651055"), 0)]
 #[case(Some(651054), String::from("651053,651054,651055"), 1)]
 #[tokio::test]
-// #[ignore]
 async fn test_process_job_works(
     #[case] failed_block_number: Option<u64>,
     #[case] blocks_to_process: String,
@@ -109,9 +114,14 @@ async fn test_process_job_works(
 
     let storage_client = services.config.storage();
 
-    for block in block_numbers {
+    // Prepare vectors to collect paths for metadata
+    let mut snos_output_paths = Vec::new();
+    let mut program_output_paths = Vec::new();
+    let mut blob_data_paths = Vec::new();
+
+    for block in block_numbers.iter() {
         // Getting the blob data from file.
-        let blob_data_key = block.to_owned().to_string() + "/" + BLOB_DATA_FILE_NAME;
+        let blob_data_key = block.to_string() + "/" + BLOB_DATA_FILE_NAME;
         let blob_data = fs::read_to_string(
             CURRENT_PATH.join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, BLOB_DATA_FILE_NAME)),
         )
@@ -119,14 +129,14 @@ async fn test_process_job_works(
         let blob_data_vec = hex_string_to_u8_vec(&blob_data).unwrap();
 
         // Getting the snos data from file.
-        let snos_output_key = block.to_owned().to_string() + "/" + SNOS_OUTPUT_FILE_NAME;
+        let snos_output_key = block.to_string() + "/" + SNOS_OUTPUT_FILE_NAME;
         let snos_output_data = fs::read_to_string(
             CURRENT_PATH.join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, SNOS_OUTPUT_FILE_NAME)),
         )
         .unwrap();
 
         // Getting the program output data from file.
-        let program_output_key = block.to_owned().to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
+        let program_output_key = block.to_string() + "/" + PROGRAM_OUTPUT_FILE_NAME;
         let program_output_data = read_file_to_vec_u8_32(
             CURRENT_PATH
                 .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, PROGRAM_OUTPUT_FILE_NAME))
@@ -139,17 +149,28 @@ async fn test_process_job_works(
         storage_client.put_data(Bytes::from(snos_output_data), &snos_output_key).await.unwrap();
         storage_client.put_data(Bytes::from(blob_data_vec), &blob_data_key).await.unwrap();
         storage_client.put_data(Bytes::from(program_output_data_serialized), &program_output_key).await.unwrap();
+
+        // Add paths to our vectors for metadata
+        snos_output_paths.push(snos_output_key);
+        program_output_paths.push(program_output_key);
+        blob_data_paths.push(blob_data_key);
     }
 
-    // setting last failed block number as 651053.
-    // setting blocks yet to process as 651054 and 651055.
-    // here total blocks to process will be 3.
-    let mut metadata: HashMap<String, String> = HashMap::new();
-    metadata.insert(JOB_PROCESS_ATTEMPT_METADATA_KEY.to_string(), "0".to_string());
-    if let Some(block_number) = failed_block_number {
-        metadata.insert(JOB_METADATA_STATE_UPDATE_LAST_FAILED_BLOCK_NO.to_string(), block_number.to_string());
-    }
-    metadata.insert(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY.to_string(), blocks_to_process);
+    // Create proper metadata structure with the collected paths
+    let mut metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            blocks_to_settle: block_numbers.clone(),
+            snos_output_paths,
+            program_output_paths,
+            blob_data_paths,
+            last_failed_block_no: failed_block_number,
+            tx_hashes: Vec::new(), // Start with empty tx_hashes, they'll be populated during processing
+        }),
+    };
+
+    // Add process attempt to common metadata
+    metadata.common.process_attempt_no = 0;
 
     // creating a `JobItem`
     let mut job = default_job_item();
@@ -168,7 +189,20 @@ async fn test_process_job_works(
 async fn create_job_works() {
     let services = TestConfigBuilder::new().build().await;
 
-    let job = StateUpdateJob.create_job(services.config, String::from("0"), HashMap::default()).await;
+    // Create proper metadata structure
+    let metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            blocks_to_settle: vec![1],
+            snos_output_paths: vec![format!("1/{}", SNOS_OUTPUT_FILE_NAME)],
+            program_output_paths: vec![format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)],
+            blob_data_paths: vec![format!("1/{}", BLOB_DATA_FILE_NAME)],
+            last_failed_block_no: None,
+            tx_hashes: vec![],
+        }),
+    };
+
+    let job = StateUpdateJob.create_job(services.config, String::from("0"), metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -203,7 +237,7 @@ async fn process_job_works_unit_test() {
         .expect("Failed to read the snos output data json file");
         storage_client
             .expect_get_data()
-            .with(eq(snos_output_key))
+            .with(eq(snos_output_key.clone()))
             .returning(move |_| Ok(Bytes::from(snos_output_data.clone())));
 
         let blob_data_key = block_no.to_owned() + "/" + BLOB_DATA_FILE_NAME;
@@ -216,7 +250,7 @@ async fn process_job_works_unit_test() {
         let blob_data_vec_clone = blob_data_vec.clone();
         storage_client
             .expect_get_data()
-            .with(eq(blob_data_key))
+            .with(eq(blob_data_key.clone()))
             .returning(move |_| Ok(Bytes::from(blob_data_vec.clone())));
 
         let x_0_key = block_no.to_owned() + "/" + X_0_FILE_NAME;
@@ -237,11 +271,9 @@ async fn process_job_works_unit_test() {
         let program_output_clone = program_output.clone();
         storage_client
             .expect_get_data()
-            .with(eq(program_output_key))
+            .with(eq(program_output_key.clone()))
             .returning(move |_| Ok(Bytes::from(bincode::serialize(&program_output).unwrap())));
 
-        // let nonce = settlement_client.get_nonce().await.expect("Unable to fetch nonce for settlement
-        // client.");
         settlement_client.expect_get_nonce().returning(|| Ok(1));
 
         let deserialized_program_output: Vec<[u8; 32]> =
@@ -259,10 +291,27 @@ async fn process_job_works_unit_test() {
         .build()
         .await;
 
-    let mut metadata: HashMap<String, String> = HashMap::new();
-    metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_FETCH_FROM_TESTS), String::from("TRUE"));
-    metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY), block_numbers.join(","));
-    metadata.insert(String::from(JOB_PROCESS_ATTEMPT_METADATA_KEY), String::from("0"));
+    // Create proper metadata structure
+    let mut metadata = JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            blocks_to_settle: block_numbers.iter().map(|b| b.parse::<u64>().unwrap()).collect(),
+            snos_output_paths: block_numbers
+                .iter()
+                .map(|block| format!("{}/{}", block, SNOS_OUTPUT_FILE_NAME))
+                .collect(),
+            program_output_paths: block_numbers
+                .iter()
+                .map(|block| format!("{}/{}", block, PROGRAM_OUTPUT_FILE_NAME))
+                .collect(),
+            blob_data_paths: block_numbers.iter().map(|block| format!("{}/{}", block, BLOB_DATA_FILE_NAME)).collect(),
+            last_failed_block_no: None,
+            tx_hashes: vec![],
+        }),
+    };
+
+    // Add process attempt to common metadata
+    metadata.common.process_attempt_no = 0;
 
     let mut job =
         StateUpdateJob.create_job(services.config.clone(), String::from("internal_id"), metadata).await.unwrap();
@@ -270,13 +319,11 @@ async fn process_job_works_unit_test() {
 }
 
 #[rstest]
-#[case(String::from("651052, 651054, 651051, 651056"), "numbers aren't sorted in increasing order")]
-#[case(String::from("651052, 651052, 651052, 651052"), "Duplicated block numbers")]
-#[case(String::from("a, 651054, b, 651056"), "settle list is not correctly formatted")]
-#[case(String::from("651052, 651052, 651053, 651053"), "Duplicated block numbers")]
-#[case(String::from(""), "settle list is not correctly formatted")]
+#[case(vec![651052, 651054, 651051, 651056], "numbers aren't sorted in increasing order")]
+#[case(vec![651052, 651052, 651052, 651052], "Duplicated block numbers")]
+#[case(vec![651052, 651052, 651053, 651053], "Duplicated block numbers")]
 #[tokio::test]
-async fn process_job_invalid_inputs_errors(#[case] block_numbers_to_settle: String, #[case] expected_error: &str) {
+async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[case] expected_error: &str) {
     let server = MockServer::start();
     let settlement_client = MockSettlementClient::new();
 
@@ -290,9 +337,26 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers_to_settle: Stri
         .build()
         .await;
 
-    let mut metadata: HashMap<String, String> = HashMap::new();
-    metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY), block_numbers_to_settle);
-    metadata.insert(String::from(JOB_PROCESS_ATTEMPT_METADATA_KEY), String::from("0"));
+    // Create paths for each block number
+    let snos_output_paths = block_numbers.iter().map(|block| format!("{}/{}", block, SNOS_OUTPUT_FILE_NAME)).collect();
+
+    let program_output_paths =
+        block_numbers.iter().map(|block| format!("{}/{}", block, PROGRAM_OUTPUT_FILE_NAME)).collect();
+
+    let blob_data_paths = block_numbers.iter().map(|block| format!("{}/{}", block, BLOB_DATA_FILE_NAME)).collect();
+
+    // Create proper metadata structure with invalid block numbers but valid paths
+    let metadata = JobMetadata {
+        common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            blocks_to_settle: block_numbers,
+            snos_output_paths,
+            program_output_paths,
+            blob_data_paths,
+            last_failed_block_no: None,
+            tx_hashes: vec![],
+        }),
+    };
 
     let mut job =
         StateUpdateJob.create_job(services.config.clone(), String::from("internal_id"), metadata).await.unwrap();
@@ -327,9 +391,30 @@ async fn process_job_invalid_input_gap_panics() {
         .build()
         .await;
 
-    let mut metadata: HashMap<String, String> = HashMap::new();
-    metadata.insert(String::from(JOB_METADATA_STATE_UPDATE_BLOCKS_TO_SETTLE_KEY), String::from("6, 7, 8"));
-    metadata.insert(String::from(JOB_PROCESS_ATTEMPT_METADATA_KEY), String::from("0"));
+    // Create proper metadata structure with valid paths
+    let metadata = JobMetadata {
+        common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
+        specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            blocks_to_settle: vec![6, 7, 8], // Gap between 4 and 6
+            snos_output_paths: vec![
+                format!("{}/{}", 6, SNOS_OUTPUT_FILE_NAME),
+                format!("{}/{}", 7, SNOS_OUTPUT_FILE_NAME),
+                format!("{}/{}", 8, SNOS_OUTPUT_FILE_NAME),
+            ],
+            program_output_paths: vec![
+                format!("{}/{}", 6, PROGRAM_OUTPUT_FILE_NAME),
+                format!("{}/{}", 7, PROGRAM_OUTPUT_FILE_NAME),
+                format!("{}/{}", 8, PROGRAM_OUTPUT_FILE_NAME),
+            ],
+            blob_data_paths: vec![
+                format!("{}/{}", 6, BLOB_DATA_FILE_NAME),
+                format!("{}/{}", 7, BLOB_DATA_FILE_NAME),
+                format!("{}/{}", 8, BLOB_DATA_FILE_NAME),
+            ],
+            last_failed_block_no: None,
+            tx_hashes: vec![],
+        }),
+    };
 
     let mut job =
         StateUpdateJob.create_job(services.config.clone(), String::from("internal_id"), metadata).await.unwrap();

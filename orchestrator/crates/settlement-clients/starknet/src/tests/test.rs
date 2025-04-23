@@ -27,14 +27,7 @@ pub async fn spin_up_madara() -> MadaraCmd {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
     tracing::debug!("Spinning up Madara");
     let mut node = MadaraCmdBuilder::new()
-        .args([
-            "--no-sync-polling",
-            "--devnet",
-            "--no-l1-sync",
-            "--chain-config-path=./src/tests/preset.yml",
-            "--rpc-cors",
-            "all",
-        ])
+        .args(["--devnet", "--no-l1-sync", "--chain-config-path=./src/tests/devnet.yaml", "--rpc-cors", "all"])
         .run();
     node.wait_for_ready().await;
     node
@@ -186,7 +179,6 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     )
     .await;
     assert!(is_success, "Update state transaction failed/reverted");
-
     let call_result = account
         .provider()
         .call(
@@ -195,7 +187,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
                 entry_point_selector: selector!("get_is_updated"),
                 calldata: vec![Felt::from_bytes_be_slice(&onchain_data_hash)],
             },
-            BlockId::Tag(BlockTag::Latest),
+            BlockId::Tag(BlockTag::Pending),
         )
         .await
         .expect("failed to call the contract");
