@@ -65,8 +65,6 @@ async fn madara_devnet_add_transaction() {
     let mut node = cmd_builder.run();
     node.wait_for_ready().await;
 
-    tokio::time::sleep(Duration::from_secs(3)).await;
-
     let chain_id = node.json_rpc().chain_id().await.unwrap();
 
     let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(ACCOUNT_SECRET));

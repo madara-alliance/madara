@@ -174,7 +174,7 @@ impl TransactionValidator {
             .into());
         }
 
-        // We have to skip part of the validation in a the very specific case where you send an invoke tx directly after a deploy account:
+        // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
         let deploy_account_skip_validation =
             matches!(tx, BTransaction::AccountTransaction(AccountTransaction::Invoke(_)))

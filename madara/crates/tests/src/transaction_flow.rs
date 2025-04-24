@@ -137,7 +137,6 @@ impl TestSetup {
             .run();
         sequencer.wait_for_sync_to(0).await;
 
-        // full_node
         let mut full_node = MadaraCmdBuilder::new()
             .label("full_node")
             .enable_gateway()

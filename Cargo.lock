@@ -9200,7 +9200,6 @@ dependencies = [
  "hyper 1.5.0",
  "hyper-tls 0.6.0",
  "hyper-util",
- "mc-db",
  "mc-submit-tx",
  "mp-block",
  "mp-class",

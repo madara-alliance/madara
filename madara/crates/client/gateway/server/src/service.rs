@@ -49,7 +49,7 @@ pub async fn start_server(
     };
     let addr = SocketAddr::new(listen_addr.into(), config.gateway_port);
     let listener = TcpListener::bind(addr).await.with_context(|| format!("Opening socket server at {addr}"))?;
-    
+
     let addr = listener.local_addr().context("Getting the bound-to address.")?;
     tracing::info!("🌐 Gateway endpoint started at {}", addr);
 

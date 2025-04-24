@@ -43,7 +43,7 @@ pub const UDC_ADDRESS: &str = "0x041a78e741e5af2fec34b695679bc6891742439f7afb848
 /// Default port for Madara node
 pub const MADARA_PORT: &str = "19944";
 /// Path to the Madara binary for testing
-pub const MADARA_BINARY_PATH: &str = "../../../../target/debug/madara";
+pub const MADARA_BINARY_PATH: &str = "../../../../target/release/madara";
 /// Path to the Madara configuration file for devnet setup
 pub const MADARA_CONFIG_PATH: &str = "../../../../configs/presets/devnet.yaml";
 

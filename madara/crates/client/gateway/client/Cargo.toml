@@ -17,7 +17,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 
 # Madara
-mc-db = { workspace = true, optional = true }
 mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-class.workspace = true
@@ -32,7 +31,7 @@ starknet-types-core.workspace = true
 # Other
 anyhow.workspace = true
 async-trait.workspace = true
-bincode = { workspace = true, optional = true }
+bincode.workspace = true
 bytes.workspace = true
 futures.workspace = true
 http.workspace = true

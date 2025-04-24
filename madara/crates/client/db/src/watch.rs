@@ -8,7 +8,7 @@ pub type PendingBlockReceiver = watch::Receiver<Arc<MadaraPendingBlockInfo>>;
 
 fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<MadaraPendingBlockInfo> {
     let Some(parent_block) = parent_block else {
-        return Default::default(); // No genesis block, we have make it all up
+        return Default::default(); // No genesis block, we have to make it all up
     };
     MadaraPendingBlockInfo {
         header: PendingHeader {
