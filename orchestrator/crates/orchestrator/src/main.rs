@@ -36,6 +36,7 @@ async fn main() {
 }
 
 async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
+    // TODO: Validate : Do we not need validated args ?
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let orchestrator_instrumentation = OrchestratorInstrumentation::setup(&config)?;
     info!("Starting orchestrator service");

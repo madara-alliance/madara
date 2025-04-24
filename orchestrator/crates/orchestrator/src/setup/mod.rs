@@ -36,6 +36,8 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     Ok(())
 }
 
+// REVIEW: 18 : I think we should match against setup_cmd.aws it should be bool true, make it generalised
+
 /// Set up the orchestrator with the provided configuration
 pub async fn setup_cloud_provider(setup_cmd: &SetupCmd) -> OrchestratorResult<Arc<CloudProvider>> {
     let aws_config = AWSConfigValidatedArgs::try_from(setup_cmd.clone())?;

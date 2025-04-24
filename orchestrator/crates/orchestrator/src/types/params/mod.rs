@@ -45,6 +45,13 @@ pub struct CronArgs {
     pub trigger_policy_name: String,
 }
 
+// REVIEW: 10 : For storage, queue, alert, cron we are taking run_cmd and directly using aws variables to access values,
+// should we not validate that aws: bool is true ? and accordingly decide ? 
+// overall I think we can generalise these even more to have other providers integrated very easily! 
+// e.g : I like how we are handling `match (run_cmd.sharp_args.sharp, run_cmd.atlantic_args.atlantic) {`
+
+
+
 impl TryFrom<RunCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
@@ -79,6 +86,8 @@ impl TryFrom<SetupCmd> for StorageArgs {
     }
 }
 
+
+// REVIEW: 9 : Why are we not implementing TryFrom on RunCmd for AlertArgs ?
 impl TryFrom<AWSSNSCliArgs> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(args: AWSSNSCliArgs) -> Result<Self, Self::Error> {

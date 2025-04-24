@@ -140,6 +140,7 @@ impl EventBridgeClient {
         Ok(TriggerArns { queue_arn: queue_arn.to_string(), role_arn: role_arn.to_string() })
     }
 
+    // REVIEW: 24 : Why do we have this fn here if it's being used in the impl below 
     fn duration_to_rate_string(duration: Duration) -> String {
         let total_secs = duration.as_secs();
         let total_mins = duration.as_secs() / 60;
@@ -176,6 +177,7 @@ impl CronClient for EventBridgeClient {
                 let input_transformer =
                     InputTransformer::builder().input_paths_map("time", "$.time").input_template(message).build()?;
 
+                // REIVEW: 25 : We might wanna send this as cli param ? or orchestrator config ? like in schedule ?
                 self.eb_client
                     .put_rule()
                     .name(trigger_name.clone())

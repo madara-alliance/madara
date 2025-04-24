@@ -19,3 +19,6 @@ impl MessageParser for JobQueueMessage {
         Ok(Box::new(result))
     }
 }
+
+// REVIEW : 30 : Let's merge these two into a single file having both `worker_trigger_parser` and this.
+// as well as the trait MessageParser, I think it's overkill

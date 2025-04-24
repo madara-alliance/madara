@@ -62,6 +62,7 @@ impl TryFrom<RunCmd> for CloudProvider {
             let config = block_on(aws_cred.get_aws_config());
             Ok(CloudProvider::AWS(Box::new(config)))
         } else {
+            // REVIEW: Does it make sense to send "AWS" here ?
             Err(OrchestratorCoreError::InvalidProvider("AWS".to_string()))
         }
 

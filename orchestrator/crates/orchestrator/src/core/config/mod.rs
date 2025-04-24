@@ -50,6 +50,7 @@ pub struct OrchestratorParams {
 pub struct Config {
     /// The orchestrator config
     orchestrator_params: OrchestratorParams,
+    // REVIEW: 13 : I think it's a good time that we can rename `starknet_client` to `madara_client`
     /// The starknet client to get data from the node
     starknet_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -78,7 +79,14 @@ impl Config {
         let cloud_provider = CloudProvider::try_from(run_cmd.clone())?;
         let provider_config = Arc::new(cloud_provider);
 
+        // REVIEW: 7 : So this is directly using mongodb since we only have Mongo as database ?
+        // Should we generalise it now ?
+        // Why is Storage generalised then ? | alerts is also not generalised | whereas in Setup it is 
+        // `let alert_params = AlertArgs::try_from(setup_cmd.clone())?;`
+        // Same for da_config below
+        // Maybe add a comment as why we cannot generalise mongodb now
         let db: MongoConfig = run_cmd.mongodb_args.clone().into();
+
         let storage_args: StorageArgs = StorageArgs::try_from(run_cmd.clone())?;
         let alert_args: AlertArgs = run_cmd.aws_sns_args.clone().try_into()?;
         let queue_args: QueueArgs = QueueArgs::try_from(run_cmd.clone())?;
@@ -92,10 +100,12 @@ impl Config {
             snos_config: run_cmd.snos_args.clone().into(),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
+            // REVIEW: 11 : I believe these values will be removed after the PR fix/atlantic get's merged.
             snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())?,
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())?,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(orchestrator_params.madara_rpc_url.clone()));
+        // REVIEW: 12 : I believe the unwrap_or(1) has been removed after the processig locks for proving jobs has been merged.
         let snos_processing_lock =
             JobProcessingState::new(orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
         let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
@@ -124,8 +134,10 @@ impl Config {
         })
     }
 
+    // REVIEW: 13 : Let's generalise all these build functions ! (all are accessing AWS !)
     async fn build_database_client(
         db_config: &MongoConfig,
+    // REVIEW: 14 : Why is this one not OrchestratorCoreResult
     ) -> OrchestratorResult<Box<dyn DatabaseClient + Send + Sync>> {
         Ok(Box::new(MongoDbClient::setup(db_config).await?))
     }
@@ -154,6 +166,7 @@ impl Config {
         Ok(Box::new(SQS::create(queue_config, aws_config)?))
     }
 
+    // REVIEW: 16 : What's the reason behind not using Send + Sync here ? 
     fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),

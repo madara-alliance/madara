@@ -45,6 +45,7 @@ impl EventWorker {
         Ok(self.consumer.clone())
     }
 
+    // REVIEW : 27 : How are these being initialised ?
     /// producer - returns a producer for the queue type
     /// if the producer is not initialized, it will be initialized
     /// and returned
@@ -81,6 +82,8 @@ impl EventWorker {
 
     async fn handle_message(&self, message: ParsedMessage) -> EventSystemResult<()> {
         // For now, just log the message
+        // REVIEW : 28 : This shall trigger general process job right ?
+      
         info!(queue = %self.queue_type, "Handling message");
         Ok(())
     }

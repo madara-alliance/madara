@@ -40,6 +40,10 @@ impl Resource for SQS {
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
+            // REVIEW: 22 : We should mention that `create_queue` already takes care of `check if queue exists, if not create it`
+            // One issue here is that if a starting queue is available but a latter queue isn't for some reason, the code would not be able to handle that
+            // Shall we hide the error untill we have run for all ?
+            // Also we are creating a dlq for all the queues seperately now, initially we had one for all, rationale ?
             let queue_name = format!("{}_{}_{}", args.prefix.clone(), queue.name.clone(), args.suffix.clone());
             let res = self.client().create_queue().queue_name(queue_name.clone()).send().await.map_err(|e| {
                 OrchestratorError::ResourceSetupError(format!(

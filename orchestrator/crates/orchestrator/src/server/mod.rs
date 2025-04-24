@@ -32,6 +32,7 @@ pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<SocketAddr>
 
     let app = server_router(config.clone());
     // TODO:  Threading the server should not be here as it will block the main thread
+    // REVIEW : 25 : is this still left ? can you explain why ?
     tokio::spawn(async move {
         axum::serve(listener, app).await.expect("Failed to start axum server");
     });

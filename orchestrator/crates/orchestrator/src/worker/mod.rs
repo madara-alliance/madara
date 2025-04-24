@@ -16,3 +16,5 @@ use std::sync::Arc;
 pub fn initialize_worker(config: Arc<Config>) -> OrchestratorResult<()> {
     Ok(())
 }
+
+// REVIEW : 31 : why do we have this ?

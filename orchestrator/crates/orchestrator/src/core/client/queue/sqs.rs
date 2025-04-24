@@ -39,9 +39,11 @@ impl SQS {
         self.suffix.clone()
     }
 
+    // REVIEW: 17 : Whould this not be OrchestratorCoreResult ?
     pub fn create(params: &QueueArgs, aws_config: &SdkConfig) -> Result<Self, QueueError> {
         let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
         let client = Client::from_conf(sqs_config_builder.build());
+        // REVIEW: 15 : Interested to know why we are using constructor here and not in sns and sss, also why not new, we are using new in atlantic and sharp client ?
         Ok(Self::constructor(
             client,
             Some(Url::parse(&params.queue_base_url).expect("Failed to parse queue base URL")),

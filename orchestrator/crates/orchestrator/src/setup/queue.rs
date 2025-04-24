@@ -10,6 +10,7 @@ pub struct DlqConfig {
 #[derive(Clone)]
 pub struct QueueConfig {
     pub name: QueueType,
+    // REVIEW: 21 : Any reason why we have i32 here ?
     pub visibility_timeout: i32,
     pub dlq_config: Option<DlqConfig>,
 }

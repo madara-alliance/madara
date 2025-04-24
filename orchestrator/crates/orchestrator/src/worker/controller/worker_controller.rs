@@ -44,6 +44,7 @@ impl WorkerController {
         Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())))
     }
 
+    // REVIEW : 29 : What about verification jobs ?
     /// get_l2_queues - Get the list of queues for L2 network
     /// This function returns a list of queues for L2 network
     /// # Returns

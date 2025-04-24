@@ -30,6 +30,7 @@ impl Resource for AWSS3 {
     }
     /// Set up a new S3 bucket
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+        // REVIEW: 23 : Why are we not using the .check function to check for the bucket already existing.
         let existing_buckets = &self
             .client
             .list_buckets()

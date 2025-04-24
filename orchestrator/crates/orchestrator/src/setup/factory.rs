@@ -28,6 +28,7 @@ pub struct ResourceFactory {
 }
 
 impl ResourceFactory {
+    // REVIEW: 19 : Do we really need this, we don't support GCS right now? YAGNI ?
     /// new_with_gcs - Create a new ResourceFactory with default resource creators for Orchestrator
     /// with GCS Cloud Provider
     pub fn new_with_gcs(
@@ -62,6 +63,13 @@ impl ResourceFactory {
     pub async fn setup_resource(&self) -> OrchestratorResult<()> {
         for (resource_type, creator) in self.creators.iter() {
             info!(" ⏳ Setting up resource: {:?}", resource_type);
+            // REVIEW: 20 : I don't think we are using `resource` completelty | Also why have we commented Notification above ?
+            // (agar last me match statement hi lagana hai over resource_type then why do we need to create a `resource` at all ?)
+            // Seems overenginered and complicated
+            // UPDATE: oh okay so the `create_resource` actually creates the client that is used in the setup,
+            // can we rename it to `create_client`, `create_resource` didn't feel intuitive at all
+            // Also it would have been crazy if we could remove the match statement, but it must have gotten much complicated to downcast and deteremine then.
+            // Also, we should refrain from using unwraps in prod code ? Feel free to suggest a reason for which it is fine to use here 
             let mut resource = creator.create_resource(self.cloud_provider.clone()).await?;
             match resource_type {
                 ResourceType::Storage => {
