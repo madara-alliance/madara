@@ -112,7 +112,6 @@ impl SubmitTransaction for GatewayProvider {
     }
 }
 
-#[cfg(feature = "add_validated_transaction")]
 #[async_trait]
 impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
     async fn submit_validated_transaction(

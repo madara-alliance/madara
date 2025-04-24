@@ -2,7 +2,6 @@ use mc_db::{MadaraBackendConfig, RocksDBConfig, TrieLogConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-/// Starknet network types.
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
     /// Disable all metrics
@@ -87,6 +86,7 @@ pub struct DbParams {
     pub flush_every_n_blocks: Option<u64>,
 
     /// Enable rocksdb statistics. This has a small performance cost for every database operation.
+    /// Statistics are dumped into the `LOG` file in the rocksdb database directory.
     #[clap(env = "MADARA_DB_ENABLE_STATISTICS", long)]
     pub db_enable_statistics: bool,
 

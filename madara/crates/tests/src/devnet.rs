@@ -18,6 +18,7 @@ pub const ERC20_ETH_CONTRACT_ADDRESS: Felt =
 pub const ACCOUNT_SECRET: Felt = ACCOUNT_SECRETS[0];
 pub const ACCOUNT_ADDRESS: Felt = ACCOUNTS[0];
 
+/// Madara default devnet accounts.
 pub const ACCOUNTS: [Felt; 10] = [
     Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d"),
     Felt::from_hex_unchecked("0x008a1719e7ca19f3d91e8ef50a48fc456575f645497a1d55f30e3781f786afe4"),
@@ -31,6 +32,7 @@ pub const ACCOUNTS: [Felt; 10] = [
     Felt::from_hex_unchecked("0x07484e8e3af210b2ead47fa08c96f8d18b616169b350a8b75fe0dc4d2e01d493"),
 ];
 
+/// Private keys for the devnet accounts.
 pub const ACCOUNT_SECRETS: [Felt; 10] = [
     Felt::from_hex_unchecked("0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07"),
     Felt::from_hex_unchecked("0x0514977443078cf1e0c36bc88b89ada9a46061a5cf728f40274caea21d76f174"),

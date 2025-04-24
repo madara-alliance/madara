@@ -304,7 +304,6 @@ impl Mempool {
     }
 }
 
-#[async_trait]
 impl MempoolProvider for Mempool {
     #[tracing::instrument(skip(self, dest, n), fields(module = "Mempool"))]
     fn txs_take_chunk(&self, dest: &mut VecDeque<MempoolTransaction>, n: usize) {

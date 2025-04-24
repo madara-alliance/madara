@@ -25,7 +25,7 @@ pub struct GatewayParams {
     /// This endpoint allows madara to accept pre-validated transactions, with already-compiled classes.
     /// The version of the madara node consuming this HTTP interface must match the version of the gateway server, as they
     /// use internal unstable types.
-    #[arg(env = "GATEWAY_MADARA_TRUSTED_ADD_TRANSACTION_ENDPOINT", long)]
+    #[arg(env = "MADARA_GATEWAY_TRUSTED_ADD_TRANSACTION_ENDPOINT", long)]
     pub gateway_trusted_add_transaction_endpoint: bool,
 
     /// The gateway port to listen on.

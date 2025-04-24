@@ -128,7 +128,6 @@ impl GatewayProvider {
         request.send_post(transaction).await
     }
 
-    #[cfg(feature = "add_validated_transaction")]
     pub async fn add_validated_transaction(
         &self,
         transaction: mp_transactions::validated::ValidatedMempoolTx,

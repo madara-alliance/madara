@@ -95,7 +95,6 @@ impl<'a> RequestBuilder<'a> {
         Ok(response)
     }
 
-    #[cfg(feature = "add_validated_transaction")]
     pub async fn send_post_bincode<T, D>(self, body: D) -> Result<T, SequencerError>
     where
         T: DeserializeOwned,
