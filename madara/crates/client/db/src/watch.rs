@@ -70,14 +70,14 @@ impl BlockWatch {
 impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
     pub fn subscribe_closed_blocks(&self) -> ClosedBlocksReceiver {
-        self.watch.subscribe_closed_blocks()
+        self.watch_blocks.subscribe_closed_blocks()
     }
     #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
     pub fn subscribe_pending_block(&self) -> PendingBlockReceiver {
-        self.watch.subscribe_pending_block()
+        self.watch_blocks.subscribe_pending_block()
     }
     #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
     pub fn latest_pending_block(&self) -> Arc<MadaraPendingBlockInfo> {
-        self.watch.latest_pending_block()
+        self.watch_blocks.latest_pending_block()
     }
 }

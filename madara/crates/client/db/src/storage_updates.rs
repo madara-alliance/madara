@@ -137,7 +137,7 @@ impl MadaraBackend {
         self.block_db_store_pending(&MadaraPendingBlock { info: info.clone(), inner }, &block.state_diff)?;
         self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
 
-        self.watch.update_pending(info.into());
+        self.watch_blocks.update_pending(info.into());
         Ok(())
     }
 
@@ -249,7 +249,7 @@ impl MadaraBackend {
                     &MadaraPendingBlock { info: info.clone(), inner: block.inner },
                     &state_diff_cpy,
                 )?;
-                self.watch.update_pending(info.into());
+                self.watch_blocks.update_pending(info.into());
                 Ok(())
             }
             MadaraMaybePendingBlockInfo::NotPending(info) => {
@@ -304,7 +304,7 @@ impl MadaraBackend {
         } else {
             None
         };
-        self.watch.clear_pending(parent_block.as_ref());
+        self.watch_blocks.clear_pending(parent_block.as_ref());
         self.block_db_clear_pending()?;
         self.contract_db_clear_pending()?;
         self.class_db_clear_pending()?;

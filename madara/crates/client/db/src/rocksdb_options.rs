@@ -13,12 +13,19 @@ pub use rocksdb::statistics::StatsLevel;
 
 #[derive(Debug, Clone)]
 pub struct RocksDBConfig {
+    /// Enable statistics. Statistics will be put in the `LOG` file in the db folder. This can have an effect on performance.
     pub enable_statistics: bool,
+    /// Dump statistics every `statistics_period_sec`.
     pub statistics_period_sec: u32,
+    /// Statistics level. This can have an effect on performance.
     pub statistics_level: StatsLevel,
+    /// Memory budget for blocks-related columns
     pub memtable_blocks_budget_mib: usize,
+    /// Memory budget for contracts-related columns
     pub memtable_contracts_budget_mib: usize,
+    /// Memory budget for other columns
     pub memtable_other_budget_mib: usize,
+    /// Ratio of the buffer size dedicated to bloom filters for a column
     pub memtable_prefix_bloom_filter_ratio: f64,
 }
 
@@ -28,6 +35,7 @@ impl Default for RocksDBConfig {
             enable_statistics: false,
             statistics_period_sec: 60,
             statistics_level: StatsLevel::All,
+            // TODO: these might not be the best defaults at all
             memtable_blocks_budget_mib: 1 * GiB,
             memtable_contracts_budget_mib: 128 * MiB,
             memtable_other_budget_mib: 128 * MiB,
@@ -52,8 +60,6 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     options.set_keep_log_file_num(3);
     options.set_log_level(rocksdb::LogLevel::Warn);
 
-    // I think this one if a column-specific option, but I'm not entirely sure. So let's just also set it here.
-    options.set_memtable_prefix_bloom_ratio(config.memtable_prefix_bloom_filter_ratio);
     if config.enable_statistics {
         options.enable_statistics();
         options.set_statistics_level(config.statistics_level);
@@ -61,7 +67,6 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
     options.set_stats_dump_period_sec(config.statistics_period_sec);
 
     let mut env = Env::new().context("Creating rocksdb env")?;
-    // env.set_high_priority_background_threads(cores); // flushes
     env.set_low_priority_background_threads(cores); // compaction
 
     options.set_env(&env);
@@ -70,7 +75,7 @@ pub fn rocksdb_global_options(config: &RocksDBConfig) -> Result<Options> {
 }
 
 impl Column {
-    /// Per column rocksdb options, like memory budget, compaction profiles, block sizes for hdd/sdd
+    /// Per column rocksdb options, like memory budget, compaction profiles, block sizes
     /// etc.
     pub(crate) fn rocksdb_options(&self, config: &RocksDBConfig) -> Options {
         let mut options = Options::default();

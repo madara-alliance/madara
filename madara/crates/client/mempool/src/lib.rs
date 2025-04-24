@@ -118,7 +118,7 @@ impl From<MempoolError> for SubmitTransactionError {
             }
             E::InnerMempool(TxInsertionError::Limit(limit)) => rejected(TransactionLimitExceeded, format!("{limit:#}")),
             E::InnerMempool(TxInsertionError::NonceConflict) => {
-                rejected(DuplicatedTransaction, "A transaction with this nonce already exists in the transaction pool")
+                rejected(InvalidTransactionNonce, "A transaction with this nonce already exists in the transaction pool")
             }
             E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
         }
@@ -334,7 +334,7 @@ impl MempoolProvider for Mempool {
         }
     }
 
-    // #[tracing::instrument(skip(self, contract_address), fields(module = "Mempool"))]
+    #[tracing::instrument(skip(self, contract_address), fields(module = "Mempool"))]
     fn tx_mark_included(&self, contract_address: &Felt) {
         let removed = self.nonce_cache.write().expect("Poisoned lock").remove(contract_address);
         debug_assert!(removed.is_some());

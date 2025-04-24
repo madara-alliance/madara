@@ -266,9 +266,9 @@ impl MadaraBackend {
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
 
         // susbcribers
-        self.watch.on_new_block(block.info.clone().into());
+        self.watch_blocks.on_new_block(block.info.clone().into());
 
-        if self.events_watch.receiver_count() > 0 {
+        if self.watch_events.receiver_count() > 0 {
             let block_number = block.info.header.block_number;
             let block_hash = block.info.block_hash;
 
@@ -281,7 +281,7 @@ impl MadaraBackend {
                     receipt.events().iter().map(move |event| (tx_hash, event))
                 })
                 .for_each(|(transaction_hash, event)| {
-                    if let Err(e) = self.events_watch.publish(EmittedEvent {
+                    if let Err(e) = self.watch_events.publish(EmittedEvent {
                         event: event.clone().into(),
                         block_hash: Some(block_hash),
                         block_number: Some(block_number),

@@ -326,11 +326,14 @@ pub struct MadaraBackend {
     db_metrics: DbMetrics,
     snapshots: Arc<Snapshots>,
     head_status: ChainHead,
-    events_watch: EventChannels,
-    watch: BlockWatch,
+    watch_events: EventChannels,
+    watch_blocks: BlockWatch,
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
+    // keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
+    #[cfg(any(test, feature = "testing"))]
+    _temp_dir: Option<tempfile::TempDir>,
 }
 
 impl fmt::Debug for MadaraBackend {
@@ -415,10 +418,6 @@ pub struct MadaraBackendConfig {
     pub backup_every_n_blocks: Option<u64>,
     pub flush_every_n_blocks: Option<u64>,
     pub rocksdb: RocksDBConfig,
-    #[cfg(any(test, feature = "testing"))]
-    pub temp_dir: Option<tempfile::TempDir>,
-    #[cfg(not(any(test, feature = "testing")))]
-    pub temp_dir: Option<()>,
 }
 
 impl MadaraBackendConfig {
@@ -431,13 +430,7 @@ impl MadaraBackendConfig {
             backup_every_n_blocks: None,
             flush_every_n_blocks: None,
             rocksdb: Default::default(),
-            temp_dir: None,
         }
-    }
-    #[cfg(any(test, feature = "testing"))]
-    pub fn new_temp_dir(temp_dir: tempfile::TempDir) -> Self {
-        let config = Self::new(temp_dir.as_ref());
-        Self { temp_dir: Some(temp_dir), ..config }
     }
     pub fn backup_dir(self, backup_dir: Option<PathBuf>) -> Self {
         Self { backup_dir, ..self }
@@ -479,22 +472,26 @@ impl MadaraBackend {
             backup_handle,
             db,
             chain_config,
-            events_watch: EventChannels::new(100),
+            watch_events: EventChannels::new(100),
             config,
             head_status: ChainHead::default(),
             snapshots,
-            watch: BlockWatch::new(),
+            watch_blocks: BlockWatch::new(),
+            #[cfg(any(test, feature = "testing"))]
+            _temp_dir: None,
         };
-        backend.watch.init_initial_values(&backend).context("Initializing watch channels initial values")?;
+        backend.watch_blocks.init_initial_values(&backend).context("Initializing watch channels initial values")?;
         Ok(backend)
     }
 
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
-        let config = MadaraBackendConfig::new_temp_dir(temp_dir);
-        let db = open_rocksdb(config.temp_dir.as_ref().unwrap().path(), &config.rocksdb).unwrap();
-        Arc::new(Self::new(None, db, chain_config, config).unwrap())
+        let config = MadaraBackendConfig::new(&temp_dir);
+        let db = open_rocksdb(temp_dir.as_ref(), &config.rocksdb).unwrap();
+        let mut backend = Self::new(None, db, chain_config, config).unwrap();
+        backend._temp_dir = Some(temp_dir);
+        Arc::new(backend)
     }
 
     /// Open the db.
@@ -560,7 +557,7 @@ impl MadaraBackend {
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
 
         for event in events {
-            if let Err(e) = self.events_watch.publish(EmittedEvent {
+            if let Err(e) = self.watch_events.publish(EmittedEvent {
                 event: event.event.into(),
                 block_hash: Some(block_info.block_hash),
                 block_number: Some(block_info.header.block_number),
@@ -569,7 +566,7 @@ impl MadaraBackend {
                 tracing::debug!("Failed to send event to subscribers: {e}");
             }
         }
-        self.watch.on_new_block(block_info);
+        self.watch_blocks.on_new_block(block_info);
 
         self.save_head_status_to_db()?;
 

@@ -279,12 +279,16 @@ async fn main() -> anyhow::Result<()> {
     let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 
     // gateway api key is needed for declare transactions on mainnet
+    if let Some(url) = run_cmd.validator_params.validate_then_forward_txs_to.clone() {
+        provider = provider.with_madara_gateway_url(url)
+    }
     if let Some(api_key) = run_cmd.l2_sync_params.gateway_key.clone() {
         provider.add_header(
             HeaderName::from_static("x-throttling-bypass"),
             HeaderValue::from_str(&api_key).with_context(|| "Invalid API key format")?,
         )
     }
+
 
     let gateway_client = Arc::new(provider);
 
@@ -305,7 +309,7 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.validator_params.as_validator_config(),
     ));
 
-    let gateway_submit_tx: Arc<dyn SubmitTransaction> = if run_cmd.validator_params.validate_then_forward_txs {
+    let gateway_submit_tx: Arc<dyn SubmitTransaction> = if run_cmd.validator_params.validate_then_forward_txs_to.is_some() {
         Arc::new(TransactionValidator::new(
             Arc::clone(&gateway_client) as _,
             Arc::clone(service_db.backend()),
@@ -398,5 +402,5 @@ async fn main() -> anyhow::Result<()> {
         app.activate(MadaraServiceId::Telemetry);
     }
 
-    Ok(())
+    app.start().await
 }

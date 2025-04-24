@@ -140,6 +140,6 @@ impl EventChannels {
 impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "EventsChannel"))]
     pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
-        self.events_watch.subscribe(from_address)
+        self.watch_events.subscribe(from_address)
     }
 }

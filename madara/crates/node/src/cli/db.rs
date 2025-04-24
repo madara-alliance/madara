@@ -130,7 +130,6 @@ impl DbParams {
             },
             backup_every_n_blocks: self.backup_every_n_blocks,
             flush_every_n_blocks: self.flush_every_n_blocks,
-            temp_dir: None,
             rocksdb: RocksDBConfig {
                 enable_statistics: self.db_enable_statistics,
                 statistics_period_sec: self.db_statistics_period_sec,

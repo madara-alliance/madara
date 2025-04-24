@@ -55,98 +55,111 @@ impl TestSetup {
 
     async fn run_single_node() -> RunningTestSetup {
         // sequencer
-        let sequencer = MadaraCmdBuilder::new().label("sequencer").enable_gateway().args([
-            "--devnet",
-            "--no-l1-sync",
-            "--gas-price",
-            "0",
-            "--chain-config-path",
-            "test_devnet.yaml",
-            "--chain-config-override",
-            "block_time=500min,pending_block_update_time=500ms",
-            "--gateway",
-        ]);
-
-        let mut sequencer = sequencer.run();
+        let mut sequencer = MadaraCmdBuilder::new()
+            .label("sequencer")
+            .enable_gateway()
+            .args([
+                "--devnet",
+                "--no-l1-sync",
+                "--gas-price",
+                "0",
+                "--chain-config-path",
+                "test_devnet.yaml",
+                "--chain-config-override",
+                "block_time=500min,pending_block_update_time=500ms",
+                "--gateway",
+            ])
+            .run();
         sequencer.wait_for_sync_to(0).await;
         RunningTestSetup::SingleNode(sequencer)
     }
 
     async fn run_gateway_and_sequencer() -> RunningTestSetup {
-        // sequencer
-        let sequencer = MadaraCmdBuilder::new().label("sequencer").enable_gateway().args([
-            "--devnet",
-            "--no-l1-sync",
-            "--gas-price",
-            "0",
-            "--chain-config-path",
-            "test_devnet.yaml",
-            "--chain-config-override",
-            "block_time=500min,pending_block_update_time=500ms",
-            "--gateway",
-            "--gateway-trusted-add-transaction-endpoint",
-        ]);
-        // validator
-        let gateway = MadaraCmdBuilder::new().label("gateway").enable_gateway().args([
-            "--full",
-            "--no-l1-sync",
-            "--gas-price",
-            "0",
-            "--chain-config-path",
-            "test_devnet.yaml",
-            "--chain-config-override",
-            &format!(
-                "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
-                sequencer.gateway_url(),
-                sequencer.feeder_gateway_url()
-            ),
-            "--validate-then-forward-txs-to",
-            &format!("{}/madara", sequencer.gateway_root_url()),
-            "--gateway",
-        ]);
-
-        let mut sequencer = sequencer.run();
+        let mut sequencer = MadaraCmdBuilder::new()
+            .label("sequencer")
+            .enable_gateway()
+            .args([
+                "--devnet",
+                "--no-l1-sync",
+                "--gas-price",
+                "0",
+                "--chain-config-path",
+                "test_devnet.yaml",
+                "--chain-config-override",
+                "block_time=500min,pending_block_update_time=500ms",
+                "--gateway",
+                "--gateway-trusted-add-transaction-endpoint",
+            ])
+            .run();
         sequencer.wait_for_sync_to(0).await;
-        let mut gateway = gateway.run();
+
+        let mut gateway = MadaraCmdBuilder::new()
+            .label("gateway")
+            .enable_gateway()
+            .args([
+                "--full",
+                "--no-l1-sync",
+                "--gas-price",
+                "0",
+                "--chain-config-path",
+                "test_devnet.yaml",
+                "--chain-config-override",
+                &format!(
+                    "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
+                    sequencer.gateway_url(),
+                    sequencer.feeder_gateway_url()
+                ),
+                "--validate-then-forward-txs-to",
+                &format!("{}/madara", sequencer.gateway_root_url.as_ref().unwrap()),
+                "--gateway",
+            ])
+            .run();
         gateway.wait_for_sync_to(0).await;
+
         RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: gateway }
     }
 
     async fn run_full_node_and_sequencer() -> RunningTestSetup {
-        // sequencer
-        let sequencer = MadaraCmdBuilder::new().label("sequencer").enable_gateway().args([
-            "--devnet",
-            "--no-l1-sync",
-            "--gas-price",
-            "0",
-            "--chain-config-path",
-            "test_devnet.yaml",
-            "--chain-config-override",
-            "block_time=500min,pending_block_update_time=500ms",
-            "--gateway",
-        ]);
-        // validator
-        let full_node = MadaraCmdBuilder::new().label("full_node").enable_gateway().args([
-            "--full",
-            "--no-l1-sync",
-            "--gas-price",
-            "0",
-            "--chain-config-path",
-            "test_devnet.yaml",
-            "--chain-config-override",
-            &format!(
-                "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
-                sequencer.gateway_url(),
-                sequencer.feeder_gateway_url()
-            ),
-            "--gateway",
-        ]);
-
-        let mut sequencer = sequencer.run();
+        let mut sequencer = MadaraCmdBuilder::new()
+            .label("sequencer")
+            .enable_gateway()
+            .args([
+                "--devnet",
+                "--no-l1-sync",
+                "--gas-price",
+                "0",
+                "--chain-config-path",
+                "test_devnet.yaml",
+                "--chain-config-override",
+                "block_time=500min,pending_block_update_time=500ms",
+                "--gateway",
+            ])
+            .run();
         sequencer.wait_for_sync_to(0).await;
-        let mut gateway = full_node.run();
-        gateway.wait_for_sync_to(0).await;
-        RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: gateway }
+
+        // full_node
+        let mut full_node = MadaraCmdBuilder::new()
+            .label("full_node")
+            .enable_gateway()
+            .args([
+                "--full",
+                "--no-l1-sync",
+                "--gas-price",
+                "0",
+                "--chain-config-path",
+                "test_devnet.yaml",
+                "--chain-config-override",
+                &format!(
+                    "gateway_url=\"{}\",feeder_gateway_url=\"{}\"",
+                    sequencer.gateway_url(),
+                    sequencer.feeder_gateway_url()
+                ),
+                "--gateway",
+            ])
+            .run();
+        full_node.wait_for_sync_to(0).await;
+
+        RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: full_node }
     }
 }
 
