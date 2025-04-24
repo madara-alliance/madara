@@ -1,6 +1,5 @@
 pub mod controller;
 pub mod event_handler;
-pub mod job;
 pub mod parser;
 pub mod service;
 pub mod traits;

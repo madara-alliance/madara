@@ -1,5 +1,4 @@
-use crate::core::client::cron::event_bridge::EventBridgeClient;
-use crate::core::client::cron::CronClient;
+use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;
@@ -29,7 +28,7 @@ impl Resource for EventBridgeClient {
     type SetupArgs = CronArgs;
     type CheckArgs = ();
 
-    async fn new(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
+    async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
                 let eb_client = aws_sdk_eventbridge::Client::new(&aws_config);
@@ -70,8 +69,8 @@ impl Resource for EventBridgeClient {
                     OrchestratorError::SetupCommandError(format!("Failed to parse the cron time: {:?}", e))
                 })?),
             )
-            .await
-            .expect("Failed to add cron target queue");
+                .await
+                .expect("Failed to add cron target queue");
         }
         Ok(())
     }

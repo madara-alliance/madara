@@ -3,6 +3,7 @@ use crate::worker::parser::job_queue_message::JobQueueMessage;
 use crate::worker::parser::worker_trigger_message::WorkerTriggerMessage;
 use omniqueue::Delivery;
 
+#[derive(Debug, Clone)]
 pub enum ParsedMessage {
     WorkerTrigger(Box<WorkerTriggerMessage>),
     JobQueue(Box<JobQueueMessage>),

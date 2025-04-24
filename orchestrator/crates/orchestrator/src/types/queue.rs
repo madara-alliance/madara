@@ -1,5 +1,12 @@
+use crate::error::event::EventSystemError;
 use crate::types::jobs::types::JobType;
 use strum_macros::{Display, EnumIter};
+
+#[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter, Hash)]
+pub enum JobState {
+    Processing,
+    Verification,
+}
 
 #[derive(Display, Debug, Clone, PartialEq, Eq, EnumIter, Hash)]
 pub enum QueueType {
@@ -28,6 +35,28 @@ pub enum QueueType {
     #[strum(serialize = "worker_trigger")]
     WorkerTrigger,
 }
+
+impl TryFrom<QueueType> for JobState {
+    type Error = EventSystemError;
+    fn try_from(value: QueueType) -> Result<Self, Self::Error> {
+        let state = match value {
+            QueueType::SnosJobProcessing => JobState::Processing,
+            QueueType::SnosJobVerification => JobState::Verification,
+            QueueType::ProvingJobProcessing => JobState::Processing,
+            QueueType::ProvingJobVerification => JobState::Verification,
+            QueueType::ProofRegistrationJobProcessing => JobState::Processing,
+            QueueType::ProofRegistrationJobVerification => JobState::Verification,
+            QueueType::DataSubmissionJobProcessing => JobState::Processing,
+            QueueType::DataSubmissionJobVerification => JobState::Verification,
+            QueueType::UpdateStateJobProcessing => JobState::Processing,
+            QueueType::UpdateStateJobVerification => JobState::Verification,
+            QueueType::JobHandleFailure => Err(Self::Error::InvalidJobType(QueueType::JobHandleFailure.to_string()))?,
+            QueueType::WorkerTrigger => Err(Self::Error::InvalidJobType(QueueType::WorkerTrigger.to_string()))?,
+        };
+        Ok(state)
+    }
+}
+
 
 pub trait QueueNameForJobType {
     fn process_queue_name(&self) -> QueueType;

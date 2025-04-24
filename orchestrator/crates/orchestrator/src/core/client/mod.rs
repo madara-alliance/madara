@@ -1,7 +1,7 @@
 // Client abstractions module - contains all client interface traits
 
 pub mod alert;
-pub mod cron;
+pub mod event_bus;
 pub mod database;
 pub mod queue;
 pub mod storage;

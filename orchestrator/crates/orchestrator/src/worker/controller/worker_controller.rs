@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::error::event::{EventSystemError, EventSystemResult};
+use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::worker::controller::event_worker::EventWorker;
 use futures::future::try_join_all;
@@ -40,7 +40,7 @@ impl WorkerController {
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
-    pub async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
+    async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
         Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())))
     }
 
@@ -64,6 +64,7 @@ impl WorkerController {
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
+    /// TODO: Use tokio spawn
     pub async fn run_l2(&self) -> EventSystemResult<()> {
         let futures = Self::get_l2_queues().into_iter().map(|queue_type| {
             let queue_type = queue_type.clone();

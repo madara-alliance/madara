@@ -5,8 +5,10 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{QueueNameForJobType, QueueType};
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::factory::JobFactory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
+use opentelemetry::KeyValue;
 use std::sync::Arc;
 use std::time::Duration;
 use uuid::Uuid;
@@ -22,7 +24,7 @@ impl JobService {
     ///
     /// # Returns
     /// * `Result<JobItem, JobError>` - The job if found, or JobNotFound error
-    async fn get_job(id: Uuid, config: Arc<Config>) -> Result<JobItem, JobError> {
+    pub(crate) async fn get_job(id: Uuid, config: Arc<Config>) -> Result<JobItem, JobError> {
         config.database().get_job_by_id(id).await?.ok_or(JobError::JobNotFound { id })
     }
 
@@ -65,7 +67,7 @@ impl JobService {
         job_type: &JobType,
         delay: Option<Duration>,
     ) -> Result<(), JobError> {
-        tracing::info!("Adding job with id {:?} to processing queue", id);
+        tracing::info!("Adding job with id {:?} to Verification queue", id);
         Self::add_job_to_queue(config, id, job_type.verify_queue_name(), delay).await
     }
 
@@ -210,8 +212,74 @@ impl JobService {
             &job.job_type,
             Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
         )
-        .await?;
+            .await?;
 
         Ok(())
+    }
+
+
+    /// Moves a job to the Failed state with the provided reason
+    ///
+    /// # Arguments
+    /// * `job` - Reference to the job to mark as failed
+    /// * `config` - Shared configuration
+    /// * `reason` - Failure reason to record in metadata
+    ///
+    /// # Returns
+    /// * `Result<(), JobError>` - Success or an error
+    ///
+    /// # Notes
+    /// * Skips processing if job is already in Failed status
+    /// * Records failure reason in job metadata
+    /// * Updates metrics for failed jobs
+    pub async fn move_job_to_failed(job: &JobItem, config: Arc<Config>, reason: String) -> Result<(), JobError> {
+        if job.status == JobStatus::Completed {
+            tracing::error!(job_id = ?job.id, job_status = ?job.status, "Invalid state exists on DL queue");
+            return Ok(());
+        }
+        // We assume that a Failure status will only show up if the message is sent twice from a queue
+        // Can return silently because it's already been processed.
+        else if job.status == JobStatus::Failed {
+            tracing::warn!(job_id = ?job.id, "Job already marked as failed, skipping processing");
+            return Ok(());
+        }
+
+        let mut job_metadata = job.metadata.clone();
+        let internal_id = job.internal_id.clone();
+
+        tracing::debug!(job_id = ?job.id, "Updating job status to Failed in database");
+        // Update failure information in common metadata
+        job_metadata.common.failure_reason = Some(reason);
+
+        match config
+            .database()
+            .update_job(job, JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build())
+            .await
+        {
+            Ok(_) => {
+                tracing::info!(
+                log_type = "completed",
+                category = "general",
+                function_type = "handle_job_failure",
+                block_no = %internal_id,
+                "General handle job failure completed for block"
+            );
+                ORCHESTRATOR_METRICS
+                    .failed_jobs
+                    .add(1.0, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!(
+                    log_type = "error",
+                    category = "general",
+                    function_type = "handle_job_failure",
+                    block_no = %internal_id,
+                    error = %e,
+                    "General handle job failure failed for block"
+                );
+                Err(JobError::from(e))
+            }
+        }
     }
 }

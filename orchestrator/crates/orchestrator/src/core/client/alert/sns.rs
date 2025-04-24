@@ -18,14 +18,32 @@ impl SNS {
     pub fn create(args: &AlertArgs, aws_config: &SdkConfig) -> Self {
         Self { client: Arc::new(Client::new(aws_config)), topic_arn: Some(args.endpoint.clone()) }
     }
+    /// get_topic_arn return the topic name, if empty it will return error
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, AlertError>` - The topic arn.
+    pub fn get_topic_arn(&self) -> Result<String, AlertError> {
+        self.topic_arn.clone().ok_or(AlertError::TopicARNEmpty)
+    }
 }
 
 #[async_trait]
 impl AlertClient for SNS {
+    /// send_message sends a message to the SNS topic.
+    ///
+    /// # Arguments
+    ///
+    /// * `message_body` - The message body to send.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<(), AlertError>` - The result of the send operation.
     async fn send_message(&self, message_body: String) -> Result<(), AlertError> {
+        let topic_name = self.get_topic_arn()?;
         self.client
             .publish()
-            .topic_arn(self.topic_arn.clone().ok_or_else(|| AlertError::UnableToExtractTopicName)?)
+            .topic_arn(topic_name)
             .message(message_body)
             .send()
             .await
@@ -33,11 +51,13 @@ impl AlertClient for SNS {
         Ok(())
     }
 
+    /// get_topic_name gets the topic name from the SNS topic ARN.
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, AlertError>` - The topic name.
     async fn get_topic_name(&self) -> Result<String, AlertError> {
-        Ok(self
-            .topic_arn
-            .clone()
-            .ok_or_else(|| AlertError::UnableToExtractTopicName)?
+        Ok(self.get_topic_arn()?
             .split(":")
             .last()
             .ok_or_else(|| AlertError::UnableToExtractTopicName)?

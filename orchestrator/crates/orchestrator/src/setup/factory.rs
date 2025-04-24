@@ -1,4 +1,4 @@
-use crate::core::client::cron::event_bridge::EventBridgeClient;
+use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{
@@ -30,6 +30,7 @@ pub struct ResourceFactory {
 impl ResourceFactory {
     /// new_with_gcs - Create a new ResourceFactory with default resource creators for Orchestrator
     /// with GCS Cloud Provider
+    #[allow(dead_code)]
     pub fn new_with_gcs(
         cloud_provider: Arc<CloudProvider>,
         queue_params: QueueArgs,
@@ -53,8 +54,8 @@ impl ResourceFactory {
         let mut creators = HashMap::new();
         creators.insert(ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>);
         creators.insert(ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>);
-        creators.insert(ResourceType::Cron, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
-        // creators.insert(ResourceType::Notification, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>);
+        creators.insert(ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
+        // creators.insert(ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>);
 
         ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
     }
@@ -72,11 +73,11 @@ impl ResourceFactory {
                     let rs = resource.downcast_mut::<SQS>().unwrap();
                     rs.setup(self.queue_params.clone()).await?;
                 }
-                ResourceType::Notification => {
+                ResourceType::PubSub => {
                     let rs = resource.downcast_mut::<SNS>().unwrap();
                     rs.setup(self.alert_params.clone()).await?;
                 }
-                ResourceType::Cron => {
+                ResourceType::EventBus => {
                     let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
                     rs.setup(self.cron_params.clone()).await?;
                 }

@@ -1,4 +1,4 @@
-use crate::core::client::cron::event_bridge::EventBridgeClient;
+use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::{
     core::client::{queue::sqs::SQS, storage::sss::AWSS3},
@@ -14,8 +14,8 @@ use std::sync::Arc;
 pub enum ResourceType {
     Queue,
     Storage,
-    Cron,
-    Notification,
+    EventBus,
+    PubSub,
 }
 
 impl ResourceType {
@@ -23,8 +23,8 @@ impl ResourceType {
         match resource_type.to_lowercase().as_str() {
             "queue" => Some(ResourceType::Queue),
             "storage" => Some(ResourceType::Storage),
-            "cron" => Some(ResourceType::Cron),
-            "notification" => Some(ResourceType::Notification),
+            "event_bus" => Some(ResourceType::EventBus),
+            "pub_sub" => Some(ResourceType::PubSub),
             _ => None,
         }
     }
@@ -42,7 +42,7 @@ pub struct S3ResourceCreator;
 #[async_trait]
 impl ResourceCreator for S3ResourceCreator {
     async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let s3 = AWSS3::new(cloud_provider.clone()).await?;
+        let s3 = AWSS3::create_setup(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, s3, ResourceType::Storage))
     }
 }
@@ -53,7 +53,7 @@ pub struct SQSResourceCreator;
 #[async_trait]
 impl ResourceCreator for SQSResourceCreator {
     async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let sqs = SQS::new(cloud_provider.clone()).await?;
+        let sqs = SQS::create_setup(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, sqs, ResourceType::Queue))
     }
 }
@@ -64,8 +64,8 @@ pub struct SNSResourceCreator;
 #[async_trait]
 impl ResourceCreator for SNSResourceCreator {
     async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let sns = SNS::new(cloud_provider.clone()).await?;
-        Ok(ResourceWrapper::new(cloud_provider, sns, ResourceType::Notification))
+        let sns = SNS::create_setup(cloud_provider.clone()).await?;
+        Ok(ResourceWrapper::new(cloud_provider, sns, ResourceType::PubSub))
     }
 }
 
@@ -75,7 +75,7 @@ pub struct EventBridgeResourceCreator;
 #[async_trait]
 impl ResourceCreator for EventBridgeResourceCreator {
     async fn create_resource(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let eb_client = EventBridgeClient::new(cloud_provider.clone()).await?;
-        Ok(ResourceWrapper::new(cloud_provider, eb_client, ResourceType::Cron))
+        let eb_client = EventBridgeClient::create_setup(cloud_provider.clone()).await?;
+        Ok(ResourceWrapper::new(cloud_provider, eb_client, ResourceType::EventBus))
     }
 }

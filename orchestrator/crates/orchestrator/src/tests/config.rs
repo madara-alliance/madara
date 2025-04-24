@@ -7,30 +7,30 @@ use crate::cli::provider::AWSConfigValidatedArgs;
 use crate::cli::settlement::SettlementValidatedArgs;
 use crate::cli::snos::SNOSParams;
 use crate::cli::storage::StorageValidatedArgs;
-use crate::config::{get_aws_config, Config, OrchestratorParams, ProviderConfig, ServiceParams};
+// use crate::config::{get_aws_config, Config, OrchestratorParams, ProviderConfig, ServiceParams};
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::config::Config;
-use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
-use crate::data_storage::{DataStorage, MockDataStorage};
-use crate::database::mongodb::MongoDBValidatedArgs;
-use crate::database::{Database, MockDatabase};
-use crate::helpers::{JobProcessingState, ProcessingLocks};
-use crate::queue::sqs::AWSSQSValidatedArgs;
-use crate::queue::{MockQueueProvider, QueueProvider};
-use crate::routes::{get_server_url, setup_server, ServerParams};
-use crate::telemetry::InstrumentationParams;
+// use crate::data_storage::aws_s3::AWSS3ValidatedArgs;
+// use crate::data_storage::{DataStorage, MockDataStorage};
+// use crate::database::mongodb::MongoDBValidatedArgs;
+// use crate::database::{Database, MockDatabase};
+// use crate::helpers::{JobProcessingState, ProcessingLocks};
+// use crate::queue::sqs::AWSSQSValidatedArgs;
+// use crate::queue::{MockQueueProvider, QueueProvider};
+// use crate::routes::{get_server_url, setup_server, ServerParams};
+// use crate::telemetry::InstrumentationParams;
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
 use crate::{DatabaseClient, QueueClient, StorageClient};
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
 use httpmock::MockServer;
-use orchestrator::core::client::AlertClient;
-use orchestrator::{DatabaseClient, QueueClient, StorageClient};
+// use orchestrator::core::client::AlertClient;
+// use orchestrator::{DatabaseClient, QueueClient, StorageClient};
 use orchestrator_da_client_interface::{DaClient, MockDaClient};
 use orchestrator_ethereum_da_client::EthereumDaValidatedArgs;
 use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
@@ -42,7 +42,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
-// TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
+// TestConfigBuilder allows heavily customising the global configs based on the test's requirement.
 // Eg: We want to mock only the da client and leave rest to be as it is, use mock_da_client.
 
 pub enum MockType {
@@ -57,6 +57,7 @@ pub enum MockType {
     Database(Box<dyn DatabaseClient>),
     Queue(Box<dyn QueueClient>),
     Storage(Box<dyn StorageClient>),
+    PubSub(Box<dyn AlertClient>),
 }
 
 // By default, everything is on Dummy.
@@ -527,11 +528,11 @@ fn get_env_params() -> EnvParams {
         l1_core_contract_address: Address::from_str(&get_env_var_or_panic(
             "MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS",
         ))
-        .expect("Invalid L1 core contract address"),
+            .expect("Invalid L1 core contract address"),
         starknet_operator_address: Address::from_str(&get_env_var_or_panic(
             "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
         ))
-        .expect("Invalid Starknet operator address"),
+            .expect("Invalid Starknet operator address"),
     });
 
     let snos_config = SNOSParams {

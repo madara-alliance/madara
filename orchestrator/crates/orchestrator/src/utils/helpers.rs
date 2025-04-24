@@ -33,7 +33,7 @@ use crate::worker::service::JobService;
 /// ```
 pub async fn wait_until_ready<F, T, E>(mut f: F, timeout_secs: u64) -> Result<T, E>
 where
-    F: FnMut() -> Pin<Box<dyn Future<Output = Result<T, E>> + Send>>,
+    F: FnMut() -> Pin<Box<dyn Future<Output=Result<T, E>> + Send>>,
 {
     let start = tokio::time::Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
@@ -95,10 +95,7 @@ impl JobProcessingState {
         }
     }
 
-    pub async fn try_release_lock<'a>(&'a self, permit: SemaphorePermit<'a>, job_id: &Uuid) -> Result<(), JobError> {
-        let mut active_jobs = self.active_jobs.lock().await;
-        active_jobs.remove(job_id);
-        drop(active_jobs); // Explicitly drop the lock (optional but clear)
+    pub async fn try_release_lock<'a>(&'a self, permit: SemaphorePermit<'a>) -> Result<(), JobError> {
         drop(permit); // Explicitly drop the permit (optional but clear)
         Ok(())
     }

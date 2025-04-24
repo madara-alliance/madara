@@ -17,6 +17,8 @@ pub mod fact_node;
 pub mod fact_topology;
 pub mod helper;
 
+pub mod conversion;
+
 pub fn biguint_vec_to_u8_vec(nums: &[BigUint]) -> Vec<u8> {
     let mut result: Vec<u8> = Vec::new();
 

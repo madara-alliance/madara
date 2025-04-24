@@ -58,4 +58,7 @@ pub enum EventSystemError {
 
     #[error("ConsumptionError: {0}")]
     FromConsumptionError(#[from] ConsumptionError),
+
+    #[error("Invalid job type: {0}")]
+    InvalidJobType(String),
 }

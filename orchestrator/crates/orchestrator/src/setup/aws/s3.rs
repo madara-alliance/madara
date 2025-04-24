@@ -15,9 +15,9 @@ impl Resource for AWSS3 {
     type TeardownResult = ();
     type Error = S3Error;
     type SetupArgs = StorageArgs;
-    type CheckArgs = String; // Bucket name
+    type CheckArgs = String;
 
-    async fn new(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
+    async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
                 let client = S3Client::new(&aws_config);
