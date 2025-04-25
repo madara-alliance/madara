@@ -12,5 +12,3 @@ pub mod worker;
 // Re-export commonly used ite
 pub use error::{OrchestratorError, OrchestratorResult};
 
-// Re-export client abstractions for convenience
-pub use core::client::{database::DatabaseClient, queue::QueueClient, storage::StorageClient};

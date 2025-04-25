@@ -7,8 +7,6 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use async_trait::async_trait;
 pub use error::DatabaseError;
 use mockall::automock;
-use serde::{de::DeserializeOwned, Serialize};
-use uuid::Uuid;
 
 /// Trait defining database operations
 #[automock]
@@ -24,7 +22,7 @@ pub trait DatabaseClient: Send + Sync {
     /// create_job - Create a new job in the database
     async fn create_job(&self, job: JobItem) -> Result<JobItem, DatabaseError>;
     /// get_job_by_id - Get a job by its ID
-    async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>, DatabaseError>;
+    async fn get_job_by_id(&self, id: uuid::Uuid) -> Result<Option<JobItem>, DatabaseError>;
     /// get_job_by_internal_id_and_type - Get a job by its internal ID and type
     async fn get_job_by_internal_id_and_type(
         &self,
@@ -62,33 +60,4 @@ pub trait DatabaseClient: Send + Sync {
         status: Vec<JobStatus>,
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
-
-    // /// this need to been uncommendted once the session is introduced
-    // ///
-    // async fn insert<T>(&self, table: &str, document: &T) -> OrchestratorResult<String>
-    // where
-    //     T: Serialize + Send + Sync;
-    //
-    // async fn find_document<T, F>(&self, collection: &str, filter: &F) -> OrchestratorResult<Option<T>>
-    // where
-    //     T: DeserializeOwned + Send + Sync,
-    //     F: Serialize + Send + Sync;
-    //
-    // async fn find_documents<T, F>(&self, collection: &str, filter: &F) -> OrchestratorResult<Vec<T>>
-    // where
-    //     T: DeserializeOwned + Send + Sync,
-    //     F: Serialize + Send + Sync;
-    //
-    // async fn update_document<F, U>(&self, collection: &str, filter: &F, update: &U) -> OrchestratorResult<bool>
-    // where
-    //     F: Serialize + Send + Sync,
-    //     U: Serialize + Send + Sync;
-    //
-    // async fn delete_document<F>(&self, collection: &str, filter: &F) -> OrchestratorResult<bool>
-    // where
-    //     F: Serialize + Send + Sync;
-    //
-    // async fn count_documents<F>(&self, collection: &str, filter: &F) -> OrchestratorResult<u64>
-    // where
-    //     F: Serialize + Send + Sync;
 }

@@ -19,6 +19,14 @@ pub mod helper;
 
 pub mod conversion;
 
+/// biguint_vec_to_u8_vec - Converts a vector of BigUint numbers to a vector of u8 bytes.
+///
+/// # Arguments
+/// * `nums` - A slice of BigUint numbers.
+///
+/// # Returns
+/// * `Vec<u8>` - A vector of u8 bytes representing the BigUint numbers.
+///
 pub fn biguint_vec_to_u8_vec(nums: &[BigUint]) -> Vec<u8> {
     let mut result: Vec<u8> = Vec::new();
 
@@ -29,6 +37,14 @@ pub fn biguint_vec_to_u8_vec(nums: &[BigUint]) -> Vec<u8> {
     result
 }
 
+/// biguint_to_32_bytes - Converts a BigUint number to a fixed-size array of 32 bytes.
+///
+/// # Arguments
+/// * `num` - A reference to a BigUint number.
+///
+/// # Returns
+/// * `[u8; 32]` - A fixed-size array of 32 bytes representing the BigUint number.
+///
 pub fn biguint_to_32_bytes(num: &BigUint) -> [u8; 32] {
     let bytes = num.to_bytes_be();
     let mut result = [0u8; 32];
@@ -44,7 +60,17 @@ pub fn biguint_to_32_bytes(num: &BigUint) -> [u8; 32] {
     result
 }
 
+/// fetch_blob_data_for_block - Fetches blob data for a specific block index.
 /// Fetching the blob data (stored in remote storage during DA job) for a particular block
+///
+/// # Arguments
+/// * `block_index` - The index of the block.
+/// * `config` - The configuration object.
+/// * `blob_data_paths` - A slice of blob data paths.
+///
+/// # Returns
+/// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
+///
 pub async fn fetch_blob_data_for_block(
     block_index: usize,
     config: Arc<Config>,
@@ -70,7 +96,18 @@ pub async fn fetch_blob_data_for_block(
     Ok(vec![blob_data.to_vec()])
 }
 
-/// Retrieves the SNOS output for the corresponding block.
+/// fetch_snos_for_block - Fetches the SNOS output for a specific block index.
+/// Retrieves the SNOS output (stored in remote storage during SNOS job) for a particular block.
+///
+/// # Arguments
+/// * `internal_id` - The internal ID of the job.
+/// * `index` - The index of the block.
+/// * `config` - The configuration object.
+/// * `snos_output_paths` - A slice of SNOS output paths.
+///
+/// # Returns
+/// * `Result<StarknetOsOutput, JobError>` - A result containing the SNOS output or an error.
+///
 pub async fn fetch_snos_for_block(
     internal_id: String,
     index: usize,

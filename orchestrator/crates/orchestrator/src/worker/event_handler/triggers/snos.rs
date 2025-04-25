@@ -24,7 +24,7 @@ impl JobTrigger for SnosJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "SnosWorker", "SnosWorker started.");
 
-        let provider = config.starknet_client();
+        let provider = config.madara_client();
         let block_number_provider = provider.block_number().await?;
 
         let latest_block_number = config

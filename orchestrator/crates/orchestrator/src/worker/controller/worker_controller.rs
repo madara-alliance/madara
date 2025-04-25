@@ -54,6 +54,12 @@ impl WorkerController {
             QueueType::ProvingJobProcessing,
             QueueType::DataSubmissionJobProcessing,
             QueueType::UpdateStateJobProcessing,
+            QueueType::SnosJobVerification,
+            QueueType::ProvingJobVerification,
+            QueueType::DataSubmissionJobVerification,
+            QueueType::UpdateStateJobVerification,
+            QueueType::WorkerTrigger,
+            QueueType::JobHandleFailure,
         ]
     }
 

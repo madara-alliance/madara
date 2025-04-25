@@ -53,6 +53,11 @@ pub struct ProcessingLocks {
     pub snos_job_processing_lock: Arc<JobProcessingState>,
 }
 
+
+/// JobProcessingState is a struct that holds the state of the job processing lock
+/// It is used to limit a job been get dupplicated in multiple place
+/// It uses a semaphore to limit been getting
+/// It also uses a mutex to hold the set of active jobs
 pub struct JobProcessingState {
     pub semaphore: Semaphore,
     pub active_jobs: Mutex<HashSet<Uuid>>,

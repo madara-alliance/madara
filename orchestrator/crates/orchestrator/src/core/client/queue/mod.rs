@@ -7,24 +7,7 @@ pub use error::QueueError;
 use mockall::automock;
 use omniqueue::backends::{SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
-use std::collections::HashMap;
 use std::time::Duration;
-
-/// Message with metadata
-#[derive(Debug, Clone)]
-pub struct Message<T> {
-    /// The message payload
-    pub payload: T,
-
-    /// Message ID
-    pub id: String,
-
-    /// Receipt handle (for acknowledgment)
-    pub receipt_handle: Option<String>,
-
-    /// Message attributes
-    pub attributes: HashMap<String, String>,
-}
 
 /// Trait defining queue operations
 #[automock]

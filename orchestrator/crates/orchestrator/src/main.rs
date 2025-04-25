@@ -7,9 +7,10 @@ use orchestrator::setup::setup;
 use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
+use orchestrator::worker::controller::worker_controller::WorkerController;
 use orchestrator::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -40,22 +41,25 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let orchestrator_instrumentation = OrchestratorInstrumentation::setup(&config)?;
     info!("Starting orchestrator service");
 
-    let config = Arc::new(Config::setup(run_cmd).await?);
+    let config = Arc::new(Config::new(run_cmd).await?);
     debug!("Configuration initialized");
 
-    // initialize the server
-    let _ = setup_server(config.clone()).await;
+    let server_config = config.clone();
+    /// Run the server in a separate tokio spawn task
+    tokio::spawn(async move {
+        let _ = setup_server(server_config).await;
+    });
 
     debug!("Application router initialized");
 
-    // // init consumer
-    // match init_consumers(old_config).await {
-    //     Ok(_) => info!("Consumers initialized successfully"),
-    //     Err(e) => {
-    //         error!(error = %e, "Failed to initialize consumers");
-    //         panic!("Failed to init consumers: {}", e);
-    //     }
-    // }
+    let controller = WorkerController::new(config.clone());
+    match controller.run().await {
+        Ok(_) => info!("Consumers initialized successfully"),
+        Err(e) => {
+            error!(error = %e, "Failed to initialize consumers");
+            panic!("Failed to init consumers: {}", e);
+        }
+    }
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
 

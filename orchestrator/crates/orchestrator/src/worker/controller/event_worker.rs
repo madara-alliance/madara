@@ -75,6 +75,15 @@ impl EventWorker {
         }
     }
 
+    /// parse_message - Parse the message received from the queue
+    /// This function parses the message based on its type
+    /// It returns a Result<ParsedMessage, EventSystemError> indicating whether the operation was successful or not
+    /// # Arguments
+    /// * `message` - The message to be parsed
+    /// # Returns
+    /// * `Result<ParsedMessage, EventSystemError>` - A result indicating whether the operation was successful or not
+    /// # Errors
+    /// * Returns an EventSystemError if the message cannot be parsed
     fn parse_message(&self, message: &Delivery) -> EventSystemResult<ParsedMessage> {
         match self.queue_type {
             QueueType::WorkerTrigger => WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger),
@@ -83,6 +92,15 @@ impl EventWorker {
     }
 
 
+    /// handle_message - Handle the message received from the queue
+    /// This function processes the message based on its type
+    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// # Arguments
+    /// * `message` - The message to be handled
+    /// # Returns
+    /// * `Result<(), EventSystemError>` - A result indicating whether the operation was successful or not
+    /// # Errors
+    /// * Returns an EventSystemError if the message cannot be handled
     async fn handle_message(&self, message: ParsedMessage) -> EventSystemResult<()> {
         match self.queue_type {
             QueueType::WorkerTrigger => {
@@ -135,9 +153,22 @@ impl EventWorker {
         }
     }
 
+
+    /// post_processing - Post process the message after handling
+    /// This function acknowledges or negatively acknowledges the message based on the result of the handling
+    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// # Arguments
+    /// * `result` - The result of the message handling
+    /// * `message` - The message to be post processed
+    /// * `parsed_message` - The parsed message
+    /// # Returns
+    /// * `Result<(), EventSystemError>` - A result indicating whether the operation was successful or not
+    /// # Errors
+    /// * Returns an EventSystemError if the message cannot be post processed
+    /// # Notes
+    /// * This function is responsible for acknowledging or negatively acknowledging the message based on the result of the handling
     async fn post_processing(&self, result: EventSystemResult<()>, message: Delivery, parsed_message: ParsedMessage) -> EventSystemResult<()> {
         if let Err(ref error) = result {
-            // Log error with context
             let (error_context, consumption_error) = match &parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
@@ -149,7 +180,7 @@ impl EventWorker {
                             error_msg: error.to_string(),
                         }
                     )
-                },
+                }
                 ParsedMessage::JobQueue(msg) => {
                     let job_id = &msg.id;
                     tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
@@ -167,14 +198,13 @@ impl EventWorker {
             self.config
                 .alerts()
                 .send_message(error_context)
-                .await
-                .map_err(|e| ConsumptionError::Other(OtherError::from(e)))?;
+                .await?;
 
             // Negative acknowledgment of the message so it can be retried
             message
                 .nack()
                 .await
-                .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
             // Return the specific error
             return Err(consumption_error.into());
@@ -184,11 +214,21 @@ impl EventWorker {
         message
             .ack()
             .await
-            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+            .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
         Ok(())
     }
 
+    /// run - Run the event worker, by closly monitoring the queue and processing messages
+    /// This function starts the event worker and processes messages from the queue
+    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// # Errors
+    /// * Returns an EventSystemError if the event worker cannot be started
+    /// # Notes
+    /// * This function runs indefinitely, processing messages from the queue
+    /// * It will sleep for a short duration if no messages are received to prevent a tight loop
+    /// * It will also sleep for a longer duration if an error occurs to prevent a tight loop
+    /// * It will log errors and messages for debugging purposes
     pub async fn run(&self) -> EventSystemResult<()> {
         loop {
             match self.get_message().await {

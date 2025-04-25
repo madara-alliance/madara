@@ -14,7 +14,7 @@ pub enum CloudProvider {
 impl CloudProvider {
     /// Get the AWS SDK config
     ///
-    /// # Returns :
+    /// # Returns:
     /// - `Ok(SdkConfig)` if the provider is AWS
     /// - `Err(Error)` if the provider is not AWS
     ///
@@ -39,20 +39,29 @@ impl CloudProvider {
 
 impl std::fmt::Debug for CloudProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CloudProvider::AWS(_) => write!(f, "AWS"),
-        }
+        f.write_str(self.get_provider_name().as_str())
     }
 }
 
+// Implement Display using Debug since they share the same formatting
 impl std::fmt::Display for CloudProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            CloudProvider::AWS(_) => write!(f, "AWS"),
-        }
+        std::fmt::Debug::fmt(self, f)
     }
 }
 
+/// Try from run cmd
+///
+/// # Arguments
+///
+/// * `cmd` - The run command
+///
+/// # Returns
+/// Returns the cloud provider based on the run command
+///
+/// # Errors
+/// Returns an error if the provider is not AWS
+///
 impl TryFrom<RunCmd> for CloudProvider {
     type Error = OrchestratorCoreError;
 
@@ -64,6 +73,5 @@ impl TryFrom<RunCmd> for CloudProvider {
         } else {
             Err(OrchestratorCoreError::InvalidProvider("AWS".to_string()))
         }
-
     }
 }

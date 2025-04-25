@@ -8,5 +8,5 @@ pub mod traits;
 
 // Re-export commonly used types from client
 pub use client::database::DatabaseClient;
-pub use client::queue::{Message, QueueClient};
-pub use client::storage::{ObjectMetadata, StorageClient};
+pub use client::queue::QueueClient;
+pub use client::storage::StorageClient;

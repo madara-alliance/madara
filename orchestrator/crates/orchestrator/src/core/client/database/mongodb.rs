@@ -2,15 +2,15 @@ use super::error::DatabaseError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::{core::client::database::DatabaseClient, types::params::database::MongoConfig, OrchestratorResult};
+use crate::{core::client::database::DatabaseClient, OrchestratorResult};
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use futures::{StreamExt, TryStreamExt};
-use mongodb::bson::ser::Error;
 use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{
-    ClientOptions, FindOneAndUpdateOptions, FindOneOptions, FindOptions, ReturnDocument, ServerApi, ServerApiVersion,
+    FindOneAndUpdateOptions, FindOneOptions, FindOptions, ReturnDocument,
     UpdateOptions,
 };
 use mongodb::{bson, Client, Collection, Database};
@@ -43,12 +43,8 @@ pub struct MongoDbClient {
 }
 
 impl MongoDbClient {
-    /// Get a reference to the database
-    fn get_database(&self) -> OrchestratorResult<Arc<Database>> {
-        Ok(self.database.clone())
-    }
-    pub async fn setup(config: &MongoConfig) -> OrchestratorResult<Self> {
-        let client = Client::with_uri_str(&config.connection_url).await?;
+    pub async fn create(config: &DatabaseArgs) -> OrchestratorResult<Self> {
+        let client = Client::with_uri_str(&config.connection_uri).await?;
         let database = Arc::new(client.database(&config.database_name));
         Ok(Self { client, database })
     }
@@ -83,8 +79,6 @@ impl DatabaseClient for MongoDbClient {
     /// * `job` - The job to be created
     /// # Returns
     /// * `Result<JobItem, DatabaseError>` - A Result indicating whether the operation was successful or not
-    ///
-    /// TODO: this code needs to been moved to the session layer
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn create_job(&self, job: JobItem) -> Result<JobItem, DatabaseError> {
         let start = Instant::now();

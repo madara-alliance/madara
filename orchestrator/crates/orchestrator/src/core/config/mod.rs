@@ -16,6 +16,7 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::core::error::OrchestratorCoreResult;
+use crate::types::params::database::DatabaseArgs;
 use crate::{
     cli::RunCmd,
     core::client::{
@@ -23,8 +24,8 @@ use crate::{
         SNS, SQS,
     },
     core::cloud::CloudProvider,
-    types::params::da::DAConfig,
-    types::params::database::MongoConfig,
+    types::params::da::DAConfig
+    ,
     types::params::prover::ProverConfig,
     types::params::service::{ServerParams, ServiceParams},
     types::params::settlement::SettlementConfig,
@@ -34,7 +35,7 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
-pub struct OrchestratorParams {
+pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub snos_config: SNOSParams,
     pub service_config: ServiceParams,
@@ -49,9 +50,9 @@ pub struct OrchestratorParams {
 /// by calling `config` function. 33
 pub struct Config {
     /// The orchestrator config
-    orchestrator_params: OrchestratorParams,
-    /// The starknet client to get data from the node
-    starknet_client: Arc<JsonRpcClient<HttpTransport>>,
+    params: ConfigParam,
+    /// The Madara client to get data from the node
+    madara_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
     da_client: Box<dyn DaClient>,
     /// The service that produces proof and registers it onchain
@@ -71,33 +72,32 @@ pub struct Config {
 }
 
 impl Config {
-    /// Setup the orchestrator
-    pub async fn setup(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
-        // let aws_cred = AWSCredentials::from(run_cmd.aws_config_args.clone());
-        // let cloud_provider = aws_cred.get_aws_config().await;
+    /// new - create config from the run command
+    pub async fn new(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
         let cloud_provider = CloudProvider::try_from(run_cmd.clone())?;
         let provider_config = Arc::new(cloud_provider);
 
-        let db: MongoConfig = run_cmd.mongodb_args.clone().into();
+        let db: DatabaseArgs = DatabaseArgs::try_from(run_cmd.clone())?;
         let storage_args: StorageArgs = StorageArgs::try_from(run_cmd.clone())?;
-        let alert_args: AlertArgs = run_cmd.aws_sns_args.clone().try_into()?;
+        let alert_args: AlertArgs = AlertArgs::try_from(run_cmd.clone())?;
         let queue_args: QueueArgs = QueueArgs::try_from(run_cmd.clone())?;
 
         let prover_config = ProverConfig::try_from(run_cmd.clone())?;
-        let da_config = DAConfig::try_from(run_cmd.ethereum_da_args.clone())?;
+        let da_config = DAConfig::try_from(run_cmd.clone())?;
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())?;
 
-        let orchestrator_params = OrchestratorParams {
+        let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
-            snos_config: run_cmd.snos_args.clone().into(),
+            snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
             snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())?,
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())?,
         };
-        let rpc_client = JsonRpcClient::new(HttpTransport::new(orchestrator_params.madara_rpc_url.clone()));
+        let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
         let snos_processing_lock =
-            JobProcessingState::new(orchestrator_params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
+            JobProcessingState::new(params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
+        // TODO: not sure if this is correct way to lock across jobs
         let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
 
         let database = Self::build_database_client(&db).await?;
@@ -111,8 +111,8 @@ impl Config {
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
         Ok(Self {
-            orchestrator_params,
-            starknet_client: Arc::new(rpc_client),
+            params,
+            madara_client: Arc::new(rpc_client),
             database,
             storage,
             alerts,
@@ -125,9 +125,9 @@ impl Config {
     }
 
     async fn build_database_client(
-        db_config: &MongoConfig,
+        db_args: &DatabaseArgs,
     ) -> OrchestratorResult<Box<dyn DatabaseClient + Send + Sync>> {
-        Ok(Box::new(MongoDbClient::setup(db_config).await?))
+        Ok(Box::new(MongoDbClient::create(db_args).await?))
     }
 
     async fn build_storage_client(
@@ -154,7 +154,7 @@ impl Config {
         Ok(Box::new(SQS::create(queue_config, aws_config)?))
     }
 
-    fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient> {
+    fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
@@ -212,29 +212,24 @@ impl Config {
         })
     }
 
-    /// Returns the starknet rpc url
-    pub fn starknet_rpc_url(&self) -> &Url {
-        &self.orchestrator_params.madara_rpc_url
+    /// Returns the Madara client
+    pub fn madara_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
+        &self.madara_client
     }
 
     /// Returns the server config
     pub fn server_config(&self) -> &ServerParams {
-        &self.orchestrator_params.server_config
+        &self.params.server_config
     }
 
     /// Returns the snos rpc url
     pub fn snos_config(&self) -> &SNOSParams {
-        &self.orchestrator_params.snos_config
+        &self.params.snos_config
     }
 
     /// Returns the service config
     pub fn service_config(&self) -> &ServiceParams {
-        &self.orchestrator_params.service_config
-    }
-
-    /// Returns the starknet client
-    pub fn starknet_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
-        &self.starknet_client
+        &self.params.service_config
     }
 
     /// Returns the DA client
@@ -274,12 +269,12 @@ impl Config {
 
     /// Returns the snos proof layout
     pub fn snos_layout_name(&self) -> &LayoutName {
-        &self.orchestrator_params.snos_layout_name
+        &self.params.snos_layout_name
     }
 
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
-        &self.orchestrator_params.prover_layout_name
+        &self.params.prover_layout_name
     }
 
     /// Returns the processing locks

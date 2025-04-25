@@ -19,4 +19,7 @@ pub enum ConsumptionError {
 
     #[error("Message Parsing Serde Error: {0}")]
     PayloadSerdeError(String),
+
+    #[error("Failed to parse message from queue, error {0}")]
+    FailedToAcknowledgeMessage(String),
 }

@@ -55,7 +55,7 @@ impl TryFrom<RunCmd> for StorageArgs {
                 run_cmd
                     .aws_s3_args
                     .bucket_name
-                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
+                    .ok_or(OrchestratorError::SetupCommandError("Bucket name Not found".to_string()))?
             ),
             bucket_location_constraint: run_cmd.aws_s3_args.bucket_location_constraint,
         })
@@ -95,14 +95,17 @@ impl TryFrom<SetupCmd> for AlertArgs {
             .aws_sns_args
             .sns_arn
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        // let prefix = setup_cmd.aws_config_args.aws_prefix.clone();
-        // let mut parts: Vec<&str> = sns_arn.split(':').collect();
-        //
-        // if let Some(last) = parts.last_mut() {
-        //     // Replace the last part with prefix + "-" + original last part
-        //     *last = format!("{}-{}", prefix.clone(), last).as_str();
-        // }
-        // let result_sns_arn = parts.join(":");
+        Ok(Self { endpoint: sns_arn })
+    }
+}
+
+impl TryFrom<RunCmd> for AlertArgs {
+    type Error = OrchestratorError;
+    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
+        let sns_arn = run_cmd
+            .aws_sns_args
+            .sns_arn
+            .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
         Ok(Self { endpoint: sns_arn })
     }
 }

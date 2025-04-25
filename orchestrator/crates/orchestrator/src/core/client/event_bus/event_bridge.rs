@@ -37,7 +37,7 @@ impl EventBridgeClient {
         queue_client: Arc<aws_sdk_sqs::Client>,
         iam_client: Arc<aws_sdk_iam::Client>,
     ) -> Self {
-        EventBridgeClient {
+        Self {
             eb_client,
             scheduler_client,
             queue_client,
@@ -85,7 +85,7 @@ impl EventBridgeClient {
             .await?;
         let queue_arn = queue_attributes.attributes().unwrap().get(&QueueAttributeName::QueueArn).unwrap();
 
-        // Create IAM role for EventBridge
+        // Create an IAM role for EventBridge
         let role_name = format!("{}-{}", trigger_role_name.clone(), uuid::Uuid::new_v4());
         // TODO: might need to change this accordingly to support rule, skipping for now
         let assume_role_policy = r#"{
@@ -135,11 +135,20 @@ impl EventBridgeClient {
         // Attach the policy to the role
         self.iam_client.attach_role_policy().role_name(&role_name).policy_arn(&policy_arn).send().await?;
 
-        // sleep(Duration::from_secs(60)).await;
 
         Ok(TriggerArns { queue_arn: queue_arn.to_string(), role_arn: role_arn.to_string() })
     }
 
+    /// duration_to_rate_string - Converts a Duration to a rate string for AWS EventBridge
+    ///
+    /// # Arguments
+    ///
+    /// * `duration` - The duration to convert
+    ///
+    /// # Returns
+    ///
+    /// * `String` - The rate string in the format "rate(X unit)" where X is the number of units
+    ///
     fn duration_to_rate_string(duration: Duration) -> String {
         let total_secs = duration.as_secs();
         let total_mins = duration.as_secs() / 60;

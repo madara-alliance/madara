@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::core::StorageClient;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -10,7 +11,6 @@ use crate::utils::helpers::JobProcessingState;
 use crate::utils::COMPILED_OS;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::get_fact_info;
-use crate::StorageClient;
 use async_trait::async_trait;
 use bytes::Bytes;
 use cairo_vm::types::layout_name::LayoutName;
