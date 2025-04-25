@@ -2,6 +2,7 @@ use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator, SQSResourceCreator};
+use crate::types::params::MiscellaneousArgs;
 use crate::{
     core::client::storage::s3::AWSS3,
     core::client::SQS,
@@ -10,6 +11,7 @@ use crate::{
     OrchestratorResult,
 };
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::info;
 
 /// ResourceFactory is responsible for creating resources based on their type
@@ -21,6 +23,7 @@ pub struct ResourceFactory {
     cron_params: CronArgs,
     storage_params: StorageArgs,
     alert_params: AlertArgs,
+    miscellaneous_params: MiscellaneousArgs,
 }
 
 impl ResourceFactory {
@@ -43,6 +46,7 @@ impl ResourceFactory {
         cron_params: CronArgs,
         storage_params: StorageArgs,
         alert_params: AlertArgs,
+        miscellaneous_params: MiscellaneousArgs,
     ) -> Self {
         let ordered_types = vec![
             (ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>),
@@ -51,13 +55,14 @@ impl ResourceFactory {
             (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>)
         ];
 
-        ResourceFactory { 
+        ResourceFactory {
             ordered_types,
-            cloud_provider, 
-            queue_params, 
-            cron_params, 
-            storage_params, 
-            alert_params 
+            cloud_provider,
+            queue_params,
+            cron_params,
+            storage_params,
+            alert_params,
+            miscellaneous_params,
         }
     }
 
@@ -75,13 +80,20 @@ impl ResourceFactory {
             let alert_params = self.alert_params.clone();
             let cron_params = self.cron_params.clone();
             let resource_type = resource_type.clone();
+            let miscellaneous_params = self.miscellaneous_params.clone();
 
             let resource_future = async move {
                 let result: OrchestratorResult<()> = async {
                     match resource_type {
                         ResourceType::Storage => {
                             let rs = resource.downcast_mut::<AWSS3>().unwrap();
-                            rs.setup(storage_params).await?;
+                            rs.setup(storage_params.clone()).await?;
+                            rs.poll(
+                                storage_params,
+                                miscellaneous_params.poll_interval,
+                                miscellaneous_params.timeout,
+                            )
+                                .await;
                             Ok(())
                         }
                         ResourceType::Queue => {
@@ -90,16 +102,35 @@ impl ResourceFactory {
                             let queue_ready = rs
                                 .poll(
                                     queue_params,
-                                    5,
-                                    6,
+                                    miscellaneous_params.poll_interval,
+                                    miscellaneous_params.timeout,
                                 )
                                 .await;
                             *is_queue_ready_clone.write().await = queue_ready;
                             Ok(())
                         }
                         ResourceType::PubSub => {
-                            let rs = resource.downcast_mut::<SNS>().unwrap();
-                            rs.setup(alert_params).await?;
+                            let start_time = std::time::Instant::now();
+                            let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
+                            let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
+
+                            while start_time.elapsed() < timeout_duration {
+                                if *is_queue_ready_clone.read().await {
+                                    info!(" ✅ Queue is ready, setting up SNS");
+                                    let rs = resource.downcast_mut::<SNS>().unwrap();
+                                    rs.setup(alert_params.clone()).await?;
+                                    rs.poll(
+                                        alert_params,
+                                        miscellaneous_params.poll_interval,
+                                        miscellaneous_params.timeout,
+                                    )
+                                        .await;
+                                    break;
+                                } else {
+                                    info!(" ⏳ Waiting for queues to be ready before setting up cron");
+                                    tokio::time::sleep(poll_duration).await;
+                                }
+                            }
                             Ok(())
                         }
                         ResourceType::EventBus => {
