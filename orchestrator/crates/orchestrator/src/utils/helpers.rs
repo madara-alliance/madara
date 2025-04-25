@@ -49,8 +49,10 @@ where
     }
 }
 
+#[derive(Default)]
 pub struct ProcessingLocks {
-    pub snos_job_processing_lock: Arc<JobProcessingState>,
+    pub snos_job_processing_lock: Option<Arc<JobProcessingState>>,
+    pub proving_job_processing_lock: Option<Arc<JobProcessingState>>,
 }
 
 

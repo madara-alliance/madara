@@ -53,6 +53,7 @@ impl JobTrigger for ProvingJobTrigger {
                     download_proof: None,
                     // Set SNOS fact for on-chain verification
                     ensure_on_chain_registration: Some(snos_fact),
+                    n_steps: snos_metadata.snos_n_steps,
                 }),
             };
 

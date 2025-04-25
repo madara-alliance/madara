@@ -83,6 +83,9 @@ impl TryFrom<RunCmd> for ProverConfig {
                     atlantic_prover_type: atlantic_args.atlantic_prover_type.clone().ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Atlantic prover type is required".to_string())
                     })?,
+                    atlantic_network: atlantic_args.atlantic_network.clone().ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Atlantic network is required".to_string())
+                    })?,
                 }))
             }
         }

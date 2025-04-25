@@ -118,6 +118,9 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
 
+    #[clap(flatten)]
+    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
+
     // Settlement Layer
     #[clap(flatten)]
     pub ethereum_settle_args: settlement::ethereum::EthereumSettlementCliArgs,
@@ -131,9 +134,6 @@ pub struct RunCmd {
 
     #[clap(flatten)]
     pub atlantic_args: prover::atlantic::AtlanticCliArgs,
-
-    #[clap(flatten)]
-    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
 
     // SNOS
     #[clap(flatten)]
