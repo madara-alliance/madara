@@ -35,6 +35,14 @@ impl Resource for AWSS3 {
     }
     /// Set up a new S3 bucket
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+
+        // Check if the bucket already exists
+        // If it does, return the existing bucket name and location
+        if self.check_if_exists(args.bucket_name.clone()).await? {
+            warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
+            return Ok(S3BucketSetupResult { name: args.bucket_name, location: None });
+        }
+
         let existing_buckets = &self
             .client
             .list_buckets()

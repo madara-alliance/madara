@@ -66,6 +66,10 @@ impl ResourceFactory {
         }
     }
 
+    /// setup_resource - Set up the resources in the factory
+    /// NOTE: this function length is a bit long, but it is necessary to maintain the order of resource creation
+    /// in the future, we can refactor this function to use a more generic approach when we add more cloud providers
+    /// TODO > Refactor this function to use a more generic approach when we add more cloud providers
     pub async fn setup_resource(&self) -> OrchestratorResult<()> {
         let mut resource_futures = Vec::new();
         // Use ordered_types to maintain creation order

@@ -1,4 +1,5 @@
 use super::error::DatabaseError;
+use crate::core::error::OrchestratorCoreResult;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -6,6 +7,7 @@ use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::{core::client::database::DatabaseClient, OrchestratorResult};
 use async_trait::async_trait;
+use cairo_vm::types::instruction::Res;
 use chrono::{SubsecRound, Utc};
 use futures::{StreamExt, TryStreamExt};
 use mongodb::bson::{doc, Bson, Document};
@@ -43,7 +45,7 @@ pub struct MongoDbClient {
 }
 
 impl MongoDbClient {
-    pub async fn create(config: &DatabaseArgs) -> OrchestratorResult<Self> {
+    pub async fn create(config: &DatabaseArgs) -> Result<Self, DatabaseError> {
         let client = Client::with_uri_str(&config.connection_uri).await?;
         let database = Arc::new(client.database(&config.database_name));
         Ok(Self { client, database })

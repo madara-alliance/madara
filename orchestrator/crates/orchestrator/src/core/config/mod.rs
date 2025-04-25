@@ -134,7 +134,7 @@ impl Config {
 
     async fn build_database_client(
         db_args: &DatabaseArgs,
-    ) -> OrchestratorResult<Box<dyn DatabaseClient + Send + Sync>> {
+    ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
         Ok(Box::new(MongoDbClient::create(db_args).await?))
     }
 
@@ -162,7 +162,17 @@ impl Config {
         Ok(Box::new(SQS::create(queue_config, aws_config)?))
     }
 
-    fn build_prover_service(prover_params: &ProverConfig, params: &ConfigParam) -> Box<dyn ProverClient> {
+    /// build_prover_service - Build the proving service based on the config
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `params` - The config parameters
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    fn build_prover_service(
+        prover_params: &ProverConfig,
+        params: &ConfigParam,
+    ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name)),
