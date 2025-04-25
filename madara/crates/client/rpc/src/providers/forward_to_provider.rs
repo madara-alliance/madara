@@ -3,10 +3,9 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mc_gateway_client::GatewayProvider;
 use mp_gateway::error::SequencerError;
 use mp_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash,
+    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
+    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::BroadcastedDeclareTransactionV0;
 
 use super::AddTransactionProvider;
 
@@ -24,7 +23,7 @@ impl ForwardToProvider {
 impl AddTransactionProvider for ForwardToProvider {
     async fn add_declare_v0_transaction(
         &self,
-        _declare_v0_transaction: BroadcastedDeclareTransactionV0,
+        _declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash> {
         Err(StarknetRpcApiError::UnimplementedMethod.into())
     }

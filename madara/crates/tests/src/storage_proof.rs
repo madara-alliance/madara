@@ -22,9 +22,8 @@ async fn test_storage_proof_snapshots() {
         "--full",
         "-n",
         "sepolia",
-        "--no-sync-polling",
-        "--n-blocks-to-sync",
-        "20",
+        "--sync-stop-at",
+        "19",
         "--no-l1-sync",
         // trie log config
         "--db-max-saved-trie-logs",
@@ -53,9 +52,8 @@ async fn test_storage_proof_trie_log() {
         "--full",
         "-n",
         "sepolia",
-        "--no-sync-polling",
-        "--n-blocks-to-sync",
-        "20",
+        "--sync-stop-at",
+        "19",
         "--no-l1-sync",
         // trie log config
         "--db-max-saved-trie-logs",
@@ -98,7 +96,8 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
         "contract_leaves_data": [
           {
             "class_hash": "0x348f560344334951bcbccd27aff05a9f6bedeaefc36315fe20e842163adae3d",
-            "nonce": "0x0"
+            "nonce": "0x0",
+            "storage_root": "0x0"
           }
         ],
         "nodes": [
@@ -106,7 +105,7 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
             "node": {
               "child": "0x3873db7e0ca5c27a75e9e867f61124c2df15095124b413cccf94e1f50427d1f",
               "length": 247,
-              "path": "0x1459c8cb7424a2946e6bcf7bc204e349a2865f84f2ae75586ada2897d74c4e0"
+              "path": "0x1459c8cb7424a2946e6bcf7bc204e349a2865f84f2ae75586ada2897d74c4e"
             },
             "node_hash": "0x556551ef2d003cf08323a6c1c60d8de89ec9e6450700b62d0a4e81378a0658d"
           },
@@ -146,7 +145,7 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
             "node": {
               "child": "0x23be95f90bf41685e18a4356e57b0cfdc1da22bf382ead8b64108353915c1e5",
               "length": 247,
-              "path": "0x5d2e9527cbeb1a51aa084b0de7501f343b7b1bf24a0c427d6204a7b79889700"
+              "path": "0x5d2e9527cbeb1a51aa084b0de7501f343b7b1bf24a0c427d6204a7b7988970"
             },
             "node_hash": "0x6da041953eaf48fefeab68c933739b8b69fd9f98c05d44c83f3a495963f322b"
           },
@@ -162,7 +161,7 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
             "node": {
               "child": "0x4c5772d1914fe6ce891b64eb35bf3522aeae1315647314aac58b01137607f3f",
               "length": 245,
-              "path": "0x6415a6ec28e9c8bad08a3a1c00c04d1f68204847570b7b4b6c8bbce25546ac0"
+              "path": "0x190569bb0a3a722eb4228e8700301347da081211d5c2ded2db22ef389551ab"
             },
             "node_hash": "0x3b8aa8795ea2891d6ee1086fdfd85ddd88be6bc7aa1fb0b4f9b9357bfa9b686"
           },
@@ -246,7 +245,8 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
         "contract_leaves_data": [
           {
             "class_hash": "0x0",
-            "nonce": "0x0"
+            "nonce": "0x0",
+            "storage_root": "0x0"
           }
         ],
         "nodes": [
@@ -254,7 +254,7 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
             "node": {
               "child": "0x3873db7e0ca5c27a75e9e867f61124c2df15095124b413cccf94e1f50427d1f",
               "length": 247,
-              "path": "0x1459c8cb7424a2946e6bcf7bc204e349a2865f84f2ae75586ada2897d74c4e0"
+              "path": "0x1459c8cb7424a2946e6bcf7bc204e349a2865f84f2ae75586ada2897d74c4e"
             },
             "node_hash": "0x556551ef2d003cf08323a6c1c60d8de89ec9e6450700b62d0a4e81378a0658d"
           },

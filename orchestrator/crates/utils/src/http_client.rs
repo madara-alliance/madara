@@ -294,7 +294,11 @@ impl<'a> RequestBuilder<'a> {
     pub fn form_file(mut self, key: &str, file_path: &Path, file_name: &str) -> io::Result<Self> {
         let file_bytes = std::fs::read(file_path)?;
         let file_name = file_name.to_string();
-        let part = Part::bytes(file_bytes).file_name(file_name);
+        // TODO: Ideally the file type should be determined automatically
+        let part = Part::bytes(file_bytes)
+            .file_name(file_name)
+            .mime_str("application/zip")
+            .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         let form = match self.form.take() {
             Some(existing_form) => existing_form.part(key.to_string(), part),
@@ -387,6 +391,7 @@ mod http_client_tests {
     }
 
     /// # Request Builder Tests
+    ///
     /// Verifies that all HTTP methods (GET, POST, PUT, DELETE, etc.)
     /// can be correctly set and are properly sent in requests
     #[test]
@@ -484,6 +489,7 @@ mod http_client_tests {
     }
 
     /// # Form Data Tests
+    ///
     /// Validates multipart form text field handling:
     /// - Single field addition
     /// - Multiple fields
@@ -618,6 +624,7 @@ mod http_client_tests {
     }
 
     /// # Integration Tests
+    ///
     /// Tests complete request flow including:
     /// - URL construction
     /// - Header merging

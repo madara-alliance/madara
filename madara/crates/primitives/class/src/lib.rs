@@ -1,7 +1,8 @@
 use blockifier::execution::contract_class::{ClassInfo as BClassInfo, ContractClass as BContractClass};
+use class_hash::ComputeClassHashError;
 use compile::ClassCompilationError;
 use starknet_types_core::felt::Felt;
-use std::{collections::HashMap, sync::Arc};
+use std::{collections::HashMap, fmt, sync::Arc};
 
 pub mod class_hash;
 pub mod class_update;
@@ -9,6 +10,7 @@ pub mod compile;
 pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
+pub mod mainnet_legacy_class_hashes;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConvertedClass {
@@ -63,6 +65,44 @@ pub struct SierraConvertedClass {
     pub compiled: Arc<CompiledSierra>,
 }
 
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ClassType {
+    Sierra,
+    Legacy,
+}
+
+impl fmt::Display for ClassType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self, f)
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct ClassInfoWithHash {
+    pub class_info: ClassInfo,
+    pub class_hash: Felt,
+}
+
+impl ClassInfoWithHash {
+    /// Does class compilation. Does check the resulting compiled class hash.
+    pub fn convert(self) -> Result<ConvertedClass, ClassCompilationError> {
+        match self.class_info {
+            ClassInfo::Sierra(sierra_class_info) => {
+                let compiled = sierra_class_info.compile()?;
+                Ok(ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: self.class_hash,
+                    info: sierra_class_info,
+                    compiled: Arc::new(compiled),
+                }))
+            }
+            ClassInfo::Legacy(legacy_class_info) => Ok(ConvertedClass::Legacy(LegacyConvertedClass {
+                class_hash: self.class_hash,
+                info: legacy_class_info,
+            })),
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClassInfo {
     Sierra(SierraClassInfo),
@@ -95,6 +135,17 @@ impl ClassInfo {
             ClassInfo::Legacy(_) => None,
         }
     }
+
+    pub fn compute_hash(&self) -> Result<Felt, ComputeClassHashError> {
+        match self {
+            ClassInfo::Sierra(sierra_class_info) => sierra_class_info.contract_class.compute_class_hash(),
+            ClassInfo::Legacy(legacy_class_info) => legacy_class_info.contract_class.compute_class_hash(),
+        }
+    }
+
+    pub fn with_computed_hash(self) -> Result<ClassInfoWithHash, ComputeClassHashError> {
+        Ok(ClassInfoWithHash { class_hash: self.compute_hash()?, class_info: self })
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -106,6 +157,19 @@ pub struct LegacyClassInfo {
 pub struct SierraClassInfo {
     pub contract_class: Arc<FlattenedSierraClass>,
     pub compiled_class_hash: Felt,
+}
+
+impl SierraClassInfo {
+    pub fn compile(&self) -> Result<CompiledSierra, ClassCompilationError> {
+        let (compiled_class_hash, compiled) = self.contract_class.compile_to_casm()?;
+        if self.compiled_class_hash != compiled_class_hash {
+            return Err(ClassCompilationError::CompiledClassHashMismatch {
+                expected: self.compiled_class_hash,
+                got: compiled_class_hash,
+            });
+        }
+        Ok(compiled)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -242,6 +306,13 @@ pub struct CompressedLegacyContractClass {
     pub abi: Option<Vec<LegacyContractAbiEntry>>,
 }
 
+#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+pub struct LegacyContractClass {
+    pub entry_points_by_type: starknet_core::types::contract::legacy::RawLegacyEntryPoints,
+    pub abi: Option<Vec<starknet_core::types::contract::legacy::RawLegacyAbiEntry>>,
+    pub program: starknet_core::types::contract::legacy::LegacyProgram,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEntryPointsByType {
     #[serde(rename = "CONSTRUCTOR")]
@@ -355,5 +426,24 @@ mod test {
         let missed_class_hashes = &MISSED_CLASS_HASHES;
         assert_eq!(missed_class_hashes.len(), 38);
         assert_eq!(missed_class_hashes.iter().map(|(_, v)| v.len()).sum::<usize>(), 57);
+    }
+
+    #[test]
+    fn legacy_class_mainnet_block_20732_no_abi() {
+        let class = serde_json::from_str::<LegacyContractClass>(include_str!(
+            "../resources/legacy_class_mainnet_block_20732_no_abi.json"
+        ))
+        .unwrap();
+
+        let real_class_hash =
+            Felt::from_hex_unchecked("0x371b5f7c5517d84205365a87f02dcef230efa7b4dd91a9e4ba7e04c5b69d69b");
+        let computed_class_hash =
+            Felt::from_hex_unchecked("0x92d5e5e82d6eaaef47a8ba076f0ea0989d2c5aeb84d74d8ade33fe773cbf67");
+        assert_eq!(class.class_hash().unwrap(), computed_class_hash);
+
+        assert_eq!(
+            crate::mainnet_legacy_class_hashes::get_real_class_hash(20732, computed_class_hash),
+            real_class_hash
+        );
     }
 }

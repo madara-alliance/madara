@@ -4,7 +4,7 @@ members = [
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
-  "madara/crates/client/eth",
+  "madara/crates/client/settlement_client",
   "madara/crates/client/rpc",
   "madara/crates/client/gateway/client",
   "madara/crates/client/gateway/server",
@@ -12,7 +12,7 @@ members = [
   "madara/crates/client/telemetry",
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
-  "madara/crates/client/block_import",
+  "madara/crates/client/block_production",
   "madara/crates/node",
   "madara/crates/primitives/block",
   "madara/crates/primitives/convert",
@@ -27,7 +27,6 @@ members = [
   "madara/crates/proc-macros",
   "madara/crates/tests",
   "madara/crates/cairo-test-contracts",
-  "madara/crates/client/block_production",
 
   # orchestrator
   "orchestrator/crates/orchestrator",
@@ -42,6 +41,9 @@ members = [
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
   "e2e-tests",
+
+  # bootstrapper
+  "bootstrapper/crates/bootstrapper",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -50,14 +52,19 @@ default-members = [
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
-  "madara/crates/client/eth",
+  "madara/crates/client/rpc",
+  "madara/crates/client/settlement_client",
   "madara/crates/client/gateway/client",
   "madara/crates/client/gateway/server",
+  "madara/crates/client/analytics",
+  "madara/crates/client/telemetry",
+  "madara/crates/client/devnet",
+  "madara/crates/client/mempool",
+  "madara/crates/client/block_production",
   "madara/crates/client/rpc",
   "madara/crates/client/telemetry",
   "madara/crates/client/devnet",
   "madara/crates/client/mempool",
-  "madara/crates/client/block_import",
   "madara/crates/client/analytics",
   "madara/crates/node",
   "madara/crates/primitives/block",
@@ -83,6 +90,9 @@ default-members = [
   "orchestrator/crates/settlement-clients/settlement-client-interface",
   "orchestrator/crates/settlement-clients/ethereum",
   "orchestrator/crates/settlement-clients/starknet",
+
+  # bootstrapper
+  "bootstrapper/crates/bootstrapper",
 ]
 
 [workspace.lints.rust]
@@ -158,10 +168,9 @@ mc-rpc = { path = "madara/crates/client/rpc" }
 mc-gateway-client = { path = "madara/crates/client/gateway/client" }
 mc-gateway-server = { path = "madara/crates/client/gateway/server" }
 mc-sync = { path = "madara/crates/client/sync" }
-mc-eth = { path = "madara/crates/client/eth" }
+mc-settlement-client = { path = "madara/crates/client/settlement_client" }
 mc-mempool = { path = "madara/crates/client/mempool" }
 mc-block-production = { path = "madara/crates/client/block_production" }
-mc-block-import = { path = "madara/crates/client/block_import" }
 mc-devnet = { path = "madara/crates/client/devnet" }
 
 # Madara misc
@@ -169,6 +178,8 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+starknet-accounts = "0.11.0"
+starknet-contract = "0.11.0"
 starknet-core = "0.12"
 starknet-crypto = "0.7"
 starknet-providers = "0.12"
@@ -186,13 +197,11 @@ starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
-# alloy = { version = "0.8.3", features = [
 alloy = { version = "0.8.3", features = [
   "node-bindings",
   "rpc-types",
   "provider-http",
   "contract",
-  "node-bindings",
 ] }
 
 # Instrumentation
@@ -265,6 +274,7 @@ num-bigint = "0.4"
 primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
+zeroize = "1.8"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
@@ -360,6 +370,7 @@ orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator-core = { path = "orchestrator/crates/orchestrator" }
+base64ct = "=1.6.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -370,6 +381,6 @@ starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branc
 starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
   "testing",
 ] }
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 
+starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
 cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }

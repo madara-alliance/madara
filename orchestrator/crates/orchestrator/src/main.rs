@@ -15,6 +15,9 @@ use tracing::{debug, error, info};
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+#[global_allocator]
+static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
+
 /// Start the server
 #[tokio::main]
 // not sure why clippy gives this error on the latest rust

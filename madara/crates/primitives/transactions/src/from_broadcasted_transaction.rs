@@ -1,7 +1,6 @@
 use crate::{
-    BroadcastedDeclareTransactionV0, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1,
-    DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, InvokeTransaction, Transaction,
-    TransactionWithHash,
+    DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3,
+    DeployAccountTransaction, InvokeTransaction, Transaction, TransactionWithHash,
 };
 use mp_chain_config::StarknetVersion;
 use starknet_types_core::felt::Felt;
@@ -56,13 +55,13 @@ impl DeclareTransaction {
         }
     }
 
-    pub fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+    pub fn from_broadcasted_declare_v0(tx: mp_rpc::admin::BroadcastedDeclareTxnV0, class_hash: Felt) -> Self {
         DeclareTransaction::V0(DeclareTransactionV0::from_broadcasted_declare_v0(tx, class_hash))
     }
 }
 
 impl DeclareTransactionV0 {
-    fn from_broadcasted_declare_v0(tx: BroadcastedDeclareTransactionV0, class_hash: Felt) -> Self {
+    fn from_broadcasted_declare_v0(tx: mp_rpc::admin::BroadcastedDeclareTxnV0, class_hash: Felt) -> Self {
         Self { sender_address: tx.sender_address, max_fee: tx.max_fee, signature: tx.signature, class_hash }
     }
 }

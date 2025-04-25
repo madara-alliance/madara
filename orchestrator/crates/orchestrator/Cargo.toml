@@ -104,6 +104,8 @@ tracing-log = { workspace = true }
 jemallocator = { workspace = true }
 anyhow = { workspace = true }
 
+jemallocator = "0.5.4"
+
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]
 ethereum = ["orchestrator-ethereum-da-client"]

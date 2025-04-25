@@ -18,9 +18,11 @@ rustc-ice-*.txt
 
 # The cache for chain data in container
 .local
+.cairo
 
 # direnv cache
 .direnv
+.cairo
 
 # Javascript dependencies
 **/node_modules/
@@ -71,3 +73,10 @@ tmp/
 .secrets
 image.tar.gz
 
+# madara test artifacts for testing l2 clients for appchains
+test-artifacts/madara
+
+# Bootstrapper
+venv
+artifacts
+!build-artifacts

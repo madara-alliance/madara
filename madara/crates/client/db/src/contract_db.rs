@@ -1,16 +1,57 @@
 #![doc = include_str!("../docs/flat_storage.md")]
 
-use std::sync::Arc;
-
+use crate::{
+    db_block_id::{DbBlockIdResolvable, RawDbBlockId},
+    Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
+};
+use mp_state_update::{
+    ContractStorageDiffItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff, StorageEntry,
+};
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::{BoundColumnFamily, IteratorMode, ReadOptions, WriteOptions};
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
+use std::{collections::HashMap, sync::Arc};
 
-use crate::{
-    db_block_id::{DbBlockId, DbBlockIdResolvable},
-    Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB, DB_UPDATES_BATCH_SIZE,
-};
+#[derive(Debug)]
+pub(crate) struct ContractDbBlockUpdate {
+    contract_class_updates: Vec<(Felt, Felt)>,
+    contract_nonces_updates: Vec<(Felt, Felt)>,
+    contract_kv_updates: Vec<((Felt, Felt), Felt)>,
+}
+
+impl ContractDbBlockUpdate {
+    pub fn from_state_diff(state_diff: StateDiff) -> Self {
+        let nonces_from_updates =
+            state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
+
+        let nonce_map: HashMap<Felt, Felt> = nonces_from_updates.collect();
+
+        let contract_class_updates_replaced = state_diff
+            .replaced_classes
+            .into_iter()
+            .map(|ReplacedClassItem { contract_address, class_hash }| (contract_address, class_hash));
+
+        let contract_class_updates_deployed = state_diff
+            .deployed_contracts
+            .into_iter()
+            .map(|DeployedContractItem { address, class_hash }| (address, class_hash));
+
+        let contract_class_updates =
+            contract_class_updates_replaced.chain(contract_class_updates_deployed).collect::<Vec<_>>();
+        let contract_nonces_updates = nonce_map.into_iter().collect::<Vec<_>>();
+
+        let contract_kv_updates = state_diff
+            .storage_diffs
+            .into_iter()
+            .flat_map(|ContractStorageDiffItem { address, storage_entries }| {
+                storage_entries.into_iter().map(move |StorageEntry { key, value }| ((address, key), value))
+            })
+            .collect::<Vec<_>>();
+
+        Self { contract_class_updates, contract_nonces_updates, contract_kv_updates }
+    }
+}
 
 // NB: Columns cf needs prefix extractor of these length during creation
 pub(crate) const CONTRACT_STORAGE_PREFIX_EXTRACTOR: usize = 64;
@@ -39,7 +80,7 @@ impl MadaraBackend {
         let Some(id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
         let block_n = match id {
-            DbBlockId::Pending => {
+            RawDbBlockId::Pending => {
                 // Get pending or fallback to latest block_n
                 let col = self.db.get_column(pending_col);
                 // todo: smallint here to avoid alloc
@@ -52,7 +93,7 @@ impl MadaraBackend {
                 let Some(block_n) = self.get_latest_block_n()? else { return Ok(None) };
                 block_n
             }
-            DbBlockId::Number(block_n) => block_n,
+            RawDbBlockId::Number(block_n) => block_n,
         };
 
         // We try to find history values.
@@ -135,58 +176,102 @@ impl MadaraBackend {
         )
     }
 
-    /// NB: This functions needs to run on the rayon thread pool
-    #[tracing::instrument(
-        skip(self, block_number, contract_class_updates, contract_nonces_updates, contract_kv_updates),
-        fields(module = "ContractDB")
-    )]
-    pub(crate) fn contract_db_store_block(
+    fn contract_db_store_chunk(
+        &self,
+        col: &Arc<BoundColumnFamily>,
+        block_number: u32,
+        chunk: impl IntoIterator<Item = (impl AsRef<[u8]>, Felt)>,
+        tx: &mut WriteBatchWithTransaction,
+    ) -> Result<(), MadaraStorageError> {
+        for (key, value) in chunk {
+            // TODO: find a way to avoid this allocation
+            let key = [key.as_ref(), &block_number.to_be_bytes() as &[u8]].concat();
+            tx.put_cf(col, key, bincode::serialize(&value)?);
+        }
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, block_number, value, tx), fields(module = "ContractDB"))]
+    pub(crate) fn contract_db_store_block_no_rayon(
         &self,
         block_number: u64,
-        contract_class_updates: &[(Felt, Felt)],
-        contract_nonces_updates: &[(Felt, Felt)],
-        contract_kv_updates: &[((Felt, Felt), Felt)],
+        value: ContractDbBlockUpdate,
+        tx: &mut WriteBatchWithTransaction,
     ) -> Result<(), MadaraStorageError> {
         let block_number = u32::try_from(block_number).map_err(|_| MadaraStorageError::InvalidBlockNumber)?;
 
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
+        let contract_to_class_hash_col = self.db.get_column(Column::ContractToClassHashes);
+        let contract_to_nonces_col = self.db.get_column(Column::ContractToNonces);
+        let contract_storage_col = self.db.get_column(Column::ContractStorage);
 
-        fn write_chunk(
-            db: &DB,
-            writeopts: &WriteOptions,
-            col: &Arc<BoundColumnFamily>,
-            block_number: u32,
-            chunk: impl IntoIterator<Item = (impl AsRef<[u8]>, Felt)>,
-        ) -> Result<(), MadaraStorageError> {
-            let mut batch = WriteBatchWithTransaction::default();
-            for (key, value) in chunk {
-                // TODO: find a way to avoid this allocation
-                let key = [key.as_ref(), &block_number.to_be_bytes() as &[u8]].concat();
-                batch.put_cf(col, key, bincode::serialize(&value)?);
-            }
-            db.write_opt(batch, writeopts)?;
-            Ok(())
-        }
+        self.contract_db_store_chunk(
+            &contract_to_class_hash_col,
+            block_number,
+            value.contract_class_updates.into_iter().map(|(k, v)| (k.to_bytes_be(), v)),
+            tx,
+        )?;
+        self.contract_db_store_chunk(
+            &contract_to_nonces_col,
+            block_number,
+            value.contract_nonces_updates.into_iter().map(|(k, v)| (k.to_bytes_be(), v)),
+            tx,
+        )?;
+        self.contract_db_store_chunk(
+            &contract_storage_col,
+            block_number,
+            value.contract_kv_updates.into_iter().map(|((k1, k2), v)| {
+                let mut key = [0u8; 64];
+                key[..32].copy_from_slice(k1.to_bytes_be().as_ref());
+                key[32..].copy_from_slice(k2.to_bytes_be().as_ref());
+                (key, v)
+            }),
+            tx,
+        )?;
+        Ok(())
+    }
 
-        contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+    /// NB: This functions needs to run on the rayon thread pool
+    #[tracing::instrument(skip(self, block_number, value), fields(module = "ContractDB"))]
+    pub(crate) fn contract_db_store_block(
+        &self,
+        block_number: u64,
+        value: ContractDbBlockUpdate,
+    ) -> Result<(), MadaraStorageError> {
+        let block_number = u32::try_from(block_number).map_err(|_| MadaraStorageError::InvalidBlockNumber)?;
+
+        value.contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::ContractToClassHashes),
             |col, chunk| {
-                write_chunk(&self.db, &writeopts, col, block_number, chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v)))
+                let mut batch = WriteBatchWithTransaction::default();
+                self.contract_db_store_chunk(
+                    col,
+                    block_number,
+                    chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v)),
+                    &mut batch,
+                )?;
+                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                Result::<(), MadaraStorageError>::Ok(())
             },
         )?;
-        contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+        value.contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::ContractToNonces),
             |col, chunk| {
-                write_chunk(&self.db, &writeopts, col, block_number, chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v)))
+                let mut batch = WriteBatchWithTransaction::default();
+                self.contract_db_store_chunk(
+                    col,
+                    block_number,
+                    chunk.iter().map(|(k, v)| (k.to_bytes_be(), *v)),
+                    &mut batch,
+                )?;
+                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                Result::<(), MadaraStorageError>::Ok(())
             },
         )?;
-        contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+        value.contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::ContractStorage),
             |col, chunk| {
-                write_chunk(
-                    &self.db,
-                    &writeopts,
+                let mut batch = WriteBatchWithTransaction::default();
+                self.contract_db_store_chunk(
                     col,
                     block_number,
                     chunk.iter().map(|((k1, k2), v)| {
@@ -195,7 +280,10 @@ impl MadaraBackend {
                         key[32..].copy_from_slice(k2.to_bytes_be().as_ref());
                         (key, *v)
                     }),
-                )
+                    &mut batch,
+                )?;
+                self.db.write_opt(batch, &self.writeopts_no_wal)?;
+                Result::<(), MadaraStorageError>::Ok(())
             },
         )?;
 
@@ -203,19 +291,8 @@ impl MadaraBackend {
     }
 
     /// NB: This functions needs to run on the rayon thread pool
-    #[tracing::instrument(
-        skip(self, contract_class_updates, contract_nonces_updates, contract_kv_updates),
-        fields(module = "ContractDB")
-    )]
-    pub(crate) fn contract_db_store_pending(
-        &self,
-        contract_class_updates: &[(Felt, Felt)],
-        contract_nonces_updates: &[(Felt, Felt)],
-        contract_kv_updates: &[((Felt, Felt), Felt)],
-    ) -> Result<(), MadaraStorageError> {
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
-
+    #[tracing::instrument(skip(self, value), fields(module = "ContractDB"))]
+    pub(crate) fn contract_db_store_pending(&self, value: ContractDbBlockUpdate) -> Result<(), MadaraStorageError> {
         // Note: pending has keys in bincode, not bytes
 
         fn write_chunk(
@@ -233,17 +310,19 @@ impl MadaraBackend {
             Ok(())
         }
 
-        contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+        value.contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::PendingContractToClassHashes),
-            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k, *v))),
+            |col, chunk| write_chunk(&self.db, &self.writeopts_no_wal, col, chunk.iter().map(|(k, v)| (k, *v))),
         )?;
-        contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+        value.contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::PendingContractToNonces),
-            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|(k, v)| (k, *v))),
+            |col, chunk| write_chunk(&self.db, &self.writeopts_no_wal, col, chunk.iter().map(|(k, v)| (k, *v))),
         )?;
-        contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
+        value.contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.db.get_column(Column::PendingContractStorage),
-            |col, chunk| write_chunk(&self.db, &writeopts, col, chunk.iter().map(|((k1, k2), v)| ((k1, k2), *v))),
+            |col, chunk| {
+                write_chunk(&self.db, &self.writeopts_no_wal, col, chunk.iter().map(|((k1, k2), v)| ((k1, k2), *v)))
+            },
         )?;
 
         Ok(())
@@ -251,26 +330,23 @@ impl MadaraBackend {
 
     #[tracing::instrument(fields(module = "ContractDB"))]
     pub(crate) fn contract_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
-        let mut writeopts = WriteOptions::new();
-        writeopts.disable_wal(true);
-
         self.db.delete_range_cf_opt(
             &self.db.get_column(Column::PendingContractToNonces),
             &[] as _,
             LAST_KEY,
-            &writeopts,
+            &self.writeopts_no_wal,
         )?;
         self.db.delete_range_cf_opt(
             &self.db.get_column(Column::PendingContractToClassHashes),
             &[] as _,
             LAST_KEY,
-            &writeopts,
+            &self.writeopts_no_wal,
         )?;
         self.db.delete_range_cf_opt(
             &self.db.get_column(Column::PendingContractStorage),
             &[] as _,
             LAST_KEY,
-            &writeopts,
+            &self.writeopts_no_wal,
         )?;
 
         Ok(())
