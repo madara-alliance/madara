@@ -9,13 +9,13 @@ use crate::{
     types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs},
     OrchestratorResult,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
 use tracing::info;
 
 /// ResourceFactory is responsible for creating resources based on their type
 pub struct ResourceFactory {
-    creators: HashMap<ResourceType, Box<dyn ResourceCreator>>,
+    // Vec to maintain order of insertion
+    ordered_types: Vec<(ResourceType, Box<dyn ResourceCreator>)>,
     cloud_provider: Arc<CloudProvider>,
     queue_params: QueueArgs,
     cron_params: CronArgs,
@@ -44,18 +44,27 @@ impl ResourceFactory {
         storage_params: StorageArgs,
         alert_params: AlertArgs,
     ) -> Self {
-        let mut creators = HashMap::new();
-        creators.insert(ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>);
-        creators.insert(ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>);
-        creators.insert(ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
-        creators.insert(ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>);
+        let ordered_types = vec![
+            (ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>)
+        ];
 
-        ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
+        ResourceFactory { 
+            ordered_types,
+            cloud_provider, 
+            queue_params, 
+            cron_params, 
+            storage_params, 
+            alert_params 
+        }
     }
 
     pub async fn setup_resource(&self) -> OrchestratorResult<()> {
         let mut resource_futures = Vec::new();
-        for (resource_type, creator) in self.creators.iter() {
+        // Use ordered_types to maintain creation order
+        for (resource_type, creator) in self.ordered_types.iter() {
             info!(" ⏳ Setting up resource: {:?}", resource_type);
             let mut resource = creator.create_resource_client(self.cloud_provider.clone()).await?;
             let is_queue_ready = Arc::new(tokio::sync::RwLock::new(false));
