@@ -187,7 +187,7 @@ impl EventWorker {
                     (
                         format!("Job {job_id:?} handling failed: {error}"),
                         ConsumptionError::FailedToHandleJob {
-                            job_id: job_id.clone(),
+                            job_id: *job_id,
                             error_msg: error.to_string(),
                         }
                     )

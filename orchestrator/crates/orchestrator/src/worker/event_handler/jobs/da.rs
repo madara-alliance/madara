@@ -1,5 +1,4 @@
 use crate::core::config::Config;
-use crate::error::event::EventSystemResult;
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -11,7 +10,6 @@ use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
-use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::{eyre, Context};
 use lazy_static::lazy_static;
 use num_bigint::{BigUint, ToBigUint};
@@ -24,7 +22,6 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
 use std::str::FromStr;
 use std::sync::Arc;
-use uuid::Uuid;
 
 pub struct DAJobHandler;
 

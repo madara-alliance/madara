@@ -18,7 +18,6 @@ use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use starknet_os::io::output::StarknetOsOutput;
-use thiserror::Error;
 use uuid::Uuid;
 
 pub struct StateUpdateJobHandler;

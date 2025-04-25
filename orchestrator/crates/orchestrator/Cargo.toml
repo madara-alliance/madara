@@ -12,7 +12,7 @@ name = "orchestrator"
 path = "src/main.rs"
 
 [dependencies]
-alloy = { version = "0.2.1", features = [
+alloy = { workspace = true, features = [
   "full",
   "node-bindings",
   "rpc-types-debug",
@@ -50,11 +50,11 @@ majin-blob-core = { workspace = true }
 majin-blob-types = { workspace = true }
 mockall = { workspace = true }
 mockall_double = { workspace = true }
-mongodb = { workspace = true, features = ["bson-chrono-0_4", "bson-uuid-1"] }
+mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
 num = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
-omniqueue = { workspace = true }
+omniqueue = { workspace = true, optional = true }
 once_cell = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
@@ -99,20 +99,19 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time", "default", "env-filter", "fmt"] }
-tracing-error = { workspace = true }
 tracing-log = { workspace = true }
 
 jemallocator = { workspace = true }
-tokio-util = { workspace = true }
 anyhow = { workspace = true }
 
 [features]
-default = ["ethereum"]
+default = ["ethereum", "with_mongodb", "with_sqs"]
 ethereum = ["orchestrator-ethereum-da-client"]
-with_sqs = []
+with_mongodb = ["mongodb"]
+with_sqs = ["omniqueue"]
 testing = []
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
 rstest = { workspace = true }
-httpmock = { workspace = true }
+httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }

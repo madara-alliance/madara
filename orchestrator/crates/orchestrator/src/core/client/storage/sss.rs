@@ -42,7 +42,7 @@ pub struct S3BucketSetupResult {
 #[async_trait]
 impl StorageClient for AWSS3 {
     async fn get_data(&self, key: &str) -> Result<Bytes, StorageError> {
-        let output = self.client.get_object().bucket(&self.bucket_name.clone().unwrap()).key(key).send().await?;
+        let output = self.client.get_object().bucket(self.bucket_name.clone().unwrap()).key(key).send().await?;
 
         let data = output.body.collect().await.map_err(|e| StorageError::ObjectStreamError(e.to_string()))?;
 
@@ -50,13 +50,13 @@ impl StorageClient for AWSS3 {
     }
 
     async fn put_data(&self, data: Bytes, key: &str) -> Result<(), StorageError> {
-        self.client.put_object().bucket(&self.bucket_name.clone().unwrap()).key(key).body(data.into()).send().await?;
+        self.client.put_object().bucket(self.bucket_name.clone().unwrap()).key(key).body(data.into()).send().await?;
 
         Ok(())
     }
 
     async fn delete_data(&self, key: &str) -> Result<(), StorageError> {
-        let result = self.client.delete_object().bucket(&self.bucket_name.clone().unwrap()).key(key).send().await;
+        let result = self.client.delete_object().bucket(self.bucket_name.clone().unwrap()).key(key).send().await;
         match result {
             Ok(_) => Ok(()),
             Err(err) => Err(StorageError::DeleteObjectError(err)),

@@ -29,7 +29,7 @@ impl OrchestratorInstrumentation {
 
         let meter_provider = Self::instrument_metric_provider(config)?;
         let tracer = Self::instrument_tracer_provider(config)?;
-        let logger = Self::instrument_logs(&config)?;
+        let logger = Self::instrument_logs(config)?;
 
         tracing_subscriber.with(OpenTelemetryLayer::new(tracer)).with(OpenTelemetryTracingBridge::new(&logger)).init();
         Ok(Self { otel_config: config.clone(), meter_provider })

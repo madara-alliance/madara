@@ -253,7 +253,7 @@ impl JobHandlerService {
             .await
             .map_err(|e| {
                 tracing::error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-                JobError::from(e)
+                e
             })?;
 
         let attributes = vec![

@@ -31,10 +31,10 @@ impl Resource for EventBridgeClient {
     async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
-                let eb_client = aws_sdk_eventbridge::Client::new(&aws_config);
-                let scheduler_client = aws_sdk_scheduler::Client::new(&aws_config);
-                let queue_client = aws_sdk_sqs::Client::new(&aws_config);
-                let iam_client = aws_sdk_iam::Client::new(&aws_config);
+                let eb_client = aws_sdk_eventbridge::Client::new(aws_config);
+                let scheduler_client = aws_sdk_scheduler::Client::new(aws_config);
+                let queue_client = aws_sdk_sqs::Client::new(aws_config);
+                let iam_client = aws_sdk_iam::Client::new(aws_config);
                 Ok(Self::constructor(
                     Arc::new(eb_client),
                     Arc::new(scheduler_client),

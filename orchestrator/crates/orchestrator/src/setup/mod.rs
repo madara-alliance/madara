@@ -1,11 +1,8 @@
-use crate::cli::provider::{AWSConfigValidatedArgs, ProviderValidatedArgs};
 use crate::cli::SetupCmd;
 use crate::core::cloud::CloudProvider;
 use crate::setup::factory::ResourceFactory;
 use crate::types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
 use crate::{OrchestratorError, OrchestratorResult};
-use aws_config::Region;
-use aws_credential_types::Credentials;
 use std::sync::Arc;
 use tracing::{info, instrument};
 
@@ -18,7 +15,7 @@ mod wrapper;
 /// Setup function that initializes all necessary resources
 #[instrument]
 pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
-    let cloud_provider = setup_cloud_provider(&setup_cmd).await?;
+    let cloud_provider = setup_cloud_provider(setup_cmd).await?;
 
     info!("Setting up resources for Orchestrator...");
 
@@ -38,21 +35,10 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
 
 /// Set up the orchestrator with the provided configuration
 pub async fn setup_cloud_provider(setup_cmd: &SetupCmd) -> OrchestratorResult<Arc<CloudProvider>> {
-    let aws_config = AWSConfigValidatedArgs::try_from(setup_cmd.clone())?;
+    let cloud_provider = CloudProvider::try_from(setup_cmd.clone())
+        .map_err(|e| OrchestratorError::InvalidCloudProviderError(e.to_string()))?;
 
-    // Create AWS SDK config
-    let sdk_config = aws_config::from_env()
-        .region(Region::new(aws_config.aws_region.clone()))
-        .credentials_provider(Credentials::from_keys(
-            &aws_config.aws_access_key_id,
-            &aws_config.aws_secret_access_key,
-            None,
-        ))
-        .load()
-        .await;
     info!("AWS credentials validated successfully");
 
-    let cloud_provider = Arc::new(CloudProvider::AWS(Box::new(sdk_config)));
-
-    Ok(cloud_provider)
+    Ok(Arc::new(cloud_provider))
 }

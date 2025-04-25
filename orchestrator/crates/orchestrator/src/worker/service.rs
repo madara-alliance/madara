@@ -1,6 +1,5 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::error::other::OtherError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};

@@ -20,7 +20,7 @@ impl Resource for AWSS3 {
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
-                let client = S3Client::new(&aws_config);
+                let client = S3Client::new(aws_config);
                 Ok(Self::constructor(Arc::new(client), None, None))
             }
             _ => Err(OrchestratorError::InvalidCloudProviderError(

@@ -32,20 +32,16 @@ pub struct JobItem {
 }
 
 impl JobItem {
-    pub fn new(
-        id: Uuid,
-        internal_id: String,
-        job_type: JobType,
-        status: JobStatus,
-        external_id: ExternalId,
-        metadata: JobMetadata,
-        version: i32,
-        created_at: DateTime<Utc>,
-        updated_at: DateTime<Utc>,
-    ) -> Self {
-        Self { id, internal_id, job_type, status, external_id, metadata, version, created_at, updated_at }
-    }
-
+    /// Creates a new job item with the given parameters.
+    ///
+    /// # Arguments
+    /// * `internal_id` - A string representing the internal ID of the job.
+    /// * `job_type` - The type of the job.
+    /// * `status` - The status of the job.
+    /// * `metadata` - The metadata associated with the job.
+    ///
+    /// # Returns
+    /// A new `JobItem` instance with the specified parameters.
     pub fn create(internal_id: String, job_type: JobType, status: JobStatus, metadata: JobMetadata) -> Self {
         Self {
             id: Uuid::new_v4(),

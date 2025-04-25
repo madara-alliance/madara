@@ -2,7 +2,7 @@ use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{
-    EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator,
+    EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator,
     SQSResourceCreator,
 };
 use crate::setup::wrapper::ResourceWrapper;
@@ -81,7 +81,7 @@ impl ResourceFactory {
                     let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
                     rs.setup(self.cron_params.clone()).await?;
                 }
-                _ => {}
+                _ => Err(OrchestratorError::UnknownResourceTypeError("Unknown".to_string()))?,
             }
             info!(" ✅ Resource setup completed: {:?}", resource_type);
         }

@@ -8,7 +8,7 @@ use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
 use orchestrator::worker::controller::worker_controller::WorkerController;
-use orchestrator::{OrchestratorError, OrchestratorResult};
+use orchestrator::OrchestratorResult;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 

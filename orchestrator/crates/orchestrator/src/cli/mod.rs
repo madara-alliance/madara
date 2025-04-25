@@ -94,13 +94,6 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub aws_config_args: AWSConfigCliArgs,
 
-    // Settlement Layer
-    #[clap(flatten)]
-    pub ethereum_args: settlement::ethereum::EthereumSettlementCliArgs,
-
-    #[clap(flatten)]
-    pub starknet_args: settlement::starknet::StarknetSettlementCliArgs,
-
     // Storage
     #[clap(flatten)]
     pub aws_s3_args: storage::aws_s3::AWSS3CliArgs,
@@ -124,6 +117,13 @@ pub struct RunCmd {
     // Data Availability Layer
     #[clap(flatten)]
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
+
+    // Settlement Layer
+    #[clap(flatten)]
+    pub ethereum_settle_args: settlement::ethereum::EthereumSettlementCliArgs,
+
+    #[clap(flatten)]
+    pub starknet_settle_args: settlement::starknet::StarknetSettlementCliArgs,
 
     // Prover
     #[clap(flatten)]

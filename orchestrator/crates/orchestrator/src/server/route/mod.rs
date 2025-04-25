@@ -37,10 +37,10 @@ fn v1_route(config: Arc<Config>) -> Router {
 
 pub(crate) fn server_router(config: Arc<Config>) -> Router {
     let v1_routes = Router::new().nest("/v1", v1_route(config.clone()));
-    let routes = Router::new()
+    
+    Router::new()
         .nest("/", local_route())
         .nest("/api", v1_routes)
         .nest("/jobs", job_router(config.clone()))
-        .fallback(handler_404);
-    routes
+        .fallback(handler_404)
 }

@@ -1,6 +1,6 @@
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::JobMetadata;
-use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::jobs::types::JobStatus;
 use serde::Serialize;
 
 /// Defining a structure that contains the changes to be made in the job object,

@@ -20,7 +20,7 @@ impl Resource for SNS {
     async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
-                let client = SNSClient::new(&aws_config);
+                let client = SNSClient::new(aws_config);
                 Ok(Self::constructor(Arc::new(client)))
             }
             _ => Err(OrchestratorError::InvalidCloudProviderError(

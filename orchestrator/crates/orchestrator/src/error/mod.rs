@@ -99,6 +99,9 @@ pub enum OrchestratorError {
     #[error("ConsumptionError: {0}")]
     ConsumptionError(#[from] ConsumptionError),
 
+    #[error("Unknow Resource type: {0}")]
+    UnknownResourceTypeError(String),
+
     /// Database error
     #[error("Database Invalid URI error: {0}")]
     DatabaseInvalidURIError(String),
