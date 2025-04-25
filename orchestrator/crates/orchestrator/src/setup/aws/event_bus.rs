@@ -95,19 +95,18 @@ impl Resource for EventBridgeClient {
         }
     }
 
-    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
-        for trigger in WORKER_TRIGGERS.iter() {
-            if self.check_if_exists((EventBridgeType::Rule, trigger.clone(), args.trigger_rule_name.clone())).await? {
-                tracing::info!(" ℹ️  Event Bridge {trigger} already exists, skipping");
-            } else {
-                tracing::error!(" ❌ Event Bridge {trigger} does not exist");
-                return Ok(false);
-            }
-        }
-        Ok(true)
-    }
-
-    async fn teardown(&self) -> OrchestratorResult<()> {
-        todo!()
+    /// is_ready_to_use - Check if the event bridge rule is ready to use
+    ///
+    /// # Arguments
+    ///
+    /// * `args` - The arguments for the check
+    ///
+    /// # Returns
+    /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule is ready to use
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+        let client = self.eb_client.clone();
+        let rule_name = args.trigger_rule_name.clone();
+        let result = client.describe_rule().name(rule_name).send().await;
+        Ok(result.is_ok())
     }
 }

@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct AWSS3 {
     pub(crate) client: Arc<Client>,
     bucket_name: Option<String>,
+    #[allow(dead_code)]
     region: Option<String>,
 }
 

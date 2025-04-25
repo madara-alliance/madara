@@ -1,7 +1,7 @@
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::{
-    core::client::{queue::sqs::SQS, storage::sss::AWSS3},
+    core::client::{queue::sqs::SQS, storage::s3::AWSS3},
     core::cloud::CloudProvider,
     core::traits::resource::Resource,
     setup::wrapper::ResourceWrapper,
@@ -16,18 +16,6 @@ pub enum ResourceType {
     Storage,
     EventBus,
     PubSub,
-}
-
-impl ResourceType {
-    pub fn from_str(resource_type: &str) -> Option<Self> {
-        match resource_type.to_lowercase().as_str() {
-            "queue" => Some(ResourceType::Queue),
-            "storage" => Some(ResourceType::Storage),
-            "event_bus" => Some(ResourceType::EventBus),
-            "pub_sub" => Some(ResourceType::PubSub),
-            _ => None,
-        }
-    }
 }
 
 /// A trait for resource creation strategies to enable flexible resource instantiation

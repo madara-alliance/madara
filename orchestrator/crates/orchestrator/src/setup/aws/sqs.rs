@@ -85,28 +85,16 @@ impl Resource for SQS {
         Ok(self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+        let client = self.client().clone();
         for queue in QUEUES.iter() {
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
             let queue_url = format!("{}/{}", args.queue_base_url, queue_name);
-            if !self.check_if_exists(queue_url).await? {
+            let result = client.get_queue_attributes().queue_url(queue_url).send().await;
+            if result.is_err() {
                 return Ok(false);
             }
         }
         Ok(true)
-    }
-
-    async fn teardown(&self) -> OrchestratorResult<()> {
-        let queue_url = self
-            .queue_url()
-            .ok_or_else(|| OrchestratorError::ResourceError("Failed to access queue URL".to_string()))?;
-
-        self.client()
-            .delete_queue()
-            .queue_url(queue_url.to_string())
-            .send()
-            .await
-            .map_err(|e| OrchestratorError::ResourceError(format!("Failed to delete SQS queue: {}", e)))?;
-        Ok(())
     }
 }

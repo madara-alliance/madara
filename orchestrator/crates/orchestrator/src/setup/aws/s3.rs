@@ -1,4 +1,4 @@
-use crate::core::client::storage::sss::{S3BucketSetupResult, AWSS3};
+use crate::core::client::storage::s3::{S3BucketSetupResult, AWSS3};
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;
@@ -74,24 +74,10 @@ impl Resource for AWSS3 {
         Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.head_bucket().bucket(args.bucket_name).send().await.is_ok())
-    }
-
-    async fn teardown(&self) -> OrchestratorResult<()> {
-        if let Some(bucket_name) = &self.bucket_name() {
-            // self.delete_all_objects(bucket_name).await?;
-
-            self.client
-                .delete_bucket()
-                .bucket(bucket_name)
-                .send()
-                .await
-                .map_err(|e| OrchestratorError::ResourceError(format!("Failed to delete bucket: {}", e)))?;
-
-            Ok(())
-        } else {
-            Err(OrchestratorError::ResourceError("Bucket name is not set".to_string()))
-        }
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+        let client = self.client.clone();
+        let bucket_name = args.bucket_name.clone();
+        let result = client.head_bucket().bucket(bucket_name).send().await;
+        Ok(result.is_ok())
     }
 }

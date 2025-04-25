@@ -21,7 +21,7 @@ use crate::types::params::database::DatabaseArgs;
 use crate::{
     cli::RunCmd,
     core::client::{
-        queue::QueueClient, storage::sss::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
+        queue::QueueClient, storage::s3::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
         SNS, SQS,
     },
     core::cloud::CloudProvider,

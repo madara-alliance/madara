@@ -54,12 +54,10 @@ impl Resource for SNS {
         Ok(self.client.get_topic_attributes().topic_arn(topic_name).send().await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(args.endpoint.clone()).send().await.is_ok())
-    }
-
-
-    async fn teardown(&self) -> OrchestratorResult<()> {
-        Ok(())
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+        let client = self.client.clone();
+        let endpoint = args.endpoint.clone();
+        let result = client.get_topic_attributes().topic_arn(endpoint).send().await;
+        Ok(result.is_ok())
     }
 }

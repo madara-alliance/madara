@@ -2,7 +2,7 @@ use super::super::cloud::CloudProvider;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 /// Resource trait
 ///
@@ -34,28 +34,33 @@ pub trait Resource: Send + Sync {
     /// check - Check if the resource exists, check only for individual resources
     async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
     /// ready - Check if all the resource is created and ready to use
-    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool>;
-    async fn teardown(&self) -> OrchestratorResult<()>;
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
     /// check - Check if the resource is in a valid state
     /// This function will check if the resource is in a valid state.
     /// This function will also check if the resource is in a valid state.
     async fn poll(&self, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
-        let start_time = std::time::Instant::now();
         let timeout_duration = Duration::from_secs(timeout);
-        let poll_duration = Duration::from_secs(poll_interval);
+        let start_time = Instant::now();
 
         while start_time.elapsed() < timeout_duration {
-            match self.is_ready_to_use(args.clone()).await {
-                Ok(result) => {
-                    if result {
-                        return true;
-                    } else {
-                        tokio::time::sleep(poll_duration).await;
-                    }
+            match self.is_ready_to_use(&args).await {
+                Ok(true) => return true,
+                Ok(false) => {
+                    tokio::time::sleep(Duration::from_secs(poll_interval)).await;
+                    continue;
                 }
-                Err(_) => return false,
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_secs(poll_interval)).await;
+                    continue;
+                }
             }
         }
         false
     }
+
+    // /// teardown - Tear down the resource
+    // /// This function will delete the resource and all dependent resources.
+    // /// This function will also delete any dependent resources that are needed.
+    // /// THis is scope for future work
+    // async fn teardown(&self) -> OrchestratorResult<()>;
 }

@@ -1,5 +1,5 @@
 pub mod error;
-pub mod sss;
+pub mod s3;
 
 use async_trait::async_trait;
 use bytes::Bytes;

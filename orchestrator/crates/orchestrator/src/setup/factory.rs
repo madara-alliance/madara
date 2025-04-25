@@ -3,7 +3,7 @@ use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator, SQSResourceCreator};
 use crate::{
-    core::client::storage::sss::AWSS3,
+    core::client::storage::s3::AWSS3,
     core::client::SQS,
     core::cloud::CloudProvider,
     types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs},
@@ -61,42 +61,59 @@ impl ResourceFactory {
             let is_queue_ready = Arc::new(tokio::sync::RwLock::new(false));
             let is_queue_ready_clone = is_queue_ready.clone();
 
+            let storage_params = self.storage_params.clone();
+            let queue_params = self.queue_params.clone();
+            let alert_params = self.alert_params.clone();
+            let cron_params = self.cron_params.clone();
+            let resource_type = resource_type.clone();
+
             let resource_future = async move {
-                match resource_type {
-                    ResourceType::Storage => {
-                        let rs = resource.downcast_mut::<AWSS3>().unwrap();
-                        rs.setup(self.storage_params.clone()).await?;
+                let result: OrchestratorResult<()> = async {
+                    match resource_type {
+                        ResourceType::Storage => {
+                            let rs = resource.downcast_mut::<AWSS3>().unwrap();
+                            rs.setup(storage_params).await?;
+                            Ok(())
+                        }
+                        ResourceType::Queue => {
+                            let rs = resource.downcast_mut::<SQS>().unwrap();
+                            rs.setup(queue_params.clone()).await?;
+                            let queue_ready = rs
+                                .poll(
+                                    queue_params,
+                                    5,
+                                    6,
+                                )
+                                .await;
+                            *is_queue_ready_clone.write().await = queue_ready;
+                            Ok(())
+                        }
+                        ResourceType::PubSub => {
+                            let rs = resource.downcast_mut::<SNS>().unwrap();
+                            rs.setup(alert_params).await?;
+                            Ok(())
+                        }
+                        ResourceType::EventBus => {
+                            let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
+                            rs.setup(cron_params).await?;
+                            Ok(())
+                        }
                     }
-                    ResourceType::Queue => {
-                        let rs = resource.downcast_mut::<SQS>().unwrap();
-                        rs.setup(self.queue_params.clone()).await?;
-                        let queue_ready = rs
-                            .poll(
-                                self.queue_params.clone(),
-                                5,
-                                6,
-                            )
-                            .await;
-                        *is_queue_ready_clone.write().await = queue_ready;
-                    }
-                    ResourceType::PubSub => {
-                        let rs = resource.downcast_mut::<SNS>().unwrap();
-                        rs.setup(self.alert_params.clone()).await?;
-                    }
-                    ResourceType::EventBus => {
-                        let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
-                        rs.setup(self.cron_params.clone()).await?;
-                    }
-                    // Note: This is a placeholder for future resource types.
-                    // _ => Err(OrchestratorError::UnknownResourceTypeError("Unknown".to_string()))?,
+                }.await;
+
+                if let Err(ref e) = result {
+                    info!(" ❌ Resource setup failed for {:?}: {:?}", resource_type, e);
+                } else {
+                    info!(" ✅ Resource setup completed: {:?}", resource_type);
                 }
+                result
             };
             resource_futures.push(resource_future);
-            info!(" ✅ Resource setup completed: {:?}", resource_type);
         }
+
         let results = futures::future::join_all(resource_futures).await;
         for result in results {
-            let (_, _) = result?;
+            result?;
         }
         Ok(())
     }
