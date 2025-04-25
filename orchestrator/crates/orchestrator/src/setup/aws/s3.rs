@@ -17,15 +17,20 @@ impl Resource for AWSS3 {
     type SetupArgs = StorageArgs;
     type CheckArgs = String;
 
+    /// create_setup creates a new S3 client and returns an instance of AWSS3
+    ///
+    /// # Arguments
+    /// * `cloud_provider` - The cloud provider configuration.
+    ///
+    /// # Returns
+    /// * `OrchestratorResult<Self>` - The result of the setup operation.
+    ///
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
                 let client = S3Client::new(aws_config);
                 Ok(Self::constructor(Arc::new(client), None, None))
             }
-            _ => Err(OrchestratorError::InvalidCloudProviderError(
-                "Mismatch Cloud Provider for S3Bucket resource".to_string(),
-            ))?,
         }
     }
     /// Set up a new S3 bucket
@@ -40,7 +45,7 @@ impl Resource for AWSS3 {
         for bucket in existing_buckets.buckets() {
             if let Some(name) = &bucket.name {
                 if name == &args.bucket_name {
-                    warn!("S3 bucket '{}' already exists", args.bucket_name);
+                    warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
                     return Ok(S3BucketSetupResult { name: args.bucket_name, location: None });
                 }
             }
@@ -65,16 +70,12 @@ impl Resource for AWSS3 {
         Ok(S3BucketSetupResult { name: args.bucket_name, location: result.location })
     }
 
-    async fn check(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
-        self.client
-            .list_objects_v2()
-            .bucket(&bucket_name)
-            .send()
-            .await
-            .map_err(|e| OrchestratorError::ResourceError(e.to_string()))?;
+    async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
+    }
 
-        // Just check if we can list objects
-        Ok(true)
+    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.head_bucket().bucket(args.bucket_name).send().await.is_ok())
     }
 
     async fn teardown(&self) -> OrchestratorResult<()> {

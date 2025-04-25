@@ -208,4 +208,12 @@ pub struct SetupCmd {
     // Cron
     #[clap(flatten)]
     pub aws_event_bridge_args: AWSEventBridgeCliArgs,
+
+    // Miscellaneous
+    #[arg(env = "MADARA_ORCHESTRATOR_SETUP_TIMEOUT", long, default_value = Some("300"))]
+    pub timeout: Option<u64>,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_SETUP_RESOURCE_POLL_INTERVAL", long, default_value = Some("5")
+    )]
+    pub poll_interval: Option<u64>,
 }

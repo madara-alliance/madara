@@ -18,8 +18,8 @@ pub struct TriggerArns {
 
 /// EventBridge Client implementation
 pub struct EventBridgeClient {
-    eb_client: Arc<aws_sdk_eventbridge::Client>,
-    scheduler_client: Arc<aws_sdk_scheduler::Client>,
+    pub(crate) eb_client: Arc<aws_sdk_eventbridge::Client>,
+    pub(crate) scheduler_client: Arc<aws_sdk_scheduler::Client>,
     queue_client: Arc<aws_sdk_sqs::Client>,
     iam_client: Arc<aws_sdk_iam::Client>,
     pub event_bridge_type: Option<EventBridgeType>,

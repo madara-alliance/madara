@@ -2,7 +2,7 @@ use crate::core::client::SNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AlertArgs;
-use crate::{OrchestratorError, OrchestratorResult};
+use crate::OrchestratorResult;
 use anyhow::Context;
 use async_trait::async_trait;
 use aws_sdk_sns::Client as SNSClient;
@@ -15,7 +15,7 @@ impl Resource for SNS {
     type TeardownResult = ();
     type Error = ();
     type SetupArgs = AlertArgs;
-    type CheckArgs = AlertArgs;
+    type CheckArgs = String;
 
     async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
@@ -23,16 +23,16 @@ impl Resource for SNS {
                 let client = SNSClient::new(aws_config);
                 Ok(Self::constructor(Arc::new(client)))
             }
-            _ => Err(OrchestratorError::InvalidCloudProviderError(
-                "Mismatch Cloud Provider for S3Bucket resource".to_string(),
-            ))?,
+            // _ => Err(OrchestratorError::InvalidCloudProviderError(
+            //     "Mismatch Cloud Provider for S3Bucket resource".to_string(),
+            // ))?,
         }
     }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let topic_name = args.endpoint.clone();
         tracing::info!("Topic ARN: {}", args.endpoint);
-        if self.check(args.clone()).await? {
+        if self.check_if_exists(topic_name.clone()).await? {
             tracing::warn!("SNS topic already exists. Topic ARN: {}", args.endpoint);
             return Ok(());
         }
@@ -50,9 +50,14 @@ impl Resource for SNS {
         Ok(())
     }
 
-    async fn check(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
-        Ok(self.client.get_topic_attributes().topic_arn(args.endpoint).send().await.is_ok())
+    async fn check_if_exists(&self, topic_name: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.get_topic_attributes().topic_arn(topic_name).send().await.is_ok())
     }
+
+    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.get_topic_attributes().topic_arn(args.endpoint.clone()).send().await.is_ok())
+    }
+
 
     async fn teardown(&self) -> OrchestratorResult<()> {
         Ok(())

@@ -2,6 +2,7 @@ use super::super::cloud::CloudProvider;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::Duration;
 
 /// Resource trait
 ///
@@ -26,7 +27,35 @@ pub trait Resource: Send + Sync {
     where
         Self: Sized;
 
+    /// setup - Setup the resource
+    /// This function will check if the resource exists, if not create it.
+    /// This function will also create any dependent resources that are needed.
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
-    async fn check(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult>;
+    /// check - Check if the resource exists, check only for individual resources
+    async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
+    /// ready - Check if all the resource is created and ready to use
+    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool>;
     async fn teardown(&self) -> OrchestratorResult<()>;
+    /// check - Check if the resource is in a valid state
+    /// This function will check if the resource is in a valid state.
+    /// This function will also check if the resource is in a valid state.
+    async fn poll(&self, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
+        let start_time = std::time::Instant::now();
+        let timeout_duration = Duration::from_secs(timeout);
+        let poll_duration = Duration::from_secs(poll_interval);
+
+        while start_time.elapsed() < timeout_duration {
+            match self.is_ready_to_use(args.clone()).await {
+                Ok(result) => {
+                    if result {
+                        return true;
+                    } else {
+                        tokio::time::sleep(poll_duration).await;
+                    }
+                }
+                Err(_) => return false,
+            }
+        }
+        false
+    }
 }

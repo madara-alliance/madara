@@ -129,7 +129,7 @@ impl JobHandlerTrait for SnosJobHandler {
     }
 
     fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        Some(config.processing_locks().snos_job_processing_lock.clone())
+        config.processing_locks().snos_job_processing_lock.clone()
     }
 }
 

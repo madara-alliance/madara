@@ -1,3 +1,4 @@
+use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -26,7 +27,7 @@ impl Resource for EventBridgeClient {
     type TeardownResult = ();
     type Error = ();
     type SetupArgs = CronArgs;
-    type CheckArgs = ();
+    type CheckArgs = (EventBridgeType, WorkerTriggerType, String);
 
     async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
@@ -42,9 +43,6 @@ impl Resource for EventBridgeClient {
                     Arc::new(iam_client),
                 ))
             }
-            _ => Err(OrchestratorError::InvalidCloudProviderError(
-                "Mismatch Cloud Provider for S3Bucket resource".to_string(),
-            ))?,
         }
     }
 
@@ -60,23 +58,53 @@ impl Resource for EventBridgeClient {
         sleep(Duration::from_secs(15)).await;
 
         for trigger in WORKER_TRIGGERS.iter() {
-            self.add_cron_target_queue(
-                trigger,
-                &trigger_arns,
-                args.trigger_rule_name.clone(),
-                args.event_bridge_type.clone(),
-                Duration::from_secs(args.cron_time.clone().parse::<u64>().map_err(|e| {
-                    OrchestratorError::SetupCommandError(format!("Failed to parse the cron time: {:?}", e))
-                })?),
-            )
-                .await
-                .expect("Failed to add cron target queue");
+            if self.check_if_exists((args.event_bridge_type.clone(), trigger.clone(), args.trigger_rule_name.clone())).await? {
+                tracing::info!(" ℹ️  Event Bridge {trigger} already exists, skipping");
+            } else {
+                self.add_cron_target_queue(
+                    trigger,
+                    &trigger_arns,
+                    args.trigger_rule_name.clone(),
+                    args.event_bridge_type.clone(),
+                    Duration::from_secs(args.cron_time.clone().parse::<u64>().map_err(|e| {
+                        OrchestratorError::SetupCommandError(format!("Failed to parse the cron time: {:?}", e))
+                    })?),
+                )
+                    .await
+                    .expect("Failed to add cron target queue");
+            }
         }
         Ok(())
     }
+    /// check_if_exists - Check if the event bridge rule exists
+    ///
+    /// # Arguments
+    /// * `args` - The arguments for the check
+    ///
+    /// # Returns
+    /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule exists
+    ///
+    async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool> {
+        let (event_bridge_type, trigger_type, trigger_rule_name) = args;
+        let trigger_name = format!("{}-{}", trigger_rule_name.clone(), trigger_type);
+        match event_bridge_type {
+            EventBridgeType::Rule => Ok(self.eb_client.describe_rule().name(trigger_name).send().await.is_ok()),
+            EventBridgeType::Schedule => {
+                Ok(self.scheduler_client.get_schedule().name(trigger_name).send().await.is_ok())
+            }
+        }
+    }
 
-    async fn check(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
-        todo!()
+    async fn is_ready_to_use(&self, args: Self::SetupArgs) -> OrchestratorResult<bool> {
+        for trigger in WORKER_TRIGGERS.iter() {
+            if self.check_if_exists((EventBridgeType::Rule, trigger.clone(), args.trigger_rule_name.clone())).await? {
+                tracing::info!(" ℹ️  Event Bridge {trigger} already exists, skipping");
+            } else {
+                tracing::error!(" ❌ Event Bridge {trigger} does not exist");
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     async fn teardown(&self) -> OrchestratorResult<()> {
