@@ -3,7 +3,8 @@ use url::Url;
 
 /// Parameters used to config Atlantic.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["atlantic_api_key", "atlantic_service_url", "atlantic_settlement_layer", "atlantic_verifier_contract_address"])]
+#[group(requires_all = ["atlantic_api_key", "atlantic_service_url", "atlantic_settlement_layer", "atlantic_verifier_contract_address"]
+)]
 pub struct AtlanticCliArgs {
     /// Use the Atlantic prover.
     #[arg(long)]
@@ -44,15 +45,4 @@ pub struct AtlanticCliArgs {
         value_parser = ["MAINNET", "TESTNET"]
     )]
     pub atlantic_network: Option<String>,
-}
-
-#[derive(Debug, Clone)]
-pub struct AtlanticValidatedArgs {
-    pub atlantic_api_key: String,
-    pub atlantic_service_url: Url,
-    pub atlantic_rpc_node_url: Url,
-    pub atlantic_verifier_contract_address: String,
-    pub atlantic_settlement_layer: String,
-    pub atlantic_mock_fact_hash: String,
-    pub atlantic_prover_type: String,
 }

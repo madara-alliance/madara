@@ -7,7 +7,7 @@ use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::factory::JobFactory;
+use crate::worker::event_handler::factory::{JobFactory, JobFactoryTrait};
 use crate::worker::service::JobService;
 use crate::worker::utils::conversion::parse_string;
 use chrono::Utc;
@@ -49,25 +49,22 @@ impl JobHandlerService {
     ) -> Result<(), JobError> {
         let start = Instant::now();
         tracing::info!(
-        log_type = "starting",
-        category = "general",
-        function_type = "create_job",
-        job_type = ?job_type,
-        block_no = %internal_id,
-        "General create job started for block"
-    );
+            log_type = "starting",
+            category = "general",
+            function_type = "create_job",
+            job_type = ?job_type,
+            block_no = %internal_id,
+            "General create job started for block"
+        );
 
         tracing::debug!(
-        job_type = ?job_type,
-        internal_id = %internal_id,
-        metadata = ?metadata,
-        "Job creation details"
-    );
+            job_type = ?job_type,
+            internal_id = %internal_id,
+            metadata = ?metadata,
+            "Job creation details"
+        );
 
-        let existing_job = config
-            .database()
-            .get_job_by_internal_id_and_type(internal_id.as_str(), &job_type)
-            .await?;
+        let existing_job = config.database().get_job_by_internal_id_and_type(internal_id.as_str(), &job_type).await?;
 
         if existing_job.is_some() {
             tracing::warn!("{}", JobError::JobAlreadyExists { internal_id, job_type });
@@ -80,16 +77,18 @@ impl JobHandlerService {
         println!("Job item inside the create job function: {:?}", job_item);
         JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
 
-        let attributes =
-            [KeyValue::new("operation_job_type", format!("{:?}", job_type)), KeyValue::new("operation_type", "create_job")];
+        let attributes = [
+            KeyValue::new("operation_job_type", format!("{:?}", job_type)),
+            KeyValue::new("operation_type", "create_job"),
+        ];
 
         tracing::info!(
-        log_type = "completed",
-        category = "general",
-        function_type = "create_job",
-        block_no = %internal_id,
-        "General create job completed for block"
-    );
+            log_type = "completed",
+            category = "general",
+            function_type = "create_job",
+            block_no = %internal_id,
+            "General create job completed for block"
+        );
 
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&internal_id)?, &attributes);
@@ -123,23 +122,18 @@ impl JobHandlerService {
     /// * Updates job version to prevent concurrent processing
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds job to verification queue upon successful processing
-    #[tracing::instrument(
-        skip(config),
-        fields(category = "general", job, job_type, internal_id),
-        ret,
-        err
-    )]
+    #[tracing::instrument(skip(config), fields(category = "general", job, job_type, internal_id), ret, err)]
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id.clone();
         tracing::info!(
-        log_type = "starting",
-        category = "general",
-        function_type = "process_job",
-        block_no = %internal_id,
-        "General process job started for block"
-    );
+            log_type = "starting",
+            category = "general",
+            function_type = "process_job",
+            block_no = %internal_id,
+            "General process job started for block"
+        );
 
         tracing::Span::current().record("job", format!("{:?}", job.clone()));
         tracing::Span::current().record("job_type", format!("{:?}", job.job_type));
@@ -189,7 +183,8 @@ impl JobHandlerService {
             })?;
 
         tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
-        let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await {
+        let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
+        {
             Ok(Ok(external_id)) => {
                 tracing::debug!(job_id = ?id, "Successfully processed job");
                 // Add the time of processing to the metadata.
@@ -217,7 +212,7 @@ impl JobHandlerService {
                     config.clone(),
                     format!("Job handler panicked with message: {}", panic_msg),
                 )
-                    .await;
+                .await;
             }
         };
 
@@ -250,11 +245,11 @@ impl JobHandlerService {
             &job.job_type,
             Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
         )
-            .await
-            .map_err(|e| {
-                tracing::error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-                e
-            })?;
+        .await
+        .map_err(|e| {
+            tracing::error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
+            e
+        })?;
 
         let attributes = vec![
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
@@ -367,9 +362,10 @@ impl JobHandlerService {
                 // Calculate verification time if processing completion timestamp exists
                 if let Some(verification_time) = job.metadata.common.verification_started_at {
                     let time_taken = (Utc::now() - verification_time).num_milliseconds();
-                    ORCHESTRATOR_METRICS
-                        .verification_time
-                        .record(time_taken as f64, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);
+                    ORCHESTRATOR_METRICS.verification_time.record(
+                        time_taken as f64,
+                        &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))],
+                    );
                 } else {
                     tracing::warn!("Failed to calculate verification time: Missing processing completion timestamp");
                 }
@@ -401,10 +397,10 @@ impl JobHandlerService {
 
                 if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
                     tracing::info!(
-                    job_id = ?id,
-                    attempt = job.metadata.common.process_attempt_no + 1,
-                    "Verification failed. Retrying job processing"
-                );
+                        job_id = ?id,
+                        attempt = job.metadata.common.process_attempt_no + 1,
+                        "Verification failed. Retrying job processing"
+                    );
 
                     config
                         .database()
@@ -420,8 +416,7 @@ impl JobHandlerService {
                             tracing::error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationFailed");
                             e
                         })?;
-                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone())
-                        .await?;
+                    JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
                 } else {
                     tracing::warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
                     return JobService::move_job_to_failed(
@@ -432,7 +427,7 @@ impl JobHandlerService {
                             job.metadata.common.process_attempt_no
                         ),
                     )
-                        .await;
+                    .await;
                 }
             }
             JobVerificationStatus::Pending => {
@@ -469,11 +464,11 @@ impl JobHandlerService {
                         &job.job_type,
                         Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
                     )
-                        .await
-                        .map_err(|e| {
-                            tracing::error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
-                            e
-                        })?;
+                    .await
+                    .map_err(|e| {
+                        tracing::error!(job_id = ?id, error = ?e, "Failed to add job to verification queue");
+                        e
+                    })?;
                 }
             }
         };
@@ -489,7 +484,6 @@ impl JobHandlerService {
         Self::register_block_gauge(job.job_type, &job.internal_id, job.external_id, &attributes)?;
         Ok(())
     }
-
 
     /// Terminates the job and updates the status of the job in the DB.
     ///
@@ -515,8 +509,12 @@ impl JobHandlerService {
 
         tracing::debug!(job_id = ?id, job_status = ?job.status, job_type = ?job.job_type, block_no = %internal_id, "Job details for failure handling for block");
         let status = job.status.clone().to_string();
-        JobService::move_job_to_failed(&job, config.clone(), format!("Received failure queue message for job with status: {}", status))
-            .await
+        JobService::move_job_to_failed(
+            &job,
+            config.clone(),
+            format!("Received failure queue message for job with status: {}", status),
+        )
+        .await
     }
 
     /// Retries a failed job by reprocessing it.
@@ -542,18 +540,18 @@ impl JobHandlerService {
         let internal_id = job.internal_id.clone();
 
         tracing::info!(
-        log_type = "starting",
-        category = "general",
-        function_type = "retry_job",
-        block_no = %internal_id,
-        "General retry job started for block"
-    );
+            log_type = "starting",
+            category = "general",
+            function_type = "retry_job",
+            block_no = %internal_id,
+            "General retry job started for block"
+        );
         if job.status != JobStatus::Failed {
             tracing::error!(
-            job_id = ?id,
-            status = ?job.status,
-            "Cannot retry job: invalid status"
-        );
+                job_id = ?id,
+                status = ?job.status,
+                "Cannot retry job: invalid status"
+            );
             return Err(JobError::InvalidStatus { id, job_status: job.status });
         }
 
@@ -563,17 +561,20 @@ impl JobHandlerService {
         job.metadata.common.process_attempt_no = 0;
 
         tracing::debug!(
-        job_id = ?id,
-        retry_count = job.metadata.common.process_retry_attempt_no,
-        "Incrementing process retry attempt counter"
-    );
+            job_id = ?id,
+            retry_count = job.metadata.common.process_retry_attempt_no,
+            "Incrementing process retry attempt counter"
+        );
 
         // Update job status and metadata to PendingRetry before processing
         config
             .database()
             .update_job(
                 &job,
-                JobItemUpdates::new().update_status(JobStatus::PendingRetry).update_metadata(job.metadata.clone()).build(),
+                JobItemUpdates::new()
+                    .update_status(JobStatus::PendingRetry)
+                    .update_metadata(job.metadata.clone())
+                    .build(),
             )
             .await
             .map_err(|e| {
@@ -598,16 +599,15 @@ impl JobHandlerService {
         })?;
 
         tracing::info!(
-        log_type = "completed",
-        category = "general",
-        function_type = "retry_job",
-        block_no = %internal_id,
-        "Successfully queued job for retry"
-    );
+            log_type = "completed",
+            category = "general",
+            function_type = "retry_job",
+            block_no = %internal_id,
+            "Successfully queued job for retry"
+        );
 
         Ok(())
     }
-
 
     fn register_block_gauge(
         job_type: JobType,

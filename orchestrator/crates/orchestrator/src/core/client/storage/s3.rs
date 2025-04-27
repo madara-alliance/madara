@@ -11,6 +11,7 @@ use std::sync::Arc;
 pub struct AWSS3 {
     pub(crate) client: Arc<Client>,
     bucket_name: Option<String>,
+    #[allow(dead_code)]
     region: Option<String>,
 }
 
@@ -32,11 +33,6 @@ impl AWSS3 {
             region: s3_config.bucket_location_constraint.clone(),
         })
     }
-}
-
-pub struct S3BucketSetupResult {
-    pub name: String,
-    pub location: Option<String>,
 }
 
 #[async_trait]

@@ -7,7 +7,6 @@ pub mod service;
 pub mod settlement;
 pub mod snos;
 
-use crate::cli::alert::aws_sns::AWSSNSCliArgs;
 use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::{RunCmd, SetupCmd};
 use crate::OrchestratorError;
@@ -45,6 +44,35 @@ pub struct CronArgs {
     pub trigger_policy_name: String,
 }
 
+/// Miscellaneous arguments
+#[derive(Debug, Clone)]
+pub struct MiscellaneousArgs {
+    pub poll_interval: u64,
+    pub timeout: u64,
+}
+
+/// NOTE: The following implementations are used to convert the command line arguments
+/// to the respective argument structs. These implementations are used to validate the command line arguments
+/// and convert them to the respective argument structs.
+/// Since we have only one Cloud Provider (AWS) for now, we are not using the provider-based implementation.
+/// e.g : I like how we are handling `match (run_cmd.sharp_args.sharp, run_cmd.atlantic_args.atlantic)`
+
+impl TryFrom<SetupCmd> for MiscellaneousArgs {
+    type Error = OrchestratorError;
+    fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
+        Ok(Self {
+            timeout: setup_cmd
+                .timeout
+                .clone()
+                .ok_or_else(|| OrchestratorError::SetupCommandError("Timeout is required".to_string()))?,
+            poll_interval: setup_cmd
+                .poll_interval
+                .clone()
+                .ok_or_else(|| OrchestratorError::SetupCommandError("Poll interval is required".to_string()))?,
+        })
+    }
+}
+
 impl TryFrom<RunCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
@@ -75,15 +103,6 @@ impl TryFrom<SetupCmd> for StorageArgs {
                     .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
             ),
             bucket_location_constraint: setup_cmd.aws_s3_args.bucket_location_constraint,
-        })
-    }
-}
-
-impl TryFrom<AWSSNSCliArgs> for AlertArgs {
-    type Error = OrchestratorError;
-    fn try_from(args: AWSSNSCliArgs) -> Result<Self, Self::Error> {
-        Ok(Self {
-            endpoint: args.sns_arn.ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?,
         })
     }
 }

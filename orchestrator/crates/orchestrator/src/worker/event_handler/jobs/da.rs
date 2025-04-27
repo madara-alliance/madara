@@ -54,8 +54,8 @@ impl DAJobHandler {
             state_update.nonces.iter().map(|item| item.contract_address),
             state_update.deployed_contracts.iter().map(|item| item.address),
         )
-            .filter(|address| !existing_storage.contains(address))
-            .collect();
+        .filter(|address| !existing_storage.contains(address))
+        .collect();
 
         // Add new storage diffs in batch
         state_update.storage_diffs.extend(
@@ -418,5 +418,318 @@ impl JobHandlerTrait for DAJobHandler {
     }
     fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
         None
+    }
+}
+
+#[cfg(test)]
+pub mod test {
+    use std::collections::HashSet;
+    use std::fs;
+    use std::fs::File;
+    use std::io::Read;
+
+    use crate::worker::event_handler::jobs::da::DAJobHandler;
+    use ::serde::{Deserialize, Serialize};
+    use color_eyre::Result;
+    use httpmock::prelude::*;
+    use majin_blob_core::blob;
+    use majin_blob_types::serde;
+    use orchestrator_da_client_interface::MockDaClient;
+    use rstest::rstest;
+    use serde_json::json;
+    use starknet::core::types::{
+        ContractStorageDiffItem, DeployedContractItem, Felt, NonceUpdate, StateDiff, StateUpdate, StorageEntry,
+    };
+    use starknet::providers::jsonrpc::HttpTransport;
+    use starknet::providers::JsonRpcClient;
+    use url::Url;
+
+    /// Tests `da_word` function with various inputs for class flag, new nonce, and number of
+    /// changes. Verifies that `da_word` produces the correct Felt based on the provided
+    /// parameters. Uses test cases with different combinations of inputs and expected output
+    /// strings. Asserts the function's correctness by comparing the computed and expected
+    /// Felts.
+    #[rstest]
+    #[case(false, 1, 1, "18446744073709551617")]
+    #[case(false, 1, 0, "18446744073709551616")]
+    #[case(false, 0, 6, "6")]
+    #[case(true, 1, 0, "340282366920938463481821351505477763072")]
+    fn test_da_word(
+        #[case] class_flag: bool,
+        #[case] new_nonce: u64,
+        #[case] num_changes: u64,
+        #[case] expected: String,
+    ) {
+        let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
+        let da_word = DAJobHandler::da_word(class_flag, new_nonce, num_changes).expect("Failed to create DA word");
+        let expected = Felt::from_dec_str(expected.as_str()).unwrap();
+        assert_eq!(da_word, expected);
+    }
+
+    /// Tests `state_update_to_blob_data` conversion with different state update files and block
+    /// numbers. Mocks DA client and storage client interactions for the test environment.
+    /// Compares the generated blob data against expected values to ensure correctness.
+    /// Verifies the data integrity by checking that the parsed state diffs match the expected
+    /// diffs.
+    #[rstest]
+    #[case(
+        631861,
+        "src/tests/jobs/da_job/test_data/state_update/631861.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/631861.txt",
+        "src/tests/jobs/da_job/test_data/nonces/631861.txt"
+    )]
+    #[case(
+        638353,
+        "src/tests/jobs/da_job/test_data/state_update/638353.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/638353.txt",
+        "src/tests/jobs/da_job/test_data/nonces/638353.txt"
+    )]
+    #[case(
+        640641,
+        "src/tests/jobs/da_job/test_data/state_update/640641.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/640641.txt",
+        "src/tests/jobs/da_job/test_data/nonces/640641.txt"
+    )]
+    #[case(
+        671070,
+        "src/tests/jobs/da_job/test_data/state_update/671070.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/671070.txt",
+        "src/tests/jobs/da_job/test_data/nonces/671070.txt"
+    )]
+    // Block from pragma madara and orch test run. Here we faced an issue where our
+    // blob building logic was not able to take the contract addresses from
+    // `deployed_contracts` field in state diff from state update. This test case
+    // was added after the fix
+    #[case(
+        178,
+        "src/tests/jobs/da_job/test_data/state_update/178.txt",
+        "src/tests/jobs/da_job/test_data/test_blob/178.txt",
+        "src/tests/jobs/da_job/test_data/nonces/178.txt"
+    )]
+    #[tokio::test]
+    async fn test_state_update_to_blob_data(
+        #[case] block_no: u64,
+        #[case] state_update_file_path: &str,
+        #[case] file_path: &str,
+        #[case] nonce_file_path: &str,
+    ) {
+        use crate::tests::config::TestConfigBuilder;
+
+        let server = MockServer::start();
+        let mut da_client = MockDaClient::new();
+
+        // Mocking DA client calls
+        da_client.expect_max_blob_per_txn().with().returning(|| 6);
+        da_client.expect_max_bytes_per_blob().with().returning(|| 131072);
+
+        // Mocking storage client
+        let provider = JsonRpcClient::new(HttpTransport::new(
+            Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
+        ));
+
+        // mock block number (madara) : 5
+        let services = TestConfigBuilder::new()
+            .configure_starknet_client(provider.into())
+            .configure_da_client(da_client.into())
+            .build()
+            .await;
+
+        get_nonce_attached(&server, nonce_file_path);
+
+        let state_update = read_state_update_from_file(state_update_file_path).expect("issue while reading");
+        let blob_data = DAJobHandler::state_update_to_blob_data(block_no, state_update, services.config)
+            .await
+            .expect("issue while converting state update to blob data");
+        let blob_data_biguint = DAJobHandler::convert_to_biguint(blob_data);
+
+        let original_blob_data = serde::parse_file_to_blob_data(file_path);
+        // converting the data to it's original format
+        let recovered_blob_data = blob::recover(original_blob_data.clone());
+
+        assert_eq!(blob_data_biguint, recovered_blob_data);
+    }
+
+    /// Tests the `fft_transformation` function with various test blob files.
+    /// Verifies the correctness of FFT and IFFT transformations by ensuring round-trip consistency.
+    /// Parses the original blob data, recovers it using IFFT, and re-applies FFT.
+    /// Asserts that the transformed data matches the original pre-IFFT data, ensuring integrity.
+    #[rstest]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/638353.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/631861.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/639404.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640641.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640644.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640646.txt")]
+    #[case("src/tests/jobs/da_job/test_data/test_blob/640647.txt")]
+    fn test_fft_transformation(#[case] file_to_check: &str) {
+        // parsing the blob hex to the bigUints
+
+        let original_blob_data = serde::parse_file_to_blob_data(file_to_check);
+        // converting the data to its original format
+        let ifft_blob_data = blob::recover(original_blob_data.clone());
+        // applying the fft function again on the original format
+        let fft_blob_data =
+            DAJobHandler::fft_transformation(ifft_blob_data).expect("FFT transformation failed during test");
+
+        // ideally the data after fft transformation and the data before ifft should be same.
+        assert_eq!(fft_blob_data, original_blob_data);
+    }
+
+    /// Tests the serialization and deserialization process using bincode.
+    /// Serializes a nested vector of integers and then deserializes it back.
+    /// Verifies that the original data matches the deserialized data.
+    /// Ensures the integrity and correctness of bincode's (de)serialization.
+    #[rstest]
+    fn test_bincode() {
+        let data = vec![vec![1, 2], vec![3, 4]];
+
+        let serialize_data = bincode::serialize(&data).unwrap();
+        let deserialize_data: Vec<Vec<u8>> = bincode::deserialize(&serialize_data).unwrap();
+
+        assert_eq!(data, deserialize_data);
+    }
+
+    #[rstest]
+    #[case::empty_case(vec![], vec![], vec![], 0)]
+    #[case::only_nonces(
+        vec![(Felt::from(1), Felt::from(10)), (Felt::from(2), Felt::from(20))],
+        vec![],
+        vec![],
+        2
+    )]
+    #[case::only_deployed(
+        vec![],
+        vec![],
+        vec![(Felt::from(1), vec![1]), (Felt::from(2), vec![2])],
+        2
+    )]
+    #[case::overlapping_addresses(
+        vec![(Felt::from(1), Felt::from(10))],
+        vec![(Felt::from(1), vec![(Felt::from(1), Felt::from(100))])],
+        vec![(Felt::from(1), vec![1])],
+        1
+    )]
+    #[case::duplicate_addresses(
+        vec![(Felt::from(1), Felt::from(10)), (Felt::from(1), Felt::from(20))],
+        vec![],
+        vec![(Felt::from(1), vec![1]), (Felt::from(1), vec![2])],
+        1
+    )]
+    fn test_refactor_state_update(
+        #[case] nonces: Vec<(Felt, Felt)>,
+        #[case] storage_diffs: Vec<(Felt, Vec<(Felt, Felt)>)>,
+        #[case] deployed_contracts: Vec<(Felt, Vec<u8>)>,
+        #[case] expected_storage_count: usize,
+    ) {
+        let mut state_diff = create_state_diff(nonces, storage_diffs.clone(), deployed_contracts);
+        let initial_storage = state_diff.storage_diffs.clone();
+
+        DAJobHandler::refactor_state_update(&mut state_diff);
+
+        assert!(verify_addresses_have_storage_diffs(&state_diff, &initial_storage));
+        verify_unique_addresses(&state_diff, expected_storage_count);
+    }
+
+    pub(crate) fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {
+        // let file_path = format!("state_update_block_no_{}.txt", block_no);
+        let mut file = File::open(file_path)?;
+        let mut json = String::new();
+        file.read_to_string(&mut json)?;
+        let state_update: StateUpdate = serde_json::from_str(&json)?;
+        Ok(state_update)
+    }
+
+    #[derive(Serialize, Deserialize, Debug)]
+    struct NonceAddress {
+        nonce: String,
+        address: String,
+    }
+
+    pub fn get_nonce_attached(server: &MockServer, file_path: &str) {
+        // Read the file
+        let file_content = fs::read_to_string(file_path).expect("Unable to read file");
+
+        // Parse the JSON content into a vector of NonceAddress
+        let nonce_addresses: Vec<NonceAddress> =
+            serde_json::from_str(&file_content).expect("JSON was not well-formatted");
+
+        // Set up mocks for each entry
+        for entry in nonce_addresses {
+            let address = entry.address.clone();
+            let nonce = entry.nonce.clone();
+            let response = json!({ "id": 1,"jsonrpc":"2.0","result": nonce });
+            let field_element =
+                Felt::from_dec_str(&address).expect("issue while converting the hex to field").to_bytes_be();
+            let hex_field_element = vec_u8_to_hex_string(&field_element);
+
+            server.mock(|when, then| {
+                when.path("/").body_includes("starknet_getNonce").body_includes(hex_field_element);
+                then.status(200).body(serde_json::to_vec(&response).unwrap());
+            });
+        }
+    }
+
+    fn vec_u8_to_hex_string(data: &[u8]) -> String {
+        let hex_chars: Vec<String> = data.iter().map(|byte| format!("{:02x}", byte)).collect();
+
+        let mut new_hex_chars = hex_chars.join("");
+        new_hex_chars = new_hex_chars.trim_start_matches('0').to_string();
+        if new_hex_chars.is_empty() {
+            "0x0".to_string()
+        } else {
+            format!("0x{}", new_hex_chars)
+        }
+    }
+
+    fn create_state_diff(
+        nonces: Vec<(Felt, Felt)>,
+        storage_diffs: Vec<(Felt, Vec<(Felt, Felt)>)>,
+        deployed_contracts: Vec<(Felt, Vec<u8>)>,
+    ) -> StateDiff {
+        StateDiff {
+            nonces: nonces.into_iter().map(|(addr, nonce)| NonceUpdate { contract_address: addr, nonce }).collect(),
+            storage_diffs: storage_diffs
+                .into_iter()
+                .map(|(addr, entries)| ContractStorageDiffItem {
+                    address: addr,
+                    storage_entries: entries.into_iter().map(|(key, value)| StorageEntry { key, value }).collect(),
+                })
+                .collect(),
+            deprecated_declared_classes: vec![],
+            declared_classes: vec![],
+            deployed_contracts: deployed_contracts
+                .into_iter()
+                .map(|(addr, _class_hash)| DeployedContractItem { address: addr, class_hash: Default::default() })
+                .collect(),
+            replaced_classes: vec![],
+        }
+    }
+
+    fn verify_unique_addresses(state_diff: &StateDiff, expected_count: usize) {
+        let unique_addresses: HashSet<_> = state_diff.storage_diffs.iter().map(|item| &item.address).collect();
+
+        assert_eq!(unique_addresses.len(), state_diff.storage_diffs.len(), "Storage diffs contain duplicate addresses");
+        assert_eq!(unique_addresses.len(), expected_count, "Unexpected number of storage diffs");
+    }
+
+    fn verify_addresses_have_storage_diffs(
+        state_diff: &StateDiff,
+        initial_storage: &Vec<ContractStorageDiffItem>,
+    ) -> bool {
+        for orig_storage in initial_storage {
+            if let Some(current_storage) =
+                state_diff.storage_diffs.iter().find(|item| item.address == orig_storage.address)
+            {
+                assert_eq!(
+                    orig_storage.storage_entries, current_storage.storage_entries,
+                    "Storage entries changed unexpectedly"
+                );
+            }
+        }
+
+        let storage_addresses: HashSet<_> = state_diff.storage_diffs.iter().map(|item| &item.address).collect();
+
+        state_diff.nonces.iter().all(|item| storage_addresses.contains(&item.contract_address))
+            && state_diff.deployed_contracts.iter().all(|item| storage_addresses.contains(&item.address))
     }
 }

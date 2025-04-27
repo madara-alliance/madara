@@ -3,11 +3,13 @@ use crate::worker::event_handler::jobs::{
     da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler,
     JobHandlerTrait,
 };
+use async_trait::async_trait;
+use mockall::automock;
 use std::sync::Arc;
 
-pub struct JobFactory;
-
-impl JobFactory {
+#[automock]
+#[async_trait]
+pub trait JobFactoryTrait {
     /// To get the job handler
     //         +-------------------+
     //         |                   |
@@ -49,7 +51,7 @@ impl JobFactory {
     /// - We return this mocked job whenever a function calls `get_job_handler`
     /// - Making it an Arc allows us to return the same MockJob in multiple calls to
     ///   `get_job_handler`. This is needed because `MockJob` doesn't implement Clone
-    pub async fn get_job_handler(job_type: &JobType) -> Arc<Box<dyn JobHandlerTrait>> {
+    async fn get_job_handler(job_type: &JobType) -> Arc<Box<dyn JobHandlerTrait>> {
         let job: Box<dyn JobHandlerTrait> = match job_type {
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::SnosRun => Box::new(SnosJobHandler),
@@ -61,3 +63,7 @@ impl JobFactory {
         Arc::new(job)
     }
 }
+
+pub struct JobFactory;
+
+impl JobFactoryTrait for JobFactory {}

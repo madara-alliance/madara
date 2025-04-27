@@ -1,6 +1,15 @@
 use std::error::Error;
 use std::sync::Arc;
 
+use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::queue::MockQueueClient;
+use crate::tests::config::TestConfigBuilder;
+use crate::tests::workers::utils::get_job_item_mock_by_id;
+use crate::types::jobs::types::JobType;
+use crate::types::queue::QueueType;
+use crate::worker::event_handler::factory::MockJobFactoryTrait;
+use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
+use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use orchestrator_da_client_interface::MockDaClient;
@@ -11,32 +20,20 @@ use starknet::providers::JsonRpcClient;
 use url::Url;
 use uuid::Uuid;
 
-use crate::database::MockDatabase;
-use crate::jobs::job_handler_factory::mock_factory;
-use crate::jobs::types::JobType;
-use crate::jobs::{Job, MockJob};
-use crate::queue::MockQueueProvider;
-use crate::tests::config::TestConfigBuilder;
-use crate::tests::workers::utils::get_job_item_mock_by_id;
-use crate::workers::snos::SnosWorker;
-use crate::workers::Worker;
-
 #[rstest]
 #[case(false)]
 #[case(true)]
 #[tokio::test]
 async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
-    use crate::queue::QueueType;
-
     let server = MockServer::start();
     let da_client = MockDaClient::new();
-    let mut db = MockDatabase::new();
-    let mut queue = MockQueueProvider::new();
+    let mut db = MockDatabaseClient::new();
+    let mut queue = MockQueueClient::new();
     let start_job_index;
     let block;
 
     // Mocking the get_job_handler function.
-    let mut job_handler = MockJob::new();
+    let mut job_handler = MockJobHandlerTrait::new();
 
     // Mocking db function expectations
     if !db_val {
@@ -76,22 +73,22 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
 
         let job_item = get_job_item_mock_by_id(i.clone().to_string(), uuid);
         let job_item_cloned = job_item.clone();
-        job_handler.expect_create_job().returning(move |_, _, _| Ok(job_item_cloned.clone()));
+        job_handler.expect_create_job().returning(move |_, _| Ok(job_item_cloned.clone()));
 
         // creating jobs call expectations
-        db.expect_create_job_item()
+        db.expect_create_job()
             .withf(move |item| item.internal_id == i.clone().to_string())
             .returning(move |_| Ok(job_item.clone()));
     }
 
-    let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
-    let ctx = mock_factory::get_job_handler_context();
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
+    let ctx = MockJobFactoryTrait::get_job_handler_context();
     // Mocking the `get_job_handler` call in create_job function.
     ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // Queue function call simulations
     queue
-        .expect_send_message_to_queue()
+        .expect_send_message()
         .returning(|_, _, _| Ok(()))
         .withf(|queue, _payload, _delay| *queue == QueueType::SnosJobProcessing);
 
@@ -117,8 +114,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
         then.status(200).body(serde_json::to_vec(&response).unwrap());
     });
 
-    let snos_worker = SnosWorker {};
-    snos_worker.run_worker(services.config).await?;
+    crate::worker::event_handler::triggers::snos::SnosJobTrigger.run_worker(services.config).await?;
 
     rpc_block_call_mock.assert();
 

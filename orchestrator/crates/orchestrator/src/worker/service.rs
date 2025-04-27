@@ -5,7 +5,7 @@ use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{QueueNameForJobType, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::factory::JobFactory;
+use crate::worker::event_handler::factory::{JobFactory, JobFactoryTrait};
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
@@ -211,11 +211,10 @@ impl JobService {
             &job.job_type,
             Some(Duration::from_secs(job_handler.verification_polling_delay_seconds())),
         )
-            .await?;
+        .await?;
 
         Ok(())
     }
-
 
     /// Moves a job to the Failed state with the provided reason
     ///
@@ -252,17 +251,20 @@ impl JobService {
 
         match config
             .database()
-            .update_job(job, JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build())
+            .update_job(
+                job,
+                JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build(),
+            )
             .await
         {
             Ok(_) => {
                 tracing::info!(
-                log_type = "completed",
-                category = "general",
-                function_type = "handle_job_failure",
-                block_no = %internal_id,
-                "General handle job failure completed for block"
-            );
+                    log_type = "completed",
+                    category = "general",
+                    function_type = "handle_job_failure",
+                    block_no = %internal_id,
+                    "General handle job failure completed for block"
+                );
                 ORCHESTRATOR_METRICS
                     .failed_jobs
                     .add(1.0, &[KeyValue::new("operation_job_type", format!("{:?}", job.job_type))]);

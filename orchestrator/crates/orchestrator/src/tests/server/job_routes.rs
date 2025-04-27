@@ -11,15 +11,16 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
 
-use crate::config::Config;
-use crate::jobs::job_handler_factory::mock_factory;
-use crate::jobs::types::{JobStatus, JobType};
-use crate::jobs::{Job, MockJob};
-use crate::queue::init_consumers;
-use crate::queue::job_queue::{JobQueueMessage, QueueNameForJobType};
-use crate::routes::types::ApiResponse;
+use crate::core::config::Config;
+use crate::server::types::ApiResponse;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::queue::QueueNameForJobType;
+use crate::worker::event_handler::factory::MockJobFactoryTrait;
+use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
+use crate::worker::initialize_worker;
+use crate::worker::parser::job_queue_message::JobQueueMessage;
 
 #[fixture]
 async fn setup_trigger() -> (SocketAddr, Arc<Config>) {
@@ -99,11 +100,11 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     let job_id = job_item.clone().id;
 
     // Set up mock job handler
-    let mut job_handler = MockJob::new();
+    let mut job_handler = MockJobHandlerTrait::new();
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    let job_handler: Arc<Box<dyn Job>> = Arc::new(Box::new(job_handler));
+    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
 
-    let ctx = mock_factory::get_job_handler_context();
+    let ctx = MockJobFactoryTrait::get_job_handler_context();
     ctx.expect().with(eq(job_type.clone())).times(1).returning(move |_| Arc::clone(&job_handler));
 
     let client = hyper::Client::new();
@@ -210,5 +211,5 @@ async fn test_trigger_retry_job_not_allowed(
 #[tokio::test]
 async fn test_init_consumer() {
     let services = TestConfigBuilder::new().build().await;
-    assert!(init_consumers(services.config).await.is_ok());
+    assert!(initialize_worker(services.config).await.is_ok());
 }

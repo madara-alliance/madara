@@ -8,8 +8,3 @@ pub struct SNOSCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_RPC_FOR_SNOS", long)]
     pub rpc_for_snos: Url,
 }
-
-#[derive(Debug, Clone)]
-pub struct SNOSParams {
-    pub rpc_for_snos: Url,
-}

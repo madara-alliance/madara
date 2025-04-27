@@ -41,7 +41,7 @@ pub struct CommonMetadata {
 /// # Field Management
 /// - Worker-initialized fields: block_number and blob_data_path
 /// - Job-populated fields: tx_hash (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct DaMetadata {
     // Worker-initialized fields
     /// Block number for data availability
@@ -67,7 +67,7 @@ pub enum ProvingInputType {
 ///
 /// # Field Management
 /// All fields are initialized by the worker during job creation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProvingMetadata {
     /// Block number to prove
     pub block_number: u64,
@@ -80,6 +80,7 @@ pub struct ProvingMetadata {
     /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
     /// in the provided storage.
     pub download_proof: Option<String>,
+    pub n_steps: Option<usize>,
 }
 
 /// Metadata specific to SNOS (Starknet OS) jobs.
@@ -87,7 +88,7 @@ pub struct ProvingMetadata {
 /// # Field Management
 /// - Worker-initialized fields: block_number, full_output, and path configurations
 /// - Job-populated fields: snos_fact (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct SnosMetadata {
     // Worker-initialized fields
     /// Block number to process
@@ -104,6 +105,8 @@ pub struct SnosMetadata {
     // Job-populated fields
     /// SNOS fact generated during processing
     pub snos_fact: Option<String>,
+    /// SNOS total steps taken
+    pub snos_n_steps: Option<usize>,
 }
 
 /// Metadata specific to state update jobs.
@@ -111,7 +114,7 @@ pub struct SnosMetadata {
 /// # Field Management
 /// - Worker-initialized fields: blocks and paths configurations
 /// - Job-populated fields: last_failed_block_no and tx_hashes (during processing)
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
     /// Block numbers that need to be settled

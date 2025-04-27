@@ -51,9 +51,9 @@ where
 
         write!(writer, "{}{:?}{} ", id_color, std::thread::current().id(), reset)?;
 
-        if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
-            write!(writer, "{}{}:{}:{} ", file_color, file, line, reset)?;
-        }
+        // if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
+        //     write!(writer, "{}{}:{}:{} ", file_color, file, line, reset)?;
+        // }
 
         write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
 

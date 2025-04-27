@@ -4,7 +4,7 @@ use url::Url;
 
 #[derive(Debug, Clone)]
 pub struct OTELConfig {
-    pub endpoint: Url,
+    pub endpoint: Option<Url>,
     pub service_name: String,
 }
 
@@ -12,10 +12,7 @@ pub struct OTELConfig {
 impl TryFrom<InstrumentationCliArgs> for OTELConfig {
     type Error = OrchestratorError;
     fn try_from(args: InstrumentationCliArgs) -> Result<Self, Self::Error> {
-        let endpoint = args
-            .otel_collector_endpoint
-            .clone()
-            .ok_or_else(|| OrchestratorError::FromDownstreamError("otel_collector_endpoint is required".to_string()))?;
+        let endpoint = args.otel_collector_endpoint.clone();
         let service_name = args
             .otel_service_name
             .clone()

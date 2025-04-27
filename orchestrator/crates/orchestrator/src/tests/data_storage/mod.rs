@@ -23,10 +23,10 @@ async fn test_put_and_get_data_s3() -> color_eyre::Result<()> {
     let json_bytes = serde_json::to_vec(&mock_data)?;
     let key = "test_data.txt";
 
-    // putting test data on key : "test_data.txt"
+    // putting test data on a key: "test_data.txt"
     s3_client.put_data(Bytes::from(json_bytes), key).await.expect("Unable to put data into the bucket.");
 
-    // getting the data from key : "test_data.txt"
+    // getting the data from a key: "test_data.txt"
     let data = s3_client.get_data(key).await.expect("Unable to get the data from the bucket.");
     let received_json: serde_json::Value = serde_json::from_slice(&data)?;
 

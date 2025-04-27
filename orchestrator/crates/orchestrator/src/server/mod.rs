@@ -36,7 +36,7 @@ pub async fn setup_server(config: Arc<Config>) -> OrchestratorResult<SocketAddr>
     Ok(api_server_url)
 }
 
-async fn get_server_url(server_params: &ServerParams) -> (SocketAddr, tokio::net::TcpListener) {
+pub(crate) async fn get_server_url(server_params: &ServerParams) -> (SocketAddr, tokio::net::TcpListener) {
     let address = format!("{}:{}", server_params.host, server_params.port);
     let listener = tokio::net::TcpListener::bind(address.clone()).await.expect("Failed to get listener");
     let api_server_url = listener.local_addr().expect("Unable to bind address to listener.");

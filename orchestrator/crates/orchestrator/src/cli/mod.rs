@@ -118,12 +118,15 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
 
+    #[clap(flatten)]
+    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
+
     // Settlement Layer
     #[clap(flatten)]
-    pub ethereum_settle_args: settlement::ethereum::EthereumSettlementCliArgs,
+    pub ethereum_settlement_args: settlement::ethereum::EthereumSettlementCliArgs,
 
     #[clap(flatten)]
-    pub starknet_settle_args: settlement::starknet::StarknetSettlementCliArgs,
+    pub starknet_settlement_args: settlement::starknet::StarknetSettlementCliArgs,
 
     // Prover
     #[clap(flatten)]
@@ -131,9 +134,6 @@ pub struct RunCmd {
 
     #[clap(flatten)]
     pub atlantic_args: prover::atlantic::AtlanticCliArgs,
-
-    #[clap(flatten)]
-    pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
 
     // SNOS
     #[clap(flatten)]
@@ -148,7 +148,6 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub instrumentation_args: instrumentation::InstrumentationCliArgs,
 }
-
 
 #[derive(Parser, Debug, Clone)]
 #[command(author, version, about, long_about = None)]
@@ -208,4 +207,12 @@ pub struct SetupCmd {
     // Cron
     #[clap(flatten)]
     pub aws_event_bridge_args: AWSEventBridgeCliArgs,
+
+    // Miscellaneous
+    #[arg(env = "MADARA_ORCHESTRATOR_SETUP_TIMEOUT", long, default_value = Some("300"))]
+    pub timeout: Option<u64>,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_SETUP_RESOURCE_POLL_INTERVAL", long, default_value = Some("5")
+    )]
+    pub poll_interval: Option<u64>,
 }

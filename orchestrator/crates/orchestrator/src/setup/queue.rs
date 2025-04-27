@@ -3,14 +3,14 @@ use lazy_static::lazy_static;
 
 #[derive(Clone)]
 pub struct DlqConfig {
-    pub max_receive_count: i32,
+    pub max_receive_count: u32,
     pub dlq_name: QueueType,
 }
 
 #[derive(Clone)]
 pub struct QueueConfig {
     pub name: QueueType,
-    pub visibility_timeout: i32,
+    pub visibility_timeout: u32,
     pub dlq_config: Option<DlqConfig>,
 }
 

@@ -33,7 +33,7 @@ use crate::worker::service::JobService;
 /// ```
 pub async fn wait_until_ready<F, T, E>(mut f: F, timeout_secs: u64) -> Result<T, E>
 where
-    F: FnMut() -> Pin<Box<dyn Future<Output=Result<T, E>> + Send>>,
+    F: FnMut() -> Pin<Box<dyn Future<Output = Result<T, E>> + Send>>,
 {
     let start = tokio::time::Instant::now();
     let timeout = Duration::from_secs(timeout_secs);
@@ -49,10 +49,11 @@ where
     }
 }
 
+#[derive(Default)]
 pub struct ProcessingLocks {
-    pub snos_job_processing_lock: Arc<JobProcessingState>,
+    pub snos_job_processing_lock: Option<Arc<JobProcessingState>>,
+    pub proving_job_processing_lock: Option<Arc<JobProcessingState>>,
 }
-
 
 /// JobProcessingState is a struct that holds the state of the job processing lock
 /// It is used to limit a job been get dupplicated in multiple place

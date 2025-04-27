@@ -2,121 +2,163 @@ use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{
-    EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator,
+    EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator,
     SQSResourceCreator,
 };
-use crate::setup::wrapper::ResourceWrapper;
+use crate::types::params::MiscellaneousArgs;
 use crate::{
-    core::client::storage::sss::AWSS3,
+    core::client::storage::s3::AWSS3,
     core::client::SQS,
     core::cloud::CloudProvider,
     types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs},
-    OrchestratorError, OrchestratorResult,
+    OrchestratorResult,
 };
-use std::collections::HashMap;
 use std::sync::Arc;
-use tracing::info;
+use std::time::Duration;
+use tracing::{debug, info};
 
 /// ResourceFactory is responsible for creating resources based on their type
 pub struct ResourceFactory {
-    creators: HashMap<ResourceType, Box<dyn ResourceCreator>>,
+    // Vec to maintain order of insertion
+    ordered_types: Vec<(ResourceType, Box<dyn ResourceCreator>)>,
     cloud_provider: Arc<CloudProvider>,
     queue_params: QueueArgs,
     cron_params: CronArgs,
     storage_params: StorageArgs,
     alert_params: AlertArgs,
+    miscellaneous_params: MiscellaneousArgs,
 }
 
 impl ResourceFactory {
-    /// new_with_gcs - Create a new ResourceFactory with default resource creators for Orchestrator
-    /// with GCS Cloud Provider
-    #[allow(dead_code)]
-    pub fn new_with_gcs(
-        cloud_provider: Arc<CloudProvider>,
-        queue_params: QueueArgs,
-        cron_params: CronArgs,
-        storage_params: StorageArgs,
-        alert_params: AlertArgs,
-    ) -> Self {
-        let creators = HashMap::new();
-        ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
-    }
-
     /// new_with_aws - Create a new ResourceFactory with default resource creators for Orchestrator
     /// with AWS Cloud Provider
+    ///
+    /// # Arguments
+    /// * `cloud_provider` - The cloud provider to use for resource creation
+    /// * `queue_params` - The parameters for the queue resource
+    /// * `cron_params` - The parameters for the cron resource
+    /// * `storage_params` - The parameters for the storage resource
+    /// * `alert_params` - The parameters for the alert resource
+    ///
+    /// # Returns
+    /// * `ResourceFactory` - A new instance of ResourceFactory
+    ///
     pub fn new_with_aws(
         cloud_provider: Arc<CloudProvider>,
         queue_params: QueueArgs,
         cron_params: CronArgs,
         storage_params: StorageArgs,
         alert_params: AlertArgs,
+        miscellaneous_params: MiscellaneousArgs,
     ) -> Self {
-        let mut creators = HashMap::new();
-        creators.insert(ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>);
-        creators.insert(ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>);
-        creators.insert(ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>);
-        // creators.insert(ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>);
+        let ordered_types = vec![
+            (ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>),
+        ];
 
-        ResourceFactory { creators, cloud_provider, queue_params, cron_params, storage_params, alert_params }
+        ResourceFactory {
+            ordered_types,
+            cloud_provider,
+            queue_params,
+            cron_params,
+            storage_params,
+            alert_params,
+            miscellaneous_params,
+        }
     }
 
+    /// setup_resource - Set up the resources in the factory
+    /// NOTE: this function length is a bit long, but it is necessary to maintain the order of resource creation
+    /// in the future, we can refactor this function to use a more generic approach when we add more cloud providers
+    /// TODO > Refactor this function to use a more generic approach when we add more cloud providers
     pub async fn setup_resource(&self) -> OrchestratorResult<()> {
-        for (resource_type, creator) in self.creators.iter() {
+        let mut resource_futures = Vec::new();
+        let is_queue_ready = Arc::new(tokio::sync::RwLock::new(false));
+        // Use ordered_types to maintain creation order
+        for (resource_type, creator) in self.ordered_types.iter() {
             info!(" ⏳ Setting up resource: {:?}", resource_type);
-            let mut resource = creator.create_resource(self.cloud_provider.clone()).await?;
-            match resource_type {
-                ResourceType::Storage => {
-                    let rs = resource.downcast_mut::<AWSS3>().unwrap();
-                    rs.setup(self.storage_params.clone()).await?;
+            let mut resource = creator.create_resource_client(self.cloud_provider.clone()).await?;
+            let is_queue_ready_clone = is_queue_ready.clone();
+
+            let storage_params = self.storage_params.clone();
+            let queue_params = self.queue_params.clone();
+            let alert_params = self.alert_params.clone();
+            let cron_params = self.cron_params.clone();
+            let resource_type = resource_type.clone();
+            let miscellaneous_params = self.miscellaneous_params.clone();
+
+            let resource_future = async move {
+                let result: OrchestratorResult<()> = async {
+                    match resource_type {
+                        ResourceType::Storage => {
+                            let rs = resource.downcast_mut::<AWSS3>().unwrap();
+                            rs.setup(storage_params.clone()).await?;
+                            rs.poll(storage_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
+                                .await;
+                            Ok(())
+                        }
+                        ResourceType::Queue => {
+                            let rs = resource.downcast_mut::<SQS>().unwrap();
+                            rs.setup(queue_params.clone()).await?;
+                            let queue_ready = rs
+                                .poll(queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
+                                .await;
+                            *is_queue_ready_clone.write().await = queue_ready;
+                            Ok(())
+                        }
+                        ResourceType::PubSub => {
+                            let start_time = std::time::Instant::now();
+                            let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
+                            let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
+
+                            while start_time.elapsed() < timeout_duration {
+                                if *is_queue_ready_clone.read().await {
+                                    info!(" ✅ Queue is ready, setting up SNS");
+                                    let rs = resource.downcast_mut::<SNS>().unwrap();
+                                    rs.setup(alert_params.clone()).await?;
+                                    rs.poll(
+                                        alert_params,
+                                        miscellaneous_params.poll_interval,
+                                        miscellaneous_params.timeout,
+                                    )
+                                    .await;
+                                    break;
+                                } else {
+                                    info!(
+                                        " Current Status of the Queue Creation is: {:?}",
+                                        *is_queue_ready_clone.read().await
+                                    );
+                                    info!(" ⏳ Waiting for queues to be ready before setting up cron");
+                                    tokio::time::sleep(poll_duration).await;
+                                }
+                            }
+                            Ok(())
+                        }
+                        ResourceType::EventBus => {
+                            let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
+                            rs.setup(cron_params).await?;
+                            Ok(())
+                        }
+                    }
                 }
-                ResourceType::Queue => {
-                    let rs = resource.downcast_mut::<SQS>().unwrap();
-                    rs.setup(self.queue_params.clone()).await?;
+                .await;
+
+                if let Err(ref e) = result {
+                    info!(" ❌ Resource setup failed for {:?}: {:?}", resource_type, e);
+                } else {
+                    info!(" ✅ Resource setup completed: {:?}", resource_type);
                 }
-                ResourceType::PubSub => {
-                    let rs = resource.downcast_mut::<SNS>().unwrap();
-                    rs.setup(self.alert_params.clone()).await?;
-                }
-                ResourceType::EventBus => {
-                    let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
-                    rs.setup(self.cron_params.clone()).await?;
-                }
-                _ => Err(OrchestratorError::UnknownResourceTypeError("Unknown".to_string()))?,
-            }
-            info!(" ✅ Resource setup completed: {:?}", resource_type);
+                result
+            };
+            resource_futures.push(resource_future);
+        }
+
+        let results = futures::future::join_all(resource_futures).await;
+        for result in results {
+            result?;
         }
         Ok(())
-    }
-
-    /// Register a new resource creator
-    pub fn register(&mut self, resource_type: ResourceType, creator: Box<dyn ResourceCreator>) {
-        self.creators.insert(resource_type, creator);
-    }
-
-    /// Create a resource of the specified type
-    pub async fn create_resource(
-        &self,
-        resource_type: ResourceType,
-        cloud_provider: Arc<CloudProvider>,
-    ) -> OrchestratorResult<ResourceWrapper> {
-        match self.creators.get(&resource_type) {
-            Some(creator) => creator.create_resource(cloud_provider).await,
-            None => Err(OrchestratorError::ResourceError(format!(
-                "No creator registered for resource type {:?}",
-                resource_type
-            ))),
-        }
-    }
-
-    /// Create a resource from a string type
-    pub async fn create_resource_from_str(
-        &self,
-        resource_type: &str,
-        cloud_provider: Arc<CloudProvider>,
-    ) -> OrchestratorResult<ResourceWrapper> {
-        match ResourceType::from_str(resource_type) {
-            Some(rt) => self.create_resource(rt, cloud_provider).await,
-            None => Err(OrchestratorError::ResourceError(format!("Unknown resource type: {}", resource_type))),
-        }
     }
 }

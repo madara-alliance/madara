@@ -1,7 +1,7 @@
 use crate::cli::SetupCmd;
 use crate::core::cloud::CloudProvider;
 use crate::setup::factory::ResourceFactory;
-use crate::types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs};
+use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, StorageArgs};
 use crate::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
 use tracing::{info, instrument};
@@ -23,9 +23,17 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let storage_params = StorageArgs::try_from(setup_cmd.clone())?;
     let alert_params = AlertArgs::try_from(setup_cmd.clone())?;
     let cron_params = CronArgs::try_from(setup_cmd.clone())?;
+    let miscellaneous_params = MiscellaneousArgs::try_from(setup_cmd.clone())?;
 
     let resources = match cloud_provider.clone().get_provider_name().as_str() {
-        "AWS" => ResourceFactory::new_with_aws(cloud_provider, queue_params, cron_params, storage_params, alert_params),
+        "AWS" => ResourceFactory::new_with_aws(
+            cloud_provider,
+            queue_params,
+            cron_params,
+            storage_params,
+            alert_params,
+            miscellaneous_params,
+        ),
         a => Err(OrchestratorError::InvalidCloudProviderError(a.to_string()))?,
     };
     resources.setup_resource().await?;

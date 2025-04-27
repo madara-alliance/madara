@@ -7,8 +7,7 @@ pub mod types;
 pub mod utils;
 pub mod worker;
 
-// pub mod tests;
+pub mod tests;
 
 // Re-export commonly used ite
 pub use error::{OrchestratorError, OrchestratorResult};
-

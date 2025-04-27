@@ -1,8 +1,8 @@
 // Client abstractions module - contains all client interface traits
 
 pub mod alert;
-pub mod event_bus;
 pub mod database;
+pub mod event_bus;
 pub mod queue;
 pub mod storage;
 
@@ -10,4 +10,4 @@ pub mod storage;
 pub use alert::{sns::SNS, AlertClient};
 pub use database::{mongodb::MongoDbClient, DatabaseClient};
 pub use queue::{sqs::SQS, QueueClient};
-pub use storage::{sss::AWSS3, StorageClient};
+pub use storage::{s3::AWSS3, StorageClient};

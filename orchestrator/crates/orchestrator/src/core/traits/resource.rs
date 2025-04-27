@@ -2,6 +2,7 @@ use super::super::cloud::CloudProvider;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 /// Resource trait
 ///
@@ -11,7 +12,6 @@ use std::sync::Arc;
 /// to work with a variety of resources without needing to know the specific details of each implementation.
 /// The trait is also used to define the interface for mocking the resource, allowing the Orchestrator to
 /// be tested in isolation without needing to set up a real resource.
-// #[automock] // TODO: uncomment this when automock is fixed
 #[async_trait]
 pub trait Resource: Send + Sync {
     type SetupResult: Send + Sync;
@@ -26,7 +26,40 @@ pub trait Resource: Send + Sync {
     where
         Self: Sized;
 
+    /// setup - Setup the resource
+    /// This function will check if the resource exists, if not create it.
+    /// This function will also create any dependent resources that are needed.
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
-    async fn check(&self, args: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult>;
-    async fn teardown(&self) -> OrchestratorResult<()>;
+    /// check - Check if the resource exists, check only for individual resources
+    async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
+    /// ready - Check if all the resource is created and ready to use
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
+    /// check - Check if the resource is in a valid state
+    /// This function will check if the resource is in a valid state.
+    /// This function will also check if the resource is in a valid state.
+    async fn poll(&self, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
+        let timeout_duration = Duration::from_secs(timeout);
+        let start_time = Instant::now();
+
+        while start_time.elapsed() < timeout_duration {
+            match self.is_ready_to_use(&args).await {
+                Ok(true) => return true,
+                Ok(false) => {
+                    tokio::time::sleep(Duration::from_secs(poll_interval)).await;
+                    continue;
+                }
+                Err(_) => {
+                    tokio::time::sleep(Duration::from_secs(poll_interval)).await;
+                    continue;
+                }
+            }
+        }
+        false
+    }
+
+    // /// teardown - Tear down the resource
+    // /// This function will delete the resource and all dependent resources.
+    // /// This function will also delete any dependent resources that are needed.
+    // /// THis is scope for future work
+    // async fn teardown(&self) -> OrchestratorResult<()>;
 }

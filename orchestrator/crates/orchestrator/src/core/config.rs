@@ -6,8 +6,9 @@ use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
-use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_settlement_client_interface::SettlementClient;
+
+use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_sharp_service::SharpProverService;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -20,12 +21,11 @@ use crate::types::params::database::DatabaseArgs;
 use crate::{
     cli::RunCmd,
     core::client::{
-        queue::QueueClient, storage::sss::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
+        queue::QueueClient, storage::s3::AWSS3, storage::StorageClient, AlertClient, DatabaseClient, MongoDbClient,
         SNS, SQS,
     },
     core::cloud::CloudProvider,
-    types::params::da::DAConfig
-    ,
+    types::params::da::DAConfig,
     types::params::prover::ProverConfig,
     types::params::service::{ServerParams, ServiceParams},
     types::params::settlement::SettlementConfig,
@@ -35,6 +35,7 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+#[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub snos_config: SNOSParams,
@@ -72,8 +73,34 @@ pub struct Config {
 }
 
 impl Config {
+    pub(crate) fn new(
+        params: ConfigParam,
+        madara_client: Arc<JsonRpcClient<HttpTransport>>,
+        database: Box<dyn DatabaseClient>,
+        storage: Box<dyn StorageClient>,
+        alerts: Box<dyn AlertClient>,
+        queue: Box<dyn QueueClient>,
+        prover_client: Box<dyn ProverClient>,
+        da_client: Box<dyn DaClient>,
+        processing_locks: ProcessingLocks,
+        settlement_client: Box<dyn SettlementClient>,
+    ) -> Self {
+        Self {
+            params,
+            madara_client,
+            database,
+            storage,
+            alerts,
+            queue,
+            prover_client,
+            da_client,
+            processing_locks,
+            settlement_client,
+        }
+    }
+
     /// new - create config from the run command
-    pub async fn new(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
+    pub async fn from_run_cmd(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
         let cloud_provider = CloudProvider::try_from(run_cmd.clone())?;
         let provider_config = Arc::new(cloud_provider);
 
@@ -95,10 +122,18 @@ impl Config {
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())?,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
-        let snos_processing_lock =
-            JobProcessingState::new(params.service_config.max_concurrent_snos_jobs.unwrap_or(1));
-        // TODO: not sure if this is correct way to lock across jobs
-        let processing_locks = ProcessingLocks { snos_job_processing_lock: Arc::new(snos_processing_lock) };
+
+        let mut processing_locks = ProcessingLocks::default();
+
+        if let Some(max_concurrent_snos_jobs) = params.service_config.max_concurrent_snos_jobs {
+            processing_locks.snos_job_processing_lock =
+                Some(Arc::new(JobProcessingState::new(max_concurrent_snos_jobs)));
+        }
+
+        if let Some(max_concurrent_proving_jobs) = params.service_config.max_concurrent_proving_jobs {
+            processing_locks.proving_job_processing_lock =
+                Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
+        }
 
         let database = Self::build_database_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
@@ -106,7 +141,7 @@ impl Config {
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(&prover_config);
+        let prover_client = Self::build_prover_service(&prover_config, &params);
         let da_client = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -124,13 +159,13 @@ impl Config {
         })
     }
 
-    async fn build_database_client(
+    pub(crate) async fn build_database_client(
         db_args: &DatabaseArgs,
-    ) -> OrchestratorResult<Box<dyn DatabaseClient + Send + Sync>> {
+    ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
         Ok(Box::new(MongoDbClient::create(db_args).await?))
     }
 
-    async fn build_storage_client(
+    pub(crate) async fn build_storage_client(
         storage_config: &StorageArgs,
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn StorageClient + Send + Sync>> {
@@ -138,7 +173,7 @@ impl Config {
         Ok(Box::new(AWSS3::create(storage_config, aws_config).await?))
     }
 
-    async fn build_alert_client(
+    pub(crate) async fn build_alert_client(
         alert_config: &AlertArgs,
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn AlertClient + Send + Sync>> {
@@ -146,7 +181,7 @@ impl Config {
         Ok(Box::new(SNS::create(alert_config, aws_config)))
     }
 
-    async fn build_queue_client(
+    pub(crate) async fn build_queue_client(
         queue_config: &QueueArgs,
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn QueueClient + Send + Sync>> {
@@ -154,14 +189,28 @@ impl Config {
         Ok(Box::new(SQS::create(queue_config, aws_config)?))
     }
 
-    fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
+    /// build_prover_service - Build the proving service based on the config
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `params` - The config parameters
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    pub(crate) fn build_prover_service(
+        prover_params: &ProverConfig,
+        params: &ConfigParam,
+    ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
-            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
+            ProverConfig::Sharp(sharp_params) => {
+                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
+            }
+            ProverConfig::Atlantic(atlantic_params) => {
+                Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
+            }
         }
     }
 
-    async fn build_da_client(da_params: &DAConfig) -> Box<dyn DaClient + Send + Sync> {
+    pub(crate) async fn build_da_client(da_params: &DAConfig) -> Box<dyn DaClient + Send + Sync> {
         match da_params {
             DAConfig::Ethereum(ethereum_da_params) => {
                 Box::new(EthereumDaClient::new_with_args(ethereum_da_params).await)
@@ -169,7 +218,7 @@ impl Config {
         }
     }
 
-    async fn build_settlement_client(
+    pub(crate) async fn build_settlement_client(
         settlement_params: &SettlementConfig,
     ) -> OrchestratorResult<Box<dyn SettlementClient + Send + Sync>> {
         match settlement_params {

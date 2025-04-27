@@ -14,7 +14,8 @@ pub enum SettlementConfig {
 impl TryFrom<RunCmd> for SettlementConfig {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        match (run_cmd.ethereum_settle_args.settle_on_ethereum, run_cmd.starknet_settle_args.settle_on_starknet) {
+        match (run_cmd.ethereum_settlement_args.settle_on_ethereum, run_cmd.starknet_settlement_args.settle_on_starknet)
+        {
             (true, true) => Err(OrchestratorError::SetupCommandError(
                 "Cannot use both Ethereum and Starknet settlement layers".to_string(),
             )),
@@ -23,13 +24,13 @@ impl TryFrom<RunCmd> for SettlementConfig {
             )),
             (true, false) => {
                 let l1_core_contract_address =
-                    Address::from_str(&run_cmd.ethereum_settle_args.l1_core_contract_address.clone().ok_or_else(|| {
-                        OrchestratorError::SetupCommandError("L1 core contract address is required".to_string())
-                    })?)?;
+                    Address::from_str(&run_cmd.ethereum_settlement_args.l1_core_contract_address.clone().ok_or_else(
+                        || OrchestratorError::SetupCommandError("L1 core contract address is required".to_string()),
+                    )?)?;
                 let ethereum_operator_address = Address::from_slice(
                     &hex::decode(
                         run_cmd
-                            .ethereum_settle_args
+                            .ethereum_settlement_args
                             .starknet_operator_address
                             .clone()
                             .ok_or_else(|| {
@@ -42,16 +43,16 @@ impl TryFrom<RunCmd> for SettlementConfig {
                                 OrchestratorError::SetupCommandError("Invalid Starknet operator address".to_string())
                             })?,
                     )
-                        .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
+                    .unwrap_or_else(|_| panic!("Invalid Starknet operator address")),
                 );
 
                 let ethereum_params = EthereumSettlementValidatedArgs {
-                    ethereum_rpc_url: run_cmd.ethereum_settle_args.ethereum_rpc_url.clone().ok_or_else(|| {
+                    ethereum_rpc_url: run_cmd.ethereum_settlement_args.ethereum_rpc_url.clone().ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Ethereum RPC URL is required".to_string())
                     })?,
-                    ethereum_private_key: run_cmd.ethereum_settle_args.ethereum_private_key.clone().ok_or_else(|| {
-                        OrchestratorError::SetupCommandError("Ethereum private key is required".to_string())
-                    })?,
+                    ethereum_private_key: run_cmd.ethereum_settlement_args.ethereum_private_key.clone().ok_or_else(
+                        || OrchestratorError::SetupCommandError("Ethereum private key is required".to_string()),
+                    )?,
                     l1_core_contract_address,
                     starknet_operator_address: ethereum_operator_address,
                 };
@@ -59,17 +60,21 @@ impl TryFrom<RunCmd> for SettlementConfig {
             }
             (false, true) => {
                 let starknet_params = StarknetSettlementValidatedArgs {
-                    starknet_rpc_url: run_cmd.starknet_settle_args.starknet_rpc_url.clone().ok_or_else(|| {
+                    starknet_rpc_url: run_cmd.starknet_settlement_args.starknet_rpc_url.clone().ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Starknet RPC URL is required".to_string())
                     })?,
-                    starknet_private_key: run_cmd.starknet_settle_args.starknet_private_key.clone().ok_or_else(|| {
-                        OrchestratorError::SetupCommandError("Starknet private key is required".to_string())
-                    })?,
-                    starknet_account_address: run_cmd.starknet_settle_args.starknet_account_address.clone().ok_or_else(
-                        || OrchestratorError::SetupCommandError("Starknet account address is required".to_string()),
+                    starknet_private_key: run_cmd.starknet_settlement_args.starknet_private_key.clone().ok_or_else(
+                        || OrchestratorError::SetupCommandError("Starknet private key is required".to_string()),
                     )?,
+                    starknet_account_address: run_cmd
+                        .starknet_settlement_args
+                        .starknet_account_address
+                        .clone()
+                        .ok_or_else(|| {
+                            OrchestratorError::SetupCommandError("Starknet account address is required".to_string())
+                        })?,
                     starknet_cairo_core_contract_address: run_cmd
-                        .starknet_settle_args
+                        .starknet_settlement_args
                         .starknet_cairo_core_contract_address
                         .clone()
                         .ok_or_else(|| {
@@ -78,7 +83,7 @@ impl TryFrom<RunCmd> for SettlementConfig {
                             )
                         })?,
                     starknet_finality_retry_wait_in_secs: run_cmd
-                        .starknet_settle_args
+                        .starknet_settlement_args
                         .starknet_finality_retry_wait_in_secs
                         .unwrap_or(6),
                 };

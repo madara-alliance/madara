@@ -1,10 +1,12 @@
 use std::time::Duration;
 
-use crate::tests::config::{ConfigType, TestConfigBuilder};
 use aws_sdk_sqs::types::QueueAttributeName::QueueArn;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use tokio::time::sleep;
+
+use crate::tests::common::{get_sns_client, get_sqs_client};
+use crate::tests::config::{ConfigType, TestConfigBuilder};
 
 pub const SNS_ALERT_TEST_QUEUE: &str = "orchestrator_sns_alert_testing_queue";
 
@@ -39,7 +41,7 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
     // Getting sns client from the module
     let alerts_client = services.config.alerts();
     // Sending the alert message
-    alerts_client.send_alert_message(message_to_send.to_string()).await.unwrap();
+    alerts_client.send_message(message_to_send.to_string()).await.unwrap();
 
     sleep(Duration::from_secs(5)).await;
 

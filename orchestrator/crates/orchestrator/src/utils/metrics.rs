@@ -23,7 +23,6 @@ impl Metrics for OrchestratorMetrics {
         let common_scope_attributes = vec![KeyValue::new("crate", "orchestrator")];
         let orchestrator_meter = global::meter_with_version(
             "crates.orchestrator.opentelemetry",
-            // TODO: Unsure of these settings, come back
             Some("0.17"),
             Some("https://opentelemetry.io/schemas/1.2.0"),
             Some(common_scope_attributes.clone()),

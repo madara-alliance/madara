@@ -6,7 +6,7 @@ use_try_shorthand = true
 max_width = 120
 group_imports = "StdExternalCrate"
 reorder_imports = true
-imports_granularity = "Preserve"
+imports_granularity = "One"
 normalize_doc_attributes = true
 
 # Unstable features below

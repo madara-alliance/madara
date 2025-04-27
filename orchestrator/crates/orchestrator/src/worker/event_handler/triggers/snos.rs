@@ -61,11 +61,12 @@ impl JobTrigger for SnosJobTrigger {
                     cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
                     snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
                     program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
-                    snos_fact: None,
+                    ..Default::default() // Ensure all other fields are set to default
                 }),
             };
 
-            match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
+            match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await
+            {
                 Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
                 Err(e) => {
                     tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");

@@ -1,4 +1,4 @@
-use crate::core::client::storage::sss::{S3BucketSetupResult, AWSS3};
+use crate::core::client::storage::s3::AWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;
@@ -7,6 +7,11 @@ use async_trait::async_trait;
 use aws_sdk_s3::{Client as S3Client, Error as S3Error};
 use std::sync::Arc;
 use tracing::{info, warn};
+
+pub struct S3BucketSetupResult {
+    pub name: String,
+    pub region: Option<String>,
+}
 
 #[async_trait]
 impl Resource for AWSS3 {
@@ -17,19 +22,31 @@ impl Resource for AWSS3 {
     type SetupArgs = StorageArgs;
     type CheckArgs = String;
 
+    /// create_setup creates a new S3 client and returns an instance of AWSS3
+    ///
+    /// # Arguments
+    /// * `cloud_provider` - The cloud provider configuration.
+    ///
+    /// # Returns
+    /// * `OrchestratorResult<Self>` - The result of the setup operation.
+    ///
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
                 let client = S3Client::new(aws_config);
                 Ok(Self::constructor(Arc::new(client), None, None))
             }
-            _ => Err(OrchestratorError::InvalidCloudProviderError(
-                "Mismatch Cloud Provider for S3Bucket resource".to_string(),
-            ))?,
         }
     }
     /// Set up a new S3 bucket
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+        // Check if the bucket already exists
+        // If it does, return the existing bucket name and location
+        if self.check_if_exists(args.bucket_name.clone()).await? {
+            warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
+            return Ok(S3BucketSetupResult { name: args.bucket_name, region: None });
+        }
+
         let existing_buckets = &self
             .client
             .list_buckets()
@@ -40,8 +57,8 @@ impl Resource for AWSS3 {
         for bucket in existing_buckets.buckets() {
             if let Some(name) = &bucket.name {
                 if name == &args.bucket_name {
-                    warn!("S3 bucket '{}' already exists", args.bucket_name);
-                    return Ok(S3BucketSetupResult { name: args.bucket_name, location: None });
+                    warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
+                    return Ok(S3BucketSetupResult { name: args.bucket_name, region: None });
                 }
             }
         }
@@ -62,35 +79,17 @@ impl Resource for AWSS3 {
         let result = bucket.send().await.map_err(|e| {
             OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", args.bucket_name, e))
         })?;
-        Ok(S3BucketSetupResult { name: args.bucket_name, location: result.location })
+        Ok(S3BucketSetupResult { name: args.bucket_name, region: result.location })
     }
 
-    async fn check(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<Self::CheckResult> {
-        self.client
-            .list_objects_v2()
-            .bucket(&bucket_name)
-            .send()
-            .await
-            .map_err(|e| OrchestratorError::ResourceError(e.to_string()))?;
-
-        // Just check if we can list objects
-        Ok(true)
+    async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
-    async fn teardown(&self) -> OrchestratorResult<()> {
-        if let Some(bucket_name) = &self.bucket_name() {
-            // self.delete_all_objects(bucket_name).await?;
-
-            self.client
-                .delete_bucket()
-                .bucket(bucket_name)
-                .send()
-                .await
-                .map_err(|e| OrchestratorError::ResourceError(format!("Failed to delete bucket: {}", e)))?;
-
-            Ok(())
-        } else {
-            Err(OrchestratorError::ResourceError("Bucket name is not set".to_string()))
-        }
+    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+        let client = self.client.clone();
+        let bucket_name = args.bucket_name.clone();
+        let result = client.head_bucket().bucket(bucket_name).send().await;
+        Ok(result.is_ok())
     }
 }

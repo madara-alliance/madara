@@ -9,6 +9,8 @@ pub type ApiServiceError = JobRouteError;
 pub type ApiServiceResult<T> = Result<T, JobRouteError>;
 
 /// TODO: Make sure the response should be in json format and not plain text when throwing error
+///     or in other works use unified response format across the application
+///     so that it will be easy for the client to parse the response
 
 /// Represents errors that can occur during job route handling operations.
 ///
@@ -83,19 +85,6 @@ pub enum JobRouteError {
 /// * `InvalidJobState` -> 409 Conflict
 /// * `DatabaseError` -> 500 Internal Server Error
 /// * `InvalidStatus` -> 400 Bad Request
-///
-/// # Examples
-/// This implementation is used automatically when returning errors from route handlers:
-/// ```rust
-/// use axum::response::Response;
-///
-///  async fn handle_job(id: String) -> Result<Response, JobRouteError> {
-///     if !is_valid_id(&id) {
-///         return Err(JobRouteError::InvalidId(id));
-///     }
-///     // ... rest of handler
-/// }
-/// ```
 impl IntoResponse for JobRouteError {
     fn into_response(self) -> Response {
         match self {

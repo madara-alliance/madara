@@ -57,10 +57,11 @@ impl AlertClient for SNS {
     ///
     /// * `Result<String, AlertError>` - The topic name.
     async fn get_topic_name(&self) -> Result<String, AlertError> {
-        Ok(self.get_topic_arn()?
+        Ok(self
+            .get_topic_arn()?
             .split(":")
             .last()
-            .ok_or(AlertError::UnableToExtractTopicName)?
+            .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn()?))?
             .to_string())
     }
 }

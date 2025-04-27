@@ -4,7 +4,9 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 
 use crate::core::config::Config;
-use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata};
+use crate::types::jobs::metadata::{
+    CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -53,12 +55,18 @@ impl JobTrigger for ProvingJobTrigger {
                     download_proof: None,
                     // Set SNOS fact for on-chain verification
                     ensure_on_chain_registration: Some(snos_fact),
+                    n_steps: snos_metadata.snos_n_steps,
                 }),
             };
 
             tracing::debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
-            match JobHandlerService::create_job(JobType::ProofCreation, snos_job.internal_id.clone(), proving_metadata, config.clone())
-                .await
+            match JobHandlerService::create_job(
+                JobType::ProofCreation,
+                snos_job.internal_id.clone(),
+                proving_metadata,
+                config.clone(),
+            )
+            .await
             {
                 Ok(_) => tracing::info!(block_id = %snos_job.internal_id, "Successfully created new proving job"),
                 Err(e) => {

@@ -1,6 +1,6 @@
 use super::error::OrchestratorCoreError;
 use crate::cli::SetupCmd;
-use crate::{cli::RunCmd, error::OrchestratorResult, types::params::cloud_provider::AWSCredentials};
+use crate::{cli::RunCmd, types::params::cloud_provider::AWSCredentials};
 use aws_config::SdkConfig;
 use futures::executor::block_on;
 
@@ -12,18 +12,10 @@ pub enum CloudProvider {
 }
 
 impl CloudProvider {
-    /// Get the AWS SDK config
+    /// get_aws_client_or_panic - Get the AWS client or panic
     ///
-    /// # Returns:
-    /// - `Ok(SdkConfig)` if the provider is AWS
-    /// - `Err(Error)` if the provider is not AWS
-    ///
-    /// Returns the AWS SDK config if the provider is AWS.
-    pub fn get_aws_config(&self) -> OrchestratorResult<&SdkConfig> {
-        match self {
-            Self::AWS(config) => Ok(config),
-        }
-    }
+    /// # Returns
+    ///  the AWS client
     pub fn get_aws_client_or_panic(&self) -> &SdkConfig {
         match self {
             CloudProvider::AWS(config) => config.as_ref(),
@@ -76,7 +68,6 @@ impl TryFrom<RunCmd> for CloudProvider {
     }
 }
 
-
 /// Try from Setup cmd
 ///
 /// # Arguments
@@ -100,5 +91,15 @@ impl TryFrom<SetupCmd> for CloudProvider {
         } else {
             Err(OrchestratorCoreError::InvalidProvider("AWS".to_string()))
         }
+    }
+}
+
+/// Try from AWSCredentials
+impl TryFrom<AWSCredentials> for CloudProvider {
+    type Error = OrchestratorCoreError;
+
+    fn try_from(aws_cred: AWSCredentials) -> Result<Self, Self::Error> {
+        let config = block_on(aws_cred.get_aws_config());
+        Ok(CloudProvider::AWS(Box::new(config)))
     }
 }

@@ -19,10 +19,7 @@ use crate::core::error::OrchestratorCoreError;
 pub use consumer::ConsumptionError;
 
 /// Result type for orchestrator operations
-pub type OrchestratorResult<T> = std::result::Result<T, OrchestratorError>;
-
-/// Alias for OrchestratorResult for easier usage
-pub type Result<T> = OrchestratorResult<T>;
+pub type OrchestratorResult<T> = Result<T, OrchestratorError>;
 
 /// Error types for the orchestrator
 #[derive(Error, Debug)]
