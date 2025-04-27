@@ -46,7 +46,7 @@ pub async fn setup_cloud_provider(setup_cmd: &SetupCmd) -> OrchestratorResult<Ar
     let cloud_provider = CloudProvider::try_from(setup_cmd.clone())
         .map_err(|e| OrchestratorError::InvalidCloudProviderError(e.to_string()))?;
 
-    info!("AWS credentials validated successfully");
+    info!("Cloud Provider initialized - AWS");
 
     Ok(Arc::new(cloud_provider))
 }

@@ -41,20 +41,6 @@ impl EventWorker {
         Self { queue_type, config, consumer: Arc::new(Mutex::new(None)), producer: Arc::new(Mutex::new(None)) }
     }
 
-    /// consumer - returns a consumer for the queue type
-    /// if the consumer is not initialized, it will be initialized
-    /// and returned
-    pub async fn consumer(&self) -> EventSystemResult<Arc<Mutex<Option<SqsConsumer>>>> {
-        Ok(self.consumer.clone())
-    }
-
-    /// producer - returns a producer for the queue type
-    /// if the producer is not initialized, it will be initialized
-    /// and returned
-    pub async fn producer(&self) -> EventSystemResult<Arc<Mutex<Option<SqsProducer>>>> {
-        Ok(self.producer.clone())
-    }
-
     /// get_message - Get the next message from the queue
     /// This function returns the next message from the queue
     /// It returns a Result<MessageType, EventSystemError> indicating whether the operation was successful or not
@@ -91,7 +77,6 @@ impl EventWorker {
         }
     }
 
-
     /// handle_message - Handle the message received from the queue
     /// This function processes the message based on its type
     /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
@@ -107,24 +92,22 @@ impl EventWorker {
                 if let ParsedMessage::WorkerTrigger(_) = message {
                     Ok(())
                 } else {
-                    Err(EventSystemError::from(ConsumptionError::Other(
-                        OtherError::from(eyre!("Expected WorkerTrigger message"))
-                    )))
+                    Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!(
+                        "Expected WorkerTrigger message"
+                    )))))
                 }
             }
-            QueueType::JobHandleFailure => {
-                match message {
-                    ParsedMessage::JobQueue(queue_message) => {
-                        JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
-                            .await
-                            .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
-                        Ok(())
-                    }
-                    _ => Err(EventSystemError::from(ConsumptionError::Other(
-                        OtherError::from(eyre!("Expected JobQueue message"))
-                    )))
+            QueueType::JobHandleFailure => match message {
+                ParsedMessage::JobQueue(queue_message) => {
+                    JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
+                        .await
+                        .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
+                    Ok(())
                 }
-            }
+                _ => Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!(
+                    "Expected JobQueue message"
+                ))))),
+            },
             _ => {
                 let job_state: JobState = JobState::try_from(self.queue_type.clone())?;
                 info!("Received message: {:?}, state: {:?}", message, job_state);
@@ -145,14 +128,13 @@ impl EventWorker {
                         }
                         Ok(())
                     }
-                    _ => Err(EventSystemError::from(ConsumptionError::Other(
-                        OtherError::from(eyre!("Expected JobQueue message"))
-                    )))
+                    _ => Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!(
+                        "Expected JobQueue message"
+                    ))))),
                 }
             }
         }
     }
-
 
     /// post_processing - Post process the message after handling
     /// This function acknowledges or negatively acknowledges the message based on the result of the handling
@@ -167,7 +149,12 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be post processed
     /// # Notes
     /// * This function is responsible for acknowledging or negatively acknowledging the message based on the result of the handling
-    async fn post_processing(&self, result: EventSystemResult<()>, message: Delivery, parsed_message: ParsedMessage) -> EventSystemResult<()> {
+    async fn post_processing(
+        &self,
+        result: EventSystemResult<()>,
+        message: Delivery,
+        parsed_message: ParsedMessage,
+    ) -> EventSystemResult<()> {
         if let Err(ref error) = result {
             let (error_context, consumption_error) = match &parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
@@ -178,7 +165,7 @@ impl EventWorker {
                         ConsumptionError::FailedToSpawnWorker {
                             worker_trigger_type: worker.clone(),
                             error_msg: error.to_string(),
-                        }
+                        },
                     )
                 }
                 ParsedMessage::JobQueue(msg) => {
@@ -186,35 +173,23 @@ impl EventWorker {
                     tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
                     (
                         format!("Job {job_id:?} handling failed: {error}"),
-                        ConsumptionError::FailedToHandleJob {
-                            job_id: *job_id,
-                            error_msg: error.to_string(),
-                        }
+                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
                     )
                 }
             };
 
             // Send alert about the error
-            self.config
-                .alerts()
-                .send_message(error_context)
-                .await?;
+            self.config.alerts().send_message(error_context).await?;
 
             // Negative acknowledgment of the message so it can be retried
-            message
-                .nack()
-                .await
-                .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+            message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
             // Return the specific error
             return Err(consumption_error.into());
         }
 
         // Only acknowledge if processing was successful
-        message
-            .ack()
-            .await
-            .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+        message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
         Ok(())
     }

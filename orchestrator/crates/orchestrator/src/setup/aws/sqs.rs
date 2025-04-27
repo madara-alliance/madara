@@ -36,13 +36,13 @@ impl Resource for SQS {
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
-            let queue_name = format!("{}_{}_{}", args.prefix.clone(), queue.name.clone(), args.suffix.clone());
+            let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
             let queue_url = format!("{}/{}", args.queue_base_url, queue_name);
             if self.check_if_exists(queue_url.clone()).await? {
                 tracing::warn!("SQS queue already exists. Queue URL: {}", queue_url);
                 continue;
             }
-            let res = self.client().create_queue().queue_name(queue_name.clone()).send().await.map_err(|e| {
+            let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
                 OrchestratorError::ResourceSetupError(format!(
                     "Failed to create SQS queue '{}': {}",
                     args.queue_base_url, e
@@ -56,7 +56,7 @@ impl Resource for SQS {
             attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
             if let Some(dlq_config) = &queue.dlq_config {
-                let dlq_url = self.get_queue_url_from_client(queue_name.clone().as_str()).await?;
+                let dlq_url = self.get_queue_url_from_client(&queue_name).await?;
                 let dlq_arn = self.get_queue_arn(&dlq_url).await?;
                 let policy = format!(
                     r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,

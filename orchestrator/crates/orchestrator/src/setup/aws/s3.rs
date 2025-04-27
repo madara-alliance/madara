@@ -46,37 +46,21 @@ impl Resource for AWSS3 {
             warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
             return Ok(S3BucketSetupResult { name: args.bucket_name, region: None });
         }
-
-        let existing_buckets = &self
-            .client
-            .list_buckets()
-            .send()
-            .await
-            .map_err(|e| OrchestratorError::ResourceSetupError(format!("Failed to list buckets: {}", e)))?;
-
-        for bucket in existing_buckets.buckets() {
-            if let Some(name) = &bucket.name {
-                if name == &args.bucket_name {
-                    warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
-                    return Ok(S3BucketSetupResult { name: args.bucket_name, region: None });
-                }
-            }
-        }
         info!("Creating New Bucket: {}", args.bucket_name);
 
         // Get the current region from the client config
         let region = self.client.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
         info!("Creating bucket in region: {}", region);
 
-        let mut bucket = self.client.create_bucket().bucket(&args.bucket_name);
+        let mut bucket_builder = self.client.create_bucket().bucket(&args.bucket_name);
 
         if region != "us-east-1" {
             let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
             let cfg = aws_sdk_s3::types::CreateBucketConfiguration::builder().location_constraint(constraint).build();
-            bucket = bucket.create_bucket_configuration(cfg);
+            bucket_builder = bucket_builder.create_bucket_configuration(cfg);
         }
 
-        let result = bucket.send().await.map_err(|e| {
+        let result = bucket_builder.send().await.map_err(|e| {
             OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", args.bucket_name, e))
         })?;
         Ok(S3BucketSetupResult { name: args.bucket_name, region: result.location })
@@ -87,9 +71,6 @@ impl Resource for AWSS3 {
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        let client = self.client.clone();
-        let bucket_name = args.bucket_name.clone();
-        let result = client.head_bucket().bucket(bucket_name).send().await;
-        Ok(result.is_ok())
+        Ok(self.client.head_bucket().bucket(&args.bucket_name).send().await.is_ok())
     }
 }

@@ -35,7 +35,6 @@ use crate::types::queue::{QueueNameForJobType, QueueType};
 use crate::worker::event_handler::factory::MockJobFactoryTrait;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::service::JobService;
 use assert_matches::assert_matches;
 
 /// Tests `create_job` function when job is not existing in the db.
@@ -804,7 +803,7 @@ async fn test_retry_job_adds_to_process_queue() {
     let job_id = job_item.id;
 
     // Retry the job
-    assert!(JobService::retry_job(job_id, services.config.clone()).await.is_ok());
+    assert!(JobHandlerService::retry_job(job_id, services.config.clone()).await.is_ok());
 
     // Verify job status was updated to PendingRetry
     let updated_job = services.config.database().get_job_by_id(job_id).await.unwrap().unwrap();
@@ -839,7 +838,7 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
     let job_id = job_item.id;
 
     // Attempt to retry the job
-    let result = JobService::retry_job(job_id, services.config.clone()).await;
+    let result = JobHandlerService::retry_job(job_id, services.config.clone()).await;
     assert!(result.is_err());
 
     if let Err(error) = result {

@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use super::super::error::JobRouteError;
 use super::super::types::{ApiResponse, JobId, JobRouteResult};
+use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
 use crate::{core::config::Config, utils::metrics::ORCHESTRATOR_METRICS};
 
@@ -120,7 +121,7 @@ async fn handle_retry_job_request(
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
-    match JobService::retry_job(job_id, config.clone()).await {
+    match JobHandlerService::retry_job(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job retry initiated successfully");
             ORCHESTRATOR_METRICS.successful_job_operations.add(

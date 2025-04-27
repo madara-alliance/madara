@@ -191,8 +191,6 @@ async fn test_process_job_works(
 #[rstest]
 #[tokio::test]
 async fn create_job_works() {
-    let services = TestConfigBuilder::new().build().await;
-
     // Create proper metadata structure
     let metadata = JobMetadata {
         common: CommonMetadata::default(),

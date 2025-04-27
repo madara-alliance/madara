@@ -12,10 +12,9 @@ pub struct OTELConfig {
 impl TryFrom<InstrumentationCliArgs> for OTELConfig {
     type Error = OrchestratorError;
     fn try_from(args: InstrumentationCliArgs) -> Result<Self, Self::Error> {
-        let endpoint = args.otel_collector_endpoint.clone();
+        let endpoint = args.otel_collector_endpoint;
         let service_name = args
             .otel_service_name
-            .clone()
             .ok_or_else(|| OrchestratorError::FromDownstreamError("otel_service_name is required".to_string()))?;
         Ok(Self { endpoint, service_name })
     }

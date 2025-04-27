@@ -36,7 +36,7 @@ where
         };
         let thread_color = "\x1b[94m"; // Bright Blue
         let id_color = "\x1b[35m"; // Magenta
-        let file_color = "\x1b[90m"; // Bright Black
+                                   // let file_color = "\x1b[90m"; // Bright Black
         let msg_color = "\x1b[97m"; // Bright White
         let fixed_field_color = "\x1b[92m"; // Bright Green
         let reset = "\x1b[0m";

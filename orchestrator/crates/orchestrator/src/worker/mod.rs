@@ -15,7 +15,7 @@ use std::sync::Arc;
 /// It is responsible for setting up the worker's environment and resources.
 /// The function should be called before the worker is started.
 pub async fn initialize_worker(config: Arc<Config>) -> OrchestratorResult<()> {
-    let controller = WorkerController::new(config.clone());
+    let controller = WorkerController::new(config);
     match controller.run().await {
         Ok(_) => tracing::info!("Consumers initialized successfully"),
         Err(e) => {

@@ -2,7 +2,7 @@ use crate::core::client::SNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AlertArgs;
-use crate::OrchestratorResult;
+use crate::{OrchestratorError, OrchestratorResult};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use aws_sdk_sns::Client as SNSClient;
@@ -29,7 +29,7 @@ impl Resource for SNS {
     }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let topic_arn = args.endpoint.clone();
+        let topic_arn = args.endpoint;
         tracing::info!("Topic ARN: {}", topic_arn);
 
         // Extract topic name from ARN or use the full string if it's just a name
@@ -41,11 +41,10 @@ impl Resource for SNS {
 
         // Validate topic name before proceeding
         if !self.is_valid_topic_name(&topic_name) {
-            return Err(anyhow!(
+            return Err(OrchestratorError::ResourceSetupError(format!(
                 "Invalid topic name: {}. Topic names must be made up of letters, numbers, hyphens, and underscores.",
                 topic_name
-            )
-            .into());
+            )));
         }
 
         // Check if topic exists using ARN
@@ -67,10 +66,7 @@ impl Resource for SNS {
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        let client = self.client.clone();
-        let endpoint = args.endpoint.clone();
-        let result = client.get_topic_attributes().topic_arn(endpoint).send().await;
-        Ok(result.is_ok())
+        Ok(self.client.get_topic_attributes().topic_arn(&args.endpoint).send().await.is_ok())
     }
 }
 

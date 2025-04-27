@@ -30,7 +30,7 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     pub async fn run(&self) -> EventSystemResult<()> {
-        Ok(())
+        self.run_l2().await
     }
 
     /// create_event_handler - Create an event handler

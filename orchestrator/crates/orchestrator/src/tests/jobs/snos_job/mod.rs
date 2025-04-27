@@ -21,8 +21,6 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    let services = TestConfigBuilder::new().build().await;
-
     // Create proper metadata structure
     let metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
