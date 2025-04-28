@@ -54,7 +54,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, RwLock};
 
 mod chain_head;
 mod db_version;
@@ -453,6 +453,16 @@ pub struct StartingBlockInfo {
     pub ignore_block_order: bool,
 }
 
+#[derive(Default, Clone)]
+pub enum SyncStatus {
+    #[default]
+    NotRunning,
+    Running {
+        highest_block_n: u64,
+        highest_block_hash: Felt,
+    },
+}
+
 /// Madara client database backend singleton.
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
@@ -466,7 +476,8 @@ pub struct MadaraBackend {
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
-    starting_block_info: StartingBlockInfo,
+    sync_status: RwLock<SyncStatus>,
+    starting_block: Option<u64>,
 }
 
 impl fmt::Debug for MadaraBackend {
@@ -601,12 +612,14 @@ impl MadaraBackend {
         chain_config: Arc<ChainConfig>,
         config: MadaraBackendConfig,
     ) -> anyhow::Result<Self> {
+        let chain_head = ChainHead::load_from_db(&db).context("Getting latest block_n from database")?;
         let snapshots = Arc::new(Snapshots::new(
             Arc::clone(&db),
-            ChainHead::load_from_db(&db).context("Getting latest block_n from database")?.global_trie.current(),
+            chain_head.global_trie.current(),
             Some(config.trie_log.max_kept_snapshots),
             config.trie_log.snapshot_interval,
         ));
+        let starting_block_n = chain_head.global_trie.current();
         Ok(Self {
             writeopts_no_wal: make_write_opt_no_wal(),
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
@@ -616,6 +629,8 @@ impl MadaraBackend {
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
             config,
+            starting_block: starting_block_n,
+            sync_status: RwLock::new(SyncStatus::default()),
             head_status: ChainHead::default(),
             snapshots,
         })

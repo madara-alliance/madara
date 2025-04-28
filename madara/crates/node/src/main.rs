@@ -27,7 +27,6 @@ use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::StarknetClientConfig;
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_oracle::pragma::PragmaOracleBuilder;
-use mp_sync::SyncStatusProvider;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
@@ -271,9 +270,14 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let service_l2_sync = SyncService::new(&run_cmd.l2_sync_params, service_db.backend(), l1_head_recv, warp_update)
-        .await
-        .context("Initializing sync service")?;
+    let service_l2_sync = SyncService::new(
+        &run_cmd.l2_sync_params,
+        service_db.backend(),
+        l1_head_recv,
+        warp_update,
+    )
+    .await
+    .context("Initializing sync service")?;
 
     let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 
@@ -305,7 +309,6 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(service_db.backend()),
         Arc::clone(&add_tx_provider_l2_sync),
         Arc::clone(&add_tx_provider_mempool),
-        sync_status_provider.clone(),
     );
 
     // Admin-facing RPC (for node operators)
@@ -315,7 +318,6 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(service_db.backend()),
         Arc::clone(&add_tx_provider_l2_sync),
         Arc::clone(&add_tx_provider_mempool),
-        sync_status_provider.clone(),
     );
 
     // Feeder gateway

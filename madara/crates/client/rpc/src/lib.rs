@@ -14,11 +14,10 @@ pub mod versions;
 use jsonrpsee::RpcModule;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
+use mc_db::SyncStatus as MadaraSyncStatus;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
-use mp_rpc::SyncStatus;
-use mp_sync::SyncStatusProvider;
 use mp_utils::service::ServiceContext;
 use providers::AddTransactionProvider;
 use starknet_types_core::felt::Felt;
@@ -26,6 +25,7 @@ use std::sync::Arc;
 use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::utils::OptionExt;
 
 /// Limits to the storage proof endpoint.
 #[derive(Clone, Debug)]
@@ -44,6 +44,18 @@ impl Default for StorageProofConfig {
     }
 }
 
+#[derive(Clone, Debug, Default)]
+pub enum StarknetSyncStatus {
+    #[default]
+    NotRunning,
+    Running {
+        starting_block_n: u64,
+        starting_block_hash: Felt,
+        highest_block_n: u64,
+        highest_block_hash: Felt,
+    },
+}
+
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {
@@ -51,7 +63,6 @@ pub struct Starknet {
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
     storage_proof_config: StorageProofConfig,
     pub ctx: ServiceContext,
-    sync_status_provider: Option<SyncStatusProvider>,
 }
 
 impl Starknet {
@@ -60,9 +71,8 @@ impl Starknet {
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
         storage_proof_config: StorageProofConfig,
         ctx: ServiceContext,
-        sync_status_provider: Option<SyncStatusProvider>,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config, ctx, sync_status_provider }
+        Self { backend, add_transaction_provider, storage_proof_config, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -113,13 +123,41 @@ impl Starknet {
             .unwrap_or_default())
     }
 
-    pub async fn sync_status(&self) -> StarknetRpcResult<SyncStatus> {
-        Ok(self
-            .sync_status_provider
-            .as_ref()
-            .ok_or(StarknetRpcApiError::InternalServerError)?
-            .get_sync_status()
-            .await)
+    pub async fn sync_status(&self) -> StarknetRpcResult<StarknetSyncStatus> {
+        // Get the highest block number and hash from MadaraBackend
+        let highest_block_info = self.backend.get_sync_status().await;
+        match highest_block_info {
+            MadaraSyncStatus::Running { highest_block_hash, highest_block_n } => {
+                // Get the starting block number from MadaraBackend
+                let starting_block_n = self.backend.get_starting_block();
+                // Get the starting block hash from MadaraBackend
+                let (starting_block_n, starting_block_hash) = match starting_block_n {
+                    Some(starting_block_n) => {
+                        let starting_block_info = self
+                            .backend
+                            .get_block_info(&BlockId::Number(starting_block_n))
+                            .or_internal_server_error("Error getting starting block")?
+                            .ok_or_internal_server_error(format!("Starting block not found: block number {}", starting_block_n))?;
+                        let starting_block_info =
+                            starting_block_info.as_nonpending().ok_or_internal_server_error("Starting block cannot be pending")?;
+                        (starting_block_n, starting_block_info.block_hash)
+                    }
+                    None => {
+                        // According to spec, if the starting block is not set in DB, we should return 0 and the empty hash.
+                        (0, Felt::default())
+                    }
+                };
+                Ok(StarknetSyncStatus::Running {
+                    starting_block_n,
+                    starting_block_hash,
+                    highest_block_hash,
+                    highest_block_n,
+                })
+            }
+            MadaraSyncStatus::NotRunning => {
+                Ok(StarknetSyncStatus::default())
+            }
+        }
     }
 }
 

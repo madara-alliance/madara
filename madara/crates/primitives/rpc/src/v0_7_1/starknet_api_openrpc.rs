@@ -941,7 +941,7 @@ pub struct StructMember {
 }
 
 /// An object describing the node synchronization status
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 pub struct SyncStatus {
     /// The hash of the current block being synchronized
     pub current_block_hash: BlockHash,

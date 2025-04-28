@@ -10,7 +10,6 @@ use mc_rpc::{
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 
 use metrics::RpcMetrics;
-use mp_sync::SyncStatusProvider;
 use server::{start_server, ServerConfig};
 
 use crate::cli::RpcParams;
@@ -32,7 +31,6 @@ pub struct RpcService {
     backend: Arc<MadaraBackend>,
     add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
     add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
-    sync_status_provider: SyncStatusProvider,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
 }
@@ -43,14 +41,12 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
         add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
-        sync_status_provider: SyncStatusProvider,
     ) -> Self {
         Self {
             config,
             backend,
             add_txs_provider_l2_sync,
             add_txs_provider_mempool,
-            sync_status_provider,
             server_handle: None,
             rpc_type: RpcType::User,
         }
@@ -61,14 +57,12 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
         add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
-        sync_status_provider: SyncStatusProvider,
     ) -> Self {
         Self {
             config,
             backend,
             add_txs_provider_l2_sync,
             add_txs_provider_mempool,
-            sync_status_provider,
             server_handle: None,
             rpc_type: RpcType::Admin,
         }
@@ -82,7 +76,6 @@ impl Service for RpcService {
         let backend = Arc::clone(&self.backend);
         let add_tx_provider_l2_sync = Arc::clone(&self.add_txs_provider_l2_sync);
         let add_tx_provider_mempool = Arc::clone(&self.add_txs_provider_mempool);
-        let sync_status_provider = self.sync_status_provider.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -101,7 +94,6 @@ impl Service for RpcService {
                 add_tx_provider,
                 config.storage_proof_config(),
                 ctx.clone(),
-                Some(sync_status_provider),
             );
             let metrics = RpcMetrics::register()?;
 

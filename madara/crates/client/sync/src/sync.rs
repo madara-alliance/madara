@@ -1,6 +1,9 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
+use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
+use mp_gateway::block::ProviderBlockHeader;
+use std::sync::Arc;
 use std::{cmp, time::Duration};
 use tokio::time::Instant;
 
@@ -86,10 +89,11 @@ pub struct SyncController<P: ForwardPipeline> {
     forward_pipeline: P,
     config: SyncControllerConfig,
     current_l1_head: Option<StateUpdate>,
-    probe: ThrottledRepeatedFuture<u64>,
+    probe: ThrottledRepeatedFuture<ProviderBlockHeader>,
     sync_metrics: SyncMetrics,
     status: Option<ServiceEvent>,
     get_pending_block: Option<ThrottledRepeatedFuture<()>>,
+    backend: Arc<MadaraBackend>,
 }
 
 impl<P: ForwardPipeline> SyncController<P> {
@@ -101,8 +105,9 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     pub fn new(
+        backend: Arc<MadaraBackend>,
         forward_pipeline: P,
-        probe: ThrottledRepeatedFuture<u64>,
+        probe: ThrottledRepeatedFuture<ProviderBlockHeader>,
         config: SyncControllerConfig,
         get_pending_block: Option<ThrottledRepeatedFuture<()>>,
     ) -> Self {
@@ -114,6 +119,7 @@ impl<P: ForwardPipeline> SyncController<P> {
             current_l1_head: None,
             probe,
             status: None,
+            backend,
         }
     }
 
@@ -141,7 +147,13 @@ impl<P: ForwardPipeline> SyncController<P> {
 
     fn target_height(&self) -> Option<u64> {
         let mut target_block = self.current_l1_head.as_ref().map(|h| h.block_number);
-        target_block = cmp::max(target_block, self.probe.last_val());
+        target_block = cmp::max(
+            target_block,
+            match self.probe.last_val() {
+                Some(v) => Some(v.block_number),
+                None => return None,
+            },
+        );
 
         // Bound by stop_at_block_n
         if let Some(stop_at) = self.config.stop_at_block_n {
@@ -166,7 +178,12 @@ impl<P: ForwardPipeline> SyncController<P> {
                 self.forward_pipeline.next_input_block_n()
             );
 
-            let probe_height = self.probe.last_val();
+            let (probe_height, probe_hash) = match self.probe.last_val() {
+                Some(v) => (Some(v.block_number), Some(v.block_hash)),
+                None => (None, None),
+            };
+
+            self.backend.set_sync_status(probe_height, probe_hash).await;
 
             let target = target_height.filter(|_| can_run_pipeline);
 
@@ -198,7 +215,10 @@ impl<P: ForwardPipeline> SyncController<P> {
                     res?;
                 }
                 res = self.probe.run() => {
-                    let new_probe_height = res?;
+                    let new_probe_height = match res? {
+                        Some(v) => Some(v.block_number),
+                        None => None,
+                    };
                     if self.config.stop_at_block_n.is_none()
                         && !can_run_pipeline
                         && self.config.stop_on_sync

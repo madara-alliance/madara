@@ -1,12 +1,4 @@
 use crate::cli::L2SyncParams;
-use mc_block_import::BlockImporter;
-use mc_db::{DatabaseService, MadaraBackend};
-use mc_sync::fetch::fetchers::{FetchConfig, WarpUpdateConfig};
-use mc_sync::SyncConfig;
-use mc_telemetry::TelemetryHandle;
-use mp_chain_config::ChainConfig;
-use mp_sync::SyncStatusProvider;
-use crate::cli::l2::L2SyncParams;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;

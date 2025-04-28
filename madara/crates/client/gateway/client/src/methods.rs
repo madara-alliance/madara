@@ -20,7 +20,6 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
-use mp_gateway::block::{ ProviderBlockHeaderOnly};
 
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
