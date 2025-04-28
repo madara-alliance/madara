@@ -139,7 +139,7 @@ pub async fn start_server(
                         match sync_status {
                             Ok(sync_status) => match sync_status {
                                 SyncingStatus::Syncing(_) => Ok(hyper::Response::builder()
-                                    .status(hyper::StatusCode::BAD_REQUEST)
+                                    .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
                                     .body(hyper::Body::from("SYNCING"))?),
                                 SyncingStatus::NotSyncing => Ok(hyper::Response::builder()
                                     .status(hyper::StatusCode::OK)
