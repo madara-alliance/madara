@@ -6,6 +6,7 @@ use super::{
     },
 };
 use crate::helpers::not_found_response;
+use bincode::Options;
 use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Response, StatusCode};
@@ -338,8 +339,10 @@ pub async fn handle_add_validated_transaction(
     let Some(submit_validated) = submit_validated else { return Ok(not_found_response()) };
     let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
 
-    let transaction: ValidatedMempoolTx = bincode::deserialize_from(whole_body.reader())
-        .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?;
+    let transaction: ValidatedMempoolTx = bincode::options()
+        .with_little_endian()
+        .deserialize_from(whole_body.reader())
+        .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?; // Fixed endinaness is important.
 
     submit_validated.submit_validated_transaction(transaction).await?;
 
