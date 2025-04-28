@@ -65,12 +65,16 @@ impl MadaraBackend {
 
     // DB read operations
 
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    // #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn tx_hash_to_block_n(&self, tx_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::TxHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(tx_hash)?)?;
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
+        // If the block_n is partial (past the latest_full_block_n), we not return it.
+        if !self.head_status.latest_full_block_n().is_some_and(|n| n >= block_n) {
+            return Ok(None)
+        }
         Ok(Some(block_n))
     }
 
@@ -80,6 +84,10 @@ impl MadaraBackend {
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
+        // If the block_n is partial (past the latest_full_block_n), we not return it.
+        if !self.head_status.latest_full_block_n().is_some_and(|n| n >= block_n) {
+            return Ok(None)
+        }
         Ok(Some(block_n))
     }
 

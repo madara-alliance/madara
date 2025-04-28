@@ -100,20 +100,20 @@ pub struct DbParams {
     #[clap(env = "MADARA_DB_STATISTICS_LEVEL", long)]
     pub db_statistics_level: Option<StatsLevel>,
 
-    /// Set the memtable budget for a column.
+    /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
     pub db_memtable_blocks_budget_mib: usize,
 
-    /// Set the memtable budget for a column.
+    /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_CONTRACTS_BUDGET_MIB", long, default_value_t = 128)]
     pub db_memtable_contracts_budget_mib: usize,
 
-    /// Set the memtable budget for a column.
+    /// Set the memtable budget for a set of columns.
     #[clap(env = "MADARA_DB_MEMTABLE_OTHER_BUDGET_MIB", long, default_value_t = 128)]
     pub db_memtable_other_budget_mib: usize,
 
-    /// Set the memtable budget for a column.
-    #[clap(env = "MADARA_DB_MEMTABLE_OTHER_BUDGET_MIB", long, default_value_t = 0.0)]
+    /// Set the rocksdb prefix bloom filter ratio.
+    #[clap(env = "MADARA_DB_MEMTABLE_PREFIX_BLOOM_FILTER_RATIO", long, default_value_t = 0.0)]
     pub db_memtable_prefix_bloom_filter_ratio: f64,
 }
 

@@ -94,21 +94,30 @@ impl SubmitTransaction for GatewayProvider {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
-        self.add_declare_transaction(tx.try_into().map_err(map_conv_error)?).await.map_err(map_gateway_error)
+        self.add_declare_transaction(tx.try_into().map_err(map_conv_error)?)
+            .await
+            .map_err(map_gateway_error)
+            .map(|res| ClassAndTxnHash { transaction_hash: res.transaction_hash, class_hash: res.class_hash })
     }
 
     async fn submit_deploy_account_transaction(
         &self,
         tx: BroadcastedDeployAccountTxn,
     ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
-        self.add_deploy_account_transaction(tx.try_into().map_err(map_conv_error)?).await.map_err(map_gateway_error)
+        self.add_deploy_account_transaction(tx.try_into().map_err(map_conv_error)?)
+            .await
+            .map_err(map_gateway_error)
+            .map(|res| ContractAndTxnHash { transaction_hash: res.transaction_hash, contract_address: res.address })
     }
 
     async fn submit_invoke_transaction(
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-        self.add_invoke_transaction(tx.try_into().map_err(map_conv_error)?).await.map_err(map_gateway_error)
+        self.add_invoke_transaction(tx.try_into().map_err(map_conv_error)?)
+            .await
+            .map_err(map_gateway_error)
+            .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
     }
 }
 

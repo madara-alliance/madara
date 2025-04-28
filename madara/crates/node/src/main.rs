@@ -123,7 +123,7 @@ async fn main() -> anyhow::Result<()> {
     tracing::info!("🥷 {} Node", GREET_IMPL_NAME);
     tracing::info!("✌️  Version {}", node_version);
     tracing::info!("💁 Support URL: {}", GREET_SUPPORT_URL);
-    tracing::info!("🏷 Node Name: {}", node_name);
+    tracing::info!("🏷  Node Name: {}", node_name);
     let role = if run_cmd.is_sequencer() { "Sequencer" } else { "Full Node" };
     tracing::info!("👤 Role: {}", role);
     tracing::info!("🌐 Network: {} (chain id `{}`)", chain_config.chain_name, chain_config.chain_id);

@@ -1,5 +1,3 @@
-use crate::helpers::not_found_response;
-
 use super::{
     error::{GatewayError, OptionExt, ResultExt},
     helpers::{
@@ -7,6 +5,7 @@ use super::{
         get_params_from_request, include_block_params,
     },
 };
+use crate::helpers::not_found_response;
 use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Response, StatusCode};
@@ -18,7 +17,6 @@ use mc_rpc::{
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
-use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::{
     AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
     UserTransaction,
@@ -26,6 +24,10 @@ use mp_gateway::user_transaction::{
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockPending, ProviderBlockSignature},
     state_update::{ProviderStateUpdate, ProviderStateUpdatePending},
+};
+use mp_gateway::{
+    error::{StarknetError, StarknetErrorCode},
+    user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult},
 };
 use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedMempoolTx;
@@ -40,7 +42,7 @@ pub async fn handle_get_block(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+    let block_id = block_id_from_params(&params)?;
 
     if params.get("headerOnly").map(|s| s.as_ref()) == Some("true") {
         if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
@@ -96,7 +98,7 @@ pub async fn handle_get_signature(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+    let block_id = block_id_from_params(&params)?;
 
     if matches!(block_id, BlockId::Tag(BlockTag::Pending)) {
         return Err(GatewayError::StarknetError(StarknetError::no_signature_for_pending_block()));
@@ -128,7 +130,7 @@ pub async fn handle_get_state_update(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+    let block_id = block_id_from_params(&params)?;
 
     let resolved_block_id = backend
         .resolve_block_id(&block_id)
@@ -235,7 +237,7 @@ pub async fn handle_get_block_traces(
     ctx: ServiceContext,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params).or_internal_server_error("Retrieving block id")?;
+    let block_id = block_id_from_params(&params)?;
 
     #[derive(Serialize)]
     struct BlockTraces {
@@ -378,7 +380,13 @@ async fn declare_transaction(
     };
 
     match add_transaction_provider.submit_declare_transaction(tx).await {
-        Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
+        Ok(result) => create_json_response(
+            hyper::StatusCode::OK,
+            &AddTransactionResult::from(AddDeclareTransactionResult {
+                class_hash: result.class_hash,
+                transaction_hash: result.transaction_hash,
+            }),
+        ),
         Err(e) => GatewayError::from(e).into(),
     }
 }
@@ -388,7 +396,13 @@ async fn deploy_account_transaction(
     add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
     match add_transaction_provider.submit_deploy_account_transaction(tx.into()).await {
-        Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
+        Ok(result) => create_json_response(
+            hyper::StatusCode::OK,
+            &AddTransactionResult::from(AddDeployAccountTransactionResult {
+                address: result.contract_address,
+                transaction_hash: result.transaction_hash,
+            }),
+        ),
         Err(e) => GatewayError::from(e).into(),
     }
 }
@@ -398,7 +412,10 @@ async fn invoke_transaction(
     add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Response<String> {
     match add_transaction_provider.submit_invoke_transaction(tx.into()).await {
-        Ok(result) => create_json_response(hyper::StatusCode::OK, &AddTransactionResult::from(result)),
+        Ok(result) => create_json_response(
+            hyper::StatusCode::OK,
+            &AddTransactionResult::from(AddInvokeTransactionResult { transaction_hash: result.transaction_hash }),
+        ),
         Err(e) => GatewayError::from(e).into(),
     }
 }

@@ -15,7 +15,7 @@ pub mod compute_hash;
 pub mod utils;
 pub mod validated;
 
-pub use to_blockifier::{BroadcastedTransactionExt, ToBlockifierError};
+pub use to_blockifier::*;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 

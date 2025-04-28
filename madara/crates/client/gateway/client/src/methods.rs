@@ -2,6 +2,7 @@ use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::error::{SequencerError, StarknetError};
+use mp_gateway::user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult};
 use mp_gateway::{
     block::{
         ProviderBlock, ProviderBlockHeader, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature,
@@ -14,7 +15,6 @@ use mp_gateway::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
 };
-use mp_rpc::{AddInvokeTransactionResult, ClassAndTxnHash, ContractAndTxnHash};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_types_core::felt::Felt;
@@ -151,14 +151,14 @@ impl GatewayProvider {
     pub async fn add_declare_transaction(
         &self,
         transaction: UserDeclareTransaction,
-    ) -> Result<ClassAndTxnHash, SequencerError> {
+    ) -> Result<AddDeclareTransactionResult, SequencerError> {
         self.add_transaction(UserTransaction::Declare(transaction)).await
     }
 
     pub async fn add_deploy_account_transaction(
         &self,
         transaction: UserDeployAccountTransaction,
-    ) -> Result<ContractAndTxnHash, SequencerError> {
+    ) -> Result<AddDeployAccountTransactionResult, SequencerError> {
         self.add_transaction(UserTransaction::DeployAccount(transaction)).await
     }
 }

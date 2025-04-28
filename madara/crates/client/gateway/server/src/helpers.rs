@@ -109,7 +109,8 @@ pub(crate) fn block_id_from_params(params: &HashMap<String, String>) -> Result<B
             .map_err(|e| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
         Ok(BlockId::Hash(block_hash))
     } else {
-        Err(StarknetError::new(StarknetErrorCode::MalformedRequest, "block_number or block_hash not found".to_string()))
+        // latest is implicit
+        Ok(BlockId::Tag(BlockTag::Latest))
     }
 }
 

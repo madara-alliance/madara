@@ -304,6 +304,7 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run_no_wait(self) -> MadaraCmd {
+        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
         let target_bin = PathBuf::from(env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script"));
 
         assert!(target_bin.exists(), "No binary to run: {:?}", target_bin);
