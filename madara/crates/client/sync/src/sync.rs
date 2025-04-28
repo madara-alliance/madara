@@ -13,7 +13,7 @@ pub trait ForwardPipeline {
         target_block_n: u64,
         probe_height: Option<u64>,
         metrics: &mut SyncMetrics,
-    ) -> impl Future<Output=anyhow::Result<()>> + Send;
+    ) -> impl Future<Output = anyhow::Result<()>> + Send;
     fn next_input_block_n(&self) -> u64;
     fn show_status(&self);
     /// Return false when no work can be done.
@@ -200,9 +200,9 @@ impl<P: ForwardPipeline> SyncController<P> {
 
             if self.forward_pipeline.is_empty()
                 && self
-                .config
-                .stop_at_block_n
-                .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
+                    .config
+                    .stop_at_block_n
+                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
                 && !self.pending_block_task_is_running()
             {
                 // End condition for stop_at_block_n.

@@ -4,8 +4,8 @@ use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
-use mc_db::SyncStatus as MadaraSyncStatus;
 use crate::Starknet;
+use mc_db::SyncStatus as MadaraSyncStatus;
 
 const SYNC_THRESHOLD_BLOCKS: u64 = 6;
 
@@ -54,9 +54,13 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
                         .backend
                         .get_block_info(&BlockId::Number(starting_block_n))
                         .or_internal_server_error("Error getting starting block")?
-                        .ok_or_internal_server_error(format!("Starting block not found: block number {}", starting_block_n))?;
-                    let starting_block_info =
-                        starting_block_info.as_nonpending().ok_or_internal_server_error("Starting block cannot be pending")?;
+                        .ok_or_internal_server_error(format!(
+                            "Starting block not found: block number {}",
+                            starting_block_n
+                        ))?;
+                    let starting_block_info = starting_block_info
+                        .as_nonpending()
+                        .ok_or_internal_server_error("Starting block cannot be pending")?;
                     (starting_block_n, starting_block_info.block_hash)
                 }
                 None => {
@@ -79,8 +83,6 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
             }
         }
         // If the node is not syncing, return NotSyncing
-        MadaraSyncStatus::NotRunning => {
-            Ok(SyncingStatus::NotSyncing)
-        }
+        MadaraSyncStatus::NotRunning => Ok(SyncingStatus::NotSyncing),
     }
 }

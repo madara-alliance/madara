@@ -270,14 +270,9 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let service_l2_sync = SyncService::new(
-        &run_cmd.l2_sync_params,
-        service_db.backend(),
-        l1_head_recv,
-        warp_update,
-    )
-    .await
-    .context("Initializing sync service")?;
+    let service_l2_sync = SyncService::new(&run_cmd.l2_sync_params, service_db.backend(), l1_head_recv, warp_update)
+        .await
+        .context("Initializing sync service")?;
 
     let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 

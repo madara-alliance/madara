@@ -89,12 +89,7 @@ impl Service for RpcService {
                 ctx.clone(),
             ));
 
-            let starknet = Starknet::new(
-                backend.clone(),
-                add_tx_provider,
-                config.storage_proof_config(),
-                ctx.clone(),
-            );
+            let starknet = Starknet::new(backend.clone(), add_tx_provider, config.storage_proof_config(), ctx.clone());
             let metrics = RpcMetrics::register()?;
 
             let server_config = {

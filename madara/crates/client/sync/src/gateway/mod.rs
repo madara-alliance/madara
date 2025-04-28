@@ -11,8 +11,8 @@ use classes::ClassesSync;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockId, BlockTag};
-use std::{iter, sync::Arc, time::Duration};
 use mp_gateway::block::ProviderBlockHeader;
+use std::{iter, sync::Arc, time::Duration};
 
 pub(crate) mod blocks;
 pub(crate) mod classes;
@@ -213,7 +213,10 @@ impl GatewayLatestProbe {
     pub fn new(client: Arc<GatewayProvider>) -> Self {
         Self { client }
     }
-    async fn probe(self: Arc<Self>, _highest_known_block: Option<ProviderBlockHeader>) -> anyhow::Result<Option<ProviderBlockHeader>> {
+    async fn probe(
+        self: Arc<Self>,
+        _highest_known_block: Option<ProviderBlockHeader>,
+    ) -> anyhow::Result<Option<ProviderBlockHeader>> {
         let header = self
             .client
             .get_header(BlockId::Tag(BlockTag::Latest))
