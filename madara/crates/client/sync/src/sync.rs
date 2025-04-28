@@ -1,6 +1,6 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, SyncStatus};
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use mp_gateway::block::ProviderBlockHeader;
 use std::sync::Arc;
@@ -13,7 +13,7 @@ pub trait ForwardPipeline {
         target_block_n: u64,
         probe_height: Option<u64>,
         metrics: &mut SyncMetrics,
-    ) -> impl Future<Output = anyhow::Result<()>> + Send;
+    ) -> impl Future<Output=anyhow::Result<()>> + Send;
     fn next_input_block_n(&self) -> u64;
     fn show_status(&self);
     /// Return false when no work can be done.
@@ -178,12 +178,17 @@ impl<P: ForwardPipeline> SyncController<P> {
                 self.forward_pipeline.next_input_block_n()
             );
 
-            let (probe_height, probe_hash) = match self.probe.last_val() {
-                Some(v) => (Some(v.block_number), Some(v.block_hash)),
-                None => (None, None),
+            let probe_height = if let Some(v) = self.probe.last_val() {
+                self.backend
+                    .set_sync_status(SyncStatus::Running {
+                        highest_block_n: v.block_number,
+                        highest_block_hash: v.block_hash,
+                    })
+                    .await;
+                Some(v.block_number)
+            } else {
+                None
             };
-
-            self.backend.set_sync_status(probe_height, probe_hash).await;
 
             let target = target_height.filter(|_| can_run_pipeline);
 
@@ -195,9 +200,9 @@ impl<P: ForwardPipeline> SyncController<P> {
 
             if self.forward_pipeline.is_empty()
                 && self
-                    .config
-                    .stop_at_block_n
-                    .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
+                .config
+                .stop_at_block_n
+                .is_some_and(|stop_at| self.forward_pipeline.next_input_block_n() > stop_at)
                 && !self.pending_block_task_is_running()
             {
                 // End condition for stop_at_block_n.

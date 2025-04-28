@@ -14,7 +14,6 @@ pub mod versions;
 use jsonrpsee::RpcModule;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
-use mc_db::SyncStatus as MadaraSyncStatus;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
@@ -25,7 +24,6 @@ use std::sync::Arc;
 use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::OptionExt;
 
 /// Limits to the storage proof endpoint.
 #[derive(Clone, Debug)]
@@ -121,43 +119,6 @@ impl Starknet {
             .get_l1_last_confirmed_block()
             .or_internal_server_error("Error getting L1 last confirmed block")?
             .unwrap_or_default())
-    }
-
-    pub async fn sync_status(&self) -> StarknetRpcResult<StarknetSyncStatus> {
-        // Get the highest block number and hash from MadaraBackend
-        let highest_block_info = self.backend.get_sync_status().await;
-        match highest_block_info {
-            MadaraSyncStatus::Running { highest_block_hash, highest_block_n } => {
-                // Get the starting block number from MadaraBackend
-                let starting_block_n = self.backend.get_starting_block();
-                // Get the starting block hash from MadaraBackend
-                let (starting_block_n, starting_block_hash) = match starting_block_n {
-                    Some(starting_block_n) => {
-                        let starting_block_info = self
-                            .backend
-                            .get_block_info(&BlockId::Number(starting_block_n))
-                            .or_internal_server_error("Error getting starting block")?
-                            .ok_or_internal_server_error(format!("Starting block not found: block number {}", starting_block_n))?;
-                        let starting_block_info =
-                            starting_block_info.as_nonpending().ok_or_internal_server_error("Starting block cannot be pending")?;
-                        (starting_block_n, starting_block_info.block_hash)
-                    }
-                    None => {
-                        // According to spec, if the starting block is not set in DB, we should return 0 and the empty hash.
-                        (0, Felt::default())
-                    }
-                };
-                Ok(StarknetSyncStatus::Running {
-                    starting_block_n,
-                    starting_block_hash,
-                    highest_block_hash,
-                    highest_block_n,
-                })
-            }
-            MadaraSyncStatus::NotRunning => {
-                Ok(StarknetSyncStatus::default())
-            }
-        }
     }
 }
 

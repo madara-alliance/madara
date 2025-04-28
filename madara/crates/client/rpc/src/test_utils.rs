@@ -63,7 +63,6 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
         Arc::new(TestTransactionProvider),
         Default::default(),
         ServiceContext::new_for_testing(),
-        None,
     );
     (backend, rpc)
 }

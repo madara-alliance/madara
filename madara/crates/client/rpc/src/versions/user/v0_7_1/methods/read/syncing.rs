@@ -4,7 +4,8 @@ use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
-use crate::{Starknet, StarknetSyncStatus};
+use mc_db::SyncStatus as MadaraSyncStatus;
+use crate::Starknet;
 
 const SYNC_THRESHOLD_BLOCKS: u64 = 6;
 
@@ -39,14 +40,32 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
         Err(_err) => (0u64, Felt::ZERO),
     };
 
-    // Get the sync status from starknet which in turn gets it from MadaraBackend
-    let sync_status =
-        starknet.sync_status().await.or_internal_server_error("Error getting sync status after retries")?;
-
-    match sync_status {
-        StarknetSyncStatus::NotRunning => Ok(SyncingStatus::NotSyncing),
-        StarknetSyncStatus::Running { starting_block_n, starting_block_hash, highest_block_n, highest_block_hash } => {
-            if highest_block_n - SYNC_THRESHOLD_BLOCKS <= current_block_num {
+    // Get the highest block number and hash from MadaraBackend
+    let highest_block_info = starknet.backend.get_sync_status().await;
+    // Check if the node is syncing or not
+    match highest_block_info {
+        MadaraSyncStatus::Running { highest_block_hash, highest_block_n } => {
+            // Get the starting block number from MadaraBackend
+            let starting_block_n = starknet.backend.get_starting_block();
+            // Get the starting block hash from MadaraBackend
+            let (starting_block_n, starting_block_hash) = match starting_block_n {
+                Some(starting_block_n) => {
+                    let starting_block_info = starknet
+                        .backend
+                        .get_block_info(&BlockId::Number(starting_block_n))
+                        .or_internal_server_error("Error getting starting block")?
+                        .ok_or_internal_server_error(format!("Starting block not found: block number {}", starting_block_n))?;
+                    let starting_block_info =
+                        starting_block_info.as_nonpending().ok_or_internal_server_error("Starting block cannot be pending")?;
+                    (starting_block_n, starting_block_info.block_hash)
+                }
+                None => {
+                    // According to spec, if the starting block is not set in DB, we should return 0 and the empty hash
+                    (0, Felt::default())
+                }
+            };
+            // If the current block number is within the sync threshold, return NotSyncing. Else return Syncing with info
+            if highest_block_n <= current_block_num + SYNC_THRESHOLD_BLOCKS {
                 Ok(SyncingStatus::NotSyncing)
             } else {
                 Ok(SyncingStatus::Syncing(SyncStatus {
@@ -58,6 +77,10 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
                     current_block_hash,
                 }))
             }
+        }
+        // If the node is not syncing, return NotSyncing
+        MadaraSyncStatus::NotRunning => {
+            Ok(SyncingStatus::NotSyncing)
         }
     }
 }
