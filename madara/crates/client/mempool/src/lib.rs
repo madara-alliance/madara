@@ -373,7 +373,7 @@ impl MempoolProvider for Mempool {
     }
 
     /// This is called by the block
-    /// production after a batch of transaction is executed. Mark the consumed
+    /// production after a batch of transactions is executed. Mark the consumed
     /// txs as consumed, and re-add the transactions that are not consumed in
     /// the mempool.
     // #[tracing::instrument(skip(self, txs, consumed_txs), fields(module = "Mempool"))]

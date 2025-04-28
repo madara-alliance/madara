@@ -72,8 +72,8 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if !self.head_status.latest_full_block_n().is_some_and(|n| n >= block_n) {
-            return Ok(None)
+        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+            return Ok(None);
         }
         Ok(Some(block_n))
     }
@@ -85,8 +85,8 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if !self.head_status.latest_full_block_n().is_some_and(|n| n >= block_n) {
-            return Ok(None)
+        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+            return Ok(None);
         }
         Ok(Some(block_n))
     }

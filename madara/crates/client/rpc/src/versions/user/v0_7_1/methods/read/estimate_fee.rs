@@ -59,7 +59,5 @@ pub async fn estimate_fee(
         },
     )?;
 
-    tracing::debug!("fee_estimates = {fee_estimates:?}");
-
     Ok(fee_estimates)
 }

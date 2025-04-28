@@ -57,10 +57,10 @@ impl MadaraBackend {
     /// an entire new block, or, you are responsible for calling the `store_xxx`, applying global state, and calling the on_full_block_imported
     /// function when the full block is stored in the backend.
     ///
-    /// This function takes a PendingFullBlock because the commitments can only be computed once we applied the state to the global
+    /// This function takes a PendingFullBlock because the commitments can only be computed once we have applied the state to the global
     /// tries. This function will close the block and compute the commitments.
     ///
-    /// The function returnes the new computed block_hash.
+    /// The function returns the new computed block_hash.
     pub async fn add_full_block_with_classes(
         &self,
         block: PendingFullBlock,

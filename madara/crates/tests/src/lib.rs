@@ -41,8 +41,7 @@ async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
 
         attempt += 1;
         if attempt >= max_attempts {
-            let elapsed = (attempt as f64 * duration.as_secs() as f64) / 60.0;
-            panic!("No answer from the node after {:.1} minutes: {:#}", elapsed, err);
+            panic!("No answer from the node after {duration:?}: {err:#}");
         }
 
         tokio::time::sleep(duration).await;
@@ -197,10 +196,16 @@ impl MadaraCmd {
                 rpc_port = rpc_port.or(get_port(&line, "Running JSON-RPC server at "));
                 gateway_port = gateway_port.or(get_port(&line, "Gateway endpoint started at "));
 
+                if (!rpc && rpc_port.is_some()) || (!gateway && gateway_port.is_some()) {
+                    panic!(
+                        "Inconsistent returned ports: expected rpc_enabled={rpc}, gateway_enabled={gateway}, \
+                        got rpc_port={rpc_port:?}, gateway_port={gateway_port:?}"
+                    )
+                }
+
                 if (rpc == rpc_port.is_some()) && (gateway == gateway_port.is_some()) {
                     let _ = tx.send((rpc_port, gateway_port));
                 }
-
                 println!("{stdout_prefix} {line}");
             }
         });

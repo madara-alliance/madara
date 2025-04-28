@@ -2,7 +2,9 @@ use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
 use mp_gateway::error::{SequencerError, StarknetError};
-use mp_gateway::user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult};
+use mp_gateway::user_transaction::{
+    AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
+};
 use mp_gateway::{
     block::{
         ProviderBlock, ProviderBlockHeader, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature,

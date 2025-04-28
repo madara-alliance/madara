@@ -23,7 +23,7 @@
 //! - Each of those functions can be called in parallel, however, [`MadaraBackend::apply_to_global_trie`] needs to be called
 //!   sequentially. This is because we cannot support updating the global trie in an inter-block parallelism fashion. However,
 //!   parallelism is still used inside of that function - intra-block parallelism.
-//! - Each of these block parts have a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
+//! - Each of these block parts has a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
 //!   which the block importer service can use however it wants. However, [`ChainHead::full_block`] is special,
 //!   as it is updated by this crate.
 //! - The block importer service needs to call [`MadaraBackend::on_block`] to mark a block as fully imported. This function

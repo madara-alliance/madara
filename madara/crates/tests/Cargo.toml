@@ -17,8 +17,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 anyhow.workspace = true
 assert_matches.workspace = true
 flate2 = "1.0.30"
+futures.workspace = true
 lazy_static.workspace = true
 m-cairo-test-contracts.workspace = true
+rand.workspace = true
 reqwest.workspace = true
 rstest.workspace = true
 serde_json = { workspace = true }
@@ -30,5 +32,3 @@ tempfile.workspace = true
 tokio = { workspace = true, features = ["rt", "macros"] }
 tracing.workspace = true
 tracing-subscriber.workspace = true
-futures.workspace = true
-rand.workspace = true

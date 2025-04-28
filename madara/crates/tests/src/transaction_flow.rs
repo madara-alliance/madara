@@ -287,7 +287,7 @@ fn make_transfer_call(recipient: Felt, amount: u128) -> Vec<Call> {
 
 async fn get_latest_block_n(provider: &(impl Provider + Send + Sync)) -> u64 {
     let MaybePendingBlockWithTxHashes::Block(b) =
-        provider.get_block_with_tx_hashes(&BlockId::Tag(BlockTag::Latest)).await.unwrap()
+        provider.get_block_with_tx_hashes(BlockId::Tag(BlockTag::Latest)).await.unwrap()
     else {
         unreachable!("block latest is pending")
     };

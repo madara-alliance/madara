@@ -1,4 +1,5 @@
 use super::builder::PausedClient;
+use bincode::Options;
 use bytes::{Buf, Bytes};
 use http::Method;
 use http_body_util::{BodyExt, Full};
@@ -106,7 +107,10 @@ impl<'a> RequestBuilder<'a> {
 
         req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
-        let body = bincode::serialize(&body).map_err(|err| SequencerError::HttpCallError(err))?;
+        let body = bincode::options()
+            .with_little_endian()
+            .serialize(&body)
+            .map_err(|err| SequencerError::HttpCallError(err))?; // Fixed endinaness is important.
         let body = Bytes::from(body);
 
         let req = req_builder.body(Full::new(body))?;
@@ -125,7 +129,10 @@ impl<'a> RequestBuilder<'a> {
             return Err(starknet_error.into());
         }
 
-        let res = bincode::deserialize_from(whole_body.reader()).map_err(|err| SequencerError::HttpCallError(err))?;
+        let res = bincode::options()
+            .with_little_endian() // Fixed endinaness is important.
+            .deserialize_from(whole_body.reader())
+            .map_err(|err| SequencerError::HttpCallError(err))?;
 
         Ok(res)
     }

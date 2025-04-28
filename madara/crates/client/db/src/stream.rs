@@ -211,7 +211,7 @@ impl MadaraBackend {
         //  done after getting the latest block number! There's a split second where it could have been possible to miss a
         //  block. Because of this rare case, there are two supplementary things to note: we *also* get the latest block_n
         //  *after* subscribing, so that we can check that we did not miss anything during subscription - and just in case,
-        //  we also handle the case when the subscription returns a block that's futher into the future than the one we
+        //  we also handle the case when the subscription returns a block that's further into the future than the one we
         //  would expect.
         // All in all, this implementation tries its *very best* not to subscribe to the channel when it does not have to.
         // In addition, because rust does not have `yield` syntax (yet? I'm losing hope..) - this is implemented as a

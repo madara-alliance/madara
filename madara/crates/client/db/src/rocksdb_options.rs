@@ -78,6 +78,10 @@ impl Column {
     /// Per column rocksdb options, like memory budget, compaction profiles, block sizes
     /// etc.
     pub(crate) fn rocksdb_options(&self, config: &RocksDBConfig) -> Options {
+        // See column-specific options here:
+        // https://github.com/facebook/rocksdb/blob/c237022831aa129aa707bc28e0702a1617ef23b5/include/rocksdb/advanced_options.h#L325
+        // https://github.com/facebook/rocksdb/blob/c237022831aa129aa707bc28e0702a1617ef23b5/include/rocksdb/advanced_options.h#L148
+
         let mut options = Options::default();
 
         let prefix_extractor_len = match self {
