@@ -149,7 +149,6 @@ pub async fn start_server(
                                 .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
                                 .body(hyper::Body::from("INTERNAL_SERVER_ERROR"))?),
                         }
-                        // Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
                     } else {
                         if is_websocket {
                             // Utilize the session close future to know when the actual WebSocket
