@@ -220,10 +220,7 @@ impl<P: ForwardPipeline> SyncController<P> {
                     res?;
                 }
                 res = self.probe.run() => {
-                    let new_probe_height = match res? {
-                        Some(v) => Some(v.block_number),
-                        None => None,
-                    };
+                    let new_probe_height = res?.map(|v| v.block_number);
                     if self.config.stop_at_block_n.is_none()
                         && !can_run_pipeline
                         && self.config.stop_on_sync
