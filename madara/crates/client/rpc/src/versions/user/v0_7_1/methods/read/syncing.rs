@@ -1,10 +1,10 @@
 use mp_block::{BlockId, BlockTag};
-use mp_rpc::{BlockHash, SyncStatus, SyncingStatus};
+use mp_rpc::{SyncStatus, SyncingStatus};
 use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
-use crate::Starknet;
+use crate::{Starknet, StarknetSyncStatus};
 
 const SYNC_THRESHOLD_BLOCKS: u64 = 6;
 
@@ -39,49 +39,25 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
         Err(_err) => (0u64, Felt::ZERO),
     };
 
-    // Get the sync status from the provider with retry logic
+    // Get the sync status from starknet which in turn gets it from MadaraBackend
     let sync_status =
         starknet.sync_status().await.or_internal_server_error("Error getting sync status after retries")?;
 
-    // Get the starting block number from the sync_status
-    let starting_block_num = starknet
-        .backend
-        .get_starting_block_info()?
-        .starting_block_num
-        .ok_or_internal_server_error("Error getting starting block")?;
-
-    // Get the starting block hash - if it's not in sync status or is zero, fetch it from the backend
-    let starting_block_hash = if sync_status.starting_block_hash == BlockHash::default() {
-        // We need to fetch the starting block hash from the backend
-        let starting_block_info = starknet
-            .backend
-            .get_block_info(&BlockId::Number(starting_block_num))
-            .or_internal_server_error("Error getting starting block")?
-            .ok_or_internal_server_error(format!("Starting block not found: block number {}", starting_block_num))?;
-
-        let starting_block_info =
-            starting_block_info.as_nonpending().ok_or_internal_server_error("Starting block cannot be pending")?;
-
-        starting_block_info.block_hash
-    } else {
-        sync_status.starting_block_hash
-    };
-
-    // Get the highest block info from the sync status
-    let highest_block_num = sync_status.highest_block_num;
-    let highest_block_hash = sync_status.highest_block_hash;
-
-    // If the highest block number is 0 or less than current, we're not syncing
-    if highest_block_num == 0 || highest_block_num - SYNC_THRESHOLD_BLOCKS <= current_block_num {
-        return Ok(SyncingStatus::NotSyncing);
+    match sync_status {
+        StarknetSyncStatus::NotRunning => Ok(SyncingStatus::NotSyncing),
+        StarknetSyncStatus::Running { starting_block_n, starting_block_hash, highest_block_n, highest_block_hash } => {
+            if highest_block_n - SYNC_THRESHOLD_BLOCKS <= current_block_num {
+                Ok(SyncingStatus::NotSyncing)
+            } else {
+                Ok(SyncingStatus::Syncing(SyncStatus {
+                    starting_block_num: starting_block_n,
+                    starting_block_hash,
+                    highest_block_num: highest_block_n,
+                    highest_block_hash,
+                    current_block_num,
+                    current_block_hash,
+                }))
+            }
+        }
     }
-
-    Ok(SyncingStatus::Syncing(SyncStatus {
-        starting_block_num,
-        starting_block_hash,
-        highest_block_num,
-        highest_block_hash,
-        current_block_num,
-        current_block_hash,
-    }))
 }

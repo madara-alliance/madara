@@ -4,7 +4,9 @@ use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::{
-    block::{ProviderBlock, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature},
+    block::{
+        ProviderBlock, ProviderBlockHeader, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature,
+    },
     state_update::{
         ProviderStateUpdate, ProviderStateUpdatePending, ProviderStateUpdatePendingMaybe, ProviderStateUpdateWithBlock,
         ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
@@ -18,7 +20,6 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
-use mp_gateway::block::{ ProviderBlockHeaderOnly};
 
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
@@ -37,14 +38,14 @@ impl GatewayProvider {
         }
     }
 
-    pub async fn get_block_with_header_only(&self) -> Result<ProviderBlockHeaderOnly, SequencerError> {
+    pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
-            .add_param(Cow::from("headerOnly"), "true")
             .add_uri_segment("get_block")
             .expect("Failed to add URI segment. This should not fail in prod.")
-            .with_block_id(&BlockId::Tag(BlockTag::Latest));
-        
-        Ok(request.send_get::<ProviderBlockHeaderOnly>().await?)
+            .with_block_id(&block_id)
+            .add_param("headerOnly", "true");
+
+        request.send_get::<ProviderBlockHeader>().await
     }
 
     pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {
@@ -543,6 +544,33 @@ mod tests {
         let signature_block_latest = client_mainnet_fixture.get_signature(BlockId::Tag(BlockTag::Latest)).await;
 
         assert!(matches!(signature_block_latest, Ok(ProviderBlockSignature { .. })))
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_header(client_mainnet_fixture: GatewayProvider) {
+        let signature_block_latest = client_mainnet_fixture.get_header(BlockId::Number(1298)).await.unwrap();
+
+        assert_eq!(
+            signature_block_latest,
+            ProviderBlockHeader {
+                block_number: 1298,
+                block_hash: Felt::from_hex_unchecked(
+                    "0x6f411368c189f6a4e75805d19c7e3b4d3ee441f243d2f601e49358a3072dd8"
+                )
+            }
+        )
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_header_pending(client_mainnet_fixture: GatewayProvider) {
+        let header_pending = client_mainnet_fixture.get_header(BlockId::Tag(BlockTag::Pending)).await;
+
+        assert!(matches!(
+            header_pending,
+            Err(SequencerError::StarknetError(StarknetError { code: StarknetErrorCode::NoBlockHeader, .. }))
+        ))
     }
 
     #[rstest]

@@ -1,9 +1,44 @@
 //! Madara database
+//!
+//! # Block storage
+//!
+//! Storing new blocks is the responsibility of the consumers of this crate. In the madara
+//! node architecture, this means: the sync service mc-sync (when we are syncing new blocks), or
+//! the block production mc-block-production task when we are producing blocks.
+//! For the sake of the mc-db documentation, we will call this service the "block importer" downstream service.
+//!
+//! The block importer service has two ways of adding blocks to the database, namely:
+//! - the easy [`MadaraBackend::add_full_block_with_classes`] function, which takes a full block, and does everything
+//!   required to save it properly and increment the latest block number of the database.
+//! - or, the more complicated lower level API that allows you to store partial blocks.
+//!
+//! Note that the validity of the block being stored is not checked for neither of those APIs.
+//!
+//! For the low-level API, there are a few responsibilities to follow:
+//!
+//! - The database can store partial blocks. Adding headers can be done using [`MadaraBackend::store_block_header`],
+//!   transactions and receipts using [`MadaraBackend::store_transactions`], classes using [`MadaraBackend::class_db_store_block`],
+//!   state diffs using [`MadaraBackend::store_state_diff`], events using [`MadaraBackend::store_events`]. Furthermore,
+//!   [`MadaraBackend::apply_to_global_trie`] also needs to be called.
+//! - Each of those functions can be called in parallel, however, [`MadaraBackend::apply_to_global_trie`] needs to be called
+//!   sequentially. This is because we cannot support updating the global trie in an inter-block parallelism fashion. However,
+//!   parallelism is still used inside of that function - intra-block parallelism.
+//! - Each of these block parts has a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
+//!   which the block importer service can use however it wants. However, [`ChainHead::full_block`] is special,
+//!   as it is updated by this crate.
+//! - The block importer service needs to call [`MadaraBackend::on_block`] to mark a block as fully imported. This function
+//!   will increment the [`ChainHead::full_block`] field, marking a new block. It will also record some metrics, flush the
+//!   database if needed, and make may create db backups if the backend is configured to do so.
+//!
+//! In addition, readers of the database should use [`db_block_id::DbBlockId`] when querying blocks from the database.
+//! This ensures that any partial block data beyond the current [`ChainHead::full_block`] will not be visible to, eg. the rpc
+//! service. The block importer service can however bypass this restriction by using [`db_block_id::RawDbBlockId`] instead;
+//! allowing it to see the partial data it has saved beyond the latest block marked as full.
 
 use anyhow::Context;
-use block_db::get_latest_block_n;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
 use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
+use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use mp_chain_config::ChainConfig;
 use mp_rpc::EmittedEvent;
@@ -19,8 +54,9 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, RwLock};
 
+mod chain_head;
 mod db_version;
 mod error;
 mod rocksdb_options;
@@ -37,7 +73,9 @@ pub mod devnet_db;
 pub mod l1_db;
 pub mod mempool_db;
 pub mod storage_updates;
+pub mod stream;
 pub mod tests;
+mod update_global_trie;
 
 pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
@@ -415,6 +453,16 @@ pub struct StartingBlockInfo {
     pub ignore_block_order: bool,
 }
 
+#[derive(Default, Clone)]
+pub enum SyncStatus {
+    #[default]
+    NotRunning,
+    Running {
+        highest_block_n: u64,
+        highest_block_hash: Felt,
+    },
+}
+
 /// Madara client database backend singleton.
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
@@ -422,23 +470,25 @@ pub struct MadaraBackend {
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     snapshots: Arc<Snapshots>,
-    trie_log_config: TrieLogConfig,
     sender_block_info: tokio::sync::broadcast::Sender<mp_block::MadaraBlockInfo>,
+    head_status: ChainHead,
     sender_event: EventChannels,
-    write_opt_no_wal: WriteOptions,
-    starting_block_info: StartingBlockInfo,
-    #[cfg(any(test, feature = "testing"))]
-    _temp_dir: Option<tempfile::TempDir>,
+    /// WriteOptions with wal disabled
+    writeopts_no_wal: WriteOptions,
+    config: MadaraBackendConfig,
+    sync_status: RwLock<SyncStatus>,
+    starting_block: Option<u64>,
 }
 
 impl fmt::Debug for MadaraBackend {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("MadaraBackend")
-            .field("backup_handle", &self.backup_handle)
+        let mut s = f.debug_struct("MadaraBackend");
+        s.field("backup_handle", &self.backup_handle)
             .field("db", &self.db)
             .field("chain_config", &self.chain_config)
             .field("db_metrics", &self.db_metrics)
             .field("sender_block_info", &self.sender_block_info)
+            .field("config", &self.config)
             .finish()
     }
 }
@@ -461,25 +511,14 @@ impl DatabaseService {
     ///
     /// A new database service.
     ///
-    pub async fn new(
-        base_path: &Path,
-        backup_dir: Option<PathBuf>,
-        restore_from_latest_backup: bool,
-        chain_config: Arc<ChainConfig>,
-        trie_log_config: TrieLogConfig,
-        starting_block: Option<u64>,
-    ) -> anyhow::Result<Self> {
-        tracing::info!("💾 Opening database at: {}", base_path.display());
+    pub async fn new(chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> anyhow::Result<Self> {
+        tracing::info!("💾 Opening database at: {}", config.base_path.display());
 
-        let handle = MadaraBackend::open(
-            base_path.to_owned(),
-            backup_dir.clone(),
-            restore_from_latest_backup,
-            chain_config,
-            trie_log_config,
-            starting_block,
-        )
-        .await?;
+        let handle = MadaraBackend::open(chain_config, config).await?;
+
+        if let Some(block_n) = handle.head_status().latest_full_block_n() {
+            tracing::info!("📦 Database latest block: #{block_n}");
+        }
 
         Ok(Self { handle })
     }
@@ -515,58 +554,126 @@ impl Drop for MadaraBackend {
     }
 }
 
+#[derive(Debug)]
+pub struct MadaraBackendConfig {
+    pub base_path: PathBuf,
+    pub backup_dir: Option<PathBuf>,
+    pub restore_from_latest_backup: bool,
+    pub trie_log: TrieLogConfig,
+    pub backup_every_n_blocks: Option<u64>,
+    pub flush_every_n_blocks: Option<u64>,
+    #[cfg(any(test, feature = "testing"))]
+    pub _temp_dir: Option<tempfile::TempDir>,
+}
+
+impl MadaraBackendConfig {
+    pub fn new(base_path: impl AsRef<Path>) -> Self {
+        Self {
+            base_path: base_path.as_ref().to_path_buf(),
+            backup_dir: None,
+            restore_from_latest_backup: false,
+            trie_log: Default::default(),
+            backup_every_n_blocks: None,
+            flush_every_n_blocks: None,
+            #[cfg(any(test, feature = "testing"))]
+            _temp_dir: None,
+        }
+    }
+    #[cfg(any(test, feature = "testing"))]
+    pub fn new_temp_dir(temp_dir: tempfile::TempDir) -> Self {
+        let config = Self::new(temp_dir.as_ref());
+        Self { _temp_dir: Some(temp_dir), ..config }
+    }
+    pub fn backup_dir(self, backup_dir: Option<PathBuf>) -> Self {
+        Self { backup_dir, ..self }
+    }
+    pub fn restore_from_latest_backup(self, restore_from_latest_backup: bool) -> Self {
+        Self { restore_from_latest_backup, ..self }
+    }
+    pub fn backup_every_n_blocks(self, backup_every_n_blocks: Option<u64>) -> Self {
+        Self { backup_every_n_blocks, ..self }
+    }
+    pub fn flush_every_n_blocks(self, flush_every_n_blocks: Option<u64>) -> Self {
+        Self { flush_every_n_blocks, ..self }
+    }
+    pub fn trie_log(self, trie_log: TrieLogConfig) -> Self {
+        Self { trie_log, ..self }
+    }
+}
+
 impl MadaraBackend {
     pub fn chain_config(&self) -> &Arc<ChainConfig> {
         &self.chain_config
+    }
+
+    fn new(
+        backup_handle: Option<mpsc::Sender<BackupRequest>>,
+        db: Arc<DB>,
+        chain_config: Arc<ChainConfig>,
+        config: MadaraBackendConfig,
+    ) -> anyhow::Result<Self> {
+        let chain_head = ChainHead::load_from_db(&db).context("Getting latest block_n from database")?;
+        let snapshots = Arc::new(Snapshots::new(
+            Arc::clone(&db),
+            chain_head.global_trie.current(),
+            Some(config.trie_log.max_kept_snapshots),
+            config.trie_log.snapshot_interval,
+        ));
+        let starting_block_n = chain_head.global_trie.current();
+        Ok(Self {
+            writeopts_no_wal: make_write_opt_no_wal(),
+            db_metrics: DbMetrics::register().context("Registering db metrics")?,
+            backup_handle,
+            db,
+            chain_config,
+            sender_block_info: tokio::sync::broadcast::channel(100).0,
+            sender_event: EventChannels::new(100),
+            config,
+            starting_block: starting_block_n,
+            sync_status: RwLock::new(SyncStatus::default()),
+            head_status: ChainHead::default(),
+            snapshots,
+        })
     }
 
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<MadaraBackend> {
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = open_rocksdb(temp_dir.as_ref()).unwrap();
-        let snapshots = Arc::new(Snapshots::new(Arc::clone(&db), None, Some(0), 5));
-        Arc::new(Self {
-            backup_handle: None,
-            starting_block_info: StartingBlockInfo { starting_block_num: None, ignore_block_order: false },
-            db,
-            chain_config,
-            db_metrics: DbMetrics::register().unwrap(),
-            snapshots,
-            trie_log_config: Default::default(),
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            sender_event: EventChannels::new(100),
-            write_opt_no_wal: make_write_opt_no_wal(),
-            _temp_dir: Some(temp_dir),
-        })
+        Arc::new(Self::new(None, db, chain_config, MadaraBackendConfig::new_temp_dir(temp_dir)).unwrap())
     }
 
     /// Open the db.
     pub async fn open(
-        db_config_dir: PathBuf,
-        backup_dir: Option<PathBuf>,
-        restore_from_latest_backup: bool,
         chain_config: Arc<ChainConfig>,
-        trie_log_config: TrieLogConfig,
-        starting_block: Option<u64>,
+        config: MadaraBackendConfig,
     ) -> anyhow::Result<Arc<MadaraBackend>> {
         // check if the db version is compatible with the current binary
         tracing::debug!("checking db version");
-        if let Some(db_version) = db_version::check_db_version(&db_config_dir).context("Checking database version")? {
+        if let Some(db_version) =
+            db_version::check_db_version(&config.base_path).context("Checking database version")?
+        {
             tracing::debug!("version of existing db is {db_version}");
         }
 
-        let db_path = db_config_dir.join("db");
+        let db_path = config.base_path.join("db");
 
         // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
         // There is also another oneshot channel involved: when restoring the db at startup, we want to wait for the backupengine to finish restoration before returning from open()
-        let backup_handle = if let Some(backup_dir) = backup_dir {
+        let backup_handle = if let Some(backup_dir) = config.backup_dir.clone() {
             let (restored_cb_sender, restored_cb_recv) = oneshot::channel();
 
             let (sender, receiver) = mpsc::channel(1);
             let db_path = db_path.clone();
             std::thread::spawn(move || {
-                spawn_backup_db_task(&backup_dir, restore_from_latest_backup, &db_path, restored_cb_sender, receiver)
-                    .expect("Database backup thread")
+                spawn_backup_db_task(
+                    &backup_dir,
+                    config.restore_from_latest_backup,
+                    &db_path,
+                    restored_cb_sender,
+                    receiver,
+                )
+                .expect("Database backup thread")
             });
 
             tracing::debug!("blocking on db restoration");
@@ -579,38 +686,36 @@ impl MadaraBackend {
         };
 
         let db = open_rocksdb(&db_path)?;
-        let current_block_n = get_latest_block_n(&db).context("Getting latest block_n from database")?;
-        let snapshots = Arc::new(Snapshots::new(
-            Arc::clone(&db),
-            current_block_n,
-            Some(trie_log_config.max_kept_snapshots),
-            trie_log_config.snapshot_interval,
-        ));
 
-        let (sb, ignore_block_order) = if starting_block.is_some() {
-            tracing::warn!("Forcing unordered state. This will most probably break your database.");
-            (starting_block, true)
-        } else {
-            (current_block_n.map(|block_id| block_id + 1), false)
-        };
-
-        let backend = Arc::new(Self {
-            db_metrics: DbMetrics::register().context("Registering db metrics")?,
-            backup_handle,
-            db,
-            chain_config: Arc::clone(&chain_config),
-            snapshots,
-            trie_log_config,
-            sender_block_info: tokio::sync::broadcast::channel(100).0,
-            sender_event: EventChannels::new(100),
-            write_opt_no_wal: make_write_opt_no_wal(),
-            starting_block_info: StartingBlockInfo { starting_block_num: sb, ignore_block_order },
-            #[cfg(any(test, feature = "testing"))]
-            _temp_dir: None,
-        });
+        let mut backend = Self::new(backup_handle, db, chain_config, config)?;
         backend.check_configuration()?;
+        backend.load_head_status_from_db()?;
         backend.update_metrics();
-        Ok(backend)
+        Ok(Arc::new(backend))
+    }
+
+    /// This function needs to be called by the downstream block importer consumer service to mark a
+    /// new block as fully imported. See the [module documentation](self) to get details on what this exactly means.
+    pub async fn on_block(&self, block_n: u64) -> anyhow::Result<()> {
+        self.head_status.set_latest_full_block_n(Some(block_n));
+        self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
+        if self
+            .config
+            .flush_every_n_blocks
+            .is_some_and(|every_n_blocks| every_n_blocks != 0 && block_n % every_n_blocks == 0)
+        {
+            self.flush().context("Flushing database")?;
+        }
+
+        if self
+            .config
+            .backup_every_n_blocks
+            .is_some_and(|every_n_blocks| every_n_blocks != 0 && block_n % every_n_blocks == 0)
+        {
+            self.backup().await.context("Making DB backup")?;
+        }
+        self.save_head_status_to_db()?;
+        Ok(())
     }
 
     pub fn flush(&self) -> anyhow::Result<()> {
@@ -645,9 +750,9 @@ impl MadaraBackend {
         map: DatabaseKeyMapping,
     ) -> BonsaiStorage<BasicId, BonsaiDb, H> {
         let config = BonsaiStorageConfig {
-            max_saved_trie_logs: Some(self.trie_log_config.max_saved_trie_logs),
-            max_saved_snapshots: Some(self.trie_log_config.max_kept_snapshots),
-            snapshot_interval: self.trie_log_config.snapshot_interval,
+            max_saved_trie_logs: Some(self.config.trie_log.max_saved_trie_logs),
+            max_saved_snapshots: Some(self.config.trie_log.max_kept_snapshots),
+            snapshot_interval: self.config.trie_log.snapshot_interval,
         };
 
         BonsaiStorage::new(

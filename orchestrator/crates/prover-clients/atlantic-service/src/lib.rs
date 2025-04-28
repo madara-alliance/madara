@@ -3,7 +3,7 @@ pub mod error;
 mod types;
 use std::str::FromStr;
 
-use alloy::primitives::B256;
+use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
@@ -67,18 +67,43 @@ impl ProverClient for AtlanticProverService {
     }
 
     #[tracing::instrument(skip(self))]
-    async fn get_task_status(&self, job_key: &str, fact: &str) -> Result<TaskStatus, ProverClientError> {
+    async fn get_task_status(
+        &self,
+        job_key: &str,
+        fact: Option<String>,
+        cross_verify: bool,
+    ) -> Result<TaskStatus, ProverClientError> {
         let res = self.atlantic_client.get_job_status(job_key).await?;
+
         match res.atlantic_query.status {
             AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
+
             AtlanticQueryStatus::Done => {
-                let fact = B256::from_str(fact).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+                if !cross_verify {
+                    tracing::debug!("Skipping cross-verification as it's disabled");
+                    return Ok(TaskStatus::Succeeded);
+                }
+
+                // Cross verification is enabled
+                let fact_str = match fact {
+                    Some(f) => f,
+                    None => {
+                        return Ok(TaskStatus::Failed("Cross verification enabled but no fact provided".to_string()));
+                    }
+                };
+
+                let fact =
+                    B256::from_str(&fact_str).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+
+                tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
+
                 if self.fact_checker.is_valid(&fact).await? {
                     Ok(TaskStatus::Succeeded)
                 } else {
                     Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
                 }
             }
+
             AtlanticQueryStatus::Failed => {
                 Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
             }

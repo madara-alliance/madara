@@ -107,10 +107,13 @@ impl MadaraCmd {
         .await;
         self
     }
-}
 
-impl Drop for MadaraCmd {
-    fn drop(&mut self) {
+    pub fn kill(&mut self) {
+        let Some(mut child) = self.process.take() else { return };
+        let _ = child.kill();
+    }
+
+    pub fn stop(&mut self) {
         let Some(mut child) = self.process.take() else { return };
 
         // Send SIGTERM signal to gracefully terminate the process
@@ -135,6 +138,12 @@ impl Drop for MadaraCmd {
 
         // Ensure process cleanup
         let _ = child.wait();
+    }
+}
+
+impl Drop for MadaraCmd {
+    fn drop(&mut self) {
+        self.stop();
     }
 }
 
@@ -223,6 +232,8 @@ impl MadaraCmdBuilder {
         let gateway_key_args =
             env::var("GATEWAY_KEY").ok().map(|key| vec!["--gateway-key".into(), key]).unwrap_or_default();
 
+        tracing::info!("Running new madara process with args {:?}", self.args);
+
         let mut cmd = Command::new(target_bin);
         cmd.envs(self.env)
             .args(self.args)
@@ -282,9 +293,8 @@ async fn madara_can_sync_a_few_blocks() {
         "--full",
         "--network",
         "sepolia",
-        "--no-sync-polling",
-        "--n-blocks-to-sync",
-        "20",
+        "--sync-stop-at",
+        "19",
         "--no-l1-sync",
         "--gas-price",
         "0",
@@ -297,9 +307,86 @@ async fn madara_can_sync_a_few_blocks() {
     assert_eq!(
         node.json_rpc().block_hash_and_number().await.unwrap(),
         BlockHashAndNumber {
-            // https://sepolia.voyager.online/block/0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5
+            // https://sepolia.voyager.online/block/19
             block_hash: Felt::from_hex_unchecked("0x4177d1ba942a4ab94f86a476c06f0f9e02363ad410cdf177c54064788c9bcb5"),
             block_number: 19
+        }
+    );
+}
+
+#[rstest]
+#[tokio::test]
+async fn madara_can_sync_and_restart() {
+    use starknet_core::types::BlockHashAndNumber;
+    use starknet_types_core::felt::Felt;
+
+    let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+
+    let cmd_builder = MadaraCmdBuilder::new().args([
+        "--full",
+        "--network",
+        "sepolia",
+        "--sync-stop-at",
+        "5",
+        "--no-l1-sync",
+        "--gas-price",
+        "0",
+    ]);
+
+    let mut node = cmd_builder.clone().run();
+    node.wait_for_ready().await;
+    node.wait_for_sync_to(5).await;
+
+    assert_eq!(
+        node.json_rpc().block_hash_and_number().await.unwrap(),
+        BlockHashAndNumber {
+            // https://sepolia.voyager.online/block/5
+            block_hash: Felt::from_hex_unchecked("0x13b390a0b2c48f907cda28c73a12aa31b96d51bc1be004ba5f71174d8d70e4f"),
+            block_number: 5
+        }
+    );
+
+    node.stop(); // stop the node (gracefully).
+
+    let cmd_builder =
+        cmd_builder.args(["--full", "--network", "sepolia", "--sync-stop-at", "7", "--no-l1-sync", "--gas-price", "0"]);
+
+    let mut node = cmd_builder.clone().run();
+    node.wait_for_ready().await;
+    node.wait_for_sync_to(7).await;
+
+    assert_eq!(
+        node.json_rpc().block_hash_and_number().await.unwrap(),
+        BlockHashAndNumber {
+            // https://sepolia.voyager.online/block/7
+            block_hash: Felt::from_hex_unchecked("0x2e59a5adbdf53e00fd282a007b59771067870c1c7664ca7878327adfff398b4"),
+            block_number: 7
+        }
+    );
+
+    node.kill(); // kill the node. ungraceful shutdown.
+
+    let cmd_builder = cmd_builder.args([
+        "--full",
+        "--network",
+        "sepolia",
+        "--sync-stop-at",
+        "10",
+        "--no-l1-sync",
+        "--gas-price",
+        "0",
+    ]);
+
+    let mut node = cmd_builder.clone().run();
+    node.wait_for_ready().await;
+    node.wait_for_sync_to(10).await;
+
+    assert_eq!(
+        node.json_rpc().block_hash_and_number().await.unwrap(),
+        BlockHashAndNumber {
+            // https://sepolia.voyager.online/block/10
+            block_hash: Felt::from_hex_unchecked("0x3b26e3fc6bc2062f99479ea06a79e080a5f373514e03002459010c3be544593"),
+            block_number: 10
         }
     );
 }

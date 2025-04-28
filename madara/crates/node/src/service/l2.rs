@@ -1,90 +1,171 @@
 use crate::cli::L2SyncParams;
-use mc_block_import::BlockImporter;
-use mc_db::{DatabaseService, MadaraBackend};
-use mc_sync::fetch::fetchers::{FetchConfig, WarpUpdateConfig};
-use mc_sync::SyncConfig;
-use mc_telemetry::TelemetryHandle;
-use mp_chain_config::ChainConfig;
-use mp_sync::SyncStatusProvider;
+use mc_db::MadaraBackend;
+use mc_gateway_client::GatewayProvider;
+use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
+use mc_settlement_client::state_update::L1HeadReceiver;
+use mc_sync::{
+    import::{BlockImporter, BlockValidationConfig},
+    SyncControllerConfig,
+};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
-use std::time::Duration;
+use url::Url;
 
-#[derive(Clone)]
-pub struct L2SyncService {
-    db_backend: Arc<MadaraBackend>,
-    block_importer: Arc<BlockImporter>,
-    fetch_config: FetchConfig,
-    backup_every_n_blocks: Option<u64>,
-    starting_block: Option<u64>,
-    telemetry: Arc<TelemetryHandle>,
-    pending_block_poll_interval: Duration,
-    sync_status_provider: SyncStatusProvider,
+#[derive(Clone, Debug)]
+pub struct WarpUpdateConfig {
+    /// The port used for nodes to make rpc calls during a warp update.
+    pub warp_update_port_rpc: u16,
+    /// The port used for nodes to send blocks during a warp update.
+    pub warp_update_port_fgw: u16,
+    /// Whether to shutdown the warp update sender once the migration has completed.
+    pub warp_update_shutdown_sender: bool,
+    /// Whether to shut down the warp update receiver once the migration has completed
+    pub warp_update_shutdown_receiver: bool,
+    /// A list of services to start once warp update has completed.
+    pub deferred_service_start: Vec<MadaraServiceId>,
+    /// A list of services to stop one warp update has completed.
+    pub deferred_service_stop: Vec<MadaraServiceId>,
 }
 
-impl L2SyncService {
+#[derive(Clone)]
+struct StartArgs {
+    l1_head_recv: L1HeadReceiver,
+    db_backend: Arc<MadaraBackend>,
+    params: L2SyncParams,
+    warp_update: Option<WarpUpdateConfig>,
+}
+
+#[derive(Clone)]
+pub struct SyncService {
+    start_args: Option<StartArgs>,
+    disabled: bool,
+}
+
+impl SyncService {
     pub async fn new(
         config: &L2SyncParams,
-        chain_config: Arc<ChainConfig>,
-        db: &DatabaseService,
-        block_importer: Arc<BlockImporter>,
-        telemetry: TelemetryHandle,
+        db: &Arc<MadaraBackend>,
+        l1_head_recv: L1HeadReceiver,
         warp_update: Option<WarpUpdateConfig>,
-        sync_status_provider: SyncStatusProvider,
     ) -> anyhow::Result<Self> {
-        let fetch_config = config.block_fetch_config(chain_config.chain_id.clone(), chain_config.clone(), warp_update);
-
-        tracing::info!("🛰️ Using feeder gateway URL: {}", fetch_config.feeder_gateway.as_str());
-
         Ok(Self {
-            db_backend: Arc::clone(db.backend()),
-            fetch_config,
-            starting_block: config.unsafe_starting_block,
-            backup_every_n_blocks: config.backup_every_n_blocks,
-            block_importer,
-            telemetry: Arc::new(telemetry),
-            pending_block_poll_interval: config.pending_block_poll_interval,
-            sync_status_provider,
+            start_args: (!config.l2_sync_disabled).then_some(StartArgs {
+                l1_head_recv,
+                db_backend: db.clone(),
+                params: config.clone(),
+                warp_update,
+            }),
+            disabled: config.l2_sync_disabled,
         })
     }
 }
 
 #[async_trait::async_trait]
-impl Service for L2SyncService {
+impl Service for SyncService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let L2SyncService {
-            db_backend,
-            fetch_config,
-            backup_every_n_blocks,
-            starting_block,
-            pending_block_poll_interval,
-            block_importer,
-            telemetry,
-            sync_status_provider,
-        } = self.clone();
-        let telemetry = Arc::clone(&telemetry);
+        if self.disabled {
+            return Ok(());
+        }
+        let this = self.start_args.take().expect("Service already started");
+        let importer = Arc::new(BlockImporter::new(
+            this.db_backend.clone(),
+            BlockValidationConfig::default().trust_parent_hash(this.params.unsafe_starting_block.is_some()),
+        ));
 
-        runner.service_loop(move |ctx| {
-            mc_sync::l2_sync_worker(
-                db_backend,
-                ctx,
-                fetch_config,
-                SyncConfig {
-                    block_importer,
-                    starting_block,
-                    backup_every_n_blocks,
-                    telemetry,
-                    pending_block_poll_interval,
-                },
-                sync_status_provider,
+        let config = SyncControllerConfig::default()
+            .l1_head_recv(this.l1_head_recv)
+            .stop_at_block_n(this.params.sync_stop_at)
+            .global_stop_on_sync(this.params.stop_on_sync)
+            .stop_on_sync(this.params.stop_on_sync)
+            .no_pending_block(this.params.no_pending_sync);
+
+        if let Some(starting_block) = this.params.unsafe_starting_block {
+            // We state that starting_block - 1 is the chain head.
+            this.db_backend.head_status().set_latest_full_block_n(starting_block.checked_sub(1));
+        }
+
+        runner.service_loop(move |ctx| async move {
+            // Warp update
+            if let Some(WarpUpdateConfig {
+                warp_update_port_rpc,
+                warp_update_port_fgw,
+                warp_update_shutdown_sender,
+                warp_update_shutdown_receiver,
+                deferred_service_start,
+                deferred_service_stop,
+            }) = this.warp_update
+            {
+                let client = jsonrpsee::http_client::HttpClientBuilder::default()
+                    .build(format!("http://localhost:{warp_update_port_rpc}"))
+                    .expect("Building client");
+
+                if client.ping().await.is_err() {
+                    tracing::error!(
+                        "❗ Failed to connect to warp update sender on http://localhost:{warp_update_port_rpc}"
+                    );
+                    ctx.cancel_global();
+                    return Ok(());
+                }
+
+                let gateway = Arc::new(GatewayProvider::new(
+                    Url::parse(&format!("http://localhost:{warp_update_port_fgw}/gateway/"))
+                        .expect("Failed to parse warp update sender gateway url. This should not fail in prod"),
+                    Url::parse(&format!("http://localhost:{warp_update_port_fgw}/feeder_gateway/"))
+                        .expect("Failed to parse warp update sender feeder gateway url. This should not fail in prod"),
+                ));
+
+                mc_sync::gateway::forward_sync(
+                    this.db_backend.clone(),
+                    importer.clone(),
+                    gateway,
+                    SyncControllerConfig::default().stop_on_sync(true),
+                    mc_sync::gateway::ForwardSyncConfig::default()
+                        .disable_tries(this.params.disable_tries)
+                        .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
+                )
+                .run(ctx.clone())
+                .await?;
+
+                if warp_update_shutdown_sender {
+                    if client.shutdown().await.is_err() {
+                        tracing::error!("❗ Failed to shutdown warp update sender");
+                        ctx.cancel_global();
+                        return Ok(());
+                    }
+
+                    for svc_id in deferred_service_stop {
+                        ctx.service_remove(svc_id);
+                    }
+
+                    for svc_id in deferred_service_start {
+                        ctx.service_add(svc_id);
+                    }
+                }
+
+                if warp_update_shutdown_receiver {
+                    return anyhow::Ok(());
+                }
+            }
+
+            let gateway = this.params.create_feeder_client(this.db_backend.chain_config().clone())?;
+            mc_sync::gateway::forward_sync(
+                this.db_backend,
+                importer,
+                gateway,
+                config,
+                mc_sync::gateway::ForwardSyncConfig::default()
+                    .disable_tries(this.params.disable_tries)
+                    .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
             )
+            .run(ctx)
+            .await
         });
 
         Ok(())
     }
 }
 
-impl ServiceId for L2SyncService {
+impl ServiceId for SyncService {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {
         MadaraServiceId::L2Sync.svc_id()

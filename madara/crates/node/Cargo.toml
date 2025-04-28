@@ -22,22 +22,19 @@ name = "madara"
 
 # Madara
 mc-analytics = { workspace = true }
-mc-block-import = { workspace = true }
 mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-devnet = { workspace = true }
-mc-eth = { workspace = true }
 mc-gateway-client = { workspace = true }
 mc-gateway-server = { workspace = true }
 mc-mempool = { workspace = true }
 mc-rpc = { workspace = true }
+mc-settlement-client = { workspace = true }
 mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-oracle = { workspace = true }
-mp-rpc = { workspace = true }
-mp-sync = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
@@ -61,6 +58,8 @@ reqwest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
+starknet-core.workspace = true
+starknet-providers.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower.workspace = true
@@ -71,9 +70,9 @@ url.workspace = true
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
-    "tonic",
-    "metrics",
-    "logs",
+  "tonic",
+  "metrics",
+  "logs",
 ] }
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry-stdout = { workspace = true }
@@ -86,4 +85,3 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
-sound = ["mc-sync/m"]
