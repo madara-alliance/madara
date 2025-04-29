@@ -371,7 +371,6 @@ async fn normal_transfer(#[case] setup: TestSetup) {
 #[case::gateway(GatewayAndSequencer)]
 #[case::single_node(SequencerOnly)]
 /// Test more transfers, with some concurrency, across some block boundaries
-/// This helps test that
 async fn more_transfers(#[case] setup: TestSetup) {
     let setup = SetupBuilder::new(setup).with_block_time("2s").with_pending_update_time("500ms").run().await;
 

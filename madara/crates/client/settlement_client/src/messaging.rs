@@ -141,7 +141,7 @@ pub async fn sync<C, S>(
 where
     S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
-    tracing::info!("⟠ Starting L1 Messages Syncing...");
+    tracing::info!("⟠  Starting L1 Messages Syncing...");
 
     let last_synced_event_block = backend
         .messaging_last_synced_l1_block_with_event()
@@ -290,11 +290,11 @@ async fn process_message(
     // Ensure that L1 message has not been executed
     match backend.has_l1_messaging_nonce(tx_nonce) {
         Ok(true) => {
-            tracing::debug!("⟠ Event already processed: {:?}", transaction);
+            tracing::debug!("Event already processed: {:?}", transaction);
             return Ok(None);
         }
         Err(e) => {
-            tracing::error!("⟠ Unexpected DB error: {:?}", e);
+            tracing::error!("Unexpected DB error: {:?}", e);
             return Err(SettlementClientError::DatabaseError(format!(
                 "Failed to check nonce in process_message: {}",
                 e

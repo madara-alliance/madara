@@ -16,6 +16,7 @@ use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx, ValidatedToBlo
 use mp_transactions::L1HandlerTransaction;
 use mp_transactions::L1HandlerTransactionResult;
 use starknet_api::core::Nonce;
+use starknet_api::transaction::TransactionVersion;
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::{BTreeMap, VecDeque};
@@ -206,7 +207,9 @@ impl Mempool {
     }
 
     fn accept_validated_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
-        let nonce_info = if let Some(tx) = tx.tx.as_l1_handler() {
+        let nonce_info = if tx.tx.version() == TransactionVersion::ZERO {
+            NonceInfo::default()
+        } else if let Some(tx) = tx.tx.as_l1_handler() {
             self.resolve_nonce_info_l1_handler(tx.nonce.into())?
         } else {
             self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce())?
