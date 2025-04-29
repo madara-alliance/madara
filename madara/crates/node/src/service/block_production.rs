@@ -37,7 +37,6 @@ impl BlockProductionService {
 
 #[async_trait::async_trait]
 impl Service for BlockProductionService {
-    // TODO(cchudant,2024-07-30): special threading requirements for the block production task
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let Self { backend, l1_data_provider, mempool, metrics, .. } = self;
@@ -47,10 +46,9 @@ impl Service for BlockProductionService {
             Arc::clone(mempool),
             Arc::clone(metrics),
             Arc::clone(l1_data_provider),
-        )
-        .await?;
+        );
 
-        runner.service_loop(move |ctx| block_production_task.block_production_task(ctx));
+        runner.service_loop(move |ctx| block_production_task.run(ctx));
 
         Ok(())
     }

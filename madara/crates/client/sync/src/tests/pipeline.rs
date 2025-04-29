@@ -6,14 +6,14 @@ use crate::{
     gateway::ForwardSyncConfig,
     import::{BlockImporter, BlockValidationConfig},
     sync::ServiceEvent,
-    util::{AbortOnDrop, ServiceStateSender},
+    util::ServiceStateSender,
     SyncControllerConfig,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_settlement_client::state_update::StateUpdate;
 use mp_chain_config::ChainConfig;
 use mp_state_update::DeclaredClassItem;
-use mp_utils::service::ServiceContext;
+use mp_utils::{service::ServiceContext, AbortOnDrop};
 use rstest::{fixture, rstest};
 use starknet_api::felt;
 use starknet_core::types::Felt;

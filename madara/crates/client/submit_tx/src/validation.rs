@@ -12,7 +12,7 @@ use blockifier::{
     },
 };
 use mc_db::MadaraBackend;
-use mc_exec::{execution::TxInfo, ExecutionContext};
+use mc_exec::{execution::TxInfo, MadaraBackendExecutionExt};
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_rpc::{
@@ -187,8 +187,7 @@ impl TransactionValidator {
 
             // Perform validations
             if let BTransaction::AccountTransaction(account_tx) = tx.clone_blockifier_transaction() {
-                let exec_context = ExecutionContext::new_on_pending(Arc::clone(&self.backend))?;
-                let mut validator = exec_context.tx_validator();
+                let mut validator = self.backend.new_transaction_validator()?;
                 validator.perform_validations(account_tx, deploy_account_skip_validation)?
             }
         }

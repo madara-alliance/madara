@@ -325,6 +325,15 @@ impl MempoolInner {
         }
     }
 
+    /// Returns true if at least one transaction can be consumed from the mempool.
+    pub fn has_ready_transactions(&self) -> bool {
+        !self.tx_intent_queue_ready.is_empty()
+    }
+
+    pub fn n_total(&self) -> usize {
+        self.limiter.current_transactions
+    }
+
     /// When `force` is `true`, this function should never return any error.
     /// `update_limits` is `false` when the transaction has been removed from
     /// the mempool in the past without updating the limits.
