@@ -43,6 +43,7 @@ use db_metrics::DbMetrics;
 use events::EventChannels;
 use mp_block::MadaraBlockInfo;
 use mp_chain_config::ChainConfig;
+use mp_convert::Felt;
 use mp_receipt::EventWithTransactionHash;
 use mp_rpc::EmittedEvent;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
@@ -56,7 +57,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, RwLock};
 use watch::BlockWatch;
 
 mod chain_head;
@@ -319,6 +320,29 @@ impl Default for TrieLogConfig {
     }
 }
 
+#[derive(Default, Clone)]
+pub enum SyncStatus {
+    #[default]
+    NotRunning,
+    Running {
+        highest_block_n: u64,
+        highest_block_hash: Felt,
+    },
+}
+
+#[derive(Default)]
+pub(crate) struct SyncStatusCell(RwLock<SyncStatus>);
+impl SyncStatusCell {
+    pub(crate) async fn set(&self, sync_status: SyncStatus) {
+        let mut status = self.0.write().await;
+        *status = sync_status;
+    }
+    pub(crate) async fn get(&self) -> SyncStatus {
+        self.0.read().await.clone()
+    }
+}
+
+/// Madara client database backend singleton.
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
@@ -334,6 +358,8 @@ pub struct MadaraBackend {
     // keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
     #[cfg(any(test, feature = "testing"))]
     _temp_dir: Option<tempfile::TempDir>,
+    sync_status: SyncStatusCell,
+    starting_block: Option<u64>,
 }
 
 impl fmt::Debug for MadaraBackend {
@@ -474,6 +500,8 @@ impl MadaraBackend {
             chain_config,
             watch_events: EventChannels::new(100),
             config,
+            starting_block: None,
+            sync_status: SyncStatusCell::default(),
             head_status: ChainHead::default(),
             snapshots,
             watch_blocks: BlockWatch::new(),
@@ -542,6 +570,7 @@ impl MadaraBackend {
         backend.check_configuration()?;
         backend.load_head_status_from_db()?;
         backend.update_metrics();
+        backend.set_starting_block(backend.head_status.latest_full_block_n());
         Ok(Arc::new(backend))
     }
 

@@ -11,6 +11,7 @@ use classes::ClassesSync;
 use mc_db::{db_block_id::RawDbBlockId, MadaraBackend};
 use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockId, BlockTag};
+use mp_gateway::block::ProviderBlockHeader;
 use std::{iter, sync::Arc, time::Duration};
 
 pub(crate) mod blocks;
@@ -63,6 +64,7 @@ pub fn forward_sync(
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
     let get_pending_block = gateway_pending_block_sync(client.clone(), importer.clone(), backend.clone());
     SyncController::new(
+        backend.clone(),
         GatewayForwardSync::new(backend, importer, client, config),
         probe,
         controller_config,
@@ -226,13 +228,16 @@ impl GatewayLatestProbe {
     pub fn new(client: Arc<GatewayProvider>) -> Self {
         Self { client }
     }
-    async fn probe(self: Arc<Self>, _highest_known_block: Option<u64>) -> anyhow::Result<Option<u64>> {
+    async fn probe(
+        self: Arc<Self>,
+        _highest_known_block: Option<ProviderBlockHeader>,
+    ) -> anyhow::Result<Option<ProviderBlockHeader>> {
         let header = self
             .client
             .get_header(BlockId::Tag(BlockTag::Latest))
             .await
             .context("Getting the latest block_n from the gateway")?;
         tracing::debug!("Probe got header {header:?}");
-        Ok(Some(header.block_number))
+        Ok(Some(header))
     }
 }

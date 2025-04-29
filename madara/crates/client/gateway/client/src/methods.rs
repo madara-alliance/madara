@@ -1,6 +1,7 @@
-use super::{builder::GatewayProvider, request_builder::RequestBuilder};
+use std::{borrow::Cow, sync::Arc};
+
 use mp_block::{BlockId, BlockTag};
-use mp_class::{ContractClass, FlattenedSierraClass, LegacyContractClass};
+use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::user_transaction::{
     AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
@@ -19,8 +20,10 @@ use mp_gateway::{
 };
 use serde::de::DeserializeOwned;
 use serde_json::Value;
+use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
-use std::{borrow::Cow, sync::Arc};
+
+use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
 impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
