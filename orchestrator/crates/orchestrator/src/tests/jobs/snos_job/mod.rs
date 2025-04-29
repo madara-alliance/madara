@@ -22,17 +22,8 @@ async fn test_create_job() {
     let services = TestConfigBuilder::new().build().await;
 
     // Create proper metadata structure
-    let metadata = JobMetadata {
-        common: CommonMetadata::default(),
-        specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number: 0,
-            full_output: false,
-            cairo_pie_path: None,
-            snos_output_path: None,
-            program_output_path: None,
-            snos_fact: None,
-        }),
-    };
+    let metadata =
+        JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
 
     let job = SnosJob.create_job(services.config.clone(), String::from("0"), metadata).await;
 
@@ -53,14 +44,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let services = TestConfigBuilder::new().build().await;
 
     // Update job_item to use the proper metadata structure for SNOS jobs
-    job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata {
-        block_number: 0,
-        full_output: false,
-        cairo_pie_path: None,
-        snos_output_path: None,
-        program_output_path: None,
-        snos_fact: None,
-    });
+    job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata::default());
 
     let job_status = SnosJob.verify_job(services.config.clone(), &mut job_item).await;
 
@@ -98,11 +82,10 @@ async fn test_process_job() -> color_eyre::Result<()> {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
             block_number,
-            full_output: false,
             cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
-            snos_fact: None,
+            ..Default::default()
         }),
     };
 

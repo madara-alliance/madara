@@ -15,7 +15,7 @@ pub enum ProvingInputTypePath {
 ///
 /// # Field Management
 /// All fields are initialized by the worker during job creation.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct ProvingMetadata {
     /// Block number to prove
     pub block_number: u64,
@@ -28,4 +28,5 @@ pub struct ProvingMetadata {
     /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
     /// in the provided storage.
     pub download_proof: Option<String>,
+    pub n_steps: Option<usize>,
 }
