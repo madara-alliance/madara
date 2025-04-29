@@ -447,12 +447,6 @@ impl EventChannels {
     }
 }
 
-#[derive(Clone, Debug)]
-pub struct StartingBlockInfo {
-    pub starting_block_num: Option<u64>,
-    pub ignore_block_order: bool,
-}
-
 #[derive(Default, Clone)]
 pub enum SyncStatus {
     #[default]
@@ -461,6 +455,18 @@ pub enum SyncStatus {
         highest_block_n: u64,
         highest_block_hash: Felt,
     },
+}
+
+#[derive(Default)]
+pub(crate) struct SyncStatusCell(RwLock<SyncStatus>);
+impl SyncStatusCell {
+    pub(crate) async fn set(&self, sync_status: SyncStatus) {
+        let mut status = self.0.write().await;
+        *status = sync_status;
+    }
+    pub(crate) async fn get(&self) -> SyncStatus {
+        self.0.read().await.clone()
+    }
 }
 
 /// Madara client database backend singleton.
@@ -476,7 +482,7 @@ pub struct MadaraBackend {
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
-    sync_status: RwLock<SyncStatus>,
+    sync_status: SyncStatusCell,
     starting_block: Option<u64>,
 }
 
@@ -612,14 +618,12 @@ impl MadaraBackend {
         chain_config: Arc<ChainConfig>,
         config: MadaraBackendConfig,
     ) -> anyhow::Result<Self> {
-        let chain_head = ChainHead::load_from_db(&db).context("Getting latest block_n from database")?;
         let snapshots = Arc::new(Snapshots::new(
             Arc::clone(&db),
-            chain_head.global_trie.current(),
+            ChainHead::load_from_db(&db).context("Getting latest block_n from database")?.global_trie.current(),
             Some(config.trie_log.max_kept_snapshots),
             config.trie_log.snapshot_interval,
         ));
-        let starting_block_n = chain_head.global_trie.current();
         Ok(Self {
             writeopts_no_wal: make_write_opt_no_wal(),
             db_metrics: DbMetrics::register().context("Registering db metrics")?,
@@ -629,8 +633,8 @@ impl MadaraBackend {
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
             config,
-            starting_block: starting_block_n,
-            sync_status: RwLock::new(SyncStatus::default()),
+            starting_block: None,
+            sync_status: SyncStatusCell::default(),
             head_status: ChainHead::default(),
             snapshots,
         })
@@ -691,6 +695,7 @@ impl MadaraBackend {
         backend.check_configuration()?;
         backend.load_head_status_from_db()?;
         backend.update_metrics();
+        backend.set_starting_block(backend.head_status.latest_full_block_n());
         Ok(Arc::new(backend))
     }
 

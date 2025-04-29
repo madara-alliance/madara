@@ -1,6 +1,6 @@
 use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
+use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, SyncStatus, WriteBatchWithTransaction};
-use crate::{MadaraStorageError};
 use anyhow::Context;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
@@ -429,19 +429,15 @@ impl MadaraBackend {
         self.starting_block
     }
 
-    pub async fn get_sync_status(&self) -> SyncStatus {
-        self.sync_status.read().await.clone()
+    pub fn set_starting_block(&mut self, starting_block: Option<u64>) {
+        self.starting_block = starting_block;
     }
 
-    pub async fn set_sync_status(&self, highest_block_n: Option<u64>, highest_block_hash: Option<Felt>) {
-        if highest_block_n.is_some() && highest_block_hash.is_some() {
-            // Acquire write lock on sync_status
-            let mut status = self.sync_status.write().await;
-            // Update the value
-            *status = SyncStatus::Running {
-                highest_block_n: highest_block_n.unwrap(),
-                highest_block_hash: highest_block_hash.unwrap(),
-            };
-        }
+    pub async fn get_sync_status(&self) -> SyncStatus {
+        self.sync_status.get().await
+    }
+
+    pub async fn set_sync_status(&self, sync_status: SyncStatus) {
+        self.sync_status.set(sync_status).await;
     }
 }

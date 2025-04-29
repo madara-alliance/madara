@@ -1,6 +1,6 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, SyncStatus};
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use mp_gateway::block::ProviderBlockHeader;
 use std::sync::Arc;
@@ -178,12 +178,17 @@ impl<P: ForwardPipeline> SyncController<P> {
                 self.forward_pipeline.next_input_block_n()
             );
 
-            let (probe_height, probe_hash) = match self.probe.last_val() {
-                Some(v) => (Some(v.block_number), Some(v.block_hash)),
-                None => (None, None),
+            let probe_height = if let Some(v) = self.probe.last_val() {
+                self.backend
+                    .set_sync_status(SyncStatus::Running {
+                        highest_block_n: v.block_number,
+                        highest_block_hash: v.block_hash,
+                    })
+                    .await;
+                Some(v.block_number)
+            } else {
+                None
             };
-
-            self.backend.set_sync_status(probe_height, probe_hash).await;
 
             let target = target_height.filter(|_| can_run_pipeline);
 
@@ -215,10 +220,7 @@ impl<P: ForwardPipeline> SyncController<P> {
                     res?;
                 }
                 res = self.probe.run() => {
-                    let new_probe_height = match res? {
-                        Some(v) => Some(v.block_number),
-                        None => None,
-                    };
+                    let new_probe_height = res?.map(|v| v.block_number);
                     if self.config.stop_at_block_n.is_none()
                         && !can_run_pipeline
                         && self.config.stop_on_sync

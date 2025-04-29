@@ -299,14 +299,6 @@ impl ProviderBlockPending {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 // #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
 #[cfg_attr(test, derive(Eq))]
-pub struct ProviderBlockHeaderOnly {
-    pub block_hash: Felt,
-    pub block_number: u64,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
-#[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockSignature {
     pub block_hash: Felt,
     pub signature: Vec<Felt>,
