@@ -1,6 +1,6 @@
 use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
 use crate::MadaraStorageError;
-use crate::{Column, DatabaseExt, MadaraBackend, WriteBatchWithTransaction};
+use crate::{Column, DatabaseExt, MadaraBackend, SyncStatus, WriteBatchWithTransaction};
 use anyhow::Context;
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
@@ -444,5 +444,21 @@ impl MadaraBackend {
                 Ok((stored_block_n, bloom))
             })
         }))
+    }
+
+    pub fn get_starting_block(&self) -> Option<u64> {
+        self.starting_block
+    }
+
+    pub fn set_starting_block(&mut self, starting_block: Option<u64>) {
+        self.starting_block = starting_block;
+    }
+
+    pub async fn get_sync_status(&self) -> SyncStatus {
+        self.sync_status.get().await
+    }
+
+    pub async fn set_sync_status(&self, sync_status: SyncStatus) {
+        self.sync_status.set(sync_status).await;
     }
 }
