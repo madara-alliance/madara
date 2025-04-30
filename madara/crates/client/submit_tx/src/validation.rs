@@ -4,7 +4,8 @@ use crate::{
 };
 use async_trait::async_trait;
 use blockifier::{
-    blockifier::stateful_validator::StatefulValidatorError,
+    blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
+    state::errors::StateError,
     transaction::{
         account_transaction::AccountTransaction,
         errors::{TransactionExecutionError, TransactionPreValidationError},
@@ -29,6 +30,20 @@ fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, 
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
 }
 
+impl From<StateError> for SubmitTransactionError {
+    fn from(err: StateError) -> Self {
+        use RejectedTransactionErrorKind::*;
+        use StateError as E;
+        use SubmitTransactionError::*;
+
+        match err {
+            // Any error raised in a madara BlockifierStateAdaptor accessor.
+            E::StateReadError(err) => Internal(anyhow::anyhow!(err)),
+            err => rejected(ValidateFailure, format!("{err:#}")),
+        }
+    }
+}
+
 impl From<TransactionPreValidationError> for SubmitTransactionError {
     fn from(err: TransactionPreValidationError) -> Self {
         use RejectedTransactionErrorKind::*;
@@ -36,8 +51,7 @@ impl From<TransactionPreValidationError> for SubmitTransactionError {
 
         match err {
             E::InvalidNonce { .. } => rejected(InvalidTransactionNonce, format!("{err:#}")),
-            // TODO: Some of those are internal server errors.
-            err @ E::StateError(_) => rejected(ValidateFailure, format!("{err:#}")),
+            E::StateError(err) => err.into(),
             err @ E::TransactionFeeError(_) => rejected(ValidateFailure, format!("{err:#}")),
         }
     }
@@ -45,15 +59,27 @@ impl From<TransactionPreValidationError> for SubmitTransactionError {
 
 impl From<StatefulValidatorError> for SubmitTransactionError {
     fn from(err: StatefulValidatorError) -> Self {
-        use RejectedTransactionErrorKind::*;
         use StatefulValidatorError as E;
 
         match err {
-            // TODO: Some of those are internal server errors.
-            err @ E::StateError(_) => rejected(ValidateFailure, format!("{err:#}")),
+            E::StateError(err) => err.into(),
             E::TransactionExecutionError(err) => err.into(),
-            err @ E::TransactionExecutorError(_) => rejected(ValidateFailure, format!("{err:#}")),
+            // this is a weird one... why does this variant exist..?
+            E::TransactionExecutorError(err) => err.into(),
             E::TransactionPreValidationError(err) => err.into(),
+        }
+    }
+}
+
+impl From<TransactionExecutorError> for SubmitTransactionError {
+    fn from(err: TransactionExecutorError) -> Self {
+        use RejectedTransactionErrorKind::*;
+        use TransactionExecutorError as E;
+
+        match err {
+            E::BlockFull => rejected(ValidateFailure, format!("{err:#}")),
+            E::StateError(err) => err.into(),
+            E::TransactionExecutionError(err) => err.into(),
         }
     }
 }
@@ -63,25 +89,23 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
         use RejectedTransactionErrorKind::*;
         use TransactionExecutionError as E;
 
-        match &err {
-            E::ContractClassVersionMismatch { .. } => rejected(InvalidContractClassVersion, format!("{err:#}")),
-            E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
-            E::ExecutionError { .. }
+        match err {
+            err @ E::ContractClassVersionMismatch { .. } => rejected(InvalidContractClassVersion, format!("{err:#}")),
+            err @ E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
+            err @ (E::ExecutionError { .. }
             | E::ValidateTransactionError { .. }
-            | E::ContractConstructorExecutionFailed { .. } => rejected(ValidateFailure, format!("{err:#}")),
-            E::FeeCheckError(_)
+            | E::ContractConstructorExecutionFailed { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            err @ (E::FeeCheckError(_)
             | E::FromStr(_)
             | E::InvalidValidateReturnData { .. }
             | E::StarknetApiError(_)
             | E::TransactionFeeError(_)
             | E::TransactionPreValidationError(_)
             | E::TryFromIntError(_)
-            | E::TransactionTooLarge { .. } => rejected(ValidateFailure, format!("{err:#}")),
-            E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
-            // Note: Unsure about InvalidSegmentStructure.
-            E::InvalidSegmentStructure(_, _) => rejected(InvalidProgram, format!("{err:#}")),
-            // TODO: Some of those are internal server errors.
-            E::StateError(_) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
+            err @ E::InvalidSegmentStructure(_, _) => rejected(InvalidProgram, format!("{err:#}")),
+            E::StateError(err) => err.into(),
         }
     }
 }
@@ -108,7 +132,7 @@ impl From<ToBlockifierError> for SubmitTransactionError {
                 rejected(ValidateFailure, format!("{transaction_execution_error:#}"))
             }
             err @ E::CompiledClassHashMismatch { .. } => rejected(InvalidCompiledClassHash, format!("{err:#}")),
-            E::Base64ToCairoError(error) => rejected(InvalidContractClass, format!("{error:#}")),
+            err @ E::Base64ToCairoError(_) => rejected(InvalidContractClass, format!("{err:#}")),
             E::ConvertContractClassError(error) => rejected(InvalidContractClass, format!("{error:#}")),
             E::MissingClass => rejected(InvalidContractClass, "Missing class"),
         }

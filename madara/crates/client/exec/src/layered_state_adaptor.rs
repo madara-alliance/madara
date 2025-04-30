@@ -56,34 +56,36 @@ impl LayeredStateAdaptor {
         self.inner.block_number.checked_sub(1)
     }
 
-    fn remove_outdated_cache(&mut self) -> Result<(), crate::Error> {
-        let Some(block_n_in_db) = self.backend.get_latest_block_n()? else {
-            return Ok(()); // No block in db.
-        };
-
-        while self.cached_states_by_block_n.back().is_some_and(|cache| cache.block_n < block_n_in_db) {
-            let popped = self.cached_states_by_block_n.pop_back().expect("Checked that back exists just above.");
-            tracing::debug!("Removed cache {:?}", popped.block_n);
+    fn remove_cache_before_including(&mut self, block_n: Option<u64>) {
+        if let Some(block_n) = block_n {
+            while self.cached_states_by_block_n.back().is_some_and(|cache| cache.block_n <= block_n) {
+                let popped = self.cached_states_by_block_n.pop_back().expect("Checked that back exists just above.");
+                tracing::debug!("Removed cache {:?} ", popped.block_n);
+            }
         }
-        Ok(())
     }
 
+    /// This will set the current executing block_n to the next block_n.
     pub fn finish_block(
         &mut self,
         state_diff: StateMaps,
         classes: HashMap<ClassHash, ContractClass>,
     ) -> Result<(), crate::Error> {
+        let latest_db_block = self.backend.get_latest_block_n()?;
         // Remove outdated cache entries
-        self.remove_outdated_cache()?;
+        self.remove_cache_before_including(latest_db_block);
 
-        // Push new block to cache
+        // Push the current state to cache
         let block_n = self.block_n();
         tracing::debug!("Push to cache {block_n}");
         self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes });
 
-        // Update the inner state adaptor (to update its block_n)
-        self.inner =
-            BlockifierStateAdapter::new(self.backend.clone(), block_n, self.previous_block_n().map(DbBlockId::Number));
+        // Update the inner state adaptor to update its block_n to the next one.
+        self.inner = BlockifierStateAdapter::new(
+            self.backend.clone(),
+            block_n + 1,
+            /* on top of */ latest_db_block.map(DbBlockId::Number),
+        );
 
         Ok(())
     }

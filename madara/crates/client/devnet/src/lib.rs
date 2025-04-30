@@ -341,6 +341,10 @@ mod tests {
         mempool_limits: MempoolLimits,
         chain_config: ChainConfig,
     ) -> DevnetForTesting {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
         let mut g = ChainGenesisDescription::base_config().unwrap();
         let contracts = g.add_devnet_contracts(10).unwrap();
 
@@ -585,7 +589,6 @@ mod tests {
         };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
-        // }
     }
 
     // TODO: add eth transfer

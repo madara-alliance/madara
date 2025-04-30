@@ -231,9 +231,6 @@ impl BlockProductionTask {
 
         let (block, declared_classes) = get_pending_block_from_db(&self.backend)?;
 
-        // NOTE: we disabled the Write Ahead Log when clearing the pending block
-        // so this will be done atomically at the same time as we close the next
-        // block, after we manually flush the db.
         self.backend.clear_pending_block().context("Error clearing pending block")?;
 
         let block_n = self.backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
@@ -271,16 +268,13 @@ impl BlockProductionTask {
             .await
             .context("Error closing block")?;
 
-        // // Flush changes to disk
-        // self.backend.flush().map_err(|err| Error::Unexpected(format!("DB flushing error: {err:#}").into()))?;
-
-        let end_time = start_time.elapsed();
-        tracing::info!("⛏️  Closed block #{} with {} transactions - {:?}", block_n, n_txs, end_time);
+        let time_to_close = start_time.elapsed();
+        tracing::info!("⛏️  Closed block #{block_n} with {n_txs} transactions - {time_to_close:?}");
 
         // Record metrics
         let attributes = [
             KeyValue::new("transactions_added", n_txs.to_string()),
-            KeyValue::new("closing_time", end_time.as_secs_f32().to_string()),
+            KeyValue::new("closing_time", time_to_close.as_secs_f32().to_string()),
         ];
 
         self.metrics.block_counter.add(1, &[]);
@@ -445,9 +439,11 @@ impl BlockProductionTask {
                     batch.push(tx.tx, additional);
                 }
 
-                tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
+                if !batch.is_empty() {
+                    tracing::debug!("Sending batch of {} transactions to the worker thread.", batch.len());
 
-                permit.send(batch);
+                    permit.send(batch);
+                }
             }
         });
 

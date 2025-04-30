@@ -160,14 +160,12 @@ impl BlockExecutionContext {
 pub(crate) fn create_execution_context(
     l1_data_provider: &Arc<dyn L1DataProvider>,
     backend: &Arc<MadaraBackend>,
-    on_block_n: Option<u64>,
+    block_n: u64,
 ) -> BlockExecutionContext {
-    let chain_config = backend.chain_config();
-    let block_n = on_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
     BlockExecutionContext {
-        sequencer_address: **chain_config.sequencer_address,
+        sequencer_address: **backend.chain_config().sequencer_address,
         block_timestamp: SystemTime::now(),
-        protocol_version: chain_config.latest_protocol_version,
+        protocol_version: backend.chain_config().latest_protocol_version,
         l1_gas_price: l1_data_provider.get_gas_prices(),
         l1_da_mode: l1_data_provider.get_da_mode(),
         block_n,

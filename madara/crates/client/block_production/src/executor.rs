@@ -188,7 +188,7 @@ impl Executor {
             return Some(Default::default());
         }
 
-        tracing::debug!("Waiting for batch. Deadline={:?}", deadline);
+        tracing::debug!("Waiting for batch. block_time_deadline={}", deadline.is_some());
 
         let res = if let Some(deadline) = deadline {
             // nb: tokio has blocking_recv, but no blocking_recv_timeout? this kinda sucks :(
@@ -269,8 +269,7 @@ impl Executor {
         &mut self,
         state: ExecutorStateNewBlock,
     ) -> anyhow::Result<(ExecutorStateExecuting, HashMap<StorageEntry, Felt>)> {
-        let previous_block_n = Some(state.state_adaptor.block_n());
-        let exec_ctx = create_execution_context(&self.l1_data_provider, &self.backend, previous_block_n);
+        let exec_ctx = create_execution_context(&self.l1_data_provider, &self.backend, state.state_adaptor.block_n());
 
         // Create the TransactionExecution, but reuse the layered_state_adaptor.
         let mut executor =
@@ -417,8 +416,9 @@ impl Executor {
                 }
             }
 
-            tracing::debug!("Weights: {:?}", execution_state.executor.bouncer.get_accumulated_weights());
+            tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);
+            tracing::debug!("Weights: {:?}", execution_state.executor.bouncer.get_accumulated_weights());
             tracing::debug!("Block now full: {:?}", block_full);
 
             let exec_result = BatchExecutionResult { executed_txs, blockifier_results, stats };
@@ -433,7 +433,10 @@ impl Executor {
             let now = Instant::now();
             let block_time_deadline_reached = now >= next_block_deadline;
             if block_full || block_time_deadline_reached {
-                tracing::debug!("Ending block block_n={}", execution_state.exec_ctx.block_n);
+                tracing::debug!(
+                    "Ending block block_n={} (block_full={block_full}, block_time_deadline_reached={block_time_deadline_reached})",
+                    execution_state.exec_ctx.block_n,
+                );
 
                 if self.replies_sender.blocking_send(ExecutorMessage::EndBlock).is_err() {
                     // Receiver closed

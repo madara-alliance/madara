@@ -13,6 +13,7 @@ pub struct BlockProductionService {
     metrics: Arc<BlockProductionMetrics>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     n_devnet_contracts: u64,
+    disabled: bool,
 }
 
 impl BlockProductionService {
@@ -31,6 +32,7 @@ impl BlockProductionService {
             mempool,
             metrics,
             n_devnet_contracts: config.devnet_contracts,
+            disabled: config.block_production_disabled,
         })
     }
 }
@@ -39,7 +41,7 @@ impl BlockProductionService {
 impl Service for BlockProductionService {
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let Self { backend, l1_data_provider, mempool, metrics, .. } = self;
+        let Self { backend, l1_data_provider, mempool, metrics, disabled, .. } = self;
 
         let block_production_task = BlockProductionTask::new(
             Arc::clone(backend),
@@ -48,7 +50,9 @@ impl Service for BlockProductionService {
             Arc::clone(l1_data_provider),
         );
 
-        runner.service_loop(move |ctx| block_production_task.run(ctx));
+        if !*disabled {
+            runner.service_loop(move |ctx| block_production_task.run(ctx));
+        }
 
         Ok(())
     }

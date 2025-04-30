@@ -193,7 +193,6 @@ impl ChainConfig {
 
     /// Verify that the chain config is valid for block production.
     pub fn precheck_block_production(&self) -> anyhow::Result<()> {
-        // block_time != 0 implies that n_pending_ticks_per_block != 0.
         if self.sequencer_address == ContractAddress::default() {
             bail!("Sequencer address cannot be 0x0 for block production.")
         }
@@ -201,7 +200,7 @@ impl ChainConfig {
             bail!("Block time cannot be zero for block production.")
         }
         if self.pending_block_update_time.as_millis() == 0 {
-            bail!("Block time cannot be zero for block production.")
+            bail!("Pending block update time cannot be zero for block production.")
         }
         Ok(())
     }

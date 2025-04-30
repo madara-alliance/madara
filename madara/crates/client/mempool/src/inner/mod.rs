@@ -727,6 +727,7 @@ impl MempoolInner {
         self.nonce_cache_inner.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
 
         // do not update mempool limits, block prod will update it with re-add txs.
+        self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx_mempool));
         Some(tx_mempool)
     }
 
@@ -753,27 +754,6 @@ impl MempoolInner {
 
     pub fn pop_next_chunk(&mut self, dest: &mut impl Extend<MempoolTransaction>, n: usize) {
         dest.extend((0..n).map_while(|_| self.pop_next()))
-    }
-
-    /// This is called by the block production after a batch of transactions is executed.
-    /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
-    pub fn re_add_txs(
-        &mut self,
-        txs: impl IntoIterator<Item = MempoolTransaction>,
-        consumed_txs: impl IntoIterator<Item = MempoolTransaction>,
-    ) {
-        for tx in consumed_txs {
-            self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx))
-        }
-        for tx in txs {
-            let force = true;
-            // Since this is re-adding a transaction which was already popped
-            // from the mempool, we can be sure it is ready
-            let nonce = tx.nonce;
-            let nonce_next = tx.nonce_next;
-            self.insert_tx(tx, force, false, NonceInfo::ready(nonce, nonce_next))
-                .expect("Force insert tx should not error");
-        }
     }
 
     /// Returns true if [MempoolInner] has the transaction at a contract address

@@ -40,6 +40,7 @@ impl Drop for MempoolConsumerView<'_> {
     fn drop(&mut self) {
         // If there are still ready transactions in the mempool, notify the next waiter.
         if self.inner.has_ready_transactions() {
+            tracing::debug!("notify_one (drop)");
             self.notify.notify_one();
         }
     }
@@ -78,6 +79,7 @@ impl MempoolInnerWithNotify {
         if lock.has_ready_transactions() {
             // We notify a single waiter. The waked task is in charge of waking the next waker in the notify if there are still transactions
             // in the mempool after it's done.
+            tracing::debug!("notify_one (insert)");
             self.notify.notify_one();
         }
 
@@ -103,16 +105,18 @@ impl MempoolInnerWithNotify {
     }
 
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
-    /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
+    /// If the mempool has no transaction that can be consumed, this function will wait until there is at least 1 transaction to consume.
     pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView<'_> {
         let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
         tokio::pin!(permit);
         loop {
             {
-                let inner = self.inner.write().expect("Poisoned lock");
+                tracing::debug!("taking lock");
                 let nonce_cache = self.nonce_cache.write().expect("Poisoned lock");
+                let inner = self.inner.write().expect("Poisoned lock");
 
                 if inner.has_ready_transactions() {
+                    tracing::debug!("consumer ready");
                     return MempoolConsumerView { inner, nonce_cache, notify: &self.notify };
                 }
                 // Note: we put ourselves in the notify list BEFORE giving back the lock.
@@ -121,8 +125,9 @@ impl MempoolInnerWithNotify {
 
                 // drop the locks here
             }
-            permit.as_mut().await; // Wait until we're notified. The first poll is when we get registered for notification.
-            permit.set(self.notify.notified()); // Reset
+            tracing::debug!("waiting");
+            permit.as_mut().await; // Wait until we're notified.
+            permit.set(self.notify.notified());
         }
     }
 
