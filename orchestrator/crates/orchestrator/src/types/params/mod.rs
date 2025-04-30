@@ -11,6 +11,7 @@ use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::{RunCmd, SetupCmd};
 use crate::OrchestratorError;
 pub use otel::OTELConfig;
+use tracing::{debug, info};
 
 /// StorageArgs - Arguments used to setup storage resources
 #[derive(Debug, Clone)]
@@ -110,10 +111,14 @@ impl TryFrom<SetupCmd> for StorageArgs {
 impl TryFrom<SetupCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let sns_arn = setup_cmd
+        let arn = setup_cmd
             .aws_sns_args
             .sns_arn
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
+        let pos =
+            arn.rfind(':').ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))?;
+        let sns_arn = format!("{}:{}_{}", &arn[..pos], setup_cmd.aws_config_args.aws_prefix, &arn[pos + 1..]);
+        info!("SNS ARN: {}", sns_arn);
         Ok(Self { endpoint: sns_arn })
     }
 }
@@ -121,10 +126,13 @@ impl TryFrom<SetupCmd> for AlertArgs {
 impl TryFrom<RunCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let sns_arn = run_cmd
+        let arn = run_cmd
             .aws_sns_args
             .sns_arn
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
+        let pos =
+            arn.rfind(':').ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))?;
+        let sns_arn = format!("{}:{}_{}", &arn[..pos], run_cmd.aws_config_args.aws_prefix, &arn[pos + 1..]);
         Ok(Self { endpoint: sns_arn })
     }
 }
@@ -132,20 +140,12 @@ impl TryFrom<RunCmd> for AlertArgs {
 impl TryFrom<RunCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let prefix = format!(
-            "{}-{}",
-            run_cmd.aws_config_args.aws_prefix,
-            run_cmd
-                .aws_sqs_args
-                .sqs_prefix
-                .ok_or(OrchestratorError::SetupCommandError("SQS prefix is required".to_string()))?,
-        );
         Ok(Self {
             queue_base_url: run_cmd
                 .aws_sqs_args
                 .queue_base_url
                 .ok_or(OrchestratorError::SetupCommandError("Queue base URL is required".to_string()))?,
-            prefix,
+            prefix: run_cmd.aws_config_args.aws_prefix.clone(),
             suffix: run_cmd
                 .aws_sqs_args
                 .sqs_suffix
@@ -157,20 +157,12 @@ impl TryFrom<RunCmd> for QueueArgs {
 impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let prefix = format!(
-            "{}-{}",
-            setup_cmd.aws_config_args.aws_prefix,
-            setup_cmd
-                .aws_sqs_args
-                .sqs_prefix
-                .ok_or(OrchestratorError::SetupCommandError("SQS prefix is required".to_string()))?,
-        );
         Ok(Self {
             queue_base_url: setup_cmd
                 .aws_sqs_args
                 .queue_base_url
                 .ok_or(OrchestratorError::SetupCommandError("Queue base URL is required".to_string()))?,
-            prefix,
+            prefix: setup_cmd.aws_config_args.aws_prefix.clone(),
             suffix: setup_cmd
                 .aws_sqs_args
                 .sqs_suffix
@@ -182,23 +174,33 @@ impl TryFrom<SetupCmd> for QueueArgs {
 impl TryFrom<SetupCmd> for CronArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
+        let target_queue_name = format!(
+            "{}_{}",
+            setup_cmd.aws_config_args.aws_prefix,
+            setup_cmd
+                .aws_event_bridge_args
+                .target_queue_name
+                .ok_or(OrchestratorError::SetupCommandError("SQS prefix is required".to_string()))?,
+        );
+        let trigger_rule_name = format!(
+            "{}_{}",
+            setup_cmd.aws_config_args.aws_prefix,
+            setup_cmd
+                .aws_event_bridge_args
+                .trigger_rule_name
+                .ok_or(OrchestratorError::SetupCommandError("Trigger rule name is required".to_string()))?,
+        );
         Ok(Self {
             event_bridge_type: setup_cmd
                 .aws_event_bridge_args
                 .event_bridge_type
                 .ok_or(OrchestratorError::SetupCommandError("Event Bridge type is required".to_string()))?,
-            target_queue_name: setup_cmd
-                .aws_event_bridge_args
-                .target_queue_name
-                .ok_or(OrchestratorError::SetupCommandError("Target queue name is required".to_string()))?,
+            target_queue_name,
             cron_time: setup_cmd
                 .aws_event_bridge_args
                 .cron_time
                 .ok_or(OrchestratorError::SetupCommandError("Cron time is required".to_string()))?,
-            trigger_rule_name: setup_cmd
-                .aws_event_bridge_args
-                .trigger_rule_name
-                .ok_or(OrchestratorError::SetupCommandError("Trigger rule name is required".to_string()))?,
+            trigger_rule_name,
             trigger_role_name: setup_cmd
                 .aws_event_bridge_args
                 .trigger_role_name

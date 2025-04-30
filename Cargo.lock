@@ -10490,6 +10490,7 @@ dependencies = [
  "tokio",
  "tracing",
  "tracing-core",
+ "tracing-error",
  "tracing-log",
  "tracing-opentelemetry",
  "tracing-subscriber",

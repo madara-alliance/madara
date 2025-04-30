@@ -4,6 +4,7 @@ use crate::setup::factory::ResourceFactory;
 use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, StorageArgs};
 use crate::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
+use tracing::debug;
 use tracing::{info, instrument};
 
 pub(crate) mod aws;
@@ -24,6 +25,11 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let alert_params = AlertArgs::try_from(setup_cmd.clone())?;
     let cron_params = CronArgs::try_from(setup_cmd.clone())?;
     let miscellaneous_params = MiscellaneousArgs::try_from(setup_cmd.clone())?;
+
+    debug!("Queue Params: {:?}", queue_params);
+    debug!("Storage Params: {:?}", storage_params);
+    debug!("Alert Params: {:?}", alert_params);
+    debug!("Cron Params: {:?}", cron_params);
 
     let resources = match cloud_provider.clone().get_provider_name().as_str() {
         "AWS" => ResourceFactory::new_with_aws(

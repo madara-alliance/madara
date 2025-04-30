@@ -54,7 +54,13 @@ impl Resource for EventBridgeClient {
                 args.trigger_policy_name.clone(),
             )
             .await
-            .map_err(|e| OrchestratorError::SetupCommandError(format!("Failed to create cron: {:?}", e)))?;
+            .map_err(|e| {
+                OrchestratorError::SetupCommandError(format!(
+                    "Failed to create cron: {:?} for queue: {:?}",
+                    e,
+                    args.target_queue_name.clone()
+                ))
+            })?;
         sleep(Duration::from_secs(15)).await;
 
         for trigger in WORKER_TRIGGERS.iter() {
@@ -62,7 +68,7 @@ impl Resource for EventBridgeClient {
                 .check_if_exists((args.event_bridge_type.clone(), trigger.clone(), args.trigger_rule_name.clone()))
                 .await?
             {
-                tracing::info!(" ℹ️  Event Bridge {trigger} already exists, skipping");
+                tracing::info!(" ⏭️ Event Bridge {trigger} already exists, skipping");
             } else {
                 self.add_cron_target_queue(
                     trigger,
@@ -74,7 +80,7 @@ impl Resource for EventBridgeClient {
                     })?),
                 )
                 .await
-                .expect("Failed to add cron target queue");
+                .expect("Failed to add Event Bus target queue");
             }
         }
         Ok(())

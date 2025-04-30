@@ -43,7 +43,7 @@ impl Resource for AWSS3 {
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
         if self.check_if_exists(args.bucket_name.clone()).await? {
-            warn!(" ℹ️  S3 bucket '{}' already exists", args.bucket_name);
+            warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_name);
             return Ok(S3BucketSetupResult { name: args.bucket_name, region: None });
         }
         info!("Creating New Bucket: {}", args.bucket_name);

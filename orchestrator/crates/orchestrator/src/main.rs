@@ -10,7 +10,7 @@ use orchestrator::utils::logging::init_logging;
 use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
 use std::sync::Arc;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -27,12 +27,24 @@ async fn main() {
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Run { run_command } => {
-            run_orchestrator(run_command).await.expect("Failed to run orchestrator");
-        }
-        Commands::Setup { setup_command } => {
-            setup_orchestrator(setup_command).await.expect("Failed to setup orchestrator");
-        }
+        Commands::Run { run_command } => match run_orchestrator(run_command).await {
+            Ok(_) => {
+                info!("Orchestrator service started successfully");
+            }
+            Err(e) => {
+                error!("Failed to start orchestrator service: {}", e);
+                return;
+            }
+        },
+        Commands::Setup { setup_command } => match setup_orchestrator(setup_command).await {
+            Ok(_) => {
+                info!("Orchestrator setup completed successfully");
+            }
+            Err(e) => {
+                error!("Failed to setup orchestrator: {}", e);
+                return;
+            }
+        },
     }
 }
 

@@ -29,7 +29,7 @@ pub struct AtlanticValidatedArgs {
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
 pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
-    pub fact_checker: FactChecker,
+    pub fact_checker: Option<FactChecker>,
     pub atlantic_api_key: String,
     pub proof_layout: LayoutName,
     pub atlantic_network: String,
@@ -93,24 +93,34 @@ impl ProverClient for AtlanticProverService {
                     tracing::debug!("Skipping cross-verification as it's disabled");
                     return Ok(TaskStatus::Succeeded);
                 }
-
-                // Cross verification is enabled
-                let fact_str = match fact {
-                    Some(f) => f,
+                match &self.fact_checker {
                     None => {
-                        return Ok(TaskStatus::Failed("Cross verification enabled but no fact provided".to_string()));
+                        tracing::debug!("There is no Fact check registered");
+                        Ok(TaskStatus::Succeeded)
                     }
-                };
+                    Some(fact_checker) => {
+                        tracing::debug!("Fact check registered");
+                        // Cross-verification is enabled
+                        let fact_str = match fact {
+                            Some(f) => f,
+                            None => {
+                                return Ok(TaskStatus::Failed(
+                                    "Cross verification enabled but no fact provided".to_string(),
+                                ));
+                            }
+                        };
 
-                let fact =
-                    B256::from_str(&fact_str).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+                        let fact = B256::from_str(&fact_str)
+                            .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
 
-                tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
+                        tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
 
-                if self.fact_checker.is_valid(&fact).await? {
-                    Ok(TaskStatus::Succeeded)
-                } else {
-                    Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
+                        if fact_checker.is_valid(&fact).await? {
+                            Ok(TaskStatus::Succeeded)
+                        } else {
+                            Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
+                        }
+                    }
                 }
             }
 
@@ -124,10 +134,10 @@ impl ProverClient for AtlanticProverService {
 impl AtlanticProverService {
     pub fn new(
         atlantic_client: AtlanticClient,
-        fact_checker: FactChecker,
         atlantic_api_key: String,
         proof_layout: &LayoutName,
         atlantic_network: String,
+        fact_checker: Option<FactChecker>,
     ) -> Self {
         Self {
             atlantic_client,
@@ -142,27 +152,35 @@ impl AtlanticProverService {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
-        let fact_checker = FactChecker::new(
-            atlantic_params.atlantic_rpc_node_url.clone(),
-            atlantic_params.atlantic_verifier_contract_address.clone(),
-        );
+        let fact_checker = if atlantic_params.atlantic_mock_fact_hash.eq("true") {
+            None
+        } else {
+            Some(FactChecker::new(
+                atlantic_params.atlantic_rpc_node_url.clone(),
+                atlantic_params.atlantic_verifier_contract_address.clone(),
+            ))
+        };
 
         Self::new(
             atlantic_client,
-            fact_checker,
             atlantic_params.atlantic_api_key.clone(),
             proof_layout,
             atlantic_params.atlantic_network.clone(),
+            fact_checker,
         )
     }
 
     pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
-        let fact_checker = FactChecker::new(
-            atlantic_params.atlantic_rpc_node_url.clone(),
-            atlantic_params.atlantic_verifier_contract_address.clone(),
-        );
-        Self::new(atlantic_client, fact_checker, "random_api_key".to_string(), proof_layout, "TESTNET".to_string())
+        let fact_checker = if atlantic_params.atlantic_mock_fact_hash.eq("true") {
+            None
+        } else {
+            Some(FactChecker::new(
+                atlantic_params.atlantic_rpc_node_url.clone(),
+                atlantic_params.atlantic_verifier_contract_address.clone(),
+            ))
+        };
+        Self::new(atlantic_client, "random_api_key".to_string(), proof_layout, "TESTNET".to_string(), fact_checker)
     }
 }

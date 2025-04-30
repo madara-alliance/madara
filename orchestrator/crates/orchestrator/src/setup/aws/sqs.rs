@@ -39,7 +39,7 @@ impl Resource for SQS {
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
             let queue_url = format!("{}/{}", args.queue_base_url, queue_name);
             if self.check_if_exists(queue_url.clone()).await? {
-                tracing::warn!("SQS queue already exists. Queue URL: {}", queue_url);
+                tracing::info!(" ⏭️️ SQS queue already exists. Queue URL: {}", queue_url);
                 continue;
             }
             let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {

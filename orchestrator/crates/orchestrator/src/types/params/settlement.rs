@@ -24,8 +24,8 @@ impl TryFrom<RunCmd> for SettlementConfig {
             )),
             (true, false) => {
                 let l1_core_contract_address =
-                    Address::from_str(&run_cmd.ethereum_settlement_args.l1_core_contract_address.clone().ok_or_else(
-                        || OrchestratorError::SetupCommandError("L1 core contract address is required".to_string()),
+                    Address::from_str(&run_cmd.ethereum_settlement_args.l1_core_contract_address.clone().ok_or(
+                        OrchestratorError::SetupCommandError("L1 core contract address is required".to_string()),
                     )?)?;
                 let ethereum_operator_address = Address::from_slice(
                     &hex::decode(

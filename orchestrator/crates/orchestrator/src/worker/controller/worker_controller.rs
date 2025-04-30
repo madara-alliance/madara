@@ -2,8 +2,10 @@ use crate::core::config::Config;
 use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::worker::controller::event_worker::EventWorker;
-use futures::future::try_join_all;
+use color_eyre::eyre::eyre;
 use std::sync::Arc;
+use tracing::{info, info_span};
+use tracing::{instrument, Instrument};
 
 #[derive(Clone)]
 pub struct WorkerController {
@@ -72,16 +74,35 @@ impl WorkerController {
     /// * `EventSystemError` - If there is an error during the operation
     /// TODO: Use tokio spawn
     pub async fn run_l2(&self) -> EventSystemResult<()> {
-        let futures = Self::get_l2_queues().into_iter().map(|queue_type| {
+        for queue_type in Self::get_l2_queues().into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();
-            async move {
-                let handler = self_clone.create_event_handler(&queue_type).await?;
-                handler.run().await
-            }
-        });
-        try_join_all(futures).await?;
+
+            tokio::spawn(async move {
+                self_clone.create_span(&queue_type).await;
+            });
+            // tokio::spawn();
+        }
+        // join_all(futures).await;
         Ok(())
+    }
+
+    #[tracing::instrument(skip(self), fields(q = %q))]
+    async fn create_span(&self, q: &QueueType) {
+        // info_span!("worker", q = ?q);
+        // let _guard = span_clone.enter();
+        info!("Starting worker for queue type {:?}", q);
+
+        match self.create_event_handler(&q).await {
+            Ok(handler) => match handler.run().await {
+                Ok(_) => info!("Worker for queue type {:?} started successfully", q),
+                Err(e) => {
+                    eyre!("🚨Failed to start worker: {:?}", e);
+                    tracing::error!("🚨Failed to start worker: {:?}", e)
+                }
+            },
+            Err(e) => tracing::error!("🚨Failed to create handler: {:?}", e),
+        };
     }
 
     /// run_l3 - Run the WorkerController for L3 Madara Network

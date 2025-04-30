@@ -15,6 +15,7 @@ use crate::{
 };
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::time::sleep;
 use tracing::{debug, info};
 
 /// ResourceFactory is responsible for creating resources based on their type
@@ -109,6 +110,7 @@ impl ResourceFactory {
                             Ok(())
                         }
                         ResourceType::PubSub => {
+                            sleep(Duration::from_secs(15)).await;
                             let start_time = std::time::Instant::now();
                             let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
                             let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);

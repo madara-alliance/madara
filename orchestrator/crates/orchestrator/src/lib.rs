@@ -7,6 +7,7 @@ pub mod types;
 pub mod utils;
 pub mod worker;
 
+#[cfg(test)]
 pub mod tests;
 
 // Re-export commonly used ite

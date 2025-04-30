@@ -9,13 +9,14 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
+use futures::executor::block_on;
 use omniqueue::backends::{SqsConsumer, SqsProducer};
 use omniqueue::{Delivery, QueueError};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::Mutex;
 use tokio::time::sleep;
-use tracing::{error, info};
+use tracing::{debug, error, info, info_span};
 
 pub enum MessageType {
     Message(Delivery),
@@ -26,7 +27,6 @@ pub struct EventWorker {
     queue_type: QueueType,
     config: Arc<Config>,
     consumer: Arc<Mutex<Option<SqsConsumer>>>,
-    producer: Arc<Mutex<Option<SqsProducer>>>,
 }
 
 impl EventWorker {
@@ -38,27 +38,34 @@ impl EventWorker {
     /// # Returns
     /// * `EventWorker` - A new EventWorker instance
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> Self {
-        Self { queue_type, config, consumer: Arc::new(Mutex::new(None)), producer: Arc::new(Mutex::new(None)) }
+        info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
+        // let consumer = block_on().expect("failed to get consumer");
+        Self { queue_type, config, consumer: Arc::new(Mutex::new(None)) }
+    }
+
+    async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
+        Ok(self.config.clone().queue().get_consumer(self.queue_type.clone()).await.expect("error"))
     }
 
     /// get_message - Get the next message from the queue
     /// This function returns the next message from the queue
     /// It returns a Result<MessageType, EventSystemError> indicating whether the operation was successful or not
     pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
-        let mut consumer = self.consumer.lock().await;
-        if let Some(consumer) = consumer.as_mut() {
-            match consumer.receive().await {
-                Ok(delivery) => Ok(Some(delivery)),
-                Err(QueueError::NoData) => Ok(None),
-                Err(e) => {
-                    Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() }))
-                }
+        let mut consumer = self.consumer().await?;
+        // if let Some(consumer) = consumer.as_mut() {
+        debug!("Waiting for message from queue {:?}", self.queue_type);
+        match consumer.receive().await {
+            Ok(delivery) => Ok(Some(delivery)),
+            Err(QueueError::NoData) => Ok(None),
+            Err(e) => {
+                Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() }))
             }
-        } else {
-            Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue {
-                error_msg: "Consumer not initialized".to_string(),
-            }))
         }
+        // } else {
+        //     Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue {
+        //         error_msg: "Consumer not initialized".to_string(),
+        //     }))
+        // }
     }
 
     /// parse_message - Parse the message received from the queue
@@ -89,7 +96,16 @@ impl EventWorker {
     async fn handle_message(&self, message: ParsedMessage) -> EventSystemResult<()> {
         match self.queue_type {
             QueueType::WorkerTrigger => {
-                if let ParsedMessage::WorkerTrigger(_) = message {
+                info!("Received message to Handler: {:?}", message);
+                if let ParsedMessage::WorkerTrigger(worker_mes) = message {
+                    let span = info_span!("worker_trigger", q = %self.queue_type, worker_id = %worker_mes.worker);
+                    let _guard = span.enter();
+                    let worker_handler =
+                        JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_mes.worker.clone());
+                    worker_handler
+                        .run_worker_if_enabled(self.config.clone())
+                        .await
+                        .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
                     Ok(())
                 } else {
                     Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!(
@@ -99,6 +115,8 @@ impl EventWorker {
             }
             QueueType::JobHandleFailure => match message {
                 ParsedMessage::JobQueue(queue_message) => {
+                    let span = info_span!("job_handle_failure", q = %self.queue_type, worker_id = %queue_message.id);
+                    let _guard = span.enter();
                     JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
                         .await
                         .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
@@ -114,6 +132,8 @@ impl EventWorker {
 
                 match message {
                     ParsedMessage::JobQueue(queue_message) => {
+                        let span = info_span!("job_queue", q = %self.queue_type, worker_id = %queue_message.id);
+                        let _guard = span.enter();
                         match job_state {
                             JobState::Processing => {
                                 JobHandlerService::process_job(queue_message.id, self.config.clone())
@@ -178,11 +198,11 @@ impl EventWorker {
                 }
             };
 
-            // Send alert about the error
-            self.config.alerts().send_message(error_context).await?;
-
             // Negative acknowledgment of the message so it can be retried
             message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+
+            // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
+            // self.config.alerts().send_message(error_context).await?;
 
             // Return the specific error
             return Err(consumption_error.into());
@@ -191,6 +211,28 @@ impl EventWorker {
         // Only acknowledge if processing was successful
         message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
+        Ok(())
+    }
+
+    async fn process_message(&self, message: Delivery, parsed_message: ParsedMessage) -> EventSystemResult<()> {
+        let result = self.handle_message(parsed_message.clone()).await;
+        match self.post_processing(result, message, parsed_message.clone()).await {
+            Ok(_) => {
+                info!("Message processed successfully");
+            }
+            Err(e) => {
+                match parsed_message.clone() {
+                    ParsedMessage::WorkerTrigger(msg) => {
+                        error!("Failed to handle worker trigger {msg:?}. Error: {e:?}");
+                    }
+                    ParsedMessage::JobQueue(msg) => {
+                        error!("Failed to handle job {msg:?}. Error: {e:?}");
+                    }
+                }
+                eyre!("Failed to process message: {:?}", e);
+                error!("Failed to process message: {:?}", e);
+            }
+        }
         Ok(())
     }
 
@@ -209,8 +251,7 @@ impl EventWorker {
             match self.get_message().await {
                 Ok(Some(message)) => match self.parse_message(&message) {
                     Ok(parsed_message) => {
-                        let result = self.handle_message(parsed_message.clone()).await;
-                        self.post_processing(result, message, parsed_message).await?;
+                        self.process_message(message, parsed_message).await?;
                     }
                     Err(e) => {
                         error!("Failed to parse message: {:?}", e);

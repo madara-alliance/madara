@@ -1,10 +1,13 @@
 use chrono::Utc;
 use tracing::{Event, Level, Subscriber};
+use tracing_error::ErrorLayer;
 use tracing_log::LogTracer;
-use tracing_subscriber::fmt;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
+use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
+use tracing_subscriber::util::SubscriberInitExt;
+use tracing_subscriber::{fmt, EnvFilter, Registry};
 
 // Pretty formatter is formatted for console readability
 struct PrettyFormatter {
@@ -21,9 +24,9 @@ where
     S: Subscriber + for<'a> LookupSpan<'a>,
     N: for<'a> FormatFields<'a> + 'static,
 {
-    fn format_event(&self, _ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
+    fn format_event(&self, ctx: &FmtContext<'_, S, N>, mut writer: Writer<'_>, event: &Event<'_>) -> std::fmt::Result {
         let meta = event.metadata();
-        let now = Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, true);
+        let now = Utc::now().format("%m-%d %H:%M:%S").to_string();
 
         // Colors
         let ts_color = "\x1b[96m"; // Bright Cyan
@@ -34,9 +37,9 @@ where
             Level::WARN => "\x1b[33m",
             Level::ERROR => "\x1b[31m",
         };
-        let thread_color = "\x1b[94m"; // Bright Blue
-        let id_color = "\x1b[35m"; // Magenta
-                                   // let file_color = "\x1b[90m"; // Bright Black
+        // let thread_color = "\x1b[94m"; // Bright Blue
+        // let id_color = "\x1b[35m"; // Magenta
+        let file_color = "\x1b[90m"; // Bright Black
         let msg_color = "\x1b[97m"; // Bright White
         let fixed_field_color = "\x1b[92m"; // Bright Green
         let reset = "\x1b[0m";
@@ -45,17 +48,32 @@ where
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
 
-        if let Some(name) = std::thread::current().name() {
-            write!(writer, "{}{}{} ", thread_color, name, reset)?;
-        }
-
-        write!(writer, "{}{:?}{} ", id_color, std::thread::current().id(), reset)?;
-
-        // if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
-        //     write!(writer, "{}{}:{}:{} ", file_color, file, line, reset)?;
+        // if let Some(name) = std::thread::current().name() {
+        //     write!(writer, "{}{}{} ", thread_color, name, reset)?;
         // }
 
-        write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
+        // write!(writer, "{}{:?}{} ", id_color, std::thread::current().id(), reset)?;
+
+        if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
+            let file_name = file.split('/').last().unwrap_or(file);
+            let module_path = meta.module_path().unwrap_or("");
+            let last_module = module_path.split("::").last().unwrap_or(module_path);
+
+            let display_name =
+                if file_name == "mod.rs" { format!("{}/{}", last_module, file_name) } else { file_name.to_string() };
+
+            write!(writer, "{}{:<20}:{:<4} {}", file_color, display_name, line, reset)?;
+        }
+
+        // write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
+
+        // Add queue_type from span if available
+        if let Some(span) = ctx.lookup_current() {
+            if let Some(fields) = span.extensions().get::<tracing_subscriber::fmt::FormattedFields<N>>() {
+                // Apply color to the entire field string
+                write!(writer, "{}[{}]{} ", fixed_field_color, fields, reset)?;
+            }
+        }
 
         let mut visitor = FieldExtractor::default();
         event.record(&mut visitor);
@@ -83,13 +101,26 @@ struct FieldExtractor {
 
 impl tracing::field::Visit for FieldExtractor {
     fn record_debug(&mut self, field: &tracing::field::Field, value: &dyn std::fmt::Debug) {
+        let fixed_field_color = "\x1b[92m"; // Bright Green
+        let reset = "\x1b[0m";
+
         if field.name() == "message" {
             self.message = format!("{:?}", value).trim_matches('"').to_string();
-        } else if field.name() == "yak" {
+        } else if field.name() == "q" {
             if !self.meta.is_empty() {
                 self.meta.push_str(", ");
             }
-            self.meta.push_str(&format!("{}={:?}", field.name(), value));
+            // Add color escape sequences around the equals sign
+            let formatted_value = format!("{:?}", value).trim_matches('"').to_string();
+            self.meta.push_str(&format!(
+                "{}{}{}={}{}{}",
+                fixed_field_color,
+                field.name(),
+                reset,
+                fixed_field_color,
+                formatted_value,
+                reset
+            ));
         } else {
             if !self.fields.is_empty() {
                 self.fields.push_str(", ");
@@ -107,12 +138,22 @@ impl tracing::field::Visit for FieldExtractor {
 pub fn init_logging(service_name: &str) {
     color_eyre::install().expect("Unable to install color_eyre");
     LogTracer::init().expect("Failed to set logger");
-    let subscriber = fmt::Subscriber::builder()
+
+    let env_filter = EnvFilter::builder()
+        .with_default_directive(tracing::Level::INFO.into())
+        .parse("orchestrator=trace")
+        .expect("Invalid filter directive");
+
+    let fmt_layer = fmt::layer()
         .with_thread_names(true)
         .with_thread_ids(true)
         .with_target(false)
-        .event_format(PrettyFormatter::new(service_name))
-        .finish();
+        // .with_thread_ids(true)
+        // .with_file(true)
+        // .with_line_number(true)
+        .event_format(PrettyFormatter::new(service_name));
 
-    tracing::subscriber::set_global_default(subscriber).unwrap();
+    let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+
+    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
 }

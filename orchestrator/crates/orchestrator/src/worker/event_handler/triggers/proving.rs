@@ -19,7 +19,7 @@ impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::trace!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
+        tracing::info!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
 
         let successful_snos_jobs = config
             .database()

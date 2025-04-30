@@ -5,7 +5,9 @@ use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
 
 use crate::core::config::Config;
-use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -22,7 +24,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         let (completed_da_jobs, last_block_processed_in_last_job) = match latest_job {
             Some(job) => {
                 if job.status != JobStatus::Completed {
-                    log::warn!(
+                    tracing::warn!(
                         "There's already a pending update state job. Parallel jobs can cause nonce issues or can \
                          completely fail as the update logic needs to be strictly ordered. Returning safely..."
                     );
@@ -79,7 +81,7 @@ impl JobTrigger for UpdateStateJobTrigger {
 
         // no DA jobs completed after the last settled block
         if blocks_to_process.is_empty() {
-            log::warn!("No DA jobs completed after the last settled block. Returning safely...");
+            tracing::warn!("No DA jobs completed after the last settled block. Returning safely...");
             return Ok(());
         }
 
@@ -87,7 +89,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         match last_block_processed_in_last_job {
             Some(last_block) => {
                 if blocks_to_process[0] != last_block + 1 {
-                    log::warn!(
+                    tracing::warn!(
                         "DA job for the block just after the last settled block is not yet completed. Returning \
                          safely..."
                     );
@@ -97,7 +99,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             None => {
                 let min_block_to_process = config.service_config().min_block_to_process.unwrap_or(0);
                 if blocks_to_process[0] != min_block_to_process {
-                    log::warn!("DA job for the first block is not yet completed. Returning safely...");
+                    tracing::warn!("DA job for the first block is not yet completed. Returning safely...");
                     return Ok(());
                 }
             }
@@ -162,7 +164,9 @@ impl JobTrigger for UpdateStateJobTrigger {
 
         // Create the state transition job
         let new_job_id = blocks_to_process[0].to_string();
-        match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone()).await {
+        match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
+            .await
+        {
             Ok(_) => tracing::info!(block_id = %new_job_id, "Successfully created new state transition job"),
             Err(e) => {
                 tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");

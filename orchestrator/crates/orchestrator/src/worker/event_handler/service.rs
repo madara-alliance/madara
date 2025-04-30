@@ -6,8 +6,15 @@ use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::jobs::WorkerTriggerType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::factory::{JobFactory, JobFactoryTrait};
+use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
+use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
+use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
+use crate::worker::event_handler::triggers::snos::SnosJobTrigger;
+use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
+use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use crate::worker::utils::conversion::parse_string;
 use chrono::Utc;
@@ -16,6 +23,7 @@ use opentelemetry::KeyValue;
 use std::panic::AssertUnwindSafe;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use tracing::info;
 use uuid::Uuid;
 
 pub struct JobHandlerService;
@@ -74,7 +82,7 @@ impl JobHandlerService {
         let job_handler = JobFactory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
         config.database().create_job(job_item.clone()).await?;
-        println!("Job item inside the create job function: {:?}", job_item);
+        info!("Job item inside the create job function: {:?}", job_item);
         JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
 
         let attributes = [
@@ -627,5 +635,15 @@ impl JobHandlerService {
 
         ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
         Ok(())
+    }
+    /// To get Box<dyn Worker> handler from `WorkerTriggerType`.
+    pub fn get_worker_handler_from_worker_trigger_type(worker_trigger_type: WorkerTriggerType) -> Box<dyn JobTrigger> {
+        match worker_trigger_type {
+            WorkerTriggerType::Snos => Box::new(SnosJobTrigger),
+            WorkerTriggerType::Proving => Box::new(ProvingJobTrigger),
+            WorkerTriggerType::DataSubmission => Box::new(DataSubmissionJobTrigger),
+            WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
+            WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
+        }
     }
 }

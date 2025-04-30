@@ -47,9 +47,9 @@ impl Resource for SNS {
             )));
         }
 
-        // Check if topic exists using ARN
+        // Check if a topic exists using ARN
         if self.check_if_exists(topic_arn.clone()).await? {
-            tracing::warn!("SNS topic already exists. Topic ARN: {}", topic_arn);
+            tracing::warn!(" ⏭️ SNS topic already exists. Topic ARN: {}", topic_arn);
             return Ok(());
         }
 

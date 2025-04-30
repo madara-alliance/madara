@@ -75,7 +75,7 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread"] }
+tokio = { workspace = true, features = ["sync", "macros", "rt-multi-thread", "rt"] }
 
 orchestrator-utils = { workspace = true }
 url = { workspace = true }
@@ -100,9 +100,12 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time", "default", "env-filter", "fmt"] }
 tracing-log = { workspace = true }
+tracing-error = "0.2.1"
 
 jemallocator = { workspace = true }
 anyhow = { workspace = true }
+hyper = { version = "0.14", features = ["full"] }
+httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]
