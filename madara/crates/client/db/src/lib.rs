@@ -54,7 +54,7 @@ use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::{fmt, fs};
-use tokio::sync::{mpsc, oneshot};
+use tokio::sync::{mpsc, oneshot, RwLock};
 
 mod chain_head;
 mod db_version;
@@ -447,6 +447,29 @@ impl EventChannels {
     }
 }
 
+#[derive(Default, Clone)]
+pub enum SyncStatus {
+    #[default]
+    NotRunning,
+    Running {
+        highest_block_n: u64,
+        highest_block_hash: Felt,
+    },
+}
+
+#[derive(Default)]
+pub(crate) struct SyncStatusCell(RwLock<SyncStatus>);
+impl SyncStatusCell {
+    pub(crate) async fn set(&self, sync_status: SyncStatus) {
+        let mut status = self.0.write().await;
+        *status = sync_status;
+    }
+    pub(crate) async fn get(&self) -> SyncStatus {
+        self.0.read().await.clone()
+    }
+}
+
+/// Madara client database backend singleton.
 pub struct MadaraBackend {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
     db: Arc<DB>,
@@ -459,6 +482,8 @@ pub struct MadaraBackend {
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
+    sync_status: SyncStatusCell,
+    starting_block: Option<u64>,
 }
 
 impl fmt::Debug for MadaraBackend {
@@ -608,6 +633,8 @@ impl MadaraBackend {
             sender_block_info: tokio::sync::broadcast::channel(100).0,
             sender_event: EventChannels::new(100),
             config,
+            starting_block: None,
+            sync_status: SyncStatusCell::default(),
             head_status: ChainHead::default(),
             snapshots,
         })
@@ -668,6 +695,7 @@ impl MadaraBackend {
         backend.check_configuration()?;
         backend.load_head_status_from_db()?;
         backend.update_metrics();
+        backend.set_starting_block(backend.head_status.latest_full_block_n());
         Ok(Arc::new(backend))
     }
 

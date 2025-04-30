@@ -35,6 +35,7 @@ mc-telemetry = { workspace = true }
 mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-oracle = { workspace = true }
+mp-rpc = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
