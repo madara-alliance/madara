@@ -1,3 +1,4 @@
+extern crate e2e_tests;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;
@@ -12,28 +13,26 @@ use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
-use orchestrator::cli::database::DatabaseValidatedArgs;
-use orchestrator::constants::{
+use orchestrator::core::StorageClient;
+use orchestrator::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
-use orchestrator::data_storage::DataStorage;
-use orchestrator::database::mongodb::MongoDBValidatedArgs;
-use orchestrator::jobs::metadata::{
+use orchestrator::types::jobs::external_id::ExternalId;
+use orchestrator::types::jobs::job_item::JobItem;
+use orchestrator::types::jobs::metadata::{
     CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata, SnosMetadata, StateUpdateMetadata,
 };
-use orchestrator::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use orchestrator::queue::job_queue::JobQueueMessage;
-use orchestrator::queue::sqs::AWSSQSValidatedArgs;
-use orchestrator::queue::QueueType;
+use orchestrator::types::jobs::types::{JobStatus, JobType};
+use orchestrator::types::params::database::DatabaseArgs;
+use orchestrator::types::params::QueueArgs;
+use orchestrator::types::queue::QueueType;
+use orchestrator::worker::parser::job_queue_message::JobQueueMessage;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use starknet::core::types::{Felt, MaybePendingStateUpdate};
-use url::Url;
 use uuid::Uuid;
-
-extern crate e2e_tests;
 
 /// Expected DB state struct
 #[derive(PartialEq, Debug)]
@@ -55,15 +54,12 @@ struct Setup {
 
 impl Setup {
     pub async fn new(l2_block_number: String) -> Self {
-        let db_params = DatabaseValidatedArgs::MongoDB(MongoDBValidatedArgs {
-            connection_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"))
-                .expect("Invalid MongoDB connection URL"),
+        let db_params = DatabaseArgs {
+            connection_uri: get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"),
             database_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME"),
-        });
+        };
 
-        let DatabaseValidatedArgs::MongoDB(mongodb_params) = db_params;
-
-        let mongo_db_instance = MongoDbServer::run(mongodb_params);
+        let mongo_db_instance = MongoDbServer::run(db_params);
         println!("✅ Mongo DB setup completed");
 
         let starknet_client = StarknetClient::new();
@@ -140,11 +136,10 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     use e2e_tests::node::OrchestratorMode;
     dotenvy::from_filename(".env.test").expect("Failed to load the .env file");
 
-    let queue_params = AWSSQSValidatedArgs {
-        queue_base_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"))
-            .expect("Invalid queue base URL"),
-        sqs_prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_PREFIX"),
-        sqs_suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
+    let queue_params = QueueArgs {
+        queue_base_url: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"),
+        prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_PREFIX"),
+        suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
     };
 
     let mut setup_config = Setup::new(l2_block_number.clone()).await;
@@ -319,16 +314,16 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
 
 /// Adding SNOS job in JOB_PROCESSING_QUEUE so that the job is triggered
 /// as soon as it is picked up by orchestrator
-pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: AWSSQSValidatedArgs) -> color_eyre::Result<()> {
+pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs) -> color_eyre::Result<()> {
     let message = JobQueueMessage { id };
     put_message_in_queue(
         message,
         format!(
             "{}/{}_{}_{}",
             queue_params.queue_base_url,
-            queue_params.sqs_prefix,
+            queue_params.prefix,
             QueueType::SnosJobProcessing,
-            queue_params.sqs_suffix
+            queue_params.suffix
         ),
     )
     .await?;
@@ -534,9 +529,9 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
 // Tests specific functions
 // ======================================
 
-/// To set up s3 files needed for e2e test (test_orchestrator_workflow)
-#[allow(clippy::borrowed_box)]
-pub async fn setup_s3(s3_client: &Box<dyn DataStorage + Send + Sync>) -> color_eyre::Result<()> {
-    s3_client.create_bucket(&get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")).await.unwrap();
-    Ok(())
-}
+// To set up s3 files needed for e2e test (test_orchestrator_workflow)
+// #[allow(clippy::borrowed_box)]
+// pub async fn setup_s3(s3_client: &Box<dyn StorageClient + Send + Sync>) -> color_eyre::Result<()> {
+//     s3_client.create_bucket(&get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")).await.unwrap();
+//     Ok(())
+// }
