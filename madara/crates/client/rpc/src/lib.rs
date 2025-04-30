@@ -42,18 +42,6 @@ impl Default for StorageProofConfig {
     }
 }
 
-#[derive(Clone, Debug, Default)]
-pub enum StarknetSyncStatus {
-    #[default]
-    NotRunning,
-    Running {
-        starting_block_n: u64,
-        starting_block_hash: Felt,
-        highest_block_n: u64,
-        highest_block_hash: Felt,
-    },
-}
-
 /// A Starknet RPC server for Madara
 #[derive(Clone)]
 pub struct Starknet {

@@ -125,7 +125,7 @@ impl Service for RpcService {
                 }
             };
 
-            start_server(server_config, ctx.clone(), stop_handle).await?;
+            start_server(server_config, ctx.clone(), stop_handle, Arc::new(starknet)).await?;
 
             anyhow::Ok(())
         });
