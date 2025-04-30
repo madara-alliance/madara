@@ -224,8 +224,8 @@ impl RunningTestSetup {
     pub async fn expect_tx_receipt(&self, tx_hash: Felt) -> TransactionReceiptWithBlockInfo {
         wait_for_cond(
             || async { Ok(self.json_rpc().get_transaction_receipt(tx_hash).await?) },
-            Duration::from_millis(500),
-            60,
+            Duration::from_millis(100),
+            300,
         )
         .await
     }
@@ -304,8 +304,8 @@ async fn wait_for_next_block(provider: &(impl Provider + Send + Sync)) {
             }
             bail!("Block n not reached: start={start}, got={got}")
         },
-        Duration::from_millis(200),
-        10,
+        Duration::from_millis(100),
+        300,
     )
     .await;
 }
