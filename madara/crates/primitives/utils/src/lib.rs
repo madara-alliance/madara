@@ -1,4 +1,11 @@
 #![allow(clippy::new_without_default)]
+use std::{
+    future::Future,
+    pin::Pin,
+    task,
+    time::{Duration, Instant},
+};
+use tokio::{sync::oneshot, task::JoinHandle};
 
 pub mod crypto;
 pub mod hash;
@@ -6,11 +13,35 @@ pub mod parsers;
 pub mod rayon;
 pub mod serde;
 pub mod service;
-use std::time::{Duration, Instant};
 
 pub use hash::trim_hash;
 
-use tokio::sync::oneshot;
+/// This ensures structural-concurrency. Use this when you know the task is cancellation-safe, it is fine to just
+/// drop the futures. Otherwise, you will need to use a graceful abort signal.
+pub struct AbortOnDrop<T>(JoinHandle<T>);
+impl<T: Send + 'static> AbortOnDrop<T> {
+    #[track_caller] // forward the tokio track_caller
+    pub fn spawn<F: Future<Output = T> + Send + 'static>(future: F) -> Self {
+        Self(tokio::spawn(future))
+    }
+}
+impl<T> Drop for AbortOnDrop<T> {
+    fn drop(&mut self) {
+        self.0.abort()
+    }
+}
+impl<T> Future for AbortOnDrop<T> {
+    type Output = T;
+    fn poll(self: Pin<&mut Self>, cx: &mut task::Context<'_>) -> task::Poll<Self::Output> {
+        // Panic: the task is never aborted, except on drop in which case it cannot be polled again.
+        Pin::new(&mut self.get_mut().0).poll(cx).map(|r| r.expect("Join error"))
+    }
+}
+impl<T> From<JoinHandle<T>> for AbortOnDrop<T> {
+    fn from(value: JoinHandle<T>) -> Self {
+        Self(value)
+    }
+}
 
 #[derive(Debug, Default)]
 pub struct StopHandle(Option<oneshot::Sender<()>>);

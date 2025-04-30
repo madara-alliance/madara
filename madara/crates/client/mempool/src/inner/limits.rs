@@ -33,7 +33,7 @@ impl MempoolLimits {
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct MempoolLimiter {
     pub config: MempoolLimits,
-    current_transactions: usize,
+    pub current_transactions: usize,
     current_declare_transactions: usize,
 }
 

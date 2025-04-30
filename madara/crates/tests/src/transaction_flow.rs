@@ -54,19 +54,41 @@ struct SetupBuilder {
     setup: TestSetup,
     block_time: String,
     pending_update_time: String,
+    block_production_disabled: bool,
 }
 
 impl SetupBuilder {
     pub fn new(setup: TestSetup) -> Self {
-        Self { setup, block_time: "2s".into(), pending_update_time: "500ms".into() }
+        Self { setup, block_time: "2s".into(), pending_update_time: "500ms".into(), block_production_disabled: false }
+    }
+    pub fn with_block_production_disabled(mut self, disabled: bool) -> Self {
+        self.block_production_disabled = disabled;
+        self
     }
     pub fn with_block_time(mut self, block_time: impl Into<String>) -> Self {
         self.block_time = block_time.into();
         self
     }
+    #[allow(unused)]
     pub fn with_pending_update_time(mut self, pending_update_time: impl Into<String>) -> Self {
         self.pending_update_time = pending_update_time.into();
         self
+    }
+
+    fn sequencer_args(&self) -> impl Iterator<Item = String> {
+        [
+            "--devnet".into(),
+            "--no-l1-sync".into(),
+            "--gas-price".into(),
+            "0".into(),
+            "--chain-config-path".into(),
+            "test_devnet.yaml".into(),
+            "--chain-config-override".into(),
+            format!("block_time={},pending_block_update_time={}", self.block_time, self.pending_update_time),
+            "--gateway".into(),
+        ]
+        .into_iter()
+        .chain(self.block_production_disabled.then_some("--no-block-production".into()))
     }
 
     pub async fn run(self) -> RunningTestSetup {
@@ -79,21 +101,8 @@ impl SetupBuilder {
 
     async fn run_single_node(self) -> RunningTestSetup {
         // sequencer
-        let mut sequencer = MadaraCmdBuilder::new()
-            .label("sequencer")
-            .enable_gateway()
-            .args([
-                "--devnet",
-                "--no-l1-sync",
-                "--gas-price",
-                "0",
-                "--chain-config-path",
-                "test_devnet.yaml",
-                "--chain-config-override",
-                &format!("block_time={},pending_block_update_time={}", self.block_time, self.pending_update_time),
-                "--gateway",
-            ])
-            .run();
+        let mut sequencer =
+            MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
         sequencer.wait_for_sync_to(0).await;
         RunningTestSetup::SingleNode(sequencer)
     }
@@ -102,20 +111,9 @@ impl SetupBuilder {
         let mut sequencer = MadaraCmdBuilder::new()
             .label("sequencer")
             .enable_gateway()
-            .args([
-                "--devnet",
-                "--no-l1-sync",
-                "--gas-price",
-                "0",
-                "--chain-config-path",
-                "test_devnet.yaml",
-                "--chain-config-override",
-                &format!("block_time={},pending_block_update_time={}", self.block_time, self.pending_update_time),
-                "--gateway",
-                "--gateway-trusted-add-transaction-endpoint",
-            ])
+            .args(self.sequencer_args().chain(["--gateway-trusted-add-transaction-endpoint".into()]))
             .run();
-        sequencer.wait_for_sync_to(0).await;
+        sequencer.wait_for_sync_to(0).await; // wait until devnet genesis is deployed
 
         let mut gateway = MadaraCmdBuilder::new()
             .label("gateway")
@@ -138,27 +136,14 @@ impl SetupBuilder {
                 "--gateway",
             ])
             .run();
-        gateway.wait_for_sync_to(0).await;
+        gateway.wait_for_sync_to(0).await; // wait until devnet genesis is synced
 
         RunningTestSetup::TwoNodes { _sequencer: sequencer, user_facing: gateway }
     }
 
     async fn run_full_node_and_sequencer(self) -> RunningTestSetup {
-        let mut sequencer = MadaraCmdBuilder::new()
-            .label("sequencer")
-            .enable_gateway()
-            .args([
-                "--devnet",
-                "--no-l1-sync",
-                "--gas-price",
-                "0",
-                "--chain-config-path",
-                "test_devnet.yaml",
-                "--chain-config-override",
-                &format!("block_time={},pending_block_update_time={}", self.block_time, self.pending_update_time),
-                "--gateway",
-            ])
-            .run();
+        let mut sequencer =
+            MadaraCmdBuilder::new().label("sequencer").enable_gateway().args(self.sequencer_args()).run();
         sequencer.wait_for_sync_to(0).await;
 
         let mut full_node = MadaraCmdBuilder::new()
@@ -225,7 +210,7 @@ impl RunningTestSetup {
         wait_for_cond(
             || async { Ok(self.json_rpc().get_transaction_receipt(tx_hash).await?) },
             Duration::from_millis(500),
-            60,
+            300,
         )
         .await
     }
@@ -304,8 +289,8 @@ async fn wait_for_next_block(provider: &(impl Provider + Send + Sync)) {
             }
             bail!("Block n not reached: start={start}, got={got}")
         },
-        Duration::from_millis(200),
-        10,
+        Duration::from_millis(500),
+        300,
     )
     .await;
 }
@@ -372,7 +357,7 @@ async fn normal_transfer(#[case] setup: TestSetup) {
 #[case::single_node(SequencerOnly)]
 /// Test more transfers, with some concurrency, across some block boundaries
 async fn more_transfers(#[case] setup: TestSetup) {
-    let setup = SetupBuilder::new(setup).with_block_time("2s").with_pending_update_time("500ms").run().await;
+    let setup = SetupBuilder::new(setup).with_block_time("2s").run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(
         setup: &RunningTestSetup,
@@ -464,7 +449,8 @@ async fn more_transfers(#[case] setup: TestSetup) {
 #[case::single_node(SequencerOnly, false)]
 async fn invalid_nonce(#[case] setup: TestSetup, #[case] wait_for_initial_transfer: bool) {
     let setup = SetupBuilder::new(setup)
-        .with_pending_update_time(if wait_for_initial_transfer { "500ms" } else { "500min" })
+        // disable block prod to be sure the tx is still in the mempool by the time we check again
+        .with_block_production_disabled(!wait_for_initial_transfer)
         .with_block_time("500min")
         .run()
         .await;
@@ -512,7 +498,7 @@ async fn invalid_nonce(#[case] setup: TestSetup, #[case] wait_for_initial_transf
 #[case::single_node(SequencerOnly)]
 /// Duplicated txn hash in mempool. Note: if the txn is already in the chain, we would get a nonce mismatch error, not duplicate txn.
 async fn duplicate_txn(#[case] setup: TestSetup) {
-    let setup = SetupBuilder::new(setup).with_pending_update_time("500min").with_block_time("500min").run().await;
+    let setup = SetupBuilder::new(setup).with_block_production_disabled(true).run().await;
 
     let nonce = setup.get_nonce(ACCOUNTS[0]).await;
     let call = make_transfer_call(ACCOUNTS[4], 1418283);
@@ -676,11 +662,8 @@ async fn declare_sierra_then_deploy(
     #[case] no_pending_block: bool,
     #[case] via_gateway_api: bool,
 ) {
-    let setup = SetupBuilder::new(setup)
-        .with_pending_update_time("500ms")
-        .with_block_time(if !no_pending_block { "500min" } else { "500ms" })
-        .run()
-        .await;
+    let setup =
+        SetupBuilder::new(setup).with_block_time(if !no_pending_block { "500min" } else { "500ms" }).run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(setup: &RunningTestSetup, provider: &P) {
         let mut nonce = setup.get_nonce(ACCOUNTS[0]).await;

@@ -27,17 +27,17 @@ tokio = { workspace = true, features = ["rt-multi-thread"] }
 proptest.workspace = true
 proptest-derive.workspace = true
 bitvec.workspace = true
-blockifier = { workspace = true, features = ["testing"] }
 mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
 serde_json.workspace = true
+tracing-test.workspace = true
 
 # Compile the test contracts in test cfg.
 m-cairo-test-contracts.workspace = true
 
 [features]
-testing = ["blockifier/testing", "mc-db/testing", "mockall"]
+testing = ["mc-db/testing", "mockall"]
 
 [dependencies]
 
