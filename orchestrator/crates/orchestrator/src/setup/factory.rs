@@ -16,7 +16,7 @@ use crate::{
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
-use tracing::{debug, info};
+use tracing::info;
 
 /// ResourceFactory is responsible for creating resources based on their type
 pub struct ResourceFactory {

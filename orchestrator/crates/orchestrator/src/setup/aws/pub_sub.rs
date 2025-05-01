@@ -74,13 +74,8 @@ impl SNS {
     fn is_valid_topic_name(&self, name: &str) -> bool {
         // AWS SNS topic name requirements:
         // - Can include numbers, letters, hyphens, and underscores
-        // - Cannot start with "AWS"
         // - Length between 1 and 256
-        if name.len() < 1 || name.len() > 256 {
-            return false;
-        }
-
-        if name.to_uppercase().starts_with("AWS") {
+        if name.is_empty() || name.len() > 256 {
             return false;
         }
 

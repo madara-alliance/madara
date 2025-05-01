@@ -73,6 +73,7 @@ pub struct Config {
 }
 
 impl Config {
+    #[allow(clippy::too_many_arguments, dead_code)]
     pub(crate) fn new(
         params: ConfigParam,
         madara_client: Arc<JsonRpcClient<HttpTransport>>,

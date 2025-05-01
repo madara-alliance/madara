@@ -9,12 +9,10 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
-use futures::executor::block_on;
-use omniqueue::backends::{SqsConsumer, SqsProducer};
+use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Mutex;
 use tokio::time::sleep;
 use tracing::{debug, error, info, info_span};
 
@@ -26,7 +24,6 @@ pub enum MessageType {
 pub struct EventWorker {
     queue_type: QueueType,
     config: Arc<Config>,
-    consumer: Arc<Mutex<Option<SqsConsumer>>>,
 }
 
 impl EventWorker {
@@ -39,8 +36,7 @@ impl EventWorker {
     /// * `EventWorker` - A new EventWorker instance
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> Self {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
-        // let consumer = block_on().expect("failed to get consumer");
-        Self { queue_type, config, consumer: Arc::new(Mutex::new(None)) }
+        Self { queue_type, config }
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -176,7 +172,7 @@ impl EventWorker {
         parsed_message: ParsedMessage,
     ) -> EventSystemResult<()> {
         if let Err(ref error) = result {
-            let (error_context, consumption_error) = match &parsed_message {
+            let (_error_context, consumption_error) = match &parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
                     tracing::error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
@@ -229,7 +225,7 @@ impl EventWorker {
                         error!("Failed to handle job {msg:?}. Error: {e:?}");
                     }
                 }
-                eyre!("Failed to process message: {:?}", e);
+                let _ = eyre!("Failed to process message: {:?}", e);
                 error!("Failed to process message: {:?}", e);
             }
         }

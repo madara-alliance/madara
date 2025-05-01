@@ -53,9 +53,8 @@ async fn test_process_job_attempt_not_present_fails() {
     });
 
     let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap_err();
-    assert_eq!(
+    assert!(
         matches!(res, JobError::StateUpdateJobError(StateUpdateError::BlockNumberNotFound)),
-        true,
         "JobError should be StateUpdateJobError with BlockNumberNotFound"
     );
 }

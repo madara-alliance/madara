@@ -10,7 +10,6 @@ use std::net::TcpListener;
 
 pub use mongodb::MongoDbServer;
 pub use node::Orchestrator;
-use orchestrator::core::client::database::DatabaseClient;
 
 const MIN_PORT: u16 = 49_152;
 const MAX_PORT: u16 = 65_535;

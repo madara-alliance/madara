@@ -8,6 +8,7 @@ use aws_sdk_s3::{Client as S3Client, Error as S3Error};
 use std::sync::Arc;
 use tracing::{info, warn};
 
+#[allow(dead_code)]
 pub struct S3BucketSetupResult {
     pub name: String,
     pub region: Option<String>,

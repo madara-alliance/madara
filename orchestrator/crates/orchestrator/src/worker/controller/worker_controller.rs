@@ -4,8 +4,7 @@ use crate::types::queue::QueueType;
 use crate::worker::controller::event_worker::EventWorker;
 use color_eyre::eyre::eyre;
 use std::sync::Arc;
-use tracing::{info, info_span};
-use tracing::{instrument, Instrument};
+use tracing::info;
 
 #[derive(Clone)]
 pub struct WorkerController {
@@ -72,18 +71,14 @@ impl WorkerController {
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
-    /// TODO: Use tokio spawn
     pub async fn run_l2(&self) -> EventSystemResult<()> {
         for queue_type in Self::get_l2_queues().into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();
-
             tokio::spawn(async move {
                 self_clone.create_span(&queue_type).await;
             });
-            // tokio::spawn();
         }
-        // join_all(futures).await;
         Ok(())
     }
 
@@ -93,11 +88,11 @@ impl WorkerController {
         // let _guard = span_clone.enter();
         info!("Starting worker for queue type {:?}", q);
 
-        match self.create_event_handler(&q).await {
+        match self.create_event_handler(q).await {
             Ok(handler) => match handler.run().await {
                 Ok(_) => info!("Worker for queue type {:?} started successfully", q),
                 Err(e) => {
-                    eyre!("🚨Failed to start worker: {:?}", e);
+                    let _ = eyre!("🚨Failed to start worker: {:?}", e);
                     tracing::error!("🚨Failed to start worker: {:?}", e)
                 }
             },

@@ -125,7 +125,6 @@ impl QueueClient for SQS {
     }
 
     /// TODO: if possible try to reuse the same producer which got created in the previous run
-
     /// get_producer - Get the producer for the given queue
     /// This function returns the producer for the given queue.
     /// The producer is used to send messages to the queue.

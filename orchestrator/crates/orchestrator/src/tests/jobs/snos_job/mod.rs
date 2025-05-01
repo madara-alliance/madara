@@ -48,9 +48,8 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
 
     let job_status = SnosJobHandler.verify_job(services.config.clone(), &mut job_item).await;
 
-    assert_eq!(
+    assert!(
         matches!(job_status, Ok(JobVerificationStatus::Verified)),
-        true,
         "Job verification status should be Verified or NotVerified"
     );
     //

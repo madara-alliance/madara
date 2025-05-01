@@ -4,6 +4,7 @@ use std::any::Any;
 use std::sync::Arc;
 
 // ResourceWrapper to type-erase the specific resource types
+#[allow(dead_code)]
 pub struct ResourceWrapper {
     resource: Box<dyn Any + Send + Sync>,
     resource_type: ResourceType,
@@ -16,14 +17,6 @@ impl ResourceWrapper {
         R: Any + Send + Sync,
     {
         ResourceWrapper { cloud_provider, resource: Box::new(resource), resource_type }
-    }
-
-    pub fn get_type(&self) -> &ResourceType {
-        &self.resource_type
-    }
-
-    pub fn downcast_ref<T: Any>(&self) -> Option<&T> {
-        self.resource.downcast_ref::<T>()
     }
 
     pub fn downcast_mut<T: Any>(&mut self) -> Option<&mut T> {

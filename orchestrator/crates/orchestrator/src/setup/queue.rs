@@ -1,6 +1,7 @@
 use crate::types::queue::QueueType;
 use lazy_static::lazy_static;
 
+#[allow(dead_code)]
 #[derive(Clone)]
 pub struct DlqConfig {
     pub max_receive_count: u32,

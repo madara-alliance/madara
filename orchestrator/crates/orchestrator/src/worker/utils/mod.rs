@@ -25,7 +25,7 @@ pub mod conversion;
 /// # Returns
 /// * `Vec<u8>` - A vector of u8 bytes representing the BigUint numbers.
 pub fn biguint_vec_to_u8_vec(nums: &[BigUint]) -> Vec<u8> {
-    nums.iter().flat_map(|num| biguint_to_32_bytes(num)).collect()
+    nums.iter().flat_map(biguint_to_32_bytes).collect()
 }
 
 /// biguint_to_32_bytes - Converts a BigUint number to a fixed-size array of 32 bytes.

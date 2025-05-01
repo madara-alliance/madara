@@ -63,7 +63,7 @@ where
             write!(writer, "{}{:<20}:{:<4} {}", file_color, display_name, line, reset)?;
         }
 
-        // write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
+        write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
 
         // Add queue_type from span if available
         if let Some(span) = ctx.lookup_current() {

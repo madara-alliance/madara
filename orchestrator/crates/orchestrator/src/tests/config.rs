@@ -387,9 +387,9 @@ pub mod implement_client {
     ) -> Box<dyn StorageClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_storage_client(&storage_cfg, provider_config)
-                .await
-                .expect("error creating storage client"),
+            ConfigType::Actual => {
+                Config::build_storage_client(storage_cfg, provider_config).await.expect("error creating storage client")
+            }
             ConfigType::Dummy => Box::new(MockStorageClient::new()),
         }
     }

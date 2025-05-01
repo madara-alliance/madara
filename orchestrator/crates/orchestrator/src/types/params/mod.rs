@@ -11,7 +11,7 @@ use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::{RunCmd, SetupCmd};
 use crate::OrchestratorError;
 pub use otel::OTELConfig;
-use tracing::{debug, info};
+use tracing::info;
 
 /// StorageArgs - Arguments used to setup storage resources
 #[derive(Debug, Clone)]
@@ -57,18 +57,15 @@ pub struct MiscellaneousArgs {
 /// and convert them to the respective argument structs.
 /// Since we have only one Cloud Provider (AWS) for now, we are not using the provider-based implementation.
 /// e.g : I like how we are handling `match (run_cmd.sharp_args.sharp, run_cmd.atlantic_args.atlantic)`
-
 impl TryFrom<SetupCmd> for MiscellaneousArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
             timeout: setup_cmd
                 .timeout
-                .clone()
                 .ok_or_else(|| OrchestratorError::SetupCommandError("Timeout is required".to_string()))?,
             poll_interval: setup_cmd
                 .poll_interval
-                .clone()
                 .ok_or_else(|| OrchestratorError::SetupCommandError("Poll interval is required".to_string()))?,
         })
     }
