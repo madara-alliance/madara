@@ -13,7 +13,7 @@ use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
-use orchestrator::core::StorageClient;
+// use orchestrator::core::StorageClient;
 use orchestrator::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -134,11 +134,12 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // setting up of the test and during orchestrator run too.
 
     use e2e_tests::node::OrchestratorMode;
-    dotenvy::from_filename(".env.test").expect("Failed to load the .env file");
+    println!("Loading .env file");
+    dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
     let queue_params = QueueArgs {
         queue_base_url: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"),
-        prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_PREFIX"),
+        prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
         suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
     };
 
@@ -532,6 +533,6 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
 // To set up s3 files needed for e2e test (test_orchestrator_workflow)
 // #[allow(clippy::borrowed_box)]
 // pub async fn setup_s3(s3_client: &Box<dyn StorageClient + Send + Sync>) -> color_eyre::Result<()> {
-//     s3_client.create_bucket(&get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")).await.unwrap();
+//     s3_client.clone().client.setup(&get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")).await.unwrap();
 //     Ok(())
 // }

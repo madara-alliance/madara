@@ -1,1 +1,1 @@
-pub(crate) mod resource;
+pub mod resource;

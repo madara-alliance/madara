@@ -16,6 +16,7 @@ pub struct AWSS3 {
 }
 
 impl AWSS3 {
+    /// Constructor is used form the setup of the Resource
     /// Creates a new instance of AWSS3 with the provided client and optional bucket name and region.
     /// used for testing purposes
     /// # Arguments
@@ -75,8 +76,8 @@ impl StorageClient for AWSS3 {
     /// # Returns
     /// * `Result<(), StorageError>` - The result of the put operation.
     async fn put_data(&self, data: Bytes, key: &str) -> Result<(), StorageError> {
+        // Note: unwrap is safe here because the bucket name is set in the constructor
         self.client.put_object().bucket(self.bucket_name.clone().unwrap()).key(key).body(data.into()).send().await?;
-
         Ok(())
     }
 
@@ -87,6 +88,7 @@ impl StorageClient for AWSS3 {
     /// # Returns
     /// * `Result<(), StorageError>` - The result of the delete operation.
     async fn delete_data(&self, key: &str) -> Result<(), StorageError> {
+        // Note: unwrap is safe here because the bucket name is set in the constructor
         let result = self.client.delete_object().bucket(self.bucket_name.clone().unwrap()).key(key).send().await;
         match result {
             Ok(_) => Ok(()),
