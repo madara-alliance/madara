@@ -102,6 +102,7 @@ opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
+tracing-error = "0.2.1"
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = [
   "env-filter",
@@ -112,12 +113,11 @@ tracing-subscriber = { workspace = true, features = [
   "env-filter",
   "fmt",
 ] }
-tracing-error = "0.2.1"
 
-jemallocator = "0.5.4"
 anyhow = { workspace = true }
-hyper = { version = "0.14", features = ["full"] }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
+hyper = { version = "0.14", features = ["full"] }
+jemallocator = "0.5.4"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]
