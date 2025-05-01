@@ -107,13 +107,11 @@ impl SQS {
             .await?;
 
         match attributes.attributes() {
-            Some(attributes) => {
-                match attributes.get(&QueueAttributeName::QueueArn) {
-                    Some(arn) => Ok(arn.to_string()),
-                    None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string()))
-                }
-            }
-            None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string()))
+            Some(attributes) => match attributes.get(&QueueAttributeName::QueueArn) {
+                Some(arn) => Ok(arn.to_string()),
+                None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
+            },
+            None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
         }
     }
 }

@@ -30,11 +30,11 @@ pub struct AtlanticCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE", long)]
     pub atlantic_prover_type: Option<String>,
 
-    /// The settlement layer for the Atlantic.
+    /// The settlement layer for Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER", long)]
     pub atlantic_settlement_layer: Option<String>,
 
-    /// The verifier contract address for the Atlantic.
+    /// The verifier contract address for Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS", long)]
     pub atlantic_verifier_contract_address: Option<String>,
 

@@ -34,7 +34,9 @@ impl Resource for AWSS3 {
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
             CloudProvider::AWS(aws_config) => {
-                let client = S3Client::new(aws_config);
+                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config.as_ref());
+                s3_config_builder.set_force_path_style(Some(true));
+                let client = S3Client::from_conf(s3_config_builder.build());
                 Ok(Self::constructor(Arc::new(client), None, None))
             }
         }

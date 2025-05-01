@@ -20,7 +20,7 @@ pub enum QueueError {
 
     #[error("Failed to get queue url for queue name : {0}")]
     FailedToGetQueueUrl(String),
-    
+
     #[error("Failed to get queue attributes for queue name : {0}")]
-    FailedToGetQueueArn(String)
+    FailedToGetQueueArn(String),
 }

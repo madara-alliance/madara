@@ -43,16 +43,3 @@ pub struct SharpCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS", long)]
     pub gps_verifier_contract_address: Option<String>,
 }
-
-// Define local structs for now
-#[derive(Debug, Clone)]
-pub struct SharpValidatedArgs {
-    pub sharp_customer_id: String,
-    pub sharp_url: Url,
-    pub sharp_user_crt: String,
-    pub sharp_user_key: String,
-    pub sharp_rpc_node_url: Url,
-    pub sharp_server_crt: String,
-    pub sharp_proof_layout: String,
-    pub gps_verifier_contract_address: String,
-}
