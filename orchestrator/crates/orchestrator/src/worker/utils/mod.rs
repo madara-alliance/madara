@@ -11,11 +11,9 @@ use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
 use starknet_os::io::output::StarknetOsOutput;
 
-pub mod da;
 pub mod fact_info;
 pub mod fact_node;
 pub mod fact_topology;
-pub mod helper;
 
 pub mod conversion;
 
@@ -26,15 +24,8 @@ pub mod conversion;
 ///
 /// # Returns
 /// * `Vec<u8>` - A vector of u8 bytes representing the BigUint numbers.
-///
 pub fn biguint_vec_to_u8_vec(nums: &[BigUint]) -> Vec<u8> {
-    let mut result: Vec<u8> = Vec::new();
-
-    for num in nums {
-        result.extend_from_slice(biguint_to_32_bytes(num).as_slice());
-    }
-
-    result
+    nums.iter().flat_map(|num| biguint_to_32_bytes(num)).collect()
 }
 
 /// biguint_to_32_bytes - Converts a BigUint number to a fixed-size array of 32 bytes.

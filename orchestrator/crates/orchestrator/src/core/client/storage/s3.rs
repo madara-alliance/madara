@@ -16,12 +16,26 @@ pub struct AWSS3 {
 }
 
 impl AWSS3 {
+    /// Creates a new instance of AWSS3 with the provided client and optional bucket name and region.
+    /// used for testing purposes
+    /// # Arguments
+    /// * `client` - The S3 client.
+    /// * `bucket_name` - The name of the S3 bucket.
+    /// * `region` - The region of the S3 bucket.
+    ///
+    /// # Returns
+    /// * `Self` - The new instance of AWSS3.
     pub(crate) fn constructor(client: Arc<Client>, bucket_name: Option<String>, region: Option<String>) -> Self {
         Self { client, bucket_name, region }
     }
-    pub(crate) fn bucket_name(&self) -> Option<String> {
-        self.bucket_name.clone()
-    }
+    /// Creates a new instance of AWSS3 with the provided configuration.
+    ///
+    /// # Arguments
+    /// * `s3_config` - The configuration for the S3 client.
+    /// * `aws_config` - The AWS SDK configuration.
+    ///
+    /// # Returns
+    /// * `Result<Self, StorageError>` - The result of the creation operation.
     pub async fn create(s3_config: &StorageArgs, aws_config: &SdkConfig) -> Result<Self, StorageError> {
         let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
         s3_config_builder.set_force_path_style(Some(true));
@@ -37,7 +51,15 @@ impl AWSS3 {
 
 #[async_trait]
 impl StorageClient for AWSS3 {
+    /// Get the data from the bucket with the specified key.
+    ///
+    /// # Arguments
+    /// * `key` - The key of the object to retrieve.
+    ///
+    /// # Returns
+    /// * `Result<Bytes, StorageError>` - The result of the get operation.
     async fn get_data(&self, key: &str) -> Result<Bytes, StorageError> {
+        // Note: unwrap is safe here because the bucket name is set in the constructor
         let output = self.client.get_object().bucket(self.bucket_name.clone().unwrap()).key(key).send().await?;
 
         let data = output.body.collect().await.map_err(|e| StorageError::ObjectStreamError(e.to_string()))?;
@@ -45,12 +67,25 @@ impl StorageClient for AWSS3 {
         Ok(data.into_bytes())
     }
 
+    /// Put the data into the bucket with the specified key.
+    ///
+    /// # Arguments
+    /// * `data` - The data to put into the bucket.
+    /// * `key` - The key of the object to put.
+    /// # Returns
+    /// * `Result<(), StorageError>` - The result of the put operation.
     async fn put_data(&self, data: Bytes, key: &str) -> Result<(), StorageError> {
         self.client.put_object().bucket(self.bucket_name.clone().unwrap()).key(key).body(data.into()).send().await?;
 
         Ok(())
     }
 
+    /// delete the data from the bucket with the specified key.
+    ///
+    /// # Arguments
+    /// * `key` - The key of the object to delete.
+    /// # Returns
+    /// * `Result<(), StorageError>` - The result of the delete operation.
     async fn delete_data(&self, key: &str) -> Result<(), StorageError> {
         let result = self.client.delete_object().bucket(self.bucket_name.clone().unwrap()).key(key).send().await;
         match result {

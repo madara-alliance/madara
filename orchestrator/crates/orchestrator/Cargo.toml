@@ -99,10 +99,9 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter", "fmt", "json", "time", "default", "env-filter", "fmt"] }
-tracing-log = { workspace = true }
 tracing-error = "0.2.1"
 
-jemallocator = { workspace = true }
+jemallocator = "0.5.4"
 anyhow = { workspace = true }
 hyper = { version = "0.14", features = ["full"] }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }

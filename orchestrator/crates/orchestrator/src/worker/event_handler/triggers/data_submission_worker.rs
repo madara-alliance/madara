@@ -47,8 +47,13 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 }),
             };
 
-            match JobHandlerService::create_job(JobType::DataSubmission, proving_job.internal_id.clone(), da_metadata, config.clone())
-                .await
+            match JobHandlerService::create_job(
+                JobType::DataSubmission,
+                proving_job.internal_id.clone(),
+                da_metadata,
+                config.clone(),
+            )
+            .await
             {
                 Ok(_) => tracing::info!(
                     block_id = %proving_job.internal_id,

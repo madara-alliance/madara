@@ -148,6 +148,15 @@ impl AtlanticProverService {
         }
     }
 
+    /// Creates a new instance of `AtlanticProverService` with the given parameters.
+    /// Note: If the mock fact hash is set to "true", the fact checker will be None.
+    /// And the Fact check will not be performed.
+    /// # Arguments
+    /// * `atlantic_params` - The parameters for the Atlantic service.
+    /// * `proof_layout` - The layout name for the proof.
+    ///
+    /// # Returns
+    /// * `AtlanticProverService` - A new instance of the service.
     pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);

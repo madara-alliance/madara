@@ -1,12 +1,10 @@
 use chrono::Utc;
 use tracing::{Event, Level, Subscriber};
 use tracing_error::ErrorLayer;
-use tracing_log::LogTracer;
 use tracing_subscriber::fmt::FmtContext;
 use tracing_subscriber::fmt::{format::Writer, FormatEvent, FormatFields};
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::{fmt, EnvFilter, Registry};
 
 // Pretty formatter is formatted for console readability
@@ -137,7 +135,6 @@ impl tracing::field::Visit for FieldExtractor {
 /// This will also install color_eyre to handle the panic in the application
 pub fn init_logging(service_name: &str) {
     color_eyre::install().expect("Unable to install color_eyre");
-    LogTracer::init().expect("Failed to set logger");
 
     let env_filter = EnvFilter::builder()
         .with_default_directive(tracing::Level::INFO.into())

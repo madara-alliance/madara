@@ -113,9 +113,6 @@ impl Resource for EventBridgeClient {
     /// # Returns
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule is ready to use
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        let client = self.eb_client.clone();
-        let rule_name = args.trigger_rule_name.clone();
-        let result = client.describe_rule().name(rule_name).send().await;
-        Ok(result.is_ok())
+        Ok(self.eb_client.describe_rule().name(&args.trigger_rule_name).send().await.is_ok())
     }
 }

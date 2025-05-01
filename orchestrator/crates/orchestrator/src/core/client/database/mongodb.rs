@@ -1,13 +1,11 @@
 use super::error::DatabaseError;
-use crate::core::error::OrchestratorCoreResult;
+use crate::core::client::database::DatabaseClient;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::{core::client::database::DatabaseClient, OrchestratorResult};
 use async_trait::async_trait;
-use cairo_vm::types::instruction::Res;
 use chrono::{SubsecRound, Utc};
 use futures::{StreamExt, TryStreamExt};
 use mongodb::bson::{doc, Bson, Document};
@@ -189,7 +187,7 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 tracing::warn!(job_id = %current_job.id, category = "db_call", "Failed to update job. Job version is likely outdated");
-                Err(DatabaseError::UpdateFailed("Failed to update job. Job version is likely outdated".to_string()))
+                Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier - {}, ", current_job.id)))
             }
         }
     }

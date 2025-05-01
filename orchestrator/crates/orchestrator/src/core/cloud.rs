@@ -38,7 +38,7 @@ impl std::fmt::Debug for CloudProvider {
 // Implement Display using Debug since they share the same formatting
 impl std::fmt::Display for CloudProvider {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        std::fmt::Debug::fmt(self, f)
+        write!(f, "{}", self.get_provider_name())
     }
 }
 
@@ -49,7 +49,7 @@ impl std::fmt::Display for CloudProvider {
 /// * `cmd` - The run command
 ///
 /// # Returns
-/// Returns the cloud provider based on the run command
+///  the cloud provider based on the run command
 ///
 /// # Errors
 /// Returns an error if the provider is not AWS

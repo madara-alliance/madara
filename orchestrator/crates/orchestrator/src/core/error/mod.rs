@@ -1,5 +1,6 @@
 use super::client::{
-    alert::AlertError, database::DatabaseError, event_bus::error::EventBusError, queue::QueueError, storage::StorageError,
+    alert::AlertError, database::DatabaseError, event_bus::error::EventBusError, queue::QueueError,
+    storage::StorageError,
 };
 use thiserror::Error;
 

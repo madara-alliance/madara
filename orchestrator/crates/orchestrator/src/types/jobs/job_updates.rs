@@ -22,7 +22,7 @@ impl Default for JobItemUpdates {
 
 impl JobItemUpdates {
     pub fn new() -> Self {
-        JobItemUpdates {  status: None, external_id: None, metadata: None }
+        JobItemUpdates { status: None, external_id: None, metadata: None }
     }
 
     pub fn update_status(mut self, status: JobStatus) -> JobItemUpdates {

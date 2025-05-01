@@ -57,7 +57,6 @@ impl TryFrom<QueueType> for JobState {
     }
 }
 
-
 pub trait QueueNameForJobType {
     fn process_queue_name(&self) -> QueueType;
     fn verify_queue_name(&self) -> QueueType;

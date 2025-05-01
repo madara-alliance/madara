@@ -18,7 +18,7 @@ impl SNS {
     pub fn create(args: &AlertArgs, aws_config: &SdkConfig) -> Self {
         Self { client: Arc::new(Client::new(aws_config)), topic_arn: Some(args.endpoint.clone()) }
     }
-    /// get_topic_arn return the topic name, if empty it will return error
+    /// get_topic_arn return the topic name, if empty it will return an error
     ///
     /// # Returns
     ///

@@ -14,7 +14,8 @@ impl TryFrom<RunCmd> for DAConfig {
             return Err(OrchestratorError::SetupCommandError("Ethereum DA is not enabled".to_string()));
         }
         Ok(Self::Ethereum(EthereumDaValidatedArgs {
-            ethereum_da_rpc_url: run_cmd.ethereum_da_args
+            ethereum_da_rpc_url: run_cmd
+                .ethereum_da_args
                 .ethereum_da_rpc_url
                 .ok_or_else(|| OrchestratorError::SetupCommandError("Ethereum DA RPC URL is required".to_string()))?,
         }))

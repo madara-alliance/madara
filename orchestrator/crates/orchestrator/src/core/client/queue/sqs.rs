@@ -42,12 +42,12 @@ impl SQS {
     pub fn create(params: &QueueArgs, aws_config: &SdkConfig) -> Result<Self, QueueError> {
         let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
         let client = Client::from_conf(sqs_config_builder.build());
-        Ok(Self::constructor(
-            client,
-            Some(Url::parse(&params.queue_base_url).expect("Failed to parse queue base URL")),
-            Some(params.prefix.clone()),
-            Some(params.suffix.clone()),
-        ))
+        Ok(Self {
+            client: Arc::new(client),
+            queue_url: Some(Url::parse(&params.queue_base_url).expect("Failed to parse queue base URL")),
+            prefix: Some(params.prefix.clone()),
+            suffix: Some(params.suffix.clone()),
+        })
     }
 
     /// get_queue_url - Get the queue URL
