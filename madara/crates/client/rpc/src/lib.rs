@@ -59,6 +59,7 @@ pub enum StarknetSyncStatus {
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    pub(crate) close_block_trigger: Option<Arc<tokio::sync::Notify>>,
     storage_proof_config: StorageProofConfig,
     pub ctx: ServiceContext,
 }
@@ -67,10 +68,11 @@ impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        close_block_trigger: Option<Arc<tokio::sync::Notify>>,
         storage_proof_config: StorageProofConfig,
         ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config, ctx }
+        Self { backend, add_transaction_provider, close_block_trigger, storage_proof_config, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {

@@ -16,6 +16,7 @@ use figment::{
 };
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
+use mc_block_production::BlockProductionMode;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
@@ -286,11 +287,19 @@ async fn main() -> anyhow::Result<()> {
 
     // Block production
 
+    let block_prod_external_trigger = match run_cmd.block_production_params.block_production_mode {
+        BlockProductionMode::ExternalTrigger | BlockProductionMode::Hybrid => {
+            Some(Arc::new(tokio::sync::Notify::new()))
+        }
+        BlockProductionMode::TimedTicks => None,
+    };
+
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,
         &service_db,
         Arc::clone(&mempool),
         Arc::clone(&l1_data_provider),
+        block_prod_external_trigger.clone(),
     )?;
 
     // Add transaction provider
@@ -313,6 +322,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(service_db.backend()),
         Arc::clone(&add_tx_provider_l2_sync),
         Arc::clone(&add_tx_provider_mempool),
+        block_prod_external_trigger,
     );
 
     // Feeder gateway

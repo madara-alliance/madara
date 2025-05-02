@@ -63,6 +63,7 @@ starknet_api.workspace = true
 # Other
 anyhow.workspace = true
 mockall = { workspace = true, optional = true }
+serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 
