@@ -26,6 +26,7 @@ use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_exec::{BlockifierStateAdapter, ExecutionContext};
 use mc_mempool::header::make_pending_header;
 use mc_mempool::{L1DataProvider, MempoolProvider};
+use mp_block::header::BlockTimestamp;
 use mp_block::{BlockId, BlockTag, MadaraPendingBlock, VisitedSegments};
 use mp_class::compile::ClassCompilationError;
 use mp_class::ConvertedClass;
@@ -221,11 +222,16 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             .get_block_hash(&BlockId::Tag(BlockTag::Latest))?
             .unwrap_or(/* genesis block's parent hash */ Felt::ZERO);
 
-        let pending_block = MadaraPendingBlock::new_empty(make_pending_header(
+        let chain_config = backend.chain_config();
+
+        let mut pending_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
-            backend.chain_config(),
+            chain_config,
             l1_data_provider.as_ref(),
         ));
+        if chain_config.null_timestamp {
+            pending_block.info.header.block_timestamp = BlockTimestamp::default();
+        }
 
         let executor = ExecutionContext::new_at_block_start(Arc::clone(&backend), &pending_block.info.clone().into())?
             .tx_executor();
@@ -358,11 +364,18 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         let block_n = self.block_n();
         // Convert the pending block to a closed block and save to db
         let parent_block_hash = Felt::ZERO; // temp parent block hash
-        let new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
+
+        let chain_config = self.backend.chain_config();
+
+        let mut new_empty_block = MadaraPendingBlock::new_empty(make_pending_header(
             parent_block_hash,
-            self.backend.chain_config(),
+            chain_config,
             self.l1_data_provider.as_ref(),
         ));
+
+        if chain_config.null_timestamp {
+            new_empty_block.info.header.block_timestamp = BlockTimestamp::default();
+        }
 
         let block_to_close = mem::replace(&mut self.block, new_empty_block);
         let declared_classes = mem::take(&mut self.declared_classes);

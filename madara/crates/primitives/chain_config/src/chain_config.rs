@@ -135,6 +135,11 @@ pub struct ChainConfig {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+
+    /// Force the node to use a null timestamp for block production.
+    /// This is useful for testing purposes, as it allows to
+    /// produce reproducible blocks.
+    pub null_timestamp: bool,
 }
 
 impl ChainConfig {
@@ -245,6 +250,8 @@ impl ChainConfig {
             mempool_tx_limit: 10_000,
             mempool_declare_tx_limit: 20,
             mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
+
+            null_timestamp: false,
         }
     }
 

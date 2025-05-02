@@ -9029,6 +9029,7 @@ dependencies = [
  "proptest",
  "proptest-derive",
  "rstest 0.18.2",
+ "serde",
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
@@ -9131,8 +9132,10 @@ name = "mc-e2e-tests"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "blockifier",
  "flate2",
  "lazy_static",
+ "m-cairo-test-contracts",
  "once_cell",
  "reqwest 0.12.8",
  "rstest 0.18.2",
@@ -9291,6 +9294,7 @@ dependencies = [
  "blockifier",
  "jsonrpsee",
  "m-proc-macros",
+ "mc-block-production",
  "mc-db",
  "mc-exec",
  "mc-gateway-client",

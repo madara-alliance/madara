@@ -162,12 +162,15 @@ impl ChainGenesisDescription {
                 header: PendingHeader {
                     parent_block_hash: Felt::ZERO,
                     sequencer_address: chain_config.sequencer_address.to_felt(),
-                    block_timestamp: mp_block::header::BlockTimestamp(
-                        SystemTime::now()
-                            .duration_since(SystemTime::UNIX_EPOCH)
-                            .expect("Current time is before unix epoch!")
-                            .as_secs(),
-                    ),
+                    block_timestamp: match chain_config.null_timestamp {
+                        true => Default::default(),
+                        false => mp_block::header::BlockTimestamp(
+                            SystemTime::now()
+                                .duration_since(SystemTime::UNIX_EPOCH)
+                                .expect("Current time is before unix epoch!")
+                                .as_secs(),
+                        ),
+                    },
                     protocol_version: chain_config.latest_protocol_version,
                     l1_gas_price: GasPrices {
                         eth_l1_gas_price: 5,

@@ -104,6 +104,7 @@ pub struct ChainConfigOverridesInner {
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+    pub null_timestamp: bool,
 }
 
 impl ChainConfigOverrideParams {
@@ -128,6 +129,7 @@ impl ChainConfigOverrideParams {
             mempool_tx_max_age: chain_config.mempool_tx_max_age,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
+            null_timestamp: chain_config.null_timestamp,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -180,6 +182,7 @@ impl ChainConfigOverrideParams {
             mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,
+            null_timestamp: chain_config_overrides.null_timestamp,
         })
     }
 }

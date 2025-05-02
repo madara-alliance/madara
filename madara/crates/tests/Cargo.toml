@@ -15,8 +15,10 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 anyhow.workspace = true
+blockifier.workspace = true
 flate2 = "1.0.30"
 lazy_static.workspace = true
+m-cairo-test-contracts.workspace = true
 once_cell.workspace = true
 reqwest.workspace = true
 rstest.workspace = true
