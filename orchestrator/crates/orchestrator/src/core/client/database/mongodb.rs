@@ -5,11 +5,14 @@ use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use futures::{StreamExt, TryStreamExt};
 use mongodb::bson::{doc, Bson, Document};
-use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, FindOptions, ReturnDocument, UpdateOptions};
+use mongodb::options::{
+    FindOneAndUpdateOptions, FindOneOptions, FindOptions, InsertOneOptions, ReturnDocument, UpdateOptions,
+};
 use mongodb::{bson, Client, Collection, Database};
 use opentelemetry::KeyValue;
 use serde::Serialize;
@@ -54,6 +57,10 @@ impl MongoDbClient {
 
     fn get_job_collection(&self) -> Collection<JobItem> {
         self.database.collection("jobs")
+    }
+
+    fn get_batch_collection(&self) -> Collection<Batch> {
+        self.database.collection("batches")
     }
 }
 
@@ -441,5 +448,109 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(jobs)
+    }
+
+    async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
+        let start = Instant::now();
+        let pipeline = vec![
+            doc! {
+                "$sort": {
+                    "index": -1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+        ];
+
+        let mut cursor = self.get_batch_collection().aggregate(pipeline, None).await?;
+
+        match cursor.try_next().await? {
+            Some(doc) => {
+                // Try to deserialize and log any errors
+                match mongodb::bson::from_document::<Batch>(doc.clone()) {
+                    Ok(batch) => {
+                        let attributes = [KeyValue::new("db_operation_name", "get_latest_batch")];
+                        let duration = start.elapsed();
+                        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                        Ok(Some(batch))
+                    }
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            document = ?doc,
+                            "Failed to deserialize document into Batch"
+                        );
+                        Err(DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e)))
+                    }
+                }
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "id": batch.id,
+        };
+        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+
+        let mut updates = update.to_document()?;
+
+        // remove null values from the updates
+        let mut non_null_updates = Document::new();
+        updates.iter_mut().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+
+        // throw an error if there's no field to be updated
+        if non_null_updates.is_empty() {
+            return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
+        }
+
+        // Add additional fields that are always updated
+        non_null_updates
+            .insert("batch_size", Bson::Int64(update.batch_end_block as i64 - batch.start_block as i64 + 1));
+        non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
+
+        let update = doc! {
+            "$set": non_null_updates
+        };
+
+        let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
+        match result {
+            Some(b) => {
+                let attributes = [KeyValue::new("db_operation_name", "update_job")];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(b)
+            }
+            None => {
+                tracing::warn!(job_id = %batch.id, category = "db_call", "Failed to update job. Job version is likely outdated");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", batch.id)))
+            }
+        }
+    }
+
+    async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError> {
+        let start = Instant::now();
+
+        match self.get_batch_collection().insert_one(batch.clone(), InsertOneOptions::builder().build()).await {
+            Ok(_) => {
+                let duration = start.elapsed();
+                tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
+
+                let attributes = [KeyValue::new("db_operation_name", "create_job")];
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(batch)
+            }
+            Err(err) => Err(DatabaseError::InsertFailed(format!(
+                "Failed to insert batch {} with id {}: {}",
+                batch.index, batch.id, err
+            ))),
+        }
     }
 }

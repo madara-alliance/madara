@@ -4,6 +4,7 @@ pub mod mongodb;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use async_trait::async_trait;
 pub use error::DatabaseError;
 use mockall::automock;
@@ -60,4 +61,10 @@ pub trait DatabaseClient: Send + Sync {
         status: Vec<JobStatus>,
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
+    async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
+    /// update_batch - Update the bath
+    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError>;
+    /// create_batch - Create a new batch
+    async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
 }

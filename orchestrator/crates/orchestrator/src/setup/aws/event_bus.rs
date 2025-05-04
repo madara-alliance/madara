@@ -16,7 +16,8 @@ lazy_static! {
         WorkerTriggerType::Snos,
         WorkerTriggerType::Proving,
         WorkerTriggerType::DataSubmission,
-        WorkerTriggerType::UpdateState
+        WorkerTriggerType::UpdateState,
+        WorkerTriggerType::Batching,
     ];
 }
 
