@@ -35,8 +35,6 @@ where
             Level::WARN => "\x1b[33m",
             Level::ERROR => "\x1b[31m",
         };
-        // let thread_color = "\x1b[94m"; // Bright Blue
-        // let id_color = "\x1b[35m"; // Magenta
         let file_color = "\x1b[90m"; // Bright Black
         let msg_color = "\x1b[97m"; // Bright White
         let fixed_field_color = "\x1b[92m"; // Bright Green
@@ -45,12 +43,6 @@ where
         // Format line
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
-
-        // if let Some(name) = std::thread::current().name() {
-        //     write!(writer, "{}{}{} ", thread_color, name, reset)?;
-        // }
-
-        // write!(writer, "{}{:?}{} ", id_color, std::thread::current().id(), reset)?;
 
         if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
             let file_name = file.split('/').last().unwrap_or(file);
@@ -145,9 +137,6 @@ pub fn init_logging(service_name: &str) {
         .with_thread_names(true)
         .with_thread_ids(true)
         .with_target(false)
-        // .with_thread_ids(true)
-        // .with_file(true)
-        // .with_line_number(true)
         .event_format(PrettyFormatter::new(service_name));
 
     let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());

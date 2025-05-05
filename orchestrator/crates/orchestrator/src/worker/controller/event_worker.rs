@@ -48,7 +48,6 @@ impl EventWorker {
     /// It returns a Result<MessageType, EventSystemError> indicating whether the operation was successful or not
     pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
         let mut consumer = self.consumer().await?;
-        // if let Some(consumer) = consumer.as_mut() {
         debug!("Waiting for message from queue {:?}", self.queue_type);
         match consumer.receive().await {
             Ok(delivery) => Ok(Some(delivery)),
@@ -57,11 +56,6 @@ impl EventWorker {
                 Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() }))
             }
         }
-        // } else {
-        //     Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue {
-        //         error_msg: "Consumer not initialized".to_string(),
-        //     }))
-        // }
     }
 
     /// parse_message - Parse the message received from the queue

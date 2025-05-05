@@ -8,14 +8,9 @@ use aws_sdk_s3::Error as S3Error;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-#[allow(dead_code)]
-pub struct S3BucketSetupResult {
-    pub name: String,
-}
-
 #[async_trait]
 impl Resource for AWSS3 {
-    type SetupResult = S3BucketSetupResult;
+    type SetupResult = ();
     type CheckResult = bool;
     type TeardownResult = ();
     type Error = S3Error;
@@ -41,7 +36,7 @@ impl Resource for AWSS3 {
         // If it does, return the existing bucket name and location
         if self.check_if_exists(args.bucket_name.clone()).await? {
             warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_name);
-            return Ok(S3BucketSetupResult { name: args.bucket_name });
+            return Ok(());
         }
         info!("Creating New Bucket: {}", args.bucket_name);
 
@@ -60,7 +55,7 @@ impl Resource for AWSS3 {
         let _result = bucket_builder.send().await.map_err(|e| {
             OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", args.bucket_name, e))
         })?;
-        Ok(S3BucketSetupResult { name: args.bucket_name })
+        Ok(())
     }
 
     async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {

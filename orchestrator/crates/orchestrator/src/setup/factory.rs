@@ -121,7 +121,7 @@ impl ResourceFactory {
                             let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
 
                             while start_time.elapsed() < timeout_duration {
-                                if is_queue_ready_clone.load(Ordering::SeqCst) {
+                                if is_queue_ready_clone.load(Ordering::Acquire) {
                                     info!(" ✅ Queue is ready, setting up SNS");
                                     let rs = resource.downcast_mut::<SNS>().ok_or(OrchestratorError::SetupError(
                                         "Failed to downcast resource to SNS".to_string(),
@@ -149,7 +149,7 @@ impl ResourceFactory {
                             let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
 
                             while start_time.elapsed() < timeout_duration {
-                                if is_queue_ready_clone.load(Ordering::SeqCst) {
+                                if is_queue_ready_clone.load(Ordering::Acquire) {
                                     info!(" ✅ Queue is ready, setting up SNS");
                                     let rs = resource.downcast_mut::<EventBridgeClient>().ok_or(
                                         OrchestratorError::SetupError(
