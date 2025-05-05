@@ -64,7 +64,7 @@ pub trait DatabaseClient: Send + Sync {
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
     /// update_batch - Update the bath
-    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError>;
+    async fn update_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError>;
     /// create_batch - Create a new batch
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
 }

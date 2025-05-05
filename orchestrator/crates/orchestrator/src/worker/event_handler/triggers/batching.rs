@@ -111,7 +111,7 @@ impl BatchingTrigger {
                             .await?;
                         // Update batch status in the database
                         database
-                            .update_batch(&batch, BatchUpdates { batch_end_block: block_number, is_batch_ready: false })
+                            .update_batch(&batch, &BatchUpdates { end_block: block_number, is_batch_ready: false })
                             .await?;
                         batch_index = batch.index;
                     } else {
@@ -119,10 +119,7 @@ impl BatchingTrigger {
 
                         // Update the status of the previous batch
                         database
-                            .update_batch(
-                                &batch,
-                                BatchUpdates { batch_end_block: batch.end_block, is_batch_ready: true },
-                            )
+                            .update_batch(&batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready: true })
                             .await?;
                         let squashed_state_updates_path = self.get_state_update_file_name(batch_index + 1);
                         // Put the state update in storage
@@ -145,9 +142,7 @@ impl BatchingTrigger {
                         .put_data(Bytes::from(serde_json::to_string(&state_update)?), &squashed_state_updates_path)
                         .await?;
                     // Add the new batch info in the database
-                    database
-                        .create_batch(Batch::create(1, block_number, squashed_state_updates_path))
-                        .await?;
+                    database.create_batch(Batch::create(1, block_number, squashed_state_updates_path)).await?;
                     batch_index = 1;
                 }
                 tracing::info!("Completed batching for block {}. Assigned batch {}", block_number, batch_index);

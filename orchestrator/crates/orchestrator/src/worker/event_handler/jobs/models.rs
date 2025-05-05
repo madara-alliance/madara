@@ -6,7 +6,7 @@ use uuid::Uuid;
 
 #[derive(Serialize, Debug)]
 pub struct BatchUpdates {
-    pub batch_end_block: u64,
+    pub end_block: u64,
     pub is_batch_ready: bool,
 }
 

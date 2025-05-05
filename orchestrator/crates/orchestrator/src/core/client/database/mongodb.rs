@@ -489,7 +489,7 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn update_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "id": batch.id,
@@ -512,8 +512,7 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Add additional fields that are always updated
-        non_null_updates
-            .insert("batch_size", Bson::Int64(update.batch_end_block as i64 - batch.start_block as i64 + 1));
+        non_null_updates.insert("batch_size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
