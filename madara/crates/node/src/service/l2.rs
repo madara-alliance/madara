@@ -118,7 +118,7 @@ impl Service for SyncService {
                     this.db_backend.clone(),
                     importer.clone(),
                     gateway,
-                    SyncControllerConfig::default().stop_on_sync(true).no_pending_block(true),
+                    SyncControllerConfig::default().stop_on_sync(true),
                     mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),
