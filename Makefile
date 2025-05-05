@@ -137,7 +137,7 @@ clean-db:
 		[yY]*) true;; \
 		*) false;; \
 	esac
-	@make --silent clean
+	@$(MAKE) --silent clean
 	@echo -e "$(DIM)removing madara database on host$(RESET)"
 	@rm -rf $(DB_PATH);
 
@@ -149,11 +149,11 @@ fclean: clean-db
 
 .PHONY: restart
 restart: clean
-	@make --silent start
+	@$(MAKE) --silent start
 
 .PHONY: frestart
 frestart: fclean
-	@make --silent start
+	@$(MAKE) --silent start
 
 
 .PHONY: snos
@@ -189,6 +189,9 @@ BRAAVOS_CONTRACTS_COMMIT_HASH="12b82a87b93ba9bfdf2cbbde2566437df2e0c6c8"
 
 # Environment setup
 SHELL := /bin/bash
+# TODO: $(HOME) may be unset, empty, or incorrectly set in some environments.
+#       This can cause scripts to attempt writing to `/`, resulting in permission errors.
+#       Consider defaulting to a fallback directory if HOME is not reliably set.
 HOME_DIR := $(HOME)
 
 # Virtual environment paths
@@ -362,20 +365,12 @@ argent-contracts-starknet: ensure-asdf
 
 # Target: build-contracts
 # Builds all contracts (legacy and latest versions)
-build-contracts:
-	make starkgate-contracts-legacy
-	make starkgate-contracts-latest
-	make braavos-account-cairo
-	make argent-contracts-starknet
+build-contracts: starkgate-contracts-legacy starkgate-contracts-latest braavos-account-cairo argent-contracts-starknet
 
 # Target: artifacts-linux
 # Builds all artifacts for Linux environment
-artifacts-linux:
-	make setup-linux
-	make build-contracts
+artifacts-linux: setup-linux build-contracts
 
 # Target: artifacts
 # Builds all artifacts for macOS environment
-artifacts:
-	make setup
-	make build-contracts
+artifacts: setup build-contracts
