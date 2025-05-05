@@ -17,9 +17,6 @@ static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 /// Start the server
 #[tokio::main]
-// not sure why clippy gives this error on the latest rust
-// version but have added it for now
-#[allow(clippy::needless_return)]
 async fn main() {
     dotenv().ok();
     init_logging("orchestrator");
@@ -33,7 +30,6 @@ async fn main() {
             }
             Err(e) => {
                 error!("Failed to start orchestrator service: {}", e);
-                return;
             }
         },
         Commands::Setup { setup_command } => match setup_orchestrator(setup_command).await {
@@ -42,7 +38,6 @@ async fn main() {
             }
             Err(e) => {
                 error!("Failed to setup orchestrator: {}", e);
-                return;
             }
         },
     }
@@ -58,7 +53,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
 
     let server_config = config.clone();
     // Run the server in a separate tokio spawn task
-    tokio::spawn(async move {
+    let server_handle = tokio::spawn(async move {
         let _ = setup_server(server_config).await;
     });
 
@@ -66,6 +61,8 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     initialize_worker(config.clone()).await?;
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
+
+    tokio::try_join!(server_handle).expect("Failed to join server handle");
 
     // Analytics Shutdown
     instrumentation.shutdown()?;

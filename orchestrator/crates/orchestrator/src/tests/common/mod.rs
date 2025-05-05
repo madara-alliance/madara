@@ -72,7 +72,7 @@ pub async fn get_sns_client(aws_config: &SdkConfig) -> aws_sdk_sns::client::Clie
 }
 
 pub async fn drop_database(mongodb_params: &DatabaseArgs) -> color_eyre::Result<()> {
-    let db_client: Client = MongoDbClient::create(mongodb_params).await?.client();
+    let db_client: Client = MongoDbClient::new(mongodb_params).await?.client();
     db_client.database(&mongodb_params.database_name).drop(None).await?;
     Ok(())
 }
@@ -161,5 +161,5 @@ pub async fn get_storage_client(
     provider_config: Arc<CloudProvider>,
 ) -> Box<dyn StorageClient + Send + Sync> {
     let aws_config = provider_config.get_aws_client_or_panic();
-    Box::new(AWSS3::create(storage_cfg, aws_config).await.expect("Could not create storage client"))
+    Box::new(AWSS3::new(aws_config, Some(storage_cfg)))
 }

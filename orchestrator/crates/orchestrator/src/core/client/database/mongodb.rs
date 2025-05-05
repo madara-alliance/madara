@@ -40,7 +40,7 @@ pub struct MongoDbClient {
 }
 
 impl MongoDbClient {
-    pub async fn create(config: &DatabaseArgs) -> Result<Self, DatabaseError> {
+    pub async fn new(config: &DatabaseArgs) -> Result<Self, DatabaseError> {
         let client = Client::with_uri_str(&config.connection_uri).await?;
         let database = Arc::new(client.database(&config.database_name));
         Ok(Self { client, database })

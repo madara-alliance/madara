@@ -31,51 +31,41 @@ pub struct EventBridgeClient {
 }
 
 impl EventBridgeClient {
-    pub fn constructor(
-        eb_client: Arc<aws_sdk_eventbridge::Client>,
-        scheduler_client: Arc<aws_sdk_scheduler::Client>,
-        queue_client: Arc<aws_sdk_sqs::Client>,
-        iam_client: Arc<aws_sdk_iam::Client>,
-    ) -> Self {
-        Self {
-            eb_client,
-            scheduler_client,
-            queue_client,
-            iam_client,
-            event_bridge_type: None,
-            target_queue_name: None,
-            cron_time: None,
-            trigger_rule_name: None,
-            trigger_role_name: None,
-            trigger_policy_name: None,
-        }
-    }
-    pub fn create(args: &CronArgs, aws_config: &SdkConfig) -> Self {
+    /// new - Create a new EventBridge client, with both client and option for the client;
+    /// we've needed to pass the aws_config and args to the constructor.
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    /// * `args` - The cron arguments.
+    /// # Returns
+    /// * `Self` - The EventBridge client.
+    pub fn new(aws_config: &SdkConfig, args: Option<&CronArgs>) -> Self {
         Self {
             eb_client: Arc::new(aws_sdk_eventbridge::Client::new(aws_config)),
             scheduler_client: Arc::new(aws_sdk_scheduler::Client::new(aws_config)),
             queue_client: Arc::new(aws_sdk_sqs::Client::new(aws_config)),
             iam_client: Arc::new(aws_sdk_iam::Client::new(aws_config)),
-            event_bridge_type: Some(args.event_bridge_type.clone()),
-            target_queue_name: Some(args.target_queue_name.clone()),
-            cron_time: Some(Duration::from_secs(
-                args.cron_time.clone().parse::<u64>().expect("Failed to parse cron time"),
-            )),
-            trigger_rule_name: Some(args.trigger_rule_name.clone()),
-            trigger_role_name: Some(args.trigger_role_name.clone()),
-            trigger_policy_name: Some(args.trigger_policy_name.clone()),
+            event_bridge_type: args.map(|args| args.event_bridge_type.clone()),
+            target_queue_name: args.map(|args| args.target_queue_name.clone()),
+            cron_time: args
+                .map(|args| args.cron_time.clone())
+                .and_then(|cron_time| cron_time.parse::<u64>().ok())
+                .map(Duration::from_secs),
+            trigger_rule_name: args.map(|args| args.trigger_rule_name.clone()),
+            trigger_role_name: args.map(|args| args.trigger_role_name.clone()),
+            trigger_policy_name: args.map(|args| args.trigger_policy_name.clone()),
         }
     }
 
-    pub async fn create_cron(
-        &self,
-        target_queue_name: String,
-        trigger_role_name: String,
-        trigger_policy_name: String,
-    ) -> Result<TriggerArns, Error> {
-        // Get Queue Info
-        let queue_url = self.queue_client.get_queue_url().queue_name(target_queue_name.clone()).send().await?;
-
+    /// get_queue_arn - Get the ARN of a queue
+    ///
+    /// # Arguments
+    ///
+    /// * `queue_name` - The name of the queue
+    ///
+    /// # Returns
+    /// * `String` - The ARN of the queue
+    async fn get_queue_arn(&self, queue_name: &str) -> Result<String, Error> {
+        let queue_url = self.queue_client.get_queue_url().queue_name(queue_name).send().await?;
         let queue_attributes = self
             .queue_client
             .get_queue_attributes()
@@ -83,11 +73,14 @@ impl EventBridgeClient {
             .attribute_names(QueueAttributeName::QueueArn)
             .send()
             .await?;
-        let queue_arn = queue_attributes.attributes().unwrap().get(&QueueAttributeName::QueueArn).unwrap();
+        queue_attributes
+            .attributes()
+            .and_then(|attrs| attrs.get(&QueueAttributeName::QueueArn))
+            .map(String::from)
+            .ok_or_else(|| Error::msg("Queue ARN not found"))
+    }
 
-        // Create an IAM role for EventBridge
-        let role_name = format!("{}-{}", trigger_role_name.clone(), uuid::Uuid::new_v4());
-        // TODO: might need to change this accordingly to support rule, skipping for now
+    async fn create_iam_role(&self, role_name: &str) -> Result<String, Error> {
         let assume_role_policy = r#"{
             "Version": "2012-10-17",
             "Statement": [{
@@ -98,44 +91,60 @@ impl EventBridgeClient {
                 "Action": "sts:AssumeRole"
             }]
         }"#;
-
         let create_role_resp = self
             .iam_client
             .create_role()
-            .role_name(&role_name)
+            .role_name(role_name)
             .assume_role_policy_document(assume_role_policy)
             .send()
             .await?;
+        let role = create_role_resp.role().ok_or_else(|| Error::msg("Failed to create IAM role"))?;
+        Ok(role.arn().to_string())
+    }
 
-        let role_arn = create_role_resp.role().unwrap().arn();
-
-        // Create policy document for SQS access
+    async fn create_and_attach_sqs_policy(
+        &self,
+        policy_name: &str,
+        role_name: &str,
+        queue_arn: &str,
+    ) -> Result<(), Error> {
         let policy_document = format!(
             r#"{{
             "Version": "2012-10-17",
             "Statement": [{{
                 "Effect": "Allow",
-                "Action": [
-                    "sqs:SendMessage"
-                ],
+                "Action": ["sqs:SendMessage"],
                 "Resource": "{}"
             }}]
         }}"#,
             queue_arn
         );
+        let create_policy_resp =
+            self.iam_client.create_policy().policy_name(policy_name).policy_document(&policy_document).send().await?;
+        let policy = create_policy_resp.policy().ok_or_else(|| Error::msg("Failed to create policy"))?;
 
-        let policy_name = format!("{}-{}", trigger_policy_name.clone(), uuid::Uuid::new_v4());
+        let policy_arn = policy.arn().ok_or_else(|| Error::msg("Failed to get policy ARN"))?;
 
-        // Create and attach the policy
-        let policy_resp =
-            self.iam_client.create_policy().policy_name(&policy_name).policy_document(&policy_document).send().await?;
+        self.iam_client.attach_role_policy().role_name(role_name).policy_arn(policy_arn).send().await?;
 
-        let policy_arn = policy_resp.policy().unwrap().arn().unwrap().to_string();
+        Ok(())
+    }
 
-        // Attach the policy to the role
-        self.iam_client.attach_role_policy().role_name(&role_name).policy_arn(&policy_arn).send().await?;
+    pub async fn create_cron(
+        &self,
+        target_queue_name: String,
+        trigger_role_name: String,
+        trigger_policy_name: String,
+    ) -> Result<TriggerArns, Error> {
+        let queue_arn = self.get_queue_arn(&target_queue_name).await?;
 
-        Ok(TriggerArns { queue_arn: queue_arn.to_string(), role_arn: role_arn.to_string() })
+        let role_name = format!("{}-{}", trigger_role_name, uuid::Uuid::new_v4());
+        let role_arn = self.create_iam_role(&role_name).await?;
+
+        let policy_name = format!("{}-{}", trigger_policy_name, uuid::Uuid::new_v4());
+        self.create_and_attach_sqs_policy(&policy_name, &role_name, &queue_arn).await?;
+
+        Ok(TriggerArns { queue_arn, role_arn })
     }
 
     /// duration_to_rate_string - Converts a Duration to a rate string for AWS EventBridge

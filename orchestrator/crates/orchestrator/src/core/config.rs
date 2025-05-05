@@ -163,7 +163,7 @@ impl Config {
     pub(crate) async fn build_database_client(
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
-        Ok(Box::new(MongoDbClient::create(db_args).await?))
+        Ok(Box::new(MongoDbClient::new(db_args).await?))
     }
 
     pub(crate) async fn build_storage_client(
@@ -171,7 +171,7 @@ impl Config {
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn StorageClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(AWSS3::create(storage_config, aws_config).await?))
+        Ok(Box::new(AWSS3::new(aws_config, Some(storage_config))))
     }
 
     pub(crate) async fn build_alert_client(
@@ -179,7 +179,7 @@ impl Config {
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn AlertClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SNS::create(alert_config, aws_config)))
+        Ok(Box::new(SNS::new(aws_config, Some(alert_config))))
     }
 
     pub(crate) async fn build_queue_client(
@@ -187,7 +187,7 @@ impl Config {
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn QueueClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SQS::create(queue_config, aws_config)?))
+        Ok(Box::new(SQS::new(aws_config, Some(queue_config))))
     }
 
     /// build_prover_service - Build the proving service based on the config
@@ -312,7 +312,7 @@ impl Config {
         self.storage.as_ref()
     }
 
-    /// Returns the alerts client
+    /// Returns the alert client
     pub fn alerts(&self) -> &dyn AlertClient {
         self.alerts.as_ref()
     }

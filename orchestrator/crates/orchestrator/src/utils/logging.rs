@@ -137,9 +137,9 @@ pub fn init_logging(service_name: &str) {
     color_eyre::install().expect("Unable to install color_eyre");
 
     let env_filter = EnvFilter::builder()
-        .with_default_directive(tracing::Level::INFO.into())
+        .with_default_directive(Level::INFO.into())
         .parse("orchestrator=trace")
-        .expect("Invalid filter directive");
+        .expect("Invalid filter directive and Logger control");
 
     let fmt_layer = fmt::layer()
         .with_thread_names(true)

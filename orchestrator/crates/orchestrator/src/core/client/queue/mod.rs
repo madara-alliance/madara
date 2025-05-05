@@ -4,13 +4,12 @@ pub mod sqs;
 use crate::types::queue::QueueType;
 use async_trait::async_trait;
 pub use error::QueueError;
-use mockall::automock;
 use omniqueue::backends::{SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
 use std::time::Duration;
 
 /// Trait defining queue operations
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait QueueClient: Send + Sync {
     async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError>;

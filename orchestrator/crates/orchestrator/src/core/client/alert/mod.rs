@@ -2,12 +2,11 @@ pub mod error;
 pub(crate) mod sns;
 
 use async_trait::async_trait;
-use mockall::automock;
 
 pub use error::AlertError;
 
 /// AlertClient trait
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait AlertClient: Send + Sync {
     /// send_message sends a message to the alert client.

@@ -4,10 +4,9 @@ use crate::worker::event_handler::jobs::{
     JobHandlerTrait,
 };
 use async_trait::async_trait;
-use mockall::automock;
 use std::sync::Arc;
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait JobFactoryTrait {
     /// To get the job handler
