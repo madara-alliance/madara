@@ -1,4 +1,5 @@
 use crate::contract_db::ContractDbBlockUpdate;
+use crate::events_bloom_filter::EventBloomWriter;
 use crate::Column;
 use crate::DatabaseExt;
 use crate::MadaraBackend;
@@ -12,7 +13,6 @@ use mp_block::MadaraPendingBlockInfo;
 use mp_block::PendingFullBlock;
 use mp_block::TransactionWithReceipt;
 use mp_block::{BlockHeaderWithSignatures, MadaraPendingBlock};
-use mp_bloom_filter::EventBloomWriter;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
@@ -209,7 +209,21 @@ impl MadaraBackend {
         let mut inner: MadaraBlockInner =
             bincode::deserialize(&self.db.get_cf(&block_n_to_block_inner, &block_n_encoded)?.unwrap_or_default())?;
 
+        let events_bloom = {
+            let mut events_iter = value.iter().map(|event_with_tx_hash| &event_with_tx_hash.event).peekable();
+            if events_iter.peek().is_none() {
+                None
+            } else {
+                // TODO: move this computation out of the storage layer
+                Some(EventBloomWriter::from_events(events_iter))
+            }
+        };
+
         store_events_to_receipts(&mut inner.receipts, value)?;
+
+        if let Some(events_bloom) = events_bloom {
+            self.store_bloom(block_n, events_bloom)?;
+        }
 
         batch.put_cf(&block_n_to_block_inner, &block_n_encoded, &bincode::serialize(&inner)?);
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
@@ -217,7 +231,7 @@ impl MadaraBackend {
         Ok(())
     }
 
-    pub fn store_bloom(&self, block_n: u64, bloom: EventBloomWriter) -> Result<(), MadaraStorageError> {
+    fn store_bloom(&self, block_n: u64, bloom: EventBloomWriter) -> Result<(), MadaraStorageError> {
         let mut batch = WriteBatchWithTransaction::default();
 
         let block_n_to_bloom = self.db.get_column(Column::EventBloom);

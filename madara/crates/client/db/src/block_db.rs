@@ -1,14 +1,14 @@
 use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
+use crate::events_bloom_filter::{EventBloomReader, EventBloomSearcher};
 use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, SyncStatus, WriteBatchWithTransaction};
 use anyhow::Context;
+use mp_block::event_with_info::{drain_block_events, event_match_filter, EventWithInfo};
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
-    MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
+    BlockId, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlock, MadaraPendingBlockInfo,
 };
-use mp_bloom_filter::EventBloomReader;
-use mp_rpc::EmittedEvent;
 use mp_state_update::StateDiff;
 use rocksdb::{Direction, IteratorMode};
 use starknet_api::core::ChainId;
@@ -283,12 +283,14 @@ impl MadaraBackend {
                     let tx_hash = receipt.transaction_hash();
                     receipt.events().iter().map(move |event| (tx_hash, event))
                 })
-                .for_each(|(transaction_hash, event)| {
-                    if let Err(e) = self.sender_event.publish(EmittedEvent {
-                        event: event.clone().into(),
+                .enumerate()
+                .for_each(|(event_index, (transaction_hash, event))| {
+                    if let Err(e) = self.sender_event.publish(EventWithInfo {
+                        event: event.clone(),
                         block_hash: Some(block_hash),
                         block_number: Some(block_number),
                         transaction_hash,
+                        event_index_in_block: event_index,
                     }) {
                         tracing::debug!("Failed to send event to subscribers: {e}");
                     }
@@ -371,7 +373,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
+    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EventWithInfo> {
         self.sender_event.subscribe(from_address)
     }
 
@@ -428,7 +430,7 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_event_filter_stream(
+    fn get_event_filter_stream(
         &self,
         block_n: u64,
     ) -> Result<impl Iterator<Item = Result<(u64, EventBloomReader)>> + '_> {
@@ -444,6 +446,79 @@ impl MadaraBackend {
                 Ok((stored_block_n, bloom))
             })
         }))
+    }
+
+    ///
+    /// ### Returns
+    /// - A vector of events that match the filter criteria.
+    /// - A boolean indicating whether there are more events to process.
+    ///   - If `true`, the caller should continue processing the next block.
+    ///   - If `false`, all matching events have been processed.
+    pub fn get_filtered_events(
+        &self,
+        start_block: u64,
+        start_event_index: usize,
+        end_block: u64,
+        from_address: Option<&Felt>,
+        keys_pattern: Option<&[Vec<Felt>]>,
+        max_events: usize,
+    ) -> Result<Vec<EventWithInfo>> {
+        let key_filter = EventBloomSearcher::new(from_address, keys_pattern);
+
+        let mut events_infos = Vec::new();
+
+        let filter_event_stream = self.get_event_filter_stream(start_block)?;
+
+        for filter_block in filter_event_stream {
+            // Attempt to retrieve the next block and its bloom filter.
+            // Only blocks with events have a bloom filter.
+            let (current_block, bloom_filter) = filter_block?;
+
+            // Stop processing if the current block exceeds the requested range.
+            // - `latest_block`: Ensures we do not process beyond the latest finalized block.
+            // - `end_block`: Ensures we do not go beyond the user-specified range.
+            if current_block > end_block {
+                break;
+            }
+
+            // Use the bloom filter to quickly check if the block might contain relevant events.
+            // - This avoids unnecessary block retrieval if no matching events exist.
+            if !key_filter.search(&bloom_filter) {
+                continue;
+            }
+
+            // Retrieve the full block data since we now suspect it contains relevant events.
+            let block =
+                self.get_block(&BlockId::Number(current_block))?.ok_or(MadaraStorageError::InconsistentStorage(
+                    format!("Bloom filter found but block not found for block {current_block}").into(),
+                ))?;
+
+            let mut iter = drain_block_events(block)
+                .enumerate()
+                // Skip events that have already been processed if we are resuming from a continuation token.
+                // Otherwise, start from the beginning of the block.
+                .skip(if current_block == start_block {
+                    start_event_index
+                } else {
+                    0
+                })
+                // Filter events based on the given event filter criteria (address, keys).
+                .filter(|(_, event)| event_match_filter(&event.event, from_address, keys_pattern));
+
+            // Take exactly enough events to fill the requested chunk size, plus one extra event.
+            // The extra event is used to determine if the block has more matching events.
+            // - If an extra event is found, it means there are still unprocessed events in this block.
+            //   -> The continuation token should point to this block and the next event index.
+            // - If no extra event is found, it means all matching events in this block have been retrieved.
+            //   -> The continuation token should move to the next block.
+            events_infos.extend(iter.by_ref().take(max_events - events_infos.len()).map(|(_, event)| event));
+
+            if events_infos.len() >= max_events {
+                break;
+            }
+        }
+
+        Ok(events_infos)
     }
 
     pub fn get_starting_block(&self) -> Option<u64> {

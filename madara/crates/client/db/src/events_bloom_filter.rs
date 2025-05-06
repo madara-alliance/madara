@@ -4,7 +4,7 @@ use serde::{Deserialize, Deserializer, Serialize};
 use starknet_types_core::felt::Felt;
 use std::{collections::HashSet, fmt};
 
-use crate::{AtomicBitStore, BitStore, BloomFilter, PreCalculatedHashes};
+use mp_bloom_filter::{AtomicBitStore, BitStore, BloomFilter, PreCalculatedHashes};
 
 /// Number of hash functions used in the Bloom filter.
 /// The value 7 is optimal for a false positive rate of 1% (0.01).

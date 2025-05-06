@@ -1,11 +1,9 @@
-use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
-use mp_bloom_filter::EventBloomSearcher;
+use mp_block::{BlockId, BlockTag, EventWithInfo};
 use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
-use crate::utils::event_match_filter;
 use crate::utils::ResultExt;
 use crate::Starknet;
 
@@ -32,14 +30,12 @@ use crate::Starknet;
 pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
-    let chunk_size = filter.chunk_size;
+    let chunk_size = filter.chunk_size as usize;
 
-    if let Some(keys) = &keys {
-        if keys.iter().flatten().count() > MAX_EVENTS_KEYS {
-            return Err(StarknetRpcApiError::TooManyKeysInFilter);
-        }
+    if keys.as_ref().map(|k| k.iter().map(|pattern| pattern.len()).sum()).unwrap_or(0) > MAX_EVENTS_KEYS {
+        return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
-    if chunk_size > MAX_EVENTS_CHUNK_SIZE as u64 {
+    if chunk_size > MAX_EVENTS_CHUNK_SIZE {
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
@@ -57,72 +53,38 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest)
     }
 
     let from_block = continuation_token.block_n;
-    let mut events_chunk: Vec<EmittedEvent> = Vec::with_capacity(chunk_size as usize);
+    let from_event_n = continuation_token.event_n as usize;
 
-    let key_filter = EventBloomSearcher::new(from_address.as_ref(), keys.as_deref());
-
-    let filter_event_stream = starknet
+    let mut events_infos = starknet
         .backend
-        .get_event_filter_stream(from_block)
-        .or_internal_server_error("Error getting event filter stream")?;
+        .get_filtered_events(from_block, from_event_n, to_block, from_address.as_ref(), keys.as_deref(), chunk_size + 1)
+        .or_internal_server_error("Error getting filtered events")?;
 
-    for filter_block in filter_event_stream {
-        // Attempt to retrieve the next block and its bloom filter.
-        // Only blocks with events have a bloom filter.
-        let (current_block, bloom_filter) = filter_block.or_internal_server_error("Error getting next filter block")?;
-
-        // Stop processing if the current block exceeds the requested range.
-        // - `latest_block`: Ensures we do not process beyond the latest finalized block.
-        // - `to_block`: Ensures we do not go beyond the user-specified range.
-        if current_block > to_block {
-            break;
-        }
-
-        // Use the bloom filter to quickly check if the block might contain relevant events.
-        // - This avoids unnecessary block retrieval if no matching events exist.
-        if !key_filter.search(&bloom_filter) {
-            continue;
-        }
-
-        // Retrieve the full block data since we now suspect it contains relevant events.
-        let block =
-            starknet.get_block(&BlockId::Number(current_block)).or_internal_server_error("Error getting block")?;
-
-        let mut iter = drain_block_events(block)
-            .enumerate()
-            // Skip events that have already been processed if we are resuming from a continuation token.
-            // Otherwise, start from the beginning of the block.
-            .skip(if current_block == from_block { continuation_token.event_n as usize } else { 0 })
-
-            // Filter events based on the given event filter criteria (address, keys).
-            .filter(|(_, event)| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()));
-
-        // Take exactly enough events to fill the requested chunk size, plus one extra event.
-        // The extra event is used to determine if the block has more matching events.
-        // - If an extra event is found, it means there are still unprocessed events in this block.
-        //   -> The continuation token should point to this block and the next event index.
-        // - If no extra event is found, it means all matching events in this block have been retrieved.
-        //   -> The continuation token should move to the next block.
-        events_chunk.extend(iter.by_ref().take(chunk_size as usize - events_chunk.len()).map(|(_, event)| event));
-
-        if events_chunk.len() >= chunk_size as usize {
-            // If the iterator still has a next event, that means there still are events in the
-            // current block which match the given filter. In that case we return a continuation token.
-            //
-            // NOTE: we return the index of the event in the actual block to make it easier to
-            // retrieve events from that point on in case of a continuation.
-            if let Some((last_event_index, _)) = iter.next() {
-                return Ok(EventsChunk {
-                    events: events_chunk,
-                    continuation_token: Some(
-                        ContinuationToken { block_n: current_block, event_n: (last_event_index) as u64 }.to_string(),
-                    ),
-                });
+    let mut continuation_token = None;
+    if events_infos.len() > chunk_size {
+        continuation_token = events_infos.pop().and_then(|event_info| match event_info {
+            EventWithInfo { block_number: Some(block_n), event_index_in_block, .. } => {
+                Some(ContinuationToken { block_n, event_n: (event_index_in_block + 1) as u64 })
             }
-        }
+            _ => None,
+        });
     }
 
-    Ok(EventsChunk { events: events_chunk, continuation_token: None })
+    Ok(EventsChunk {
+        events: events_infos
+            .into_iter()
+            .map(|event_info| EmittedEvent {
+                event: Event {
+                    from_address: event_info.event.from_address,
+                    event_content: EventContent { keys: event_info.event.keys, data: event_info.event.data },
+                },
+                block_hash: event_info.block_hash,
+                block_number: event_info.block_number,
+                transaction_hash: event_info.transaction_hash,
+            })
+            .collect(),
+        continuation_token: continuation_token.map(|token| token.to_string()),
+    })
 }
 
 fn block_range(
@@ -142,42 +104,4 @@ fn block_range(
         None => latest_block_n,
     };
     Ok((from_block_n, to_block_n, latest_block_n))
-}
-
-/// Extracts and iterates over all events emitted within a block.
-///
-/// This function processes all transactions in a given block (whether pending or confirmed)
-/// and returns an iterator over their emitted events. Each event is enriched with its
-/// contextual information including block details and the transaction that generated it.
-///
-/// # Arguments
-///
-/// * `block` - A reference to either a pending or confirmed block (`MadaraMaybePendingBlock`)
-///
-/// # Returns
-///
-/// Returns an iterator yielding `EmittedEvent` items. Each item contains:
-/// - The event data (from address, keys, and associated data)
-/// - Block context (hash and number, if the block is confirmed)
-/// - Transaction hash that generated the event
-pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent> {
-    let (block_hash, block_number) = match &block.info {
-        MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
-        MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
-    };
-
-    let tx_hash_and_events = block.inner.receipts.into_iter().flat_map(|receipt| {
-        let tx_hash = receipt.transaction_hash();
-        receipt.into_events().into_iter().map(move |events| (tx_hash, events))
-    });
-
-    tx_hash_and_events.map(move |(transaction_hash, event)| EmittedEvent {
-        event: Event {
-            from_address: event.from_address,
-            event_content: EventContent { keys: event.keys, data: event.data },
-        },
-        block_hash,
-        block_number,
-        transaction_hash,
-    })
 }

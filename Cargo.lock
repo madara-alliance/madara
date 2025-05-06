@@ -9131,6 +9131,7 @@ dependencies = [
 name = "mc-db"
 version = "0.8.0"
 dependencies = [
+ "ahash 0.8.11",
  "anyhow",
  "bincode 1.3.3",
  "bitvec",
@@ -9156,10 +9157,13 @@ dependencies = [
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
+ "proptest",
+ "rand",
  "rayon",
  "rocksdb",
  "rstest 0.18.2",
  "serde",
+ "serde_json",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
  "tempfile",

@@ -4,7 +4,6 @@ use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
     BlockHeaderWithSignatures, Header, PendingFullBlock, TransactionWithReceipt,
 };
-use mp_bloom_filter::EventBloomWriter;
 use mp_chain_config::StarknetVersion;
 use mp_class::{
     class_hash::ComputeClassHashError, compile::ClassCompilationError, ClassInfo, ClassInfoWithHash, ClassType,
@@ -509,27 +508,10 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_events(&self, block_n: u64, events: Vec<EventWithTransactionHash>) -> Result<(), BlockImportError> {
-        // TODO: move this computation to other place.
-        let events_bloom = {
-            let mut events_iter = events.iter().map(|event_with_tx_hash| &event_with_tx_hash.event).peekable();
-            if events_iter.peek().is_none() {
-                None
-            } else {
-                Some(EventBloomWriter::from_events(events_iter))
-            }
-        };
-
         self.db.store_events(block_n, events).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing events for {block_n}").into(),
         })?;
-
-        if let Some(events_bloom) = events_bloom {
-            self.db.store_bloom(block_n, events_bloom).map_err(|error| BlockImportError::InternalDb {
-                error,
-                context: format!("Storing bloom for {block_n}").into(),
-            })?;
-        }
 
         Ok(())
     }

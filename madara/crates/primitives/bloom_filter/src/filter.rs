@@ -177,7 +177,7 @@ impl<H: Hasher + Default, B> BloomFilter<H, B> {
         self.hash_count
     }
 
-    pub(crate) fn storage(&self) -> &B {
+    pub fn storage(&self) -> &B {
         &self.storage
     }
 }
