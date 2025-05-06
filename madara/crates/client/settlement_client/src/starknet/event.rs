@@ -131,50 +131,60 @@ impl StarknetEventStream {
     ) -> anyhow::Result<(Option<EmittedEvent>, EventFilter)> {
         // Adding sleep to introduce delay
         sleep(polling_interval).await;
-
-        let mut page_indicator = false;
-        let mut continuation_token: Option<String> = None;
-
-        while !page_indicator {
-            let events = provider
-                .get_events(
-                    EventFilter {
-                        from_block: filter.from_block,
-                        to_block: filter.to_block,
-                        address: filter.address,
-                        keys: filter.keys.clone(),
-                    },
-                    continuation_token.clone(),
-                    1000,
-                )
-                .await?;
-
-            // Process this page of events immediately
-            for event in &events.events {
-                if let Some(nonce) = event.data.get(1) {
-                    if !processed_events.contains(nonce) {
-                        processed_events.insert(*nonce);
-                        return Ok((Some(event.clone()), filter));
+    
+        async {
+            let mut page_indicator = false;
+            let mut continuation_token: Option<String> = None;
+    
+            while !page_indicator {
+                let events = provider
+                    .get_events(
+                        EventFilter {
+                            from_block: filter.from_block,
+                            to_block: filter.to_block,
+                            address: filter.address,
+                            keys: filter.keys.clone(),
+                        },
+                        continuation_token.clone(),
+                        1000,
+                    )
+                    .await?;
+    
+                // Process this page of events immediately
+                for event in &events.events {
+                    if let Some(nonce) = event.data.get(1) {
+                        if !processed_events.contains(nonce) {
+                            processed_events.insert(*nonce);
+                            return Ok((Some(event.clone()), filter));
+                        }
                     }
                 }
+    
+                // Continue pagination logic
+                if let Some(token) = events.continuation_token {
+                    continuation_token = Some(token);
+                } else {
+                    page_indicator = true;
+                }
             }
-
-            // Continue pagination logic
-            if let Some(token) = events.continuation_token {
-                continuation_token = Some(token);
-            } else {
-                page_indicator = true;
-            }
+    
+            // If we get here, we didn't find any unprocessed events
+            // So we update the filter and return None
+            let latest_block = provider.block_number().await?;
+            filter.from_block = filter.to_block;
+            filter.to_block = Some(BlockId::Number(latest_block));
+    
+            Ok::<_, anyhow::Error>((None, filter))
         }
-
-        // If we get here, we didn't find any unprocessed events
-        // So we update the filter and return None
-        let latest_block = provider.block_number().await?;
-        filter.from_block = filter.to_block;
-        filter.to_block = Some(BlockId::Number(latest_block));
-
-        Ok((None, filter))
+        .await
+        .map_err(|e| {
+            // Log the error
+            tracing::error!("Error in fetch_events: {:?}", e);
+            // Convert to anyhow error
+            anyhow::anyhow!("Starknet error: {}", e)
+        })
     }
+
 }
 
 /// Implementation of the `Stream` trait for `StarknetEventStream`.

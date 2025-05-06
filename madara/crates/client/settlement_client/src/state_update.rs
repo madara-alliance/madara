@@ -82,7 +82,11 @@ where
         .update_state(initial_state)
         .map_err(|e| SettlementClientError::StateUpdate(format!("Failed to update L1 with initial state: {e:#}")))?;
 
-    settlement_client.listen_for_update_state_events(ctx.clone(), state).await.map_err(|e| {
-        SettlementClientError::StateEventListener(format!("Failed to listen for update state events: {e:#}"))
-    })
+    match settlement_client.listen_for_update_state_events(ctx.clone(), state).await {
+        Ok(_) => {}
+        Err(e) => {
+            tracing::error!("Failed to listen for update state events: {}", e);
+        }
+    }
+    Ok(())
 }
