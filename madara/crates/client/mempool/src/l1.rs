@@ -133,6 +133,6 @@ impl L1DataProvider for GasPriceProvider {
     }
 
     fn get_da_mode(&self) -> L1DataAvailabilityMode {
-        L1DataAvailabilityMode::Blob
+        L1DataAvailabilityMode::Calldata
     }
 }

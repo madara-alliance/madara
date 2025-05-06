@@ -12,9 +12,25 @@ RUN apt-get update && apt-get install -y \
     cmake \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
+# Install Python dependencies with increased timeouts and retry mechanisms
 RUN pip install --upgrade pip
-RUN pip install cmake==3.22
+
+# Create pip.conf with timeout and retry settings
+RUN mkdir -p /etc/pip && \
+    echo "[global]" > /etc/pip/pip.conf && \
+    echo "timeout = 180" >> /etc/pip/pip.conf && \
+    echo "retries = 5" >> /etc/pip/pip.conf && \
+    echo "default-timeout = 180" >> /etc/pip/pip.conf
+
+# Set environment variables for pip and other network operations
+ENV PIP_DEFAULT_TIMEOUT=180 \
+    PIP_RETRIES=5 \
+    PIP_TIMEOUT=180 \
+    HTTP_TIMEOUT=180 \
+    PYTHONUNBUFFERED=1
+
+# Install CMake with retry and increased timeout
+RUN pip install --timeout 180 --retries 5 cmake==3.22
 
 # Install solc
 RUN curl https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v0.6.12+commit.27d51765 -o /usr/local/bin/solc-0.6.12
@@ -29,7 +45,8 @@ COPY . /app/
 # Build
 WORKDIR /app/
 RUN rm -rf build
-RUN ./build.sh
+# Run build.sh with increased timeouts
+RUN PIP_DEFAULT_TIMEOUT=180 PIP_RETRIES=5 HTTP_TIMEOUT=180 ./build.sh
 
 # Create a simpler entrypoint script
 RUN echo '#!/bin/sh' > /entrypoint.sh && \
