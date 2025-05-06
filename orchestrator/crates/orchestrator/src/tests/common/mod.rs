@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::core::client::{MongoDbClient, AWSS3};
 use crate::core::cloud::CloudProvider;
-use crate::core::StorageClient;
+use crate::core::traits::resource::Resource;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata};
@@ -156,10 +156,6 @@ pub struct MessagePayloadType {
     pub(crate) id: Uuid,
 }
 
-pub async fn get_storage_client(
-    storage_cfg: &StorageArgs,
-    provider_config: Arc<CloudProvider>,
-) -> Box<dyn StorageClient + Send + Sync> {
-    let aws_config = provider_config.get_aws_client_or_panic();
-    Box::new(AWSS3::new(aws_config, Some(storage_cfg)))
+pub async fn get_storage_client(provider_config: Arc<CloudProvider>) -> AWSS3 {
+    AWSS3::create_setup(provider_config).await.unwrap()
 }

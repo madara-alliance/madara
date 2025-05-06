@@ -1,4 +1,3 @@
-use core::panic;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -17,7 +16,7 @@ use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueNameForJobType;
-use crate::worker::event_handler::factory::MockJobFactoryTrait;
+use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::initialize_worker;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
@@ -104,7 +103,7 @@ async fn test_trigger_verify_job(#[future] setup_trigger: (SocketAddr, Arc<Confi
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
 
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = get_job_handler_context();
     ctx.expect().with(eq(job_type.clone())).times(1).returning(move |_| Arc::clone(&job_handler));
 
     let client = hyper::Client::new();

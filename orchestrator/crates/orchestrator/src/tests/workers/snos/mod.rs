@@ -7,7 +7,7 @@ use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
 use crate::types::jobs::types::JobType;
 use crate::types::queue::QueueType;
-use crate::worker::event_handler::factory::MockJobFactoryTrait;
+use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
@@ -82,7 +82,7 @@ async fn test_snos_worker(#[case] db_val: bool) -> Result<(), Box<dyn Error>> {
     }
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = get_job_handler_context();
     // Mocking the `get_job_handler` call in create_job function.
     ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 

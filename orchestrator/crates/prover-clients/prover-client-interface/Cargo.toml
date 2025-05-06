@@ -11,4 +11,3 @@ orchestrator-gps-fact-checker.workspace = true
 orchestrator-utils.workspace = true
 starknet-os.workspace = true
 thiserror.workspace = true
-hex = "0.4.3"
