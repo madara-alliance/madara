@@ -23,7 +23,7 @@ use crate::worker::parser::job_queue_message::JobQueueMessage;
 
 #[fixture]
 async fn setup_trigger() -> (SocketAddr, Arc<Config>) {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
     let madara_url = get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL");
     let provider = JsonRpcClient::new(HttpTransport::new(

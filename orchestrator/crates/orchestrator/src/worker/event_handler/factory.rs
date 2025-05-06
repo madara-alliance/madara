@@ -1,5 +1,6 @@
 use mockall::automock;
 
+#[allow(clippy::module_inception)]
 #[automock]
 pub mod factory {
     use std::sync::Arc;
