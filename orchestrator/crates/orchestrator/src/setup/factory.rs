@@ -16,7 +16,6 @@ use crate::{
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
 use tracing::info;
 
 /// ResourceFactory is responsible for creating resources based on their type
@@ -111,11 +110,10 @@ impl ResourceFactory {
                             let queue_ready = rs
                                 .poll(queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
                                 .await;
-                            is_queue_ready_clone.store(queue_ready, Ordering::SeqCst);
+                            is_queue_ready_clone.store(queue_ready, Ordering::Release);
                             Ok(())
                         }
                         ResourceType::PubSub => {
-                            sleep(Duration::from_secs(15)).await;
                             let start_time = std::time::Instant::now();
                             let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
                             let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
@@ -143,26 +141,19 @@ impl ResourceFactory {
                             Ok(())
                         }
                         ResourceType::EventBus => {
-                            sleep(Duration::from_secs(15)).await;
                             let start_time = std::time::Instant::now();
                             let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
                             let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
 
                             while start_time.elapsed() < timeout_duration {
                                 if is_queue_ready_clone.load(Ordering::Acquire) {
-                                    info!(" ✅ Queue is ready, setting up SNS");
+                                    info!(" ✅ Queue is ready, setting up EventBridge");
                                     let rs = resource.downcast_mut::<EventBridgeClient>().ok_or(
                                         OrchestratorError::SetupError(
                                             "Failed to downcast resource to EventBridge".to_string(),
                                         ),
                                     )?;
                                     rs.setup(cron_params.clone()).await?;
-                                    rs.poll(
-                                        cron_params,
-                                        miscellaneous_params.poll_interval,
-                                        miscellaneous_params.timeout,
-                                    )
-                                    .await;
                                     break;
                                 } else {
                                     info!(" Current Status of the Queue Creation is: {:?}", is_queue_ready_clone);

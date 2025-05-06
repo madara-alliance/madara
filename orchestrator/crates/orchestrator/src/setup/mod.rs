@@ -5,7 +5,7 @@ use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, St
 use crate::{OrchestratorError, OrchestratorResult};
 use std::sync::Arc;
 use tracing::debug;
-use tracing::{info, instrument};
+use tracing::info;
 
 pub(crate) mod aws;
 mod creator;
@@ -14,7 +14,6 @@ pub(crate) mod queue;
 mod wrapper;
 
 /// Setup function that initializes all necessary resources
-#[instrument]
 pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let cloud_provider = setup_cloud_provider(setup_cmd).await?;
 
