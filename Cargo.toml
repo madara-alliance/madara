@@ -190,7 +190,7 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+blockifier = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
   "testing",
 ] }
 starknet_api = "=0.13.0-rc.1"
@@ -375,7 +375,7 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
   "testing",
 ] }
 
