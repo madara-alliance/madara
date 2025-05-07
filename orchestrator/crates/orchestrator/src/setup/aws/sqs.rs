@@ -39,10 +39,7 @@ impl Resource for SQS {
                 continue;
             }
             let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-                OrchestratorError::ResourceSetupError(format!(
-                    "Failed to create SQS queue '{}': {}",
-                    queue_url, e
-                ))
+                OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_url, e))
             })?;
             let queue_url = res
                 .queue_url()

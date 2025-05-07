@@ -322,11 +322,7 @@ pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs)
     let queue = SQS::new(&config, Some(&queue_params));
     let queue_name = format!("{}_{}_{}", queue_params.prefix, QueueType::SnosJobProcessing, queue_params.suffix);
     let queue_url = queue.get_queue_url_from_client(queue_name.as_str()).await?;
-    put_message_in_queue(
-        message,
-        queue_url,
-    )
-    .await?;
+    put_message_in_queue(message, queue_url).await?;
     Ok(())
 }
 

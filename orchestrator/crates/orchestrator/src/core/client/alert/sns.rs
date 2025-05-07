@@ -27,7 +27,7 @@ impl SNS {
         Self {
             client: Arc::new(Client::new(aws_config)),
             topic_name: args.map(|a| a.topic_name.clone()),
-            topic_arn: Arc::new(Mutex::new(None))
+            topic_arn: Arc::new(Mutex::new(None)),
         }
     }
 
@@ -48,15 +48,15 @@ impl SNS {
         if topic_name.starts_with("arn:") {
             let arn = topic_name.clone();
             // Set the cached value
-            self.topic_arn.lock()
+            self.topic_arn
+                .lock()
                 .map_err(|e| AlertError::LockError(format!("Failed to acquire lock: {}", e)))
                 .map(|mut guard| *guard = Some(arn.clone()))?;
             return Ok(arn);
         }
 
         // Rest of implementation...
-        let resp = self.client.list_topics().send().await
-            .map_err(|e| AlertError::ListTopicsError(e))?;
+        let resp = self.client.list_topics().send().await.map_err(|e| AlertError::ListTopicsError(e))?;
 
         let topics = resp.topics();
         for topic in topics {
@@ -98,7 +98,8 @@ impl AlertClient for SNS {
     /// * `Result<String, AlertError>` - The topic name.
     async fn get_topic_name(&self) -> Result<String, AlertError> {
         Ok(self
-            .get_topic_arn().await?
+            .get_topic_arn()
+            .await?
             .split(":")
             .last()
             .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn().await?))?

@@ -498,10 +498,8 @@ pub(crate) fn get_env_params() -> EnvParams {
         bucket_location_constraint: None,
     };
 
-    let queue_params = QueueArgs {
-        prefix: prefix.clone(),
-        suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
-    };
+    let queue_params =
+        QueueArgs { prefix: prefix.clone(), suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX") };
 
     let aws_params = AWSCredentials {
         access_key_id: get_env_var_or_panic("AWS_ACCESS_KEY_ID"),
