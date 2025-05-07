@@ -1,5 +1,5 @@
 [package]
-description = "Madara primitive for block state update"
+description = "Madara primitive for bloom filter"
 name = "mp-bloom-filter"
 authors.workspace = true
 edition.workspace = true

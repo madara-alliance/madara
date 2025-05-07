@@ -429,6 +429,16 @@ impl MadaraBackend {
         }
     }
 
+    /// Retrieves an iterator over event bloom filters starting from the specified block.
+    ///
+    /// This method returns an iterator that yields (block_number, bloom_filter) pairs,
+    /// allowing for efficient filtering of potential blocks containing matching events.
+    /// Only blocks containing events will have bloom filters, which is why we return
+    /// the block number with each filter - this allows us to identify gaps in the sequence
+    /// where blocks had no events.
+    ///
+    /// Note: The caller should consume this iterator quickly to avoid pinning RocksDB
+    /// resources for an extended period.
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn get_event_filter_stream(
         &self,
@@ -448,12 +458,18 @@ impl MadaraBackend {
         }))
     }
 
+    /// Retrieves events that match the specified filter criteria within a block range.
+    ///
+    /// This implementation uses a two-phase filtering approach:
+    /// 1. First use bloom filters to quickly identify blocks that *might* contain matching events
+    /// 2. Then retrieve and process only those candidate blocks
+    ///
+    /// The method processes blocks incrementally to avoid keeping RocksDB iterators open for too long.
     ///
     /// ### Returns
-    /// - A vector of events that match the filter criteria.
-    /// - A boolean indicating whether there are more events to process.
-    ///   - If `true`, the caller should continue processing the next block.
-    ///   - If `false`, all matching events have been processed.
+    /// - A vector of events that match the filter criteria, up to `max_events` in size.
+    /// - The returned events are collected across multiple blocks within the specified range.
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_filtered_events(
         &self,
         start_block: u64,
@@ -467,25 +483,29 @@ impl MadaraBackend {
 
         let mut events_infos = Vec::new();
 
-        let filter_event_stream = self.get_event_filter_stream(start_block)?;
+        let mut current_block = start_block;
 
-        for filter_block in filter_event_stream {
-            // Attempt to retrieve the next block and its bloom filter.
-            // Only blocks with events have a bloom filter.
-            let (current_block, bloom_filter) = filter_block?;
+        while current_block <= end_block && events_infos.len() < max_events {
+            {
+                // Scope the filter stream iterator to ensure it's dropped promptly
+                let filter_event_stream = self.get_event_filter_stream(current_block)?;
 
-            // Stop processing if the current block exceeds the requested range.
-            // - `latest_block`: Ensures we do not process beyond the latest finalized block.
-            // - `end_block`: Ensures we do not go beyond the user-specified range.
-            if current_block > end_block {
-                break;
-            }
+                for filter_block in filter_event_stream {
+                    let (block_n, bloom_filter) = filter_block?;
 
-            // Use the bloom filter to quickly check if the block might contain relevant events.
-            // - This avoids unnecessary block retrieval if no matching events exist.
-            if !key_filter.search(&bloom_filter) {
-                continue;
-            }
+                    // Stop if we've gone beyond the requested range
+                    if block_n > end_block {
+                        return Ok(events_infos);
+                    }
+
+                    // Use the bloom filter to quickly check if the block might contain relevant events.
+                    // - This avoids unnecessary block retrieval if no matching events exist.
+                    if key_filter.search(&bloom_filter) {
+                        current_block = block_n;
+                        break;
+                    }
+                }
+            } // RocksDB iterator is dropped here
 
             // Retrieve the full block data since we now suspect it contains relevant events.
             let block =
@@ -493,29 +513,21 @@ impl MadaraBackend {
                     format!("Bloom filter found but block not found for block {current_block}").into(),
                 ))?;
 
+            // Determine starting event index based on whether we're continuing from a previous query
+            let skip_events = if current_block == start_block { start_event_index } else { 0 };
+
+            // Extract matching events from the block
             let mut iter = drain_block_events(block)
                 .enumerate()
-                // Skip events that have already been processed if we are resuming from a continuation token.
-                // Otherwise, start from the beginning of the block.
-                .skip(if current_block == start_block {
-                    start_event_index
-                } else {
-                    0
-                })
-                // Filter events based on the given event filter criteria (address, keys).
+                .skip(skip_events)
                 .filter(|(_, event)| event_match_filter(&event.event, from_address, keys_pattern));
 
-            // Take exactly enough events to fill the requested chunk size, plus one extra event.
-            // The extra event is used to determine if the block has more matching events.
-            // - If an extra event is found, it means there are still unprocessed events in this block.
-            //   -> The continuation token should point to this block and the next event index.
-            // - If no extra event is found, it means all matching events in this block have been retrieved.
-            //   -> The continuation token should move to the next block.
+            // Take exactly enough events to fill the requested chunk size.
             events_infos.extend(iter.by_ref().take(max_events - events_infos.len()).map(|(_, event)| event));
 
-            if events_infos.len() >= max_events {
-                break;
-            }
+            current_block
+                .checked_add(1)
+                .ok_or(MadaraStorageError::InconsistentStorage("Block number overflow".into()))?;
         }
 
         Ok(events_infos)
