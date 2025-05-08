@@ -35,9 +35,18 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+#[derive(Debug, Clone, PartialOrd, PartialEq)]
+pub enum StarknetVersion {
+    V0_13_3,
+    V0_13_4,
+    V0_13_5,
+    V0_14_0,
+}
+
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
+    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
@@ -48,10 +57,10 @@ pub struct ConfigParam {
 }
 
 /// The app config. It can be accessed from anywhere inside the service
-/// by calling `config` function. 33
+/// by calling the ` config ` function. 33
 pub struct Config {
     /// The orchestrator config
-    params: ConfigParam,
+    pub params: ConfigParam,
     /// The Madara client to get data from the node
     madara_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -116,6 +125,7 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_version: run_cmd.madara_version.clone(),
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),

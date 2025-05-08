@@ -1,5 +1,10 @@
-use crate::core::config::Config;
+use crate::compression::blob::state_update_to_blob_data;
+use crate::compression::squash::squash_state_updates;
+use crate::compression::stateful::compress as stateful_compress;
+use crate::core::config::{Config, StarknetVersion};
+use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
+use crate::error::other::OtherError;
 use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
@@ -13,8 +18,7 @@ use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-// TODO: Remove this constant when `assign_batch_to_block` method is updated
-const MAX_BATCH_SIZE: u64 = 50;
+const MAX_BLOB_SIZE: usize = 4096 * 6;
 
 const STATE_UPDATE_DIR: &str = "state_update";
 
@@ -78,74 +82,69 @@ impl BatchingTrigger {
 
         match state_update {
             Update(state_update) => {
-                // FIXME: Update this flow
-                // For now, adding a hardcoded limit on the number of blocks each batch can have
-                // The Correct implementation:
-                // 1. Squash all state updates to get a single state update
-                // 2. Perform stateful compression
-                // 3. Perform stateless compression
-                // 4. Create an array of felts
-                // 5. Check if its length is less than 6 * 4096
-                //    If yes, it can be added in the same batch
-                //    Else, start a new batch
                 tracing::info!("Starting batching for block {}", block_number);
                 let latest_batch = database.get_latest_batch().await?;
-                let mut batch_index = 1;
+                let mut assigned_batch_index = 1;
                 if let Some(batch) = latest_batch {
                     // A batch exists
                     // Check if we can add a new block in the same batch
-                    if batch.size < MAX_BATCH_SIZE {
-                        // Can add in the same batch
+                    if !batch.is_batch_ready {
+                        // Check if we can add in the same batch
 
                         // Fetch existing state update
                         let current_state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                         let current_state_update: StateUpdate = serde_json::from_slice(&current_state_update_bytes)?;
                         // Merge the current block's state update with the batch's state update
-                        let new_state_update = self.squash_state_updates(vec![current_state_update, state_update])?;
-                        // Update state update for the batch in storage
-                        storage
-                            .put_data(
-                                Bytes::from(serde_json::to_string(&new_state_update)?),
-                                &self.get_state_update_file_name(batch.index),
-                            )
-                            .await?;
-                        // Update batch status in the database
-                        database
-                            .update_batch(&batch, &BatchUpdates { end_block: block_number, is_batch_ready: false })
-                            .await?;
-                        batch_index = batch.index;
+                        let new_state_update = squash_state_updates(vec![current_state_update, state_update])?;
+                        // Perform stateful compression
+                        let stateful_compressed =
+                            stateful_compress(&new_state_update).map_err(|err| JobError::Other(OtherError(err)))?;
+                        // Get a vector of felts from the compressed state update
+                        let vec_felts =
+                            state_update_to_blob_data(stateful_compressed, config.params.madara_version.clone())
+                                .await?;
+
+                        if vec_felts.len() > MAX_BLOB_SIZE {
+                            // We cannot add the current block in this batch
+
+                            // Update the status of the previous batch
+                            database
+                                .update_batch(
+                                    &batch,
+                                    &BatchUpdates { end_block: batch.end_block, is_batch_ready: true },
+                                )
+                                .await?;
+
+                            // Start a new batch with the index `batch_index + 1`
+                            assigned_batch_index = batch.index + 1;
+                            self.start_new_batch(storage, database, assigned_batch_index, block_number, state_update)
+                                .await?
+                        } else {
+                            // We can add the current block in this batch
+
+                            assigned_batch_index = batch.index;
+                            self.update_batch(storage, database, new_state_update, &batch, block_number, false)
+                        }
                     } else {
+                        // The previous block is full
                         // Start a new batch
 
-                        // Update the status of the previous batch
-                        database
-                            .update_batch(&batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready: true })
-                            .await?;
-                        let squashed_state_updates_path = self.get_state_update_file_name(batch_index + 1);
-                        // Put the state update in storage
-                        storage
-                            .put_data(Bytes::from(serde_json::to_string(&state_update)?), &squashed_state_updates_path)
-                            .await?;
-                        // Add the new batch info in the database
-                        database
-                            .create_batch(Batch::create(batch.index + 1, block_number, squashed_state_updates_path))
-                            .await?;
-                        batch_index = batch.index + 1;
+                        assigned_batch_index = batch.index + 1;
+                        self.start_new_batch(storage, database, assigned_batch_index, block_number, state_update)
+                            .await?
                     }
                 } else {
                     // No batch exists in the DB yet
-                    // Create a fresh batch
+                    // Create the first batch
 
-                    let squashed_state_updates_path = self.get_state_update_file_name(batch_index + 1);
-                    // Put the state update in storage
-                    storage
-                        .put_data(Bytes::from(serde_json::to_string(&state_update)?), &squashed_state_updates_path)
-                        .await?;
-                    // Add the new batch info in the database
-                    database.create_batch(Batch::create(1, block_number, squashed_state_updates_path)).await?;
-                    batch_index = 1;
+                    assigned_batch_index = 1;
+                    self.start_new_batch(storage, database, assigned_batch_index, block_number, state_update).await?
                 }
-                tracing::info!("Completed batching for block {}. Assigned batch {}", block_number, batch_index);
+                tracing::info!(
+                    "Completed batching for block {}. Assigned batch {}",
+                    block_number,
+                    assigned_batch_index
+                );
             }
             PendingUpdate(_) => {
                 tracing::info!("Skipping batching for block {} as it is still pending", block_number);
@@ -155,124 +154,44 @@ impl BatchingTrigger {
         Ok(())
     }
 
+    /// get_state_update_file_name returns the file path for storing the state update in storage
     fn get_state_update_file_name(&self, batch_index: u64) -> String {
         format!("{}/batch/{}.json", STATE_UPDATE_DIR, batch_index)
     }
 
-    /// squash_state_updates merge all the StateUpdate into a single StateUpdate
-    fn squash_state_updates(&self, state_updates: Vec<StateUpdate>) -> Result<StateUpdate, JobError> {
-        if state_updates.is_empty() {
-            panic!("Cannot merge empty state updates");
-        }
+    /// start_new_batch starts a new batch
+    async fn start_new_batch(
+        &self,
+        storage: &dyn StorageClient,
+        database: &dyn DatabaseClient,
+        batch_index: u64,
+        start_block: u64,
+        state_update: StateUpdate,
+    ) -> Result<(), JobError> {
+        // Get the state update file path
+        let squashed_state_updates_path = self.get_state_update_file_name(batch_index);
+        // Put the state update in storage
+        storage.put_data(Bytes::from(serde_json::to_string(&state_update)?), &squashed_state_updates_path).await?;
+        // Add the new batch info in the database
+        database.create_batch(Batch::create(1, start_block, squashed_state_updates_path)).await?;
+        Ok(())
+    }
 
-        // Take the last block hash and number from the last update as our "latest"
-        let last_update = state_updates.last().unwrap();
-        let block_hash = last_update.block_hash;
-        let new_root = last_update.new_root;
-        let old_root = state_updates.first().unwrap().old_root;
-
-        // Create a new StateDiff to hold the merged state
-        let mut state_diff = StateDiff {
-            storage_diffs: Vec::new(),
-            deployed_contracts: Vec::new(),
-            declared_classes: Vec::new(),
-            deprecated_declared_classes: Vec::new(),
-            nonces: Vec::new(),
-            replaced_classes: Vec::new(),
-        };
-
-        // Maps to efficiently track the latest state
-        let mut storage_diffs_map: HashMap<Felt, HashMap<Felt, Felt>> = HashMap::new();
-        let mut deployed_contracts_map: HashMap<Felt, Felt> = HashMap::new();
-        let mut declared_classes_map: HashMap<Felt, Felt> = HashMap::new();
-        let mut nonces_map: HashMap<Felt, Felt> = HashMap::new();
-        let mut replaced_classes_map: HashMap<Felt, Felt> = HashMap::new();
-        let mut deprecated_classes_set: HashSet<Felt> = HashSet::new();
-
-        // Process each update in order
-        for update in state_updates {
-            // Process storage diffs
-            for contract_diff in update.state_diff.storage_diffs {
-                let contract_addr = contract_diff.address;
-                let contract_storage_map = storage_diffs_map.entry(contract_addr).or_default();
-
-                for entry in contract_diff.storage_entries {
-                    contract_storage_map.insert(entry.key, entry.value);
-                }
-            }
-
-            // Process deployed contracts
-            for item in update.state_diff.deployed_contracts {
-                deployed_contracts_map.insert(item.address, item.class_hash);
-            }
-
-            // Process declared classes
-            for item in update.state_diff.declared_classes {
-                declared_classes_map.insert(item.class_hash, item.compiled_class_hash);
-            }
-
-            // Process nonces
-            for item in update.state_diff.nonces {
-                nonces_map.insert(item.contract_address, item.nonce);
-            }
-
-            // Process replaced classes
-            for item in update.state_diff.replaced_classes {
-                replaced_classes_map.insert(item.contract_address, item.class_hash);
-            }
-
-            // Process deprecated classes
-            for class_hash in update.state_diff.deprecated_declared_classes {
-                deprecated_classes_set.insert(class_hash);
-            }
-        }
-
-        // Convert maps back to the required StateDiff format
-
-        // Storage diffs
-        for (contract_addr, storage_map) in storage_diffs_map {
-            let storage_entries = storage_map
-                .into_iter()
-                .filter(|(_, value)| *value != Felt::ZERO) // Filter out entries with value 0x0
-                .map(|(key, value)| StorageEntry { key, value })
-                .collect::<Vec<_>>();
-
-            // Only include contracts that have non-zero storage entries
-            if !storage_entries.is_empty() {
-                let contract_storage_diff = ContractStorageDiffItem { address: contract_addr, storage_entries };
-
-                state_diff.storage_diffs.push(contract_storage_diff);
-            }
-        }
-
-        // Deployed contracts
-        state_diff.deployed_contracts = deployed_contracts_map
-            .into_iter()
-            .map(|(address, class_hash)| DeployedContractItem { address, class_hash })
-            .collect();
-
-        // Declared classes
-        state_diff.declared_classes = declared_classes_map
-            .into_iter()
-            .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
-            .collect();
-
-        // Nonces
-        state_diff.nonces =
-            nonces_map.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect();
-
-        // Replaced classes
-        state_diff.replaced_classes = replaced_classes_map
-            .into_iter()
-            .map(|(contract_address, class_hash)| ReplacedClassItem { contract_address, class_hash })
-            .collect();
-
-        // Deprecated classes
-        state_diff.deprecated_declared_classes = deprecated_classes_set.into_iter().collect();
-
-        // Create the merged StateUpdate
-        let merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
-
-        Ok(merged_update)
+    async fn update_batch(
+        &self,
+        storage: &dyn StorageClient,
+        database: &dyn DatabaseClient,
+        state_update: StateUpdate,
+        batch: &Batch,
+        end_block: u64,
+        is_batch_ready: bool,
+    ) -> Result<(), JobError> {
+        // Update state update for the batch in storage
+        storage
+            .put_data(Bytes::from(serde_json::to_string(&state_update)?), &self.get_state_update_file_name(batch.index))
+            .await?;
+        // Update batch status in the database
+        database.update_batch(&batch, &BatchUpdates { end_block, is_batch_ready }).await?;
+        Ok(())
     }
 }

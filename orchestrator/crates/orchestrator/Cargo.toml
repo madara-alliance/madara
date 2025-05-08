@@ -118,6 +118,8 @@ anyhow = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 hyper = { version = "0.14", features = ["full"] }
 jemallocator = "0.5.4"
+indexmap = "2.6.0"
+num-integer = "0.1.46"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]
