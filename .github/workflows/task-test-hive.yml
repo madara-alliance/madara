@@ -12,7 +12,7 @@ on:
 jobs:
   hive-madara:
     runs-on: karnot-arc-runner-set
-    container: pull ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0
+    container: ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0
 
     steps:
       - uses: actions/checkout@v4
