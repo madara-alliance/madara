@@ -52,19 +52,19 @@ jobs:
         with:
           cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          # scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          # install-mold: true
-          # install-scarb: true
-          # install-foundry: true
-          # foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
-          # install-node: true
-          # node-version: ${{ env.BUILD_NODE_VERSION }}
-          # install-ganache: true
-          # ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
-          # install-solc: true
-          # solc-version: ${{ env.BUILD_SOLC_VERSION }}
-          # python-version: ${{ env.BUILD_PYTHON_VERSION }}
-          # build-snos: true
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          install-node: true
+          node-version: ${{ env.BUILD_NODE_VERSION }}
+          install-ganache: true
+          ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
+          install-solc: true
+          solc-version: ${{ env.BUILD_SOLC_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
 
       # - name: Build the artifacts
       - run: |
