@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Test Madara (hive)
+
+on:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+
+jobs:
+  hive-madara:
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - uses: ./.github/actions/load-env
+
+      - uses: ./.github/actions/rust-setup
+        with:
+          cache-key: test-madara
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: stable
+          build-snos: true
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - run: chmod +x target/release/madara
+
+      - name: Download Starknet Hive image
+        run: docker pull ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0
+
+      - name: Start Madara
+        timeout-minutes: 1
+        run: |
+          # Run Madara in devnet mode
+          cargo run -p madara --release -- \
+            --name madara \
+            --devnet \
+            --l1-sync-disabled \
+            --devnet-unsafe \
+            --base-path ../madara-db \
+            --feeder-gateway-enable \
+            --chain-config-override="block_time=2s"
+
+          # Wait for Madara to start
+          until curl -s \
+            --location localhost:9944 \
+            --header 'Content-Type: application/json' \
+            --data '{
+                "jsonrpc": "2.0",
+                "method": "starknet_blockNumber",
+                "params": [],
+                "id": 1
+            }' &>/dev/null
+          do
+            sleep 1;
+            echo "Retrying...";
+          done
+          echo "Done!"
+
+      - name: Run Starknet Hive
+        run: |
+          docker run --network host \
+            ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0 --urls "http://127.0.0.1:9944" \
+              --paymaster-account-address "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d" \
+              --paymaster-private-key "0x077e56c6dc32d40a67f6f7e6625c8dc5e570abe49c0a24e9202e4ae906abcc07" \
+              --udc-address "0x41a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf" \
+              --account-class-hash "0xe2eb8f5672af4e6a4e8a8f1b44989685e668489b0a25437733756c5a34a1d6" \
+              --suite open-rpc

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Workflow - Pull Request Main
 
 # This workflow orchestrates all checks and tests for pull requests
@@ -50,6 +51,14 @@ jobs:
   test-madara:
     needs: [update-db-version, build-madara-cairo]
     uses: ./.github/workflows/task-test-madara.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # Run Madara tests (hive)
+  test-hive:
+    needs: [update-db-version, build-madara-cairo]
+    uses: ./.github/workflows/task-test-hive.yml
     with:
       madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
     secrets: inherit
