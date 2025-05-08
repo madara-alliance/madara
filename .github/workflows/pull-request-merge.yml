@@ -1,0 +1,29 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Workflow - Pull Request Main (merge)
+
+on:
+  workflow_dispatch:
+  merge_group:
+
+jobs:
+  build-nightly:
+    uses: ./.github/workflows/task-build-nightly.yaml
+    with:
+      registry: ghcr.io
+      image-name: madara
+      image-file: ./Dockerfile
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  # Run Madara tests (hive)
+  test-hive:
+    needs: [build-nightly]
+    uses: ./.github/workflows/task-test-hive.yml
+    with:
+      tag: ${{ needs.build-nightly.outputs.tag }}
+    secrets: inherit
+
