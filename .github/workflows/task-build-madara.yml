@@ -67,8 +67,8 @@ jobs:
           # build-snos: true
 
       # - name: Build the artifacts
-      #   run: |
-      #     make artifacts-linux
+      - run: |
+          make artifacts-linux
 
       # Build Madara, Orchestrator and test contracts
       - name: Cargo build binaries
