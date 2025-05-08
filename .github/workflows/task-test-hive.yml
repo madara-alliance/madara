@@ -45,7 +45,7 @@ jobs:
         timeout-minutes: 1
         run: |
           # Run Madara in devnet mode
-          target/release/madara \
+          nohup target/release/madara \
             --name madara \
             --devnet \
             --l1-sync-disabled \
