@@ -3,13 +3,14 @@ use url::Url;
 
 /// Parameters used to config Atlantic.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["atlantic_api_key", "atlantic_service_url", "atlantic_settlement_layer", "atlantic_verifier_contract_address"])]
+#[group(requires_all = ["atlantic_api_key", "atlantic_service_url", "atlantic_settlement_layer", "atlantic_verifier_contract_address"]
+)]
 pub struct AtlanticCliArgs {
     /// Use the Atlantic prover.
     #[arg(long)]
     pub atlantic: bool,
 
-    /// The API key for Atlantic.
+    /// The API key for the Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY", long)]
     pub atlantic_api_key: Option<String>,
 

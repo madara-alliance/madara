@@ -7,25 +7,25 @@ use starknet_os::io::output::StarknetOsOutput;
 use url::Url;
 use uuid::Uuid;
 
-use crate::constants::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
-use crate::jobs::snos_job::SnosJob;
-use crate::jobs::types::{JobItem, JobStatus, JobType, JobVerificationStatus};
-use crate::jobs::Job;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{MockType, TestConfigBuilder};
 use crate::tests::jobs::ConfigType;
+use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
+use crate::types::jobs::status::JobVerificationStatus;
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::snos::SnosJobHandler;
+use crate::worker::event_handler::jobs::JobHandlerTrait;
 
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    let services = TestConfigBuilder::new().build().await;
-
     // Create proper metadata structure
     let metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::Snos(SnosMetadata::default()) };
 
-    let job = SnosJob.create_job(services.config.clone(), String::from("0"), metadata).await;
+    let job = SnosJobHandler.create_job(String::from("0"), metadata).await;
 
     assert!(job.is_ok());
     let job = job.unwrap();
@@ -46,10 +46,15 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     // Update job_item to use the proper metadata structure for SNOS jobs
     job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata::default());
 
-    let job_status = SnosJob.verify_job(services.config.clone(), &mut job_item).await;
+    let job_status = SnosJobHandler.verify_job(services.config.clone(), &mut job_item).await;
 
-    // Should always be [Verified] for the moment.
-    assert_eq!(job_status, Ok(JobVerificationStatus::Verified));
+    assert!(
+        matches!(job_status, Ok(JobVerificationStatus::Verified)),
+        "Job verification status should be Verified or NotVerified"
+    );
+    //
+    // // Should always be [Verified] for the moment.
+    // assert_eq!(job_status, Ok(JobVerificationStatus::Verified));
 }
 
 /// We have a private pathfinder node used to run the Snos [prove_block] function.
@@ -101,7 +106,7 @@ async fn test_process_job() -> color_eyre::Result<()> {
         updated_at: Utc::now().round_subsecs(0),
     };
 
-    let result = SnosJob.process_job(Arc::clone(&services.config), &mut job_item).await?;
+    let result = SnosJobHandler.process_job(Arc::clone(&services.config), &mut job_item).await?;
 
     assert_eq!(result, "76793");
 

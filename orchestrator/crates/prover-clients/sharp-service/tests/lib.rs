@@ -19,7 +19,7 @@ mod constants;
 #[rstest]
 #[tokio::test]
 async fn prover_client_submit_task_works() {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
 
     let sharp_params = SharpValidatedArgs {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
@@ -65,7 +65,7 @@ async fn prover_client_submit_task_works() {
 #[case(CairoJobStatus::ONCHAIN)]
 #[tokio::test]
 async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
 
     let sharp_params = SharpValidatedArgs {
         sharp_customer_id: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID"),
