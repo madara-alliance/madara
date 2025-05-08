@@ -39,7 +39,7 @@ jobs:
     needs: [build-nightly]
     uses: ./.github/workflows/task-test-hive.yml
     with:
-      nightly-tag: ${{ needs.build-nightly.outputs.nightly-tag }}
+      nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
     secrets: inherit
 
   # # Update database version for schema changes
