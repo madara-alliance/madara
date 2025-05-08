@@ -41,6 +41,7 @@ jobs:
         run: docker pull ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0
 
       - name: Start Madara
+        id: madara
         timeout-minutes: 1
         run: |
           # Run Madara in devnet mode
@@ -51,7 +52,10 @@ jobs:
             --devnet-unsafe \
             --base-path ../madara-db \
             --feeder-gateway-enable \
-            --chain-config-override="block_time=2s"
+            --chain-config-override="block_time=2s" &
+
+          # Store Madara pid for cleanup
+          echo "madara-pid=$!" >> $GITHUB_OUTPUT
 
           # Wait for Madara to start
           until curl -s \
@@ -78,3 +82,8 @@ jobs:
               --udc-address "0x41a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf" \
               --account-class-hash "0xe2eb8f5672af4e6a4e8a8f1b44989685e668489b0a25437733756c5a34a1d6" \
               --suite open-rpc
+
+      - name: Stop Madara
+        if: ${{ steps.madara.outcome == 'success' }}
+        run: |
+          kill ${{ steps.madara.output.madara-pid }}
