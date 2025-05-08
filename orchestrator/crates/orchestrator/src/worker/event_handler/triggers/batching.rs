@@ -1,6 +1,7 @@
 use crate::compression::blob::state_update_to_blob_data;
 use crate::compression::squash::squash_state_updates;
 use crate::compression::stateful::compress as stateful_compress;
+use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::{Config, StarknetVersion};
 use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
@@ -103,8 +104,10 @@ impl BatchingTrigger {
                         let vec_felts =
                             state_update_to_blob_data(stateful_compressed, config.params.madara_version.clone())
                                 .await?;
+                        // Perform stateless compression
+                        let stateless_compressed = stateless_compress(&vec_felts);
 
-                        if vec_felts.len() > MAX_BLOB_SIZE {
+                        if stateless_compressed.len() > MAX_BLOB_SIZE {
                             // We cannot add the current block in this batch
 
                             // Update the status of the previous batch
