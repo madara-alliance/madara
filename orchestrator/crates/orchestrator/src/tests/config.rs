@@ -283,11 +283,7 @@ async fn implement_api_server(api_server_type: ConfigType, config: Arc<Config>) 
                 panic!(concat!("Mock client is not a ", stringify!($client_type)));
             }
         }
-        ConfigType::Actual => {
-            let (api_server_url, _) = get_server_url(config.server_config()).await;
-            tokio::spawn(async move { setup_server(config.clone()).await.expect("Failed to start the API server") });
-            Some(api_server_url)
-        }
+        ConfigType::Actual => Some(setup_server(config.clone()).await.expect("Failed to setup server")),
         ConfigType::Dummy => None,
     }
 }

@@ -51,18 +51,13 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
     debug!("Configuration initialized");
 
-    let server_config = config.clone();
     // Run the server in a separate tokio spawn task
-    let server_handle = tokio::spawn(async move {
-        let _ = setup_server(server_config).await;
-    });
+    setup_server(config.clone()).await?;
 
     debug!("Application router initialized");
     initialize_worker(config.clone()).await?;
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
-
-    tokio::try_join!(server_handle).expect("Failed to join server handle");
 
     // Analytics Shutdown
     instrumentation.shutdown()?;
