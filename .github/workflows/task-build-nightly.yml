@@ -34,8 +34,8 @@ jobs:
   build-nightly:
     runs-on: ubuntu-latest
     outputs:
-      nightly: ${{ steps.tag.output.nightly }}
-      nightly-sha: ${{ steps.tag.output.nightly-sha }}
+      nightly: ${{ steps.tag.outputs.nightly }}
+      nightly-sha: ${{ steps.tag.outputs.nightly-sha }}
 
     steps:
       - name: Checkout repository
