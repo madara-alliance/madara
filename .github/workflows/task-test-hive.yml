@@ -22,13 +22,13 @@ jobs:
         with:
           cache-key: test-madara
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          install-mold: true
-          install-scarb: true
-          install-foundry: true
-          foundry-version: stable
-          build-snos: true
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          # scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          # install-mold: true
+          # install-scarb: true
+          # install-foundry: true
+          # foundry-version: stable
+          # build-snos: true
+          # python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
@@ -75,6 +75,16 @@ jobs:
 
       - name: Run Starknet Hive
         run: |
+          curl -s \
+            --location localhost:9944 \
+            --header 'Content-Type: application/json' \
+            --data '{
+                "jsonrpc": "2.0",
+                "method": "starknet_blockNumber",
+                "params": [],
+                "id": 1
+            }'
+
           docker run --network host \
             ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0 --urls "http://127.0.0.1:9944" \
               --paymaster-account-address "0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d" \
