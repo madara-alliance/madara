@@ -18,21 +18,24 @@ on:
         required: true
         type: string
     outputs:
-      tag:
+      nightly:
         description: Nightly image tag
-        value: ${{ jobs.build-nightly.outputs.tag }}
+        value: ${{ jobs.build-nightly.outputs.nightly }}
+      nightly-sha:
+        description: Nightly image tag
+        value: ${{ jobs.build-nightly.outputs.nightly-sha }}
 
 permissions:
   contents: read
-  packages: write
   attestations: write
   id-token: write
 
 jobs:
   build-nightly:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
     outputs:
-      tag: ${{ steps.tag.output.nightly-sha }}
+      nightly: ${{ steps.tag.output.nightly }}
+      nightly-sha: ${{ steps.tag.output.nightly-sha }}
 
     steps:
       - name: Checkout repository

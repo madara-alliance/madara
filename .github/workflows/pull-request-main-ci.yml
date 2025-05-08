@@ -35,10 +35,12 @@ jobs:
       id-token: write
     secrets: inherit
 
-  # Run Madara tests (hive)
   test-hive:
     needs: [build-nightly]
     uses: ./.github/workflows/task-test-hive.yml
+    with:
+      nightly: ${{ needs.build-nightly.outputs.nightly }}
+      nightly-tag: ${{ needs.build-nightly.outputs.nightly-tag }}
     secrets: inherit
 
   # # Update database version for schema changes
@@ -64,14 +66,6 @@ jobs:
   #   uses: ./.github/workflows/task-lint-cargo.yml
   #   with:
   #     bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
-  #   secrets: inherit
-
-  # # Run Madara tests
-  # test-madara:
-  #   needs: [update-db-version, build-madara-cairo]
-  #   uses: ./.github/workflows/task-test-madara.yml
-  #   with:
-  #     madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
   #   secrets: inherit
 
   # # Run Madara tests (hive)

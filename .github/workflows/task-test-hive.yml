@@ -3,6 +3,9 @@ name: Task - Test Madara (hive)
 
 on:
   workflow_call:
+    inputs:
+      nightly-sha:
+        type: string
 
 jobs:
   hive-madara:
@@ -14,7 +17,7 @@ jobs:
         with:
           name: madara
           path: ${{ runner.temp }}/madara.tar
-      - run: docker load --input ${{ runner.temp }}/myimage.tar
+      - run: docker load --input ${{ runner.temp }}/madara.tar
 
       - name: Download openrpc-testgen-runner
         run: docker pull ghcr.io/madara-alliance/openrpc-testgen-runner:v0.1.0
@@ -24,7 +27,7 @@ jobs:
 
       - name: Start Madara
         run: |
-          docker run --rm --network hive -p 9944:9944 --name madara -d madara:ci \
+          docker run --rm --network hive -p 9944:9944 --name madara -d ${{ inputs.nightly-sha }} \
             --name madara \
             --devnet \
             --l1-sync-disabled \
