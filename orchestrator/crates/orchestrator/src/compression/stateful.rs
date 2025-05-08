@@ -40,7 +40,7 @@ impl ValueMapping {
 
     /// Maps a value using the stored mappings
     fn map_value(&self, value: &Felt) -> Felt {
-        self.mappings.get(value).cloned().unwrap_or_else(|| value.clone())
+        self.mappings.get(value).cloned().unwrap_or(*value)
     }
 }
 

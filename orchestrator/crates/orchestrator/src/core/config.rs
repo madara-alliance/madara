@@ -13,6 +13,7 @@ use orchestrator_sharp_service::SharpProverService;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
@@ -35,13 +36,49 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
-#[derive(Debug, Clone, PartialOrd, PartialEq)]
-pub enum StarknetVersion {
-    V0_13_3,
-    V0_13_4,
-    V0_13_5,
-    V0_14_0,
+macro_rules! versions {
+    ($(($variant:ident, $version:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub enum StarknetVersion {
+            $($variant),*
+        }
+
+        impl StarknetVersion {
+            pub fn to_string(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $version),*
+                }
+            }
+
+            pub fn supported() -> &'static [StarknetVersion] {
+                &[$(Self::$variant),*]
+            }
+
+            pub fn is_supported(&self) -> bool {
+                Self::supported().contains(self)
+            }
+        }
+
+        impl FromStr for StarknetVersion {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($version => Ok(Self::$variant),)*
+                    _ => Err(format!("Unknown version: {}", s)),
+                }
+            }
+        }
+
+        impl std::fmt::Display for StarknetVersion {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.to_string())
+            }
+        }
+    }
 }
+
+versions!((V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
 
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
@@ -125,7 +162,7 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
-            madara_version: run_cmd.madara_version.clone(),
+            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),

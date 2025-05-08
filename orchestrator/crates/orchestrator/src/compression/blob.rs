@@ -1,11 +1,10 @@
-// use color_eyre::Result;
-use std::collections::{HashMap, HashSet};
-use num_bigint::BigUint;
-use num_traits::Num;
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use num_bigint::BigUint;
+use num_traits::Num;
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
+use std::collections::{HashMap, HashSet};
 
 /// Converts a StateUpdate to a vector of Felt values for blob creation
 ///
@@ -62,7 +61,7 @@ pub async fn state_update_to_blob_data(
         let nonce = nonces.remove(&address);
 
         // Create the DA word - class_flag is true if class_hash is Some
-        let da_word = da_word(class_hash.is_some(), nonce, storage_entries.len() as u64, version.clone())?;
+        let da_word = da_word(class_hash.is_some(), nonce, storage_entries.len() as u64, version)?;
 
         // Add address and DA word to blob data
         blob_data.push(address);
@@ -122,7 +121,7 @@ pub async fn state_update_to_blob_data(
     // Process each leftover address
     for (address, class_hash, nonce) in leftover_addresses.clone() {
         // Create DA word with zero storage entries
-        let da_word = da_word(class_hash.is_some(), nonce, 0, version.clone())?;
+        let da_word = da_word(class_hash.is_some(), nonce, 0, version)?;
 
         println!(
             "Processing leftover address {}: class_hash={:?}, nonce={:?}",
@@ -181,7 +180,7 @@ fn da_word(
     version: StarknetVersion,
 ) -> Result<Felt, JobError> {
     // Parse version to determine format
-    let is_new_version = if version >= StarknetVersion::V0_13_3 { true } else { false };
+    let is_new_version = version >= StarknetVersion::V0_13_3;
     let mut binary_string = String::new();
     if is_new_version {
         // v0.13.3+ format:
@@ -260,9 +259,6 @@ fn da_word(
         .to_str_radix(10);
 
     Felt::from_dec_str(&decimal_string).map_err(|e| {
-        JobError::Other(OtherError(color_eyre::eyre::eyre!(
-                "Failed to convert decimal string to FieldElement: {}",
-                e
-            )))
+        JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert decimal string to FieldElement: {}", e)))
     })
 }
