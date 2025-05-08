@@ -39,7 +39,6 @@ jobs:
     needs: [build-nightly]
     uses: ./.github/workflows/task-test-hive.yml
     with:
-      nightly: ${{ needs.build-nightly.outputs.nightly }}
       nightly-tag: ${{ needs.build-nightly.outputs.nightly-tag }}
     secrets: inherit
 
