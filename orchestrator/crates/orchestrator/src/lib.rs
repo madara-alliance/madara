@@ -6,6 +6,7 @@ pub mod setup;
 pub mod types;
 pub mod utils;
 pub mod worker;
+pub mod compression;
 
 #[cfg(test)]
 pub mod tests;
