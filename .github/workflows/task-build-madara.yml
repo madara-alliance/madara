@@ -66,9 +66,9 @@ jobs:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
-      # - name: Build the artifacts
-      - run: |
-          make artifacts-linux
+      # # - name: Build the artifacts
+      # - run: |
+      #     make artifacts-linux
 
       # Build Madara, Orchestrator and test contracts
       - name: Cargo build binaries
@@ -76,7 +76,7 @@ jobs:
           export GIT_COMMIT_HASH=$GITHUB_SHA
           # We build the whole workspace to ensure nothing broke.
           # Builds "madara", the "orchestrator" and the "m-cairo-test-contracts" package
-          cargo build --release --workspace
+          cargo build -p madara --release --workspace
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes
