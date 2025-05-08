@@ -6,6 +6,7 @@ on:
     inputs:
       nightly-sha:
         type: string
+        required: true
 
 jobs:
   hive-madara:
@@ -65,5 +66,5 @@ jobs:
             --suite open-rpc
 
       - name: Stop Madara
-        if: ${{ steps.madara.outcome == 'success' }}
-        run: docker stop madara
+        if: always() && ${{ steps.madara.outcome == 'success' }}
+        run: docker stop madara &> /dev/null | true
