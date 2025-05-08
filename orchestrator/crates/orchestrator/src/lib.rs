@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod compression;
 pub mod core;
 pub mod error;
 pub mod server;
@@ -6,7 +7,6 @@ pub mod setup;
 pub mod types;
 pub mod utils;
 pub mod worker;
-pub mod compression;
 
 #[cfg(test)]
 pub mod tests;

@@ -1,6 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem, StateDiff, StateUpdate, StorageEntry};
 use crate::error::job::JobError;
+use starknet_core::types::{
+    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem, StateDiff,
+    StateUpdate, StorageEntry,
+};
+use std::collections::{HashMap, HashSet};
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 pub fn squash_state_updates(state_updates: Vec<StateUpdate>) -> Result<StateUpdate, JobError> {
