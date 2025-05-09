@@ -49,14 +49,17 @@ jobs:
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
+
       - name: Download Madara binary
         uses: actions/download-artifact@v4
         with:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
       - run: chmod +x target/release/madara
+
       - name: Start Anvil with fork
         run: |
           nohup anvil \
@@ -81,7 +84,6 @@ jobs:
           fi
 
       - name: Run tests with coverage
-        continue-on-error: true
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
           GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
