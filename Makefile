@@ -59,6 +59,22 @@ Targets:
   - clean-db           Perform clean and remove local database
   - fclean             Perform clean-db and remove local images
 
+  [ CODE QUALITY ]
+
+  Runs various code quality checks including formatting and linting.
+
+  - check              Run code quality checks (fmt, clippy)
+  - fmt                Format code using taplo and cargo fmt
+  - pre-commit         Run formatting and checks before committing
+
+  [ TESTING ]
+
+  Runs various types of tests for the codebase.
+
+  - test-e2e          Run end-to-end tests
+  - test-unit         Run unit tests with coverage report
+  - test              Run all tests (e2e and unit)
+
   [ OTHER COMMANDS ]
 
   - help               Show this help message
@@ -154,7 +170,6 @@ restart: clean
 .PHONY: frestart
 frestart: fclean
 	@$(MAKE) --silent start
-
 
 .PHONY: snos
 snos:
@@ -374,3 +389,61 @@ artifacts-linux: setup-linux build-contracts
 # Target: artifacts
 # Builds all artifacts for macOS environment
 artifacts: setup build-contracts
+
+.PHONY: check
+check:
+	@echo -e "$(DIM)Running code quality checks...$(RESET)"
+	@echo -e "$(INFO)Running prettier check...$(RESET)"
+	@npx prettier --check .
+	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
+	@cargo fmt -- --check
+	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
+	@cargo clippy --workspace --no-deps -- -D warnings
+	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
+	@cargo clippy --workspace --tests --no-deps -- -D warnings
+	@echo -e "$(INFO)Running cargo clippy with testing features...$(RESET)"
+	@cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
+	@echo -e "$(INFO)Running cargo clippy with testing features and tests...$(RESET)"
+	@cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings
+	@echo -e "$(PASS)All code quality checks passed!$(RESET)"
+
+.PHONY: fmt
+fmt:
+	@echo -e "$(DIM)Running code formatters...$(RESET)"
+	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
+	@taplo format --config=./taplo/taplo.toml
+	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
+	@cargo fmt
+	@echo -e "$(PASS)Code formatting complete!$(RESET)"
+
+.PHONY: test-e2e
+test-e2e:
+	@echo -e "$(DIM)Running E2E tests...$(RESET)"
+	@RUST_LOG=info cargo nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast
+	@echo -e "$(PASS)E2E tests completed!$(RESET)"
+
+.PHONY: test-unit
+test-unit:
+	@echo -e "$(DIM)Running unit tests with coverage...$(RESET)"
+	@RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
+		--release \
+		--features testing \
+		--lcov \
+		--output-path lcov.info \
+		--test-threads=1 \
+		--package "orchestrator-*" \
+		--no-fail-fast
+	@echo -e "$(PASS)Unit tests completed!$(RESET)"
+
+.PHONY: test
+test: test-e2e test-unit
+	@echo -e "$(PASS)All tests completed!$(RESET)"
+
+.PHONY: pre-commit
+pre-commit:
+	@echo -e "$(DIM)Running pre-commit checks...$(RESET)"
+	@echo -e "$(INFO)Formatting code...$(RESET)"
+	@$(MAKE) --silent fmt
+	@echo -e "$(INFO)Running code quality checks...$(RESET)"
+	@$(MAKE) --silent check
+	@echo -e "$(PASS)Pre-commit checks completed successfully!$(RESET)"
