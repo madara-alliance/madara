@@ -9,7 +9,6 @@ jobs:
   build-nightly:
     uses: ./.github/workflows/task-build-nightly.yml
     with:
-      registry: ghcr.io
       image-name: madara
       image-file: ./Dockerfile
     permissions:

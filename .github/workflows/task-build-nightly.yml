@@ -6,10 +6,11 @@ on:
     inputs:
       registry:
         description: Container registry domain
-        required: true
+        required: false
+        default: ghcr.io
         type: string
       image-name:
-        description: Name for the Docker image
+        description: Name of the Docker image
         required: true
         type: string
       image-file:
@@ -21,7 +22,7 @@ on:
         description: Nightly image tag
         value: ${{ jobs.build-nightly.outputs.nightly }}
       nightly-sha:
-        description: Nightly image tag
+        description: Nightly image tag (with commit sha)
         value: ${{ jobs.build-nightly.outputs.nightly-sha }}
 
 permissions:

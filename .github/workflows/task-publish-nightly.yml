@@ -4,11 +4,22 @@ name: Task - Publish Nightly Release
 on:
   workflow_call:
     inputs:
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
+        type: string
       image-name:
+        description: Name of the Docker image
+        required: true
         type: string
       nightly:
+        description: Nightly image tag
+        required: true
         type: string
       nightly-sha:
+        description: Nightly image tag (with commit sha)
+        required: true
         type: string
 
 permissions:
@@ -28,6 +39,13 @@ jobs:
           name: ${{ inputs.image-name }}
           path: ${{ runner.temp }}
       - run: docker load --input ${{ runner.temp }}/${{ inputs.image-name }}.tar
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Publish nightly
         run: |
