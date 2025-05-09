@@ -1560,7 +1560,6 @@ mod tests {
                 },
                 pending_state_diff.clone(),
                 converted_classes.clone(),
-                // None, // No visited segments!
             )
             .expect("Failed to store pending block");
 
