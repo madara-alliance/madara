@@ -15,7 +15,6 @@ name: Task - Publish Stable Release
 
 on:
   workflow_dispatch:
-  workflow_call:
     inputs:
       registry:
         description: Container registry domain
@@ -122,7 +121,7 @@ jobs:
           IMAGE="${{ inputs.registry }}/$ORG/${{ inputs.image-name }}"
           NIGHTLY="$IMAGE:${{ steps.tag-nightly.outputs.tag }}"
           VERSION="$IMAGE:${{ steps.tag-version.outputs.tag }}"
-          LATEST="$IMAGE:test"
+          LATEST="$IMAGE:latest"
 
           echo "nightly=$NIGHTLY" >> $GITHUB_OUTPUT
           echo "version=$VERSION" >> $GITHUB_OUTPUT

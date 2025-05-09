@@ -2,6 +2,8 @@
 FROM rust:1.85 AS base-rust
 WORKDIR /app
 
+# Note that we do not install cargo chef and sccache through docker to avoid
+# having to compile them from source
 ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-x86_64-unknown-linux-musl.tar.gz
 ENV SCCACHE_TAR=sccache-v0.10.0-x86_64-unknown-linux-musl.tar.gz
 ENV SCCACHE_BIN=/bin/sccache
@@ -17,9 +19,7 @@ RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 RUN --mount=type=cache,target=/var/cache/apt/archives \
     --mount=type=cache,target=/var/lib/apt/lists \
     apt-get -y update && \
-    apt-get install -y clang && \
-    apt-get autoremove -y; \
-    apt-get clean;
+    apt-get install -y clang
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
