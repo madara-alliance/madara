@@ -4,7 +4,10 @@ use crate::tests::utils::build_job_item;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
+use chrono::Utc;
 use rstest::*;
+use uuid::Uuid;
 
 #[rstest]
 #[tokio::test]
@@ -238,4 +241,129 @@ async fn database_test_update_job() {
     } else {
         panic!("Job not found in Database.")
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_test_get_latest_batch() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Create multiple batches with different indices
+    let batch1 = Batch {
+        id: Uuid::new_v4(),
+        index: 1,
+        size: 101,
+        start_block: 100,
+        end_block: 200,
+        is_batch_ready: false,
+        squashed_state_updates_path: String::from("path/to/file.json"),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    let batch2 = Batch {
+        id: Uuid::new_v4(),
+        index: 2,
+        size: 100,
+        start_block: 201,
+        end_block: 300,
+        is_batch_ready: false,
+        squashed_state_updates_path: String::from("path/to/file.json"),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    let batch3 = Batch {
+        id: Uuid::new_v4(),
+        index: 3,
+        size: 100,
+        start_block: 301,
+        end_block: 400,
+        is_batch_ready: false,
+        squashed_state_updates_path: String::from("path/to/file.json"),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    // Insert batches in non-sequential order
+    database_client.create_batch(batch2.clone()).await.unwrap();
+    database_client.create_batch(batch1.clone()).await.unwrap();
+    database_client.create_batch(batch3.clone()).await.unwrap();
+
+    // Get latest batch should return batch3 since it has the highest index
+    let latest_batch = database_client.get_latest_batch().await.unwrap().unwrap();
+    assert_eq!(latest_batch, batch3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_test_update_batch() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Create a new batch
+    let batch = Batch {
+        id: Uuid::new_v4(),
+        index: 1,
+        size: 101,
+        start_block: 100,
+        end_block: 200,
+        is_batch_ready: false,
+        squashed_state_updates_path: String::from("path/to/file.json"),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    database_client.create_batch(batch.clone()).await.unwrap();
+
+    // Create updates for the batch
+    let updates = BatchUpdates { end_block: 250, is_batch_ready: batch.is_batch_ready };
+
+    // Update the batch
+    let updated_batch = database_client.update_batch(&batch, &updates).await.unwrap();
+
+    // Verify the updates
+    assert_eq!(updated_batch.id, batch.id);
+    assert_eq!(updated_batch.index, batch.index);
+    assert_eq!(updated_batch.size, updates.end_block - batch.start_block + 1);
+    assert_eq!(updated_batch.start_block, batch.start_block);
+    assert_eq!(updated_batch.end_block, updates.end_block);
+    assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);
+    assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
+    assert_eq!(updated_batch.created_at, batch.created_at);
+    assert!(updated_batch.updated_at > batch.updated_at);
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_test_create_batch() {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Create a new batch
+    let batch = Batch {
+        id: Uuid::new_v4(),
+        index: 1,
+        size: 101,
+        start_block: 100,
+        end_block: 200,
+        is_batch_ready: false,
+        squashed_state_updates_path: String::from("path/to/file.json"),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+    };
+
+    // Create the batch
+    let created_batch = database_client.create_batch(batch.clone()).await.unwrap();
+
+    // Verify the created batch matches the input
+    assert_eq!(created_batch, batch);
+
+    // Verify we can retrieve the batch
+    let retrieved_batch = database_client.get_latest_batch().await.unwrap().unwrap();
+    assert_eq!(retrieved_batch, batch);
 }
