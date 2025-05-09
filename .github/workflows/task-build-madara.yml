@@ -9,18 +9,18 @@ on:
       madara-binary-hash:
         description: "Hash of the built madara binary"
         value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
-      # orchestrator-binary-hash:
-      #   description: "Hash of the built orchestror binary"
-      #   value: ${{ jobs.build-binaries.outputs.orchestrator-binary-hash }}
-      # bootstrapper-binary-hash:
-      #   description: "Hash of the built bootstrapper binary"
-      #   value: ${{ jobs.build-binaries.outputs.bootstrapper-binary-hash }}
-      # cairo-artifacts-hash:
-      #   description: "Hash of Cairo artifacts"
-      #   value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
-      # bootstrapper-artifacts-hash:
-      #   description: "Hash of Bootstrapper artifacts"
-      #   value: ${{ jobs.build-binaries.outputs.bootstrapper-artifacts-hash }}
+      orchestrator-binary-hash:
+        description: "Hash of the built orchestror binary"
+        value: ${{ jobs.build-binaries.outputs.orchestrator-binary-hash }}
+      bootstrapper-binary-hash:
+        description: "Hash of the built bootstrapper binary"
+        value: ${{ jobs.build-binaries.outputs.bootstrapper-binary-hash }}
+      cairo-artifacts-hash:
+        description: "Hash of Cairo artifacts"
+        value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
+      bootstrapper-artifacts-hash:
+        description: "Hash of Bootstrapper artifacts"
+        value: ${{ jobs.build-binaries.outputs.bootstrapper-artifacts-hash }}
 
 jobs:
   build-binaries:
@@ -29,10 +29,10 @@ jobs:
     runs-on: karnot-arc-runner-set
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
-      # orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
-      # bootstrapper-binary-hash: ${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-      # cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
-      # bootstrapper-artifacts-hash: ${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
+      orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+      bootstrapper-binary-hash: ${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
+      cairo-artifacts-hash: ${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
+      bootstrapper-artifacts-hash: ${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
 
     steps:
       - uses: actions/checkout@v4
@@ -52,23 +52,23 @@ jobs:
         with:
           cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          # scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          # install-mold: true
-          # install-scarb: true
-          # install-foundry: true
-          # foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
-          # install-node: true
-          # node-version: ${{ env.BUILD_NODE_VERSION }}
-          # install-ganache: true
-          # ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
-          # install-solc: true
-          # solc-version: ${{ env.BUILD_SOLC_VERSION }}
-          # python-version: ${{ env.BUILD_PYTHON_VERSION }}
-          # build-snos: true
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+          install-mold: true
+          install-scarb: true
+          install-foundry: true
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+          install-node: true
+          node-version: ${{ env.BUILD_NODE_VERSION }}
+          install-ganache: true
+          ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
+          install-solc: true
+          solc-version: ${{ env.BUILD_SOLC_VERSION }}
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+          build-snos: true
 
-      # # - name: Build the artifacts
-      # - run: |
-      #     make artifacts-linux
+      # - name: Build the artifacts
+      - run: |
+          make artifacts-linux
 
       # Build Madara, Orchestrator and test contracts
       - name: Cargo build binaries
@@ -76,7 +76,7 @@ jobs:
           export GIT_COMMIT_HASH=$GITHUB_SHA
           # We build the whole workspace to ensure nothing broke.
           # Builds "madara", the "orchestrator" and the "m-cairo-test-contracts" package
-          cargo build -p madara --release
+          cargo build --release --workspace
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes
@@ -111,67 +111,67 @@ jobs:
           path: target/release/madara
           retention-days: 1
 
-      # # Upload Orchestrator binary as artifact
-      # - name: Upload Orchestrator binary
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: orchestrator-binary-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
-      #     path: target/release/orchestrator
-      #     retention-days: 1
-      #
-      # # Upload Bootstrapper binary as artifact
-      # - name: Upload Bootstrapper binary
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: bootstrapper-binary-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-      #     path: target/release/madara-bootstrapper
-      #     retention-days: 1
-      #
-      # # Generate hash for Cairo artifacts
-      # - name: Generate Cairo artifacts hash
-      #   id: generate_cairo_hash
-      #   run: |
-      #     # Get current Unix timestamp for uniqueness
-      #     TIMESTAMP=$(date +%s)
-      #     # Generate hash of all files in cairo/target directory
-      #     FILES_HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
-      #     # Combine timestamp with files hash for unique identifier
-      #     HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
-      #     # Set output for use in subsequent steps
-      #     echo "cairo-artifacts-hash=$HASH" >> $GITHUB_OUTPUT
-      #     # Save hash to file for artifact sharing
-      #     echo "$HASH" > cairo_artifacts_hash.txt
-      #     echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
-      #
-      # - name: Generate Bootstrapper artifacts hash
-      #   id: generate_bootstrapper_artifacts_hash
-      #   run: |
-      #     # Get current Unix timestamp for uniqueness
-      #     TIMESTAMP=$(date +%s)
-      #     # Generate hash of all files in artifacts directory
-      #     FILES_HASH=$(find artifacts -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
-      #     # Combine timestamp with files hash for unique identifier
-      #     HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
-      #     # Set output for use in subsequent steps
-      #     echo "bootstrapper-artifacts-hash=$HASH" >> $GITHUB_OUTPUT
-      #     # Save hash to file for artifact sharing
-      #     echo "$HASH" > bootstrapper_artifacts_hash.txt
-      #     echo "Hash of Bootstrapper artifacts is: $HASH (with timestamp: $TIMESTAMP)"
-      #
-      # # Upload Cairo artifacts as artifact
-      # - name: Upload Cairo artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: cairo-artifacts-${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
-      #     path: cairo/target
-      #     retention-days: 1
-      #
-      # - name: Upload Bootstrapper artifacts
-      #   uses: actions/upload-artifact@v4
-      #   with:
-      #     name: bootstrapper-artifacts-${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
-      #     path: artifacts
-      #     retention-days: 1
+      # Upload Orchestrator binary as artifact
+      - name: Upload Orchestrator binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: orchestrator-binary-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+          path: target/release/orchestrator
+          retention-days: 1
+
+      # Upload Bootstrapper binary as artifact
+      - name: Upload Bootstrapper binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrapper-binary-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
+          path: target/release/madara-bootstrapper
+          retention-days: 1
+
+      # Generate hash for Cairo artifacts
+      - name: Generate Cairo artifacts hash
+        id: generate_cairo_hash
+        run: |
+          # Get current Unix timestamp for uniqueness
+          TIMESTAMP=$(date +%s)
+          # Generate hash of all files in cairo/target directory
+          FILES_HASH=$(find cairo/target -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          # Combine timestamp with files hash for unique identifier
+          HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
+          # Set output for use in subsequent steps
+          echo "cairo-artifacts-hash=$HASH" >> $GITHUB_OUTPUT
+          # Save hash to file for artifact sharing
+          echo "$HASH" > cairo_artifacts_hash.txt
+          echo "Hash of Cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
+
+      - name: Generate Bootstrapper artifacts hash
+        id: generate_bootstrapper_artifacts_hash
+        run: |
+          # Get current Unix timestamp for uniqueness
+          TIMESTAMP=$(date +%s)
+          # Generate hash of all files in artifacts directory
+          FILES_HASH=$(find artifacts -type f -exec sha256sum {} \; | sort | sha256sum | awk '{ print $1 }')
+          # Combine timestamp with files hash for unique identifier
+          HASH=$(echo "$TIMESTAMP $FILES_HASH" | sha256sum | awk '{ print $1 }')
+          # Set output for use in subsequent steps
+          echo "bootstrapper-artifacts-hash=$HASH" >> $GITHUB_OUTPUT
+          # Save hash to file for artifact sharing
+          echo "$HASH" > bootstrapper_artifacts_hash.txt
+          echo "Hash of Bootstrapper artifacts is: $HASH (with timestamp: $TIMESTAMP)"
+
+      # Upload Cairo artifacts as artifact
+      - name: Upload Cairo artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairo-artifacts-${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
+          path: cairo/target
+          retention-days: 1
+
+      - name: Upload Bootstrapper artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrapper-artifacts-${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
+          path: artifacts
+          retention-days: 1
 
       # Keep the cache operations for runners of the same type
       - name: Cache Madara binary
@@ -180,29 +180,29 @@ jobs:
           path: target/release/madara
           key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.madara-hash }}
 
-      # - name: Cache Ochestrator binary
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: target/release/orchestrator
-      #     key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
-      #
-      # - name: Cache Bootstrapper binary
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: target/release/madara-bootstrapper
-      #     key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-      #
-      # - name: Cache Cairo build artifacts
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: cairo/target
-      #     key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
-      #
-      # - name: Cache Bootstrapper artifacts
-      #   uses: actions/cache/save@v4
-      #   with:
-      #     path: artifacts
-      #     key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bootstrapper-${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
+      - name: Cache Ochestrator binary
+        uses: actions/cache/save@v4
+        with:
+          path: target/release/orchestrator
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+
+      - name: Cache Bootstrapper binary
+        uses: actions/cache/save@v4
+        with:
+          path: target/release/madara-bootstrapper
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bin-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
+
+      - name: Cache Cairo build artifacts
+        uses: actions/cache/save@v4
+        with:
+          path: cairo/target
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-cairo-${{ steps.generate_cairo_hash.outputs.cairo-artifacts-hash }}
+
+      - name: Cache Bootstrapper artifacts
+        uses: actions/cache/save@v4
+        with:
+          path: artifacts
+          key: ${{ runner.os }}-${{ env.BUILD_ACTION_CACHE_PREFIX }}-bootstrapper-${{ steps.generate_bootstrapper_artifacts_hash.outputs.bootstrapper-artifacts-hash }}
 
       - name: Display hashes
         run: |
