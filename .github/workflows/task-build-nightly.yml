@@ -2,7 +2,6 @@
 name: Task - Build And Publish Nightly Docker Image
 
 on:
-  workflow_dispatch:
   workflow_call:
     inputs:
       registry:

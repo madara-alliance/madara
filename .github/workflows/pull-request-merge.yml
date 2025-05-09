@@ -7,7 +7,7 @@ on:
 
 jobs:
   build-nightly:
-    uses: ./.github/workflows/task-build-nightly.yaml
+    uses: ./.github/workflows/task-build-nightly.yml
     with:
       registry: ghcr.io
       image-name: madara
@@ -19,11 +19,18 @@ jobs:
       id-token: write
     secrets: inherit
 
-  # Run Madara tests (hive)
   test-hive:
     needs: [build-nightly]
     uses: ./.github/workflows/task-test-hive.yml
     with:
-      tag: ${{ needs.build-nightly.outputs.tag }}
+      nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
     secrets: inherit
 
+  publish-nightly:
+    needs: [test-hive]
+    uses: ./.github/workflows/task-publish-nightly.yml
+    with:
+      image-name: madara
+      nightly: ${{ needs.build-nightly.outputs.nightly }}
+      nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
+    secrets: inherit

@@ -1,0 +1,35 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Publish Nightly Release
+
+on:
+  workflow_call:
+    inputs:
+      image-name:
+        type: string
+      nightly:
+        type: string
+      nightly-sha:
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  publish-nightly:
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - name: Download ${{ inputs.image-name }}
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ inputs.image-name }}
+          path: ${{ runner.temp }}/${{ inputs.image-name }}.tar
+      - run: docker load --input ${{ runner.temp }}/${{ inputs.image-name }}.tar
+
+      - name: Publish nightly
+        run: |
+          docker push ${{ inputs.nightly }}
+          docker push ${{ inputs.nightly-sha }}
