@@ -14,7 +14,6 @@ jobs:
       image-file: ./Dockerfile
     permissions:
       contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
@@ -33,4 +32,9 @@ jobs:
       image-name: madara
       nightly: ${{ needs.build-nightly.outputs.nightly }}
       nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
     secrets: inherit
