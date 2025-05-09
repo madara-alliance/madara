@@ -26,7 +26,7 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ inputs.image-name }}
-          path: ${{ runner.temp }}/${{ inputs.image-name }}.tar
+          path: ${{ runner.temp }}
       - run: docker load --input ${{ runner.temp }}/${{ inputs.image-name }}.tar
 
       - name: Publish nightly
