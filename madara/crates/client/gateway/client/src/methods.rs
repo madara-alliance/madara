@@ -3,6 +3,9 @@ use std::{borrow::Cow, sync::Arc};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::error::{SequencerError, StarknetError};
+use mp_gateway::user_transaction::{
+    AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
+};
 use mp_gateway::{
     block::{
         ProviderBlock, ProviderBlockHeader, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature,
@@ -15,7 +18,6 @@ use mp_gateway::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
 };
-use mp_rpc::{AddInvokeTransactionResult, ClassAndTxnHash, ContractAndTxnHash};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
@@ -131,6 +133,19 @@ impl GatewayProvider {
         request.send_post(transaction).await
     }
 
+    pub async fn add_validated_transaction(
+        &self,
+        transaction: mp_transactions::validated::ValidatedMempoolTx,
+    ) -> Result<(), SequencerError> {
+        let url = self.madara_specific_url.as_ref().ok_or(SequencerError::NoUrl)?;
+
+        let request = RequestBuilder::new(&self.client, url.clone(), self.headers.clone())
+            .add_uri_segment("trusted_add_validated_transaction")
+            .expect("Failed to add URI segment. This should not fail in prod.");
+
+        request.send_post_bincode(transaction).await
+    }
+
     pub async fn add_invoke_transaction(
         &self,
         transaction: UserInvokeFunctionTransaction,
@@ -141,14 +156,14 @@ impl GatewayProvider {
     pub async fn add_declare_transaction(
         &self,
         transaction: UserDeclareTransaction,
-    ) -> Result<ClassAndTxnHash, SequencerError> {
+    ) -> Result<AddDeclareTransactionResult, SequencerError> {
         self.add_transaction(UserTransaction::Declare(transaction)).await
     }
 
     pub async fn add_deploy_account_transaction(
         &self,
         transaction: UserDeployAccountTransaction,
-    ) -> Result<ContractAndTxnHash, SequencerError> {
+    ) -> Result<AddDeployAccountTransactionResult, SequencerError> {
         self.add_transaction(UserTransaction::DeployAccount(transaction)).await
     }
 }

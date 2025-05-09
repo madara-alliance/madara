@@ -36,10 +36,9 @@
 use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
 use mp_rpc::{
-    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
-    BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn,
-    ClassAndTxnHash as AddDeclareTransactionResult, ContractAndTxnHash as AddDeployAccountTransactionResult,
-    DeployAccountTxnV1, DeployAccountTxnV3, InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
+    BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3,
+    BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, DeployAccountTxnV1, DeployAccountTxnV3,
+    InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
 };
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
@@ -56,6 +55,23 @@ pub struct AddTransactionResult<T> {
     /// The transaction result
     #[serde(flatten)]
     result: T,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct AddDeclareTransactionResult {
+    pub class_hash: Felt,
+    pub transaction_hash: Felt,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct AddDeployAccountTransactionResult {
+    pub address: Felt,
+    pub transaction_hash: Felt,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct AddInvokeTransactionResult {
+    pub transaction_hash: Felt,
 }
 
 /// Marker trait to restrict which types can be used as transaction results.

@@ -1,5 +1,7 @@
+use bytes::Bytes;
 use futures::FutureExt;
 use http::StatusCode;
+use http_body_util::Full;
 use hyper::body::Incoming;
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{Request, Response};
@@ -19,36 +21,55 @@ use tower::Service;
 use tower::{retry::Retry, timeout::Timeout};
 use url::Url;
 
-type HttpsClient = Client<HttpsConnector<HttpConnector>, String>;
+use crate::request_builder::url_join_segment;
+
+type BodyTy = Full<Bytes>;
+
+type HttpsClient = Client<HttpsConnector<HttpConnector>, BodyTy>;
 type TimeoutRetryClient = Retry<RetryPolicy, Timeout<HttpsClient>>;
 pub type PausedClient = PauseLayerMiddleware<TimeoutRetryClient>;
 #[derive(Debug, Clone)]
 pub struct GatewayProvider {
     pub(crate) client: PausedClient,
+    pub(crate) headers: HeaderMap,
     pub(crate) gateway_url: Url,
     pub(crate) feeder_gateway_url: Url,
-    pub(crate) headers: HeaderMap,
+    pub(crate) madara_specific_url: Option<Url>,
 }
 
 impl GatewayProvider {
+    pub fn with_madara_gateway_url(mut self, madara_specific_url: Url) -> Self {
+        self.madara_specific_url = Some(madara_specific_url);
+        self
+    }
+
+    /// This function will append the /gateway and /feeder_gateway suffixes to this single base url to get
+    /// the feeder-gateway and gateway urls.
+    pub fn new_from_base_path(base_path: Url) -> Self {
+        let (mut gateway_url, mut feeder_gateway_url, mut madara_specific) =
+            (base_path.clone(), base_path.clone(), base_path);
+        url_join_segment(&mut gateway_url, "gateway");
+        url_join_segment(&mut feeder_gateway_url, "feeder_gateway");
+        url_join_segment(&mut madara_specific, "madara");
+        Self::new(gateway_url, feeder_gateway_url).with_madara_gateway_url(madara_specific)
+    }
+
     pub fn new(gateway_url: Url, feeder_gateway_url: Url) -> Self {
         let pause_until = Arc::new(RwLock::new(None));
         let connector = HttpsConnector::new();
-        let base_client = Client::builder(TokioExecutor::new()).build::<_, String>(connector);
+        let base_client = Client::builder(TokioExecutor::new()).build::<_, BodyTy>(connector);
 
         let timeout_layer = Timeout::new(base_client, Duration::from_secs(20)); // Timeout after 20 seconds
         let retry_policy = RetryPolicy::new(5, Duration::from_secs(1), Arc::clone(&pause_until)); // Retry 5 times with 1 second backoff
         let retry_layer = Retry::new(retry_policy, timeout_layer);
         let client = PauseLayerMiddleware::new(retry_layer, Arc::clone(&pause_until));
 
-        Self { client, gateway_url, feeder_gateway_url, headers: HeaderMap::new() }
+        Self { client, gateway_url, feeder_gateway_url, madara_specific_url: None, headers: HeaderMap::new() }
     }
 
-    pub fn new_with_headers(gateway_url: Url, feeder_gateway_url: Url, headers: &[(HeaderName, HeaderValue)]) -> Self {
-        let feeder_client = Self::new(gateway_url, feeder_gateway_url);
-        let headers = headers.iter().cloned().collect();
-
-        Self { headers, ..feeder_client }
+    pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.add_header(name, value);
+        self
     }
 
     pub fn add_header(&mut self, name: HeaderName, value: HeaderValue) {
@@ -100,13 +121,13 @@ impl RetryPolicy {
     }
 }
 
-impl retry::Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
+impl<Req: Clone> retry::Policy<Req, Response<Incoming>, Box<dyn Error + Send + Sync>> for RetryPolicy {
     type Future = Pin<Box<dyn Future<Output = Self> + Send>>;
 
     #[tracing::instrument(skip(self, result), fields(module = "RetryPolicy"))]
     fn retry(
         &self,
-        _: &Request<String>,
+        _: &Req,
         result: Result<&Response<Incoming>, &Box<dyn Error + Send + Sync>>,
     ) -> Option<Self::Future> {
         let pause_until = self.pause_until.clone();
@@ -154,7 +175,7 @@ impl retry::Policy<Request<String>, Response<Incoming>, Box<dyn Error + Send + S
         }
     }
 
-    fn clone_request(&self, req: &Request<String>) -> Option<Request<String>> {
+    fn clone_request(&self, req: &Req) -> Option<Req> {
         Some(req.clone())
     }
 }
@@ -182,9 +203,9 @@ impl<S> PauseLayerMiddleware<S> {
     }
 }
 
-impl<S> Service<Request<String>> for PauseLayerMiddleware<S>
+impl<S, Req: Send + Sync + 'static> Service<Request<Req>> for PauseLayerMiddleware<S>
 where
-    S: Service<Request<String>, Response = Response<Incoming>, Error = Box<dyn Error + Send + Sync>>
+    S: Service<Request<Req>, Response = Response<Incoming>, Error = Box<dyn Error + Send + Sync>>
         + Clone
         + Send
         + 'static,
@@ -198,7 +219,7 @@ where
         self.inner.poll_ready(cx)
     }
 
-    fn call(&mut self, req: Request<String>) -> Self::Future {
+    fn call(&mut self, req: Request<Req>) -> Self::Future {
         let pause_until = self.pause_until.clone();
         let mut inner = self.inner.clone();
 

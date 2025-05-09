@@ -40,7 +40,7 @@ pub fn get_class_at(
         .backend
         .get_contract_class_hash_at(&resolved_block_id, &contract_address)
         .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or(StarknetRpcApiError::ContractNotFound)?;
+        .ok_or(StarknetRpcApiError::contract_not_found())?;
 
     let class_data = starknet
         .backend

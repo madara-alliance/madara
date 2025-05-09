@@ -52,14 +52,14 @@ pub enum MadaraMaybePendingBlockInfo {
 }
 
 impl MadaraMaybePendingBlockInfo {
-    pub fn as_nonpending(&self) -> Option<&MadaraBlockInfo> {
+    pub fn as_closed(&self) -> Option<&MadaraBlockInfo> {
         match self {
             MadaraMaybePendingBlockInfo::Pending(_) => None,
             MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
         }
     }
 
-    pub fn as_nonpending_owned(self) -> Option<MadaraBlockInfo> {
+    pub fn into_closed(self) -> Option<MadaraBlockInfo> {
         match self {
             MadaraMaybePendingBlockInfo::Pending(_) => None,
             MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
@@ -73,7 +73,14 @@ impl MadaraMaybePendingBlockInfo {
         }
     }
 
-    pub fn as_block_id(&self) -> BlockId {
+    pub fn into_pending(self) -> Option<MadaraPendingBlockInfo> {
+        match self {
+            MadaraMaybePendingBlockInfo::Pending(v) => Some(v),
+            MadaraMaybePendingBlockInfo::NotPending(_) => None,
+        }
+    }
+
+    pub fn block_id(&self) -> BlockId {
         match self {
             MadaraMaybePendingBlockInfo::Pending(_) => BlockId::Tag(BlockTag::Pending),
             MadaraMaybePendingBlockInfo::NotPending(info) => BlockId::Number(info.header.block_number),
@@ -81,11 +88,11 @@ impl MadaraMaybePendingBlockInfo {
     }
 
     pub fn block_n(&self) -> Option<u64> {
-        self.as_nonpending().map(|v| v.header.block_number)
+        self.as_closed().map(|v| v.header.block_number)
     }
 
     pub fn block_hash(&self) -> Option<Felt> {
-        self.as_nonpending().map(|v| v.block_hash)
+        self.as_closed().map(|v| v.block_hash)
     }
 
     pub fn tx_hashes(&self) -> &[Felt] {
@@ -239,6 +246,13 @@ impl MadaraMaybePendingBlock {
     pub fn is_pending(&self) -> bool {
         matches!(self.info, MadaraMaybePendingBlockInfo::Pending(_))
     }
+
+    pub fn into_pending(self) -> Option<MadaraPendingBlock> {
+        Some(MadaraPendingBlock { info: self.info.into_pending()?, inner: self.inner })
+    }
+    pub fn into_closed(self) -> Option<MadaraBlock> {
+        Some(MadaraBlock { info: self.info.into_closed()?, inner: self.inner })
+    }
 }
 
 /// Starknet block definition.
@@ -344,7 +358,7 @@ pub struct FullBlock {
 }
 
 /// A pending block is a block that has not yet been closed.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct PendingFullBlock {
     pub header: PendingHeader,
     pub state_diff: StateDiff,
@@ -386,14 +400,14 @@ mod tests {
         let not_pending = MadaraBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5));
         let not_pending_as_maybe_pending: MadaraMaybePendingBlockInfo = not_pending.clone().into();
 
-        assert_eq!(not_pending_as_maybe_pending.as_nonpending(), Some(&not_pending));
-        assert!(pending_as_maybe_pending.as_nonpending().is_none());
+        assert_eq!(not_pending_as_maybe_pending.as_closed(), Some(&not_pending));
+        assert!(pending_as_maybe_pending.as_closed().is_none());
 
         assert_eq!(pending_as_maybe_pending.as_pending(), Some(&pending));
         assert!(not_pending_as_maybe_pending.as_pending().is_none());
 
-        assert_eq!(pending_as_maybe_pending.as_block_id(), BlockId::Tag(BlockTag::Pending));
-        assert_eq!(not_pending_as_maybe_pending.as_block_id(), BlockId::Number(0));
+        assert_eq!(pending_as_maybe_pending.block_id(), BlockId::Tag(BlockTag::Pending));
+        assert_eq!(not_pending_as_maybe_pending.block_id(), BlockId::Number(0));
 
         assert_eq!(pending_as_maybe_pending.block_n(), None);
         assert_eq!(not_pending_as_maybe_pending.block_n(), Some(0));

@@ -4,7 +4,6 @@
 
 mod constants;
 mod errors;
-pub mod providers;
 #[cfg(test)]
 pub mod test_utils;
 mod types;
@@ -14,11 +13,11 @@ pub mod versions;
 use jsonrpsee::RpcModule;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
+use mc_submit_tx::SubmitTransaction;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_utils::service::ServiceContext;
-use providers::AddTransactionProvider;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use utils::ResultExt;
@@ -46,7 +45,7 @@ impl Default for StorageProofConfig {
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
-    pub(crate) add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub ctx: ServiceContext,
 }
@@ -54,7 +53,7 @@ pub struct Starknet {
 impl Starknet {
     pub fn new(
         backend: Arc<MadaraBackend>,
-        add_transaction_provider: Arc<dyn AddTransactionProvider>,
+        add_transaction_provider: Arc<dyn SubmitTransaction>,
         storage_proof_config: StorageProofConfig,
         ctx: ServiceContext,
     ) -> Self {

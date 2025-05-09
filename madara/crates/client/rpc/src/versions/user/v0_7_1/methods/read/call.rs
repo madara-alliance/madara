@@ -36,7 +36,7 @@ pub fn call(starknet: &Starknet, request: FunctionCall, block_id: BlockId) -> St
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
     if block_info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+        return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
     let FunctionCall { contract_address, entry_point_selector, calldata } = request;

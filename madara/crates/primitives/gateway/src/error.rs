@@ -1,3 +1,5 @@
+use std::fmt::Display;
+
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
@@ -8,7 +10,9 @@ pub enum SequencerError {
     #[error("Starknet error: {0:#}")]
     StarknetError(#[from] StarknetError),
     #[error("Hyper error: {0:#}")]
-    ReqwestError(#[from] hyper::Error),
+    HyperError(#[from] hyper::Error),
+    #[error("No URL available to use this request")]
+    NoUrl,
     #[error("Invalid URL: {0}")]
     InvalidUrl(url::Url),
     #[error("HTTP error: {0:#}")]
@@ -17,7 +21,7 @@ pub enum SequencerError {
     HttpCallError(Box<dyn std::error::Error + Send + Sync>),
     #[error("Error deserializing response: {serde_error:#}")]
     DeserializeBody { serde_error: serde_json::Error },
-    #[error("Serialization/Deserialization error: {0:#}")]
+    #[error("Serialization or deserialization error: {0:#}")]
     SerializeRequest(#[from] serde_json::Error),
     #[error("Error compressing class: {0:#}")]
     CompressError(#[from] starknet_core::types::contract::CompressProgramError),
@@ -87,8 +91,8 @@ impl StarknetError {
         }
     }
 
-    pub fn malformed_request(e: serde_json::Error) -> Self {
-        Self { code: StarknetErrorCode::MalformedRequest, message: format!("Failed to parse transaction: {}", e) }
+    pub fn malformed_request(e: impl Display) -> Self {
+        Self { code: StarknetErrorCode::MalformedRequest, message: format!("Failed to parse transaction: {:#}", e) }
     }
 }
 

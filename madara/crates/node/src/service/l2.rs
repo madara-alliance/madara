@@ -1,4 +1,4 @@
-use crate::cli::L2SyncParams;
+use crate::cli::l2::L2SyncParams;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;

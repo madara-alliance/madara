@@ -3,8 +3,8 @@ use crate::{
     TransactionWithHash,
 };
 use blockifier::{
-    execution::contract_class::ClassInfo as BClassInfo, execution::errors::ContractClassError,
-    transaction::errors::TransactionExecutionError, transaction::transaction_execution::Transaction as BTransaction,
+    execution::{contract_class::ClassInfo as BClassInfo, errors::ContractClassError},
+    transaction::{errors::TransactionExecutionError, transaction_execution::Transaction as BTransaction},
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{

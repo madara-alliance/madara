@@ -34,7 +34,7 @@ pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt)
         .is_contract_deployed_at(&block_id, &contract_address)
         .or_internal_server_error("Error checking if contract exists")?
     {
-        return Err(StarknetRpcApiError::ContractNotFound);
+        return Err(StarknetRpcApiError::contract_not_found());
     }
 
     let nonce = starknet
@@ -60,8 +60,8 @@ mod tests {
         // Block 0
         let block_n = BlockId::Number(0);
         assert_eq!(get_nonce(&rpc, block_n.clone(), contracts[0]).unwrap(), 0.into());
-        assert_eq!(get_nonce(&rpc, block_n.clone(), contracts[1]), Err(StarknetRpcApiError::ContractNotFound));
-        assert_eq!(get_nonce(&rpc, block_n, contracts[2]), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(get_nonce(&rpc, block_n.clone(), contracts[1]), Err(StarknetRpcApiError::contract_not_found()));
+        assert_eq!(get_nonce(&rpc, block_n, contracts[2]), Err(StarknetRpcApiError::contract_not_found()));
 
         // Block 1
         let block_n = BlockId::Number(1);
@@ -90,8 +90,8 @@ mod tests {
         let block_n = BlockId::Number(3);
         assert_eq!(get_nonce(&rpc, block_n, contracts[0]), Err(StarknetRpcApiError::BlockNotFound));
         let block_n = BlockId::Number(0);
-        assert_eq!(get_nonce(&rpc, block_n.clone(), contracts[1]), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(get_nonce(&rpc, block_n.clone(), contracts[1]), Err(StarknetRpcApiError::contract_not_found()));
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
-        assert_eq!(get_nonce(&rpc, block_n, does_not_exist), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(get_nonce(&rpc, block_n, does_not_exist), Err(StarknetRpcApiError::contract_not_found()));
     }
 }

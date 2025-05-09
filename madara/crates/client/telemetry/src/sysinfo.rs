@@ -44,7 +44,7 @@ impl SysInfo {
             tracing::info!(target: "madara", "💻 CPU cores: {}", val)
         }
         if let Some(val) = &self.memory {
-            tracing::info!(target: "madara", "💻 Memory: {}MB", val / 1024 / 1024)
+            tracing::info!(target: "madara", "💻 Memory: {}MiB", val / 1024 / 1024)
         }
         if let Some(val) = &self.linux_kernel {
             tracing::info!(target: "madara", "💻 Kernel: {}", val)

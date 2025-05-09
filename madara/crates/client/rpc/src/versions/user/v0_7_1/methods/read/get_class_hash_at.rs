@@ -29,7 +29,7 @@ pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_addres
         .backend
         .get_contract_class_hash_at(&block_id, &contract_address)
         .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or(StarknetRpcApiError::ContractNotFound)?;
+        .ok_or(StarknetRpcApiError::contract_not_found())?;
 
     Ok(class_hash)
 }
@@ -48,8 +48,11 @@ mod tests {
         // Block 0
         let block_n = BlockId::Number(0);
         assert_eq!(get_class_hash_at(&rpc, block_n.clone(), contracts[0]).unwrap(), class_hashes[0]);
-        assert_eq!(get_class_hash_at(&rpc, block_n.clone(), contracts[1]), Err(StarknetRpcApiError::ContractNotFound));
-        assert_eq!(get_class_hash_at(&rpc, block_n, contracts[2]), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(
+            get_class_hash_at(&rpc, block_n.clone(), contracts[1]),
+            Err(StarknetRpcApiError::contract_not_found())
+        );
+        assert_eq!(get_class_hash_at(&rpc, block_n, contracts[2]), Err(StarknetRpcApiError::contract_not_found()));
 
         // Block 1
         let block_n = BlockId::Number(1);
@@ -78,8 +81,11 @@ mod tests {
         let block_n = BlockId::Number(3);
         assert_eq!(get_class_hash_at(&rpc, block_n, contracts[0]), Err(StarknetRpcApiError::BlockNotFound));
         let block_n = BlockId::Number(0);
-        assert_eq!(get_class_hash_at(&rpc, block_n.clone(), contracts[1]), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(
+            get_class_hash_at(&rpc, block_n.clone(), contracts[1]),
+            Err(StarknetRpcApiError::contract_not_found())
+        );
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
-        assert_eq!(get_class_hash_at(&rpc, block_n, does_not_exist), Err(StarknetRpcApiError::ContractNotFound));
+        assert_eq!(get_class_hash_at(&rpc, block_n, does_not_exist), Err(StarknetRpcApiError::contract_not_found()));
     }
 }

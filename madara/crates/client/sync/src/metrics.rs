@@ -144,7 +144,7 @@ impl SyncMetrics {
             .get_block_info(&RawDbBlockId::Number(block_n))
             .context("Getting block info")?
             .context("No block info")?
-            .as_nonpending_owned()
+            .into_closed()
             .context("Block is pending")?
             .header;
 

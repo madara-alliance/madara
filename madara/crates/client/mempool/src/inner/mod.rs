@@ -746,7 +746,7 @@ impl MempoolInner {
         dest.extend((0..n).map_while(|_| self.pop_next()))
     }
 
-    /// This is called by the block production after a batch of transaction is executed.
+    /// This is called by the block production after a batch of transactions is executed.
     /// Mark the consumed txs as consumed, and re-add the transactions that are not consumed in the mempool.
     pub fn re_add_txs(
         &mut self,

@@ -20,10 +20,10 @@ pub(crate) fn not_found_response() -> Response<String> {
         .expect("Failed to build NOT_FOUND response with a valid status and body")
 }
 
-pub(crate) fn internal_error_response(msg: &str) -> Response<String> {
+pub(crate) fn internal_error_response() -> Response<String> {
     Response::builder()
         .status(StatusCode::INTERNAL_SERVER_ERROR)
-        .body(format!("Internal Server Error: {msg}"))
+        .body("Internal Server Error".to_string())
         .expect("Failed to build INTERNAL_SERVER_ERROR response with a valid status and body")
 }
 
@@ -39,7 +39,7 @@ where
         Ok(body) => body,
         Err(e) => {
             tracing::error!("Failed to serialize response body: {}", e);
-            return internal_error_response(&e.to_string());
+            return internal_error_response();
         }
     };
 
@@ -48,7 +48,7 @@ where
         Ok(response) => response,
         Err(e) => {
             tracing::error!("Failed to build response: {}", e);
-            internal_error_response(&e.to_string())
+            internal_error_response()
         }
     }
 }
@@ -62,7 +62,7 @@ pub(crate) fn create_string_response(status: StatusCode, body: String) -> Respon
         Ok(response) => response,
         Err(e) => {
             tracing::error!("Failed to build response: {}", e);
-            internal_error_response(&e.to_string())
+            internal_error_response()
         }
     }
 }
@@ -74,7 +74,7 @@ pub(crate) fn create_response_with_json_body(status: StatusCode, body: String) -
         Ok(response) => response,
         Err(e) => {
             tracing::error!("Failed to build response: {}", e);
-            internal_error_response(&e.to_string())
+            internal_error_response()
         }
     }
 }
@@ -109,7 +109,8 @@ pub(crate) fn block_id_from_params(params: &HashMap<String, String>) -> Result<B
             .map_err(|e| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
         Ok(BlockId::Hash(block_hash))
     } else {
-        Err(StarknetError::new(StarknetErrorCode::MalformedRequest, "block_number or block_hash not found".to_string()))
+        // latest is implicit
+        Ok(BlockId::Tag(BlockTag::Latest))
     }
 }
 

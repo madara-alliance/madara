@@ -1,0 +1,31 @@
+[package]
+description = "Abstraction layer over where transactions are submitted - usually the local-run mempool or another node's gateway interface"
+name = "mc-submit-tx"
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
+
+[lints]
+workspace = true
+
+[package.metadata.docs.rs]
+targets = ["x86_64-unknown-linux-gnu"]
+
+[dependencies]
+anyhow.workspace = true
+async-trait.workspace = true
+thiserror.workspace = true
+tracing.workspace = true
+
+blockifier.workspace = true
+starknet_api.workspace = true
+
+mc-db.workspace = true
+mc-exec.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-rpc.workspace = true
+mp-transactions.workspace = true

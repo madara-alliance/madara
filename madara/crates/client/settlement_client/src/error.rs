@@ -43,8 +43,8 @@ pub enum SettlementClientError {
     #[error("Stream processing error: {0}")]
     StreamProcessing(String),
 
-    #[error("Mempool error: {0}")]
-    Mempool(String),
+    #[error("Transaction submission error: {0}")]
+    SubmitTx(String),
 
     #[error("Gas price error: {0}")]
     GasPrice(String),

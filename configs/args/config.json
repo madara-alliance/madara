@@ -19,7 +19,14 @@
     "restore_from_latest_backup": false,
     "db_max_saved_trie_logs": 0,
     "db_max_kept_snapshots": 0,
-    "db_snapshot_interval": 5
+    "db_snapshot_interval": 5,
+    "db_enable_statistics": false,
+    "db_statistics_period_sec": 60,
+    "db_statistics_level": null,
+    "db_memtable_blocks_budget_mib": 1024,
+    "db_memtable_contracts_budget_mib": 128,
+    "db_memtable_other_budget_mib": 128,
+    "db_memtable_prefix_bloom_filter_ratio": 0
   },
   "l2_sync_params": {
     "l2_sync_disabled": false,
@@ -33,10 +40,6 @@
     "warp_update_shutdown_receiver": false,
     "no_pending_sync": true,
     "post_v0_13_2_hashes": false,
-    "pending_block_poll_interval": {
-      "secs": 2,
-      "nanos": 0
-    },
     "no_sync_polling": false,
     "n_blocks_to_sync": null,
     "stop_on_sync": false,
@@ -69,7 +72,8 @@
     "feeder_gateway_enable": false,
     "gateway_enable": false,
     "gateway_external": false,
-    "gateway_port": 8080
+    "gateway_port": 8080,
+    "gateway_trusted_add_transaction_endpoint": false
   },
   "rpc_params": {
     "rpc_disable": false,
@@ -89,6 +93,11 @@
     "rpc_storage_proof_max_distance": 0,
     "rpc_storage_proof_max_keys": 1024,
     "rpc_storage_proof_max_tries": 5
+  },
+  "validator_params": {
+    "validate_then_forward_txs_to": null,
+    "no_transaction_validation": false,
+    "no_mempool_saving": false
   },
   "block_production_params": {
     "block_production_disabled": false,

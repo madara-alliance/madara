@@ -20,6 +20,7 @@ rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
 mc-devnet.workspace = true
+mc-submit-tx.workspace = true
 mp-rpc.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }

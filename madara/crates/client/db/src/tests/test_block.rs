@@ -98,7 +98,7 @@ mod block_tests {
         assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().inner.transactions.is_empty());
         assert!(
             backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().info.as_pending().unwrap().header.parent_block_hash
-                == finalized_block_zero(Header::default()).info.as_nonpending().unwrap().block_hash,
+                == finalized_block_zero(Header::default()).info.as_closed().unwrap().block_hash,
             "fake pending block parent hash must match with latest block in db"
         );
 

@@ -15,9 +15,12 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 anyhow.workspace = true
+assert_matches.workspace = true
 flate2 = "1.0.30"
+futures.workspace = true
 lazy_static.workspace = true
-once_cell.workspace = true
+m-cairo-test-contracts.workspace = true
+rand.workspace = true
 reqwest.workspace = true
 rstest.workspace = true
 serde_json = { workspace = true }
