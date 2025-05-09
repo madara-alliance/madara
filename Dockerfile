@@ -2,15 +2,24 @@
 FROM rust:1.85 AS base-rust
 WORKDIR /app
 
-RUN cargo install sccache
-RUN cargo install cargo-chef
-ENV RUSTC_WRAPPER=sccache SCCACHE_DIR=/sccache
+ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/v0.10.0/sccache-v0.10.0-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_TAR=sccache-v0.10.0-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_BIN=/bin/sccache
+ENV SCCACHE_DIR=/sccache
+ENV SCCACHE=sccache-v0.10.0-x86_64-unknown-linux-musl/sccache
+ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/v0.1.71/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+ENV RUSTC_WRAPPER=/bin/sccache
 
-RUN apt-get -y update && \
+RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
+RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
+
+RUN --mount=type=cache,target=/var/cache/apt/archives \
+    --mount=type=cache,target=/var/lib/apt/lists \
+    apt-get -y update && \
     apt-get install -y clang && \
     apt-get autoremove -y; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+    apt-get clean;
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
