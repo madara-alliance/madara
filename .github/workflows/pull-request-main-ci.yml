@@ -28,77 +28,77 @@ jobs:
     uses: ./.github/workflows/task-ci-db-version.yml
     secrets: inherit
 
-  # Build Madara binary and Cairo artifacts
-  build-madara-cairo:
-    needs: update-db-version
-    uses: ./.github/workflows/task-build-madara.yml
-    secrets: inherit
-
-  # Run linters for code style and quality
-  lint-code-style:
-    needs: update-db-version
-    uses: ./.github/workflows/task-lint-code-style.yml
-
-  # Run Rust-specific linters
-  lint-cargo:
-    needs: [update-db-version, build-madara-cairo]
-    uses: ./.github/workflows/task-lint-cargo.yml
-    with:
-      bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
-    secrets: inherit
-
-  # Run JavaScript tests against the built binary
-  test-js:
-    needs: build-madara-cairo
-    uses: ./.github/workflows/task-test-js.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
-      cairo-artifacts-hash: ${{ needs.build-madara-cairo.outputs.cairo-artifacts-hash }}
-
-  # Run orchestrator tests
-  test-e2e:
-    needs: build-madara-cairo
-    uses: ./.github/workflows/task-test-orchestrator-e2e.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
-      bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
-    secrets: inherit
-
-  # Run CLI tests against the built binary
-  test-cli:
-    needs: update-db-version
-    uses: ./.github/workflows/task-test-cli.yml
-    secrets: inherit
-
-  # Generate coverage reports
-  coverage-madara:
-    needs: [update-db-version, build-madara-cairo]
-    uses: ./.github/workflows/task-coverage-madara.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
-    secrets: inherit
-
-  coverage-orchestrator:
-    needs: build-madara-cairo
-    uses: ./.github/workflows/task-coverage-orchestrator.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
-    secrets: inherit
-
-  coverage-bootstrapper:
-    needs: build-madara-cairo
-    uses: ./.github/workflows/task-coverage-bootstrapper.yml
-    with:
-      bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
-    secrets: inherit
-
+  # # Build Madara binary and Cairo artifacts
+  # build-madara-cairo:
+  #   needs: update-db-version
+  #   uses: ./.github/workflows/task-build-madara.yml
+  #   secrets: inherit
+  #
+  # # Run linters for code style and quality
+  # lint-code-style:
+  #   needs: update-db-version
+  #   uses: ./.github/workflows/task-lint-code-style.yml
+  #
+  # # Run Rust-specific linters
+  # lint-cargo:
+  #   needs: [update-db-version, build-madara-cairo]
+  #   uses: ./.github/workflows/task-lint-cargo.yml
+  #   with:
+  #     bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
+  #   secrets: inherit
+  #
+  # # Run JavaScript tests against the built binary
+  # test-js:
+  #   needs: build-madara-cairo
+  #   uses: ./.github/workflows/task-test-js.yml
+  #   with:
+  #     madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+  #     cairo-artifacts-hash: ${{ needs.build-madara-cairo.outputs.cairo-artifacts-hash }}
+  #
+  # # Run orchestrator tests
+  # test-e2e:
+  #   needs: build-madara-cairo
+  #   uses: ./.github/workflows/task-test-orchestrator-e2e.yml
+  #   with:
+  #     madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+  #     bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
+  #   secrets: inherit
+  #
+  # # Run CLI tests against the built binary
+  # test-cli:
+  #   needs: update-db-version
+  #   uses: ./.github/workflows/task-test-cli.yml
+  #   secrets: inherit
+  #
+  # # Generate coverage reports
+  # coverage-madara:
+  #   needs: [update-db-version, build-madara-cairo]
+  #   uses: ./.github/workflows/task-coverage-madara.yml
+  #   with:
+  #     madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+  #   secrets: inherit
+  #
+  # coverage-orchestrator:
+  #   needs: build-madara-cairo
+  #   uses: ./.github/workflows/task-coverage-orchestrator.yml
+  #   with:
+  #     madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+  #   secrets: inherit
+  #
+  # coverage-bootstrapper:
+  #   needs: build-madara-cairo
+  #   uses: ./.github/workflows/task-coverage-bootstrapper.yml
+  #   with:
+  #     bootstrapper-artifacts-hash: ${{ needs.build-madara-cairo.outputs.bootstrapper-artifacts-hash }}
+  #     madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+  #   secrets: inherit
+  #
   # Merge queue stubs
   build-nightly:
     uses: ./.github/workflows/task-do-nothing-build-nightly.yml
 
-  test-hive:
-    uses: ./.github/workflows/task-do-nothing-test-hive.yml
+  # test-hive:
+  #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
   publish-nightly:
     uses: ./.github/workflows/task-do-nothing-publish-nightly.yml

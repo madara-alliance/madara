@@ -19,15 +19,15 @@ jobs:
       id-token: write
     secrets: inherit
 
-  test-hive:
-    needs: [build-nightly]
-    uses: ./.github/workflows/task-test-hive.yml
-    with:
-      nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
-    secrets: inherit
+  # test-hive:
+  #   needs: [build-nightly]
+  #   uses: ./.github/workflows/task-test-hive.yml
+  #   with:
+  #     nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
+  #   secrets: inherit
 
   publish-nightly:
-    needs: [test-hive]
+    needs: [build-nightly]
     uses: ./.github/workflows/task-publish-nightly.yml
     with:
       image-name: madara

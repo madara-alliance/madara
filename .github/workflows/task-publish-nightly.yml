@@ -33,3 +33,6 @@ jobs:
         run: |
           docker push ${{ inputs.nightly }}
           docker push ${{ inputs.nightly-sha }}
+
+      - name: Fail
+        run: exit 1
