@@ -1,6 +1,6 @@
 use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
-use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask};
+use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionMode, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_mempool::{L1DataProvider, Mempool};
@@ -13,6 +13,8 @@ pub struct BlockProductionService {
     metrics: Arc<BlockProductionMetrics>,
     l1_data_provider: Arc<dyn L1DataProvider>,
     n_devnet_contracts: u64,
+    production_mode: BlockProductionMode,
+    external_trigger: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl BlockProductionService {
@@ -22,8 +24,19 @@ impl BlockProductionService {
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
         l1_data_provider: Arc<dyn L1DataProvider>,
+        external_trigger: Option<Arc<tokio::sync::Notify>>,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
+
+        debug_assert!(
+            matches!(
+                (config.block_production_mode, external_trigger.is_some()),
+                (BlockProductionMode::ExternalTrigger, true)
+                    | (BlockProductionMode::Hybrid, true)
+                    | (BlockProductionMode::TimedTicks, false)
+            ),
+            "Invalid external_trigger state for the selected block production mode"
+        );
 
         Ok(Self {
             backend: Arc::clone(db_service.backend()),
@@ -31,6 +44,8 @@ impl BlockProductionService {
             mempool,
             metrics,
             n_devnet_contracts: config.devnet_contracts,
+            production_mode: config.block_production_mode,
+            external_trigger,
         })
     }
 }
@@ -40,13 +55,15 @@ impl Service for BlockProductionService {
     // TODO(cchudant,2024-07-30): special threading requirements for the block production task
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let Self { backend, l1_data_provider, mempool, metrics, .. } = self;
+        let Self { backend, l1_data_provider, mempool, metrics, production_mode, external_trigger, .. } = self;
 
         let block_production_task = BlockProductionTask::new(
             Arc::clone(backend),
             Arc::clone(mempool),
             Arc::clone(metrics),
             Arc::clone(l1_data_provider),
+            *production_mode,
+            external_trigger.take(),
         )
         .await?;
 
