@@ -494,16 +494,10 @@ pub(crate) fn get_env_params() -> EnvParams {
         bucket_location_constraint: None,
     };
 
-    let queue_params = QueueArgs {
-        prefix: prefix.clone(),
-        suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
-    };
+    let queue_params =
+        QueueArgs { prefix: prefix.clone(), suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX") };
 
-    let aws_params = AWSCredentials {
-        access_key_id: get_env_var_or_panic("AWS_ACCESS_KEY_ID"),
-        secret_access_key: get_env_var_or_panic("AWS_SECRET_ACCESS_KEY"),
-        region: get_env_var_or_panic("AWS_REGION"),
-    };
+    let aws_params = AWSCredentials { region: get_env_var_or_panic("AWS_REGION") };
 
     let da_params = DAConfig::Ethereum(EthereumDaValidatedArgs {
         ethereum_da_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL"))
