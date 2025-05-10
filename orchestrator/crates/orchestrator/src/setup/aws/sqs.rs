@@ -33,16 +33,12 @@ impl Resource for SQS {
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
-            let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
-            if self.check_if_exists(queue_url.clone()).await? {
-                tracing::info!(" ⏭️️ SQS queue already exists. Queue URL: {}", queue_url);
+            if self.check_if_exists(queue_name.clone()).await? {
+                tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
                 continue;
             }
             let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-                OrchestratorError::ResourceSetupError(format!(
-                    "Failed to create SQS queue '{}': {}",
-                    queue_url, e
-                ))
+                OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
             })?;
             let queue_url = res
                 .queue_url()
@@ -77,8 +73,8 @@ impl Resource for SQS {
     /// # Returns
     /// * `OrchestratorResult<bool>` - true if the queue exists, false otherwise
     ///
-    async fn check_if_exists(&self, queue_url: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok())
+    async fn check_if_exists(&self, queue_name: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.get_queue_url_from_client(queue_name.as_str()).await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
