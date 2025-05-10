@@ -20,7 +20,6 @@ use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::utils::helpers::ProcessingLocks;
-use crate::OrchestratorError;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -511,14 +510,9 @@ pub(crate) fn get_env_params() -> EnvParams {
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
     });
 
-    let arn = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_ARN");
-    let pos = arn
-        .rfind(':')
-        .ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))
-        .expect("error");
-    let sns_arn = format!("{}:{}_{}", &arn[..pos], prefix, &arn[pos + 1..]);
+    let topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
 
-    let alert_params = AlertArgs { endpoint: sns_arn };
+    let alert_params = AlertArgs { topic_name };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))

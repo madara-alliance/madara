@@ -1,14 +1,16 @@
 use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_sns::Client;
-use std::sync::Arc;
 
 use super::AlertError;
 use crate::{core::client::alert::AlertClient, types::params::AlertArgs};
+use std::sync::{Arc, Mutex};
 
+#[derive(Clone)]
 pub struct SNS {
     pub client: Arc<Client>,
-    pub topic_arn: Option<String>,
+    pub topic_name: Option<String>,
+    pub topic_arn: Arc<Mutex<Option<String>>>,
 }
 
 impl SNS {
@@ -22,7 +24,11 @@ impl SNS {
     /// # Returns
     /// * `Self` - The SNS client.
     pub(crate) fn new(aws_config: &SdkConfig, args: Option<&AlertArgs>) -> Self {
-        Self { client: Arc::new(Client::new(aws_config)), topic_arn: args.map(|a| a.endpoint.clone()) }
+        Self {
+            client: Arc::new(Client::new(aws_config)),
+            topic_name: args.map(|a| a.topic_name.clone()),
+            topic_arn: Arc::new(Mutex::new(None))
+        }
     }
 
     /// get_topic_arn return the topic name, if empty it will return an error
@@ -30,8 +36,42 @@ impl SNS {
     /// # Returns
     ///
     /// * `Result<String, AlertError>` - The topic arn.
-    pub fn get_topic_arn(&self) -> Result<String, AlertError> {
-        self.topic_arn.clone().ok_or(AlertError::TopicARNEmpty)
+    pub async fn get_topic_arn(&self) -> Result<String, AlertError> {
+        // Check if topic_arn is available
+        if let Some(topic_arn) = self.topic_arn.lock().unwrap().clone() {
+            return Ok(topic_arn);
+        }
+
+        let topic_name = self.topic_name.clone().ok_or(AlertError::TopicARNEmpty)?;
+
+        // If already an ARN, return it and cache it
+        if topic_name.starts_with("arn:") {
+            let arn = topic_name.clone();
+            // Set the cached value
+            self.topic_arn.lock()
+                .map_err(|e| AlertError::LockError(format!("Failed to acquire lock: {}", e)))
+                .map(|mut guard| *guard = Some(arn.clone()))?;
+            return Ok(arn);
+        }
+
+        // Rest of implementation...
+        let resp = self.client.list_topics().send().await
+            .map_err(|e| AlertError::ListTopicsError(e))?;
+
+        let topics = resp.topics();
+        for topic in topics {
+            if let Some(arn) = topic.topic_arn() {
+                // ARN format: arn:aws:sns:region:account-id:topic-name
+                let parts: Vec<&str> = arn.split(':').collect();
+                if parts.len() == 6 && parts[5] == topic_name {
+                    let arn_string = arn.to_string();
+                    *self.topic_arn.lock().unwrap() = Some(arn_string.clone());
+                    return Ok(arn_string);
+                }
+            }
+        }
+
+        Err(AlertError::TopicNotFound(topic_name.to_string()))
     }
 }
 
@@ -47,7 +87,7 @@ impl AlertClient for SNS {
     ///
     /// * `Result<(), AlertError>` - The result of the send operation.
     async fn send_message(&self, message_body: String) -> Result<(), AlertError> {
-        self.client.publish().topic_arn(self.get_topic_arn()?).message(message_body).send().await?;
+        self.client.publish().topic_arn(self.get_topic_arn().await?).message(message_body).send().await?;
         Ok(())
     }
 
@@ -58,10 +98,10 @@ impl AlertClient for SNS {
     /// * `Result<String, AlertError>` - The topic name.
     async fn get_topic_name(&self) -> Result<String, AlertError> {
         Ok(self
-            .get_topic_arn()?
+            .get_topic_arn().await?
             .split(":")
             .last()
-            .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn()?))?
+            .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn().await?))?
             .to_string())
     }
 }

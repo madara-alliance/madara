@@ -61,7 +61,8 @@ pub async fn create_sns_arn(
     provider_config: Arc<CloudProvider>,
     aws_sns_params: &AlertArgs,
 ) -> Result<(), SdkError<CreateTopicError>> {
-    let topic_name = aws_sns_params.endpoint.split(":").last().unwrap();
+    // TODO: need to rework this!
+    let topic_name = aws_sns_params.topic_name.split(":").last().unwrap();
     let sns_client = get_sns_client(provider_config.get_aws_client_or_panic()).await;
     sns_client.create_topic().name(topic_name).send().await?;
     Ok(())

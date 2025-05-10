@@ -30,7 +30,8 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
     let queue_arn = queue_attributes.attributes().unwrap().get(&QueueArn).unwrap();
     let prefix = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
 
-    let arn = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_ARN");
+    // TODO: need to rework this!
+    let arn = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
     let pos = arn
         .rfind(':')
         .ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))
