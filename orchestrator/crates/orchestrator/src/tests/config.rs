@@ -496,7 +496,6 @@ pub(crate) fn get_env_params() -> EnvParams {
     };
 
     let queue_params = QueueArgs {
-        queue_base_url: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"),
         prefix: prefix.clone(),
         suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
     };
