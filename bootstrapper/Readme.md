@@ -34,7 +34,7 @@ There are three test in the repository:
 
 ### Important Notes
 
-- You need to comment/remove the #[ignore] tags in [src/tests/mod.rs](src/tests/mod.rs) file
+- You need to comment/remove the #[ignore] tags in [crates/bootstrapper/src/tests/mod.rs](crates/bootstrapper/src/tests/mod.rs) file
 - Only one test can be run at one time as all the tests are e2e tests.
 - You also would need to restart both the chains after running each test.
 - You would need to clone [Madara](https://github.com/madara-alliance/madara.git) repo by running :
