@@ -177,7 +177,7 @@ mc-devnet = { path = "madara/crates/client/devnet" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = ["cairo-1-hints", "extensive_hints", "mod_builtin"] }
 starknet-accounts = "0.11.0"
 starknet-contract = "0.11.0"
 starknet-core = "0.12"
@@ -353,8 +353,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
-prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+starknet-os = { git = "https://github.com/heemankv/snos/", branch = "release/l2_support/paradex" }
+prove_block = { git = "https://github.com/heemankv/snos/", branch = "release/l2_support/paradex" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
