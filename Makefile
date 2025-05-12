@@ -78,6 +78,7 @@ Targets:
   [ OTHER COMMANDS ]
 
   - help               Show this help message
+  - git-hook           Setup git hooks path to .githooks
 
 endef
 export HELP
@@ -447,3 +448,7 @@ pre-commit:
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
 	@$(MAKE) --silent check
 	@echo -e "$(PASS)Pre-commit checks completed successfully!$(RESET)"
+
+.PHONY: git-hook
+git-hook:
+	@git config core.hooksPath .githooks
