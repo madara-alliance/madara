@@ -65,7 +65,7 @@ Targets:
 
   - check              Run code quality checks (fmt, clippy)
   - fmt                Format code using taplo and cargo fmt
-  - pre-commit         Run formatting and checks before committing
+  - pre-push         Run formatting and checks before committing / Pushing
 
   [ TESTING ]
 
@@ -440,14 +440,14 @@ test-unit:
 test: test-e2e test-unit
 	@echo -e "$(PASS)All tests completed!$(RESET)"
 
-.PHONY: pre-commit
-pre-commit:
-	@echo -e "$(DIM)Running pre-commit checks...$(RESET)"
+.PHONY: pre-push
+pre-push:
+	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
 	@echo -e "$(INFO)Formatting code...$(RESET)"
 	@$(MAKE) --silent fmt
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
 	@$(MAKE) --silent check
-	@echo -e "$(PASS)Pre-commit checks completed successfully!$(RESET)"
+	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
 
 .PHONY: git-hook
 git-hook:

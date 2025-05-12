@@ -1,2 +1,2 @@
 #!/bin/sh
-make pre-commit
+make pre-push
