@@ -27,7 +27,6 @@ RUN git checkout $STARKGATE_TAG
 # setup python
 RUN python3 -m venv venv
 ENV PATH="$STARKGATE_DIR/venv/bin:$PATH"
-RUN echo $PATH $PWD
 RUN pip install -r requirements.txt
 
 # Download cairo and solc
@@ -78,6 +77,27 @@ RUN ./build.sh
 WORKDIR build/Release/src
 
 # =========================================================================== #
+#                                   CAIRO-LANG                                #
+# =========================================================================== #
+
+FROM builder as cairo-lang
+ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
+ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
+
+WORKDIR /contracts
+
+# Clone the repo
+RUN git clone https://github.com/starkware-libs/cairo-lang.git
+WORKDIR cairo-lang
+RUN git checkout $CAIRO_LANG_REV
+
+RUN python3 -m venv venv
+ENV PATH="$CAIRO_LANG_DIR/venv/bin:$PATH"
+RUN pip install "cairo-lang==0.13.2" "sympy<1.13.0"
+
+RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.json --cairo_path src
+
+# =========================================================================== #
 #                               BRAAVOS CONTRACTS                             #
 # =========================================================================== #
 
@@ -126,6 +146,8 @@ RUN ./scarb/bin/scarb build
 FROM scratch
 WORKDIR artifacts
 
+WORKDIR starkgate_latest
+
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
@@ -143,12 +165,22 @@ COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ERC20_070.casm.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_upgraded.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
 
+WORKDIR ../starkgate_legacy
+
 ENV STARKGATE_DIR="/contracts/starkgate-contracts/build/Release/src"
 ENV ARTIFACTS_LEGACY="$STARKGATE_DIR/starkware/starknet"
 
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/apps/starkgate/artifacts/cairo/token_bridge_1.json legacy_token_bridge.json
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/std_contracts/upgradability_proxy/proxy.json proxy_starkgate.json
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/std_contracts/ERC20/ERC20.json ERC20.json
+
+WORKDIR ../cairo_lang
+
+ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
+
+COPY --from=cairo-lang $CAIRO_LANG_DIR/os_latest.json .
+
+WORKDIR ../braavos
 
 ENV BRAAVOS_DIR="/contracts/braavos-account-cairo"
 ENV ARTIFACTS_BRAAVOS="$BRAAVOS_DIR/target/dev"
@@ -157,6 +189,8 @@ COPY --from=braavos $ARTIFACTS_BRAAVOS/braavos_account_BraavosAccount.contract_c
 COPY --from=braavos $ARTIFACTS_BRAAVOS/braavos_account_BraavosAccount.compiled_contract_class.json BraavosAccount.casm.json
 COPY --from=braavos $ARTIFACTS_BRAAVOS/braavos_account_BraavosBaseAccount.contract_class.json BraavosBaseAccount.sierra.json
 COPY --from=braavos $ARTIFACTS_BRAAVOS/braavos_account_BraavosBaseAccount.compiled_contract_class.json BraavosBaseAccount.casm.json
+
+WORKDIR ../argent
 
 ENV ARGENT_DIR="/contracts/argent-contracts-starknet"
 ENV ARTIFACTS_ARGENT="$ARGENT_DIR/target/dev"
