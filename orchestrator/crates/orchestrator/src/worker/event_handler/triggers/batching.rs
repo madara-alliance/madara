@@ -1,8 +1,10 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
+use crate::error::other::OtherError;
 use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
+use color_eyre::eyre::eyre;
 use starknet::core::types::{
     BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
     StateDiff, StateUpdate, StorageEntry,
@@ -162,14 +164,15 @@ impl BatchingTrigger {
     /// squash_state_updates merge all the StateUpdate into a single StateUpdate
     fn squash_state_updates(&self, state_updates: Vec<StateUpdate>) -> Result<StateUpdate, JobError> {
         if state_updates.is_empty() {
-            panic!("Cannot merge empty state updates");
+            return Err(JobError::Other(OtherError(eyre!("Cannot merge empty state updates"))));
         }
 
         // Take the last block hash and number from the last update as our "latest"
-        let last_update = state_updates.last().unwrap();
+        let last_update = state_updates.last().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?;
         let block_hash = last_update.block_hash;
         let new_root = last_update.new_root;
-        let old_root = state_updates.first().unwrap().old_root;
+        let old_root =
+            state_updates.first().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?.old_root;
 
         // Create a new StateDiff to hold the merged state
         let mut state_diff = StateDiff {

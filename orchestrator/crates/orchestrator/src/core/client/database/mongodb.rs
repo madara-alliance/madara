@@ -519,16 +519,19 @@ impl DatabaseClient for MongoDbClient {
             "$set": non_null_updates
         };
 
+        // Find a batch and update it
         let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
         match result {
             Some(b) => {
-                let attributes = [KeyValue::new("db_operation_name", "update_job")];
+                // Update done
+                let attributes = [KeyValue::new("db_operation_name", "update_batch")];
                 let duration = start.elapsed();
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(b)
             }
             None => {
-                tracing::warn!(job_id = %batch.id, category = "db_call", "Failed to update job. Job version is likely outdated");
+                // Not found
+                tracing::warn!(batch_id = %batch.id, category = "db_call", "Failed to update batch");
                 Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", batch.id)))
             }
         }
@@ -542,7 +545,7 @@ impl DatabaseClient for MongoDbClient {
                 let duration = start.elapsed();
                 tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
 
-                let attributes = [KeyValue::new("db_operation_name", "create_job")];
+                let attributes = [KeyValue::new("db_operation_name", "create_batch")];
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(batch)
             }
