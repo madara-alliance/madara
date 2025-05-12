@@ -1,8 +1,8 @@
-use crate::compression::blob::state_update_to_blob_data;
+use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
 use crate::compression::squash::squash_state_updates;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
-use crate::core::config::Config;
+use crate::core::config::{Config, StarknetVersion};
 use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -11,6 +11,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::Provider;
+use starknet_core::types::Felt;
 use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
@@ -18,6 +19,7 @@ use std::sync::Arc;
 const MAX_BLOB_SIZE: usize = 4096 * 6;
 
 const STATE_UPDATE_DIR: &str = "state_update";
+const BLOB_DIR: &str = "blob";
 
 pub struct BatchingTrigger;
 
@@ -52,6 +54,7 @@ impl JobTrigger for BatchingTrigger {
             .map_or(latest_block_in_db, |min_block| max(min_block, latest_block_in_db));
 
         for block_num in first_block_to_assign_batch..last_block_to_assign_batch + 1 {
+            println!("Assigning batch to block {}", block_num);
             self.assign_batch_to_block(block_num, config.clone()).await?;
         }
         tracing::trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
@@ -92,18 +95,19 @@ impl BatchingTrigger {
                         let current_state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                         let current_state_update: StateUpdate = serde_json::from_slice(&current_state_update_bytes)?;
                         // Merge the current block's state update with the batch's state update
-                        let new_state_update = squash_state_updates(vec![current_state_update, state_update.clone()])?;
-                        // Perform stateful compression
-                        let stateful_compressed =
-                            stateful_compress(&new_state_update).map_err(|err| JobError::Other(OtherError(err)))?;
-                        // Get a vector of felts from the compressed state update
-                        let vec_felts =
-                            state_update_to_blob_data(stateful_compressed, config.params.madara_version)
-                                .await?;
-                        // Perform stateless compression
-                        let stateless_compressed = stateless_compress(&vec_felts);
+                        let new_state_update = squash_state_updates(
+                            vec![current_state_update, state_update.clone()],
+                            batch.start_block.saturating_sub(1),
+                            provider,
+                        )
+                        .await?;
 
-                        if stateless_compressed.len() > MAX_BLOB_SIZE {
+                        let compressed_state_update =
+                            self.compress_state_update(&new_state_update, config.params.madara_version).await?;
+
+                        eprintln!("Compressed state update size: {}", compressed_state_update.len());
+
+                        if compressed_state_update.len() > MAX_BLOB_SIZE {
                             // We cannot add the current block in this batch
 
                             // Update the status of the previous batch
@@ -116,28 +120,59 @@ impl BatchingTrigger {
 
                             // Start a new batch with the index `batch_index + 1`
                             assigned_batch_index = batch.index + 1;
-                            self.start_new_batch(storage, database, assigned_batch_index, block_number, state_update)
-                                .await?
+                            self.start_new_batch(
+                                storage,
+                                database,
+                                assigned_batch_index,
+                                block_number,
+                                &state_update,
+                                &compressed_state_update,
+                            )
+                            .await?
                         } else {
                             // We can add the current block in this batch
 
                             assigned_batch_index = batch.index;
-                            self.update_batch(storage, database, new_state_update, &batch, block_number, false).await?
+                            self.update_batch(
+                                storage,
+                                database,
+                                &new_state_update,
+                                &compressed_state_update,
+                                &batch,
+                                block_number,
+                                false,
+                            )
+                            .await?
                         }
                     } else {
                         // The previous block is full
                         // Start a new batch
 
                         assigned_batch_index = batch.index + 1;
-                        self.start_new_batch(storage, database, assigned_batch_index, block_number, state_update)
-                            .await?
+                        self.start_new_batch(
+                            storage,
+                            database,
+                            assigned_batch_index,
+                            block_number,
+                            &state_update,
+                            &self.compress_state_update(&state_update, config.params.madara_version).await?,
+                        )
+                        .await?
                     }
                 } else {
                     // No batch exists in the DB yet
                     // Create the first batch
 
                     assigned_batch_index = 1;
-                    self.start_new_batch(storage, database, assigned_batch_index, block_number, state_update).await?
+                    self.start_new_batch(
+                        storage,
+                        database,
+                        assigned_batch_index,
+                        block_number,
+                        &state_update,
+                        &self.compress_state_update(&state_update, config.params.madara_version).await?,
+                    )
+                    .await?
                 }
                 tracing::info!(
                     "Completed batching for block {}. Assigned batch {}",
@@ -153,9 +188,26 @@ impl BatchingTrigger {
         Ok(())
     }
 
+    async fn compress_state_update(
+        &self,
+        state_update: &StateUpdate,
+        madara_version: StarknetVersion,
+    ) -> Result<Vec<Felt>, JobError> {
+        // Perform stateful compression
+        let stateful_compressed = stateful_compress(state_update).map_err(|err| JobError::Other(OtherError(err)))?;
+        // Get a vector of felts from the compressed state update
+        let vec_felts = state_update_to_blob_data(stateful_compressed, madara_version).await?;
+        // Perform stateless compression
+        Ok(stateless_compress(&vec_felts))
+    }
+
     /// get_state_update_file_name returns the file path for storing the state update in storage
     fn get_state_update_file_name(&self, batch_index: u64) -> String {
         format!("{}/batch/{}.json", STATE_UPDATE_DIR, batch_index)
+    }
+
+    fn get_blob_file_name(&self, batch_index: u64) -> String {
+        format!("{}/batch/{}.txt", BLOB_DIR, batch_index)
     }
 
     /// start_new_batch starts a new batch
@@ -165,14 +217,16 @@ impl BatchingTrigger {
         database: &dyn DatabaseClient,
         batch_index: u64,
         start_block: u64,
-        state_update: StateUpdate,
+        state_update: &StateUpdate,
+        compressed_state_update: &Vec<Felt>,
     ) -> Result<(), JobError> {
-        // Get the state update file path
-        let squashed_state_updates_path = self.get_state_update_file_name(batch_index);
-        // Put the state update in storage
-        storage.put_data(Bytes::from(serde_json::to_string(&state_update)?), &squashed_state_updates_path).await?;
+        // Create a new batch
+        let batch = Batch::create(batch_index, start_block, self.get_state_update_file_name(batch_index), self.get_blob_file_name(batch_index));
+        // Put the state update and blob in storage
+        self.store_state_update(storage, state_update, &batch).await?;
+        self.store_blob(storage, compressed_state_update, &batch).await?;
         // Add the new batch info in the database
-        database.create_batch(Batch::create(1, start_block, squashed_state_updates_path)).await?;
+        database.create_batch(batch).await?;
         Ok(())
     }
 
@@ -180,17 +234,44 @@ impl BatchingTrigger {
         &self,
         storage: &dyn StorageClient,
         database: &dyn DatabaseClient,
-        state_update: StateUpdate,
+        state_update: &StateUpdate,
+        compressed_state_update: &Vec<Felt>,
         batch: &Batch,
         end_block: u64,
         is_batch_ready: bool,
     ) -> Result<(), JobError> {
-        // Update state update for the batch in storage
+        // Update state update and blob for the batch in storage
+        self.store_state_update(storage, &state_update, batch).await?;
+        self.store_blob(storage, compressed_state_update, batch).await?;
+        // Update batch status in the database
+        database.update_batch(batch, &BatchUpdates { end_block, is_batch_ready }).await?;
+        Ok(())
+    }
+
+    async fn store_state_update(
+        &self,
+        storage: &dyn StorageClient,
+        state_update: &StateUpdate,
+        batch: &Batch,
+    ) -> Result<(), JobError> {
         storage
             .put_data(Bytes::from(serde_json::to_string(&state_update)?), &self.get_state_update_file_name(batch.index))
             .await?;
-        // Update batch status in the database
-        database.update_batch(batch, &BatchUpdates { end_block, is_batch_ready }).await?;
+        Ok(())
+    }
+
+    async fn store_blob(
+        &self,
+        storage: &dyn StorageClient,
+        compressed_state_update: &Vec<Felt>,
+        batch: &Batch,
+    ) -> Result<(), JobError> {
+        storage
+            .put_data(
+                Bytes::from(convert_felt_vec_to_blob_data(compressed_state_update)),
+                &self.get_blob_file_name(batch.index),
+            )
+            .await?;
         Ok(())
     }
 }

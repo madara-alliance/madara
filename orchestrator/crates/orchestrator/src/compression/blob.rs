@@ -1,9 +1,10 @@
-// use color_eyre::Result;
+use crate::compression::constants::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use num_bigint::BigUint;
-use num_traits::Num;
+use num_traits::{Num, Zero};
+use rayon::prelude::*;
 use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
 use std::collections::{HashMap, HashSet};
 
@@ -49,12 +50,12 @@ pub async fn state_update_to_blob_data(
 
         // First, try deployed contracts
         if let Some(hash) = deployed_contracts.remove(&address) {
-            println!("Found deployed contract at address {}: class_hash={}", address, hash);
+            // println!("Found deployed contract at address {}: class_hash={}", address, hash);
             class_hash = Some(hash);
         }
         // Then try replaced classes
         else if let Some(hash) = replaced_classes.remove(&address) {
-            println!("Found replaced class at address {}: class_hash={}", address, hash);
+            // println!("Found replaced class at address {}: class_hash={}", address, hash);
             class_hash = Some(hash);
         }
 
@@ -71,7 +72,7 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
-            println!("Adding class hash {} for address {}", hash, address);
+            // println!("Adding class hash {} for address {}", hash, address);
         }
 
         // Sort storage entries by key for deterministic output
@@ -91,7 +92,7 @@ pub async fn state_update_to_blob_data(
     for (address, class_hash) in deployed_contracts.iter() {
         if !processed_addresses.contains(address) {
             leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
-            println!("Found leftover deployed contract: address={}, class_hash={}", address, class_hash);
+            // println!("Found leftover deployed contract: address={}, class_hash={}", address, class_hash);
         }
     }
 
@@ -99,7 +100,7 @@ pub async fn state_update_to_blob_data(
     for (address, class_hash) in replaced_classes.iter() {
         if !processed_addresses.contains(address) {
             leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
-            println!("Found leftover replaced class: address={}, class_hash={}", address, class_hash);
+            // println!("Found leftover replaced class: address={}, class_hash={}", address, class_hash);
         }
     }
 
@@ -107,29 +108,29 @@ pub async fn state_update_to_blob_data(
     for (address, nonce) in nonces.iter() {
         if !processed_addresses.contains(address) {
             leftover_addresses.push((*address, None, Some(*nonce)));
-            println!("Found leftover nonce: address={}, nonce={}", address, nonce);
+            // println!("Found leftover nonce: address={}, nonce={}", address, nonce);
         }
     }
 
     // Sort leftover addresses for deterministic output
     leftover_addresses.sort_by_key(|(address, _, _)| *address);
 
-    println!(
-        "Processing {} leftover addresses with nonce or class updates but no storage updates",
-        leftover_addresses.len()
-    );
+    // println!(
+    //     "Processing {} leftover addresses with nonce or class updates but no storage updates",
+    //     leftover_addresses.len()
+    // );
 
     // Process each leftover address
     for (address, class_hash, nonce) in leftover_addresses.clone() {
         // Create DA word with zero storage entries
         let da_word = da_word(class_hash.is_some(), nonce, 0, version)?;
 
-        println!(
-            "Processing leftover address {}: class_hash={:?}, nonce={:?}",
-            address,
-            class_hash.map(|h| h.to_string()),
-            nonce.map(|n| n.to_string())
-        );
+        // println!(
+        //     "Processing leftover address {}: class_hash={:?}, nonce={:?}",
+        //     address,
+        //     class_hash.map(|h| h.to_string()),
+        //     nonce.map(|n| n.to_string())
+        // );
 
         // Add address and DA word to blob data
         blob_data.push(address);
@@ -138,14 +139,14 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
-            println!("Adding class hash {} for leftover address {}", hash, address);
+            // println!("Adding class hash {} for leftover address {}", hash, address);
         }
     }
 
     // Update the first element with the total number of contracts (original storage diffs and leftover addresses)
     let total_contracts = state_diff.storage_diffs.len() + leftover_addresses.len();
     blob_data[0] = Felt::from(total_contracts);
-    println!("Total contract updates in blob: {}", total_contracts);
+    // println!("Total contract updates in blob: {}", total_contracts);
 
     // Add declared classes count
     blob_data.push(Felt::from(state_diff.declared_classes.len()));
@@ -159,7 +160,7 @@ pub async fn state_update_to_blob_data(
         blob_data.push(compiled_class_hash);
     }
 
-    println!("Created blob data with {} elements", blob_data.len());
+    // println!("Created blob data with {} elements", blob_data.len());
 
     Ok(blob_data)
 }
@@ -262,4 +263,140 @@ fn da_word(
     Felt::from_dec_str(&decimal_string).map_err(|e| {
         JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert decimal string to FieldElement: {}", e)))
     })
+}
+
+pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
+    let input_len = elements.len();
+    if input_len == 0 {
+        return Vec::new(); // Return empty vector for empty input
+    }
+
+    // Calculate the required output size: ceil(input_len / 4096.0) * 4096
+    // Integer division trick: (input_len + 4095) / 4096 gives the ceiling division result
+    let num_blocks = (input_len + 4095) / 4096;
+    let output_len = num_blocks * 4096;
+
+    // Initialize the vector with the calculated size, filled with zeros
+    let mut biguint_vec = vec![BigUint::zero(); output_len];
+
+    // Iterate over the input elements and place them in the output vector
+    for (i, element) in elements.iter().enumerate() {
+        // Remove .take(4096)
+        // Convert Felt to [u8; 32]
+        let bytes: [u8; 32] = element.to_bytes_be();
+
+        // Convert [u8; 32] to BigUint
+        let biguint = BigUint::from_bytes_be(&bytes);
+
+        // Place the converted value at the correct index
+        // This automatically leaves remaining spots as zeros
+        biguint_vec[i] = biguint;
+    }
+
+    biguint_vec
+}
+
+/// Perform Number Theoretic Transform (NTT) on a vector of BigUint values
+///
+/// # Arguments
+/// * `arr` - Vector of BigUint values
+/// * `xs` - Evaluation points
+/// * `p` - Modulus (typically BLS_MODULUS)
+///
+/// # Returns
+/// Transformed vector of BigUint values
+pub fn ntt(arr: Vec<BigUint>, xs: Vec<BigUint>, p: &BigUint) -> Vec<BigUint> {
+    // Use Rayon for parallel processing
+    (0..arr.len())
+        .into_par_iter()
+        .map(|i| {
+            let mut result = BigUint::zero();
+            let mut xi_pow_j = ONE.clone(); // Initialize to xs[i]**0
+
+            for j in 0..arr.len() {
+                let term = (&arr[j] * &xi_pow_j) % p;
+                result = (result + term) % p;
+                xi_pow_j = (&xi_pow_j * &xs[i]) % p; // Update power for next iteration
+            }
+
+            result
+        })
+        .collect()
+}
+
+/// Generate evaluation points for NTT/IFFT operations
+///
+/// # Arguments
+/// * `size` - Size of the data (default: BLOB_LEN)
+///
+/// # Returns
+/// A tuple of (evaluation points, modulus)
+pub fn generate_evaluation_points(size: Option<usize>) -> (Vec<BigUint>, BigUint) {
+    let blob_len = size.unwrap_or(BLOB_LEN);
+
+    // Generate evaluation points
+    let xs: Vec<BigUint> = (0..blob_len)
+        .map(|i| {
+            let bin = format!("{:012b}", i);
+            let bin_rev = bin.chars().rev().collect::<String>();
+            GENERATOR.modpow(&BigUint::from_str_radix(&bin_rev, 2).unwrap(), &BLS_MODULUS)
+        })
+        .collect();
+
+    (xs, BLS_MODULUS.clone())
+}
+
+/// Process a vector of BigUint values for blob data transformation using NTT
+///
+/// # Arguments
+/// * `data` - Vector of BigUint values to process
+/// * `size` - Optional size parameter to override BLOB_LEN (default: BLOB_LEN)
+///
+/// # Returns
+/// Transformed vector for blob data
+pub fn process_for_blob(data: Vec<BigUint>, size: Option<usize>) -> Vec<BigUint> {
+    let blob_len = size.unwrap_or(BLOB_LEN);
+
+    // Get evaluation points
+    let (xs, p) = generate_evaluation_points(Some(blob_len));
+
+    // Ensure data is of correct length
+    let mut data_padded = data;
+    if data_padded.len() < blob_len {
+        // Pad with zeros if needed
+        data_padded.resize(blob_len, BigUint::zero());
+    } else if data_padded.len() > blob_len {
+        // Truncate if too long
+        data_padded.truncate(blob_len);
+    }
+
+    // Perform NTT transformation
+    let transformed_data = ntt(data_padded, xs, &p);
+
+    transformed_data
+}
+
+/// Create a blob from BigUint data
+///
+/// # Arguments
+/// * `data` - Vector of BigUint values
+///
+/// # Returns
+/// Blob data as a Vec<u8>
+pub fn create_blob_from_data(data: Vec<BigUint>) -> Vec<u8> {
+    // Convert BigUint to bytes
+    let mut blob_data = Vec::new();
+    for num in data {
+        let bytes = num.to_bytes_be();
+        blob_data.extend_from_slice(&bytes);
+    }
+    blob_data
+}
+
+pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> String {
+    create_blob_from_data(process_for_blob(convert_to_biguint(elements), None))
+        .iter()
+        .map(|x| x.to_string())
+        .collect()
+    // transformed_data.into_iter().map(|x| Felt::from(x)).collect()
 }

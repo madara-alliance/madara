@@ -260,6 +260,7 @@ async fn database_test_get_latest_batch() {
         end_block: 200,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
@@ -272,6 +273,7 @@ async fn database_test_get_latest_batch() {
         end_block: 300,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
@@ -284,6 +286,7 @@ async fn database_test_get_latest_batch() {
         end_block: 400,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
@@ -314,6 +317,7 @@ async fn database_test_update_batch() {
         end_block: 200,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
@@ -334,6 +338,7 @@ async fn database_test_update_batch() {
     assert_eq!(updated_batch.end_block, updates.end_block);
     assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);
     assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
+    assert_eq!(updated_batch.blob_path, batch.blob_path);
     assert_eq!(updated_batch.created_at, batch.created_at);
     assert!(updated_batch.updated_at > batch.updated_at);
 }
@@ -354,6 +359,7 @@ async fn database_test_create_batch() {
         end_block: 200,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now(),
         updated_at: Utc::now(),
     };
