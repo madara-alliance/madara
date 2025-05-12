@@ -579,9 +579,6 @@ fn unpack_felt(packed_felt: Felt, elm_bound: u32, n_elms: usize) -> Result<Vec<u
     let mut res = Vec::with_capacity(n_elms);
     let mut current_felt_big = felt_to_big_uint(&packed_felt);
     let elm_bound_big = BigUint::from(elm_bound);
-    println!("current_felt_big: {}", current_felt_big);
-    println!("elm_bound_big: {}", elm_bound_big);
-    println!("n_elms: {}", n_elms);
     for _ in 0..n_elms {
         // Use BigUint division and remainder
         let remainder_big = &current_felt_big % &elm_bound_big;
@@ -870,8 +867,6 @@ mod stateless_compression_tests {
         // assert!(compressed_data_result.is_ok(), "Compression failed: {:?}", compressed_data_result.err());
         // let compressed_data = compressed_data_result.unwrap();
 
-        println!("Original data length: {}", original_data.len());
-        println!("Compressed data length: {}", compressed_data.len());
         // Basic heuristic check: compression should ideally reduce the size for this data
         // Note: For very small or incompressible data, compressed size might be larger due to header/metadata
         assert!(
@@ -891,8 +886,6 @@ mod stateless_compression_tests {
             "Data mismatch after decompression. Original: {:?} Decompressed: {:?}",
             original_data, decompressed_data
         );
-
-        println!("End-to-end compression/decompression test passed!");
     }
 
     #[test]
