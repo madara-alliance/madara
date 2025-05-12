@@ -4,19 +4,13 @@ use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;
 use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
-use aws_sdk_s3::{Client as S3Client, Error as S3Error};
+use aws_sdk_s3::Error as S3Error;
 use std::sync::Arc;
 use tracing::{info, warn};
 
-#[allow(dead_code)]
-pub struct S3BucketSetupResult {
-    pub name: String,
-    pub region: Option<String>,
-}
-
 #[async_trait]
 impl Resource for AWSS3 {
-    type SetupResult = S3BucketSetupResult;
+    type SetupResult = ();
     type CheckResult = bool;
     type TeardownResult = ();
     type Error = S3Error;
@@ -33,12 +27,7 @@ impl Resource for AWSS3 {
     ///
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
-            CloudProvider::AWS(aws_config) => {
-                let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config.as_ref());
-                s3_config_builder.set_force_path_style(Some(true));
-                let client = S3Client::from_conf(s3_config_builder.build());
-                Ok(Self::constructor(Arc::new(client), None, None))
-            }
+            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
         }
     }
     /// Set up a new S3 bucket
@@ -47,7 +36,7 @@ impl Resource for AWSS3 {
         // If it does, return the existing bucket name and location
         if self.check_if_exists(args.bucket_name.clone()).await? {
             warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_name);
-            return Ok(S3BucketSetupResult { name: args.bucket_name, region: None });
+            return Ok(());
         }
         info!("Creating New Bucket: {}", args.bucket_name);
 
@@ -63,10 +52,10 @@ impl Resource for AWSS3 {
             bucket_builder = bucket_builder.create_bucket_configuration(cfg);
         }
 
-        let result = bucket_builder.send().await.map_err(|e| {
+        let _result = bucket_builder.send().await.map_err(|e| {
             OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", args.bucket_name, e))
         })?;
-        Ok(S3BucketSetupResult { name: args.bucket_name, region: result.location })
+        Ok(())
     }
 
     async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {

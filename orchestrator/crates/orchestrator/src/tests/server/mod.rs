@@ -12,7 +12,7 @@ use crate::worker::initialize_worker;
 #[rstest]
 #[tokio::test]
 async fn test_health_endpoint() {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
     let services = TestConfigBuilder::new().configure_api_server(ConfigType::Actual).build().await;
 

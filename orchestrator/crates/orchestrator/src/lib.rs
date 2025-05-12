@@ -11,5 +11,5 @@ pub mod worker;
 #[cfg(test)]
 pub mod tests;
 
-// Re-export commonly used ite
+// Re-export commonly used item
 pub use error::{OrchestratorError, OrchestratorResult};

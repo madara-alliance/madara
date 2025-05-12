@@ -25,4 +25,6 @@ pub enum StorageError {
     GetObjectError(#[from] SdkError<GetObjectError>),
     #[error("Failed to stream object: {0}")]
     ObjectStreamError(String),
+    #[error("Invalid Bucket Name is given: {0}")]
+    InvalidBucketName(String),
 }

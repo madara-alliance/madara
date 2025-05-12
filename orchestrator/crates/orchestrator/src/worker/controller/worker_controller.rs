@@ -3,6 +3,7 @@ use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::worker::controller::event_worker::EventWorker;
 use color_eyre::eyre::eyre;
+use futures::future::try_join_all;
 use std::sync::Arc;
 use tracing::info;
 
@@ -72,13 +73,15 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     pub async fn run_l2(&self) -> EventSystemResult<()> {
+        let mut tokio_threads = vec![];
         for queue_type in Self::get_l2_queues().into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();
-            tokio::spawn(async move {
+            tokio_threads.push(tokio::spawn(async move {
                 self_clone.create_span(&queue_type).await;
-            });
+            }));
         }
+        try_join_all(tokio_threads).await?;
         Ok(())
     }
 

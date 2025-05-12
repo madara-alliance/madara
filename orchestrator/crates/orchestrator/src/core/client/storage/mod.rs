@@ -4,10 +4,9 @@ pub mod s3;
 use async_trait::async_trait;
 use bytes::Bytes;
 pub use error::StorageError;
-use mockall::automock;
 
 /// Trait defining object storage operations
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait StorageClient: Send + Sync {
     /// Initialize the storage client
