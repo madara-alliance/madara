@@ -8,6 +8,7 @@ use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use chrono::Utc;
 use rstest::*;
 use uuid::Uuid;
+use rstest::*;
 
 #[rstest]
 #[tokio::test]

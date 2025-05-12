@@ -1,3 +1,12 @@
+use chrono::Utc;
+use futures::FutureExt;
+use mockall_double::double;
+use opentelemetry::KeyValue;
+use std::panic::AssertUnwindSafe;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+use uuid::Uuid;
+
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -8,7 +17,8 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::factory::{JobFactory, JobFactoryTrait};
+#[double]
+use crate::worker::event_handler::factory::factory;
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
@@ -18,14 +28,6 @@ use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use crate::worker::utils::conversion::parse_string;
-use chrono::Utc;
-use futures::FutureExt;
-use opentelemetry::KeyValue;
-use std::panic::AssertUnwindSafe;
-use std::sync::Arc;
-use std::time::{Duration, Instant};
-use tracing::info;
-use uuid::Uuid;
 
 pub struct JobHandlerService;
 
@@ -80,10 +82,10 @@ impl JobHandlerService {
             return Ok(());
         }
 
-        let job_handler = JobFactory::get_job_handler(&job_type).await;
+        let job_handler = factory::get_job_handler(&job_type).await;
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
         config.database().create_job(job_item.clone()).await?;
-        info!("Job item inside the create job function: {:?}", job_item);
+        tracing::info!("Job item inside the create job function: {:?}", job_item);
         JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
 
         let attributes = [
@@ -162,7 +164,7 @@ impl JobHandlerService {
             }
         }
 
-        let job_handler = JobFactory::get_job_handler(&job.job_type).await;
+        let job_handler = factory::get_job_handler(&job.job_type).await;
         let job_processing_locks = job_handler.job_processing_lock(config.clone());
 
         let permit = if let Some(ref processing_locks) = job_processing_locks {
@@ -342,7 +344,7 @@ impl JobHandlerService {
             }
         }
 
-        let job_handler = JobFactory::get_job_handler(&job.job_type).await;
+        let job_handler = factory::get_job_handler(&job.job_type).await;
         tracing::debug!(job_id = ?id, "Verifying job with handler");
 
         job.metadata.common.verification_started_at = Some(Utc::now());

@@ -1,3 +1,9 @@
+use mockall_double::double;
+use opentelemetry::KeyValue;
+use std::sync::Arc;
+use std::time::Duration;
+use uuid::Uuid;
+
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::jobs::job_item::JobItem;
@@ -5,12 +11,9 @@ use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{QueueNameForJobType, QueueType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::factory::{JobFactory, JobFactoryTrait};
+#[double]
+use crate::worker::event_handler::factory::factory;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
-use opentelemetry::KeyValue;
-use std::sync::Arc;
-use std::time::Duration;
-use uuid::Uuid;
 
 pub struct JobService;
 
@@ -106,7 +109,7 @@ impl JobService {
     #[tracing::instrument(skip(config), fields(category = "general"), ret, err)]
     pub async fn queue_job_for_verification(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let mut job = Self::get_job(id, config.clone()).await?;
-        let job_handler = JobFactory::get_job_handler(&job.job_type).await;
+        let job_handler = factory::get_job_handler(&job.job_type).await;
 
         // Reset verification attempts and increment retry counter in common metadata
         job.metadata.common.verification_attempt_no = 0;

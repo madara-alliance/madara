@@ -1,3 +1,5 @@
+use aws_sdk_sns::error::SdkError;
+use aws_sdk_sns::operation::publish::PublishError;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
@@ -9,5 +11,5 @@ pub enum AlertError {
     UnableToExtractTopicName(String),
 
     #[error("Failed to send alert: {0}")]
-    SendFailure(String),
+    SendFailure(#[from] SdkError<PublishError>),
 }

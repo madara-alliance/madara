@@ -5,7 +5,6 @@ use crate::types::params::AlertArgs;
 use crate::{OrchestratorError, OrchestratorResult};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
-use aws_sdk_sns::Client as SNSClient;
 use std::sync::Arc;
 
 #[async_trait]
@@ -19,12 +18,7 @@ impl Resource for SNS {
 
     async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
-            CloudProvider::AWS(aws_config) => {
-                let client = SNSClient::new(aws_config);
-                Ok(Self::constructor(Arc::new(client)))
-            } // _ => Err(OrchestratorError::InvalidCloudProviderError(
-              //     "Mismatch Cloud Provider for S3Bucket resource".to_string(),
-              // ))?,
+            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
         }
     }
 

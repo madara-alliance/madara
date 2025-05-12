@@ -4,7 +4,6 @@ use crate::{
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
-use aws_sdk_sqs::Client;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -20,10 +19,7 @@ impl Resource for SQS {
 
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
-            CloudProvider::AWS(aws_config) => {
-                let client = Client::new(aws_config);
-                Ok(Self::constructor(client, None, None, None))
-            }
+            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
         }
     }
 

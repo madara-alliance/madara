@@ -69,7 +69,7 @@ async fn test_process_job_works(
     #[case] blocks_to_process: String,
     #[case] processing_start_index: u8,
 ) {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
 
     // Mocking the settlement client.
     let mut settlement_client = MockSettlementClient::new();

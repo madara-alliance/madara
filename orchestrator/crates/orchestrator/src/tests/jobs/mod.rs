@@ -32,7 +32,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::{QueueNameForJobType, QueueType};
-use crate::worker::event_handler::factory::MockJobFactoryTrait;
+use crate::worker::event_handler::factory::mock_factory;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::service::JobHandlerService;
 use assert_matches::assert_matches;
@@ -56,7 +56,7 @@ async fn create_job_job_does_not_exists_in_db_works() {
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
     // Create a proper JobMetadata for the test
@@ -137,7 +137,7 @@ async fn create_job_job_handler_is_not_implemented_panics() {
         .await;
 
     // Mocking the `get_job_handler` call in create_job function.
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).returning(|_| panic!("Job type not implemented yet."));
 
     let job_type = JobType::ProofCreation;
@@ -196,7 +196,7 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(job_type.clone())).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
@@ -252,7 +252,7 @@ async fn process_job_handles_panic() {
 
     // Mocking the `get_job_handler` call in process_job function
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).return_once(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::process_job(job_item.id, services.config.clone()).await.is_ok());
@@ -346,7 +346,7 @@ async fn process_job_two_workers_process_same_job_works() {
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
@@ -402,7 +402,7 @@ async fn process_job_job_handler_returns_error_works() {
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
@@ -449,7 +449,7 @@ async fn verify_job_with_verified_status_works() {
     job_handler.expect_max_process_attempts().returning(move || 2u64);
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     // Mocking the `get_job_handler` call in create_job function.
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
@@ -494,7 +494,7 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
     job_handler.expect_max_process_attempts().returning(move || 2u64);
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     // Mocking the `get_job_handler` call in create_job function.
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
@@ -545,7 +545,7 @@ async fn verify_job_with_rejected_status_works() {
 
     // Mocking the `get_job_handler` call
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
@@ -594,7 +594,7 @@ async fn verify_job_with_pending_status_adds_to_queue_works() {
 
     // Mocking the `get_job_handler` call
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());
@@ -649,7 +649,7 @@ async fn verify_job_with_pending_status_works() {
 
     // Mocking the `get_job_handler` call
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = mock_factory::get_job_handler_context();
     ctx.expect().times(1).with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
     assert!(JobHandlerService::verify_job(job_item.id, services.config.clone()).await.is_ok());

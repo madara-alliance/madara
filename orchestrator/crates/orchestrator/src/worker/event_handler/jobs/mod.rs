@@ -11,7 +11,6 @@ use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::utils::helpers::JobProcessingState;
 use async_trait::async_trait;
-use mockall::automock;
 use std::sync::Arc;
 
 /// Job Trait
@@ -22,7 +21,7 @@ use std::sync::Arc;
 ///
 /// # Implementation Requirements
 /// Implementors must be both `Send` and `Sync` to work with the async processing system.
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 pub trait JobHandlerTrait: Send + Sync {
     /// Should build a new job item and return it

@@ -13,7 +13,6 @@ use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
-// use orchestrator::core::StorageClient;
 use orchestrator::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -525,14 +524,3 @@ pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_numbe
     let mongo_db_client = get_mongo_db_client(mongo_db).await;
     mongo_db_client.database("orchestrator").collection("jobs").insert_one(job_item, None).await.unwrap();
 }
-
-// ======================================
-// Tests specific functions
-// ======================================
-
-// To set up s3 files needed for e2e test (test_orchestrator_workflow)
-// #[allow(clippy::borrowed_box)]
-// pub async fn setup_s3(s3_client: &Box<dyn StorageClient + Send + Sync>) -> color_eyre::Result<()> {
-//     s3_client.clone().client.setup(&get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")).await.unwrap();
-//     Ok(())
-// }

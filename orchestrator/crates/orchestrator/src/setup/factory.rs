@@ -11,11 +11,11 @@ use crate::{
     core::client::SQS,
     core::cloud::CloudProvider,
     types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs},
-    OrchestratorResult,
+    OrchestratorError, OrchestratorResult,
 };
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::time::sleep;
 use tracing::info;
 
 /// ResourceFactory is responsible for creating resources based on their type
@@ -76,7 +76,7 @@ impl ResourceFactory {
     /// TODO > Refactor this function to use a more generic approach when we add more cloud providers
     pub async fn setup_resource(&self) -> OrchestratorResult<()> {
         let mut resource_futures = Vec::new();
-        let is_queue_ready = Arc::new(tokio::sync::RwLock::new(false));
+        let is_queue_ready = Arc::new(AtomicBool::new(false));
         // Use ordered_types to maintain creation order
         for (resource_type, creator) in self.ordered_types.iter() {
             info!(" ⏳ Setting up resource: {:?}", resource_type);
@@ -94,31 +94,36 @@ impl ResourceFactory {
                 let result: OrchestratorResult<()> = async {
                     match resource_type {
                         ResourceType::Storage => {
-                            let rs = resource.downcast_mut::<AWSS3>().unwrap();
+                            let rs = resource.downcast_mut::<AWSS3>().ok_or(OrchestratorError::SetupError(
+                                "Failed to downcast resource to AWSS3".to_string(),
+                            ))?;
                             rs.setup(storage_params.clone()).await?;
                             rs.poll(storage_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
                                 .await;
                             Ok(())
                         }
                         ResourceType::Queue => {
-                            let rs = resource.downcast_mut::<SQS>().unwrap();
+                            let rs = resource.downcast_mut::<SQS>().ok_or(OrchestratorError::SetupError(
+                                "Failed to downcast resource to SQS".to_string(),
+                            ))?;
                             rs.setup(queue_params.clone()).await?;
                             let queue_ready = rs
                                 .poll(queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
                                 .await;
-                            *is_queue_ready_clone.write().await = queue_ready;
+                            is_queue_ready_clone.store(queue_ready, Ordering::Release);
                             Ok(())
                         }
                         ResourceType::PubSub => {
-                            sleep(Duration::from_secs(15)).await;
                             let start_time = std::time::Instant::now();
                             let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
                             let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
 
                             while start_time.elapsed() < timeout_duration {
-                                if *is_queue_ready_clone.read().await {
+                                if is_queue_ready_clone.load(Ordering::Acquire) {
                                     info!(" ✅ Queue is ready, setting up SNS");
-                                    let rs = resource.downcast_mut::<SNS>().unwrap();
+                                    let rs = resource.downcast_mut::<SNS>().ok_or(OrchestratorError::SetupError(
+                                        "Failed to downcast resource to SNS".to_string(),
+                                    ))?;
                                     rs.setup(alert_params.clone()).await?;
                                     rs.poll(
                                         alert_params,
@@ -128,10 +133,7 @@ impl ResourceFactory {
                                     .await;
                                     break;
                                 } else {
-                                    info!(
-                                        " Current Status of the Queue Creation is: {:?}",
-                                        *is_queue_ready_clone.read().await
-                                    );
+                                    info!(" Current Status of the Queue Creation is: {:?}", is_queue_ready_clone);
                                     info!(" ⏳ Waiting for queues to be ready before setting up cron");
                                     tokio::time::sleep(poll_duration).await;
                                 }
@@ -139,8 +141,26 @@ impl ResourceFactory {
                             Ok(())
                         }
                         ResourceType::EventBus => {
-                            let rs = resource.downcast_mut::<EventBridgeClient>().unwrap();
-                            rs.setup(cron_params).await?;
+                            let start_time = std::time::Instant::now();
+                            let timeout_duration = Duration::from_secs(miscellaneous_params.timeout);
+                            let poll_duration = Duration::from_secs(miscellaneous_params.poll_interval);
+
+                            while start_time.elapsed() < timeout_duration {
+                                if is_queue_ready_clone.load(Ordering::Acquire) {
+                                    info!(" ✅ Queue is ready, setting up EventBridge");
+                                    let rs = resource.downcast_mut::<EventBridgeClient>().ok_or(
+                                        OrchestratorError::SetupError(
+                                            "Failed to downcast resource to EventBridge".to_string(),
+                                        ),
+                                    )?;
+                                    rs.setup(cron_params.clone()).await?;
+                                    break;
+                                } else {
+                                    info!(" Current Status of the Queue Creation is: {:?}", is_queue_ready_clone);
+                                    info!(" ⏳ Waiting for queues to be ready before setting up cron");
+                                    tokio::time::sleep(poll_duration).await;
+                                }
+                            }
                             Ok(())
                         }
                     }

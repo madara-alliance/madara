@@ -22,8 +22,22 @@ pub struct SQS {
 }
 
 impl SQS {
-    pub fn constructor(client: Client, queue_url: Option<Url>, prefix: Option<String>, suffix: Option<String>) -> Self {
-        Self { client: Arc::new(client), queue_url, prefix, suffix }
+    /// new - Create a new SQS client, with both client and option for the client;
+    /// we've needed to pass the aws_config and args to the constructor.
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    /// * `args` - The queue arguments.
+    /// # Returns
+    /// * `Self` - The SQS client.
+    pub fn new(aws_config: &SdkConfig, args: Option<&QueueArgs>) -> Self {
+        let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
+        let client = Client::from_conf(sqs_config_builder.build());
+        Self {
+            client: Arc::new(client),
+            queue_url: args.and_then(|a| Url::parse(&a.queue_base_url).ok()),
+            prefix: args.map(|a| a.prefix.clone()),
+            suffix: args.map(|a| a.suffix.clone()),
+        }
     }
 
     pub fn client(&self) -> Arc<Client> {
@@ -37,17 +51,6 @@ impl SQS {
     }
     pub fn suffix(&self) -> Option<String> {
         self.suffix.clone()
-    }
-
-    pub fn create(params: &QueueArgs, aws_config: &SdkConfig) -> Result<Self, QueueError> {
-        let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
-        let client = Client::from_conf(sqs_config_builder.build());
-        Ok(Self {
-            client: Arc::new(client),
-            queue_url: Some(Url::parse(&params.queue_base_url).expect("Failed to parse queue base URL")),
-            prefix: Some(params.prefix.clone()),
-            suffix: Some(params.suffix.clone()),
-        })
     }
 
     /// get_queue_url - Get the queue URL

@@ -90,7 +90,7 @@ impl EthereumTestBuilder {
 
     pub async fn build(&self) -> EthereumTest {
         // Load ENV vars
-        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
+        dotenvy::from_filename_override(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
 
         // Setup Anvil
         let anvil = match self.fork_block {
@@ -155,7 +155,7 @@ mod settlement_client_tests {
     /// And hence to test the signature and transaction via a dummy contract that has same function
     /// selector as `updateStateKzgDa`. and anvil is for testing on fork Eth.
     async fn update_state_blob_with_dummy_contract_works() {
-        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
+        dotenvy::from_filename_override(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
 
         let setup = EthereumTestBuilder::new().build().await;
 
@@ -229,7 +229,7 @@ mod settlement_client_tests {
     /// transaction. We impersonate the Starknet Operator to send a transaction to the Core
     /// contract Here signature checks are bypassed and anvil is for testing on fork Eth.
     async fn update_state_blob_with_impersonation_works(#[case] fork_block_no: u64) {
-        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
+        dotenvy::from_filename_override(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
 
         let setup = EthereumTestBuilder::new()
             .with_fork_block(fork_block_no)
@@ -306,7 +306,7 @@ mod settlement_client_tests {
     #[tokio::test]
     #[case::typical(6806847)]
     async fn get_last_settled_block_typical_works(#[case] fork_block_no: u64) {
-        dotenvy::from_filename(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
+        dotenvy::from_filename_override(&*ENV_FILE_PATH).expect("Could not load .env.test file.");
         let setup = EthereumTestBuilder::new().with_fork_block(fork_block_no).build().await;
 
         let ethereum_settlement_params = EthereumSettlementValidatedArgs {

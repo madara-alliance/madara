@@ -32,10 +32,8 @@ aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sns = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
-axum-macros = { workspace = true }
 bincode = { workspace = true }
 bytes.workspace = true
-c-kzg = { workspace = true }
 cairo-vm = { workspace = true }
 chrono = { workspace = true }
 clap = { workspace = true }
@@ -45,13 +43,11 @@ futures = { workspace = true }
 hex = { workspace = true }
 itertools = { workspace = true }
 lazy_static = { workspace = true }
-log = { workspace = true }
 majin-blob-core = { workspace = true }
 majin-blob-types = { workspace = true }
 mockall = { workspace = true }
 mockall_double = { workspace = true }
 mongodb = { workspace = true, features = ["bson-uuid-1"], optional = true }
-num = { workspace = true }
 num-bigint = { workspace = true }
 num-traits = { workspace = true }
 omniqueue = { workspace = true, optional = true }
@@ -98,10 +94,8 @@ opentelemetry-otlp = { workspace = true, features = [
   "logs",
 ] }
 opentelemetry-semantic-conventions = { workspace = true }
-opentelemetry-stdout = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
 tracing = { workspace = true }
-tracing-core = { workspace = true, default-features = false }
 tracing-error = "0.2.1"
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = [
@@ -118,6 +112,7 @@ anyhow = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 hyper = { version = "0.14", features = ["full"] }
 jemallocator = "0.5.4"
+tracing-test = "0.2.5"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]

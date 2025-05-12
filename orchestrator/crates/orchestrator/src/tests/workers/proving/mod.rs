@@ -8,7 +8,7 @@ use crate::tests::workers::utils::{db_checks_proving_worker, get_job_by_mock_id_
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
-use crate::worker::event_handler::factory::MockJobFactoryTrait;
+use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
 use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -108,7 +108,7 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
         .await;
 
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = MockJobFactoryTrait::get_job_handler_context();
+    let ctx = get_job_handler_context();
 
     // Mocking the `get_job_handler` call in create_job function.
     if incomplete_runs {

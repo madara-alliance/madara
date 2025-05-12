@@ -34,9 +34,8 @@ pub trait Resource: Send + Sync {
     async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
     /// ready - Check if all the resource is created and ready to use
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
-    /// check - Check if the resource is in a valid state
-    /// This function will check if the resource is in a valid state.
-    /// This function will also check if the resource is in a valid state.
+    /// check - Check if the resource is ready to use
+    /// This function will check if the resource is ready to use.
     async fn poll(&self, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
         let timeout_duration = Duration::from_secs(timeout);
         let start_time = Instant::now();
@@ -56,10 +55,4 @@ pub trait Resource: Send + Sync {
         }
         false
     }
-
-    // /// teardown - Tear down the resource
-    // /// This function will delete the resource and all dependent resources.
-    // /// This function will also delete any dependent resources that are needed.
-    // /// THis is scope for future work
-    // async fn teardown(&self) -> OrchestratorResult<()>;
 }

@@ -61,4 +61,7 @@ pub enum EventSystemError {
 
     #[error("Invalid job type: {0}")]
     InvalidJobType(String),
+
+    #[error("Invalid Task join Error: {0}")]
+    InvalidJoinError(#[from] tokio::task::JoinError),
 }
