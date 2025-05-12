@@ -3,9 +3,9 @@ use cron::event_bridge::AWSEventBridgeCliArgs;
 use provider::aws::AWSConfigCliArgs;
 use url::Url;
 
+use crate::core::config::StarknetVersion;
 pub use server::ServerCliArgs as ServerParams;
 pub use service::ServiceCliArgs as ServiceParams;
-use crate::core::config::StarknetVersion;
 
 pub mod alert;
 pub mod cron;

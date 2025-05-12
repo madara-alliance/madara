@@ -1,11 +1,11 @@
 // use color_eyre::Result;
-use std::collections::{HashMap, HashSet};
-use num_bigint::BigUint;
-use num_traits::Num;
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use num_bigint::BigUint;
+use num_traits::Num;
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
+use std::collections::{HashMap, HashSet};
 
 /// Converts a StateUpdate to a vector of Felt values for blob creation
 ///
@@ -260,9 +260,6 @@ fn da_word(
         .to_str_radix(10);
 
     Felt::from_dec_str(&decimal_string).map_err(|e| {
-        JobError::Other(OtherError(color_eyre::eyre::eyre!(
-                "Failed to convert decimal string to FieldElement: {}",
-                e
-            )))
+        JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert decimal string to FieldElement: {}", e)))
     })
 }
