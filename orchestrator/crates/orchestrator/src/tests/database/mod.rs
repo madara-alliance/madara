@@ -7,6 +7,7 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use chrono::Utc;
 use rstest::*;
+use rstest::*;
 use uuid::Uuid;
 
 #[rstest]

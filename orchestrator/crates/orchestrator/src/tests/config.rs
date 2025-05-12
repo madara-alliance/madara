@@ -2,7 +2,6 @@ use std::net::SocketAddr;
 use std::str::FromStr as _;
 use std::sync::Arc;
 
-use super::common::delete_storage;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
@@ -21,6 +20,7 @@ use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::utils::helpers::ProcessingLocks;
+use crate::OrchestratorError;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -194,7 +194,7 @@ impl TestConfigBuilder {
     }
 
     pub async fn build(self) -> TestConfigBuilderReturns {
-        dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
         let params = get_env_params();
 
@@ -226,9 +226,6 @@ impl TestConfigBuilder {
 
         let settlement_client =
             implement_client::init_settlement_client(settlement_client_type, &params.settlement_params).await;
-
-        // Delete the Storage before use
-        delete_storage(provider_config.clone(), &params.storage_params).await.expect("Could not delete storage");
         // External Dependencies
         let storage =
             implement_client::init_storage_client(storage_type, &params.storage_params, provider_config.clone()).await;
@@ -286,7 +283,7 @@ async fn implement_api_server(api_server_type: ConfigType, config: Arc<Config>) 
                 panic!(concat!("Mock client is not a ", stringify!($client_type)));
             }
         }
-        ConfigType::Actual => Some(setup_server(config.clone()).await.expect("Failed to start the API server")),
+        ConfigType::Actual => Some(setup_server(config.clone()).await.expect("Failed to setup server")),
         ConfigType::Dummy => None,
     }
 }
@@ -309,7 +306,9 @@ pub mod implement_client {
     use crate::core::client::AlertClient;
     use crate::core::cloud::CloudProvider;
     use crate::core::config::Config;
+    use crate::core::traits::resource::Resource;
     use crate::core::{DatabaseClient, QueueClient, StorageClient};
+    use crate::tests::common::{delete_storage, get_storage_client};
     use crate::types::params::da::DAConfig;
     use crate::types::params::database::DatabaseArgs;
     use crate::types::params::settlement::SettlementConfig;
@@ -388,6 +387,12 @@ pub mod implement_client {
         match service {
             ConfigType::Mock(client) => client.into(),
             ConfigType::Actual => {
+                // Delete the Storage before use
+                delete_storage(provider_config.clone(), storage_cfg).await.expect("Could not delete storage");
+                let storage = get_storage_client(provider_config.clone()).await;
+                // First set up the storage
+                println!("Setting up the storage , {:?}", storage_cfg);
+                storage.setup(storage_cfg.clone()).await.unwrap();
                 Config::build_storage_client(storage_cfg, provider_config).await.expect("error creating storage client")
             }
             ConfigType::Dummy => Box::new(MockStorageClient::new()),
@@ -474,20 +479,25 @@ pub struct EnvParams {
     instrumentation_params: OTELConfig,
 }
 
-fn get_env_params() -> EnvParams {
+pub(crate) fn get_env_params() -> EnvParams {
+    let prefix = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
     let db_params = DatabaseArgs {
         connection_uri: get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"),
         database_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME"),
     };
 
     let storage_params = StorageArgs {
-        bucket_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME"),
+        bucket_name: format!(
+            "{}-{}",
+            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
+            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")
+        ),
         bucket_location_constraint: None,
     };
 
     let queue_params = QueueArgs {
         queue_base_url: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"),
-        prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_PREFIX"),
+        prefix: prefix.clone(),
         suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
     };
 
@@ -502,7 +512,14 @@ fn get_env_params() -> EnvParams {
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
     });
 
-    let alert_params = AlertArgs { endpoint: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_ARN") };
+    let arn = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_ARN");
+    let pos = arn
+        .rfind(':')
+        .ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))
+        .expect("error");
+    let sns_arn = format!("{}:{}_{}", &arn[..pos], prefix, &arn[pos + 1..]);
+
+    let alert_params = AlertArgs { endpoint: sns_arn };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))

@@ -8,6 +8,7 @@ use crate::error::other::OtherError;
 use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
+use color_eyre::eyre::eyre;
 use starknet::core::types::{
     BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
     StateDiff, StateUpdate, StorageEntry,

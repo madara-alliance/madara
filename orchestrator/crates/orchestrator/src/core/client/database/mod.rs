@@ -10,7 +10,7 @@ pub use error::DatabaseError;
 use mockall::automock;
 
 /// Trait defining database operations
-#[automock]
+#[cfg_attr(test, automock)]
 #[async_trait]
 pub trait DatabaseClient: Send + Sync {
     /// switch_database - switch to a different database

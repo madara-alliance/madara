@@ -1,15 +1,19 @@
-use crate::types::jobs::types::JobType;
-use crate::worker::event_handler::jobs::{
-    da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler,
-    JobHandlerTrait,
-};
-use async_trait::async_trait;
 use mockall::automock;
-use std::sync::Arc;
 
+#[allow(clippy::module_inception)]
 #[automock]
-#[async_trait]
-pub trait JobFactoryTrait {
+pub mod factory {
+    use std::sync::Arc;
+
+    #[allow(unused_imports)]
+    use mockall::automock;
+
+    use crate::types::jobs::types::JobType;
+    use crate::worker::event_handler::jobs::{
+        da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler,
+        JobHandlerTrait,
+    };
+
     /// To get the job handler
     //         +-------------------+
     //         |                   |
@@ -51,7 +55,7 @@ pub trait JobFactoryTrait {
     /// - We return this mocked job whenever a function calls `get_job_handler`
     /// - Making it an Arc allows us to return the same MockJob in multiple calls to
     ///   `get_job_handler`. This is needed because `MockJob` doesn't implement Clone
-    async fn get_job_handler(job_type: &JobType) -> Arc<Box<dyn JobHandlerTrait>> {
+    pub async fn get_job_handler(job_type: &JobType) -> Arc<Box<dyn JobHandlerTrait>> {
         let job: Box<dyn JobHandlerTrait> = match job_type {
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::SnosRun => Box::new(SnosJobHandler),
@@ -63,7 +67,3 @@ pub trait JobFactoryTrait {
         Arc::new(job)
     }
 }
-
-pub struct JobFactory;
-
-impl JobFactoryTrait for JobFactory {}

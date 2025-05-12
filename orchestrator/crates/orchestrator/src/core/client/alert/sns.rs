@@ -12,12 +12,19 @@ pub struct SNS {
 }
 
 impl SNS {
-    pub(crate) fn constructor(client: Arc<Client>) -> Self {
-        Self { client, topic_arn: None }
+    /// Since the SNS client with both client and option for the client, we've needed to pass the
+    /// aws_config and args to the constructor.
+    ///
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    /// * `args` - The alert arguments.
+    ///
+    /// # Returns
+    /// * `Self` - The SNS client.
+    pub(crate) fn new(aws_config: &SdkConfig, args: Option<&AlertArgs>) -> Self {
+        Self { client: Arc::new(Client::new(aws_config)), topic_arn: args.map(|a| a.endpoint.clone()) }
     }
-    pub fn create(args: &AlertArgs, aws_config: &SdkConfig) -> Self {
-        Self { client: Arc::new(Client::new(aws_config)), topic_arn: Some(args.endpoint.clone()) }
-    }
+
     /// get_topic_arn return the topic name, if empty it will return an error
     ///
     /// # Returns
@@ -40,14 +47,7 @@ impl AlertClient for SNS {
     ///
     /// * `Result<(), AlertError>` - The result of the send operation.
     async fn send_message(&self, message_body: String) -> Result<(), AlertError> {
-        let topic_name = self.get_topic_arn()?;
-        self.client
-            .publish()
-            .topic_arn(topic_name)
-            .message(message_body)
-            .send()
-            .await
-            .map_err(|e| AlertError::SendFailure(e.to_string()))?;
+        self.client.publish().topic_arn(self.get_topic_arn()?).message(message_body).send().await?;
         Ok(())
     }
 
