@@ -34,7 +34,6 @@ impl ValueMapping {
             }
         }
 
-        println!("Found {} mappings at special address (excluding global counter)", mappings.len());
         ValueMapping { mappings }
     }
 
@@ -61,8 +60,6 @@ pub fn compress(state_update: &StateUpdate) -> Result<StateUpdate> {
 
     // Create mapping from the special address
     let mapping = ValueMapping::from_special_address(&state_update);
-
-    println!("Found {} mappings at special address", mapping.mappings.len());
 
     // Create a new storage diffs vector
     let mut new_storage_diffs = Vec::new();
