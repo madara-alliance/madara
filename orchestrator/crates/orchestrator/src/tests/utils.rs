@@ -7,6 +7,7 @@ use uuid::Uuid;
 //     StateUpdateMetadata,
 // };
 // use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::types::batch::Batch;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -70,6 +71,20 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
         external_id: ExternalId::Number(0),
         metadata,
         version: 0,
+        created_at: Utc::now().round_subsecs(0),
+        updated_at: Utc::now().round_subsecs(0),
+    }
+}
+
+pub fn build_batch(index: u64, start_block: u64, end_block: u64) -> Batch {
+    Batch {
+        id: Uuid::new_v4(),
+        index,
+        size: end_block - start_block + 1,
+        start_block,
+        end_block,
+        is_batch_ready: false,
+        squashed_state_updates_path: String::from("path/to/file.json"),
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
     }

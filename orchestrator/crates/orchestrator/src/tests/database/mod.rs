@@ -1,14 +1,11 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::tests::utils::build_job_item;
+use crate::tests::utils::{build_batch, build_job_item};
+use crate::types::batch::BatchUpdates;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
-use chrono::Utc;
 use rstest::*;
-use rstest::*;
-use uuid::Uuid;
 
 #[rstest]
 #[tokio::test]
@@ -252,41 +249,9 @@ async fn database_test_get_latest_batch() {
     let database_client = config.database();
 
     // Create multiple batches with different indices
-    let batch1 = Batch {
-        id: Uuid::new_v4(),
-        index: 1,
-        size: 101,
-        start_block: 100,
-        end_block: 200,
-        is_batch_ready: false,
-        squashed_state_updates_path: String::from("path/to/file.json"),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-
-    let batch2 = Batch {
-        id: Uuid::new_v4(),
-        index: 2,
-        size: 100,
-        start_block: 201,
-        end_block: 300,
-        is_batch_ready: false,
-        squashed_state_updates_path: String::from("path/to/file.json"),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
-
-    let batch3 = Batch {
-        id: Uuid::new_v4(),
-        index: 3,
-        size: 100,
-        start_block: 301,
-        end_block: 400,
-        is_batch_ready: false,
-        squashed_state_updates_path: String::from("path/to/file.json"),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
+    let batch1 = build_batch(1, 100, 200);
+    let batch2 = build_batch(2, 201, 300);
+    let batch3 = build_batch(3, 301, 400);
 
     // Insert batches in non-sequential order
     database_client.create_batch(batch2.clone()).await.unwrap();
@@ -306,19 +271,12 @@ async fn database_test_update_batch() {
     let database_client = config.database();
 
     // Create a new batch
-    let batch = Batch {
-        id: Uuid::new_v4(),
-        index: 1,
-        size: 101,
-        start_block: 100,
-        end_block: 200,
-        is_batch_ready: false,
-        squashed_state_updates_path: String::from("path/to/file.json"),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
+    let batch = build_batch(1, 100, 200);
 
     database_client.create_batch(batch.clone()).await.unwrap();
+
+    // Waiting for sometime to ensure updated_at is different after the update
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Create updates for the batch
     let updates = BatchUpdates { end_block: 250, is_batch_ready: batch.is_batch_ready };
@@ -335,7 +293,7 @@ async fn database_test_update_batch() {
     assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);
     assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
     assert_eq!(updated_batch.created_at, batch.created_at);
-    assert!(updated_batch.updated_at > batch.updated_at);
+    assert_ne!(updated_batch.updated_at, batch.updated_at);
 }
 
 #[rstest]
@@ -346,17 +304,7 @@ async fn database_test_create_batch() {
     let database_client = config.database();
 
     // Create a new batch
-    let batch = Batch {
-        id: Uuid::new_v4(),
-        index: 1,
-        size: 101,
-        start_block: 100,
-        end_block: 200,
-        is_batch_ready: false,
-        squashed_state_updates_path: String::from("path/to/file.json"),
-        created_at: Utc::now(),
-        updated_at: Utc::now(),
-    };
+    let batch = build_batch(1, 100, 200);
 
     // Create the batch
     let created_batch = database_client.create_batch(batch.clone()).await.unwrap();

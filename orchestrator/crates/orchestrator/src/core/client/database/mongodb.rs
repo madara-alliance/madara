@@ -1,11 +1,11 @@
 use super::error::DatabaseError;
 use crate::core::client::database::DatabaseClient;
+use crate::types::batch::{Batch, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use futures::{StreamExt, TryStreamExt};
@@ -512,7 +512,7 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Add additional fields that are always updated
-        non_null_updates.insert("batch_size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
+        non_null_updates.insert("size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {

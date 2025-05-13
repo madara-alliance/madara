@@ -1,6 +1,6 @@
 use chrono::{DateTime, SubsecRound, Utc};
 #[cfg(feature = "with_mongodb")]
-use mongodb::bson::serde_helpers::chrono_datetime_as_bson_datetime;
+use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_binary};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -13,6 +13,7 @@ pub struct BatchUpdates {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Batch {
     /// Unique identifier for the batch
+    #[cfg_attr(feature = "with_mongodb", serde(with = "uuid_1_as_binary"))]
     pub id: Uuid,
     /// Index of the batch
     pub index: u64,
