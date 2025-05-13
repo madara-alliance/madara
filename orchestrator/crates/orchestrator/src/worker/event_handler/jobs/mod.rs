@@ -1,5 +1,4 @@
 pub mod da;
-pub mod models;
 pub mod proving;
 pub mod snos;
 pub mod state_update;

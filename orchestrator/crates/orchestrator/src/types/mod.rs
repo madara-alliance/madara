@@ -1,3 +1,4 @@
+pub mod batch;
 pub mod constant;
 pub mod error;
 pub mod jobs;
