@@ -20,7 +20,6 @@ pub async fn initialize_worker(config: Arc<Config>) -> OrchestratorResult<()> {
         Ok(_) => tracing::info!("Consumers initialized successfully"),
         Err(e) => {
             tracing::error!(error = %e, "Failed to initialize consumers");
-            panic!("Failed to init consumers: {}", e);
         }
     }
     Ok(())

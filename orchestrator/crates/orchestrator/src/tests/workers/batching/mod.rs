@@ -38,6 +38,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             size: 4,
             squashed_state_updates_path: "state_update/batch/1.json".to_string(),
             is_batch_ready: false,
+            ..Default::default()
         };
         db.expect_get_latest_batch().returning(move || Ok(Some(existing_batch.clone())));
         start_block = 4;
@@ -66,7 +67,8 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
 
         // Mock storage expectations for each block
         let state_update_path = format!("state_update/batch/{}.json", if has_existing_batch { 2 } else { 1 });
-        storage.expect_put_data().withf(move |data, path| path == &state_update_path).returning(|_, _| Ok(()));
+        let state_update_path_clone = state_update_path.clone();
+        storage.expect_put_data().withf(move |data, path| path == &state_update_path_clone).returning(|_, _| Ok(()));
 
         // Mock database expectations for each block
         if block_num == start_block {
@@ -77,7 +79,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
                         && batch.size == 1
                         && batch.squashed_state_updates_path == state_update_path
                 })
-                .returning(|_| Ok(()));
+                .returning(|batch| Ok(batch));
         } else {
             db.expect_update_batch()
                 .withf(move |batch, updates| {
@@ -85,7 +87,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
                         && updates.end_block == block_num
                         && updates.is_batch_ready == false
                 })
-                .returning(|_, _| Ok(()));
+                .returning(|batch, update| Ok(batch.clone()));
         }
     }
 
