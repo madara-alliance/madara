@@ -6,10 +6,10 @@ WORKDIR /app
 # having to compile them from source
 ENV SCCACHE_VERSION=v0.10.0
 ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
-ENV SCCACHE_TAR=sccache-v0.10.0-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
 ENV SCCACHE_BIN=/bin/sccache
 ENV SCCACHE_DIR=/sccache
-ENV SCCACHE=sccache-v0.10.0-x86_64-unknown-linux-musl/sccache
+ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
 
 ENV CHEF_VERSION=v0.1.71
 ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
