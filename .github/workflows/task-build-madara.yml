@@ -66,8 +66,8 @@ jobs:
           python-version: ${{ env.BUILD_PYTHON_VERSION }}
           build-snos: true
 
-      # - name: Build the artifacts
-      - run: |
+      - name: Build the artifacts
+        run: |
           make artifacts-linux
 
       # Build Madara, Orchestrator and test contracts
