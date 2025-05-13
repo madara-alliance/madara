@@ -1,10 +1,10 @@
 pub mod error;
 pub mod mongodb;
 
+use crate::types::batch::{Batch, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use async_trait::async_trait;
 pub use error::DatabaseError;
 use mockall::automock;

@@ -1,10 +1,10 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::tests::utils::{build_job_item, build_batch};
+use crate::tests::utils::{build_batch, build_job_item};
+use crate::types::batch::BatchUpdates;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::jobs::models::BatchUpdates;
 use rstest::*;
 
 #[rstest]

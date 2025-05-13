@@ -1,12 +1,10 @@
 use std::error::Error;
-use std::sync::Arc;
 
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
-use mockall::predicate::eq;
 use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -31,7 +29,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         end_block = 5;
     } else {
         // Mock existing batch
-        let existing_batch = crate::worker::event_handler::jobs::models::Batch {
+        let existing_batch = crate::types::batch::Batch {
             index: 1,
             start_block: 0,
             end_block: 3,

@@ -1,7 +1,7 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchUpdates};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
 use color_eyre::eyre::eyre;

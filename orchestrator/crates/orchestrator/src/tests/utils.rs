@@ -7,6 +7,7 @@ use uuid::Uuid;
 //     StateUpdateMetadata,
 // };
 // use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::types::batch::Batch;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -17,7 +18,6 @@ use crate::types::jobs::metadata::{
     StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::jobs::models::Batch;
 // Test Util Functions
 // ==========================================
 

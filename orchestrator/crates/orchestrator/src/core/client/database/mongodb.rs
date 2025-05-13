@@ -1,11 +1,11 @@
 use super::error::DatabaseError;
 use crate::core::client::database::DatabaseClient;
+use crate::types::batch::{Batch, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::params::database::DatabaseArgs;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::jobs::models::{Batch, BatchUpdates};
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use futures::{StreamExt, TryStreamExt};
