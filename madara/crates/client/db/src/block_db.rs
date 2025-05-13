@@ -485,8 +485,8 @@ impl MadaraBackend {
 
         let mut current_block = start_block;
 
-        while current_block <= end_block && events_infos.len() < max_events {
-            {
+        'event_block_research: while current_block <= end_block && events_infos.len() < max_events {
+            'bloom_research: {
                 // Scope the filter stream iterator to ensure it's dropped promptly
                 let filter_event_stream = self.get_event_filter_stream(current_block)?;
 
@@ -495,16 +495,18 @@ impl MadaraBackend {
 
                     // Stop if we've gone beyond the requested range
                     if block_n > end_block {
-                        return Ok(events_infos);
+                        break 'event_block_research;
                     }
 
                     // Use the bloom filter to quickly check if the block might contain relevant events.
                     // - This avoids unnecessary block retrieval if no matching events exist.
                     if key_filter.search(&bloom_filter) {
                         current_block = block_n;
-                        break;
+                        break 'bloom_research;
                     }
                 }
+                // If no bloom filter was found, there's no more blocks whith events to process in DB.
+                break 'event_block_research;
             } // RocksDB iterator is dropped here
 
             // Retrieve the full block data since we now suspect it contains relevant events.
@@ -525,7 +527,7 @@ impl MadaraBackend {
             // Take exactly enough events to fill the requested chunk size.
             events_infos.extend(iter.by_ref().take(max_events - events_infos.len()).map(|(_, event)| event));
 
-            current_block
+            current_block = current_block
                 .checked_add(1)
                 .ok_or(MadaraStorageError::InconsistentStorage("Block number overflow".into()))?;
         }
