@@ -8,13 +8,13 @@ use std::sync::Arc;
 use appchain_core_contract_client::clients::StarknetCoreContractClient;
 use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
-use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
-use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
+use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus, SPECIAL_BLOCK_NUMBER};
 use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;
@@ -234,8 +234,8 @@ impl SettlementClient for StarknetSettlementClient {
     }
 
     /// Returns the last block settled from the core contract.
-    async fn get_last_settled_block(&self) -> Result<u64> {
-        let block_number = self
+    async fn get_last_settled_block(&self) -> Result<Option<u64>> {
+        let block_number: Vec<Felt> = self
             .account
             .provider()
             .call(
@@ -251,7 +251,14 @@ impl SettlementClient for StarknetSettlementClient {
             return Err(eyre!("Could not fetch last block number from core contract."));
         }
 
-        u64_from_felt(block_number[0]).wrap_err("Failed to convert block number from Felt to u64")
+        let special_number: Felt = Felt::from_hex(SPECIAL_BLOCK_NUMBER)?;
+        let last_block_number: Felt = block_number[1];
+
+        if last_block_number == special_number {
+            return Ok(None);
+        }
+
+        Ok(Some(u64_from_felt(block_number[1]).expect("Failed to convert to u64")))
     }
 
     /// Returns the nonce for the wallet in use.
