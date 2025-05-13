@@ -13,7 +13,7 @@ pub fn convert_log_state_update(log_state_update: StarknetCoreContract::LogState
     let global_root = log_state_update.globalRoot.to_felt();
     let block_hash = log_state_update.blockHash.to_felt();
 
-    Ok(StateUpdate { block_number, global_root, block_hash })
+    Ok(StateUpdate { block_number: Some(block_number), global_root, block_hash })
 }
 
 #[cfg(test)]

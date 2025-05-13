@@ -138,9 +138,7 @@ impl SettlementClientTrait for StarknetClient {
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let state = self.get_state_call().await?; // Returns (StateRoot, BlockNumber, BlockHash).
         let global_root = state[0];
-        let block_number = u64::try_from(state[1]).map_err(|e| -> SettlementClientError {
-            StarknetClientError::Conversion(format!("Failed to convert state[1] to block number u64: {e:#}")).into()
-        })?;
+        let block_number = u64::try_from(state[1]).ok();
         let block_hash = state[2];
 
         Ok(StateUpdate { global_root, block_number, block_hash })
@@ -194,8 +192,11 @@ impl SettlementClientTrait for StarknetClient {
                         StarknetClientError::MissingField("block_hash").into()
                     })?;
 
-                    let formatted_event =
-                        StateUpdate { block_number, global_root: *global_root, block_hash: *block_hash };
+                    let formatted_event = StateUpdate {
+                        block_number: Some(block_number),
+                        global_root: *global_root,
+                        block_hash: *block_hash,
+                    };
 
                     worker.update_state(formatted_event).map_err(|e| -> SettlementClientError {
                         StarknetClientError::StateSync { message: e.to_string(), block_number }.into()

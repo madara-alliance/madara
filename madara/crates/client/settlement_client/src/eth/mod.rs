@@ -138,7 +138,7 @@ impl SettlementClientTrait for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
                 },
             )?;
-        let block_number: u64 = block_number._0.as_u64();
+        let block_number: Option<u64> = block_number._0.try_into().ok();
 
         let global_root =
             self.l1_core_contract.stateRoot().block(BlockId::number(latest_block_n)).call().await.map_err(
@@ -394,7 +394,7 @@ pub mod eth_client_getter_test {
         assert_eq!(
             state_update,
             StateUpdate {
-                block_number: L2_BLOCK_NUMBER,
+                block_number: Some(L2_BLOCK_NUMBER),
                 global_root: U256::from_str_radix(L2_STATE_ROOT, 10)
                     .expect("Should parse the predefined L2 state root")
                     .to_felt(),
