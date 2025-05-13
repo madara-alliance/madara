@@ -85,6 +85,7 @@ pub fn build_batch(index: u64, start_block: u64, end_block: u64) -> Batch {
         end_block,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
     }

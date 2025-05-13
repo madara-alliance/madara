@@ -1,14 +1,21 @@
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use color_eyre::eyre::eyre;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem, StateDiff,
-    StateUpdate, StorageEntry,
+    BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
+    StateDiff, StateUpdate, StorageEntry,
 };
 use std::collections::{HashMap, HashSet};
+use std::sync::Arc;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
-pub fn squash_state_updates(state_updates: Vec<StateUpdate>) -> Result<StateUpdate, JobError> {
+pub async fn squash_state_updates(
+    state_updates: Vec<StateUpdate>,
+    pre_range_block: u64,
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+) -> Result<StateUpdate, JobError> {
     if state_updates.is_empty() {
         return Err(JobError::Other(OtherError(eyre!("Cannot merge empty state updates"))));
     }
@@ -76,21 +83,40 @@ pub fn squash_state_updates(state_updates: Vec<StateUpdate>) -> Result<StateUpda
     }
 
     // Convert maps back to the required StateDiff format
-
+    let mut no_of_contracts = 0;
     // Storage diffs
     for (contract_addr, storage_map) in storage_diffs_map {
-        let storage_entries = storage_map
-            .into_iter()
-            .filter(|(_, value)| *value != Felt::ZERO) // Filter out entries with value 0x0
-            .map(|(key, value)| StorageEntry { key, value })
-            .collect::<Vec<_>>();
+        let mut storage_entries = Vec::new();
 
-        // Only include contracts that have non-zero storage entries
+        // First check if contract existed at pre-range block
+        let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await;
+
+        for (key, value) in storage_map {
+            if contract_existed {
+                // Only check pre-range value if the contract existed
+                let pre_range_value =
+                    check_pre_range_storage_value(&provider, contract_addr, key, pre_range_block).await?;
+
+                // Only include if values are different
+                if pre_range_value != value {
+                    storage_entries.push(StorageEntry { key, value });
+                }
+            } else {
+                // Contract didn't exist, so pre-range value was definitely 0
+                // Only include non-zero values
+                if value != Felt::ZERO {
+                    storage_entries.push(StorageEntry { key, value });
+                }
+            }
+        }
+
+        // Only include contracts that have storage entries
         if !storage_entries.is_empty() {
             let contract_storage_diff = ContractStorageDiffItem { address: contract_addr, storage_entries };
 
             state_diff.storage_diffs.push(contract_storage_diff);
         }
+        no_of_contracts += 1;
     }
 
     // Deployed contracts
@@ -122,4 +148,34 @@ pub fn squash_state_updates(state_updates: Vec<StateUpdate>) -> Result<StateUpda
     let merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
 
     Ok(merged_update)
+}
+
+pub async fn check_contract_existed_at_block(
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+    contract_address: Felt,
+    block_number: u64,
+) -> bool {
+    match provider.get_class_at(BlockId::Number(block_number), contract_address).await {
+        Ok(_) => true,
+        Err(_) => false,
+    }
+}
+
+pub async fn check_pre_range_storage_value(
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+    contract_address: Felt,
+    key: Felt,
+    pre_range_block: u64,
+) -> Result<Felt, JobError> {
+    // Get storage value at the block before our range
+    match provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await {
+        Ok(value) => Ok(value),
+        Err(e) => {
+            println!(
+                "Warning: Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
+                contract_address, key, pre_range_block, e
+            );
+            Ok(Felt::ZERO)
+        }
+    }
 }

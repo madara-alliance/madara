@@ -115,6 +115,7 @@ jemallocator = "0.5.4"
 indexmap = "2.6.0"
 num-integer = "0.1.46"
 tracing-test = "0.2.5"
+rayon = "1.10.0"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs"]

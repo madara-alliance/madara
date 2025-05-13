@@ -7,7 +7,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
-use crate::core::config::{Config, ConfigParam};
+use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
@@ -573,6 +573,7 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
+        madara_version: StarknetVersion::V0_13_3, // FIXME: fetch this from env
         snos_config,
         service_config,
         server_config,
