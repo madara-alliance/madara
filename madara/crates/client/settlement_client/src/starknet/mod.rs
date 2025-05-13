@@ -579,7 +579,7 @@ pub mod starknet_client_tests {
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
             StateUpdate {
-                block_number: 99,
+                block_number: Some(99),
                 global_root: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
                 block_hash: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
             },
@@ -590,7 +590,7 @@ pub mod starknet_client_tests {
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
             StateUpdate {
-                block_number: 100,
+                block_number: Some(100),
                 global_root: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
                 block_hash: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
             },
@@ -618,7 +618,7 @@ pub mod starknet_client_tests {
         let block_number = send_state_update(
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
-            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
+            StateUpdate { block_number: Some(100), global_root: global_root_event, block_hash: block_hash_event },
         )
         .await?;
         poll_on_block_completion(block_number, fixture.context.account.provider(), 100).await?;
@@ -627,7 +627,7 @@ pub mod starknet_client_tests {
             fixture.client.get_current_core_contract_state().await.expect("issue while getting the state");
         assert_eq!(
             state_update,
-            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event }
+            StateUpdate { block_number: Some(100), global_root: global_root_event, block_hash: block_hash_event }
         );
 
         Ok(())
@@ -890,7 +890,7 @@ mod starknet_client_event_subscription_test {
 
         // Wait for get_initial_state
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 0);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(0));
 
         // Verify the block number
         let block_in_db = db
@@ -904,7 +904,7 @@ mod starknet_client_event_subscription_test {
             &context.account,
             context.deployed_appchain_contract_address,
             StateUpdate {
-                block_number: 100,
+                block_number: Some(100),
                 global_root: Felt::from_hex("0xbeef")?,
                 block_hash: Felt::from_hex("0xbeef")?,
             },
@@ -913,7 +913,7 @@ mod starknet_client_event_subscription_test {
 
         // Wait for changed
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 100);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(100));
 
         // Verify the block number
         let block_in_db = db

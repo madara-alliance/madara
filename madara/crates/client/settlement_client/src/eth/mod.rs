@@ -903,7 +903,7 @@ mod eth_client_event_subscription_test {
 
         // Wait for get_initial_state
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 662702);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(662702));
 
         let block_in_db = backend.get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
         assert_eq!(block_in_db, Some(662702), "Block in DB does not match expected L2 block number");
@@ -911,7 +911,7 @@ mod eth_client_event_subscription_test {
         let _ = contract.fireEvent().send().await.expect("Should successfully fire state update event");
 
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 662703);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(662703));
 
         // Verify the block number
         let block_in_db = backend

@@ -28,8 +28,11 @@ mod eth_client_conversion_tests {
         let block_hash: u128 = 2345;
         let global_root: u128 = 456;
 
-        let expected =
-            StateUpdate { block_number, block_hash: Felt::from(block_hash), global_root: Felt::from(global_root) };
+        let expected = StateUpdate {
+            block_number: Some(block_number),
+            block_hash: Felt::from(block_hash),
+            global_root: Felt::from(global_root),
+        };
 
         let input = StarknetCoreContract::LogStateUpdate {
             blockNumber: I256::from_dec_str(block_number.to_string().as_str()).unwrap(),
