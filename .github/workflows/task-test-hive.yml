@@ -68,6 +68,4 @@ jobs:
       - name: Stop Madara
         if: always()
         run: |
-          echo ${{ steps.madara.outcome }}
-          echo ${{ steps.madara.outcome == 'success '}}
           docker stop madara &> /dev/null | true
