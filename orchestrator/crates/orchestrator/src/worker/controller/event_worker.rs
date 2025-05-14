@@ -12,18 +12,21 @@ use color_eyre::eyre::eyre;
 use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::sleep;
 use tracing::{debug, error, info, info_span};
+use tokio::sync::Notify;
 
 pub enum MessageType {
     Message(Delivery),
     NoMessage,
 }
 
+#[derive(Clone)]
 pub struct EventWorker {
     queue_type: QueueType,
     config: Arc<Config>,
+    shutdown: Arc<Notify>,
+    concurrency_limit: usize,
+    semaphore: Arc<tokio::sync::Semaphore>,
 }
 
 impl EventWorker {
@@ -36,7 +39,14 @@ impl EventWorker {
     /// * `EventWorker` - A new EventWorker instance
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> Self {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
-        Self { queue_type, config }
+        let concurrency_limit = 1;
+        Self {
+            queue_type,
+            config,
+            shutdown: Arc::new(Notify::new()),
+            concurrency_limit,
+            semaphore: Arc::new(tokio::sync::Semaphore::new(concurrency_limit)),
+        }
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -237,26 +247,54 @@ impl EventWorker {
     /// * It will also sleep for a longer duration if an error occurs to prevent a tight loop
     /// * It will log errors and messages for debugging purposes
     pub async fn run(&self) -> EventSystemResult<()> {
+        let shutdown = self.shutdown.clone();
+        let semaphore = self.semaphore.clone();
+        let concurrency_limit = self.concurrency_limit;
+
         loop {
-            match self.get_message().await {
-                Ok(Some(message)) => match self.parse_message(&message) {
-                    Ok(parsed_message) => {
-                        self.process_message(message, parsed_message).await?;
-                    }
-                    Err(e) => {
-                        error!("Failed to parse message: {:?}", e);
-                    }
-                },
-                Ok(None) => {
-                    // Sleep to prevent tight loop and allow memory cleanup
-                    sleep(Duration::from_secs(1)).await;
+            tokio::select! {
+                _ = shutdown.notified() => {
+                    info!("Shutdown signal received. Waiting for in-flight tasks to finish...");
+                    break;
                 }
-                Err(e) => {
-                    error!("Error receiving message: {:?}", e);
-                    // Sleep before retrying to prevent tight loop
-                    sleep(Duration::from_secs(5)).await;
+                result = self.get_message() => {
+                    match result {
+                        Ok(Some(message)) => match self.parse_message(&message) {
+                            Ok(parsed_message) => {
+                                let permit = semaphore.clone().acquire_owned().await.unwrap();
+                                let this = self.clone();
+                                tokio::spawn(async move {
+                                    let _permit = permit;
+                                    // TODO: Add a timeout to the process_message call, Handle the long running jobs with max timeout, to avoid hang forever
+                                    if let Err(e) = this.process_message(message, parsed_message).await {
+                                        error!("Failed to process message: {:?}", e);
+                                    }
+                                });
+                            }
+                            Err(e) => {
+                                error!("Failed to parse message: {:?}", e);
+                            }
+                        },
+                        Ok(None) => {
+                            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+                        }
+                        Err(e) => {
+                            error!("Error receiving message: {:?}", e);
+                            tokio::time::sleep(std::time::Duration::from_secs(5)).await;
+                        }
+                    }
                 }
             }
         }
+        // Wait for all in-flight tasks to finish (semaphore count == concurrency_limit)
+        for _ in 0..concurrency_limit {
+            let _ = semaphore.clone().acquire_owned().await;
+        }
+        info!("EventWorker shutdown complete.");
+        Ok(())
+    }
+
+    pub fn shutdown(&self) {
+        self.shutdown.notify_waiters();
     }
 }
