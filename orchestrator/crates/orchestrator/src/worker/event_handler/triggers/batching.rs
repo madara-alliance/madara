@@ -2,6 +2,7 @@ use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::constant::{MAX_BATCH_SIZE, S3_STATE_UPDATE_DIR};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
 use color_eyre::eyre::eyre;
@@ -14,7 +15,6 @@ use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::types::constant::{S3_STATE_UPDATE_DIR, MAX_BATCH_SIZE};
 
 pub struct BatchingTrigger;
 
