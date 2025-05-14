@@ -10,8 +10,10 @@ use mp_transactions::Transaction;
 use starknet_types_core::felt::Felt;
 
 pub mod commitments;
+pub mod event_with_info;
 pub mod header;
 
+pub use event_with_info::EventWithInfo;
 pub use header::Header;
 pub use primitive_types::{H160, U256};
 
