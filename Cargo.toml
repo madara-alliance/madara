@@ -30,8 +30,19 @@ members = [
   "madara/crates/cairo-test-contracts",
 
   "orchestrator",
+  "orchestrator/crates/da-clients/da-client-interface",
+  "orchestrator/crates/da-clients/ethereum",
+  "orchestrator/crates/prover-clients/prover-client-interface",
+  "orchestrator/crates/prover-clients/gps-fact-checker",
+  "orchestrator/crates/prover-clients/sharp-service",
+  "orchestrator/crates/prover-clients/atlantic-service",
+  "orchestrator/crates/utils",
+  "orchestrator/crates/settlement-clients/settlement-client-interface",
+  "orchestrator/crates/settlement-clients/ethereum",
+  "orchestrator/crates/settlement-clients/starknet",
+
   # "e2e-tests",
-  # "bootstrapper",
+  "bootstrapper",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
@@ -86,9 +97,14 @@ default-members = [
   "bootstrapper/crates/bootstrapper",
 =======
   "madara",
+<<<<<<< HEAD
   "orchestrator",
   # "bootstrapper"
 >>>>>>> 752f16f3 (build(madara): separate target)
+=======
+  # "orchestrator",
+  "bootstrapper",
+>>>>>>> 99dd9133 (build(bootstrapper): separate target)
 ]
 
 [workspace.lints.rust]
