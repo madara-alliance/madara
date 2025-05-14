@@ -37,14 +37,13 @@ impl EventWorker {
     /// * `config` - The configuration for the EventWorker
     /// # Returns
     /// * `EventWorker` - A new EventWorker instance
-    pub fn new(queue_type: QueueType, config: Arc<Config>) -> Self {
+    pub fn new(queue_type: QueueType, config: Arc<Config>, concurrency_limit: Option<usize>) -> Self {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
-        let concurrency_limit = 1;
         Self {
             queue_type,
             config,
             shutdown: Arc::new(Notify::new()),
-            concurrency_limit,
+            concurrency_limit: concurrency_limit.unwrap_or(1),
             semaphore: Arc::new(tokio::sync::Semaphore::new(concurrency_limit)),
         }
     }
