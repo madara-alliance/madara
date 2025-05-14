@@ -1,4 +1,5 @@
 [workspace]
+<<<<<<< HEAD
 members = [
   "madara",
   "madara/crates/client/db",
@@ -106,6 +107,20 @@ default-members = [
   "bootstrapper",
 >>>>>>> 99dd9133 (build(bootstrapper): separate target)
 ]
+=======
+members = ["madara", "orchestrator", "e2e-tests", "bootstrapper"]
+resolver = "2"
+# Everything except test-related packages, so that they are not compiled when doing `cargo build`.
+default-members = ["madara", "orchestrator", "bootstrapper"]
+
+[workspace.package]
+authors = ["Madara <https://github.com/madara-alliance>"]
+homepage = "https://madara.build"
+edition = "2021"
+repository = "https://github.com/madara-alliance/madara/"
+version = "0.8.0"
+license = "Apache-2.0"
+>>>>>>> e398dec7 (build(orchestrator): separate target)
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -137,14 +152,6 @@ lto = "fat"          # Enables Link Time Optimization, enabling more aggressive 
 opt-level = 3        # Optimize for speed regardless of binary size or compile time
 rpath = false        # Disables adding rpath to the binary
 strip = "symbols"    # Removes debug info and symbold from final binary
-
-[workspace.package]
-authors = ["Madara <https://github.com/madara-alliance>"]
-homepage = "https://madara.build"
-edition = "2021"
-repository = "https://github.com/madara-alliance/madara/"
-version = "0.8.0"
-license = "Apache-2.0"
 
 [workspace.dependencies]
 rocksdb = "0.22"
@@ -385,7 +392,7 @@ orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clie
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
-orchestrator-core = { path = "orchestrator/crates/orchestrator" }
+orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
 
 [patch.crates-io]
