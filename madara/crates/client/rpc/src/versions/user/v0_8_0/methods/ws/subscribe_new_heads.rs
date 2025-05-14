@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use mp_block::{BlockId, BlockTag};
 
 use crate::errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError};
@@ -56,7 +58,7 @@ pub async fn subscribe_new_heads(
         }
     };
 
-    let mut rx = starknet.backend.subscribe_block_info();
+    let mut rx = starknet.backend.subscribe_closed_blocks();
     for n in block_n.. {
         if sink.is_closed() {
             return Ok(());
@@ -65,7 +67,7 @@ pub async fn subscribe_new_heads(
         let block_info = match starknet.backend.get_block_info(&BlockId::Number(n)) {
             Ok(Some(block_info)) => {
                 let err = || format!("Failed to retrieve block info for block {n}");
-                block_info.as_nonpending_owned().ok_or_else_internal_server_error(err)?
+                block_info.into_closed().ok_or_else_internal_server_error(err)?
             }
             Ok(None) => break,
             Err(e) => {
@@ -84,7 +86,7 @@ pub async fn subscribe_new_heads(
             block_info = rx.recv() => {
                 let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
                 if block_info.header.block_number == block_n {
-                    break send_block_header(&sink, block_info, block_n).await?;
+                    break send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
                 }
             },
             _ = sink.closed() => {
@@ -99,7 +101,7 @@ pub async fn subscribe_new_heads(
             block_info = rx.recv() => {
                 let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
                 if block_info.header.block_number == block_n + 1 {
-                    send_block_header(&sink, block_info, block_n).await?;
+                    send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
                 } else {
                     let err = format!(
                         "Received non-sequential block {}, expected {}",
@@ -169,7 +171,7 @@ mod test {
                 .get_block_info(&BlockId::Number(n))
                 .expect("Retrieving block info")
                 .expect("Retrieving block info")
-                .as_nonpending_owned()
+                .into_closed()
                 .expect("Retrieving block info");
 
             NewHead::from(block_info)

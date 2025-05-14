@@ -1,5 +1,6 @@
 use anyhow::Context;
 use clap::ArgGroup;
+use l2::L2SyncParams;
 use mp_chain_config::ChainConfig;
 use mp_utils::crypto::ZeroingPrivateKey;
 use serde::{Deserialize, Serialize};
@@ -16,6 +17,7 @@ pub mod l1;
 pub mod l2;
 pub mod rpc;
 pub mod telemetry;
+pub mod validator;
 
 pub use analytics::*;
 pub use block_production::*;
@@ -23,9 +25,9 @@ pub use chain_config_overrides::*;
 pub use db::*;
 pub use gateway::*;
 pub use l1::*;
-pub use l2::*;
 pub use rpc::*;
 pub use telemetry::*;
+pub use validator::*;
 
 /// Combines multiple cli args into a single easy to use preset
 ///
@@ -177,6 +179,10 @@ pub struct RunCmd {
     #[allow(missing_docs)]
     #[clap(flatten)]
     pub rpc_params: RpcParams,
+
+    #[allow(missing_docs)]
+    #[clap(flatten)]
+    pub validator_params: ValidatorParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

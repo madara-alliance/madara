@@ -671,7 +671,7 @@ mod starknet_client_messaging_test {
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::{fixture, rstest};
@@ -714,14 +714,7 @@ mod starknet_client_messaging_test {
         })
         .await?;
 
-        let l1_gas_setter = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-
-        let mempool = Arc::new(Mempool::new(
-            Arc::clone(db.backend()),
-            Arc::clone(&l1_data_provider),
-            MempoolLimits::for_testing(),
-        ));
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 
         // Return all resources bundled together
         Ok(StarknetClientTextFixture {
