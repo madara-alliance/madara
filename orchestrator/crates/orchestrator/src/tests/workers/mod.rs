@@ -1,4 +1,3 @@
-mod batching;
 #[cfg(test)]
 pub mod proving;
 #[cfg(test)]
