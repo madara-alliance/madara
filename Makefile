@@ -305,7 +305,7 @@ starkgate-contracts-latest: setup-venv
 	./scripts/setup.sh && \
 	FILES=$$(cat src/solidity/files_to_compile.txt) && \
 	$(SOLC) $$FILES --allow-paths .=., --optimize --optimize-runs 200 --overwrite --combined-json abi,bin -o artifacts && \
-	./scripts/extract_artifacts.py	
+	./scripts/extract_artifacts.py
 	# Copying Contracts
 	mkdir -p artifacts/upgrade-contracts
 	cp lib/starkgate-contracts-latest/artifacts/StarknetEthBridge.json artifacts/upgrade-contracts/eth_bridge_upgraded.json

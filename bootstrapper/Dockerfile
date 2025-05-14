@@ -200,6 +200,7 @@ FROM debian:buster-slim
 # Copy only the compiled binary and artifacts
 COPY --from=builder /app/target/release/madara-bootstrapper /usr/local/bin/
 COPY --from=builder /app/artifacts /app/artifacts
+COPY --from=builder /app/src/contracts/ /app/src/contracts/
 
 # Set working directory
 WORKDIR /app
