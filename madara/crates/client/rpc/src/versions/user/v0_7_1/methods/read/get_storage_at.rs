@@ -59,7 +59,7 @@ pub fn get_storage_at(
             .backend
             .get_contract_class_hash_at(&block_id, &contract_address)
             .or_internal_server_error("Failed to check if contract is deployed")?
-            .ok_or(StarknetRpcApiError::ContractNotFound)?;
+            .ok_or(StarknetRpcApiError::contract_not_found())?;
     }
 
     let storage = starknet
@@ -98,7 +98,7 @@ mod tests {
                     for (key_i, _) in keys.iter().enumerate() {
                         assert_eq!(
                             get_storage_at(&rpc, contracts[contract_i], keys[key_i], block_n.clone()),
-                            Err(StarknetRpcApiError::ContractNotFound),
+                            Err(StarknetRpcApiError::contract_not_found()),
                             "get storage at blockid {block_n:?}, contract #{contract_i}, key #{key_i} should not found"
                         );
                     }
@@ -149,12 +149,12 @@ mod tests {
         let block_n = BlockId::Number(0);
         assert_eq!(
             get_storage_at(&rpc, contracts[1], keys[0], block_n.clone()),
-            Err(StarknetRpcApiError::ContractNotFound)
+            Err(StarknetRpcApiError::contract_not_found())
         );
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
         assert_eq!(
             get_storage_at(&rpc, does_not_exist, keys[0], block_n.clone()),
-            Err(StarknetRpcApiError::ContractNotFound)
+            Err(StarknetRpcApiError::contract_not_found())
         );
         assert_eq!(
             get_storage_at(&rpc, contracts[0], keys[1], block_n),

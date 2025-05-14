@@ -32,7 +32,7 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
     {
         Ok(block_info) => {
             let current_block_info =
-                block_info.as_nonpending().ok_or_internal_server_error("Latest block cannot be pending")?;
+                block_info.as_closed().ok_or_internal_server_error("Latest block cannot be pending")?;
             let current_block_num = current_block_info.header.block_number;
             let current_block_hash = current_block_info.block_hash;
             (current_block_num, current_block_hash)
@@ -59,7 +59,7 @@ pub async fn syncing(starknet: &Starknet) -> StarknetRpcResult<SyncingStatus> {
                             starting_block_n
                         ))?;
                     let starting_block_info = starting_block_info
-                        .as_nonpending()
+                        .as_closed()
                         .ok_or_internal_server_error("Starting block cannot be pending")?;
                     (starting_block_n, starting_block_info.block_hash)
                 }

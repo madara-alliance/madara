@@ -1,8 +1,41 @@
-use mc_db::{MadaraBackendConfig, TrieLogConfig};
+use mc_db::{MadaraBackendConfig, RocksDBConfig, TrieLogConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-#[derive(Clone, Debug, clap::Args, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
+pub enum StatsLevel {
+    /// Disable all metrics
+    DisableAll,
+    /// Disable timer stats, and skip histogram stats
+    ExceptHistogramOrTimers,
+    /// Skip timer stats
+    ExceptTimers,
+    /// Collect all stats except time inside mutex lock AND time spent on
+    /// compression.
+    ExceptDetailedTimers,
+    /// Collect all stats except the counters requiring to get time inside the
+    /// mutex lock.
+    ExceptTimeForMutex,
+    /// Collect all stats, including measuring duration of mutex operations.
+    /// If getting time is expensive on the platform to run, it can
+    /// reduce scalability to more threads, especially for writes.
+    All,
+}
+
+impl From<StatsLevel> for mc_db::StatsLevel {
+    fn from(value: StatsLevel) -> Self {
+        match value {
+            StatsLevel::DisableAll => Self::DisableAll,
+            StatsLevel::ExceptHistogramOrTimers => Self::ExceptHistogramOrTimers,
+            StatsLevel::ExceptTimers => Self::ExceptTimers,
+            StatsLevel::ExceptDetailedTimers => Self::ExceptDetailedTimers,
+            StatsLevel::ExceptTimeForMutex => Self::ExceptTimeForMutex,
+            StatsLevel::All => Self::All,
+        }
+    }
+}
+
+#[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
 pub struct DbParams {
     /// The path where madara will store the database. You should probably change it.
     #[clap(env = "MADARA_BASE_PATH", long, default_value = "/tmp/madara", value_name = "PATH")]
@@ -51,19 +84,61 @@ pub struct DbParams {
     /// might be an issue for chains which synchronize slowly.
     #[clap(env = "MADARA_FLUSH_EVERY_N_BLOCKS", long, value_name = "NUMBER OF BLOCKS")]
     pub flush_every_n_blocks: Option<u64>,
+
+    /// Enable rocksdb statistics. This has a small performance cost for every database operation.
+    /// Statistics are dumped into the `LOG` file in the rocksdb database directory.
+    #[clap(env = "MADARA_DB_ENABLE_STATISTICS", long)]
+    pub db_enable_statistics: bool,
+
+    /// If not zero, the rocksdb statistics will be dumped into the db LOG file with this frequency.
+    /// The argument `--db-enable-statistics` is needed for this argument to have an effect.
+    #[clap(env = "MADARA_DB_STATISTICS_PERIOD_SEC", long, default_value_t = 60)]
+    pub db_statistics_period_sec: u32,
+
+    /// Level of statistics. Collection all statistics may have a performance hit.
+    /// The argument `--db-enable-statistics` is needed for this argument to have an effect.
+    #[clap(env = "MADARA_DB_STATISTICS_LEVEL", long)]
+    pub db_statistics_level: Option<StatsLevel>,
+
+    /// Set the memtable budget for a set of columns.
+    #[clap(env = "MADARA_DB_MEMTABLE_BLOCKS_BUDGET_MIB", long, default_value_t = 1024)]
+    pub db_memtable_blocks_budget_mib: usize,
+
+    /// Set the memtable budget for a set of columns.
+    #[clap(env = "MADARA_DB_MEMTABLE_CONTRACTS_BUDGET_MIB", long, default_value_t = 128)]
+    pub db_memtable_contracts_budget_mib: usize,
+
+    /// Set the memtable budget for a set of columns.
+    #[clap(env = "MADARA_DB_MEMTABLE_OTHER_BUDGET_MIB", long, default_value_t = 128)]
+    pub db_memtable_other_budget_mib: usize,
+
+    /// Set the rocksdb prefix bloom filter ratio.
+    #[clap(env = "MADARA_DB_MEMTABLE_PREFIX_BLOOM_FILTER_RATIO", long, default_value_t = 0.0)]
+    pub db_memtable_prefix_bloom_filter_ratio: f64,
 }
 
 impl DbParams {
     pub fn backend_config(&self) -> MadaraBackendConfig {
-        MadaraBackendConfig::new(&self.base_path)
-            .restore_from_latest_backup(self.restore_from_latest_backup)
-            .backup_dir(self.backup_dir.clone())
-            .trie_log(TrieLogConfig {
+        MadaraBackendConfig {
+            base_path: self.base_path.clone(),
+            backup_dir: self.backup_dir.clone(),
+            restore_from_latest_backup: self.restore_from_latest_backup,
+            trie_log: TrieLogConfig {
                 max_saved_trie_logs: self.db_max_saved_trie_logs,
                 max_kept_snapshots: self.db_max_kept_snapshots,
                 snapshot_interval: self.db_snapshot_interval,
-            })
-            .backup_every_n_blocks(self.backup_every_n_blocks)
-            .flush_every_n_blocks(self.flush_every_n_blocks)
+            },
+            backup_every_n_blocks: self.backup_every_n_blocks,
+            flush_every_n_blocks: self.flush_every_n_blocks,
+            rocksdb: RocksDBConfig {
+                enable_statistics: self.db_enable_statistics,
+                statistics_period_sec: self.db_statistics_period_sec,
+                statistics_level: self.db_statistics_level.unwrap_or(StatsLevel::All).into(),
+                memtable_blocks_budget_mib: self.db_memtable_blocks_budget_mib,
+                memtable_contracts_budget_mib: self.db_memtable_contracts_budget_mib,
+                memtable_other_budget_mib: self.db_memtable_other_budget_mib,
+                memtable_prefix_bloom_filter_ratio: self.db_memtable_prefix_bloom_filter_ratio,
+            },
+        }
     }
 }
