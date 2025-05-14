@@ -134,7 +134,9 @@ impl SettlementClient for StarknetSettlementClient {
         let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
         let onchain_data_size = crypto_bigint::U256::from_be_bytes(onchain_data_size).into();
-        let invoke_result = core_contract.update_state(program_output.clone(), program_output, onchain_data_hash, onchain_data_size).await?;
+        let invoke_result = core_contract
+            .update_state(program_output.clone(), program_output, onchain_data_hash, onchain_data_size)
+            .await?;
         tracing::info!(
             log_type = "completed",
             category = "update_state",
