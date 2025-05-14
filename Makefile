@@ -177,19 +177,6 @@ restart: clean
 frestart: fclean
 	@$(MAKE) --silent start
 
-.PHONY: snos
-snos:
-	rm -rf orchestrator_venv && \
-	python3.9 -m venv orchestrator_venv && \
-	. ./orchestrator_venv/bin/activate && \
-	pip install cairo-lang==0.13.2 "sympy<1.13.0" && \
-	mkdir -p orchestrator/build && \
-	git submodule update --init --recursive && \
-	cd orchestrator/cairo-lang && \
-	git checkout $(CAIRO_LANG_COMMIT) && \
-	cd ../.. && \
-	cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src
-
 # =============================================================================
 # Starknet Contract Build System
 # =============================================================================
@@ -197,9 +184,16 @@ snos:
 # StarkGate, Braavos, and Argent. It handles both legacy and latest versions,
 # supporting multiple architectures (amd64/arm64).
 
+ARTIFACTS := ./build_artifacts
+
 .PHONY: artifacts
 artifacts:
-	@if [ -d "artifacts" ]; then \
+	@if [ -d "$(ARTIFACTS)/argent"           ] || \
+			[ -d "$(ARTIFACTS)/bravoos"          ] || \
+			[ -d "$(ARTIFACTS)/cairo_lang"       ] || \
+			[ -d "$(ARTIFACTS)/starkgate_latest" ] || \
+			[ -d "$(ARTIFACTS)/starkgate_legacy" ]; \
+	then \
 		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
 		read ans && \
 		case "$$ans" in \
@@ -207,10 +201,14 @@ artifacts:
 		*) false;; \
 	esac \
 	fi
-	@rm -rf artifacts
-	@docker build -f lib/Dockerfile -t contracts .
+	@rm -rf "$(ARTIFACTS)/argent"
+	@rm -rf "$(ARTIFACTS)/bravoos"
+	@rm -rf "$(ARTIFACTS)/cairo_lang"
+	@rm -rf "$(ARTIFACTS)/starkgate_latest"
+	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
+	@docker build -f $(ARTIFACTS)/Dockerfile -t contracts .
 	@docker create --name contracts contracts do-nothing > /dev/null
-	@docker cp contracts:/artifacts .
+	@docker cp contracts:/artifacts/. $(ARTIFACTS)
 	@docker rm contracts > /dev/null
 
 .PHONY: check
