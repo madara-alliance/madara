@@ -11,11 +11,11 @@ mod into_starknet_api;
 mod to_blockifier;
 mod to_starknet_types;
 
-// pub mod broadcasted;
 pub mod compute_hash;
 pub mod utils;
+pub mod validated;
 
-pub use to_blockifier::{BroadcastedTransactionExt, ToBlockifierError};
+pub use to_blockifier::*;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -188,6 +188,17 @@ impl Transaction {
             Transaction::Declare(tx) => tx.version(),
             Transaction::Deploy(tx) => tx.version(),
             Transaction::DeployAccount(tx) => tx.version(),
+        }
+    }
+
+    // Note: warning on what this nonce is for l1 handler txs.
+    pub fn nonce(&self) -> Felt {
+        match self {
+            Transaction::Invoke(tx) => *tx.nonce(),
+            Transaction::L1Handler(tx) => tx.nonce.into(),
+            Transaction::Declare(tx) => *tx.nonce(),
+            Transaction::Deploy(_) => Felt::ZERO,
+            Transaction::DeployAccount(tx) => *tx.nonce(),
         }
     }
 

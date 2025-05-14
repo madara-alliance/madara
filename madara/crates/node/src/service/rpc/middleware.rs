@@ -61,17 +61,17 @@ where
             let rp = inner.call(req.clone()).await;
 
             let method = req.method_name();
-            let status = rp.as_error_code().unwrap_or(200);
-            let res_len = rp.as_result().len();
-            let response_time = now.elapsed();
+            let status = rp.as_error_code().unwrap_or(200) as i64;
+            let res_len = rp.as_result().len() as u64;
+            let response_time = now.elapsed().as_micros();
 
             tracing::info!(
                 target: "rpc_calls",
                 method = method,
                 status = status,
                 res_len = res_len,
-                response_time = response_time.as_micros(),
-                "{method} {status} {res_len} - {response_time:?}",
+                response_time = response_time,
+                "{method} {status} {res_len} - {response_time} micros",
             );
 
             metrics.on_response(&req, &rp, now);
