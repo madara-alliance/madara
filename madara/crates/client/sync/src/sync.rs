@@ -146,24 +146,21 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     fn target_height(&self) -> Option<u64> {
-        let current_head = self.current_l1_head.as_ref().map(|h| h.block_number)?;
+        let current_head = self.current_l1_head.as_ref().and_then(|h| h.block_number);
+        let probe_block = self.probe.last_val().map(|v| v.block_number);
 
-        let target_block = cmp::max(
-            current_head,
-            match self.probe.last_val() {
-                Some(v) => Some(v.block_number),
-                None => return None,
-            },
-        );
+        let target_block = match (current_head, probe_block) {
+            (Some(head), Some(probe)) => Some(cmp::max(head, probe)),
+            (Some(head), None) => Some(head),
+            (None, Some(probe)) => Some(probe),
+            (None, None) => None,
+        };
 
         // Bound by stop_at_block_n
-        if let Some(stop_at) = self.config.stop_at_block_n {
-            if target_block >= Some(stop_at) {
-                return Some(stop_at);
-            }
+        match (target_block, self.config.stop_at_block_n) {
+            (Some(target), Some(stop_at)) if target >= stop_at => Some(stop_at),
+            _ => target_block,
         }
-
-        target_block
     }
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
