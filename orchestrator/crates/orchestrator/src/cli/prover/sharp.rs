@@ -3,7 +3,8 @@ use url::Url;
 
 /// Parameters used to config Sharp.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["sharp_customer_id", "sharp_url", "sharp_user_crt", "sharp_user_key", "sharp_server_crt", "gps_verifier_contract_address", "sharp_rpc_node_url"])]
+#[group(requires_all = ["sharp_customer_id", "sharp_url", "sharp_user_crt", "sharp_user_key", "sharp_server_crt", "gps_verifier_contract_address", "sharp_rpc_node_url"]
+)]
 pub struct SharpCliArgs {
     /// Use the Sharp prover.
     #[arg(long)]

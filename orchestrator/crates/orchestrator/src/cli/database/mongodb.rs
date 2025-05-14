@@ -9,7 +9,8 @@ pub struct MongoDBCliArgs {
     pub mongodb: bool,
 
     /// The connection string to the MongoDB server.
-    #[arg(env = "MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL", long, default_value = Some("mongodb://localhost:27017"))]
+    #[arg(env = "MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL", long, default_value = Some("mongodb://localhost:27017")
+    )]
     pub mongodb_connection_url: Option<String>,
 
     /// The name of the database.

@@ -20,4 +20,8 @@ pub struct AWSConfigCliArgs {
     /// The region.
     #[arg(env = "AWS_REGION", long)]
     pub aws_region: String,
+
+    /// The region.
+    #[arg(env = "MADARA_ORCHESTRATOR_AWS_PREFIX", long, default_value = "madara-orchestrator")]
+    pub aws_prefix: String,
 }
