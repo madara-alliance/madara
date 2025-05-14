@@ -35,16 +35,65 @@ use mp_state_update::{ContractStorageDiffItem, DeclaredClassItem, NonceUpdate, S
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use opentelemetry::KeyValue;
+use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::mem;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Instant;
 
 mod close_block;
 mod finalize_execution_state;
 pub mod metrics;
+
+/// Block production mode.
+///
+/// This enum defines the different modes for triggering block closure.
+#[derive(Default, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum BlockProductionMode {
+    /// Uses periodic time intervals to trigger block production.
+    ///
+    /// In this mode, blocks are produced at regular intervals defined by the chain configuration.
+    TimedTicks,
+
+    /// Relies exclusively on external triggers to produce blocks.
+    ///
+    /// In this mode, blocks are only produced when explicitly triggered through an external channel,
+    /// allowing for manual or event-driven block production.
+    ExternalTrigger,
+
+    /// Combines both timed intervals and external triggers.
+    ///
+    /// This mode allows blocks to be produced both at regular intervals and when explicitly
+    /// triggered through an external channel, providing maximum flexibility.
+    #[default]
+    Hybrid,
+}
+
+impl FromStr for BlockProductionMode {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "timed-ticks" => Ok(BlockProductionMode::TimedTicks),
+            "external-trigger" => Ok(BlockProductionMode::ExternalTrigger),
+            "hybrid" => Ok(BlockProductionMode::Hybrid),
+            _ => Err(format!("Invalid block production mode: {s}")),
+        }
+    }
+}
+
+impl ToString for BlockProductionMode {
+    fn to_string(&self) -> String {
+        match self {
+            BlockProductionMode::TimedTicks => "timed-ticks".to_string(),
+            BlockProductionMode::ExternalTrigger => "external-trigger".to_string(),
+            BlockProductionMode::Hybrid => "hybrid".to_string(),
+        }
+    }
+}
 
 #[derive(Default, Clone)]
 struct ContinueBlockStats {
@@ -114,6 +163,8 @@ pub struct BlockProductionTask<Mempool: MempoolProvider> {
     l1_data_provider: Arc<dyn L1DataProvider>,
     current_pending_tick: usize,
     metrics: Arc<BlockProductionMetrics>,
+    production_mode: BlockProductionMode,
+    external_trigger: Option<Arc<tokio::sync::Notify>>,
 }
 
 impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
@@ -210,6 +261,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
         l1_data_provider: Arc<dyn L1DataProvider>,
+        production_mode: BlockProductionMode,
+        external_trigger: Option<Arc<tokio::sync::Notify>>,
     ) -> Result<Self, Error> {
         if let Err(err) = Self::close_pending_block(&backend, &metrics).await {
             // This error should not stop block production from working. If it happens, that's too bad. We drop the pending state and start from
@@ -239,6 +292,8 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
             declared_classes: Default::default(),
             l1_data_provider,
             metrics,
+            production_mode,
+            external_trigger,
         })
     }
 
@@ -530,7 +585,7 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
 
         loop {
             tokio::select! {
-                instant = interval_block_time.tick() => {
+                instant = interval_block_time.tick(), if matches!(self.production_mode, BlockProductionMode::Hybrid | BlockProductionMode::TimedTicks) => {
                     if let Err(err) = self.on_block_time().await {
                         tracing::error!("Block production task has errored: {err:#}");
                         // Clear pending block. The reason we do this is because
@@ -571,6 +626,24 @@ impl<Mempool: MempoolProvider> BlockProductionTask<Mempool> {
                             tracing::error!("Pending block update task has errored: {err:#}");
                         }
                     }
+                },
+                _ = async {
+                    if let Some(trigger) = self.external_trigger.as_ref() {
+                        trigger.notified().await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                }, if matches!(self.production_mode, BlockProductionMode::Hybrid | BlockProductionMode::ExternalTrigger) => {
+                    if let Err(err) = self.on_block_time().await {
+                        tracing::error!("Block production (external trigger) errored: {err:#}");
+                        if let Err(err) = self.backend.clear_pending_block() {
+                            tracing::error!("Error while clearing the pending block in recovery of external trigger: {err:#}");
+                        }
+                    }
+                    // Reset tick state to sync back with timers if needed
+                    self.current_pending_tick = 0;
+                    interval_block_time.reset();
+                    interval_pending_block_update.reset();
                 },
                 _ = ctx.cancelled() => break,
             }

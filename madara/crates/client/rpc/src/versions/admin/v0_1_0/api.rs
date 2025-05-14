@@ -1,5 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mp_block::MadaraBlockInfo;
 use mp_rpc::{admin::BroadcastedDeclareTxnV0, ClassAndTxnHash};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,9 @@ pub trait MadaraWriteRpcApi {
         &self,
         declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash>;
+
+    #[method(name = "closeBlock")]
+    async fn close_block(&self) -> RpcResult<MadaraBlockInfo>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]
