@@ -43,8 +43,8 @@ impl StateUpdateWorker {
 
         match state_update.block_number {
             Some(block_num) => {
-                self.block_metrics.l1_block_number.record(block_num as u64, &[]);
-                self.backend.write_last_confirmed_block(block_num as u64).map_err(|e| {
+                self.block_metrics.l1_block_number.record(block_num, &[]);
+                self.backend.write_last_confirmed_block(block_num).map_err(|e| {
                     SettlementClientError::DatabaseError(format!("Failed to write last confirmed block: {}", e))
                 })?;
                 tracing::debug!("update_l1: wrote last confirmed block number: {}", block_num);
