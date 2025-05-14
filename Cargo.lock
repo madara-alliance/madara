@@ -1213,7 +1213,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/notlesh/zaun?branch=madara-monorepo#537249e843997768cefddc022e275a98dadb7757"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.0#17cce3512269919d653d9daa1cb84e088a26c6d9"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1223,17 +1223,17 @@ dependencies = [
  "log",
  "num-traits 0.2.19",
  "serde_json",
- "starknet 0.12.0",
- "starknet-accounts 0.11.0",
- "starknet-core 0.12.0",
+ "starknet 0.11.0",
+ "starknet-accounts 0.10.0",
+ "starknet-core 0.11.1",
  "starknet-ff",
- "starknet-providers 0.12.0",
+ "starknet-providers 0.11.0",
 ]
 
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/notlesh/zaun?branch=madara-monorepo#537249e843997768cefddc022e275a98dadb7757"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.0#17cce3512269919d653d9daa1cb84e088a26c6d9"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -1241,13 +1241,13 @@ dependencies = [
  "log",
  "num-traits 0.2.19",
  "serde_json",
- "starknet 0.12.0",
- "starknet-accounts 0.11.0",
- "starknet-contract 0.11.0",
- "starknet-core 0.12.0",
+ "starknet 0.11.0",
+ "starknet-accounts 0.10.0",
+ "starknet-contract 0.10.0",
+ "starknet-core 0.11.1",
  "starknet-ff",
- "starknet-providers 0.12.0",
- "starknet-signers 0.10.0",
+ "starknet-providers 0.11.0",
+ "starknet-signers 0.9.0",
  "thiserror 1.0.65",
  "url",
 ]
