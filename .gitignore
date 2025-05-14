@@ -63,6 +63,7 @@ starknet-e2e-test/contracts/build
 output*
 
 build*
+!build_artifacts
 
 tmp/
 
