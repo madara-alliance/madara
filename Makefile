@@ -72,7 +72,7 @@ Targets:
   Runs various types of tests for the codebase.
 
   - test-e2e          Run end-to-end tests
-  - test-unit         Run unit tests with coverage report
+  - test-orchestrator Run unit tests with coverage report
   - test              Run all tests (e2e and unit)
 
   [ OTHER COMMANDS ]
@@ -423,8 +423,8 @@ test-e2e:
 	@RUST_LOG=info cargo nextest run --release --features testing --workspace test_orchestrator_workflow -E 'test(test_orchestrator_workflow)' --no-fail-fast
 	@echo -e "$(PASS)E2E tests completed!$(RESET)"
 
-.PHONY: test-unit
-test-unit:
+.PHONY: test-orchestrator
+test-orchestrator:
 	@echo -e "$(DIM)Running unit tests with coverage...$(RESET)"
 	@RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
 		--release \
@@ -437,7 +437,7 @@ test-unit:
 	@echo -e "$(PASS)Unit tests completed!$(RESET)"
 
 .PHONY: test
-test: test-e2e test-unit
+test: test-e2e test-orchestrator
 	@echo -e "$(PASS)All tests completed!$(RESET)"
 
 .PHONY: pre-push
