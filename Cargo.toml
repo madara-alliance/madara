@@ -349,7 +349,7 @@ stark_evm_adapter = "0.1.1"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.0" }
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.1" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
