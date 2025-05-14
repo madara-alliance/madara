@@ -3,6 +3,7 @@ use cron::event_bridge::AWSEventBridgeCliArgs;
 use provider::aws::AWSConfigCliArgs;
 use url::Url;
 
+use crate::core::config::StarknetVersion;
 pub use server::ServerCliArgs as ServerParams;
 pub use service::ServiceCliArgs as ServiceParams;
 
@@ -141,6 +142,9 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
+    pub madara_version: StarknetVersion,
 
     // Service
     #[clap(flatten)]
