@@ -11,6 +11,7 @@ use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
+use std::os::unix::thread;
 use std::sync::Arc;
 use tracing::{debug, error, info, info_span};
 use tokio::sync::Notify;
@@ -37,13 +38,14 @@ impl EventWorker {
     /// * `config` - The configuration for the EventWorker
     /// # Returns
     /// * `EventWorker` - A new EventWorker instance
-    pub fn new(queue_type: QueueType, config: Arc<Config>, concurrency_limit: Option<usize>) -> Self {
+    pub fn new(queue_type: QueueType, config: Arc<Config>, thread_count: Option<usize>) -> Self {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
+        let concurrency_limit = thread_count.unwrap_or(1);
         Self {
             queue_type,
             config,
             shutdown: Arc::new(Notify::new()),
-            concurrency_limit: concurrency_limit.unwrap_or(1),
+            concurrency_limit,
             semaphore: Arc::new(tokio::sync::Semaphore::new(concurrency_limit)),
         }
     }
