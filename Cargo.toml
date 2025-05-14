@@ -1,6 +1,6 @@
 [workspace]
 members = [
-  # madara
+  "madara",
   "madara/crates/client/db",
   "madara/crates/client/exec",
   "madara/crates/client/sync",
@@ -14,7 +14,6 @@ members = [
   "madara/crates/client/mempool",
   "madara/crates/client/submit_tx",
   "madara/crates/client/block_production",
-  "madara/crates/node",
   "madara/crates/primitives/block",
   "madara/crates/primitives/bloom_filter",
   "madara/crates/primitives/convert",
@@ -30,26 +29,14 @@ members = [
   "madara/crates/tests",
   "madara/crates/cairo-test-contracts",
 
-  # orchestrator
-  "orchestrator/crates/orchestrator",
-  "orchestrator/crates/da-clients/da-client-interface",
-  "orchestrator/crates/da-clients/ethereum",
-  "orchestrator/crates/prover-clients/prover-client-interface",
-  "orchestrator/crates/prover-clients/gps-fact-checker",
-  "orchestrator/crates/prover-clients/sharp-service",
-  "orchestrator/crates/prover-clients/atlantic-service",
-  "orchestrator/crates/utils",
-  "orchestrator/crates/settlement-clients/settlement-client-interface",
-  "orchestrator/crates/settlement-clients/ethereum",
-  "orchestrator/crates/settlement-clients/starknet",
-  "e2e-tests",
-
-  # bootstrapper
-  "bootstrapper/crates/bootstrapper",
+  "orchestrator",
+  # "e2e-tests",
+  # "bootstrapper",
 ]
 resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
+<<<<<<< HEAD
   # madara
   "madara/crates/client/db",
   "madara/crates/client/exec",
@@ -97,6 +84,11 @@ default-members = [
 
   # bootstrapper
   "bootstrapper/crates/bootstrapper",
+=======
+  "madara",
+  "orchestrator",
+  # "bootstrapper"
+>>>>>>> 752f16f3 (build(madara): separate target)
 ]
 
 [workspace.lints.rust]
@@ -291,6 +283,7 @@ once_cell = "1.19"
 itertools = "0.13.0"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
+derive_more = { version = "2.0.1", features = ["from_str"] }
 
 # Error handling
 thiserror = "2.0"
