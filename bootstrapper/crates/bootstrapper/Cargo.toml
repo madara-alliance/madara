@@ -1,7 +1,11 @@
 [package]
 name = "madara-bootstrapper"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "bootstrapper"
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.80"
