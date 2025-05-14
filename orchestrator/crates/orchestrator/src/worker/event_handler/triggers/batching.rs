@@ -18,10 +18,7 @@ use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-
-const MAX_BLOB_SIZE: usize = 4096 * 6;
-
-const STATE_UPDATE_DIR: &str = "state_update";
+use crate::types::constant::{S3_STATE_UPDATE_DIR, MAX_BATCH_SIZE};
 
 pub struct BatchingTrigger;
 
@@ -47,7 +44,7 @@ impl JobTrigger for BatchingTrigger {
 
         // Getting the latest batch in DB
         let latest_batch = config.database().get_latest_batch().await?;
-        let latest_block_in_db = latest_batch.map(|batch| batch.start_block).unwrap_or(0);
+        let latest_block_in_db = latest_batch.map(|batch| batch.end_block).unwrap_or(0);
 
         // Calculating the first block number to for which a batch needs to be assigned
         let first_block_to_assign_batch = config
@@ -157,7 +154,7 @@ impl BatchingTrigger {
 
     /// get_state_update_file_name returns the file path for storing the state update in storage
     fn get_state_update_file_name(&self, batch_index: u64) -> String {
-        format!("{}/batch/{}.json", STATE_UPDATE_DIR, batch_index)
+        format!("{}/batch/{}.json", S3_STATE_UPDATE_DIR, batch_index)
     }
 
     /// start_new_batch starts a new batch
