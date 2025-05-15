@@ -42,7 +42,7 @@ jobs:
 
   # Build Madara binary
   build-madara:
-    needs: [lint-rust, lint-code-style]
+    needs: [lint-code-style]
     uses: ./.github/workflows/task-build-madara.yml
     secrets: inherit
 
