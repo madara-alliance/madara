@@ -1,6 +1,9 @@
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use color_eyre::eyre::eyre;
+use futures::future::try_join_all;
+use futures::stream;
+use futures::stream::StreamExt;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::{
@@ -9,6 +12,8 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+
+const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 100;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 pub async fn squash_state_updates(
@@ -84,37 +89,22 @@ pub async fn squash_state_updates(
 
     // Convert maps back to the required StateDiff format
     let mut no_of_contracts = 0;
-    // Storage diffs
-    for (contract_addr, storage_map) in storage_diffs_map {
-        let mut storage_entries = Vec::new();
 
-        // First check if contract existed at pre-range block
-        let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await;
+    let results: Vec<_> = stream::iter(storage_diffs_map)
+        .map(|(contract_addr, storage_map)| async move {
+            process_single_contract(contract_addr, storage_map, provider, pre_range_block).await
+        })
+        .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
+        .collect()
+        .await;
 
-        for (key, value) in storage_map {
-            if contract_existed {
-                // Only check pre-range value if the contract existed
-                let pre_range_value =
-                    check_pre_range_storage_value(&provider, contract_addr, key, pre_range_block).await?;
-
-                // Only include if values are different
-                if pre_range_value != value {
-                    storage_entries.push(StorageEntry { key, value });
-                }
-            } else {
-                // Contract didn't exist, so pre-range value was definitely 0
-                // Only include non-zero values
-                if value != Felt::ZERO {
-                    storage_entries.push(StorageEntry { key, value });
-                }
+    for result in results {
+        match result {
+            Ok(Some(contract_storage_diff)) => {
+                state_diff.storage_diffs.push(contract_storage_diff);
             }
-        }
-
-        // Only include contracts that have storage entries
-        if !storage_entries.is_empty() {
-            let contract_storage_diff = ContractStorageDiffItem { address: contract_addr, storage_entries };
-
-            state_diff.storage_diffs.push(contract_storage_diff);
+            Ok(None) => {} // No storage entries for this contract
+            Err(e) => return Err(e),
         }
         no_of_contracts += 1;
     }
@@ -150,12 +140,64 @@ pub async fn squash_state_updates(
     Ok(merged_update)
 }
 
+async fn process_single_contract(
+    contract_addr: Felt,
+    storage_map: HashMap<Felt, Felt>,
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+    pre_range_block: u64,
+) -> Result<Option<ContractStorageDiffItem>, JobError> {
+    let mut storage_entries = Vec::new();
+
+    // Check if contract existed at pre-range block
+    let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await;
+
+    if contract_existed {
+        // Process storage entries for existing contract
+        let storage_futures: Vec<_> = storage_map
+            .clone()
+            .into_iter()
+            .map(|(key, value)| {
+                let provider = provider.clone();
+                async move {
+                    let pre_range_value =
+                        check_pre_range_storage_value(&provider, contract_addr, key, pre_range_block).await?;
+
+                    Ok::<_, JobError>((key, value, pre_range_value))
+                }
+            })
+            .collect();
+
+        // Execute all storage checks concurrently
+        let results = try_join_all(storage_futures).await?;
+
+        // Process results
+        for (key, value, pre_range_value) in results {
+            if pre_range_value != value {
+                storage_entries.push(StorageEntry { key, value });
+            }
+        }
+    } else {
+        // Contract didn't exist, filter non-zero values
+        for (key, value) in storage_map {
+            if value != Felt::ZERO {
+                storage_entries.push(StorageEntry { key, value });
+            }
+        }
+    }
+
+    if !storage_entries.is_empty() {
+        Ok(Some(ContractStorageDiffItem { address: contract_addr, storage_entries }))
+    } else {
+        Ok(None)
+    }
+}
+
 pub async fn check_contract_existed_at_block(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     contract_address: Felt,
     block_number: u64,
 ) -> bool {
-    match provider.get_class_at(BlockId::Number(block_number), contract_address).await {
+    match provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await {
         Ok(_) => true,
         Err(_) => false,
     }

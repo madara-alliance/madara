@@ -7,7 +7,9 @@ use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::worker::event_handler::triggers::JobTrigger;
+use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::Provider;
@@ -15,11 +17,7 @@ use starknet_core::types::Felt;
 use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
-
-const MAX_BLOB_SIZE: usize = 4096 * 6;
-
-const STATE_UPDATE_DIR: &str = "state_update";
-const BLOB_DIR: &str = "blob";
+use tokio::try_join;
 
 pub struct BatchingTrigger;
 
@@ -104,8 +102,6 @@ impl BatchingTrigger {
 
                         let compressed_state_update =
                             self.compress_state_update(&new_state_update, config.params.madara_version).await?;
-
-                        eprintln!("Compressed state update size: {}", compressed_state_update.len());
 
                         if compressed_state_update.len() > MAX_BLOB_SIZE {
                             // We cannot add the current block in this batch
@@ -193,6 +189,7 @@ impl BatchingTrigger {
         state_update: &StateUpdate,
         madara_version: StarknetVersion,
     ) -> Result<Vec<Felt>, JobError> {
+        // FIXME: Update this to compress based on the starknet version being used
         // Perform stateful compression
         let stateful_compressed = stateful_compress(state_update).map_err(|err| JobError::Other(OtherError(err)))?;
         // Get a vector of felts from the compressed state update
@@ -202,12 +199,16 @@ impl BatchingTrigger {
     }
 
     /// get_state_update_file_name returns the file path for storing the state update in storage
-    fn get_state_update_file_name(&self, batch_index: u64) -> String {
-        format!("{}/batch/{}.json", STATE_UPDATE_DIR, batch_index)
+    fn get_state_update_file_path(&self, batch_index: u64) -> String {
+        format!("{}/batch/{}.json", STORAGE_STATE_UPDATE_DIR, batch_index)
     }
 
-    fn get_blob_file_name(&self, batch_index: u64) -> String {
-        format!("{}/batch/{}.txt", BLOB_DIR, batch_index)
+    fn get_blob_file_path(&self, batch_index: u64, blob_index: u64) -> String {
+        format!("{}/batch/{}/{}.txt", STORAGE_BLOB_DIR, batch_index, blob_index)
+    }
+
+    fn get_blob_dir_path(&self, batch_index: u64) -> String {
+        format!("{}/batch/{}", STORAGE_BLOB_DIR, batch_index)
     }
 
     /// start_new_batch starts a new batch
@@ -221,7 +222,12 @@ impl BatchingTrigger {
         compressed_state_update: &Vec<Felt>,
     ) -> Result<(), JobError> {
         // Create a new batch
-        let batch = Batch::create(batch_index, start_block, self.get_state_update_file_name(batch_index), self.get_blob_file_name(batch_index));
+        let batch = Batch::create(
+            batch_index,
+            start_block,
+            self.get_state_update_file_path(batch_index),
+            self.get_blob_dir_path(batch_index),
+        );
         // Put the state update and blob in storage
         self.store_state_update(storage, state_update, &batch).await?;
         self.store_blob(storage, compressed_state_update, &batch).await?;
@@ -230,6 +236,9 @@ impl BatchingTrigger {
         Ok(())
     }
 
+    /// update_batch updates the batch information in DB and storage
+    /// NOTE: compressed_state_update should be a vector of felts from which a blob is created
+    /// Make sure that this is compressed according to the specs of the Starknet Version being used
     async fn update_batch(
         &self,
         storage: &dyn StorageClient,
@@ -240,14 +249,17 @@ impl BatchingTrigger {
         end_block: u64,
         is_batch_ready: bool,
     ) -> Result<(), JobError> {
-        // Update state update and blob for the batch in storage
-        self.store_state_update(storage, &state_update, batch).await?;
-        self.store_blob(storage, compressed_state_update, batch).await?;
+        try_join!(
+            // Update state update and blob for the batch in storage
+            self.store_state_update(storage, &state_update, batch),
+            self.store_blob(storage, compressed_state_update, batch),
+        )?;
         // Update batch status in the database
         database.update_batch(batch, &BatchUpdates { end_block, is_batch_ready }).await?;
         Ok(())
     }
 
+    /// store_state_update stores the state_update in the DB
     async fn store_state_update(
         &self,
         storage: &dyn StorageClient,
@@ -255,23 +267,29 @@ impl BatchingTrigger {
         batch: &Batch,
     ) -> Result<(), JobError> {
         storage
-            .put_data(Bytes::from(serde_json::to_string(&state_update)?), &self.get_state_update_file_name(batch.index))
+            .put_data(Bytes::from(serde_json::to_string(&state_update)?), &self.get_state_update_file_path(batch.index))
             .await?;
         Ok(())
     }
 
+    /// store_blob stores the compressed_state_update in a blob format in the storage
+    /// NOTE: compressed_state_update should be a vector of felts from which a blob is created
+    /// Make sure that this is compressed according to the specs of the Starknet Version being used
     async fn store_blob(
         &self,
         storage: &dyn StorageClient,
         compressed_state_update: &Vec<Felt>,
         batch: &Batch,
     ) -> Result<(), JobError> {
-        storage
-            .put_data(
-                Bytes::from(convert_felt_vec_to_blob_data(compressed_state_update)),
-                &self.get_blob_file_name(batch.index),
-            )
-            .await?;
+        let blobs = convert_felt_vec_to_blob_data(compressed_state_update)?;
+        for (index, blob) in blobs.iter().enumerate() {
+            storage
+                .put_data(
+                    biguint_vec_to_u8_vec(blob.as_slice()).into(),
+                    &self.get_blob_file_path(batch.index, index as u64 + 1),
+                )
+                .await?;
+        }
         Ok(())
     }
 }

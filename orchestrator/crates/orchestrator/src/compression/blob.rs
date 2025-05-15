@@ -2,6 +2,7 @@ use crate::compression::constants::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::worker::event_handler::jobs::da::DAJobHandler;
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use rayon::prelude::*;
@@ -268,13 +269,13 @@ fn da_word(
 pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
     let input_len = elements.len();
     if input_len == 0 {
-        return Vec::new(); // Return empty vector for empty input
+        return Vec::new(); // Return an empty vector for an empty input
     }
 
     // Calculate the required output size: ceil(input_len / 4096.0) * 4096
     // Integer division trick: (input_len + 4095) / 4096 gives the ceiling division result
-    let num_blocks = (input_len + 4095) / 4096;
-    let output_len = num_blocks * 4096;
+    let num_blocks = (input_len + BLOB_LEN - 1) / BLOB_LEN;
+    let output_len = num_blocks * BLOB_LEN;
 
     // Initialize the vector with the calculated size, filled with zeros
     let mut biguint_vec = vec![BigUint::zero(); output_len];
@@ -393,10 +394,12 @@ pub fn create_blob_from_data(data: Vec<BigUint>) -> Vec<u8> {
     blob_data
 }
 
-pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> String {
-    create_blob_from_data(process_for_blob(convert_to_biguint(elements), None))
-        .iter()
-        .map(|x| x.to_string())
-        .collect()
-    // transformed_data.into_iter().map(|x| Felt::from(x)).collect()
+pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> Result<Vec<Vec<BigUint>>, JobError> {
+    let blob_data = convert_to_biguint(elements);
+    let num_blobs = (blob_data.len() + BLOB_LEN - 1) / BLOB_LEN; // ceil(len / BLOB_LEN)
+    let mut transformed_data = Vec::new();
+    for i in 0..num_blobs {
+        transformed_data.push(DAJobHandler::fft_transformation(blob_data[i..(BLOB_LEN * (i + 1))].to_vec())?);
+    }
+    Ok(transformed_data)
 }
