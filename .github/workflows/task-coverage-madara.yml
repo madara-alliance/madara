@@ -37,6 +37,12 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara
+
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov

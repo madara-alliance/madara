@@ -19,6 +19,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara
 
       - name: Run cli without arguments
         run: |
