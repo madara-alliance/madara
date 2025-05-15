@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-action.json
 name: Action - Setup Rust
-description: Sets up the Rust environment  with a configurable toolchain
+description: Sets up the Rust environment with a configurable toolchain
 
 inputs:
   rust-version:

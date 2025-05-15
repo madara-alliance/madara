@@ -36,7 +36,7 @@ impl SubmitTransactionSwitch {
         if self.ctx.service_status(MadaraServiceId::L2Sync).is_on() {
             Ok(&self.redirect_to_gateway)
         } else if self.ctx.service_status(MadaraServiceId::BlockProduction).is_on() {
-            Ok(&selfc.mempool_with_validator)
+            Ok(&self.mempool_with_validator)
         } else {
             Err(SubmitTransactionError::Internal(anyhow::anyhow!(ERROR)))
         }
