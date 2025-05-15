@@ -56,14 +56,14 @@ jobs:
 
   # Run JavaScript tests against the built binary
   test-js:
-    needs: test-madara
+    needs: build-madara
     uses: ./.github/workflows/task-test-js.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
 
   # Run CLI tests against the built binary
   test-cli:
-    needs: test-madara
+    needs: build-madara
     uses: ./.github/workflows/task-test-cli.yml
     secrets: inherit
 
@@ -87,7 +87,7 @@ jobs:
 
   # Run e2e tests
   test-e2e:
-    needs: test-orchestrator
+    needs: [build-madara, build-orchestrator]
     uses: ./.github/workflows/task-test-orchestrator-e2e.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
