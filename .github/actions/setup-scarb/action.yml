@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-action.json
+name: Action - Setup Scarb
+description: Sets up the Scarb environment with a configurable toolchain
+
+inputs:
+  scarb-version:
+    description: Scarb version to set up
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Scarb
+      uses: software-mansion/setup-scarb@v1
+      with:
+        scarb-version: ${{ inputs.scarb-version }}

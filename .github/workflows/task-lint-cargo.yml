@@ -19,6 +19,11 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
 
+      - name: Scarb setup
+        uses: ./.github/actions/setup-scarb
+        with:
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
+
       - name: Cargo fmt
         run: cargo fmt -- --check
 
