@@ -9,9 +9,6 @@ workspace = true
 [[bin]]
 name = "madara"
 
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "linker=clang", "-C", "link-arg=-fuse-ld=mold"]
-
 [dependencies]
 # Database
 bonsai-trie.workspace = true
