@@ -1,13 +1,22 @@
 use chrono::{SubsecRound, Utc};
 use uuid::Uuid;
 
-use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
+// use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+// use crate::jobs::metadata::{
+//     CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
+//     StateUpdateMetadata,
+// };
+// use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
+use crate::types::constant::{
+    BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+};
+use crate::types::jobs::external_id::ExternalId;
+use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::metadata::{
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
     StateUpdateMetadata,
 };
-use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-
+use crate::types::jobs::types::{JobStatus, JobType};
 // Test Util Functions
 // ==========================================
 
@@ -38,7 +47,7 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: internal_id,
-                input_path: Some(ProvingInputTypePath::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
+                input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", internal_id, CAIRO_PIE_FILE_NAME))),
                 ..Default::default()
             }),
         },

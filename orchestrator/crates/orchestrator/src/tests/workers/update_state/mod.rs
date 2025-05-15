@@ -4,15 +4,15 @@ use mockall::predicate::eq;
 use rstest::*;
 use uuid::Uuid;
 
-use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::jobs::job_handler_factory::mock_factory;
-use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
-use crate::jobs::state_update_job::StateUpdateJob;
-use crate::jobs::types::{JobStatus, JobType};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::workers::utils::{create_and_store_prerequisite_jobs, get_job_item_mock_by_id};
-use crate::workers::update_state::UpdateStateWorker;
-use crate::workers::Worker;
+use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
+use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
+use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
+use crate::worker::event_handler::triggers::JobTrigger;
 
 #[rstest]
 #[tokio::test]
@@ -27,10 +27,9 @@ async fn update_state_worker_with_pending_jobs() {
     let mut job_item = get_job_item_mock_by_id("1".to_string(), unique_id);
     job_item.status = JobStatus::PendingVerification;
     job_item.job_type = JobType::StateTransition;
-    services.config.database().create_job_item(job_item).await.unwrap();
+    services.config.database().create_job(job_item).await.unwrap();
 
-    let update_state_worker = UpdateStateWorker {};
-    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
         services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
@@ -51,11 +50,10 @@ async fn update_state_worker_first_block() {
     // Create both SNOS and DA jobs for block 0 with Completed status
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 0, JobStatus::Completed).await.unwrap();
 
-    let ctx = mock_factory::get_job_handler_context();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+    let ctx = get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
-    let update_state_worker = UpdateStateWorker {};
-    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
         services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
@@ -80,11 +78,10 @@ async fn update_state_worker_first_block_missing() {
     // Note: Block 0 and 1 are missing, so the worker should not create a job
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 2, JobStatus::Completed).await.unwrap();
 
-    let ctx = mock_factory::get_job_handler_context();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+    let ctx = get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
-    let update_state_worker = UpdateStateWorker {};
-    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     // update state worker should not create any job
     assert!(services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().is_none());
@@ -104,11 +101,10 @@ async fn update_state_worker_selects_consective_blocks() {
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 1, JobStatus::Completed).await.unwrap();
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 3, JobStatus::Completed).await.unwrap();
 
-    let ctx = mock_factory::get_job_handler_context();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+    let ctx = get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
-    let update_state_worker = UpdateStateWorker {};
-    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
         services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
@@ -169,13 +165,12 @@ async fn update_state_worker_continues_from_previous_state_update() {
     job_item.metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::StateUpdate(state_metadata) };
 
-    services.config.database().create_job_item(job_item).await.unwrap();
+    services.config.database().create_job(job_item).await.unwrap();
 
-    let ctx = mock_factory::get_job_handler_context();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+    let ctx = get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
-    let update_state_worker = UpdateStateWorker {};
-    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
         services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();
@@ -238,13 +233,12 @@ async fn update_state_worker_next_block_missing() {
     job_item.metadata =
         JobMetadata { common: CommonMetadata::default(), specific: JobSpecificMetadata::StateUpdate(state_metadata) };
 
-    services.config.database().create_job_item(job_item).await.unwrap();
+    services.config.database().create_job(job_item).await.unwrap();
 
-    let ctx = mock_factory::get_job_handler_context();
-    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJob)));
+    let ctx = get_job_handler_context();
+    ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
 
-    let update_state_worker = UpdateStateWorker {};
-    assert!(update_state_worker.run_worker(services.config.clone()).await.is_ok());
+    assert!(UpdateStateJobTrigger.run_worker(services.config.clone()).await.is_ok());
 
     let latest_job =
         services.config.database().get_latest_job_by_type(JobType::StateTransition).await.unwrap().unwrap();

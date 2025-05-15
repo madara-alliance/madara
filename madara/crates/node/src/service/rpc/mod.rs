@@ -1,20 +1,12 @@
-use std::sync::Arc;
-
-use jsonrpsee::server::ServerHandle;
-
-use mc_db::MadaraBackend;
-use mc_rpc::{
-    providers::{AddTransactionProvider, AddTransactionProviderGroup},
-    rpc_api_admin, rpc_api_user, Starknet,
-};
-use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
-
-use metrics::RpcMetrics;
-use server::{start_server, ServerConfig};
-
-use crate::cli::RpcParams;
-
 use self::server::rpc_api_build;
+use crate::{cli::RpcParams, submit_tx::MakeSubmitTransactionSwitch};
+use jsonrpsee::server::ServerHandle;
+use mc_db::MadaraBackend;
+use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
+use metrics::RpcMetrics;
+use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
+use server::{start_server, ServerConfig};
+use std::sync::Arc;
 
 mod metrics;
 mod middleware;
@@ -29,8 +21,7 @@ pub enum RpcType {
 pub struct RpcService {
     config: RpcParams,
     backend: Arc<MadaraBackend>,
-    add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
-    add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
+    submit_tx_provider: MakeSubmitTransactionSwitch,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
 }
@@ -39,33 +30,17 @@ impl RpcService {
     pub fn user(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
-        add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
-        add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
+        submit_tx_provider: MakeSubmitTransactionSwitch,
     ) -> Self {
-        Self {
-            config,
-            backend,
-            add_txs_provider_l2_sync,
-            add_txs_provider_mempool,
-            server_handle: None,
-            rpc_type: RpcType::User,
-        }
+        Self { config, backend, submit_tx_provider, server_handle: None, rpc_type: RpcType::User }
     }
 
     pub fn admin(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
-        add_txs_provider_l2_sync: Arc<dyn AddTransactionProvider>,
-        add_txs_provider_mempool: Arc<dyn AddTransactionProvider>,
+        submit_tx_provider: MakeSubmitTransactionSwitch,
     ) -> Self {
-        Self {
-            config,
-            backend,
-            add_txs_provider_l2_sync,
-            add_txs_provider_mempool,
-            server_handle: None,
-            rpc_type: RpcType::Admin,
-        }
+        Self { config, backend, submit_tx_provider, server_handle: None, rpc_type: RpcType::Admin }
     }
 }
 
@@ -74,8 +49,7 @@ impl Service for RpcService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
-        let add_tx_provider_l2_sync = Arc::clone(&self.add_txs_provider_l2_sync);
-        let add_tx_provider_mempool = Arc::clone(&self.add_txs_provider_mempool);
+        let submit_tx_provider = self.submit_tx_provider.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -83,13 +57,9 @@ impl Service for RpcService {
         self.server_handle = Some(server_handle);
 
         runner.service_loop(move |ctx| async move {
-            let add_tx_provider = Arc::new(AddTransactionProviderGroup::new(
-                add_tx_provider_l2_sync,
-                add_tx_provider_mempool,
-                ctx.clone(),
-            ));
+            let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
 
-            let starknet = Starknet::new(backend.clone(), add_tx_provider, config.storage_proof_config(), ctx.clone());
+            let starknet = Starknet::new(backend.clone(), submit_tx, config.storage_proof_config(), ctx.clone());
             let metrics = RpcMetrics::register()?;
 
             let server_config = {
@@ -114,8 +84,8 @@ impl Service for RpcService {
                     addr,
                     batch_config: config.batch_config(),
                     max_connections: config.rpc_max_connections,
-                    max_payload_in_mb: config.rpc_max_request_size,
-                    max_payload_out_mb: config.rpc_max_response_size,
+                    max_payload_in_mib: config.rpc_max_request_size,
+                    max_payload_out_mib: config.rpc_max_response_size,
                     max_subs_per_conn: config.rpc_max_subscriptions_per_connection,
                     message_buffer_capacity: config.rpc_message_buffer_capacity_per_connection,
                     methods,
@@ -125,7 +95,7 @@ impl Service for RpcService {
                 }
             };
 
-            start_server(server_config, ctx.clone(), stop_handle).await?;
+            start_server(server_config, ctx.clone(), stop_handle, Arc::new(starknet)).await?;
 
             anyhow::Ok(())
         });

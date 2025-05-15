@@ -1,20 +1,22 @@
 #![allow(clippy::declare_interior_mutable_const)]
 #![allow(clippy::borrow_interior_mutable_const)]
 
-use std::convert::Infallible;
-use std::net::SocketAddr;
-use std::time::Duration;
-
-use anyhow::Context;
-use mp_utils::service::ServiceContext;
-use tower::Service;
-
-use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
-
 use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
+use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
+use anyhow::Context;
+use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
+use mc_rpc::Starknet;
+use mp_rpc::SyncingStatus;
+use mp_utils::service::ServiceContext;
+use std::convert::Infallible;
+use std::net::SocketAddr;
+use std::sync::Arc;
+use std::time::Duration;
+use tower::Service;
 
-const MEGABYTE: u32 = 1024 * 1024;
+#[allow(non_upper_case_globals)]
+const MiB: u32 = 1024 * 1024;
 
 /// RPC server configuration.
 #[derive(Debug, Clone)]
@@ -25,8 +27,8 @@ pub struct ServerConfig {
     pub rpc_version_default: mp_chain_config::RpcVersion,
     pub max_connections: u32,
     pub max_subs_per_conn: u32,
-    pub max_payload_in_mb: u32,
-    pub max_payload_out_mb: u32,
+    pub max_payload_in_mib: u32,
+    pub max_payload_out_mib: u32,
     pub metrics: RpcMetrics,
     pub message_buffer_capacity: u32,
     pub methods: jsonrpsee::Methods,
@@ -49,6 +51,7 @@ pub async fn start_server(
     config: ServerConfig,
     mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,
+    starknet: Arc<Starknet>,
 ) -> anyhow::Result<()> {
     let ServerConfig {
         name,
@@ -57,8 +60,8 @@ pub async fn start_server(
         rpc_version_default,
         max_connections,
         max_subs_per_conn,
-        max_payload_in_mb,
-        max_payload_out_mb,
+        max_payload_in_mib,
+        max_payload_out_mib,
         metrics,
         message_buffer_capacity,
         methods,
@@ -80,8 +83,8 @@ pub async fn start_server(
         .layer(try_into_cors(cors.as_ref())?);
 
     let builder = jsonrpsee::server::Server::builder()
-        .max_request_body_size(max_payload_in_mb.saturating_mul(MEGABYTE))
-        .max_response_body_size(max_payload_out_mb.saturating_mul(MEGABYTE))
+        .max_request_body_size(max_payload_in_mib.saturating_mul(MiB))
+        .max_response_body_size(max_payload_out_mib.saturating_mul(MiB))
         .max_connections(max_connections)
         .max_subscriptions_per_connection(max_subs_per_conn)
         .enable_ws_ping(ping_config)
@@ -101,13 +104,16 @@ pub async fn start_server(
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
         let ctx1 = ctx1.clone();
+        let starknet = Arc::clone(&starknet);
 
         async move {
             let cfg = cfg.clone();
+            let starknet = Arc::clone(&starknet);
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
                 let ctx1 = ctx1.clone();
+                let starknet = Arc::clone(&starknet);
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
@@ -129,6 +135,21 @@ pub async fn start_server(
                             .body(hyper::Body::from("GONE"))?)
                     } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
+                    } else if req.uri().path() == "/ready" {
+                        let sync_status = syncing(&starknet).await;
+                        match sync_status {
+                            Ok(sync_status) => match sync_status {
+                                SyncingStatus::Syncing(_) => Ok(hyper::Response::builder()
+                                    .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                                    .body(hyper::Body::from("SYNCING"))?),
+                                SyncingStatus::NotSyncing => Ok(hyper::Response::builder()
+                                    .status(hyper::StatusCode::OK)
+                                    .body(hyper::Body::from("OK"))?),
+                            },
+                            Err(_) => Ok(hyper::Response::builder()
+                                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(hyper::Body::from("INTERNAL_SERVER_ERROR"))?),
+                        }
                     } else {
                         if is_websocket {
                             // Utilize the session close future to know when the actual WebSocket
