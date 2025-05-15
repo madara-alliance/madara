@@ -37,7 +37,7 @@ pub async fn estimate_message_fee(
     let block_info = starknet.get_block_info(&block_id)?;
 
     if block_info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+        return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;

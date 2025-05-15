@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Publish Nightly Release
+
+on:
+  workflow_call:
+
+jobs:
+  publish-nightly:
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - name: Stub
+        run: exit 0

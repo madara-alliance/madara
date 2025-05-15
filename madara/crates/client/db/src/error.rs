@@ -15,8 +15,6 @@ pub enum MadaraStorageError {
     CompilationClassError(String),
     #[error("Invalid block number")]
     InvalidBlockNumber,
-    #[error("Invalid nonce")]
-    InvalidNonce,
     #[error("Chain info is missing from the database")]
     MissingChainInfo,
     #[error("Inconsistent storage")]

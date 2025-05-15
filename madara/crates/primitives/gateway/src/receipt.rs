@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub struct ConfirmedReceipt {
     pub transaction_hash: Felt,
     pub transaction_index: u64,
@@ -141,7 +141,7 @@ fn execution_result(status: ExecutionStatus, reason: Option<String>) -> mp_recei
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): re-add this flag.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub struct ExecutionResources {
     pub builtin_instance_counter: BuiltinCounters,
     pub n_steps: u64,
@@ -220,6 +220,7 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[serde(default)]
 pub struct BuiltinCounters {
     #[serde(skip_serializing_if = "is_zero")]

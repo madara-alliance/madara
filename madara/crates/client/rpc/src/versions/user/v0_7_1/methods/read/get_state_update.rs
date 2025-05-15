@@ -47,7 +47,7 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
                 .or_internal_server_error("Error getting latest block from db")?
             {
                 block
-                    .as_nonpending()
+                    .as_closed()
                     .ok_or_internal_server_error("Latest block cannot be pending")?
                     .header
                     .global_state_root
@@ -59,13 +59,13 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
         }
         false => {
             let block_info = &starknet.get_block_info(&resolved_block_id)?;
-            let block_info = block_info.as_nonpending().ok_or_internal_server_error("Block should not be pending")?;
+            let block_info = block_info.as_closed().ok_or_internal_server_error("Block should not be pending")?;
 
             // Get the old root from the previous block if it exists, otherwise default to zero.
             let old_root = if let Some(val) = block_info.header.block_number.checked_sub(1) {
                 let prev_block_info = &starknet.get_block_info(&DbBlockId::Number(val))?;
                 let prev_block_info =
-                    prev_block_info.as_nonpending().ok_or_internal_server_error("Block should not be pending")?;
+                    prev_block_info.as_closed().ok_or_internal_server_error("Block should not be pending")?;
 
                 prev_block_info.header.global_state_root
             } else {

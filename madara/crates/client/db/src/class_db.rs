@@ -52,7 +52,7 @@ impl MadaraBackend {
     ) -> Result<Option<ClassInfo>, MadaraStorageError> {
         let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
-        tracing::debug!("class info {requested_id:?} {class_hash:#x}");
+        tracing::debug!("get class info {requested_id:?} {class_hash:#x}");
 
         let Some(info) = self.class_db_get_encoded_kv::<ClassInfoWithBlockNumber>(
             requested_id.is_pending(),
@@ -96,7 +96,7 @@ impl MadaraBackend {
     ) -> Result<Option<CompiledSierra>, MadaraStorageError> {
         let Some(requested_id) = id.resolve_db_block_id(self)? else { return Ok(None) };
 
-        tracing::trace!("sierra compiled {requested_id:?} {compiled_class_hash:#x}");
+        tracing::trace!("get sierra compiled {requested_id:?} {compiled_class_hash:#x}");
 
         let Some(compiled) = self.class_db_get_encoded_kv::<CompiledSierra>(
             requested_id.is_pending(),
@@ -221,6 +221,10 @@ impl MadaraBackend {
         block_number: u64,
         converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
+        tracing::debug!(
+            "Storing classes block_n={block_number} {:?}",
+            converted_classes.iter().map(|c| format!("{:#x}", c.class_hash())).collect::<Vec<_>>()
+        );
         self.store_classes(
             RawDbBlockId::Number(block_number),
             converted_classes,
@@ -232,6 +236,10 @@ impl MadaraBackend {
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
     pub fn class_db_store_pending(&self, converted_classes: &[ConvertedClass]) -> Result<(), MadaraStorageError> {
+        tracing::debug!(
+            "Storing classes pending {:?}",
+            converted_classes.iter().map(|c| format!("{:#x}", c.class_hash())).collect::<Vec<_>>()
+        );
         self.store_classes(
             RawDbBlockId::Pending,
             converted_classes,
