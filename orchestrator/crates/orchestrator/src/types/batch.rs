@@ -28,10 +28,10 @@ pub struct Batch {
     /// Path to the squashed state updates file,
     /// This is done for optimization so we don't have to create a new squashed state update from scratch
     pub squashed_state_updates_path: String,
-    /// timestamp when the job was created
+    /// timestamp when the batch was created
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub created_at: DateTime<Utc>,
-    /// timestamp when the job was last updated
+    /// timestamp when the batch was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
 }

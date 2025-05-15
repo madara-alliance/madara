@@ -2,7 +2,7 @@ use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchUpdates};
-use crate::types::constant::{MAX_BATCH_SIZE, S3_STATE_UPDATE_DIR};
+use crate::types::constant::{MAX_BATCH_SIZE, STORAGE_STATE_UPDATE_DIR};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
 use color_eyre::eyre::eyre;
@@ -30,13 +30,13 @@ impl JobTrigger for BatchingTrigger {
         let provider = config.madara_client();
         let block_number_provider = provider.block_number().await?;
 
-        // Calculating the last block number to for which a batch needs to be assigned
+        // Calculating the latest block number that needs to be assigned to a batch
         let last_block_to_assign_batch = config
             .service_config()
             .max_block_to_process
             .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
-        tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Fetched latest block number from starknet");
+        tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch.");
 
         // Getting the latest batch in DB
         let latest_batch = config.database().get_latest_batch().await?;
@@ -154,7 +154,7 @@ impl BatchingTrigger {
     }
 
     fn get_state_update_file_name(&self, batch_index: u64) -> String {
-        format!("{}/batch/{}.json", S3_STATE_UPDATE_DIR, batch_index)
+        format!("{}/batch/{}.json", STORAGE_STATE_UPDATE_DIR, batch_index)
     }
 
     /// squash_state_updates merge all the StateUpdate into a single StateUpdate
