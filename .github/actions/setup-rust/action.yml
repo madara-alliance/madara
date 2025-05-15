@@ -26,9 +26,9 @@ runs:
         rustc --version --verbose
         rustc --print cfg
 
-    - name: Install wget
+    - name: Install dependencies
       shell: bash
-      run: sudo apt-get update -y && sudo apt-get install wget
+      run: sudo apt-get update -y && sudo apt-get install wget clang
 
     - name: Setup mold
       uses: rui314/setup-mold@v1
