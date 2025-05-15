@@ -18,6 +18,7 @@ runs:
       with:
         toolchain: ${{ inputs.rust-version }}
         components: cargo, clippy, rustfmt
+        rustflags: ""
 
     - name: Rust target
       shell: bash
