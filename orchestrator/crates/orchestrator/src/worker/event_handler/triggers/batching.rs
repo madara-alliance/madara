@@ -1,23 +1,18 @@
 use crate::compression::blob::state_update_to_blob_data;
 use crate::compression::squash::squash_state_updates;
 use crate::compression::stateful::compress as stateful_compress;
-use crate::core::config::{Config, StarknetVersion};
+use crate::core::config::Config;
 use crate::core::{DatabaseClient, StorageClient};
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchUpdates};
-use crate::types::constant::{MAX_BATCH_SIZE, STORAGE_STATE_UPDATE_DIR};
+use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_STATE_UPDATE_DIR};
 use crate::worker::event_handler::triggers::JobTrigger;
 use bytes::Bytes;
-use color_eyre::eyre::eyre;
-use starknet::core::types::{
-    BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
-    StateDiff, StateUpdate, StorageEntry,
-};
+use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::Provider;
 use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
-use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 pub struct BatchingTrigger;
@@ -82,7 +77,7 @@ impl BatchingTrigger {
             Update(state_update) => {
                 tracing::info!("Starting batching for block {}", block_number);
                 let latest_batch = database.get_latest_batch().await?;
-                let mut assigned_batch_index = 1;
+                let assigned_batch_index;
                 if let Some(batch) = latest_batch {
                     // A batch exists
                     // Check if we can add a new block in the same batch
@@ -93,7 +88,7 @@ impl BatchingTrigger {
                         let current_state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                         let current_state_update: StateUpdate = serde_json::from_slice(&current_state_update_bytes)?;
                         // Merge the current block's state update with the batch's state update
-                        let new_state_update = squash_state_updates(vec![current_state_update, state_update])?;
+                        let new_state_update = squash_state_updates(vec![current_state_update, state_update.clone()])?;
                         // Perform stateful compression
                         let stateful_compressed =
                             stateful_compress(&new_state_update).map_err(|err| JobError::Other(OtherError(err)))?;
@@ -121,7 +116,7 @@ impl BatchingTrigger {
                             // We can add the current block in this batch
 
                             assigned_batch_index = batch.index;
-                            self.update_batch(storage, database, new_state_update, &batch, block_number, false)
+                            self.update_batch(storage, database, new_state_update, &batch, block_number, false).await?;
                         }
                     } else {
                         // The previous block is full
