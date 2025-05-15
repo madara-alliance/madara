@@ -23,5 +23,9 @@ runs:
       shell: bash
       run: rustc --version
 
+    - name: Install wget
+      shell: bash
+      run: apt-get update -y && apt-get install wget
+
     - name: Setup mold
       uses: rui314/setup-mold@v1
