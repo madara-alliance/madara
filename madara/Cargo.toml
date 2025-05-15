@@ -14,56 +14,56 @@ rustflags = ["-C", "linker=clang", "-C", "link-arg=-fuse-ld=mold"]
 
 [dependencies]
 # Database
-rocksdb.workspace = true
-librocksdb-sys.workspace = true
 bonsai-trie.workspace = true
+librocksdb-sys.workspace = true
+rocksdb.workspace = true
 
 # Madara proc macros
 m-proc-macros.workspace = true
 
 # Madara primtitives
 mp-block.workspace = true
-mp-convert.workspace = true
-mp-transactions.workspace = true
-mp-class.workspace = true
-mp-gateway.workspace = true
-mp-rpc.workspace = true
-mp-receipt.workspace = true
-mp-state-update.workspace = true
-mp-utils.workspace = true
 mp-chain-config.workspace = true
+mp-class.workspace = true
+mp-convert.workspace = true
+mp-gateway.workspace = true
 mp-oracle.workspace = true
+mp-receipt.workspace = true
+mp-rpc.workspace = true
+mp-state-update.workspace = true
+mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Madara client
 mc-analytics.workspace = true
-mc-telemetry.workspace = true
+mc-block-production.workspace = true
 mc-db.workspace = true
+mc-devnet.workspace = true
 mc-exec.workspace = true
-mc-rpc.workspace = true
 mc-gateway-client.workspace = true
 mc-gateway-server.workspace = true
-mc-sync.workspace = true
-mc-settlement-client.workspace = true
 mc-mempool.workspace = true
-mc-block-production.workspace = true
-mc-devnet.workspace = true
+mc-rpc.workspace = true
+mc-settlement-client.workspace = true
 mc-submit-tx.workspace = true
+mc-sync.workspace = true
+mc-telemetry.workspace = true
 
 # Starknet dependencies
 cairo-vm.workspace = true
+starknet.workspace = true
 starknet-accounts.workspace = true
 starknet-contract.workspace = true
 starknet-core.workspace = true
 starknet-crypto.workspace = true
 starknet-providers.workspace = true
 starknet-signers.workspace = true
-starknet.workspace = true
 starknet-types-core.workspace = true
 
 blockifier.workspace = true
-starknet_api.workspace = true
 cairo-lang-starknet-classes.workspace = true
 cairo-lang-utils.workspace = true
+starknet_api.workspace = true
 
 alloy.workspace = true
 
@@ -84,72 +84,72 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 # Networking
-jsonrpsee.workspace = true
-tower.workspace = true
-tower-http.workspace = true
 governor.workspace = true
+http.workspace = true
+http-body-util.workspace = true
 hyper = { version = "0.14", features = ["server"] }
 hyper-tls.workspace = true
 hyper-util.workspace = true
-http.workspace = true
-http-body-util.workspace = true
 ip_network.workspace = true
+jsonrpsee.workspace = true
 reqwest.workspace = true
+tower.workspace = true
+tower-http.workspace = true
 url.workspace = true
 
 # Async
+async-trait.workspace = true
+futures = { workspace = true, features = ["thread-pool"] }
+rayon.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-rayon.workspace = true
-futures = { workspace = true, features = ["thread-pool"] }
-async-trait.workspace = true
 
 # Serialization
-serde = { workspace = true, features = ["derive"] }
-serde_with.workspace = true
-serde_json.workspace = true
-serde_yaml.workspace = true
 bincode.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+serde_with.workspace = true
+serde_yaml.workspace = true
 
 # Numbers
 base64.workspace = true
 bigdecimal.workspace = true
-num-traits.workspace = true
+crypto-bigint.workspace = true
 num-bigint.workspace = true
+num-traits.workspace = true
 primitive-types.workspace = true
 rand.workspace = true
-crypto-bigint.workspace = true
 zeroize.workspace = true
 
 # Std extensions
-lazy_static.workspace = true
-once_cell.workspace = true
-itertools.workspace = true
 bitvec.workspace = true
 bytes.workspace = true
 derive_more.workspace = true
+itertools.workspace = true
+lazy_static.workspace = true
+once_cell.workspace = true
 
 # Error handling
-thiserror.workspace = true
 anyhow.workspace = true
+thiserror.workspace = true
 
 # Testing
-rstest.workspace = true
+assert_matches.workspace = true
+fdlimit.workspace = true
+httpmock.workspace = true
+mockall.workspace = true
 proptest.workspace = true
 proptest-derive.workspace = true
 proptest-state-machine.workspace = true
+rstest.workspace = true
 tempfile.workspace = true
-httpmock.workspace = true
-mockall.workspace = true
-fdlimit.workspace = true
-assert_matches.workspace = true
 
 # Macros
 indoc.workspace = true
+paste.workspace = true
 proc-macro2.workspace = true
 quote.workspace = true
 syn.workspace = true
-paste.workspace = true
 
 # Setup
 clap.workspace = true
