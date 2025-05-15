@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
-name: Task - Build Madara
+name: Task - Build Orchestrator
 
 # This workflow builds the main Madara binary and related components
 # It also caches the build artifacts for other workflows to use
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
   workflow_call:
     outputs:
-      madara-binary-hash:
-        description: "Hash of the built madara binary"
-        value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
+      orchestrator-binary-hash:
+        description: "Hash of the built orchestror binary"
+        value: ${{ jobs.build-binaries.outputs.orchestrator-binary-hash }}
 
 jobs:
   build-binaries:
@@ -17,7 +17,7 @@ jobs:
       pull-requests: write
     runs-on: karnot-arc-runner-set
     outputs:
-      madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
+      orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
 
     steps:
       - name: Checkout Repository
@@ -31,28 +31,28 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
 
-      # Build Madara
+      # Build Orchestrator
       - name: Cargo build
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build -p madara --release
+          cargo build -p orchestrator --release
 
-      # Generate hash for the Madara binary
+      # Generate hash for the Orchestrator binary
       - name: Generate binary hashes
         id: generate-binary-hash
         run: |
           # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
 
-          # Path to the compiled Madara binary
-          BINARY_PATH=./target/release/madara
+          # Path to the compiled Orchestrator binary
+          BINARY_PATH=./target/release/orchestrator
           HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
+          echo "orchestrator-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
 
-      # Upload Madara binary as artifact
-      - name: Upload Madara binary
+      # Upload Orchestrator binary as artifact
+      - name: Upload Orchestrator binary
         uses: actions/upload-artifact@v4
         with:
-          name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
-          path: target/release/madara
+          name: orchestrator-binary-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
+          path: target/release/orchestrator
