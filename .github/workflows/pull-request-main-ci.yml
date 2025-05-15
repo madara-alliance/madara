@@ -99,7 +99,7 @@ jobs:
 
   # Build Bootstrapper binary
   build-bootstrapper:
-    needs: lint-rust
+    needs: lint-code-style
     uses: ./.github/workflows/task-build-bootstrapper.yml
     secrets: inherit
 
