@@ -32,7 +32,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: bootstrapper
+          cache-key: bootstrapper-test
 
       - name: Foundry setup
         uses: ./.github/actions/setup-foundry
@@ -94,15 +94,15 @@ jobs:
       - name: Run tests with coverage
         continue-on-error: false
         run: |
-          export COVERAGE_BIN=$(realpath target/release/madara-bootstrapper)
-          rm -f target/madara-bootstrapper-* lcov.info
+          export COVERAGE_BIN=$(realpath target/release/bootstrapper)
+          rm -f target/bootstrapper-* lcov.info
 
           # run tests for bootstrapper crate
           RUST_LOG=info cargo llvm-cov nextest \
                   --release \
                   --lcov \
                   --output-path lcov.info \
-                  --package "madara-bootstrapper" \
+                  --package "bootstrapper" \
                   --no-fail-fast
 
       - name: Upload coverage to Coveralls
