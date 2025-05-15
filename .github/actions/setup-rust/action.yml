@@ -25,7 +25,7 @@ runs:
 
     - name: Install wget
       shell: bash
-      run: apt-get update -y && apt-get install wget
+      run: sudo apt-get update -y && sudo apt-get install wget
 
     - name: Setup mold
       uses: rui314/setup-mold@v1
