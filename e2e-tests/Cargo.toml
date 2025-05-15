@@ -3,6 +3,9 @@ name = "e2e-tests"
 version = "0.1.0"
 edition = "2021"
 
+[target.x86_64-unknown-linux-gnu]
+rustflags = ["-C", "linker=clang", "-C", "link-arg=-fuse-ld=mold"]
+
 [dependencies]
 alloy = { workspace = true, features = [
   "full",
@@ -28,7 +31,7 @@ env_logger = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 log = { workspace = true }
 mongodb = { workspace = true }
-orchestrator-core = { workspace = true }
+orchestrator = { workspace = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }
