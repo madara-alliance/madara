@@ -449,8 +449,6 @@ test: test-e2e test-orchestrator
 .PHONY: pre-push
 pre-push:
 	@echo -e "$(DIM)Running pre-push checks...$(RESET)"
-	@echo -e "$(INFO)Formatting code...$(RESET)"
-	@$(MAKE) --silent fmt
 	@echo -e "$(INFO)Running code quality checks...$(RESET)"
 	@$(MAKE) --silent check
 	@echo -e "$(PASS)Pre-push checks completed successfully!$(RESET)"
