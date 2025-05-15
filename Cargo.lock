@@ -8948,10 +8948,7 @@ dependencies = [
  "mp-oracle",
  "mp-receipt",
  "mp-rpc",
-<<<<<<< HEAD
-=======
  "mp-state-update",
->>>>>>> 752f16f3 (build(madara): separate target)
  "mp-transactions",
  "mp-utils",
  "num-bigint",
@@ -9241,54 +9238,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-<<<<<<< HEAD
-<<<<<<< HEAD
-=======
->>>>>>> 99dd9133 (build(bootstrapper): separate target)
-name = "mc-e2e-tests"
-version = "0.8.0"
-dependencies = [
- "anyhow",
-<<<<<<< HEAD
- "assert_matches",
- "flate2",
- "futures",
- "lazy_static",
- "m-cairo-test-contracts",
- "rand",
- "reqwest 0.12.8",
- "rstest 0.18.2",
- "serde_json",
- "starknet 0.12.0",
- "starknet-core 0.12.0",
- "starknet-providers 0.12.0",
-=======
- "flate2",
- "lazy_static",
- "once_cell",
- "reqwest 0.12.12",
- "rstest 0.18.2",
- "serde_json",
- "starknet 0.12.0",
- "starknet-core 0.12.2",
- "starknet-providers 0.12.1",
->>>>>>> 99dd9133 (build(bootstrapper): separate target)
- "starknet-types-core",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
-]
-
-[[package]]
-<<<<<<< HEAD
-=======
->>>>>>> 752f16f3 (build(madara): separate target)
-=======
->>>>>>> 99dd9133 (build(bootstrapper): separate target)
-=======
->>>>>>> e398dec7 (build(orchestrator): separate target)
 name = "mc-exec"
 version = "0.8.0"
 dependencies = [

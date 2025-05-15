@@ -47,6 +47,7 @@ mc-settlement-client.workspace = true
 mc-mempool.workspace = true
 mc-block-production.workspace = true
 mc-devnet.workspace = true
+mc-submit-tx.workspace = true
 
 # Starknet dependencies
 cairo-vm.workspace = true
