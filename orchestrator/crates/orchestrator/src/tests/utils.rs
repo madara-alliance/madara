@@ -1,12 +1,3 @@
-use chrono::{SubsecRound, Utc};
-use uuid::Uuid;
-
-// use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-// use crate::jobs::metadata::{
-//     CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
-//     StateUpdateMetadata,
-// };
-// use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::types::batch::Batch;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
@@ -18,8 +9,12 @@ use crate::types::jobs::metadata::{
     StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-// Test Util Functions
-// ==========================================
+use chrono::{SubsecRound, Utc};
+use color_eyre::Result;
+use std::fs::File;
+use std::hash::Hash;
+use std::io::Read;
+use uuid::Uuid;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
     let metadata = match job_type {
@@ -89,4 +84,11 @@ pub fn build_batch(index: u64, start_block: u64, end_block: u64) -> Batch {
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
     }
+}
+
+pub fn read_blob_from_file(file_path: String) -> Result<String> {
+    let mut file = File::open(file_path)?;
+    let mut blob = String::new();
+    file.read_to_string(&mut blob)?;
+    Ok(blob)
 }
