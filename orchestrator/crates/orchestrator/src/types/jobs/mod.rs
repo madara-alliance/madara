@@ -18,6 +18,7 @@ pub enum WorkerTriggerType {
     ProofRegistration,
     DataSubmission,
     UpdateState,
+    Batching,
 }
 
 #[derive(Debug, Serialize, Clone)]
@@ -41,6 +42,7 @@ impl FromStr for WorkerTriggerType {
             "ProofRegistration" => Ok(WorkerTriggerType::ProofRegistration),
             "DataSubmission" => Ok(WorkerTriggerType::DataSubmission),
             "UpdateState" => Ok(WorkerTriggerType::UpdateState),
+            "Batching" => Ok(WorkerTriggerType::Batching),
             _ => Err(WorkerTriggerTypeError::UnknownType(s.to_string())),
         }
     }
