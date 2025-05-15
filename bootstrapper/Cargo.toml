@@ -3,9 +3,6 @@ name = "bootstrapper"
 version = "0.1.0"
 edition.workspace = true
 
-[target.x86_64-unknown-linux-gnu]
-rustflags = ["-C", "linker=clang", "-C", "link-arg=-fuse-ld=mold"]
-
 [dependencies]
 anyhow = "1.0.80"
 base64 = "0.22"
