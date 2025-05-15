@@ -412,6 +412,10 @@ check:
 fmt:
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
+	@npx prettier --write .
+	@echo -e "$(PASS)Code formatting complete!$(RESET)"
+	@echo -e "$(DIM)Running code formatters...$(RESET)"
+	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
 	@taplo format --config=./taplo/taplo.toml
 	@echo -e "$(INFO)Running cargo fmt...$(RESET)"
 	@cargo fmt
