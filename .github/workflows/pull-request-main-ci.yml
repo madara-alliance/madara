@@ -51,7 +51,7 @@ jobs:
     needs: build-madara
     uses: ./.github/workflows/task-coverage-madara.yml
     with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
   # Run JavaScript tests against the built binary
@@ -59,7 +59,7 @@ jobs:
     needs: test-madara
     uses: ./.github/workflows/task-test-js.yml
     with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
 
   # Run CLI tests against the built binary
   test-cli:
@@ -82,7 +82,7 @@ jobs:
     needs: [build-madara, build-orchestrator]
     uses: ./.github/workflows/task-coverage-orchestrator.yml
     with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
   # Run e2e tests
@@ -90,7 +90,7 @@ jobs:
     needs: test-orchestrator
     uses: ./.github/workflows/task-test-orchestrator-e2e.yml
     with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
   # ========================================================================= #
@@ -108,7 +108,7 @@ jobs:
     needs: [build-madara, build-bootstrapper]
     uses: ./.github/workflows/task-coverage-bootstrapper.yml
     with:
-      madara-binary-hash: ${{ needs.build-madara-cairo.outputs.madara-binary-hash }}
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
   # ========================================================================= #
