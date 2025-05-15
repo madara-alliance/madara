@@ -1,117 +1,8 @@
 [workspace]
-<<<<<<< HEAD
-members = [
-  "madara",
-  "madara/crates/client/db",
-  "madara/crates/client/exec",
-  "madara/crates/client/sync",
-  "madara/crates/client/settlement_client",
-  "madara/crates/client/rpc",
-  "madara/crates/client/gateway/client",
-  "madara/crates/client/gateway/server",
-  "madara/crates/client/analytics",
-  "madara/crates/client/telemetry",
-  "madara/crates/client/devnet",
-  "madara/crates/client/mempool",
-  "madara/crates/client/submit_tx",
-  "madara/crates/client/block_production",
-  "madara/crates/primitives/block",
-  "madara/crates/primitives/bloom_filter",
-  "madara/crates/primitives/convert",
-  "madara/crates/primitives/transactions",
-  "madara/crates/primitives/class",
-  "madara/crates/primitives/gateway",
-  "madara/crates/primitives/rpc",
-  "madara/crates/primitives/receipt",
-  "madara/crates/primitives/state_update",
-  "madara/crates/primitives/chain_config",
-  "madara/crates/primitives/utils",
-  "madara/crates/proc-macros",
-  "madara/crates/tests",
-  "madara/crates/cairo-test-contracts",
-
-  "orchestrator",
-  "orchestrator/crates/da-clients/da-client-interface",
-  "orchestrator/crates/da-clients/ethereum",
-  "orchestrator/crates/prover-clients/prover-client-interface",
-  "orchestrator/crates/prover-clients/gps-fact-checker",
-  "orchestrator/crates/prover-clients/sharp-service",
-  "orchestrator/crates/prover-clients/atlantic-service",
-  "orchestrator/crates/utils",
-  "orchestrator/crates/settlement-clients/settlement-client-interface",
-  "orchestrator/crates/settlement-clients/ethereum",
-  "orchestrator/crates/settlement-clients/starknet",
-
-  # "e2e-tests",
-  "bootstrapper",
-]
-resolver = "2"
-# Everything except test-related packages, so that they are not compiled when doing `cargo build`.
-default-members = [
-<<<<<<< HEAD
-  # madara
-  "madara/crates/client/db",
-  "madara/crates/client/exec",
-  "madara/crates/client/sync",
-  "madara/crates/client/rpc",
-  "madara/crates/client/settlement_client",
-  "madara/crates/client/gateway/client",
-  "madara/crates/client/gateway/server",
-  "madara/crates/client/analytics",
-  "madara/crates/client/telemetry",
-  "madara/crates/client/devnet",
-  "madara/crates/client/mempool",
-  "madara/crates/client/submit_tx",
-  "madara/crates/client/block_production",
-  "madara/crates/client/rpc",
-  "madara/crates/client/telemetry",
-  "madara/crates/client/devnet",
-  "madara/crates/client/mempool",
-  "madara/crates/client/analytics",
-  "madara/crates/node",
-  "madara/crates/primitives/block",
-  "madara/crates/primitives/bloom_filter",
-  "madara/crates/primitives/convert",
-  "madara/crates/primitives/transactions",
-  "madara/crates/primitives/class",
-  "madara/crates/primitives/gateway",
-  "madara/crates/primitives/rpc",
-  "madara/crates/primitives/receipt",
-  "madara/crates/primitives/state_update",
-  "madara/crates/primitives/chain_config",
-  "madara/crates/primitives/utils",
-  "madara/crates/proc-macros",
-
-  "orchestrator/crates/orchestrator",                                   # TODO: rename
-  "orchestrator/crates/da-clients/da-client-interface",
-  "orchestrator/crates/da-clients/ethereum",
-  "orchestrator/crates/prover-clients/prover-client-interface",
-  "orchestrator/crates/prover-clients/gps-fact-checker",
-  "orchestrator/crates/prover-clients/sharp-service",
-  "orchestrator/crates/prover-clients/atlantic-service",
-  "orchestrator/crates/utils",                                          # TODO: rename
-  "orchestrator/crates/settlement-clients/settlement-client-interface",
-  "orchestrator/crates/settlement-clients/ethereum",
-  "orchestrator/crates/settlement-clients/starknet",
-
-  # bootstrapper
-  "bootstrapper/crates/bootstrapper",
-=======
-  "madara",
-<<<<<<< HEAD
-  "orchestrator",
-  # "bootstrapper"
->>>>>>> 752f16f3 (build(madara): separate target)
-=======
-  # "orchestrator",
-  "bootstrapper",
->>>>>>> 99dd9133 (build(bootstrapper): separate target)
-]
-=======
 members = ["madara", "orchestrator", "e2e-tests", "bootstrapper"]
-resolver = "2"
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = ["madara", "orchestrator", "bootstrapper"]
+resolver = "2"
 
 [workspace.package]
 authors = ["Madara <https://github.com/madara-alliance>"]
@@ -120,7 +11,6 @@ edition = "2021"
 repository = "https://github.com/madara-alliance/madara/"
 version = "0.8.0"
 license = "Apache-2.0"
->>>>>>> e398dec7 (build(orchestrator): separate target)
 
 [workspace.lints.rust]
 unsafe_code = "forbid"
@@ -167,7 +57,6 @@ m-proc-macros = { path = "madara/crates/proc-macros", default-features = false }
 
 # Madara primtitives
 mp-block = { path = "madara/crates/primitives/block", default-features = false }
-mp-bloom-filter = { path = "madara/crates/primitives/bloom_filter", default-features = false }
 mp-convert = { path = "madara/crates/primitives/convert", default-features = false }
 mp-transactions = { path = "madara/crates/primitives/transactions", default-features = false }
 mp-class = { path = "madara/crates/primitives/class", default-features = false }
@@ -296,8 +185,6 @@ num-bigint = "0.4"
 primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
-ahash = "0.8"
-twox-hash = "2.1"
 zeroize = "1.8"
 
 # Std extensions
@@ -322,7 +209,6 @@ httpmock = "0.7.0"
 mockall = "0.13.0"
 fdlimit = "0.3.0"
 assert_matches = "1.5"
-criterion = { version = "0.5", features = ["html_reports"] }
 
 # Macros
 indoc = "2"

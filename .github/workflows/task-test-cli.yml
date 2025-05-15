@@ -9,18 +9,16 @@ jobs:
   cli_test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: ./.github/actions/load-env
-      - uses: ./.github/actions/rust-setup
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
         with:
-          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
-          # This used to be 1.81, but we are using 1.85 now. Keep an eye on this.
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          install-mold: true
-          install-scarb: true
-          build-snos: true
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
 
       - name: Run cli without arguments
         run: |

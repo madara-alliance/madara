@@ -1,5 +1,5 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
-name: Task - Build Madara
+name: Task - Build Bootstrapper
 
 # This workflow builds the main Madara binary and related components
 # It also caches the build artifacts for other workflows to use
@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
   workflow_call:
     outputs:
-      madara-binary-hash:
-        description: "Hash of the built madara binary"
-        value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
+      bootstrapper-binary-hash:
+        description: "Hash of the built bootstrapper binary"
+        value: ${{ jobs.build-binaries.outputs.bootstrapper-binary-hash }}
 
 jobs:
   build-binaries:
@@ -17,7 +17,7 @@ jobs:
       pull-requests: write
     runs-on: karnot-arc-runner-set
     outputs:
-      madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
+      bootstrapper-binary-hash: ${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
 
     steps:
       - name: Checkout Repository
@@ -31,28 +31,28 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
 
-      # Build Madara
+      # Build Bootstrapper
       - name: Cargo build
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build -p madara --release
+          cargo build -p bootstrapper --release
 
-      # Generate hash for the Madara binary
+      # Generate hash for the Bootsrapper binary
       - name: Generate binary hashes
         id: generate-binary-hash
         run: |
           # Get current Unix timestamp for uniqueness
           TIMESTAMP=$(date +%s)
 
-          # Path to the compiled Madara binary
-          BINARY_PATH=./target/release/madara
+          # Path to the compiled Bootstrapper binary
+          BINARY_PATH=./target/release/madara-bootstrapper
           HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
+          echo "bootstrapper-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the bootstrapper is: $HASH (with timestamp: $TIMESTAMP)"
 
-      # Upload Madara binary as artifact
-      - name: Upload Madara binary
+      # Upload Bootstrapper binary as artifact
+      - name: Upload Bootstrapper binary
         uses: actions/upload-artifact@v4
         with:
-          name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
-          path: target/release/madara
+          name: bootstrapper-binary-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
+          path: target/release/madara-bootstrapper
