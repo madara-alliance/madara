@@ -18,7 +18,7 @@ pub async fn simulate_transactions(
     let starknet_version = *block_info.protocol_version();
 
     if starknet_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+        return Err(StarknetRpcApiError::unsupported_txn_version());
     }
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
