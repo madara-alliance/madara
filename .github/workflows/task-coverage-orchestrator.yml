@@ -54,6 +54,11 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: orchestrator-test
 
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
 
