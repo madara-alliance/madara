@@ -70,6 +70,13 @@ macro_rules! versions {
             }
         }
 
+        /// Making 0.13.3 as the default version for now
+        impl Default for StarknetVersion {
+            fn default() -> Self {
+                Self::V0_13_3
+            }
+        }
+
         impl std::fmt::Display for StarknetVersion {
             fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
                 write!(f, "{}", self.to_string())
