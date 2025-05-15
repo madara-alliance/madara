@@ -6,12 +6,40 @@ inputs:
   rust-version:
     description: Rust version to set up
     required: true
+  cache-key:
+    description: "Cache key used to retrieve built data. Usually matches the profile of the build"
+    required: false
+    default: "cache"
 
 runs:
   using: composite
   steps:
     - name: Checkout Repository
       uses: actions/checkout@v4
+
+    - uses: actions/cache@v4
+      id: cache-cargo
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}
+          ${{ runner.os }}-cargo-registry-
+
+    - uses: actions/cache@v4
+      id: cache-build-deps
+      with:
+        path: |
+          target/release/deps
+          target/release/build
+          target/release/.fingerprint
+        key: ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}
 
     - name: Setup Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
