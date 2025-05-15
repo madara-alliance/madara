@@ -31,6 +31,11 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
 
+      - name: Debug
+        run: |
+          ls -la
+          cat .cargo/config.toml
+
       # Build Madara
       - name: Cargo build
         run: |
