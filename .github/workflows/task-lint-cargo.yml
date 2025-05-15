@@ -20,9 +20,7 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
 
       - name: Cargo fmt
-        run: |
-          cargo fmt -- --check
-          cargo fmt --tests -- --check
+        run: cargo fmt -- --check
 
       - name: Cargo Clippy
         run: |
