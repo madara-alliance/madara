@@ -8,7 +8,7 @@ export const readContractCasm = (name: string): CompiledSierraCasm =>
       .readFileSync(
         path.resolve(
           __dirname,
-          `../../cairo/target/dev/${name}.compiled_contract_class.json`,
+          `../../build_artifacts/cairo/${name}.compiled_contract_class.json`,
         ),
       )
       .toString("ascii"),
@@ -20,7 +20,7 @@ export const readContractSierra = (name: string): CompiledSierra =>
       .readFileSync(
         path.resolve(
           __dirname,
-          `../../cairo/target/dev/${name}.contract_class.json`,
+          `../../build_artifacts/cairo/${name}.contract_class.json`,
         ),
       )
       .toString("ascii"),
@@ -32,7 +32,7 @@ export const readContractSierraInArtifacts = (name: string): CompiledSierra =>
       .readFileSync(
         path.resolve(
           __dirname,
-          `../../cairo-artifacts/${name}.contract_class.json`,
+          `../../build_artifacts/cairo/${name}.contract_class.json`,
         ),
       )
       .toString("ascii"),
