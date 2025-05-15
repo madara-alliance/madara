@@ -52,6 +52,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: orchestrator
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -81,7 +82,7 @@ jobs:
         run: |
           wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
           # TODO: this can be optimised
-          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./crates/orchestrator/src/tests/artifacts/238996-SN.zip
+          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./src/tests/artifacts/238996-SN.zip
 
       - name: Check rust version
         run: rustup show
