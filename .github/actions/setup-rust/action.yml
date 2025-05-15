@@ -29,3 +29,5 @@ runs:
 
     - name: Setup mold
       uses: rui314/setup-mold@v1
+      with:
+        make-default: true
