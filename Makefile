@@ -395,6 +395,7 @@ artifacts: setup build-contracts
 check:
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
+	@npm install
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
@@ -412,6 +413,7 @@ check:
 fmt:
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
 	@echo -e "$(INFO)Running taplo formatter...$(RESET)"
+	@npm install
 	@npx prettier --write .
 	@echo -e "$(PASS)Code formatting complete!$(RESET)"
 	@echo -e "$(DIM)Running code formatters...$(RESET)"
