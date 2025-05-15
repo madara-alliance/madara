@@ -30,10 +30,7 @@ runs:
       shell: bash
       run: |
         sudo apt-get update -y && sudo apt-get install -y \
-          wget \
-          clang \
-          libssl-dev \
-          pkg-config
+          clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
 
     - name: Setup mold
       uses: rui314/setup-mold@v1
