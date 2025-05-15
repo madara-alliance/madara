@@ -19,9 +19,11 @@ runs:
         toolchain: ${{ inputs.rust-version }}
         components: cargo, clippy, rustfmt
 
-    - name: Rust version
+    - name: Rust target
       shell: bash
-      run: rustc --version
+      run: |
+        rustc --version --verbose
+        rustc --print cfg
 
     - name: Install wget
       shell: bash
