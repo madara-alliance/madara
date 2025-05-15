@@ -73,7 +73,7 @@ jobs:
 
   # Build Orchestrator binary
   build-orchestrator:
-    needs: [lint-rust, lint-code-style]
+    needs: lint-code-style
     uses: ./.github/workflows/task-build-orchestrator.yml
     secrets: inherit
 
@@ -99,7 +99,7 @@ jobs:
 
   # Build Bootstrapper binary
   build-bootstrapper:
-    needs: [lint-rust, lint-code-style]
+    needs: lint-rust
     uses: ./.github/workflows/task-build-bootstrapper.yml
     secrets: inherit
 
