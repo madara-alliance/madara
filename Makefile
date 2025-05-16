@@ -188,12 +188,13 @@ ARTIFACTS := ./build_artifacts
 
 .PHONY: artifacts
 artifacts:
-	@if [ -d "$(ARTIFACTS)/argent"           ] || \
-			[ -d "$(ARTIFACTS)/bravoos"          ] || \
-			[ -d "$(ARTIFACTS)/cairo"            ] || \
-			[ -d "$(ARTIFACTS)/cairo_lang"       ] || \
-			[ -d "$(ARTIFACTS)/starkgate_latest" ] || \
-			[ -d "$(ARTIFACTS)/starkgate_legacy" ]; \
+	@if [ -d "$(ARTIFACTS)/argent"             ] || \
+			[ -d "$(ARTIFACTS)/bravoos"            ] || \
+			[ -d "$(ARTIFACTS)/cairo_lang"         ] || \
+			[ -d "$(ARTIFACTS)/js_tests"           ] || \
+			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
+			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
+			[ -d "$(ARTIFACTS)/starkgate_legacy"   ]; \
 	then \
 		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
 		read ans && \
@@ -204,8 +205,9 @@ artifacts:
 	fi
 	@rm -rf "$(ARTIFACTS)/argent"
 	@rm -rf "$(ARTIFACTS)/bravoos"
-	@rm -rf "$(ARTIFACTS)/cairo"
 	@rm -rf "$(ARTIFACTS)/cairo_lang"
+	@rm -rf "$(ARTIFACTS)/js_tests"
+	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
 	@docker build -f $(ARTIFACTS)/Dockerfile -t contracts .

@@ -1,4 +1,4 @@
-FROM debian:bookworm AS builder
+FROM rust:1.85 AS builder
 WORKDIR /contracts
 
 RUN apt-get -y update && apt-get install -y \
@@ -140,17 +140,36 @@ RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components
 RUN ./scarb/bin/scarb build
 
 # =========================================================================== #
-#                               LOCAL CONTRACTS                               #
+#                                   JS TESTS                                  #
 # =========================================================================== #
 
-FROM builder AS local-contracts
+FROM builder AS js-tests
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
 ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
 
 # Copy over contracts
-WORKDIR local-contracts
-COPY cairo .
+WORKDIR js-tests
+COPY cairo/js_tests .
+
+# Setup scarb
+RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+
+# Compile contracts
+RUN ./scarb/bin/scarb build
+
+# =========================================================================== #
+#                              ORCHESTRATOR TESTS                             #
+# =========================================================================== #
+
+FROM builder AS orchestrator-tests
+ENV SCARB_VERSION="2.8.2"
+ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
+ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+
+# Copy over contracts
+WORKDIR orchestrator-tests
+COPY cairo/orchestrator_tests .
 
 # Setup scarb
 RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
@@ -217,9 +236,16 @@ ENV ARTIFACTS_ARGENT="$ARGENT_DIR/target/dev"
 COPY --from=argent $ARTIFACTS_ARGENT/argent_ArgentAccount.contract_class.json ArgentAccount.sierra.json
 COPY --from=argent $ARTIFACTS_ARGENT/argent_ArgentAccount.compiled_contract_class.json ArgentAccount.casm.json
 
-WORKDIR ../cairo
+WORKDIR ../js_tests
 
-ENV LOCAL_CONTRACTS_DIR="/contracts/local-contracts"
-ENV ARTIFACTS_LOCAL_CONTRACTS="$LOCAL_CONTRACTS_DIR/target/dev"
+ENV JS_TESTS_DIR="/contracts/js-tests"
+ENV ARTIFACTS_JS_TESTS="$JS_TESTS_DIR/target/dev"
 
-COPY --from=local-contracts $ARTIFACTS_LOCAL_CONTRACTS .
+COPY --from=js-tests $ARTIFACTS_JS_TESTS .
+
+WORKDIR ../orchestrator_tests
+
+ENV ORCHESTRATOR_TESTS_DIR="/contracts/orchestrator-tests"
+ENV ARTIFACTS_ORCHESTRATOR_TESTS="$ORCHESTRATOR_TESTS_DIR/target/dev"
+
+COPY --from=orchestrator-tests $ARTIFACTS_ORCHESTRATOR_TESTS .

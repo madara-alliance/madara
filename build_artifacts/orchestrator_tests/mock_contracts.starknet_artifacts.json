@@ -1,0 +1,1 @@
+{"version":1,"contracts":[{"id":"il2hb6gflkg4e","package_name":"mock_contracts","contract_name":"Piltover","module_path":"mock_contracts::Piltover","artifacts":{"sierra":"mock_contracts_Piltover.contract_class.json","casm":"mock_contracts_Piltover.compiled_contract_class.json"}}]}
