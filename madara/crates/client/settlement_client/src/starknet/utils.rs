@@ -419,7 +419,7 @@ pub async fn send_state_update(
         .execute_v1(vec![Call {
             to: appchain_contract_address,
             selector: get_selector_from_name("update_state")?,
-            calldata: vec![Felt::from(update.block_number), update.global_root, update.block_hash],
+            calldata: vec![Felt::from(update.block_number.unwrap_or(0)), update.global_root, update.block_hash],
         }])
         .send()
         .await?;
