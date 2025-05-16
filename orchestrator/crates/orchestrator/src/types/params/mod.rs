@@ -120,13 +120,13 @@ impl TryFrom<SetupCmd> for AlertArgs {
 impl TryFrom<RunCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-         let topic = run_cmd
+        let topic = run_cmd
             .aws_sns_args
             .alert_topic_name
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-         let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
-         info!("SNS TOPIC: {}", alert_topic_name);
-         Ok(Self { alert_topic_name })
+        let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
+        info!("SNS TOPIC: {}", alert_topic_name);
+        Ok(Self { alert_topic_name })
     }
 }
 

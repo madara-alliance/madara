@@ -17,7 +17,7 @@ impl SNS {
         Self {
             client: Arc::new(Client::new(aws_config)),
             alert_topic_name: args.map(|a| a.alert_topic_name.clone()),
-            alert_topic_arn: Arc::new(OnceLock::new())
+            alert_topic_arn: Arc::new(OnceLock::new()),
         }
     }
 
@@ -39,8 +39,7 @@ impl SNS {
         }
 
         // Lookup ARN from AWS...
-        let resp = self.client.list_topics().send().await
-            .map_err(|e| AlertError::ListTopicsError(e))?;
+        let resp = self.client.list_topics().send().await.map_err(|e| AlertError::ListTopicsError(e))?;
 
         for topic in resp.topics() {
             if let Some(arn) = topic.topic_arn() {
@@ -80,7 +79,8 @@ impl AlertClient for SNS {
     /// * `Result<String, AlertError>` - The topic name.
     async fn get_topic_name(&self) -> Result<String, AlertError> {
         Ok(self
-            .get_topic_arn().await?
+            .get_topic_arn()
+            .await?
             .split(":")
             .last()
             .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn().await?))?

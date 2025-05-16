@@ -259,18 +259,15 @@ impl SettlementClient for StarknetSettlementClient {
             return Ok(None);
         }
 
-        let converted_value = u64_from_felt(block_number[1])
-            .wrap_err("Failed to convert to u64")?;
+        let converted_value = u64_from_felt(block_number[1]).wrap_err("Failed to convert to u64")?;
 
         Ok(Some(converted_value))
-
     }
 
     /// Returns the nonce for the wallet in use.
     async fn get_nonce(&self) -> Result<u64> {
         let nonce = self.account.get_nonce().await?;
-        let converted_value = u64_from_felt(nonce)
-            .wrap_err("Failed to convert to u64")?;
+        let converted_value = u64_from_felt(nonce).wrap_err("Failed to convert to u64")?;
         Ok(converted_value)
     }
 }

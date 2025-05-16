@@ -15,5 +15,4 @@ pub struct AWSSQSCliArgs {
     /// The suffix of the queue.
     #[arg(env = "MADARA_ORCHESTRATOR_SQS_SUFFIX", long, default_value = Some("queue"))]
     pub sqs_suffix: Option<String>,
-
 }

@@ -48,7 +48,8 @@ impl Resource for SNS {
         }
 
         // Create topic using the validated name
-        let response = self.client.create_topic().name(alert_topic_name).send().await.context("Failed to create topic")?;
+        let response =
+            self.client.create_topic().name(alert_topic_name).send().await.context("Failed to create topic")?;
 
         let new_topic_arn = response.topic_arn().context("Failed to get topic ARN")?;
         tracing::info!("SNS topic created. Topic ARN: {}", new_topic_arn);
