@@ -32,7 +32,7 @@ export const readContractSierraInArtifacts = (name: string): CompiledSierra =>
       .readFileSync(
         path.resolve(
           __dirname,
-          `../../build_artifacts/cairo/${name}.contract_class.json`,
+          `../../build_artifacts/cairo_artifacts/${name}.contract_class.json`,
         ),
       )
       .toString("ascii"),

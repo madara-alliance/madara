@@ -140,6 +140,25 @@ RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components
 RUN ./scarb/bin/scarb build
 
 # =========================================================================== #
+#                               LOCAL CONTRACTS                               #
+# =========================================================================== #
+
+FROM builder AS local-contracts
+ENV SCARB_VERSION="2.8.2"
+ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
+ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+
+# Copy over contracts
+WORKDIR local-contracts
+COPY cairo .
+
+# Setup scarb
+RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+
+# Compile contracts
+RUN ./scarb/bin/scarb build
+
+# =========================================================================== #
 #                                  ARTIFACTS                                  #
 # =========================================================================== #
 
@@ -197,3 +216,10 @@ ENV ARTIFACTS_ARGENT="$ARGENT_DIR/target/dev"
 
 COPY --from=argent $ARTIFACTS_ARGENT/argent_ArgentAccount.contract_class.json ArgentAccount.sierra.json
 COPY --from=argent $ARTIFACTS_ARGENT/argent_ArgentAccount.compiled_contract_class.json ArgentAccount.casm.json
+
+WORKDIR ../cairo
+
+ENV LOCAL_CONTRACTS_DIR="/contracts/local-contracts"
+ENV ARTIFACTS_LOCAL_CONTRACTS="$LOCAL_CONTRACTS_DIR/target/dev"
+
+COPY --from=local-contracts $ARTIFACTS_LOCAL_CONTRACTS .
