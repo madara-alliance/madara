@@ -56,4 +56,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: bootstrapper-binary-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-          path: target/release/madara-bootstrapper
+          path: target/release/bootstrapper
