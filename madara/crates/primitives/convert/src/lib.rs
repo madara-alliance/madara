@@ -6,7 +6,7 @@ pub mod hex_serde;
 
 pub use felt::*;
 pub use primitive_types::{H160, H256};
-pub use to_felt::{DisplayFeltAsHex, FeltHexDisplay, ToFelt};
+pub use to_felt::*;
 
 pub mod test {
     /// Asserts that the conversion between two types is consistent.
