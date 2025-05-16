@@ -2912,6 +2912,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootstrapper"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "assert_matches",
+ "async-trait",
+ "base64 0.22.1",
+ "bytes",
+ "clap",
+ "color-eyre",
+ "dotenv",
+ "env_logger 0.11.6",
+ "ethereum-instance",
+ "ethers",
+ "flate2",
+ "hex",
+ "indexmap 2.6.0",
+ "inline_colorization",
+ "lazy_static",
+ "log",
+ "num-bigint",
+ "parity-scale-codec",
+ "reqwest 0.11.27",
+ "rstest 0.18.2",
+ "scale-info",
+ "serde",
+ "serde_json",
+ "serde_with 2.3.3",
+ "starkgate-manager-client",
+ "starkgate-registry-client",
+ "starknet 0.11.0",
+ "starknet-accounts 0.11.0",
+ "starknet-core 0.11.1",
+ "starknet-core-contract-client",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-erc20-client",
+ "starknet-eth-bridge-client",
+ "starknet-providers 0.11.0",
+ "starknet-proxy-client",
+ "starknet-signers 0.9.0",
+ "starknet-token-bridge-client",
+ "starknet-types-core",
+ "starknet_api 0.8.0",
+ "subxt-lightclient",
+ "tempfile",
+ "thiserror 1.0.65",
+ "tokio",
+ "url",
+ "utils",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5723,7 +5775,16 @@ version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a9b99b9cbbe49445b21764dc0625032a89b145a2642e67603e1c936f5458d05"
 dependencies = [
- "derive_more-impl",
+ "derive_more-impl 1.0.0",
+]
+
+[[package]]
+name = "derive_more"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "093242cf7570c207c83073cf82f79706fe7b8317e98620a47d5be7c3d8497678"
+dependencies = [
+ "derive_more-impl 2.0.1",
 ]
 
 [[package]]
@@ -5736,6 +5797,17 @@ dependencies = [
  "quote",
  "syn 2.0.89",
  "unicode-xid",
+]
+
+[[package]]
+name = "derive_more-impl"
+version = "2.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bda628edc44c4bb645fbe0f758797143e4e07926f7ebf4e9bdfbd3d2ce621df3"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.89",
 ]
 
 [[package]]
@@ -5934,7 +6006,7 @@ dependencies = [
  "httpmock 0.8.0-alpha.1",
  "log",
  "mongodb",
- "orchestrator-core",
+ "orchestrator",
  "orchestrator-ethereum-settlement-client",
  "orchestrator-utils",
  "reqwest 0.12.8",
@@ -6222,7 +6294,7 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "dirs",
  "ethers",
@@ -7128,6 +7200,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8f49c12ba8b21d128a2ce8585955246977fbce4415f680ebf9199b6f9d6d725f"
 dependencies = [
  "async-trait",
+]
+
+[[package]]
+name = "governor"
+version = "0.6.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68a7f542ee6b35af73b06abc0dad1c1bae89964e4e253bc4b587b91c9637867b"
+dependencies = [
+ "cfg-if",
+ "dashmap 5.5.3",
+ "futures",
+ "futures-timer",
+ "no-std-compat",
+ "nonzero_ext",
+ "parking_lot 0.12.3",
+ "portable-atomic 1.10.0",
+ "quanta",
+ "rand",
+ "smallvec",
+ "spinning_top",
 ]
 
 [[package]]
@@ -8122,6 +8214,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "ip_network"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "aa2f047c0a98b2f299aa5d6d7088443570faae494e9ae1305e48be000c9e0eb1"
+
+[[package]]
 name = "ipconfig"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8794,19 +8892,45 @@ version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "anyhow",
+ "assert_matches",
  "async-trait",
+ "base64 0.22.1",
+ "bigdecimal 0.4.5",
+ "bincode 1.3.3",
+ "bitvec",
  "blockifier",
+ "bonsai-trie",
+ "bytes",
+ "cairo-lang-starknet-classes 2.8.4",
+ "cairo-lang-utils 2.8.4",
+ "cairo-vm",
  "clap",
+ "crypto-bigint 0.5.5",
+ "derive_more 2.0.1",
+ "dotenv",
  "fdlimit",
  "figment",
+ "flate2",
  "futures",
+ "governor",
  "http 1.1.0",
+ "http-body-util",
+ "httpmock 0.7.0",
  "hyper 0.14.31",
+ "hyper-tls 0.6.0",
+ "hyper-util",
+ "indoc 2.0.5",
+ "ip_network",
+ "itertools 0.13.0",
  "jsonrpsee",
+ "lazy_static",
+ "librocksdb-sys",
+ "m-proc-macros",
  "mc-analytics",
  "mc-block-production",
  "mc-db",
  "mc-devnet",
+ "mc-exec",
  "mc-gateway-client",
  "mc-gateway-server",
  "mc-mempool",
@@ -8815,29 +8939,59 @@ dependencies = [
  "mc-submit-tx",
  "mc-sync",
  "mc-telemetry",
+ "mockall",
  "mp-block",
  "mp-chain-config",
+ "mp-class",
+ "mp-convert",
+ "mp-gateway",
  "mp-oracle",
+ "mp-receipt",
  "mp-rpc",
+ "mp-state-update",
  "mp-transactions",
  "mp-utils",
+ "num-bigint",
+ "num-traits 0.2.19",
+ "once_cell",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
  "opentelemetry-semantic-conventions",
  "opentelemetry-stdout",
  "opentelemetry_sdk",
+ "paste",
+ "primitive-types",
+ "proc-macro2",
+ "proptest",
+ "proptest-derive",
+ "proptest-state-machine",
+ "quote",
  "rand",
  "rayon",
+ "regex",
  "reqwest 0.12.8",
+ "rocksdb",
+ "rstest 0.18.2",
  "serde",
  "serde_json",
+ "serde_with 3.11.0",
  "serde_yaml",
+ "sha3",
+ "starknet 0.12.0",
+ "starknet-accounts 0.11.0",
+ "starknet-contract 0.11.0",
  "starknet-core 0.12.0",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "starknet-providers 0.12.0",
+ "starknet-signers 0.10.0",
+ "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
+ "syn 2.0.89",
+ "tempfile",
  "thiserror 2.0.3",
  "tokio",
+ "tokio-util",
  "tower 0.4.13",
  "tower-http",
  "tracing",
@@ -8845,58 +8999,7 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "url",
-]
-
-[[package]]
-name = "madara-bootstrapper"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "assert_matches",
- "async-trait",
- "base64 0.22.1",
- "bytes",
- "clap",
- "color-eyre",
- "dotenv",
- "env_logger 0.11.6",
- "ethereum-instance",
- "ethers",
- "flate2",
- "hex",
- "indexmap 2.6.0",
- "inline_colorization",
- "lazy_static",
- "log",
- "num-bigint",
- "parity-scale-codec",
- "reqwest 0.11.27",
- "rstest 0.18.2",
- "scale-info",
- "serde",
- "serde_json",
- "serde_with 2.3.3",
- "starkgate-manager-client",
- "starkgate-registry-client",
- "starknet 0.11.0",
- "starknet-accounts 0.11.0",
- "starknet-core 0.11.1",
- "starknet-core-contract-client",
- "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
- "starknet-erc20-client",
- "starknet-eth-bridge-client",
- "starknet-providers 0.11.0",
- "starknet-proxy-client",
- "starknet-signers 0.9.0",
- "starknet-token-bridge-client",
- "starknet-types-core",
- "starknet_api 0.8.0",
- "subxt-lightclient",
- "tempfile",
- "thiserror 1.0.65",
- "tokio",
- "url",
- "utils",
+ "zeroize",
 ]
 
 [[package]]
@@ -9130,30 +9233,6 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-opentelemetry",
- "tracing-subscriber",
-]
-
-[[package]]
-name = "mc-e2e-tests"
-version = "0.8.0"
-dependencies = [
- "anyhow",
- "assert_matches",
- "flate2",
- "futures",
- "lazy_static",
- "m-cairo-test-contracts",
- "rand",
- "reqwest 0.12.8",
- "rstest 0.18.2",
- "serde_json",
- "starknet 0.12.0",
- "starknet-core 0.12.0",
- "starknet-providers 0.12.0",
- "starknet-types-core",
- "tempfile",
- "tokio",
- "tracing",
  "tracing-subscriber",
 ]
 
@@ -9955,6 +10034,12 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
+name = "no-std-compat"
+version = "0.4.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b93853da6d84c2e3c7d730d6473e8817692dd89be387eb01b94d7f108ecb5b8c"
+
+[[package]]
 name = "no-std-net"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9975,6 +10060,12 @@ dependencies = [
  "memchr",
  "minimal-lexical",
 ]
+
+[[package]]
+name = "nonzero_ext"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "38bf9645c8b145698bb0b18a4637dcacbc421ea49bef2317e4fd8065a387cf21"
 
 [[package]]
 name = "ntapi"
@@ -10379,51 +10470,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "04744f49eae99ab78e0d5c0b603ab218f515ea8cfe5a456d7629ad883a3b6e7d"
 
 [[package]]
-name = "orchestrator-atlantic-service"
-version = "0.8.0"
-dependencies = [
- "alloy 0.8.3",
- "alloy-primitives 0.8.18",
- "async-trait",
- "base64 0.22.1",
- "cairo-vm",
- "chrono",
- "color-eyre",
- "dotenvy",
- "env_logger 0.11.6",
- "hex",
- "httpmock 0.8.0-alpha.1",
- "lazy_static",
- "log",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
- "orchestrator-gps-fact-checker",
- "orchestrator-prover-client-interface",
- "orchestrator-utils",
- "reqwest 0.12.8",
- "rstest 0.18.2",
- "serde",
- "serde_json",
- "starknet-os",
- "strum 0.26.3",
- "strum_macros 0.26.4",
- "tempfile",
- "thiserror 2.0.3",
- "tokio",
- "tokio-util",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
- "url",
- "uuid 1.12.0",
-]
-
-[[package]]
-name = "orchestrator-core"
+name = "orchestrator"
 version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
@@ -10494,6 +10541,50 @@ dependencies = [
  "tracing-opentelemetry",
  "tracing-subscriber",
  "tracing-test",
+ "url",
+ "uuid 1.12.0",
+]
+
+[[package]]
+name = "orchestrator-atlantic-service"
+version = "0.8.0"
+dependencies = [
+ "alloy 0.8.3",
+ "alloy-primitives 0.8.18",
+ "async-trait",
+ "base64 0.22.1",
+ "cairo-vm",
+ "chrono",
+ "color-eyre",
+ "dotenvy",
+ "env_logger 0.11.6",
+ "hex",
+ "httpmock 0.8.0-alpha.1",
+ "lazy_static",
+ "log",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "orchestrator-gps-fact-checker",
+ "orchestrator-prover-client-interface",
+ "orchestrator-utils",
+ "reqwest 0.12.8",
+ "rstest 0.18.2",
+ "serde",
+ "serde_json",
+ "starknet-os",
+ "strum 0.26.3",
+ "strum_macros 0.26.4",
+ "tempfile",
+ "thiserror 2.0.3",
+ "tokio",
+ "tokio-util",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
  "url",
  "uuid 1.12.0",
 ]
@@ -11582,6 +11673,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "quanta"
+version = "0.12.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3bd1fe6824cea6538803de3ff1bc0cf3949024db3d43c9643024bfb33a807c0e"
+dependencies = [
+ "crossbeam-utils",
+ "libc",
+ "once_cell",
+ "raw-cpuid",
+ "wasi",
+ "web-sys",
+ "winapi",
+]
+
+[[package]]
 name = "quick-error"
 version = "1.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -11692,6 +11798,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d25bf25ec5ae4a3f1b92f929810509a2f53d7dca2f50b794ff57e3face536c8f"
 dependencies = [
  "rand_core",
+]
+
+[[package]]
+name = "raw-cpuid"
+version = "11.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c6df7ab838ed27997ba19a4664507e6f82b41fe6e20be42929332156e5e85146"
+dependencies = [
+ "bitflags 2.6.0",
 ]
 
 [[package]]
@@ -13395,6 +13510,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "spinning_top"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d96d2d1d716fb500937168cc09353ffdc7a012be8475ac7308e1bdf0e3923300"
+dependencies = [
+ "lock_api",
+]
+
+[[package]]
 name = "spki"
 version = "0.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -13434,7 +13558,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13448,7 +13572,7 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13589,7 +13713,7 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13726,7 +13850,7 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -13741,7 +13865,7 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13915,7 +14039,7 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -13964,7 +14088,7 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethers",
@@ -15403,7 +15527,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=34bda2ccb69fb26be9cdfe091c11f27480850c96#34bda2ccb69fb26be9cdfe091c11f27480850c96"
+source = "git+https://github.com/trantorian1/zaun?branch=fix%2Fbuild#ed0bb462f2edf6f5f9938856b82c7d57c85a2a3b"
 dependencies = [
  "async-trait",
  "ethers",

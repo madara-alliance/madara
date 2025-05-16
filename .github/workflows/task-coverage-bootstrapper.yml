@@ -10,10 +10,6 @@ on:
         description: "Hash used to retrieve the artifact"
         required: true
         type: string
-      bootstrapper-artifacts-hash:
-        description: "Hash used to retrieve the artifact"
-        required: true
-        type: string
     secrets:
       ETH_FORK_URL:
         required: true
@@ -26,36 +22,29 @@ jobs:
       pull-requests: write
     runs-on: karnot-arc-runner-set
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Setup the environment with all necessary dependencies
-      - uses: ./.github/actions/load-env
+      - name: Load env
+        uses: ./.github/actions/load-env
 
-      # Setup the rust environment
-      - uses: ./.github/actions/rust-setup
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
         with:
-          # Uses the dev cache key as we are using the --profile dev later
-          cache-key: COVERAGE
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          install-mold: true
-          install-scarb: true
-          install-foundry: true
-          foundry-version: stable
-          install-node: true
-          node-version: ${{ env.BUILD_NODE_VERSION }}
-          install-ganache: true
-          ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
-          install-solc: true
-          solc-version: ${{ env.BUILD_SOLC_VERSION }}
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-          build-snos: true
+          cache-key: bootstrapper-test
+
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
       - name: Install nextest
         uses: taiki-e/install-action@nextest
+
       - name: Download Madara binary
         uses: actions/download-artifact@v4
         with:
@@ -66,7 +55,7 @@ jobs:
 
       - name: Prepare Madara Environment (Bootstrapper)
         run: |
-          mv target/release/madara ./madara-binary          
+          mv target/release/madara ./madara-binary
           echo "MADARA_BOOTSTRAPPER_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
           echo "Binary path: $(pwd)/madara-binary"
 
@@ -81,11 +70,6 @@ jobs:
             echo "Config file NOT found at specified path!"
             ls -la $(pwd)/configs/presets/ || echo "Directory not found!"
           fi
-      - name: Download Bootstrapper artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
-          path: artifacts
 
       - name: Start Anvil with fork
         run: |
@@ -110,15 +94,15 @@ jobs:
       - name: Run tests with coverage
         continue-on-error: false
         run: |
-          export COVERAGE_BIN=$(realpath target/release/madara-bootstrapper)
-          rm -f target/madara-bootstrapper-* lcov.info
+          export COVERAGE_BIN=$(realpath target/release/bootstrapper)
+          rm -f target/bootstrapper-* lcov.info
 
           # run tests for bootstrapper crate
           RUST_LOG=info cargo llvm-cov nextest \
                   --release \
                   --lcov \
                   --output-path lcov.info \
-                  --package "madara-bootstrapper" \
+                  --package "bootstrapper" \
                   --no-fail-fast
 
       - name: Upload coverage to Coveralls

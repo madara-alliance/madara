@@ -42,37 +42,28 @@ jobs:
           - 27017:27017
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Setup the environment with all necessary dependencies
-      - uses: ./.github/actions/load-env
+      - name: Load env
+        uses: ./.github/actions/load-env
 
-      - uses: ./.github/actions/rust-setup
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
         with:
-          # Uses the testing cache key as we are using the --profile dev later
-          cache-key: coverage-orchestrator
-          rust-version: ${{ env.TESTING_RUST_VERSION }}
-          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          install-scarb: true
-          install-foundry: true
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: orchestrator-test
+
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-          build-snos: true
-          install-mold: true
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-
-      - name: Build Mock Contracts using Scarb
-        working-directory: orchestrator
-        run: |
-          cd crates/settlement-clients/starknet/src/tests/mock_contracts
-          scarb fmt --check
-          scarb build
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
@@ -96,7 +87,7 @@ jobs:
         run: |
           wget -P ./crates/prover-clients/sharp-service/tests/artifacts https://madara-orchestrator-sharp-pie.s3.amazonaws.com/238996-SN.zip
           # TODO: this can be optimised
-          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./crates/orchestrator/src/tests/artifacts/238996-SN.zip
+          cp ./crates/prover-clients/sharp-service/tests/artifacts/238996-SN.zip ./src/tests/artifacts/238996-SN.zip
 
       - name: Check rust version
         run: rustup show

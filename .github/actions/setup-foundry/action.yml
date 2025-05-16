@@ -1,0 +1,19 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-action.json
+name: Action - Setup Foundry
+description: Sets up the Foundry environment with a configurable toolchain
+
+inputs:
+  foundry-version:
+    description: Foundry version to set up
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+      with:
+        version: ${{ inputs.foundry-version }}
