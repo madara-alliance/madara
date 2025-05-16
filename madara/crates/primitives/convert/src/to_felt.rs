@@ -1,6 +1,5 @@
 use alloy::primitives::U256;
 use primitive_types::H160;
-use starknet_types_core::felt::Felt;
 
 use core::fmt;
 use std::ops::Deref;
@@ -11,6 +10,8 @@ use starknet_api::core::{
 };
 use starknet_api::transaction::{ContractAddressSalt, EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
+
+pub use starknet_types_core::felt::Felt;
 
 pub trait ToFelt {
     fn to_felt(self) -> Felt;
