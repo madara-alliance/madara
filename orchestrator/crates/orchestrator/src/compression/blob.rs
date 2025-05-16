@@ -399,7 +399,7 @@ pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> Result<Vec<Vec<BigUin
     let num_blobs = (blob_data.len() + BLOB_LEN - 1) / BLOB_LEN; // ceil(len / BLOB_LEN)
     let mut transformed_data = Vec::new();
     for i in 0..num_blobs {
-        transformed_data.push(DAJobHandler::fft_transformation(blob_data[i..(BLOB_LEN * (i + 1))].to_vec())?);
+        transformed_data.push(DAJobHandler::fft_transformation(blob_data[BLOB_LEN*i..(BLOB_LEN * (i + 1))].to_vec())?);
     }
     Ok(transformed_data)
 }
