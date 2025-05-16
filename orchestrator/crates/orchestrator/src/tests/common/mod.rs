@@ -62,9 +62,9 @@ pub async fn create_sns_arn(
     aws_sns_params: &AlertArgs,
 ) -> Result<(), SdkError<CreateTopicError>> {
     // TODO: need to rework this!
-    let topic_name = aws_sns_params.topic_name.split(":").last().unwrap();
+    let alert_topic_name = aws_sns_params.alert_topic_name.split(":").last().unwrap();
     let sns_client = get_sns_client(provider_config.get_aws_client_or_panic()).await;
-    sns_client.create_topic().name(topic_name).send().await?;
+    sns_client.create_topic().name(alert_topic_name).send().await?;
     Ok(())
 }
 

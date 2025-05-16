@@ -30,7 +30,7 @@ pub struct QueueArgs {
 /// AlertArgs - Arguments used to set up alert resources
 #[derive(Debug, Clone)]
 pub struct AlertArgs {
-    pub topic_name: String,
+    pub alert_topic_name: String,
 }
 
 /// CronArgs - Arguments used to setup cron resources
@@ -109,11 +109,11 @@ impl TryFrom<SetupCmd> for AlertArgs {
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         let topic = setup_cmd
             .aws_sns_args
-            .topic_name
+            .alert_topic_name
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        let topic_name = format!("{}_{}", setup_cmd.aws_config_args.aws_prefix, topic);
-        info!("SNS TOPIC: {}", topic_name);
-        Ok(Self { topic_name })
+        let alert_topic_name = format!("{}_{}", setup_cmd.aws_config_args.aws_prefix, topic);
+        info!("SNS TOPIC: {}", alert_topic_name);
+        Ok(Self { alert_topic_name })
     }
 }
 
@@ -122,11 +122,11 @@ impl TryFrom<RunCmd> for AlertArgs {
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
          let topic = run_cmd
             .aws_sns_args
-            .topic_name
+            .alert_topic_name
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-         let topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
-         info!("SNS TOPIC: {}", topic_name);
-         Ok(Self { topic_name })
+         let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
+         info!("SNS TOPIC: {}", alert_topic_name);
+         Ok(Self { alert_topic_name })
     }
 }
 

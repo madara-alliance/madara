@@ -23,44 +23,44 @@ impl Resource for SNS {
     }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let topic_arn = args.topic_name;
-        tracing::info!("Topic ARN: {}", topic_arn);
+        let alert_topic_arn = args.alert_topic_name;
+        tracing::info!("Topic ARN: {}", alert_topic_arn);
 
         // Extract topic name from ARN or use the full string if it's just a name
-        let topic_name = if topic_arn.starts_with("arn:aws:sns:") {
-            topic_arn.split(':').last().ok_or_else(|| anyhow!("Invalid ARN format"))?.to_string()
+        let alert_topic_name = if alert_topic_arn.starts_with("arn:aws:sns:") {
+            alert_topic_arn.split(':').last().ok_or_else(|| anyhow!("Invalid ARN format"))?.to_string()
         } else {
-            topic_arn.clone()
+            alert_topic_arn.clone()
         };
 
         // Validate topic name before proceeding
-        if !self.is_valid_topic_name(&topic_name) {
+        if !self.is_valid_topic_name(&alert_topic_name) {
             return Err(OrchestratorError::ResourceSetupError(format!(
                 "Invalid topic name: {}. Topic names must be made up of letters, numbers, hyphens, and underscores.",
-                topic_name
+                alert_topic_name
             )));
         }
 
         // Check if a topic exists using ARN
-        if self.check_if_exists(topic_arn.clone()).await? {
-            tracing::warn!(" ⏭️ SNS topic already exists. Topic ARN: {}", topic_arn);
+        if self.check_if_exists(alert_topic_arn.clone()).await? {
+            tracing::warn!(" ⏭️ SNS topic already exists. Topic ARN: {}", alert_topic_arn);
             return Ok(());
         }
 
         // Create topic using the validated name
-        let response = self.client.create_topic().name(topic_name).send().await.context("Failed to create topic")?;
+        let response = self.client.create_topic().name(alert_topic_name).send().await.context("Failed to create topic")?;
 
         let new_topic_arn = response.topic_arn().context("Failed to get topic ARN")?;
         tracing::info!("SNS topic created. Topic ARN: {}", new_topic_arn);
         Ok(())
     }
 
-    async fn check_if_exists(&self, topic_arn: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(topic_arn).send().await.is_ok())
+    async fn check_if_exists(&self, alert_topic_arn: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.get_topic_attributes().topic_arn(alert_topic_arn).send().await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(&args.topic_name).send().await.is_ok())
+        Ok(self.client.get_topic_attributes().topic_arn(&args.alert_topic_name).send().await.is_ok())
     }
 }
 

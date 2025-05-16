@@ -11,5 +11,5 @@ pub struct AWSSNSCliArgs {
     /// The ARN of the SNS topic.
     #[arg(env = "MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME", long, default_value = Some("arn")
     )]
-    pub topic_name: Option<String>,
+    pub alert_topic_name: Option<String>,
 }

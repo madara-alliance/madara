@@ -17,9 +17,9 @@ pub enum AlertError {
     #[error("Topic not found: {0}")]
     TopicNotFound(String),
 
-    #[error("Failed to list topics: {0}")]
+    #[error("Failed to list alert topics: {0}")]
     ListTopicsError(#[from] SdkError<ListTopicsError>),
 
-    #[error("SNS error: {0}")]
+    #[error("Failed to take lock: {0}")]
     LockError(String),
 }

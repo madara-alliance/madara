@@ -504,9 +504,9 @@ pub(crate) fn get_env_params() -> EnvParams {
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
     });
 
-    let topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
+    let alert_topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
 
-    let alert_params = AlertArgs { topic_name };
+    let alert_params = AlertArgs { alert_topic_name };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))
