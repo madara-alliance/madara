@@ -9,6 +9,7 @@ use appchain_core_contract_client::clients::StarknetCoreContractClient;
 use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
+use color_eyre::eyre::Context;
 use color_eyre::Result;
 use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
@@ -258,12 +259,18 @@ impl SettlementClient for StarknetSettlementClient {
             return Ok(None);
         }
 
-        Ok(Some(u64_from_felt(block_number[1]).expect("Failed to convert to u64")))
+        let converted_value = u64_from_felt(block_number[1])
+            .wrap_err("Failed to convert to u64")?;
+
+        Ok(Some(converted_value))
+
     }
 
     /// Returns the nonce for the wallet in use.
     async fn get_nonce(&self) -> Result<u64> {
         let nonce = self.account.get_nonce().await?;
-        Ok(u64_from_felt(nonce).expect("Failed to convert to u64"))
+        let converted_value = u64_from_felt(nonce)
+            .wrap_err("Failed to convert to u64")?;
+        Ok(converted_value)
     }
 }
