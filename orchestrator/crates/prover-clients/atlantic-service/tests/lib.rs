@@ -12,7 +12,7 @@ mod constants;
 #[tokio::test]
 async fn atlantic_client_submit_task_when_mock_works() {
     let _ = env_logger::try_init();
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
     let atlantic_params = AtlanticValidatedArgs {
         atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
         atlantic_service_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL")).unwrap(),
@@ -53,7 +53,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
 #[tokio::test]
 async fn atlantic_client_get_task_status_works() {
     let _ = env_logger::try_init();
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
     let atlantic_params = AtlanticValidatedArgs {
         atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
         atlantic_service_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL")).unwrap(),
@@ -76,7 +76,7 @@ async fn atlantic_client_get_task_status_works() {
 #[tokio::test]
 async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     let _ = env_logger::try_init();
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
 
     // Initialize Atlantic parameters from environment variables
     let atlantic_params = AtlanticValidatedArgs {

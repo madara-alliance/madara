@@ -15,15 +15,17 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
 
-use crate::constants::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::data_storage::MockDataStorage;
-use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
-use crate::jobs::state_update_job::utils::hex_string_to_u8_vec;
-use crate::jobs::state_update_job::{StateUpdateError, StateUpdateJob};
-use crate::jobs::types::{JobStatus, JobType};
-use crate::jobs::{Job, JobError};
+use crate::core::client::storage::MockStorageClient;
+use crate::error::job::state_update::StateUpdateError;
+use crate::error::job::JobError;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
+use crate::worker::event_handler::jobs::JobHandlerTrait;
+use crate::worker::utils::hex_string_to_u8_vec;
 
 lazy_static! {
     pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().expect("Failed to get Current Path");
@@ -50,9 +52,11 @@ async fn test_process_job_attempt_not_present_fails() {
         tx_hashes: vec![],
     });
 
-    let state_update_job = StateUpdateJob {};
-    let res = state_update_job.process_job(services.config, &mut job).await.unwrap_err();
-    assert_eq!(res, JobError::StateUpdateJobError(StateUpdateError::BlockNumberNotFound));
+    let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap_err();
+    assert!(
+        matches!(res, JobError::StateUpdateJobError(StateUpdateError::BlockNumberNotFound)),
+        "JobError should be StateUpdateJobError with BlockNumberNotFound"
+    );
 }
 
 // TODO : make this test work
@@ -65,7 +69,7 @@ async fn test_process_job_works(
     #[case] blocks_to_process: String,
     #[case] processing_start_index: u8,
 ) {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
 
     // Mocking the settlement client.
     let mut settlement_client = MockSettlementClient::new();
@@ -177,8 +181,7 @@ async fn test_process_job_works(
     job.job_type = JobType::StateTransition;
     job.metadata = metadata;
 
-    let state_update_job = StateUpdateJob {};
-    let res = state_update_job.process_job(services.config, &mut job).await.unwrap();
+    let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap();
     assert_eq!(res, last_block_number.to_string());
 }
 
@@ -187,8 +190,6 @@ async fn test_process_job_works(
 #[rstest]
 #[tokio::test]
 async fn create_job_works() {
-    let services = TestConfigBuilder::new().build().await;
-
     // Create proper metadata structure
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
@@ -202,7 +203,7 @@ async fn create_job_works() {
         }),
     };
 
-    let job = StateUpdateJob.create_job(services.config, String::from("0"), metadata).await;
+    let job = StateUpdateJobHandler.create_job(String::from("0"), metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -219,7 +220,7 @@ async fn create_job_works() {
 #[tokio::test]
 async fn process_job_works_unit_test() {
     let mut settlement_client = MockSettlementClient::new();
-    let mut storage_client = MockDataStorage::new();
+    let mut storage_client = MockStorageClient::new();
 
     // Mock the latest block settled
     settlement_client.expect_get_last_settled_block().returning(|| Ok(651052_u64));
@@ -313,9 +314,8 @@ async fn process_job_works_unit_test() {
     // Add process attempt to common metadata
     metadata.common.process_attempt_no = 0;
 
-    let mut job =
-        StateUpdateJob.create_job(services.config.clone(), String::from("internal_id"), metadata).await.unwrap();
-    assert_eq!(StateUpdateJob.process_job(services.config, &mut job).await.unwrap(), "651056".to_string())
+    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    assert_eq!(StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap(), "651056".to_string())
 }
 
 #[rstest]
@@ -358,9 +358,8 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
         }),
     };
 
-    let mut job =
-        StateUpdateJob.create_job(services.config.clone(), String::from("internal_id"), metadata).await.unwrap();
-    let status = StateUpdateJob.process_job(services.config, &mut job).await;
+    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let status = StateUpdateJobHandler.process_job(services.config, &mut job).await;
     assert!(status.is_err());
 
     if let Err(error) = status {
@@ -416,9 +415,8 @@ async fn process_job_invalid_input_gap_panics() {
         }),
     };
 
-    let mut job =
-        StateUpdateJob.create_job(services.config.clone(), String::from("internal_id"), metadata).await.unwrap();
-    let response = StateUpdateJob.process_job(services.config, &mut job).await;
+    let mut job = StateUpdateJobHandler.create_job(String::from("internal_id"), metadata).await.unwrap();
+    let response = StateUpdateJobHandler.process_job(services.config, &mut job).await;
 
     assert_matches!(response,
         Err(e) => {

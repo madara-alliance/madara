@@ -1,7 +1,8 @@
 use super::builder::PausedClient;
-use bytes::Buf;
+use bincode::Options;
+use bytes::{Buf, Bytes};
 use http::Method;
-use http_body_util::BodyExt;
+use http_body_util::{BodyExt, Full};
 use hyper::body::Incoming;
 use hyper::header::{HeaderName, HeaderValue, CONTENT_TYPE};
 use hyper::{HeaderMap, Request, Response, StatusCode, Uri};
@@ -13,6 +14,13 @@ use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, collections::HashMap};
 use tower::Service;
 use url::Url;
+
+pub(crate) fn url_join_segment(url: &mut Url, segment: &str) {
+    if url.path_segments().expect("Invalid base URL").last().is_some_and(|e| e.is_empty()) {
+        url.path_segments_mut().expect("Invalid base URL").pop();
+    }
+    url.path_segments_mut().expect("Invalid base URL").extend(&[segment]);
+}
 
 #[derive(Debug)]
 pub struct RequestBuilder<'a> {
@@ -28,7 +36,7 @@ impl<'a> RequestBuilder<'a> {
     }
 
     pub fn add_uri_segment(mut self, segment: &str) -> Result<Self, url::ParseError> {
-        self.url = self.url.join(segment)?;
+        url_join_segment(&mut self.url, segment);
         Ok(self)
     }
 
@@ -81,11 +89,52 @@ impl<'a> RequestBuilder<'a> {
 
         req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
 
-        let req = req_builder.body(String::new())?;
+        let req = req_builder.body(Full::new(Bytes::from(String::new())))?;
 
         let response: Response<Incoming> =
             self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
         Ok(response)
+    }
+
+    pub async fn send_post_bincode<T, D>(self, body: D) -> Result<T, SequencerError>
+    where
+        T: DeserializeOwned,
+        D: Serialize,
+    {
+        let uri = self.build_uri()?;
+
+        let mut req_builder = Request::builder().method(Method::POST).uri(uri);
+
+        req_builder.headers_mut().expect("Failed to get mutable reference to request headers").extend(self.headers);
+
+        let body = bincode::options()
+            .with_little_endian()
+            .serialize(&body)
+            .map_err(|err| SequencerError::HttpCallError(err))?; // Fixed endinaness is important.
+        let body = Bytes::from(body);
+
+        let req = req_builder.body(Full::new(body))?;
+
+        let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
+
+        let http_status = response.status();
+        let whole_body = response.collect().await?.aggregate();
+
+        if http_status == StatusCode::TOO_MANY_REQUESTS {
+            return Err(SequencerError::StarknetError(StarknetError::rate_limited()));
+        } else if !http_status.is_success() {
+            let starknet_error = serde_json::from_reader::<_, StarknetError>(whole_body.reader())
+                .map_err(|serde_error| SequencerError::InvalidStarknetError { http_status, serde_error })?;
+
+            return Err(starknet_error.into());
+        }
+
+        let res = bincode::options()
+            .with_little_endian() // Fixed endinaness is important.
+            .deserialize_from(whole_body.reader())
+            .map_err(|err| SequencerError::HttpCallError(err))?;
+
+        Ok(res)
     }
 
     pub async fn send_post<T, D>(self, body: D) -> Result<T, SequencerError>
@@ -101,7 +150,7 @@ impl<'a> RequestBuilder<'a> {
 
         let body = serde_json::to_string(&body).map_err(SequencerError::SerializeRequest)?;
 
-        let req = req_builder.header(CONTENT_TYPE, "application/json").body(body)?;
+        let req = req_builder.header(CONTENT_TYPE, "application/json").body(Full::new(Bytes::from(body)))?;
 
         let response = self.client.clone().call(req).await.map_err(SequencerError::HttpCallError)?;
         unpack(response).await

@@ -13,7 +13,7 @@ use starknet_types_core::felt::Felt;
 
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 pub struct StateUpdate {
-    pub block_number: u64,
+    pub block_number: Option<u64>,
     pub global_root: Felt,
     pub block_hash: Felt,
 }
@@ -29,19 +29,30 @@ pub struct StateUpdateWorker {
 
 impl StateUpdateWorker {
     pub fn update_state(&self, state_update: StateUpdate) -> Result<(), SettlementClientError> {
+        let block_info = match state_update.block_number {
+            Some(num) => format!("#{}", num),
+            None => "no block number".to_string(),
+        };
+
         tracing::info!(
-            "🔄 Updated L1 head #{} ({}) with state root ({})",
-            state_update.block_number,
+            "🔄 L1 State Update: {} | BlockHash: {} | GlobalRoot: {}",
+            block_info,
             trim_hash(&state_update.block_hash),
             trim_hash(&state_update.global_root)
         );
 
-        self.block_metrics.l1_block_number.record(state_update.block_number, &[]);
-
-        self.backend.write_last_confirmed_block(state_update.block_number).map_err(|e| {
-            SettlementClientError::DatabaseError(format!("Failed to write last confirmed block: {}", e))
-        })?;
-        tracing::debug!("update_l1: wrote last confirmed block number");
+        match state_update.block_number {
+            Some(block_num) => {
+                self.block_metrics.l1_block_number.record(block_num, &[]);
+                self.backend.write_last_confirmed_block(block_num).map_err(|e| {
+                    SettlementClientError::DatabaseError(format!("Failed to write last confirmed block: {}", e))
+                })?;
+                tracing::debug!("update_l1: wrote last confirmed block number: {}", block_num);
+            }
+            None => {
+                tracing::warn!("update_l1: no valid block number received from L1, skipping block number update");
+            }
+        }
 
         self.l1_head_sender.send_modify(|s| *s = Some(state_update.clone()));
 

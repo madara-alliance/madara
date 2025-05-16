@@ -60,11 +60,11 @@ bouncer_config:
     # Maximum number of steps per block
     n_steps: 40000000
     # Maximum length of message segments
-    message_segment_length: 18446744073709551615
+    message_segment_length: 3700
     # Maximum number of events per block
-    n_events: 18446744073709551615
+    n_events: 5000
     # Maximum size of state differences per block
-    state_diff_size: 131072
+    state_diff_size: 4000
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).
