@@ -10,7 +10,7 @@ pub struct ServiceCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS", long)]
     pub min_block_to_process: Option<u64>,
 
-    /// The maximum number of SNOS jobs to process concurrently.
+    /// The maximum number of SNOS jobs to create concurrently.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", long)]
     pub max_concurrent_created_snos_jobs: Option<usize>,
 
