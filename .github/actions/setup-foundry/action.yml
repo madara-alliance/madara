@@ -3,7 +3,7 @@ name: Action - Setup Foundry
 description: Sets up the Foundry environment with a configurable toolchain
 
 inputs:
-  rust-version:
+  foundry-version:
     description: Foundry version to set up
     required: true
 
