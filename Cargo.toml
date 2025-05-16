@@ -180,7 +180,11 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = ["cairo-1-hints", "extensive_hints", "mod_builtin"] }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+  "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
+] }
 starknet-accounts = "0.11.0"
 starknet-contract = "0.11.0"
 starknet-core = "0.12"

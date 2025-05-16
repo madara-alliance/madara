@@ -9439,14 +9439,14 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "mc-db",
  "mc-exec",
  "mp-class",
  "mp-convert",
  "mp-rpc",
  "mp-transactions",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
