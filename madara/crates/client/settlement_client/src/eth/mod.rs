@@ -132,7 +132,6 @@ impl SettlementClientTrait for EthereumClient {
         // Get the latest block_n first, to guard against the case when the contract state changed in between the calls following calls.
         let latest_block_n = self.get_latest_block_number().await?;
 
-        println!("latest_block_n: {}", latest_block_n);
         let block_number =
             self.l1_core_contract.stateBlockNumber().block(BlockId::number(latest_block_n)).call().await.map_err(
                 |e| -> SettlementClientError {
