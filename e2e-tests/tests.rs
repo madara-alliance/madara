@@ -317,8 +317,7 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
 pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs) -> color_eyre::Result<()> {
     let message = JobQueueMessage { id };
 
-    let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
-    let config = aws_config::from_env().region(region_provider).load().await;
+    let config = aws_config::from_env().load().await;
     let queue = SQS::new(&config, Some(&queue_params));
     let queue_name = format!("{}_{}_{}", queue_params.prefix, QueueType::SnosJobProcessing, queue_params.suffix);
     let queue_url = queue.get_queue_url_from_client(queue_name.as_str()).await?;
@@ -331,8 +330,7 @@ pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs)
 }
 
 pub async fn put_message_in_queue(message: JobQueueMessage, queue_url: String) -> color_eyre::Result<()> {
-    let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
-    let config = aws_config::from_env().region(region_provider).load().await;
+    let config = aws_config::from_env().load().await;
     let client = aws_sdk_sqs::Client::new(&config);
 
     let rsp = client.send_message().queue_url(queue_url).message_body(serde_json::to_string(&message)?).send().await?;
