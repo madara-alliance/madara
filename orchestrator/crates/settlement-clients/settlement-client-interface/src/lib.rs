@@ -4,6 +4,7 @@ use mockall::automock;
 use mockall::predicate::*;
 
 pub const SETTLEMENT_SETTINGS_NAME: &str = "settlement_settings";
+pub const SPECIAL_BLOCK_NUMBER: &str = "0x800000000000011000000000000000000000000000000000000000000000000";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettlementVerificationStatus {
@@ -43,7 +44,7 @@ pub trait SettlementClient: Send + Sync {
     async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<Option<u64>>;
 
     /// Should retrieves the last settled block in the settlement layer
-    async fn get_last_settled_block(&self) -> Result<u64>;
+    async fn get_last_settled_block(&self) -> Result<Option<u64>>;
 
     /// Should retrieve the latest transaction count to be used as nonce.
     async fn get_nonce(&self) -> Result<u64>;
