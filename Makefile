@@ -190,6 +190,7 @@ ARTIFACTS := ./build_artifacts
 artifacts:
 	@if [ -d "$(ARTIFACTS)/argent"           ] || \
 			[ -d "$(ARTIFACTS)/bravoos"          ] || \
+			[ -d "$(ARTIFACTS)/cairo"            ] || \
 			[ -d "$(ARTIFACTS)/cairo_lang"       ] || \
 			[ -d "$(ARTIFACTS)/starkgate_latest" ] || \
 			[ -d "$(ARTIFACTS)/starkgate_legacy" ]; \
@@ -203,6 +204,7 @@ artifacts:
 	fi
 	@rm -rf "$(ARTIFACTS)/argent"
 	@rm -rf "$(ARTIFACTS)/bravoos"
+	@rm -rf "$(ARTIFACTS)/cairo"
 	@rm -rf "$(ARTIFACTS)/cairo_lang"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"

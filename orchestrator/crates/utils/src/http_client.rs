@@ -521,7 +521,7 @@ mod http_client_tests {
     fn test_multipart_form_file() {
         let client =
             HttpClient::builder(TEST_URL).expect("Failed to create builder").build().expect("Failed to build client");
-        let file_path: PathBuf = "../orchestrator/src/tests/artifacts/fibonacci.zip".parse().unwrap();
+        let file_path: PathBuf = "../../src/tests/artifacts/fibonacci.zip".parse().unwrap();
 
         // Test initial state
         let request = client.request();
