@@ -13,6 +13,15 @@ pub struct SNS {
 }
 
 impl SNS {
+    /// Since the SNS client with both client and option for the client, we've needed to pass the
+    /// aws_config and args to the constructor.
+    ///
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    /// * `args` - The alert arguments.
+    ///
+    /// # Returns
+    /// * `Self` - The SNS client.
     pub(crate) fn new(aws_config: &SdkConfig, args: Option<&AlertArgs>) -> Self {
         Self {
             client: Arc::new(Client::new(aws_config)),
@@ -21,6 +30,11 @@ impl SNS {
         }
     }
 
+    /// get_topic_arn return the topic name, if empty it will return an error
+    ///
+    /// # Returns
+    ///
+    /// * `Result<String, AlertError>` - The topic arn.
     pub async fn get_topic_arn(&self) -> Result<String, AlertError> {
         // First, try to get the cached value
         if let Some(arn) = self.alert_topic_arn.get() {
