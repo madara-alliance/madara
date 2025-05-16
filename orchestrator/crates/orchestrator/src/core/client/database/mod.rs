@@ -59,4 +59,10 @@ pub trait DatabaseClient: Send + Sync {
         status: Vec<JobStatus>,
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_jobs_by_type_and_status - Get all the jobs by type and status
+    async fn get_jobs_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
 }
