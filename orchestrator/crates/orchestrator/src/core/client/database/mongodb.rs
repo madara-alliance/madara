@@ -12,10 +12,10 @@ use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, FindOptions, ReturnDocument, UpdateOptions};
 use mongodb::{bson, Client, Collection, Database};
 use opentelemetry::KeyValue;
+use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -86,36 +86,47 @@ impl MongoDbClient {
         Ok(collection.find_one(filter, None).await?)
     }
 
-    pub async fn update_one<T>(&self, collection: Collection<T>, filter: Document, update: Document, options: Option<UpdateOptions>) -> Result<UpdateResult, DatabaseError>
+    pub async fn update_one<T>(
+        &self,
+        collection: Collection<T>,
+        filter: Document,
+        update: Document,
+        options: Option<UpdateOptions>,
+    ) -> Result<UpdateResult, DatabaseError>
     where
         T: Serialize + Sized,
     {
         let result = collection.update_one(filter, update, options).await?;
-        Ok(UpdateResult {
-            matched_count: result.matched_count,
-            modified_count: result.modified_count,
-        })
+        Ok(UpdateResult { matched_count: result.matched_count, modified_count: result.modified_count })
     }
 
-    pub async fn delete_one<T>(&self, collection: Collection<T>, filter: Document) -> Result<DeleteResult, DatabaseError>
+    pub async fn delete_one<T>(
+        &self,
+        collection: Collection<T>,
+        filter: Document,
+    ) -> Result<DeleteResult, DatabaseError>
     where
         T: Serialize + Sized,
     {
         let result = collection.delete_one(filter, None).await?;
-        Ok(DeleteResult {
-            deleted_count: result.deleted_count,
-        })
+        Ok(DeleteResult { deleted_count: result.deleted_count })
     }
-    pub async fn find<T>(&self, collection: Collection<T>, filter: Document, sort: Option<Document>, limit: Option<i64>, skip: Option<i64>, projection: Option<Document>) -> Result<Vec<T>, DatabaseError>
+    pub async fn find<T>(
+        &self,
+        collection: Collection<T>,
+        filter: Document,
+        sort: Option<Document>,
+        limit: Option<i64>,
+        skip: Option<i64>,
+        projection: Option<Document>,
+    ) -> Result<Vec<T>, DatabaseError>
     where
         T: DeserializeOwned + Unpin + Send + Sync + Sized,
     {
         let start = Instant::now();
-        let mut pipeline = vec![
-            doc! {
-                "$match": filter
-            },
-        ];
+        let mut pipeline = vec![doc! {
+            "$match": filter
+        }];
         if let Some(sort) = sort {
             pipeline.push(doc! {
                 "$sort": sort
@@ -145,12 +156,18 @@ impl MongoDbClient {
                     Ok(item) => vec_items.push(item),
                     Err(e) => {
                         tracing::error!(error = %e, category = "db_call", "Deserialization error");
-                        return Err(DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e)));
+                        return Err(DatabaseError::FailedToSerializeDocument(format!(
+                            "Failed to deserialize document: {}",
+                            e
+                        )));
                     }
-                }
+                },
                 Err(e) => {
                     tracing::error!(error = %e, category = "db_call", "Error retrieving document");
-                    return Err(DatabaseError::FailedToSerializeDocument(format!("Failed to retrieve document: {}", e)));
+                    return Err(DatabaseError::FailedToSerializeDocument(format!(
+                        "Failed to retrieve document: {}",
+                        e
+                    )));
                 }
             }
         }
@@ -160,7 +177,6 @@ impl MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(vec_items)
     }
-
 }
 
 #[async_trait]
@@ -555,7 +571,7 @@ mod tests {
     use super::*;
     use mongodb::bson::doc;
     use mongodb::options::ClientOptions;
-    use serde::{Serialize, Deserialize};
+    use serde::{Deserialize, Serialize};
     use std::env;
 
     #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
@@ -581,10 +597,7 @@ mod tests {
         let test_doc = TestDoc { _id: 1, name: "Alice".to_string() };
         collection.insert_one(&test_doc, None).await.unwrap();
 
-        let client = MongoDbClient {
-            client,
-            database: Arc::new(db),
-        };
+        let client = MongoDbClient { client, database: Arc::new(db) };
 
         // find_one
         let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
