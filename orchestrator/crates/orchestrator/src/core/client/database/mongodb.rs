@@ -12,9 +12,10 @@ use mongodb::bson::{doc, Bson, Document};
 use mongodb::options::{FindOneAndUpdateOptions, FindOneOptions, FindOptions, ReturnDocument, UpdateOptions};
 use mongodb::{bson, Client, Collection, Database};
 use opentelemetry::KeyValue;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
+use serde::de::DeserializeOwned;
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -31,6 +32,17 @@ impl<T: Serialize> ToDocument for T {
             Err(DatabaseError::FailedToSerializeDocument(format!("Failed to serialize document: {}", doc)))
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UpdateResult {
+    pub matched_count: u64,
+    pub modified_count: u64,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DeleteResult {
+    pub deleted_count: u64,
 }
 
 /// MongoDB client implementation
@@ -55,6 +67,100 @@ impl MongoDbClient {
     fn get_job_collection(&self) -> Collection<JobItem> {
         self.database.collection("jobs")
     }
+
+    pub fn get_collection(&self, name: &str) -> Collection<JobItem> {
+        self.database.collection(name)
+    }
+    pub fn jobs_collection(&self) -> Collection<JobItem> {
+        self.get_collection("jobs")
+    }
+
+    pub fn locks_collection(&self) -> Collection<JobItem> {
+        self.get_collection("locks")
+    }
+
+    pub async fn find_one<T>(&self, collection: Collection<T>, filter: Document) -> Result<Option<T>, DatabaseError>
+    where
+        T: DeserializeOwned + Unpin + Send + Sync + Sized,
+    {
+        Ok(collection.find_one(filter, None).await?)
+    }
+
+    pub async fn update_one<T>(&self, collection: Collection<T>, filter: Document, update: Document, options: Option<UpdateOptions>) -> Result<UpdateResult, DatabaseError>
+    where
+        T: Serialize + Sized,
+    {
+        let result = collection.update_one(filter, update, options).await?;
+        Ok(UpdateResult {
+            matched_count: result.matched_count,
+            modified_count: result.modified_count,
+        })
+    }
+
+    pub async fn delete_one<T>(&self, collection: Collection<T>, filter: Document) -> Result<DeleteResult, DatabaseError>
+    where
+        T: Serialize + Sized,
+    {
+        let result = collection.delete_one(filter, None).await?;
+        Ok(DeleteResult {
+            deleted_count: result.deleted_count,
+        })
+    }
+    pub async fn find<T>(&self, collection: Collection<T>, filter: Document, sort: Option<Document>, limit: Option<i64>, skip: Option<i64>, projection: Option<Document>) -> Result<Vec<T>, DatabaseError>
+    where
+        T: DeserializeOwned + Unpin + Send + Sync + Sized,
+    {
+        let start = Instant::now();
+        let mut pipeline = vec![
+            doc! {
+                "$match": filter
+            },
+        ];
+        if let Some(sort) = sort {
+            pipeline.push(doc! {
+                "$sort": sort
+            });
+        }
+        if let Some(limit) = limit {
+            pipeline.push(doc! {
+                "$limit": limit
+            });
+        }
+        if let Some(skip) = skip {
+            pipeline.push(doc! {
+                "$skip": skip
+            });
+        }
+        if let Some(projection) = projection {
+            pipeline.push(doc! {
+                "$project": projection
+            });
+        }
+
+        let mut cursor = collection.aggregate(pipeline, None).await?;
+        let mut vec_items: Vec<T> = Vec::new();
+        while let Some(result) = cursor.next().await {
+            match result {
+                Ok(doc) => match mongodb::bson::from_document::<T>(doc) {
+                    Ok(item) => vec_items.push(item),
+                    Err(e) => {
+                        tracing::error!(error = %e, category = "db_call", "Deserialization error");
+                        return Err(DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e)));
+                    }
+                }
+                Err(e) => {
+                    tracing::error!(error = %e, category = "db_call", "Error retrieving document");
+                    return Err(DatabaseError::FailedToSerializeDocument(format!("Failed to retrieve document: {}", e)));
+                }
+            }
+        }
+        tracing::debug!(db_operation_name = "find", category = "db_call", "Fetched data from collection");
+        let attributes = [KeyValue::new("db_operation_name", "find")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(vec_items)
+    }
+
 }
 
 #[async_trait]
@@ -441,5 +547,66 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(jobs)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mongodb::bson::doc;
+    use mongodb::options::ClientOptions;
+    use serde::{Serialize, Deserialize};
+    use std::env;
+
+    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
+    struct TestDoc {
+        _id: i32,
+        name: String,
+    }
+
+    async fn get_test_handles() -> (Client, Database, Collection<TestDoc>) {
+        let uri = env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
+        let client_options = ClientOptions::parse(&uri).await.unwrap();
+        let client = Client::with_options(client_options).unwrap();
+        let db = client.database("test_db");
+        let collection = db.collection::<TestDoc>("test_collection");
+        (client, db, collection)
+    }
+
+    #[tokio::test]
+    async fn test_find_one_insert_and_delete() {
+        let (client, db, collection) = get_test_handles().await;
+        // Clean up before test
+        let _ = collection.delete_many(doc! {}, None).await;
+        let test_doc = TestDoc { _id: 1, name: "Alice".to_string() };
+        collection.insert_one(&test_doc, None).await.unwrap();
+
+        let client = MongoDbClient {
+            client,
+            database: Arc::new(db),
+        };
+
+        // find_one
+        let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
+        assert_eq!(found, Some(test_doc.clone()));
+
+        // update_one
+        let update = doc! { "$set": { "name": "Bob" } };
+        let update_result = client.update_one(collection.clone(), doc! {"_id": 1}, update, None).await.unwrap();
+        assert_eq!(update_result.matched_count, 1);
+        assert_eq!(update_result.modified_count, 1);
+
+        // find (should return updated doc)
+        let found_docs = client.find(collection.clone(), doc! {"_id": 1}, None, None, None, None).await.unwrap();
+        assert_eq!(found_docs.len(), 1);
+        assert_eq!(found_docs[0].name, "Bob");
+
+        // delete_one
+        let delete_result = client.delete_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
+        assert_eq!(delete_result.deleted_count, 1);
+
+        // find_one (should be None)
+        let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
+        assert_eq!(found, None);
     }
 }
