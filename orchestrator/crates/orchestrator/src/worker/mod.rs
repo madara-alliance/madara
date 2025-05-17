@@ -4,6 +4,7 @@ pub mod parser;
 pub mod service;
 pub mod traits;
 pub mod utils;
+mod states;
 
 use controller::worker_controller::WorkerController;
 
