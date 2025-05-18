@@ -12,8 +12,8 @@ pub struct DlqConfig {
 pub struct QueueConfig {
     pub name: QueueType,
     pub visibility_timeout: u32,
-    pub max_retry: Option<u16>,         // max number of retries
-    pub retry_delay: Option<u32>,       // in seconds
+    pub max_retry: Option<u16>,   // max number of retries
+    pub retry_delay: Option<u32>, // in seconds
     pub dlq_config: Option<DlqConfig>,
 }
 
