@@ -17,11 +17,7 @@ pub struct QueueConfig {
 
 lazy_static! {
     pub static ref QUEUES: Vec<QueueConfig> = vec![
-        QueueConfig {
-            name: QueueType::JobHandleFailure,
-            visibility_timeout: 300,
-            dlq_config: None,
-        },
+        QueueConfig { name: QueueType::JobHandleFailure, visibility_timeout: 300, dlq_config: None },
         QueueConfig {
             name: QueueType::SnosJobProcessing,
             visibility_timeout: 300,
@@ -72,10 +68,6 @@ lazy_static! {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
         },
-        QueueConfig {
-            name: QueueType::WorkerTrigger,
-            visibility_timeout: 300,
-            dlq_config: None
-        },
+        QueueConfig { name: QueueType::WorkerTrigger, visibility_timeout: 300, dlq_config: None },
     ];
 }
