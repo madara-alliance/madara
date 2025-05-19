@@ -1,4 +1,4 @@
-use crate::cli::SetupCmd;
+use crate::cli::{Layer, SetupCmd};
 use crate::core::cloud::CloudProvider;
 use crate::setup::factory::ResourceFactory;
 use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, StorageArgs};
@@ -18,6 +18,8 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let cloud_provider = setup_cloud_provider(setup_cmd).await?;
 
     info!("Setting up resources for Orchestrator...");
+
+    let layer = setup_cmd.layer.as_ref().unwrap_or(&Layer::L2);
 
     let queue_params = QueueArgs::try_from(setup_cmd.clone())?;
     let storage_params = StorageArgs::try_from(setup_cmd.clone())?;
@@ -41,7 +43,7 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
         ),
         cloud_provider => Err(OrchestratorError::InvalidCloudProviderError(cloud_provider.to_string()))?,
     };
-    resources.setup_resource().await?;
+    resources.setup_resource(layer).await?;
 
     Ok(())
 }

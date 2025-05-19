@@ -148,29 +148,26 @@ impl MongoDbClient {
             });
         }
 
-        let mut cursor = collection.aggregate(pipeline, None).await?;
-        let mut vec_items: Vec<T> = Vec::new();
-        while let Some(result) = cursor.next().await {
-            match result {
-                Ok(doc) => match mongodb::bson::from_document::<T>(doc) {
-                    Ok(item) => vec_items.push(item),
-                    Err(e) => {
-                        tracing::error!(error = %e, category = "db_call", "Deserialization error");
-                        return Err(DatabaseError::FailedToSerializeDocument(format!(
-                            "Failed to deserialize document: {}",
-                            e
-                        )));
-                    }
-                },
-                Err(e) => {
-                    tracing::error!(error = %e, category = "db_call", "Error retrieving document");
-                    return Err(DatabaseError::FailedToSerializeDocument(format!(
-                        "Failed to retrieve document: {}",
+        let cursor = collection.aggregate(pipeline, None).await?;
+        let vec_items: Vec<T> = cursor
+            .map_err(|e| {
+                tracing::error!(error = %e, category = "db_call", "Error retrieving document");
+                DatabaseError::FailedToSerializeDocument(format!(
+                    "Failed to retrieve document: {}",
+                    e
+                ))
+            })
+            .and_then(|doc| {
+                futures::future::ready(mongodb::bson::from_document::<T>(doc).map_err(|e| {
+                    tracing::error!(error = %e, category = "db_call", "Deserialization error");
+                    DatabaseError::FailedToSerializeDocument(format!(
+                        "Failed to deserialize document: {}",
                         e
-                    )));
-                }
-            }
-        }
+                    ))
+                }))
+            })
+            .try_collect()
+            .await?;
         tracing::debug!(db_operation_name = "find", category = "db_call", "Fetched data from collection");
         let attributes = [KeyValue::new("db_operation_name", "find")];
         let duration = start.elapsed();

@@ -1,3 +1,4 @@
+use crate::cli::Layer;
 use crate::{
     core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
     types::params::QueueArgs, OrchestratorError, OrchestratorResult,
@@ -30,8 +31,11 @@ impl Resource for SQS {
     /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
+            if !queue.supported_layers.contains(&layer) {
+                continue;
+            }
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
             let queue_url = format!("{}/{}", args.queue_base_url, queue_name);
             if self.check_if_exists(queue_url.clone()).await? {

@@ -1,3 +1,4 @@
+use crate::cli::Layer;
 use crate::core::client::SNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -22,7 +23,7 @@ impl Resource for SNS {
         }
     }
 
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let topic_arn = args.endpoint;
         tracing::info!("Topic ARN: {}", topic_arn);
 

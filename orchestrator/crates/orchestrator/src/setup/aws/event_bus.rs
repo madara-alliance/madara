@@ -1,3 +1,4 @@
+use crate::cli::Layer;
 use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::cloud::CloudProvider;
@@ -35,7 +36,7 @@ impl Resource for EventBridgeClient {
         }
     }
 
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let trigger_arns = self
             .create_cron(
                 args.target_queue_name.clone(),
