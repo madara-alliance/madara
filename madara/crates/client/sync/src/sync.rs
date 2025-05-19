@@ -161,8 +161,7 @@ impl<P: ForwardPipeline> SyncController<P> {
         let target_block = merge_options(current_head, probe_block, cmp::max);
 
         // Bound by stop_at_block_n
-        let target_block = merge_options(target_block, self.config.stop_at_block_n, cmp::min);
-        target_block
+        merge_options(target_block, self.config.stop_at_block_n, cmp::min)
     }
 
     async fn run_inner(&mut self) -> anyhow::Result<()> {
