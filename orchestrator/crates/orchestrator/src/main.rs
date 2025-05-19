@@ -1,71 +1,71 @@
 use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
-use orchestrator::config::init_config;
-use orchestrator::queue::init_consumers;
-use orchestrator::routes::setup_server;
-use orchestrator::setup::setup_cloud;
-use orchestrator::telemetry::{setup_analytics, shutdown_analytics};
+use orchestrator::core::config::Config;
+use orchestrator::server::setup_server;
+use orchestrator::setup::setup;
+use orchestrator::types::params::OTELConfig;
+use orchestrator::utils::instrument::OrchestratorInstrumentation;
+use orchestrator::utils::logging::init_logging;
+use orchestrator::worker::initialize_worker;
+use orchestrator::OrchestratorResult;
+use std::sync::Arc;
+use tracing::{debug, error, info};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
 /// Start the server
 #[tokio::main]
-// not sure why clippy gives this error on the latest rust
-// version but have added it for now
-#[allow(clippy::needless_return)]
 async fn main() {
     dotenv().ok();
-
+    init_logging("orchestrator");
+    info!("Starting orchestrator");
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Run { run_command } => {
-            run_orchestrator(run_command).await.expect("Failed to run orchestrator");
-        }
-        Commands::Setup { setup_command } => {
-            setup_orchestrator(setup_command).await.expect("Failed to setup orchestrator");
-        }
+        Commands::Run { run_command } => match run_orchestrator(run_command).await {
+            Ok(_) => {
+                info!("Orchestrator service started successfully");
+            }
+            Err(e) => {
+                error!("Failed to start orchestrator service: {}", e);
+            }
+        },
+        Commands::Setup { setup_command } => match setup_orchestrator(setup_command).await {
+            Ok(_) => {
+                info!("Orchestrator setup completed successfully");
+            }
+            Err(e) => {
+                error!("Failed to setup orchestrator: {}", e);
+            }
+        },
     }
 }
 
-async fn run_orchestrator(run_cmd: &RunCmd) -> color_eyre::Result<()> {
-    // Analytics Setup
-    let instrumentation_params = run_cmd.validate_instrumentation_params().expect("Invalid instrumentation params");
-    let meter_provider = setup_analytics(&instrumentation_params);
-    tracing::info!(service = "orchestrator", "Starting orchestrator service");
+async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
+    let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
+    let instrumentation = OrchestratorInstrumentation::new(&config)?;
+    info!("Starting orchestrator service");
 
-    color_eyre::install().expect("Unable to install color_eyre");
+    let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
+    debug!("Configuration initialized");
 
-    // initial config setup
-    let config = init_config(run_cmd).await.expect("Config instantiation failed");
-    tracing::debug!(service = "orchestrator", "Configuration initialized");
+    // Run the server in a separate tokio spawn task
+    setup_server(config.clone()).await?;
 
-    // initialize the server
-    let _ = setup_server(config.clone()).await;
-
-    tracing::debug!(service = "orchestrator", "Application router initialized");
-
-    // init consumer
-    match init_consumers(config).await {
-        Ok(_) => tracing::info!(service = "orchestrator", "Consumers initialized successfully"),
-        Err(e) => {
-            tracing::error!(service = "orchestrator", error = %e, "Failed to initialize consumers");
-            panic!("Failed to init consumers: {}", e);
-        }
-    }
+    debug!("Application router initialized");
+    initialize_worker(config.clone()).await?;
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
 
     // Analytics Shutdown
-    shutdown_analytics(meter_provider, &instrumentation_params);
-    tracing::info!(service = "orchestrator", "Orchestrator service shutting down");
-
+    instrumentation.shutdown()?;
+    info!("Orchestrator service shutting down");
     Ok(())
 }
 
-async fn setup_orchestrator(setup_cmd: &SetupCmd) -> color_eyre::Result<()> {
-    setup_cloud(setup_cmd).await.expect("Failed to setup cloud");
-    Ok(())
+/// setup_orchestrator - Initializes the orchestrator with the provided configuration
+async fn setup_orchestrator(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
+    setup(setup_cmd).await
 }

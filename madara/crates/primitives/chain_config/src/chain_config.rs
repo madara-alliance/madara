@@ -580,7 +580,7 @@ mod tests {
         // Check bouncer config
         assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.n_steps, 40000000);
-        assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 131072);
+        assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 4000);
         assert_eq!(chain_config.bouncer_config.block_max_capacity.builtin_count.add_mod, 18446744073709551615);
 
         assert_eq!(

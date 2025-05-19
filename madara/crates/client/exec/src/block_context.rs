@@ -78,7 +78,19 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub(crate) fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
+    pub fn executor_for_block_production(&self) -> TransactionExecutor<BlockifierStateAdapter> {
+        TransactionExecutor::new(
+            self.init_cached_state(),
+            self.block_context.clone(),
+            TransactionExecutorConfig { concurrency_config: Default::default() },
+        )
+    }
+
+    pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
+        StatefulValidator::create(self.init_cached_state(), self.block_context.clone())
+    }
+
+    pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
         tracing::debug!(
             "Init cached state on top of {:?}, block number {:?}",
             self.latest_visible_block,

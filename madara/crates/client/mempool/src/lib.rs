@@ -176,7 +176,7 @@ impl Mempool {
         Ok(())
     }
 
-    async fn accept_validated_tx_with_nonce_info(
+    async fn accept_tx_with_nonce_info(
         &self,
         tx: ValidatedMempoolTx,
         nonce_info: NonceInfo,
@@ -203,7 +203,7 @@ impl Mempool {
         } else {
             self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce()).await?
         };
-        self.accept_validated_tx_with_nonce_info(tx, nonce_info).await
+        self.accept_tx_with_nonce_info(tx, nonce_info).await
     }
 
     /// Does not save to the database.
@@ -1180,7 +1180,7 @@ pub(crate) mod tests {
         let nonce_info = NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO));
         let timestamp_pending = TxTimestamp::now();
         tx_pending.arrived_at = timestamp_pending;
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_pending, nonce_info).await;
+        let result = mempool.accept_tx_with_nonce_info(tx_pending, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().await;
@@ -1207,7 +1207,7 @@ pub(crate) mod tests {
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let timestamp_ready = TxTimestamp::now();
         tx_ready.arrived_at = timestamp_ready;
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_ready, nonce_info).await;
+        let result = mempool.accept_tx_with_nonce_info(tx_ready, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().await;
@@ -1307,7 +1307,7 @@ pub(crate) mod tests {
         let timestamp_1 = TxTimestamp::now();
         tx_1.arrived_at = timestamp_1;
 
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_1, nonce_info).await;
+        let result = mempool.accept_tx_with_nonce_info(tx_1, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().await;
@@ -1340,7 +1340,7 @@ pub(crate) mod tests {
 
         let timestamp_2 = TxTimestamp::now();
         tx_2.arrived_at = timestamp_2;
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_2, nonce_info).await;
+        let result = mempool.accept_tx_with_nonce_info(tx_2, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         let inner = mempool.inner.read().await;

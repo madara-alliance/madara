@@ -8,13 +8,18 @@ use serde_json::json;
 use starknet::core::types::{Felt, MaybePendingStateUpdate, PendingStateUpdate, StateDiff};
 use uuid::Uuid;
 
-use crate::constants::BLOB_DATA_FILE_NAME;
-use crate::jobs::da_job::test::{get_nonce_attached, read_state_update_from_file};
-use crate::jobs::da_job::{DaError, DaJob};
-use crate::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata};
-use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use crate::jobs::{Job, JobError};
+use crate::error::job::da_error::DaError;
+use crate::error::job::JobError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::types::constant::BLOB_DATA_FILE_NAME;
+use crate::types::jobs::external_id::ExternalId;
+use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata};
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::da::test::{get_nonce_attached, read_state_update_from_file};
+use crate::worker::event_handler::jobs::da::DAJobHandler;
+use crate::worker::event_handler::jobs::JobHandlerTrait;
+
 /// Tests the DA Job's handling of a blob length exceeding the supported size.
 /// It mocks the DA client to simulate the environment and expects an error on job processing.
 /// Validates the error message for exceeding blob limits against the expected output.
@@ -69,7 +74,7 @@ async fn test_da_job_process_job_failure_on_small_blob_size(
         }),
     };
 
-    let response = DaJob
+    let response = DAJobHandler
         .process_job(
             services.config,
             &mut JobItem {
@@ -143,7 +148,7 @@ async fn test_da_job_process_job_failure_on_pending_block() {
         }),
     };
 
-    let response = DaJob
+    let response = DAJobHandler
         .process_job(
             services.config,
             &mut JobItem {
@@ -237,7 +242,7 @@ async fn test_da_job_process_job_success(
         }),
     };
 
-    let response = DaJob
+    let response = DAJobHandler
         .process_job(
             services.config,
             &mut JobItem {

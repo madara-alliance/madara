@@ -1,0 +1,151 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Publish Stable Release
+
+# This action will
+#
+# 1. Get the current version as specified by the root `Cargo.toml`
+# 2. Get the latest nightly tag
+# 3. Pull the latest nightly image
+# 4. Tag it with the current version
+# 5. Tag it as `latest`
+# 6. Push the updated tags to ghcr
+#
+# (Steps 1 and 2 will fail if the version has not been updated or there is no
+# nighlty release to build from)
+
+on:
+  workflow_dispatch:
+    inputs:
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
+        type: string
+      image-name:
+        description: Name for the Docker image (needs to correspond to an existing release)
+        required: true
+        type: string
+        default: madara
+
+permissions:
+  contents: read
+  packages: write
+  attestations: write
+  id-token: write
+
+jobs:
+  build-release:
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Get tag info (version)
+        id: tag-version
+        run: |
+          PACKAGE_NAME=$(echo ${{ inputs.image-name }} | tr '[:upper:]' '[:lower:]')
+          PACKAGE_INFO=$(
+            curl -Ls \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/madara-alliance/packages/container/$PACKAGE_NAME/versions"
+          )
+
+          echo $PACKAGE_INFO
+
+          VERSION_LATEST=$(
+           echo $PACKAGE_INFO | \
+            jq -r '
+              [
+                .[].metadata?.container?.tags? // []
+                | .[]
+                | select(test("^v[0-9]+(\\.[0-9]+)*(\\.[0-9]+)*$"))
+                | ltrimstr("v")
+              ]
+              | sort_by(split(".")
+              | map(tonumber))
+              | last // "zilch"
+            '
+          )
+          VERSION_NEW=$(grep -oP "(?<=^version = \").*(?=\"$)" Cargo.toml)
+
+          if [[ "$VERSION_LATEST" == "$VERSION_NEW" ]]; then
+            echo "ERROR - Release action cannot replace an existing version!"
+            exit 1
+          fi
+
+          TAG_NEW="v$VERSION_NEW"
+          echo "tag=$TAG_NEW" >> $GITHUB_OUTPUT
+          echo "Version tag is: $TAG_NEW"
+
+      - name: Get tag info (nightly)
+        id: tag-nightly
+        run: |
+          PACKAGE_NAME=$(echo ${{ inputs.image-name }} | tr '[:upper:]' '[:lower:]')
+          PACKAGE_INFO=$(
+            curl -Ls \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              "https://api.github.com/orgs/madara-alliance/packages/container/$PACKAGE_NAME/versions"
+          )
+
+          echo $PACKAGE_INFO
+
+          NIGHTLY_LATEST=$(
+            echo $PACKAGE_INFO | \
+            jq -r '
+              sort_by(.created_at)
+              | reverse
+              | map(select(.metadata?.container?.tags? // [] | length != 0))
+              | .[0].metadata?.container?.tags? // []
+              | map(select(test("nightly-[0-9a-f]+")))
+              | .[0] // ""
+            '
+          )
+
+          if [[ "$NIGHTLY_LATEST" == "" ]]; then
+            echo "ERROR - Release actions called without a nightly build!"
+            exit 1
+          fi
+
+          echo "tag=$NIGHTLY_LATEST" >> $GITHUB_OUTPUT
+          echo "Nighlty tag is: $NIGHTLY_LATEST"
+
+      - name: Tags
+        id: tag
+        run: |
+          ORG=$(echo $GITHUB_REPOSITORY | cut -d '/' -f 1)
+          IMAGE="${{ inputs.registry }}/$ORG/${{ inputs.image-name }}"
+          NIGHTLY="$IMAGE:${{ steps.tag-nightly.outputs.tag }}"
+          VERSION="$IMAGE:${{ steps.tag-version.outputs.tag }}"
+          LATEST="$IMAGE:latest"
+
+          echo "nightly=$NIGHTLY" >> $GITHUB_OUTPUT
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "latest=$LATEST" >> $GITHUB_OUTPUT
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest nightly image
+        run: docker pull ${{ steps.tag.outputs.nightly }}
+
+      - name: Tag image with version tag
+        run: |
+          docker tag ${{ steps.tag.outputs.nightly }} ${{ steps.tag.outputs.version }}
+
+      - name: Tag image with latest tag
+        run: |
+          docker tag ${{ steps.tag.outputs.nightly }} ${{ steps.tag.outputs.latest }}
+
+      - name: Push updated docker image
+        run: |
+          docker push ${{ steps.tag.outputs.version }}
+          docker push ${{ steps.tag.outputs.latest }}

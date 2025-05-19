@@ -1730,7 +1730,7 @@ pub(crate) mod tests {
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_on_pending_block_tick_closes_block(
         #[future]
-        #[with(Duration::from_secs(60000), Duration::from_millis(1000), true)]
+        #[with(Duration::from_secs(1), Duration::from_secs(60000), true)]
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
@@ -1781,18 +1781,13 @@ pub(crate) mod tests {
             );
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
-
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 2);
 
         let closed_block: mp_block::MadaraMaybePendingBlock =
             backend.get_block(&DbBlockId::Number(1)).unwrap().unwrap();
-        assert_eq!(closed_block.inner.transactions.len(), 1);
+        assert_eq!(closed_block.inner.transactions.len(), 3);
         let closed_block: mp_block::MadaraMaybePendingBlock =
             backend.get_block(&DbBlockId::Number(2)).unwrap().unwrap();
-        assert_eq!(closed_block.inner.transactions.len(), 1);
-        let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
-        assert_eq!(pending_block.inner.transactions.len(), 1);
+        assert_eq!(closed_block.inner.transactions.len(), 0);
         assert!(mempool.is_empty().await);
     }
 
@@ -1938,7 +1933,7 @@ pub(crate) mod tests {
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_start_block_production_task_pending_tick_too_small(
         #[future]
-        #[with(Duration::from_secs(30), Duration::from_micros(1), false)]
+        #[with(Duration::from_secs(30), Duration::default(), false)]
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
@@ -1983,7 +1978,7 @@ pub(crate) mod tests {
             .await
             .expect_err("Should give an error");
 
-        assert_eq!(result.to_string(), "Block time cannot be zero for block production.");
+        assert_eq!(result.to_string(), "Pending block update time cannot be zero for block production.");
         assert!(!mempool.is_empty().await);
     }
 

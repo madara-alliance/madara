@@ -209,6 +209,7 @@ impl ChainGenesisDescription {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
+
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
     use mc_db::MadaraBackend;

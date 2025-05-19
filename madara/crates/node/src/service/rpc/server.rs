@@ -5,9 +5,13 @@ use super::metrics::RpcMetrics;
 use super::middleware::{Metrics, RpcMiddlewareLayerMetrics};
 use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 use anyhow::Context;
+use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
+use mc_rpc::Starknet;
+use mp_rpc::SyncingStatus;
 use mp_utils::service::ServiceContext;
 use std::convert::Infallible;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Duration;
 use tower::Service;
 
@@ -47,6 +51,7 @@ pub async fn start_server(
     config: ServerConfig,
     mut ctx: ServiceContext,
     stop_handle: jsonrpsee::server::StopHandle,
+    starknet: Arc<Starknet>,
 ) -> anyhow::Result<()> {
     let ServerConfig {
         name,
@@ -99,13 +104,16 @@ pub async fn start_server(
     let make_service = hyper::service::make_service_fn(move |_| {
         let cfg = cfg.clone();
         let ctx1 = ctx1.clone();
+        let starknet = Arc::clone(&starknet);
 
         async move {
             let cfg = cfg.clone();
+            let starknet = Arc::clone(&starknet);
 
             Ok::<_, Infallible>(hyper::service::service_fn(move |req| {
                 let PerConnection { service_builder, metrics, stop_handle, methods } = cfg.clone();
                 let ctx1 = ctx1.clone();
+                let starknet = Arc::clone(&starknet);
 
                 let is_websocket = jsonrpsee::server::ws::is_upgrade_request(&req);
                 let transport_label = if is_websocket { "ws" } else { "http" };
@@ -127,6 +135,21 @@ pub async fn start_server(
                             .body(hyper::Body::from("GONE"))?)
                     } else if req.uri().path() == "/health" {
                         Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::from("OK"))?)
+                    } else if req.uri().path() == "/ready" {
+                        let sync_status = syncing(&starknet).await;
+                        match sync_status {
+                            Ok(sync_status) => match sync_status {
+                                SyncingStatus::Syncing(_) => Ok(hyper::Response::builder()
+                                    .status(hyper::StatusCode::SERVICE_UNAVAILABLE)
+                                    .body(hyper::Body::from("SYNCING"))?),
+                                SyncingStatus::NotSyncing => Ok(hyper::Response::builder()
+                                    .status(hyper::StatusCode::OK)
+                                    .body(hyper::Body::from("OK"))?),
+                            },
+                            Err(_) => Ok(hyper::Response::builder()
+                                .status(hyper::StatusCode::INTERNAL_SERVER_ERROR)
+                                .body(hyper::Body::from("INTERNAL_SERVER_ERROR"))?),
+                        }
                     } else {
                         if is_websocket {
                             // Utilize the session close future to know when the actual WebSocket
