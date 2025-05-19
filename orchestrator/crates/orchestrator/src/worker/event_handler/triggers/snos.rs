@@ -52,8 +52,8 @@ impl JobTrigger for SnosJobTrigger {
             .await
             .wrap_err("Failed to fetch completed SNOS jobs")?;
 
-        // Find the last completed block (default to 0 if no completed jobs or parsing fails)
-        let last_completed_block = match all_completed_jobs
+        // Find the last completed block
+        let last_completed_block = all_completed_jobs
             .iter()
             .filter_map(|job| match job.internal_id.parse::<u64>() {
                 Ok(block_num) => Some(block_num),
@@ -67,12 +67,15 @@ impl JobTrigger for SnosJobTrigger {
                     None
                 }
             })
-            .max()
-        {
+            .max();
+
+        let last_completed_block = match last_completed_block {
             Some(block) => block,
             None => {
-                tracing::info!("No previously completed SNOS jobs found, starting from block 0");
-                0
+                tracing::info!("No previously completed SNOS jobs found, starting from min_block_to_process");
+                // We use min_block_to_process - 1 so that the first block to be processed will be min_block_to_process
+                // This ensures we don't incorrectly assume block 0 is processed when no blocks are processed
+                min_block_to_process.saturating_sub(1)
             }
         };
 
@@ -108,6 +111,25 @@ impl JobTrigger for SnosJobTrigger {
             .await
             .wrap_err("Failed to fetch created SNOS jobs")?;
 
+        // Create a set of blocks that are already in pending or created status
+        // to avoid creating duplicate jobs for these blocks
+        let pending_and_created_blocks: HashSet<u64> = pending_jobs
+            .iter()
+            .chain(created_jobs.iter())
+            .filter_map(|job| match job.internal_id.parse::<u64>() {
+                Ok(block_num) => Some(block_num),
+                Err(e) => {
+                    tracing::warn!(
+                        job_id = %job.id,
+                        internal_id = %job.internal_id,
+                        error = %e,
+                        "Failed to parse job internal ID while building pending/created blocks set"
+                    );
+                    None
+                }
+            })
+            .collect();
+
         // Calculate total pending and created jobs
         let total_pending_and_created: u64 = (pending_jobs.len() + created_jobs.len()) as u64;
 
@@ -136,13 +158,18 @@ impl JobTrigger for SnosJobTrigger {
         let mut jobs_to_create = Vec::new();
 
         // 1. First identify missing blocks in already "completed" range
-        let missing_blocks: Vec<u64> =
-            (min_block_to_process..=last_completed_block).filter(|block| !processed_blocks.contains(block)).collect();
+        // Ensure we don't try to process blocks below min_block_to_process
+        let range_start = if min_block_to_process > 0 { min_block_to_process } else { 0 };
+        let missing_blocks: Vec<u64> = (range_start..=last_completed_block)
+            .filter(|block| !processed_blocks.contains(block))
+            // FIX: Also filter out blocks that are already pending or created
+            .filter(|block| !pending_and_created_blocks.contains(block))
+            .collect();
 
         tracing::info!(
             count = missing_blocks.len(),
             min_block = %min_block_to_process,
-            max_block = %last_completed_block,
+            last_completed_block = %last_completed_block,
             "Found missing blocks before last completed block"
         );
 
@@ -161,27 +188,44 @@ impl JobTrigger for SnosJobTrigger {
 
         // 2. If we still have slots or no limit (None), add new blocks after the last completed one
         if remaining_slots > 0 || config.service_config().max_concurrent_created_snos_jobs.is_none() {
+            //  we need to handle the case where some blocks in our desired
+            // range are already pending/created by continuing to add more blocks beyond the initial range
+
+            // Start from the block after the last completed one
             let block_start = max(min_block_to_process, last_completed_block + 1);
 
-            // For unlimited case (None), use all blocks up to max_block_to_process
-            let end_block = if config.service_config().max_concurrent_created_snos_jobs.is_none() {
-                max_block_to_process
+            // Collect all candidate blocks from block_start up to max_block_to_process
+            // that aren't already in pending or created status
+            let candidate_blocks: Vec<u64> = (block_start..=max_block_to_process)
+                .filter(|block| !pending_and_created_blocks.contains(block))
+                .collect();
+
+            // Take only as many blocks as we have slots for
+            let new_blocks_count = if config.service_config().max_concurrent_created_snos_jobs.is_none() {
+                candidate_blocks.len() // No limit, take all candidate blocks
             } else {
-                // Calculate end_block carefully to prevent overflow
-                if let Some(end) = block_start.checked_add(remaining_slots.saturating_sub(1)) {
-                    min(end, max_block_to_process)
-                } else {
-                    max_block_to_process
-                }
+                min(remaining_slots as usize, candidate_blocks.len())
             };
 
-            if block_start <= end_block {
+            // Take the first new_blocks_count blocks from candidate_blocks
+            let new_blocks = candidate_blocks.into_iter().take(new_blocks_count).collect::<Vec<_>>();
+
+            tracing::info!(
+                new_blocks_count = %new_blocks_count,
+                remaining_slots = %remaining_slots,
+                "new blocks to add {:?}", new_blocks
+            );
+
+            if !new_blocks.is_empty() {
+                let min_block = new_blocks.first().unwrap();
+                let max_block = new_blocks.last().unwrap();
                 tracing::info!(
-                    block_start = %block_start,
-                    end_block = %end_block,
+                    block_start = %min_block,
+                    end_block = %max_block,
+                    count = new_blocks.len(),
                     "Creating SNOS jobs for new blocks"
                 );
-                jobs_to_create.extend(block_start..=end_block);
+                jobs_to_create.extend(new_blocks);
             }
         }
 
