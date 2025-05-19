@@ -1,6 +1,3 @@
-use std::error::Error;
-use std::sync::Arc;
-use rstest::rstest;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
@@ -13,9 +10,12 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use orchestrator_da_client_interface::MockDaClient;
+use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use std::error::Error;
+use std::sync::Arc;
 use url::Url;
 use uuid::Uuid;
 
