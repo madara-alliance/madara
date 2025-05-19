@@ -282,7 +282,7 @@ async fn database_test_update_batch() {
     let updates = BatchUpdates { end_block: 250, is_batch_ready: batch.is_batch_ready };
 
     // Update the batch
-    let updated_batch = database_client.update_batch(&batch, &updates).await.unwrap();
+    let updated_batch = database_client.update_or_create_batch(&batch, &updates).await.unwrap();
 
     // Verify the updates
     assert_eq!(updated_batch.id, batch.id);

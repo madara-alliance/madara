@@ -489,18 +489,23 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn update_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "id": batch.id,
         };
-        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
 
-        let mut updates = update.to_document()?;
+        let mut updates = batch.to_document()?;
 
         // remove null values from the updates
         let mut non_null_updates = Document::new();
         updates.iter_mut().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+        update.to_document()?.iter_mut().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
             }

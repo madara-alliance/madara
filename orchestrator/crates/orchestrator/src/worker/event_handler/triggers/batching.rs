@@ -199,7 +199,7 @@ impl BatchingTrigger {
         )?;
 
         // Update batch status in the database
-        database.update_batch(&batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready }).await?;
+        database.update_or_create_batch(&batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready }).await?;
 
         Ok(())
     }
