@@ -12,7 +12,6 @@ use mp_state_update::{
 use starknet_api::{core::ContractAddress, StarknetApiError};
 use std::{
     collections::{hash_map, HashMap, VecDeque},
-    mem,
     ops::{Add, AddAssign},
     sync::Arc,
     time::{Duration, SystemTime},
@@ -76,9 +75,6 @@ impl BatchToExecute {
     pub fn len(&self) -> usize {
         self.txs.len()
     }
-    pub fn capacity(&self) -> usize {
-        self.txs.capacity()
-    }
     pub fn is_empty(&self) -> bool {
         self.txs.is_empty()
     }
@@ -89,18 +85,7 @@ impl BatchToExecute {
     }
 
     pub fn remove_n_front(&mut self, n_to_remove: usize) -> BatchToExecute {
-        // we can't acutally use split_off because it doesnt leave the cap :/
-
-        if n_to_remove >= self.len() {
-            // if we take everything, just replace self with an empty batch and return self.
-            // unsure if this can actually help with perf, but hey this theorically saves a memcopy
-            // let's be frank, ideally blockifier just isn't dumb and takes an iterator and not a &[Transaction]..
-            let cap = self.capacity();
-            return BatchToExecute {
-                additional_info: mem::replace(&mut self.additional_info, VecDeque::with_capacity(cap)),
-                txs: mem::replace(&mut self.txs, Vec::with_capacity(cap)),
-            };
-        }
+        // we can't actually use split_off because it doesnt leave the cap :/
 
         let txs = self.txs.drain(..n_to_remove).collect();
         let additional_info = self.additional_info.drain(..n_to_remove).collect();

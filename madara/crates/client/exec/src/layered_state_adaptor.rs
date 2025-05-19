@@ -133,3 +133,123 @@ impl StateReader for LayeredStateAdaptor {
         self.inner.get_compiled_class_hash(class_hash)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::LayeredStateAdaptor;
+    use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
+    use mc_db::MadaraBackend;
+    use mp_block::{
+        header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader},
+        PendingFullBlock,
+    };
+    use mp_chain_config::{ChainConfig, StarknetVersion};
+    use mp_convert::{Felt, ToFelt};
+    use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+
+    #[tokio::test]
+    async fn test_layered_state_adaptor() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        let mut adaptor = LayeredStateAdaptor::new(backend.clone()).unwrap();
+
+        // initial state (no genesis block)
+
+        assert_eq!(adaptor.block_n(), 0);
+        assert_eq!(adaptor.previous_block_n(), None);
+        assert_eq!(adaptor.cached_states_by_block_n.len(), 0);
+
+        assert_eq!(
+            adaptor.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+        assert_eq!(
+            adaptor.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+        assert_eq!(
+            adaptor.get_storage_at(Felt::THREE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+
+        // finish a block, not in db yet
+
+        let mut state_maps = StateMaps::default();
+        state_maps.storage.insert((Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()), Felt::THREE);
+        adaptor.finish_block(state_maps, Default::default()).unwrap();
+
+        assert_eq!(adaptor.block_n(), 1);
+        assert_eq!(adaptor.previous_block_n(), Some(0));
+        assert_eq!(adaptor.cached_states_by_block_n.len(), 1);
+
+        assert_eq!(
+            adaptor.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()).unwrap(),
+            Felt::THREE
+        ); // from cache
+        assert_eq!(
+            adaptor.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+        assert_eq!(
+            adaptor.get_storage_at(Felt::THREE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+
+        // block is now in db
+
+        backend
+            .add_full_block_with_classes(
+                PendingFullBlock {
+                    header: PendingHeader {
+                        parent_block_hash: Felt::ZERO,
+                        sequencer_address: backend.chain_config().sequencer_address.to_felt(),
+                        block_timestamp: BlockTimestamp::now(),
+                        protocol_version: StarknetVersion::LATEST,
+                        l1_gas_price: GasPrices::default(),
+                        l1_da_mode: L1DataAvailabilityMode::Calldata,
+                    },
+                    state_diff: StateDiff {
+                        storage_diffs: [ContractStorageDiffItem {
+                            address: Felt::ONE,
+                            storage_entries: vec![StorageEntry { key: Felt::ONE, value: Felt::THREE }],
+                        }]
+                        .into(),
+                        ..Default::default()
+                    },
+                    transactions: vec![],
+                    events: vec![],
+                },
+                /* block_n */ 0,
+                /* classes */ &[],
+                /* pre_v0_13_2_hash_override */ false,
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(adaptor.block_n(), 1);
+        assert_eq!(adaptor.previous_block_n(), Some(0));
+        assert_eq!(adaptor.cached_states_by_block_n.len(), 1); // nothing changed here yet
+
+        // finish another block, not in db yet but the earlier one is now in db. that one should have its state removed from the deque.
+
+        let mut state_maps = StateMaps::default();
+        state_maps.storage.insert((Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()), Felt::TWO);
+        adaptor.finish_block(state_maps, Default::default()).unwrap();
+
+        assert_eq!(adaptor.block_n(), 2);
+        assert_eq!(adaptor.previous_block_n(), Some(1));
+        assert_eq!(adaptor.cached_states_by_block_n.len(), 1);
+
+        assert_eq!(
+            adaptor.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()).unwrap(),
+            Felt::THREE
+        ); // from db
+        assert_eq!(
+            adaptor.get_storage_at(Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::TWO
+        ); // from cache
+        assert_eq!(
+            adaptor.get_storage_at(Felt::THREE.try_into().unwrap(), Felt::TWO.try_into().unwrap()).unwrap(),
+            Felt::ZERO
+        );
+    }
+}

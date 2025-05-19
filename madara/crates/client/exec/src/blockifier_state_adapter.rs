@@ -81,6 +81,7 @@ impl StateReader for BlockifierStateAdapter {
         Ok(Nonce(value))
     }
 
+    /// Blockifier expects us to return 0x0 if the contract is not deployed.
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
         let value = match self.on_top_of_block_id {
             Some(on_top_of_block_id) => self

@@ -195,7 +195,7 @@ async fn main() -> anyhow::Result<()> {
         MempoolConfig::new(MempoolLimits::new(&chain_config))
             .with_no_saving(run_cmd.validator_params.no_mempool_saving),
     );
-    mempool.load_txs_from_db().context("Loading mempool transactions")?;
+    mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 
     let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);

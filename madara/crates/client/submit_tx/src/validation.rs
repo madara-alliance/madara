@@ -64,7 +64,6 @@ impl From<StatefulValidatorError> for SubmitTransactionError {
         match err {
             E::StateError(err) => err.into(),
             E::TransactionExecutionError(err) => err.into(),
-            // this is a weird one... why does this variant exist..?
             E::TransactionExecutorError(err) => err.into(),
             E::TransactionPreValidationError(err) => err.into(),
         }

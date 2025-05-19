@@ -870,6 +870,6 @@ mod tests {
         // no transactions :)
         assert_eq!(block.inner.transactions, vec![]);
         assert_eq!(block.inner.receipts, vec![]);
-        assert!(chain.mempool.is_empty());
+        assert!(chain.mempool.is_empty().await);
     }
 }

@@ -119,7 +119,7 @@ impl From<MempoolError> for SubmitTransactionError {
 #[async_trait]
 impl SubmitValidatedTransaction for Mempool {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
-        Ok(self.accept_tx(tx)?)
+        Ok(self.accept_tx(tx).await?)
     }
 }
 
@@ -140,7 +140,7 @@ impl SubmitL1HandlerTransaction for Mempool {
             .context("Converting l1 handler tx to blockifier")
             .map_err(SubmitTransactionError::Internal)?;
         let res = L1HandlerTransactionResult { transaction_hash: tx.tx_hash().to_felt() };
-        self.accept_tx(ValidatedMempoolTx::from_blockifier(tx, arrived_at, converted_class))?;
+        self.accept_tx(ValidatedMempoolTx::from_blockifier(tx, arrived_at, converted_class)).await?;
         Ok(res)
     }
 }
@@ -155,7 +155,7 @@ impl Mempool {
         }
     }
 
-    pub fn load_txs_from_db(&mut self) -> Result<(), anyhow::Error> {
+    pub async fn load_txs_from_db(&mut self) -> Result<(), anyhow::Error> {
         for res in self.backend.get_mempool_transactions() {
             let (_, DbMempoolTxInfoDecoder { tx, nonce_readiness }) = res.context("Getting mempool transactions")?;
 
@@ -165,7 +165,8 @@ impl Mempool {
                 .context("Converting validated tx to blockifier")
                 .map_err(SubmitTransactionError::Internal)?;
 
-            if let Err(err) = self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_readiness) {
+            if let Err(err) = self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_readiness).await
+            {
                 match err {
                     MempoolError::InnerMempool(TxInsertionError::Limit(MempoolLimitReached::Age { .. })) => {} // do nothing
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
@@ -175,7 +176,7 @@ impl Mempool {
         Ok(())
     }
 
-    fn accept_validated_tx_with_nonce_info(
+    async fn accept_validated_tx_with_nonce_info(
         &self,
         tx: ValidatedMempoolTx,
         nonce_info: NonceInfo,
@@ -189,24 +190,24 @@ impl Mempool {
         let tx_hash = tx.tx_hash;
         let (tx, arrived_at, converted_class) = tx.into_blockifier()?;
 
-        self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info)?;
+        self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info).await?;
 
         Ok(())
     }
 
-    fn accept_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
+    async fn accept_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
         let nonce_info = if tx.tx.version() == TransactionVersion::ZERO {
             NonceInfo::default()
         } else if let Some(tx) = tx.tx.as_l1_handler() {
             self.resolve_nonce_info_l1_handler(tx.nonce.into())?
         } else {
-            self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce())?
+            self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce()).await?
         };
-        self.accept_validated_tx_with_nonce_info(tx, nonce_info)
+        self.accept_validated_tx_with_nonce_info(tx, nonce_info).await
     }
 
     /// Does not save to the database.
-    fn add_to_inner_mempool(
+    async fn add_to_inner_mempool(
         &self,
         tx_hash: Felt,
         tx: Transaction,
@@ -220,12 +221,14 @@ impl Mempool {
         let force = false;
         let nonce = nonce_info.nonce;
         let nonce_next = nonce_info.nonce_next;
-        self.inner.insert_tx(
-            MempoolTransaction { tx, arrived_at, converted_class, nonce, nonce_next },
-            force,
-            /* update_limits */ true,
-            nonce_info,
-        )?;
+        self.inner
+            .insert_tx(
+                MempoolTransaction { tx, arrived_at, converted_class, nonce, nonce_next },
+                force,
+                /* update_limits */ true,
+                nonce_info,
+            )
+            .await?;
 
         self.metrics.accepted_transaction_counter.add(1, &[]);
 
@@ -233,8 +236,8 @@ impl Mempool {
     }
 
     #[cfg(any(test, feature = "testing"))]
-    pub fn is_empty(&self) -> bool {
-        self.inner.read().is_empty()
+    pub async fn is_empty(&self) -> bool {
+        self.inner.read().await.is_empty()
     }
 
     /// Determines the status of a transaction based on the address of the
@@ -246,7 +249,7 @@ impl Mempool {
     /// contracts to be included in the upcoming block as well as checking the
     /// state of the mempool to see if previous transactions are marked as
     /// ready.
-    fn retrieve_nonce_info(&self, sender_address: Felt, nonce: Felt) -> Result<NonceInfo, MempoolError> {
+    async fn retrieve_nonce_info(&self, sender_address: Felt, nonce: Felt) -> Result<NonceInfo, MempoolError> {
         let nonce = Nonce(nonce);
         let nonce_next = nonce.try_increment().context("Nonce overflow").map_err(MempoolError::Internal)?;
 
@@ -255,7 +258,7 @@ impl Mempool {
             // and non negative, so there is no nonce s.t nonce != nonce_target,
             // nonce < nonce_target & nonce = 0
             let nonce_prev = Nonce(nonce.0 - Felt::ONE);
-            let nonce_prev_ready = self.inner.read().nonce_is_ready(sender_address, nonce_prev);
+            let nonce_prev_ready = self.inner.read().await.nonce_is_ready(sender_address, nonce_prev);
 
             // If the mempool has the transaction before this one ready, then
             // this transaction is ready too. Even if the db has not been
@@ -273,7 +276,7 @@ impl Mempool {
         // the db is updated. For this reason, nonce_cache keeps track of
         // the nonces of contracts which have not yet been included in the
         // block but are scheduled to.
-        let nonce_cached = self.inner.nonce_cache_read().get(&sender_address).cloned();
+        let nonce_cached = self.inner.nonce_cache_read().await.get(&sender_address).cloned();
 
         if let Some(nonce_cached) = nonce_cached {
             match nonce.cmp(&nonce_cached) {
@@ -336,13 +339,13 @@ impl Mempool {
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
-    pub fn get_consumer(&self) -> MempoolConsumerView<'_> {
-        self.inner.get_consumer()
+    pub async fn get_consumer(&self) -> MempoolConsumerView<'_> {
+        self.inner.get_consumer().await
     }
 }
 
 #[cfg(test)]
-mod test {
+pub(crate) mod tests {
     use super::*;
     use mc_db::mempool_db::NonceStatus;
     use mp_block::{MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
@@ -363,7 +366,7 @@ mod test {
         Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
 
     #[rstest::fixture]
-    fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+    pub fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
             blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
                 blockifier::transaction::account_transaction::AccountTransaction::Invoke(
@@ -385,7 +388,7 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx_account_v1_invalid() -> ValidatedMempoolTx {
+    pub fn tx_account_v1_invalid() -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
             blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
                 blockifier::transaction::account_transaction::AccountTransaction::Invoke(
@@ -404,7 +407,7 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+    pub fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
             blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
                 blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
@@ -450,10 +453,10 @@ mod test {
     ) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
-        let result = mempool.accept_tx(tx_account_v0_valid);
+        let result = mempool.accept_tx(tx_account_v0_valid).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        mempool.inner.read().check_invariants();
+        mempool.inner.read().await.check_invariants();
     }
 
     /// This test checks if a ready transaction is indeed inserted into the
@@ -471,10 +474,10 @@ mod test {
 
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
         let arrived_at = tx_account_v0_valid.arrived_at;
-        let result = mempool.accept_tx(tx_account_v0_valid);
+        let result = mempool.accept_tx(tx_account_v0_valid).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
 
         assert!(inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
@@ -501,18 +504,18 @@ mod test {
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
         let timestamp = TxTimestamp::now();
         tx_account_v0_valid.arrived_at = timestamp;
-        let result = mempool.accept_tx(tx_account_v0_valid);
+        let result = mempool.accept_tx(tx_account_v0_valid).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let mempool_tx = mempool.get_consumer().next().expect("Mempool should contain a transaction");
+        let mempool_tx = mempool.get_consumer().await.next().expect("Mempool should contain a transaction");
         assert_eq!(mempool_tx.arrived_at, timestamp);
 
         assert!(
-            mempool.get_consumer().next().is_none(),
+            mempool.get_consumer().await.next().is_none(),
             "It should not be possible to take a transaction from an empty mempool"
         );
 
-        mempool.inner.read().check_invariants();
+        mempool.inner.read().await.check_invariants();
     }
 
     /// This test makes sure that all deploy account transactions inserted into
@@ -540,10 +543,10 @@ mod test {
 
         let force = true;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
     }
@@ -578,12 +581,12 @@ mod test {
         // valid deploy transaction since the outer mempool checks this
         let force = false;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         // We insert a first non-deploy tx. This should not update the count of
         // deploy transactions.
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(!inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
         drop(inner);
@@ -601,11 +604,11 @@ mod test {
         // Now we replace the previous transaction with a deploy account tx
         let force = true;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         // This should have updated the count of deploy transactions.
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
     }
@@ -638,10 +641,10 @@ mod test {
 
         let force = true;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
         drop(inner);
@@ -659,11 +662,11 @@ mod test {
 
         let force = true;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         // The deploy transaction count at that address should be 0
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(!inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
     }
@@ -702,20 +705,20 @@ mod test {
 
         let force = true;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
         drop(inner);
 
         // Next, we manually call `remove_age_exceeded_txs`
-        mempool.inner.write().remove_age_exceeded_txs();
+        mempool.inner.write().await.remove_age_exceeded_txs();
 
         // This should have removed the deploy contract transaction and updated
         // the count at that address
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(!inner.deployed_contracts.contains(&contract_address));
         inner.check_invariants();
     }
@@ -787,15 +790,13 @@ mod test {
             nonce: Nonce(Felt::ZERO),
             nonce_next: Nonce(Felt::ONE),
         };
-        let res = mempool.inner.insert_tx(
-            tx_new_1_mempool.clone(),
-            true,
-            false,
-            NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_new_1_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)))
+            .await;
         assert!(res.is_ok());
         assert!(
-            mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_new_1_mempool.contract_address(),
                 timestamp: tx_new_1_mempool.arrived_at,
                 nonce: tx_new_1_mempool.nonce,
@@ -803,8 +804,8 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = TxTimestamp::now();
@@ -815,15 +816,13 @@ mod test {
             nonce: Nonce(Felt::ZERO),
             nonce_next: Nonce(Felt::ONE),
         };
-        let res = mempool.inner.insert_tx(
-            tx_new_2_mempool.clone(),
-            true,
-            false,
-            NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_new_2_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)))
+            .await;
         assert!(res.is_ok());
         assert!(
-            mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_new_2_mempool.contract_address(),
                 timestamp: tx_new_2_mempool.arrived_at,
                 nonce: tx_new_2_mempool.nonce,
@@ -831,8 +830,8 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = TxTimestamp::now();
@@ -843,17 +842,16 @@ mod test {
             nonce: Nonce(Felt::ONE),
             nonce_next: Nonce(Felt::TWO),
         };
-        let res = mempool.inner.insert_tx(
-            tx_new_3_mempool.clone(),
-            true,
-            false,
-            NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_new_3_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .await;
         assert!(res.is_ok());
         assert!(
             mempool
                 .inner
                 .read()
+                .await
                 .tx_intent_queue_pending_by_nonce
                 .get(&**tx_new_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_new_3")
@@ -865,8 +863,8 @@ mod test {
                     phantom: std::marker::PhantomData
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
@@ -877,15 +875,13 @@ mod test {
             nonce: Nonce(Felt::ONE),
             nonce_next: Nonce(Felt::TWO),
         };
-        let res = mempool.inner.insert_tx(
-            tx_old_1_mempool.clone(),
-            true,
-            false,
-            NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_old_1_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .await;
         assert!(res.is_ok());
         assert!(
-            mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_old_1_mempool.contract_address(),
                 timestamp: tx_old_1_mempool.arrived_at,
                 nonce: tx_old_1_mempool.nonce,
@@ -893,8 +889,8 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
@@ -905,15 +901,13 @@ mod test {
             nonce: Nonce(Felt::ONE),
             nonce_next: Nonce(Felt::TWO),
         };
-        let res = mempool.inner.insert_tx(
-            tx_old_2_mempool.clone(),
-            true,
-            false,
-            NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_old_2_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .await;
         assert!(res.is_ok());
         assert!(
-            mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_old_2_mempool.contract_address(),
                 timestamp: tx_old_2_mempool.arrived_at,
                 nonce: tx_old_2_mempool.nonce,
@@ -921,8 +915,8 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
@@ -933,17 +927,16 @@ mod test {
             nonce: Nonce(Felt::TWO),
             nonce_next: Nonce(Felt::THREE),
         };
-        let res = mempool.inner.insert_tx(
-            tx_old_3_mempool.clone(),
-            true,
-            false,
-            NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_old_3_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)))
+            .await;
         assert!(res.is_ok());
         assert!(
             mempool
                 .inner
                 .read()
+                .await
                 .tx_intent_queue_pending_by_nonce
                 .get(&**tx_old_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_old_3")
@@ -955,8 +948,8 @@ mod test {
                     phantom: std::marker::PhantomData
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
@@ -967,17 +960,16 @@ mod test {
             nonce: Nonce(Felt::ONE),
             nonce_next: Nonce(Felt::TWO),
         };
-        let res = mempool.inner.insert_tx(
-            tx_old_4_mempool.clone(),
-            true,
-            false,
-            NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
-        );
+        let res = mempool
+            .inner
+            .insert_tx(tx_old_4_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .await;
         assert!(res.is_ok());
         assert!(
             mempool
                 .inner
                 .read()
+                .await
                 .tx_intent_queue_pending_by_nonce
                 .get(&**tx_old_4_mempool.contract_address())
                 .expect("Missing nonce_mapping for tx_old_4")
@@ -989,12 +981,12 @@ mod test {
                     phantom: std::marker::PhantomData
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         // Make sure we have not entered an invalid state.
-        mempool.inner.read().check_invariants();
+        mempool.inner.read().await.check_invariants();
 
         // ================================================================== //
         //                                STEP 2                              //
@@ -1002,11 +994,11 @@ mod test {
 
         // Now we actually remove the transactions. All the old transactions
         // should be removed.
-        mempool.inner.write().remove_age_exceeded_txs();
+        mempool.inner.write().await.remove_age_exceeded_txs();
 
         // tx_new_1 and tx_new_2 should still be in the mempool
         assert!(
-            mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_new_1_mempool.contract_address(),
                 timestamp: tx_new_1_mempool.arrived_at,
                 nonce: tx_new_1_mempool.nonce,
@@ -1014,11 +1006,11 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
         assert!(
-            mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_new_2_mempool.contract_address(),
                 timestamp: tx_new_2_mempool.arrived_at,
                 nonce: tx_new_2_mempool.nonce,
@@ -1026,13 +1018,13 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         // tx_old_1 and tx_old_2 should no longer be in the ready queue
         assert!(
-            !mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            !mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_old_1_mempool.contract_address(),
                 timestamp: tx_old_1_mempool.arrived_at,
                 nonce: tx_old_1_mempool.nonce,
@@ -1040,11 +1032,11 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
         assert!(
-            !mempool.inner.read().tx_intent_queue_ready.contains(&TransactionIntentReady {
+            !mempool.inner.read().await.tx_intent_queue_ready.contains(&TransactionIntentReady {
                 contract_address: **tx_old_2_mempool.contract_address(),
                 timestamp: tx_old_2_mempool.arrived_at,
                 nonce: tx_old_2_mempool.nonce,
@@ -1052,8 +1044,8 @@ mod test {
                 phantom: std::marker::PhantomData
             }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         // tx_new_3 should still be in the pending queue but tx_old_3 should not
@@ -1061,6 +1053,7 @@ mod test {
             mempool
                 .inner
                 .read()
+                .await
                 .tx_intent_queue_pending_by_nonce
                 .get(&**tx_new_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_new_3")
@@ -1072,13 +1065,14 @@ mod test {
                     phantom: std::marker::PhantomData
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
         assert!(
             !mempool
                 .inner
                 .read()
+                .await
                 .tx_intent_queue_pending_by_nonce
                 .get(&**tx_old_3_mempool.contract_address())
                 .expect("Missing nonce mapping for tx_old_3")
@@ -1090,22 +1084,27 @@ mod test {
                     phantom: std::marker::PhantomData
                 }),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         // tx_old_4 should no longer be in the pending queue and since it was
         // the only transaction for that contract address, that pending queue
         // should have been emptied
         assert!(
-            !mempool.inner.read().tx_intent_queue_pending_by_nonce.contains_key(&**tx_old_4_mempool.contract_address()),
+            !mempool
+                .inner
+                .read()
+                .await
+                .tx_intent_queue_pending_by_nonce
+                .contains_key(&**tx_old_4_mempool.contract_address()),
             "ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         // Make sure we have not entered an invalid state.
-        mempool.inner.read().check_invariants();
+        mempool.inner.read().await.check_invariants();
     }
 
     /// This test makes sure that adding an l1 handler to [MempoolInner] does
@@ -1137,17 +1136,17 @@ mod test {
 
         let force = false;
         let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info);
+        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         assert!(inner.nonce_is_ready(CONTRACT_ADDRESS, Nonce(Felt::ZERO)));
         inner.check_invariants();
         drop(inner);
 
         // This should not loop!
-        mempool.inner.write().remove_age_exceeded_txs();
-        let inner = mempool.inner.read();
+        mempool.inner.write().await.remove_age_exceeded_txs();
+        let inner = mempool.inner.read().await;
         assert!(inner.nonce_is_ready(CONTRACT_ADDRESS, Nonce(Felt::ZERO)));
         inner.check_invariants();
     }
@@ -1181,10 +1180,10 @@ mod test {
         let nonce_info = NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO));
         let timestamp_pending = TxTimestamp::now();
         tx_pending.arrived_at = timestamp_pending;
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_pending, nonce_info);
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_pending, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
         inner
             .tx_intent_queue_pending_by_nonce
@@ -1208,10 +1207,10 @@ mod test {
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let timestamp_ready = TxTimestamp::now();
         tx_ready.arrived_at = timestamp_ready;
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_ready, nonce_info);
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_ready, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
         inner
             .tx_intent_queue_ready
@@ -1231,9 +1230,9 @@ mod test {
         // Take the next transaction. The pending transaction was received first
         // but this should return the ready transaction instead.
 
-        let mempool_tx = mempool.get_consumer().next().expect("Mempool contains a ready transaction!");
+        let mempool_tx = mempool.get_consumer().await.next().expect("Mempool contains a ready transaction!");
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
         inner
             .tx_intent_queue_ready
@@ -1258,9 +1257,9 @@ mod test {
         // Take the next transaction. The pending transaction has been marked as
         // ready and should be returned here
 
-        let mempool_tx = mempool.get_consumer().next().expect("Mempool contains a ready transaction!");
+        let mempool_tx = mempool.get_consumer().await.next().expect("Mempool contains a ready transaction!");
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
 
         // No more transactions left
@@ -1304,14 +1303,14 @@ mod test {
         // Insert the first transaction
 
         let nonce_info =
-            mempool.retrieve_nonce_info(CONTRACT_ADDRESS, Felt::ZERO).expect("Failed to retrieve nonce info");
+            mempool.retrieve_nonce_info(CONTRACT_ADDRESS, Felt::ZERO).await.expect("Failed to retrieve nonce info");
         let timestamp_1 = TxTimestamp::now();
         tx_1.arrived_at = timestamp_1;
 
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_1, nonce_info);
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_1, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: CONTRACT_ADDRESS,
@@ -1323,8 +1322,8 @@ mod test {
         assert!(
             contains,
             "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
@@ -1337,14 +1336,14 @@ mod test {
         // it has already been marked as ready in the mempool.
 
         let nonce_info =
-            mempool.retrieve_nonce_info(CONTRACT_ADDRESS, Felt::ONE).expect("Failed to retrieve nonce info");
+            mempool.retrieve_nonce_info(CONTRACT_ADDRESS, Felt::ONE).await.expect("Failed to retrieve nonce info");
 
         let timestamp_2 = TxTimestamp::now();
         tx_2.arrived_at = timestamp_2;
-        let result = mempool.accept_validated_tx_with_nonce_info(tx_2, nonce_info);
+        let result = mempool.accept_validated_tx_with_nonce_info(tx_2, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         inner.check_invariants();
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: CONTRACT_ADDRESS,
@@ -1356,8 +1355,8 @@ mod test {
         assert!(
             contains,
             "Mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
@@ -1387,19 +1386,22 @@ mod test {
         let contract_address = Felt::ZERO;
         let nonce = Nonce(Felt::ONE);
         let nonce_next = nonce.try_increment().unwrap();
-        mempool.inner.nonce_cache_write().insert(contract_address, nonce);
+        mempool.inner.nonce_cache_write().await.insert(contract_address, nonce);
 
         // Despite the tx nonce being Felt::ONE, it should be marked as ready
         // since it is present in the nonce cache
-        assert_eq!(mempool.retrieve_nonce_info(contract_address, *nonce).unwrap(), NonceInfo::ready(nonce, nonce_next));
+        assert_eq!(
+            mempool.retrieve_nonce_info(contract_address, *nonce).await.unwrap(),
+            NonceInfo::ready(nonce, nonce_next)
+        );
 
         // We remove the nonce cache at that address
-        let removed = mempool.inner.nonce_cache_write().remove(&contract_address);
+        let removed = mempool.inner.nonce_cache_write().await.remove(&contract_address);
         debug_assert!(removed.is_some());
 
         // Now the nonce should be marked as pending
         assert_eq!(
-            mempool.retrieve_nonce_info(contract_address, *nonce).unwrap(),
+            mempool.retrieve_nonce_info(contract_address, *nonce).await.unwrap(),
             NonceInfo::pending(nonce, nonce_next)
         );
     }
@@ -1430,14 +1432,14 @@ mod test {
         // Transactions which meet the nonce in db should be marked as ready...
 
         assert_eq!(
-            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO).unwrap(),
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO).await.unwrap(),
             NonceInfo { readiness: NonceStatus::Ready, nonce: Nonce(Felt::ZERO), nonce_next: Nonce(Felt::ONE) }
         );
 
         // ...otherwise they should be marked as pending
 
         assert_eq!(
-            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ONE).unwrap(),
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ONE).await.unwrap(),
             NonceInfo { readiness: NonceStatus::Pending, nonce: Nonce(Felt::ONE), nonce_next: Nonce(Felt::TWO) }
         );
 
@@ -1445,7 +1447,7 @@ mod test {
         // should not fail during nonce info retrieval
 
         assert_eq!(
-            mempool.retrieve_nonce_info(Felt::ONE, Felt::ZERO).unwrap(),
+            mempool.retrieve_nonce_info(Felt::ONE, Felt::ZERO).await.unwrap(),
             NonceInfo { readiness: NonceStatus::Ready, nonce: Nonce(Felt::ZERO), nonce_next: Nonce(Felt::ONE) }
         );
 
@@ -1467,14 +1469,14 @@ mod test {
             .expect("Failed to store block");
 
         assert_matches::assert_matches!(
-            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO),
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::ZERO).await,
             Err(MempoolError::InvalidNonce)
         );
 
         // We need to compute the next nonce inside retrieve nonce_info, so
         // passing Felt::MAX is not allowed.
         assert_matches::assert_matches!(
-            mempool.retrieve_nonce_info(Felt::ZERO, Felt::MAX),
+            mempool.retrieve_nonce_info(Felt::ZERO, Felt::MAX).await,
             Err(MempoolError::Internal(_))
         );
     }
@@ -1571,10 +1573,10 @@ mod test {
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        let result = mempool.inner.insert_tx(tx_1_mempool.clone(), force, update_tx_limits, nonce_info);
+        let result = mempool.inner.insert_tx(tx_1_mempool.clone(), force, update_tx_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_1_mempool.contract_address(),
             timestamp: tx_1_mempool.arrived_at,
@@ -1585,8 +1587,8 @@ mod test {
         assert!(
             contains,
             "Mempool should contain transaction 1, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
@@ -1610,10 +1612,10 @@ mod test {
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        let result = mempool.inner.insert_tx(tx_2_mempool.clone(), force, update_tx_limits, nonce_info);
+        let result = mempool.inner.insert_tx(tx_2_mempool.clone(), force, update_tx_limits, nonce_info).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_2_mempool.contract_address(),
             timestamp: tx_2_mempool.arrived_at,
@@ -1624,8 +1626,8 @@ mod test {
         assert!(
             contains,
             "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_1_mempool.contract_address(),
@@ -1637,8 +1639,8 @@ mod test {
         assert!(
             !contains,
             "Mempool should not contain transaction 1 after it has been replaced, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 1);
@@ -1662,10 +1664,10 @@ mod test {
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        let result = mempool.inner.insert_tx(tx_3_mempool.clone(), force, update_tx_limits, nonce_info.clone());
+        let result = mempool.inner.insert_tx(tx_3_mempool.clone(), force, update_tx_limits, nonce_info.clone()).await;
         assert_matches::assert_matches!(result, Ok(()));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_3_mempool.contract_address(),
             timestamp: tx_3_mempool.arrived_at,
@@ -1676,8 +1678,8 @@ mod test {
         assert!(
             contains,
             "Mempool should contain transaction 3, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_2_mempool.contract_address(),
@@ -1689,8 +1691,8 @@ mod test {
         assert!(
             contains,
             "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
@@ -1705,10 +1707,10 @@ mod test {
         let force = false;
         let update_tx_limits = true;
 
-        let result = mempool.inner.insert_tx(tx_3_mempool.clone(), force, update_tx_limits, nonce_info);
+        let result = mempool.inner.insert_tx(tx_3_mempool.clone(), force, update_tx_limits, nonce_info).await;
         assert_eq!(result, Err(TxInsertionError::DuplicateTxn));
 
-        let inner = mempool.inner.read();
+        let inner = mempool.inner.read().await;
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_3_mempool.contract_address(),
             timestamp: tx_3_mempool.arrived_at,
@@ -1719,8 +1721,8 @@ mod test {
         assert!(
             contains,
             "Mempool should contain transaction 3, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
         let contains = inner.tx_intent_queue_ready.contains(&TransactionIntentReady {
             contract_address: **tx_2_mempool.contract_address(),
@@ -1732,8 +1734,8 @@ mod test {
         assert!(
             contains,
             "mempool should contain transaction 2, ready transaction intents are: {:#?}\npending transaction intents are: {:#?}",
-            mempool.inner.read().tx_intent_queue_ready,
-            mempool.inner.read().tx_intent_queue_pending_by_nonce
+            mempool.inner.read().await.tx_intent_queue_ready,
+            mempool.inner.read().await.tx_intent_queue_pending_by_nonce
         );
 
         assert_eq!(inner.tx_intent_queue_ready.len(), 2);
