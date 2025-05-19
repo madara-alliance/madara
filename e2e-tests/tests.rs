@@ -102,7 +102,8 @@ impl Setup {
             "MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS".to_string(),
             starknet_core_contract_address.to_string(),
         );
-        env_vec.insert("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS".to_string(), l2_block_number);
+        env_vec.insert("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS".to_string(), l2_block_number.clone());
+        env_vec.insert("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS".to_string(), l2_block_number);
 
         Self { mongo_db_instance, starknet_client, sharp_client, env_vector: env_vec }
     }
