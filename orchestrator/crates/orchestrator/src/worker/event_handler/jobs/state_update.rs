@@ -44,19 +44,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             tracing::error!(job_id = %internal_id, "Missing required paths in metadata");
             return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
         }
-
-        // Create job with initialized metadata
-        let job_item = JobItem {
-            id: Uuid::new_v4(),
-            internal_id: internal_id.clone(),
-            job_type: JobType::StateTransition,
-            status: JobStatus::Created,
-            external_id: String::new().into(),
-            metadata: metadata.clone(),
-            version: 0,
-            created_at: Utc::now().round_subsecs(0),
-            updated_at: Utc::now().round_subsecs(0),
-        };
+        let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
 
         tracing::info!(
             log_type = "completed",
@@ -255,7 +243,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let expected_last_block_number = block_numbers.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
 
         let out_last_block_number =
-            settlement_client.get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+            settlement_client.get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?.unwrap_or(0);
 
         let block_status = if out_last_block_number == *expected_last_block_number {
             tracing::info!(
@@ -318,7 +306,8 @@ impl StateUpdateJobHandler {
         }
         // Check for gap between the last settled block and the first block to settle
         let last_settled_block: u64 =
-            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?
+                .unwrap_or(0);
         if last_settled_block + 1 != block_numbers[0] {
             Err(StateUpdateError::GapBetweenFirstAndLastBlock)?;
         }

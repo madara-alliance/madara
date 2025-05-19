@@ -23,6 +23,7 @@ pub trait SettlementClient: Send + Sync {
     /// Should be used to update state on core contract when DA is done in calldata
     async fn update_state_calldata(
         &self,
+        snos_output: Vec<[u8; 32]>,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
@@ -42,8 +43,8 @@ pub trait SettlementClient: Send + Sync {
     /// Should wait that the pending tx_hash is finalized
     async fn wait_for_tx_finality(&self, tx_hash: &str) -> Result<Option<u64>>;
 
-    /// Should retrieves the last settled block in the settlement layer
-    async fn get_last_settled_block(&self) -> Result<u64>;
+    /// Should retrieve the last settled block in the settlement layer
+    async fn get_last_settled_block(&self) -> Result<Option<u64>>;
 
     /// Should retrieve the latest transaction count to be used as nonce.
     async fn get_nonce(&self) -> Result<u64>;

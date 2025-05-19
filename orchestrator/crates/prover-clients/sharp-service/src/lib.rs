@@ -28,6 +28,7 @@ pub struct SharpValidatedArgs {
     pub sharp_server_crt: String,
     pub sharp_proof_layout: String,
     pub gps_verifier_contract_address: String,
+    pub sharp_settlement_layer: String,
 }
 
 /// SHARP (aka GPS) is a shared proving service hosted by Starkware.
@@ -158,7 +159,7 @@ impl ProverClient for SharpProverService {
         todo!()
     }
 
-    async fn submit_l2_query(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError> {
+    async fn submit_l2_query(&self, task_id: &str, fact: &str, n_steps: Option<usize>) -> Result<String, ProverClientError> {
         todo!()
     }
 }
@@ -173,6 +174,7 @@ impl SharpProverService {
         let fact_checker = FactChecker::new(
             sharp_params.sharp_rpc_node_url.clone(),
             sharp_params.gps_verifier_contract_address.clone(),
+            sharp_params.sharp_settlement_layer.clone(),
         );
         Self::new(sharp_client, fact_checker, proof_layout)
     }
@@ -185,6 +187,7 @@ impl SharpProverService {
         let fact_checker = FactChecker::new(
             sharp_params.sharp_rpc_node_url.clone(),
             sharp_params.gps_verifier_contract_address.clone(),
+            sharp_params.sharp_settlement_layer.clone(),
         );
         Self::new(sharp_client, fact_checker, proof_layout)
     }

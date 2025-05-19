@@ -538,6 +538,7 @@ pub(crate) fn get_env_params() -> EnvParams {
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
+        snos_full_output: false,
     };
 
     let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS").expect("Couldn't get max block");
@@ -561,6 +562,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         min_block_to_process: min_block,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
+        max_concurrent_proof_registration_jobs: None,
     };
 
     let server_config = ServerParams {
@@ -598,6 +600,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_PROOF_SETTLEMENT_LAYER"),
     });
 
     EnvParams {

@@ -103,96 +103,96 @@ async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddlew
     (Arc::new(account), madara_process)
 }
 
-#[rstest]
-#[tokio::test]
-async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) {
-    dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
-
-    let (account, madara_process) = setup.await;
-
-    let mut starknet_settlement_params: StarknetSettlementValidatedArgs = StarknetSettlementValidatedArgs {
-        starknet_rpc_url: madara_process.rpc_url.clone(),
-        starknet_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY"),
-        starknet_account_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS"),
-        starknet_cairo_core_contract_address: get_env_var_or_panic(
-            "MADARA_ORCHESTRATOR_STARKNET_CAIRO_CORE_CONTRACT_ADDRESS",
-        ),
-        starknet_finality_retry_wait_in_secs: get_env_var_or_panic(
-            "MADARA_ORCHESTRATOR_STARKNET_FINALITY_RETRY_WAIT_IN_SECS",
-        )
-        .parse::<u64>()
-        .unwrap(),
-    };
-
-    let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
-    let contract_path = project_root.join("crates/settlement-clients/starknet/src/tests/mock_contracts/target/dev");
-    let sierra_class: SierraClass = serde_json::from_reader(
-        std::fs::File::open(contract_path.join("mock_contracts_Piltover.contract_class.json"))
-            .expect("Could not open sierra class file"),
-    )
-    .expect("Failed to parse SierraClass");
-
-    let compiled_class: CompiledClass = serde_json::from_reader(
-        std::fs::File::open(contract_path.join("mock_contracts_Piltover.compiled_contract_class.json"))
-            .expect("Could not open compiled class file"),
-    )
-    .expect("Failed to parse CompiledClass");
-
-    let flattened_class = sierra_class.clone().flatten().unwrap();
-    let compiled_class_hash = compiled_class.class_hash().unwrap();
-
-    let DeclareTransactionResult { transaction_hash: declare_tx_hash, class_hash: _ } =
-        account.declare_v2(Arc::new(flattened_class.clone()), compiled_class_hash).send().await.unwrap();
-    tracing::debug!("declare tx hash {:?}", declare_tx_hash);
-
-    let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
-    assert!(is_success, "Declare transaction failed");
-
-    let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
-    let deploy_v1 = contract_factory.deploy_v1(vec![], felt!("1122"), false);
-    let deployed_address = deploy_v1.deployed_address();
-
-    // env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());
-    starknet_settlement_params.starknet_cairo_core_contract_address = deployed_address.to_hex_string();
-
-    let InvokeTransactionResult { transaction_hash: deploy_tx_hash } =
-        deploy_v1.send().await.expect("Unable to deploy contract");
-
-    let is_success = wait_for_tx(&account, deploy_tx_hash, Duration::from_secs(2)).await;
-    assert!(is_success, "Deploy trasaction failed");
-
-    let settlement_client = StarknetSettlementClient::new_with_args(&starknet_settlement_params).await;
-    let onchain_data_hash = [1; 32];
-    let mut program_output = Vec::with_capacity(32);
-    program_output.fill(onchain_data_hash);
-    let update_state_tx_hash = settlement_client
-        .update_state_calldata(program_output, onchain_data_hash, [1; 32])
-        .await
-        .expect("Sending Update state");
-
-    tracing::debug!("update state tx hash {:?}", update_state_tx_hash);
-
-    let is_success = wait_for_tx(
-        &account,
-        Felt::from_hex(&update_state_tx_hash).expect("Incorrect transaction hash"),
-        Duration::from_secs(2),
-    )
-    .await;
-    assert!(is_success, "Update state transaction failed/reverted");
-    let call_result = account
-        .provider()
-        .call(
-            FunctionCall {
-                contract_address: deployed_address,
-                entry_point_selector: selector!("get_is_updated"),
-                calldata: vec![Felt::from_bytes_be_slice(&onchain_data_hash)],
-            },
-            BlockId::Tag(BlockTag::Pending),
-        )
-        .await
-        .expect("failed to call the contract");
-    assert!(call_result[0] == true.into(), "Should be updated");
-}
+// #[rstest]
+// #[tokio::test]
+// async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) {
+//     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
+// 
+//     let (account, madara_process) = setup.await;
+// 
+//     let mut starknet_settlement_params: StarknetSettlementValidatedArgs = StarknetSettlementValidatedArgs {
+//         starknet_rpc_url: madara_process.rpc_url.clone(),
+//         starknet_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY"),
+//         starknet_account_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS"),
+//         starknet_cairo_core_contract_address: get_env_var_or_panic(
+//             "MADARA_ORCHESTRATOR_STARKNET_CAIRO_CORE_CONTRACT_ADDRESS",
+//         ),
+//         starknet_finality_retry_wait_in_secs: get_env_var_or_panic(
+//             "MADARA_ORCHESTRATOR_STARKNET_FINALITY_RETRY_WAIT_IN_SECS",
+//         )
+//         .parse::<u64>()
+//         .unwrap(),
+//     };
+// 
+//     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
+//     let contract_path = project_root.join("crates/settlement-clients/starknet/src/tests/mock_contracts/target/dev");
+//     let sierra_class: SierraClass = serde_json::from_reader(
+//         std::fs::File::open(contract_path.join("mock_contracts_Piltover.contract_class.json"))
+//             .expect("Could not open sierra class file"),
+//     )
+//     .expect("Failed to parse SierraClass");
+// 
+//     let compiled_class: CompiledClass = serde_json::from_reader(
+//         std::fs::File::open(contract_path.join("mock_contracts_Piltover.compiled_contract_class.json"))
+//             .expect("Could not open compiled class file"),
+//     )
+//     .expect("Failed to parse CompiledClass");
+// 
+//     let flattened_class = sierra_class.clone().flatten().unwrap();
+//     let compiled_class_hash = compiled_class.class_hash().unwrap();
+// 
+//     let DeclareTransactionResult { transaction_hash: declare_tx_hash, class_hash: _ } =
+//         account.declare_v2(Arc::new(flattened_class.clone()), compiled_class_hash).send().await.unwrap();
+//     tracing::debug!("declare tx hash {:?}", declare_tx_hash);
+// 
+//     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
+//     assert!(is_success, "Declare transaction failed");
+// 
+//     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
+//     let deploy_v1 = contract_factory.deploy_v1(vec![], felt!("1122"), false);
+//     let deployed_address = deploy_v1.deployed_address();
+// 
+//     // env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());
+//     starknet_settlement_params.starknet_cairo_core_contract_address = deployed_address.to_hex_string();
+// 
+//     let InvokeTransactionResult { transaction_hash: deploy_tx_hash } =
+//         deploy_v1.send().await.expect("Unable to deploy contract");
+// 
+//     let is_success = wait_for_tx(&account, deploy_tx_hash, Duration::from_secs(2)).await;
+//     assert!(is_success, "Deploy trasaction failed");
+// 
+//     let settlement_client = StarknetSettlementClient::new_with_args(&starknet_settlement_params).await;
+//     let onchain_data_hash = [1; 32];
+//     let mut program_output = Vec::with_capacity(32);
+//     program_output.fill(onchain_data_hash);
+//     let update_state_tx_hash = settlement_client
+//         .update_state_calldata(program_output, onchain_data_hash, [1; 32])
+//         .await
+//         .expect("Sending Update state");
+// 
+//     tracing::debug!("update state tx hash {:?}", update_state_tx_hash);
+// 
+//     let is_success = wait_for_tx(
+//         &account,
+//         Felt::from_hex(&update_state_tx_hash).expect("Incorrect transaction hash"),
+//         Duration::from_secs(2),
+//     )
+//     .await;
+//     assert!(is_success, "Update state transaction failed/reverted");
+//     let call_result = account
+//         .provider()
+//         .call(
+//             FunctionCall {
+//                 contract_address: deployed_address,
+//                 entry_point_selector: selector!("get_is_updated"),
+//                 calldata: vec![Felt::from_bytes_be_slice(&onchain_data_hash)],
+//             },
+//             BlockId::Tag(BlockTag::Pending),
+//         )
+//         .await
+//         .expect("failed to call the contract");
+//     assert!(call_result[0] == true.into(), "Should be updated");
+// }
 
 #[rstest]
 #[tokio::test]

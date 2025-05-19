@@ -84,7 +84,7 @@ pub enum Commands {
     ),
     group(
         ArgGroup::new("da_layer")
-            .args(&["da_on_ethereum"])
+            .args(&["da_on_ethereum", "da_on_starknet"])
             .required(true)
             .multiple(false)
     ),

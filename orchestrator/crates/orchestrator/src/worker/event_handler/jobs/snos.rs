@@ -120,29 +120,28 @@ impl JobHandlerTrait for SnosJobHandler {
         }
 
         tracing::debug!(job_id = %job.internal_id, "Storing SNOS outputs");
-        match snos_output.use_kzg_da {
-            Felt252::ZERO => {
-                self.store_l2(
-                    internal_id.clone(),
-                    config.storage(),
-                    &snos_metadata,
-                    cairo_pie,
-                    snos_output,
-                    program_output,
-                )
+        if snos_output.use_kzg_da == Felt252::ZERO {
+            // Store the on-chain data path
+            self.store_l2(
+                internal_id.clone(),
+                config.storage(),
+                &snos_metadata,
+                cairo_pie,
+                snos_output,
+                program_output,
+            )
                 .await?;
-            }
-            Felt252::ONE => {
-                self.store(
-                    internal_id.clone(),
-                    config.storage(),
-                    &snos_metadata,
-                    cairo_pie,
-                    snos_output,
-                    program_output,
-                )
+        } else if snos_output.use_kzg_da == Felt252::ONE {
+            // Store the Cairo Pie path
+            self.store(
+                internal_id.clone(),
+                config.storage(),
+                &snos_metadata,
+                cairo_pie,
+                snos_output,
+                program_output,
+            )
                 .await?;
-            }
         }
 
         tracing::info!(

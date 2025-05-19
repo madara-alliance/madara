@@ -365,7 +365,6 @@ majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
 prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
-wiftness_proof_parser = "0.1.0"
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }

@@ -1,3 +1,4 @@
+use crate::types::constant::PROOF_FILE_NAME;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -25,17 +26,7 @@ impl JobHandlerTrait for ProvingJobHandler {
     #[tracing::instrument(fields(category = "proving"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         tracing::info!(log_type = "starting", category = "proving", function_type = "create_job",  block_no = %internal_id, "Proving job creation started.");
-        let job_item = JobItem {
-            id: Uuid::new_v4(),
-            internal_id: internal_id.clone(),
-            job_type: JobType::ProofCreation,
-            status: JobStatus::Created,
-            external_id: String::new().into(),
-            metadata,
-            version: 0,
-            created_at: Utc::now().round_subsecs(0),
-            updated_at: Utc::now().round_subsecs(0),
-        };
+        let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
         tracing::info!(log_type = "completed", category = "proving", function_type = "create_job",  block_no = %internal_id, "Proving job created.");
         Ok(job_item)
     }
@@ -132,7 +123,7 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         let task_status = config
             .prover_client()
-            .get_task_status(&task_id, fact, cross_verify)
+            .get_task_status(&task_id, fact.clone(), cross_verify)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
@@ -158,13 +149,26 @@ impl JobHandlerTrait for ProvingJobHandler {
             }
             TaskStatus::Succeeded => {
                 // If proof download path is specified, store the proof
+                // TODO:L3 review the unwrap
+                let fetched_proof = config.prover_client().get_proof(&task_id, &fact.unwrap()).await
+                    .wrap_err("Prover Client Error".to_string())
+                    .map_err(|e| {
+                        tracing::error!(
+                            job_id = %job.internal_id,
+                            error = %e,
+                            "Failed to get task status from prover client"
+                        );
+                        JobError::Other(OtherError(e))
+                    })?;
+                let proof_key = format!("{internal_id}/{PROOF_FILE_NAME}");
+                config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &proof_key).await?;
+
                 if let Some(download_path) = proving_metadata.download_proof {
                     tracing::debug!(
                         job_id = %job.internal_id,
                         "Downloading and storing proof to path: {}",
                         download_path
                     );
-                    // TODO: Implement proof download and storage
                 }
 
                 tracing::info!(

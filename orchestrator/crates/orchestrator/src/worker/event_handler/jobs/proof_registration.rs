@@ -8,19 +8,16 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use alloy::providers::Provider;
 use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::Result;
 use itertools::Itertools;
 use orchestrator_prover_client_interface::TaskStatus;
-use std::collections::HashMap;
 use std::fs::File;
 use std::io::Write;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
-use uuid::Uuid;
 
 pub struct RegisterProofJob;
 
@@ -74,7 +71,7 @@ impl JobHandlerTrait for RegisterProofJob {
         // Submit proof for L2 verification
         let external_id = config
             .prover_client()
-            .submit_l2_query(&task_id, &formatted_proof)
+            .submit_l2_query(&task_id, &formatted_proof, None)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
@@ -114,7 +111,7 @@ impl JobHandlerTrait for RegisterProofJob {
                 JobError::Other(OtherError(e))
             })?
             .into();
-        let mut proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
+        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
         // Determine if we need on-chain verification
         let (cross_verify, fact) = match &proving_metadata.ensure_on_chain_registration {
             Some(fact_str) => (true, Some(fact_str.clone())),

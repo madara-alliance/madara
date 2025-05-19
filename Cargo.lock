@@ -2417,7 +2417,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "itoa",
  "matchit",
@@ -2858,7 +2858,7 @@ dependencies = [
  "home",
  "http 1.1.0",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-named-pipe",
  "hyper-rustls 0.26.0",
  "hyper-util",
@@ -7572,7 +7572,7 @@ dependencies = [
  "headers",
  "http 1.1.0",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-rustls 0.27.3",
  "hyper-util",
  "lazy_static",
@@ -7623,9 +7623,9 @@ dependencies = [
 
 [[package]]
 name = "hyper"
-version = "1.5.0"
+version = "1.6.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bbbff0a806a4728c99295b254c8838933b5b082d75e3cb70c8dab21fdfbcfa9a"
+checksum = "cc2b571658e38e0c01b1fdca3bbbe93c00d3d71693ff2770043f8c29bc7d6f80"
 dependencies = [
  "bytes",
  "futures-channel",
@@ -7649,7 +7649,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "73b7d8abf35697b81a825e386fc151e0d503e8cb5fcb93cc8669c376dfd6f278"
 dependencies = [
  "hex",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "pin-project-lite",
  "tokio",
@@ -7681,7 +7681,7 @@ checksum = "a0bea761b46ae2b24eb4aef630d8d1c398157b6fc29e6350ecf090a0b70c952c"
 dependencies = [
  "futures-util",
  "http 1.1.0",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "log",
  "rustls 0.22.4",
@@ -7700,7 +7700,7 @@ checksum = "08afdbb5c31130e3034af566421053ab03787c640246a446327f550d11bcb333"
 dependencies = [
  "futures-util",
  "http 1.1.0",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "log",
  "rustls 0.23.16",
@@ -7730,7 +7730,7 @@ version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3203a961e5c83b6f5498933e78b6b263e208c197b63e9c6c53cc82ffd3f63793"
 dependencies = [
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "pin-project-lite",
  "tokio",
@@ -7758,7 +7758,7 @@ checksum = "70206fc6890eaca9fde8a0bf71caa2ddfc9fe045ac9e5c70df101a7dbde866e0"
 dependencies = [
  "bytes",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "native-tls",
  "tokio",
@@ -7777,7 +7777,7 @@ dependencies = [
  "futures-util",
  "http 1.1.0",
  "http-body 1.0.1",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "pin-project-lite",
  "socket2 0.5.7",
  "tokio",
@@ -7793,7 +7793,7 @@ checksum = "acf569d43fa9848e510358c07b80f4adf34084ddc28c6a4a651ee8474c070dcc"
 dependencies = [
  "hex",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "pin-project-lite",
  "tokio",
@@ -9231,7 +9231,7 @@ dependencies = [
  "futures",
  "http 1.1.0",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-tls 0.6.0",
  "hyper-util",
  "mc-submit-tx",
@@ -9260,7 +9260,7 @@ dependencies = [
  "bytes",
  "flate2",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-util",
  "mc-db",
  "mc-rpc",
@@ -9452,7 +9452,7 @@ dependencies = [
  "bonsai-trie",
  "futures",
  "httpmock 0.7.0",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "m-cairo-test-contracts",
  "mc-analytics",
  "mc-db",
@@ -9813,7 +9813,7 @@ dependencies = [
  "anyhow",
  "base64 0.22.1",
  "http 1.1.0",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -10477,6 +10477,7 @@ dependencies = [
  "hex",
  "httpmock 0.8.0-alpha.1",
  "hyper 0.14.31",
+ "hyper 1.6.0",
  "itertools 0.13.0",
  "jemallocator",
  "lazy_static",
@@ -10703,29 +10704,13 @@ dependencies = [
 name = "orchestrator-starknet-da-client"
 version = "0.8.0"
 dependencies = [
- "alloy 0.8.3",
  "async-trait",
- "c-kzg",
  "color-eyre",
- "dotenvy",
  "mockall",
- "opentelemetry",
- "opentelemetry-appender-tracing",
- "opentelemetry-otlp",
- "opentelemetry-semantic-conventions",
- "opentelemetry_sdk",
  "orchestrator-da-client-interface",
- "orchestrator-utils",
- "reqwest 0.12.8",
- "rstest 0.18.2",
  "serde",
  "starknet 0.12.0",
- "tokio",
  "tokio-test",
- "tracing",
- "tracing-core",
- "tracing-opentelemetry",
- "tracing-subscriber",
  "url",
 ]
 
@@ -11977,7 +11962,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-rustls 0.27.3",
  "hyper-tls 0.6.0",
  "hyper-util",
@@ -14943,7 +14928,7 @@ dependencies = [
  "http 1.1.0",
  "http-body 1.0.1",
  "http-body-util",
- "hyper 1.5.0",
+ "hyper 1.6.0",
  "hyper-timeout 0.5.1",
  "hyper-util",
  "percent-encoding",
