@@ -152,7 +152,12 @@ impl ProverClient for AtlanticProverService {
         file.write_all(response_text.as_bytes()).unwrap();
         Ok(response_text)
     }
-    async fn submit_l2_query(&self, _task_id: &str, proof: &str, n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_l2_query(
+        &self,
+        _task_id: &str,
+        proof: &str,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_l2_query",
@@ -163,24 +168,26 @@ impl ProverClient for AtlanticProverService {
             Ok(content) => content,
             Err(e) => return Err(ProverClientError::from(AtlanticError::FileReadError(e))),
         };
-    
-        let atlantic_job_response =
-            self.atlantic_client.submit_l2_query(
+
+        let atlantic_job_response = self
+            .atlantic_client
+            .submit_l2_query(
                 proof,
                 cairo_verifier.as_str(),
                 self.proof_layout,
                 n_steps,
                 &self.atlantic_network,
                 &self.atlantic_api_key,
-            ).await?;
-    
+            )
+            .await?;
+
         tracing::info!(
             log_type = "completed",
             category = "submit_l2_query",
             function_type = "proof",
             "L2 query submitted."
         );
-    
+
         Ok(atlantic_job_response.atlantic_query_id)
     }
 }

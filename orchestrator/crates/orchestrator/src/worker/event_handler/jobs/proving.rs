@@ -150,7 +150,10 @@ impl JobHandlerTrait for ProvingJobHandler {
             TaskStatus::Succeeded => {
                 // If proof download path is specified, store the proof
                 // TODO:L3 review the unwrap
-                let fetched_proof = config.prover_client().get_proof(&task_id, &fact.unwrap()).await
+                let fetched_proof = config
+                    .prover_client()
+                    .get_proof(&task_id, &fact.unwrap())
+                    .await
                     .wrap_err("Prover Client Error".to_string())
                     .map_err(|e| {
                         tracing::error!(

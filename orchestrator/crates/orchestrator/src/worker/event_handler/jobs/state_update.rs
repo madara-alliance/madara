@@ -305,9 +305,12 @@ impl StateUpdateJobHandler {
             Err(StateUpdateError::UnsortedBlockNumbers)?;
         }
         // Check for gap between the last settled block and the first block to settle
-        let last_settled_block: u64 =
-            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?
-                .unwrap_or(0);
+        let last_settled_block: u64 = config
+            .settlement_client()
+            .get_last_settled_block()
+            .await
+            .map_err(|e| JobError::Other(OtherError(e)))?
+            .unwrap_or(0);
         if last_settled_block + 1 != block_numbers[0] {
             Err(StateUpdateError::GapBetweenFirstAndLastBlock)?;
         }

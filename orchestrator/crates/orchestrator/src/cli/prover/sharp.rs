@@ -46,5 +46,4 @@ pub struct SharpCliArgs {
     /// Settlement layer for Sharp.
     #[arg(env = "MADARA_ORCHESTRATOR_PROOF_SETTLEMENT_LAYER", long, default_value = "ethereum")]
     pub settlement_layer: Option<String>,
-
 }
