@@ -119,6 +119,9 @@ pub struct RunCmd {
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
 
     #[clap(flatten)]
+    pub starknet_da_args: da::starknet::StarknetDaCliArgs,
+
+    #[clap(flatten)]
     pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
 
     // Settlement Layer
@@ -141,6 +144,9 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, value_parser = ["L2", "L3"], default_value = "L2")]
+    pub layer: String,
 
     // Service
     #[clap(flatten)]
@@ -207,6 +213,9 @@ pub struct SetupCmd {
     // Cron
     #[clap(flatten)]
     pub aws_event_bridge_args: AWSEventBridgeCliArgs,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, value_parser = ["L2", "L3"], default_value = "L2")]
+    pub layer: String,
 
     // Miscellaneous
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_TIMEOUT", long, default_value = Some("300"))]

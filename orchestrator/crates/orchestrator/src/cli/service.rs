@@ -17,4 +17,8 @@ pub struct ServiceCliArgs {
     /// The maximum number of proving jobs to process concurrently.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", long)]
     pub max_concurrent_proving_jobs: Option<usize>,
+
+    /// The maximum number of proof registration jobs to process concurrently.
+    #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROOF_REGISTRATION_JOBS", long, default_value = Some("1"))]
+    pub max_concurrent_proof_registration_jobs: Option<usize>,
 }

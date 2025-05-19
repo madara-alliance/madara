@@ -1,6 +1,9 @@
 pub mod client;
 pub mod error;
 pub mod types;
+
+use std::fs::File;
+use std::io::Write;
 use std::str::FromStr;
 
 pub use crate::types::AtlanticQueryStatus;
@@ -9,10 +12,13 @@ use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
+use crate::error::AtlanticError;
+use crate::types::AtlanticAddJobResponse;
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -129,6 +135,49 @@ impl ProverClient for AtlanticProverService {
             }
         }
     }
+    async fn get_proof(&self, task_id: &str, _fact: &str) -> Result<String, ProverClientError> {
+        let proof_path =
+            format!("https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json", task_id);
+        let client = reqwest::Client::new();
+        let response =
+            client.get(&proof_path).send().await.map_err(|e| ProverClientError::NetworkError(e.to_string()))?;
+        let response_text = response.text().await.map_err(|e| ProverClientError::NetworkError(e.to_string()))?;
+
+        // Verify if it's a valid proof format
+        let _: StarkProof =
+            parse(response_text.clone()).map_err(|e| ProverClientError::InvalidProofFormat(e.to_string()))?;
+
+        // save the proof to a file
+        let mut file = File::create("proof1.json").unwrap();
+        file.write_all(response_text.as_bytes()).unwrap();
+        Ok(response_text)
+    }
+
+    async fn submit_l2_query(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError> {
+        todo!()
+    }
+
+
+    // async fn submit_l2_query(&self, proof: &str, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    //     tracing::info!(
+    //         log_type = "starting",
+    //         category = "submit_l2_query",
+    //         function_type = "proof",
+    //         "Submitting L2 query."
+    //     );
+    // 
+    //     let atlantic_job_response =
+    //         self.atlantic_client.submit_l2_query(proof, &self.atlantic_api_key.clone()).await?;
+    // 
+    //     tracing::info!(
+    //         log_type = "completed",
+    //         category = "submit_l2_query",
+    //         function_type = "proof",
+    //         "L2 query submitted."
+    //     );
+    // 
+    //     Ok(atlantic_job_response.atlantic_query_id)
+    // }
 }
 
 impl AtlanticProverService {

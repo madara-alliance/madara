@@ -1,8 +1,10 @@
 use crate::core::config::Config;
 use crate::core::StorageClient;
+use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::ON_CHAIN_DATA_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -10,7 +12,7 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
 use crate::utils::COMPILED_OS;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::fact_info::get_fact_info;
+use crate::worker::utils::fact_info::{build_on_chain_data, get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
 use bytes::Bytes;
 use cairo_vm::types::layout_name::LayoutName;
@@ -80,19 +82,54 @@ impl JobHandlerTrait for SnosJobHandler {
                 })?;
         tracing::debug!(job_id = %job.internal_id, "prove_block function completed successfully");
 
-        let fact_info = get_fact_info(&cairo_pie, None)?;
-        let program_output = fact_info.program_output;
+        // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
+        // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
+        // calldata based DA.
+        // So in case of KZG flag == 0 :
+        //      we calculate the l2 fact
+        // And in case of KZG flag == 1 :
+        //      we calculate the fact info
+        let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
+            tracing::debug!(job_id = %job.internal_id, "Using L2 as settlement layer");
+            // Get the program output from CairoPie
+            let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {;
+                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
+                JobError::FactError(FactError::L2FactCompute)
+            })?;
+            let program_output = get_program_output(&cairo_pie).map_err(|e| {
+                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
+                JobError::FactError(FactError::ProgramOutputCompute)
+            })?;
+            (fact_hash, program_output)
+        } else if snos_output.use_kzg_da == Felt252::ONE {
+            tracing::debug!(job_id = %job.internal_id, "Using L1 as settlement layer");
+            // Get the program output from CairoPie
+            let fact_info = get_fact_info(&cairo_pie, None)?;
+            (fact_info.fact, fact_info.program_output)
+        } else {
+            tracing::error!(job_id = %job.internal_id, "Invalid KZG flag");
+            return Err(JobError::from(SnosError::UnsupportedKZGFlag));
+        };
+
         tracing::debug!(job_id = %job.internal_id, "Fact info calculated successfully");
 
         // Update the metadata with new paths and fact info
         if let JobSpecificMetadata::Snos(metadata) = &mut job.metadata.specific {
-            metadata.snos_fact = Some(fact_info.fact.to_string());
+            metadata.snos_fact = Some(fact_hash.to_string());
             metadata.snos_n_steps = Some(cairo_pie.execution_resources.n_steps);
         }
 
         tracing::debug!(job_id = %job.internal_id, "Storing SNOS outputs");
-        self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
-            .await?;
+        match snos_output.use_kzg_da {
+            Felt252::ZERO => {
+                self.store_l2(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
+                    .await?;
+            }
+            Felt252::ONE => {
+                self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
+                    .await?;
+            }
+        }
 
         tracing::info!(
             log_type = "completed",
@@ -134,6 +171,46 @@ impl JobHandlerTrait for SnosJobHandler {
 }
 
 impl SnosJobHandler {
+    /// Stores the [CairoPie] and the [StarknetOsOutput] and [OnChainData] in the Data Storage.
+    /// The paths will be:
+    ///     - [block_number]/cairo_pie.zip
+    ///     - [block_number]/snos_output.json
+    ///     - [block_number]/onchain_data.json
+    ///     - [block_number]/program_output.json
+    async fn store_l2(
+        &self,
+        internal_id: String,
+        data_storage: &dyn StorageClient,
+        snos_metadata: &SnosMetadata,
+        cairo_pie: CairoPie,
+        snos_output: StarknetOsOutput,
+        program_output: Vec<Felt252>,
+    ) -> Result<(), SnosError> {
+        let on_chain_data = build_on_chain_data(&cairo_pie)
+            .map_err(|_e| SnosError::FactCalculationError(FactError::OnChainDataCompute))?;
+
+        self.store(
+            internal_id.clone(),
+            data_storage,
+            snos_metadata,
+            cairo_pie,
+            snos_output,
+            program_output,
+        )
+            .await?;
+        let on_chain_data_key = snos_metadata
+            .on_chain_data_path
+            .as_ref()
+            .ok_or_else(|| SnosError::Other(OtherError(eyre!("OnChain data path is not found"))))?;
+
+        let on_chain_data_vec = serde_json::to_vec(&on_chain_data).map_err(|e| {
+            SnosError::OnChainDataUnserializable { internal_id: internal_id.to_string(), message: e.to_string() }
+        })?;
+        data_storage.put_data(on_chain_data_vec.into(), &on_chain_data_key).await.map_err(|e| {
+            SnosError::OnChainDataUnstorable { internal_id: internal_id.to_string(), message: e.to_string() }
+        })?;
+        Ok(())
+    }
     /// Stores the [CairoPie] and the [StarknetOsOutput] in the Data Storage.
     /// The paths will be:
     ///     - [block_number]/cairo_pie.zip
@@ -200,11 +277,36 @@ impl SnosJobHandler {
     /// Converts the [CairoPie] input as a zip file and returns it as [Bytes].
     async fn cairo_pie_to_zip_bytes(&self, cairo_pie: CairoPie) -> Result<Bytes> {
         let mut cairo_pie_zipfile = NamedTempFile::new()?;
+        // TODO:L3 Validation of true
         cairo_pie.write_zip_file(cairo_pie_zipfile.path())?;
         drop(cairo_pie); // Drop cairo_pie to release the memory
-        let cairo_pie_zip_bytes = self.tempfile_to_bytes(&mut cairo_pie_zipfile)?;
+        let cairo_pie_zip_bytes = self.tempfile_to_bytes_streaming(&mut cairo_pie_zipfile).await?;
         cairo_pie_zipfile.close()?;
         Ok(cairo_pie_zip_bytes)
+    }
+
+    /// Converts a [NamedTempFile] to [Bytes].
+    /// This function reads the file in chunks and appends them to the buffer.
+    /// This is useful when the file is too large to be read in one go.
+    async fn tempfile_to_bytes_streaming(&self, tmp_file: &mut NamedTempFile) -> Result<Bytes> {
+        use tokio::io::AsyncReadExt;
+
+        let file_size = tmp_file.as_file().metadata()?.len() as usize;
+        let mut buffer = Vec::with_capacity(file_size);
+
+        const CHUNK_SIZE: usize = 8192; // 8KB chunks
+        let mut chunk = vec![0; CHUNK_SIZE];
+
+        let mut file = tokio::fs::File::from_std(tmp_file.as_file().try_clone()?);
+
+        while let Ok(n) = file.read(&mut chunk).await {
+            if n == 0 {
+                break;
+            }
+            buffer.extend_from_slice(&chunk[..n]);
+        }
+
+        Ok(Bytes::from(buffer))
     }
 
     /// Converts a [NamedTempFile] to [Bytes].

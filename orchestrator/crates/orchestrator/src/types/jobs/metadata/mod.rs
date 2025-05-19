@@ -97,6 +97,7 @@ pub struct SnosMetadata {
     pub full_output: bool,
     /// Path to the Cairo PIE file
     pub cairo_pie_path: Option<String>,
+    pub on_chain_data_path: Option<String>,
     /// Path to the SNOS output file
     pub snos_output_path: Option<String>,
     /// Path to the program output file

@@ -2792,7 +2792,7 @@ dependencies = [
  "cairo-lang-runner",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-lang-utils 2.8.4",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex)",
  "derive_more 0.99.18",
  "indexmap 2.6.0",
  "itertools 0.10.5",
@@ -3905,7 +3905,7 @@ dependencies = [
  "cairo-lang-sierra-type-size 2.8.4",
  "cairo-lang-starknet 2.8.4",
  "cairo-lang-utils 2.8.4",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex)",
  "itertools 0.12.1",
  "keccak",
  "num-bigint",
@@ -4911,6 +4911,37 @@ dependencies = [
  "cairo-lang-casm 2.8.4",
  "cairo-lang-starknet 2.8.4",
  "cairo-lang-starknet-classes 2.8.4",
+ "generic-array",
+ "hashbrown 0.14.5",
+ "hex",
+ "keccak",
+ "lazy_static",
+ "nom",
+ "num-bigint",
+ "num-integer",
+ "num-prime",
+ "num-traits 0.2.19",
+ "rand",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "sha3",
+ "starknet-crypto 0.6.2",
+ "starknet-types-core",
+ "thiserror-no-std",
+ "wasm-bindgen",
+ "zip",
+]
+
+[[package]]
+name = "cairo-vm"
+version = "1.0.1"
+source = "git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "bitvec",
  "generic-array",
  "hashbrown 0.14.5",
  "hex",
@@ -9162,7 +9193,7 @@ name = "mc-exec"
 version = "0.8.0"
 dependencies = [
  "blockifier",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "mc-db",
  "mp-block",
  "mp-chain-config",
@@ -9743,7 +9774,7 @@ dependencies = [
  "cairo-lang-utils 1.0.0-rc0",
  "cairo-lang-utils 1.1.1",
  "cairo-lang-utils 2.8.4",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "flate2",
  "lazy_static",
  "mp-convert",
@@ -9820,7 +9851,7 @@ dependencies = [
  "anyhow",
  "bincode 1.3.3",
  "blockifier",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "mp-chain-config",
  "mp-convert",
  "mp-rpc",
@@ -9868,7 +9899,7 @@ dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-lang-utils 2.8.4",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "mp-chain-config",
  "mp-class",
  "mp-convert",
@@ -10383,18 +10414,13 @@ name = "orchestrator-atlantic-service"
 version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
- "alloy-primitives 0.8.18",
  "async-trait",
- "base64 0.22.1",
- "cairo-vm",
- "chrono",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "color-eyre",
  "dotenvy",
  "env_logger 0.11.6",
  "hex",
  "httpmock 0.8.0-alpha.1",
- "lazy_static",
- "log",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
@@ -10404,12 +10430,12 @@ dependencies = [
  "orchestrator-prover-client-interface",
  "orchestrator-utils",
  "reqwest 0.12.8",
- "rstest 0.18.2",
  "serde",
  "serde_json",
  "starknet-os",
  "strum 0.26.3",
  "strum_macros 0.26.4",
+ "swiftness_proof_parser",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -10442,7 +10468,7 @@ dependencies = [
  "axum 0.7.7",
  "bincode 1.3.3",
  "bytes",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "chrono",
  "clap",
  "color-eyre",
@@ -10475,6 +10501,7 @@ dependencies = [
  "orchestrator-prover-client-interface",
  "orchestrator-settlement-client-interface",
  "orchestrator-sharp-service",
+ "orchestrator-starknet-da-client",
  "orchestrator-starknet-settlement-client",
  "orchestrator-utils",
  "prove_block",
@@ -10486,6 +10513,7 @@ dependencies = [
  "starknet-os",
  "strum 0.26.3",
  "strum_macros 0.26.4",
+ "swiftness_proof_parser",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -10548,7 +10576,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "c-kzg",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "color-eyre",
  "dotenvy",
  "lazy_static",
@@ -10585,7 +10613,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bincode 1.3.3",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "dotenvy",
  "itertools 0.13.0",
  "log",
@@ -10612,7 +10640,7 @@ name = "orchestrator-prover-client-interface"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "mockall",
  "orchestrator-gps-fact-checker",
  "orchestrator-utils",
@@ -10641,7 +10669,7 @@ dependencies = [
  "alloy-primitives 0.8.18",
  "async-trait",
  "base64 0.22.1",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "color-eyre",
  "dotenvy",
  "hex",
@@ -10669,6 +10697,36 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid 1.12.0",
+]
+
+[[package]]
+name = "orchestrator-starknet-da-client"
+version = "0.8.0"
+dependencies = [
+ "alloy 0.8.3",
+ "async-trait",
+ "c-kzg",
+ "color-eyre",
+ "dotenvy",
+ "mockall",
+ "opentelemetry",
+ "opentelemetry-appender-tracing",
+ "opentelemetry-otlp",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_sdk",
+ "orchestrator-da-client-interface",
+ "orchestrator-utils",
+ "reqwest 0.12.8",
+ "rstest 0.18.2",
+ "serde",
+ "starknet 0.12.0",
+ "tokio",
+ "tokio-test",
+ "tracing",
+ "tracing-core",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
+ "url",
 ]
 
 [[package]]
@@ -11557,7 +11615,7 @@ dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-lang-utils 2.8.4",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "clap",
  "env_logger 0.11.6",
  "futures-core",
@@ -13816,7 +13874,7 @@ dependencies = [
  "cairo-lang-starknet 2.8.4",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-type-derive",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "futures",
  "futures-util",
  "heck 0.4.1",
@@ -13854,7 +13912,7 @@ source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monore
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo)",
  "flate2",
  "num-bigint",
  "once_cell",
@@ -14220,6 +14278,23 @@ dependencies = [
  "thiserror 1.0.65",
  "url",
  "zip",
+]
+
+[[package]]
+name = "swiftness_proof_parser"
+version = "0.1.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6d86780ddec535b0acb5515190d205cf9623def0ab88661ef8f64399e26fc870"
+dependencies = [
+ "anyhow",
+ "clap",
+ "num-bigint",
+ "regex",
+ "serde",
+ "serde_json",
+ "starknet-crypto 0.7.2 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-types-core",
+ "thiserror 1.0.65",
 ]
 
 [[package]]
@@ -16217,3 +16292,18 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "appchain-core-contract-client"
+version = "0.1.0"
+source = "git+https://github.com/Mohiiit/zaun?rev=878cf6fac215c260858b070f72fb52a70bf5e460#878cf6fac215c260858b070f72fb52a70bf5e460"
+
+[[patch.unused]]
+name = "prove_block"
+version = "0.1.0"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+
+[[patch.unused]]
+name = "starknet-os"
+version = "0.1.0"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"

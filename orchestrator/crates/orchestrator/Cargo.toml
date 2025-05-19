@@ -55,6 +55,7 @@ once_cell = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }
+orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
 orchestrator-prover-client-interface = { workspace = true }
 orchestrator-settlement-client-interface = { workspace = true }
@@ -71,6 +72,7 @@ strum = { workspace = true }
 strum_macros = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
+swiftness_proof_parser = { workspace = true }
 tokio = { workspace = true, features = [
   "sync",
   "macros",
@@ -115,8 +117,9 @@ jemallocator = "0.5.4"
 tracing-test = "0.2.5"
 
 [features]
-default = ["ethereum", "with_mongodb", "with_sqs"]
+default = ["ethereum", "with_mongodb", "with_sqs", "starknet"]
 ethereum = ["orchestrator-ethereum-da-client"]
+starknet = ["orchestrator-starknet-da-client"]
 with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
 testing = []

@@ -11,7 +11,11 @@ use cairo_vm::types::builtin_name::BuiltinName;
 use cairo_vm::types::relocatable::MaybeRelocatable;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
+use serde::{Deserialize, Serialize};
 use starknet::core::types::Felt;
+use starknet_os::crypto::poseidon::poseidon_hash_many_bytes;
+use std::ops::Add;
+use std::str::FromStr;
 
 /// Default bootloader program version.
 ///
@@ -22,6 +26,86 @@ pub struct FactInfo {
     pub program_output: Vec<Felt252>,
     pub fact_topology: FactTopology,
     pub fact: B256,
+}
+
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct OnChainData {
+    pub on_chain_data_hash: B256,
+    pub on_chain_data_size: usize,
+}
+
+pub struct BootLoaderOutput {
+    pub one_felt: Felt,
+    pub program_output_len_add_2: Felt,
+    pub program_hash: Felt,
+    pub program_output: Vec<Felt>,
+}
+
+impl BootLoaderOutput {
+    pub fn to_byte_nested_vec(&self) -> Vec<Vec<u8>> {
+        let mut result = Vec::new();
+        result.push(self.one_felt.to_bytes_be().to_vec());
+        result.push(self.program_output_len_add_2.to_bytes_be().to_vec());
+        result.push(self.program_hash.to_bytes_be().to_vec());
+        for felt in &self.program_output {
+            result.push(felt.to_bytes_be().to_vec());
+        }
+        result
+    }
+}
+
+pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_eyre::Result<B256> {
+    let program_hash = match program_hash {
+        Some(hash) => hash,
+        None => Felt::from_bytes_be(
+            &compute_program_hash_chain(&cairo_pie.metadata.program, BOOTLOADER_VERSION)
+                .map_err(|e| {
+                    tracing::error!(
+                        log_type = "FactInfo",
+                        category = "fact_info",
+                        function_type = "get_fact_info",
+                        "Failed to compute program hash: {}",
+                        e
+                    );
+                    FactError::ProgramHashCompute(e.to_string())
+                })?
+                .to_bytes_be(),
+        ),
+    };
+
+    let program_output = get_program_output(cairo_pie)?;
+    let boot_loader_output: BootLoaderOutput = BootLoaderOutput {
+        one_felt: Felt::ONE,
+        program_output_len_add_2: Felt::from(program_output.len()).add(2),
+        program_hash,
+        program_output,
+    };
+    let boot_loader_output_slice_vec = boot_loader_output.to_byte_nested_vec();
+    let boot_loader_output_hash_vec =
+        poseidon_hash_many_bytes(&boot_loader_output_slice_vec.iter().map(|v| v.as_slice()).collect::<Vec<_>>())?
+            .to_vec();
+    let boot_loader_output_hash = boot_loader_output_hash_vec.as_slice();
+
+    // Bootloader Program Hash : 0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07
+    // taken from the code sent by integrity team.
+    let boot_loader_program_hash_bytes =
+        Felt::from_str("0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07")?.to_bytes_be();
+    let boot_loader_program_hash = boot_loader_program_hash_bytes.as_slice();
+
+    let fact_hash = poseidon_hash_many_bytes(vec![boot_loader_program_hash, boot_loader_output_hash].as_slice())?;
+
+    Ok(B256::from_slice(fact_hash.to_vec().as_slice()))
+}
+
+pub fn build_on_chain_data(cairo_pie: &CairoPie) -> color_eyre::Result<OnChainData> {
+    let program_output = get_program_output(cairo_pie)?;
+    let fact_topology = get_fact_topology(cairo_pie, program_output.len())?;
+    let fact_root = generate_merkle_root(&program_output, &fact_topology)?;
+
+    let da_child = fact_root.children.last().expect("fact_root is empty");
+
+    Ok(OnChainData { on_chain_data_hash: da_child.node_hash, on_chain_data_size: da_child.page_size })
 }
 
 pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result<FactInfo, FactError> {

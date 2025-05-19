@@ -307,6 +307,22 @@ impl<'a> RequestBuilder<'a> {
         self.form = Some(form);
         Ok(self)
     }
+
+    /// Adds a file part to the multipart form from bytes.
+    pub fn form_file_bytes(mut self, key: &str, bytes: Vec<u8>, file_name: &str) -> Self {
+        let part = Part::bytes(bytes)
+            .file_name(file_name.to_string())
+            .mime_str("application/json")
+            .expect("Failed to set mime type");
+
+        let form = match self.form.take() {
+            Some(existing_form) => existing_form.part(key.to_string(), part),
+            None => Form::new().part(key.to_string(), part),
+        };
+        self.form = Some(form);
+        self
+    }
+    
     /// Sends the request with all configured parameters.
     pub async fn send(self) -> Result<Response> {
         self.client.send_request(self).await

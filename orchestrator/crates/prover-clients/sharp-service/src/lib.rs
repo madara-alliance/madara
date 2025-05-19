@@ -153,6 +153,14 @@ impl ProverClient for SharpProverService {
             },
         }
     }
+
+    async fn get_proof(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError> {
+        todo!()
+    }
+
+    async fn submit_l2_query(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError> {
+        todo!()
+    }
 }
 
 impl SharpProverService {

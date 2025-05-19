@@ -6,10 +6,10 @@ use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
-use orchestrator_settlement_client_interface::SettlementClient;
-
 use orchestrator_prover_client_interface::ProverClient;
+use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
+use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
@@ -137,6 +137,11 @@ impl Config {
                 Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
         }
 
+        if let Some(max_concurrent_proof_registration_jobs) = params.service_config.max_concurrent_proof_registration_jobs {
+            processing_locks.proof_registration_job_processing_lock =
+                Some(Arc::new(JobProcessingState::new(max_concurrent_proof_registration_jobs)));
+        }
+
         let database = Self::build_database_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
@@ -216,6 +221,9 @@ impl Config {
         match da_params {
             DAConfig::Ethereum(ethereum_da_params) => {
                 Box::new(EthereumDaClient::new_with_args(ethereum_da_params).await)
+            },
+            DAConfig::Starknet(starknet_da_params) => {
+                Box::new(StarknetDaClient::new_with_args(starknet_da_params).await)
             }
         }
     }

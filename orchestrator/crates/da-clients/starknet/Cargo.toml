@@ -1,0 +1,39 @@
+[package]
+name = "orchestrator-starknet-da-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+alloy = { workspace = true }
+async-trait = { workspace = true }
+c-kzg = { workspace = true }
+color-eyre = { workspace = true }
+orchestrator-da-client-interface = { workspace = true }
+dotenvy.workspace = true
+mockall = { workspace = true }
+reqwest = { workspace = true }
+rstest = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+starknet = { workspace = true }
+tokio = { workspace = true }
+url = { workspace = true }
+orchestrator-utils = { workspace = true }
+
+#Instrumentation
+opentelemetry = { workspace = true, features = ["metrics", "logs"] }
+opentelemetry-appender-tracing = { workspace = true, default-features = false }
+opentelemetry-otlp = { workspace = true, features = [
+    "tonic",
+    "metrics",
+    "logs",
+] }
+opentelemetry-semantic-conventions = { workspace = true }
+opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+tracing = { workspace = true }
+tracing-core = { workspace = true, default-features = false }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["env-filter"] }
+
+
+[dev-dependencies]
+tokio-test = "*"

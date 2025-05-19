@@ -57,9 +57,10 @@ pub mod factory {
     ///   `get_job_handler`. This is needed because `MockJob` doesn't implement Clone
     pub async fn get_job_handler(job_type: &JobType) -> Arc<Box<dyn JobHandlerTrait>> {
         let job: Box<dyn JobHandlerTrait> = match job_type {
-            JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::SnosRun => Box::new(SnosJobHandler),
             JobType::ProofCreation => Box::new(ProvingJobHandler),
+            JobType::ProofRegistration => Box::new(ProvingJobHandler),
+            JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
             _ => unimplemented!("Job type not implemented yet."),
         };

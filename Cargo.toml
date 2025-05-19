@@ -33,6 +33,7 @@ members = [
   "orchestrator/crates/orchestrator",
   "orchestrator/crates/da-clients/da-client-interface",
   "orchestrator/crates/da-clients/ethereum",
+  "orchestrator/crates/da-clients/starknet",
   "orchestrator/crates/prover-clients/prover-client-interface",
   "orchestrator/crates/prover-clients/gps-fact-checker",
   "orchestrator/crates/prover-clients/sharp-service",
@@ -205,6 +206,13 @@ alloy = { version = "0.8.3", features = [
   "rpc-types",
   "provider-http",
   "contract",
+  "consensus",
+  "providers",
+  "rpc-client",
+  "transport-http",
+  "network",
+  "eips",
+  "signers",
 ] }
 
 # Instrumentation
@@ -335,7 +343,6 @@ aws-credential-types = { version = "1.2.1", features = [
 ] }
 aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
-axum-macros = "0.4.1"
 color-eyre = "0.6.2"
 chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "1.0.3"
@@ -345,7 +352,7 @@ mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
 omniqueue = { version = "0.2.0" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
-stark_evm_adapter = "0.1.1"
+swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
@@ -358,9 +365,11 @@ majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
 prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+wiftness_proof_parser = "0.1.0"
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
+orchestrator-starknet-da-client = { path = "orchestrator/crates/da-clients/starknet" }
 orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlement-clients/settlement-client-interface" }
 orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
@@ -373,6 +382,7 @@ orchestrator-core = { path = "orchestrator/crates/orchestrator" }
 base64ct = "=1.6.0"
 
 [patch.crates-io]
+appchain-core-contract-client = { git = "https://github.com/Mohiiit/zaun", rev="878cf6fac215c260858b070f72fb52a70bf5e460" }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
@@ -383,4 +393,10 @@ starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "m
 ] }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+  "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
+] }
+starknet-os = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
+prove_block = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }

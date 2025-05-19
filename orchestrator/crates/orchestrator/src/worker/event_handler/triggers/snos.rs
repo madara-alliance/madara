@@ -7,7 +7,7 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 
 use crate::core::config::Config;
-use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::constant::{CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -59,6 +59,7 @@ impl JobTrigger for SnosJobTrigger {
                     full_output: false,
                     // Set the storage paths using block number
                     cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
+                    on_chain_data_path: Some(format!("{}/{}", block_num, ON_CHAIN_DATA_FILE_NAME)),
                     snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
                     program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
                     ..Default::default() // Ensure all other fields are set to default

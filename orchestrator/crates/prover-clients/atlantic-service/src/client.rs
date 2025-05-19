@@ -84,7 +84,8 @@ impl AtlanticClient {
                     .path("atlantic-query")
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
-                    .form_text("layout", proof_layout)
+                    .form_text("layout", proof_layout)        
+                    .form_text("result", "PROOF_GENERATION")
                     .form_text("network", atlantic_network.as_ref())
                     .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                     .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
@@ -117,6 +118,46 @@ impl AtlanticClient {
             Err(AtlanticError::SharpService(response.status()))
         }
     }
+
+    pub async fn submit_l2_query(
+        &self,
+        proof: &str,
+        n_steps: Option<usize>,
+        atlantic_network: impl AsRef<str>,
+        atlantic_api_key: &str,
+    ) -> Result<AtlanticAddJobResponse, AtlanticError> {
+
+        let cairo_verifier = match tokio::fs::read_to_string("build/cairo_verifier.json").await {
+            Ok(content) => content,
+            Err(e) => return Err(AtlanticError::FileReadError(e)),
+        };
+        
+        let response = self
+            .proving_layer
+            .customize_request(
+                self.client.request().method(Method::POST).query_param("apiKey", atlantic_api_key.as_ref()),
+            )
+            // doesn't seem like a valid input
+            // .form_text("programHash", "0x193641eb151b0f41674641089952e60bc3aded26e3cf42793655c562b8c3aa0")
+            // .form_text("prover", "starkware_sharp")
+            .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json")
+            .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json")
+            .form_text("layout", "recursive_with_poseidon")
+            .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+            .form_text("network", atlantic_network.as_ref())
+            .form_text("result", "PROOF_VERIFICATION_ON_L2")
+            .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
+            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+            .send()
+            .await
+            .map_err(AtlanticError::SubmitL2QueryFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            false => Err(AtlanticError::SharpService(response.status())),
+        }
+    }
+
 
     // https://docs.herodotus.cloud/atlantic/sending-query#sending-query
     fn n_steps_to_job_size(&self, n_steps: Option<usize>) -> &'static str {
