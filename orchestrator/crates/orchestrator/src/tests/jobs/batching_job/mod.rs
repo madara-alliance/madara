@@ -1,16 +1,29 @@
+mod compare;
+
+use crate::compression::blob::convert_to_biguint;
+use crate::compression::stateless::decompress;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
-use crate::tests::utils::read_blob_from_file;
+use crate::tests::jobs::batching_job::compare::compare_data_json;
+use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
+use crate::tests::utils::read_data_json_from_file;
+use crate::types::batch::{ClassDeclaration, ContractUpdate, DataJson, StorageUpdate};
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
+use crate::worker::utils::hex_string_to_u8_vec;
 use alloy::hex;
+use color_eyre::Result;
+use majin_blob_core::blob;
+use num_bigint::BigUint;
+use num_traits::{Num, ToPrimitive, Zero};
 use rstest::*;
+use starknet_core::types::Felt;
+use std::collections::HashMap;
 use url::Url;
-use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
 
 #[rstest]
-#[case("src/tests/jobs/batching_job/test_data/blob/")]
+#[case("src/tests/jobs/batching_job/blob/datajson/")]
 #[tokio::test]
-async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String) -> color_eyre::Result<()> {
+async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String) -> Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
@@ -30,10 +43,23 @@ async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String) -> color
 
     assert!(result.is_ok());
 
-    let blob = read_blob_from_file(format!("{blob_dir}6815891.txt")).expect("issue while reading blob from storage");
-    let generated_blob = hex::encode(services.config.storage().get_data("blob/batch/1/1.txt").await?);
+    let real_data_json = read_data_json_from_file(format!("{datajson_dir}7791723.txt"))?;
+    let mut generated_blob_1 =
+        get_felt_vec(&hex::encode(services.config.storage().get_data("blob/batch/1/1.txt").await?))?;
+    let mut generated_blob_2 =
+        get_felt_vec(&hex::encode(services.config.storage().get_data("blob/batch/1/2.txt").await?))?;
+    generated_blob_1.append(&mut generated_blob_2);
 
-    assert_eq!(generated_blob, blob);
+    let generated_blob = convert_biguints_to_felts(&generated_blob_1)?;
+
+    let decompressed_felts = decompress(&generated_blob)?;
+    let decompressed_biguints = convert_to_biguint(&decompressed_felts);
+
+    let generated_data_json = parse_state_diffs(&decompressed_biguints, "0.13.4");
+
+    let report = compare_data_json(&real_data_json, &generated_data_json);
+
+    assert!(report.is_ok());
 
     Ok(())
 }
