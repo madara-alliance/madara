@@ -53,7 +53,7 @@ impl SNS {
         }
 
         // Lookup ARN from AWS...
-        let resp = self.client.list_topics().send().await.map_err(|e| AlertError::ListTopicsError(e))?;
+        let resp = self.client.list_topics().send().await.map_err(AlertError::ListTopicsError)?;
 
         for topic in resp.topics() {
             if let Some(arn) = topic.topic_arn() {
