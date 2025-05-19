@@ -51,7 +51,7 @@ impl ProverClient for AtlanticProverService {
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();
                 cairo_pie
-                    .write_zip_file(pie_file_path, true)
+                    .write_zip_file(pie_file_path)
                     .map_err(|e| ProverClientError::FailedToWriteFile(e.to_string()))?;
 
                 // sleep for 2 seconds to make sure the job is submitted
