@@ -155,7 +155,6 @@ impl SettlementClient for StarknetSettlementClient {
         let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
 
-
         let low = u128::from_be_bytes(onchain_data_size[16..32].try_into()?);
         let high = u128::from_be_bytes(onchain_data_size[0..16].try_into()?);
         let size = U256::from_words(low, high);

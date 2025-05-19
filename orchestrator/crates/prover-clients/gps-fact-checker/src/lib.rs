@@ -18,7 +18,6 @@ pub enum FactCheckerError {
     InvalidFact(#[source] alloy::contract::Error),
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum SettlementLayer {
     Ethereum,
@@ -46,14 +45,9 @@ type TransportT = Http<Client>;
 type ProviderT = RootProvider<TransportT>;
 
 impl FactChecker {
-    pub fn new(
-        sharp_rpc_node_url: Url,
-        gps_verifier_contract_address: String,
-        settlement_layer: String
-    ) -> Self {
+    pub fn new(sharp_rpc_node_url: Url, gps_verifier_contract_address: String, settlement_layer: String) -> Self {
         // TODO:L3 Fix the fact registry contract address
-        let settlement_layer = SettlementLayer::from_str(&settlement_layer)
-            .expect("Invalid settlement layer");
+        let settlement_layer = SettlementLayer::from_str(&settlement_layer).expect("Invalid settlement layer");
 
         match settlement_layer {
             SettlementLayer::Ethereum => {

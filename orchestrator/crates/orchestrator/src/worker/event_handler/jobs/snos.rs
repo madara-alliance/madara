@@ -130,17 +130,10 @@ impl JobHandlerTrait for SnosJobHandler {
                 snos_output,
                 program_output,
             )
-                .await?;
+            .await?;
         } else if snos_output.use_kzg_da == Felt252::ONE {
             // Store the Cairo Pie path
-            self.store(
-                internal_id.clone(),
-                config.storage(),
-                &snos_metadata,
-                cairo_pie,
-                snos_output,
-                program_output,
-            )
+            self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
                 .await?;
         }
 

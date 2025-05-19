@@ -159,7 +159,12 @@ impl ProverClient for SharpProverService {
         todo!()
     }
 
-    async fn submit_l2_query(&self, task_id: &str, fact: &str, n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_l2_query(
+        &self,
+        task_id: &str,
+        fact: &str,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
         todo!()
     }
 }
