@@ -556,9 +556,15 @@ pub(crate) fn get_env_params() -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
+    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS")
+        .expect("Couldn't get max concurrent proving jobs");
+    let max_concurrent_created_snos_jobs: Option<usize> =
+        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+
     let service_config = ServiceParams {
         max_block_to_process: max_block,
         min_block_to_process: min_block,
+        max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
     };
