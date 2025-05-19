@@ -166,8 +166,9 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
             sierra_class_hash
         }
         LegacyDeclarationInputs(artifact_path, url, provider) => {
+            let path = env!("CARGO_MANIFEST_DIR").to_owned() + "/" + &artifact_path;
             let contract_abi_artifact: LegacyContractClass = serde_json::from_reader(
-                std::fs::File::open(env!("CARGO_MANIFEST_DIR").to_owned() + "/" + &artifact_path).unwrap(),
+                std::fs::File::open(path).expect(&format!("Failed to open {path}, no such file or directory")),
             )
             .unwrap();
 
