@@ -18,15 +18,15 @@ url = "2.4.1"
 
 
 # Zaun Deps
-ethereum-instance = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "ethereum-instance" }
-starkgate-manager-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starkgate-manager-client" }
-starkgate-registry-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starkgate-registry-client" }
-starknet-core-contract-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starknet-core-contract-client" }
-starknet-erc20-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starknet-erc20-client" }
-starknet-eth-bridge-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starknet-eth-bridge-client" }
-starknet-proxy-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starknet-proxy-client" }
-starknet-token-bridge-client = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "starknet-token-bridge-client" }
-zaun-utils = { git = "https://github.com/trantorian1/zaun", branch = "fix/artifacts", package = "utils" }
+ethereum-instance = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "ethereum-instance" }
+starkgate-manager-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starkgate-manager-client" }
+starkgate-registry-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starkgate-registry-client" }
+starknet-core-contract-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starknet-core-contract-client" }
+starknet-erc20-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starknet-erc20-client" }
+starknet-eth-bridge-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starknet-eth-bridge-client" }
+starknet-proxy-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starknet-proxy-client" }
+starknet-token-bridge-client = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "starknet-token-bridge-client" }
+zaun-utils = { git = "https://github.com/trantorian1/zaun", rev = "832b87491b06d7f0146750f440a0733a25d08d77", package = "utils" }
 
 # Starknet Deps
 starknet = "0.11.0"
