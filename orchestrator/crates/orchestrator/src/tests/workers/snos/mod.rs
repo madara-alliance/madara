@@ -68,31 +68,25 @@ async fn test_snos_worker(
         completed_job_items.push(get_job_item_mock_by_id(block_num.to_string(), uuid));
     }
     db.expect_get_jobs_by_type_and_status()
-        .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
         .returning(move |_, _| Ok(completed_job_items.clone()));
 
     // Mock get_job_by_internal_id_and_type to always return None
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
 
-    // 2. Mock get_jobs_by_type_and_status for PendingRetry jobs
-    let mut pending_job_items = Vec::new();
-    for block_num in &pending_retry_blocks {
-        let uuid = Uuid::new_v4();
-        pending_job_items.push(get_job_item_mock_by_id(block_num.to_string(), uuid));
-    }
-    db.expect_get_jobs_by_type_and_status()
-        .with(eq(JobType::SnosRun), eq(JobStatus::PendingRetry))
-        .returning(move |_, _| Ok(pending_job_items.clone()));
+    // 2. Mock get_jobs_by_type_and_status for PendingRetry jobs and Created jobs.
+    let pending_and_created_job_items: Vec<_> = pending_retry_blocks
+        .iter()
+        .chain(created_blocks.iter())
+        .map(|block_num| {
+            let uuid = Uuid::new_v4();
+            get_job_item_mock_by_id(block_num.to_string(), uuid)
+        })
+        .collect();
 
-    // 3. Mock get_jobs_by_type_and_status for Created jobs
-    let mut created_job_items = Vec::new();
-    for block_num in &created_blocks {
-        let uuid = Uuid::new_v4();
-        created_job_items.push(get_job_item_mock_by_id(block_num.to_string(), uuid));
-    }
     db.expect_get_jobs_by_type_and_status()
-        .with(eq(JobType::SnosRun), eq(JobStatus::Created))
-        .returning(move |_, _| Ok(created_job_items.clone()));
+        .with(eq(JobType::SnosRun), eq(vec![JobStatus::PendingRetry, JobStatus::Created]))
+        .returning(move |_, _| Ok(pending_and_created_job_items.clone()));
 
     // Setup job creation expectations for each expected job
     for &block_num in &expected_jobs_to_create {

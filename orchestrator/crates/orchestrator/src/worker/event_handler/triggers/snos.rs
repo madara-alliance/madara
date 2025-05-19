@@ -1,4 +1,4 @@
-use std::cmp::{max, min};
+use std::cmp::mingit;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -22,241 +22,114 @@ impl JobTrigger for SnosJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
         tracing::trace!(log_type = "starting", category = "SnosWorker", "SnosWorker started.");
 
+        // Get provider and fetch latest block number from sequencer
         let provider = config.madara_client();
-
-        // Get the latest block from sequencer
         let latest_block_from_sequencer =
             provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")?;
 
-        // Get max block number to process up to
-        let max_block_to_process = match config.service_config().max_block_to_process {
-            Some(max_block) => min(max_block, latest_block_from_sequencer),
-            None => latest_block_from_sequencer,
-        };
+        // Get processing boundaries from config
+        let service_config = config.service_config();
+        let max_block_to_process = service_config
+            .max_block_to_process
+            .map_or(latest_block_from_sequencer, |max_block| min(max_block, latest_block_from_sequencer));
+        let min_block_to_process = service_config.min_block_to_process.unwrap_or(0);
 
-        tracing::debug!(max_block_to_process = %max_block_to_process, "Fetched latest block number from starknet");
+        tracing::debug!(min_block = %min_block_to_process, max_block = %max_block_to_process, "Block processing range determined");
 
-        // Get minimum block to process from config (default to 0 if not specified)
-        let min_block_to_process = match config.service_config().min_block_to_process {
-            Some(min_block) => min_block,
-            None => {
-                tracing::debug!("No minimum block specified in config, defaulting to 0");
-                0
-            }
-        };
+        // Fetch jobs in a single query with combined statuses
+        let statuses = vec![JobStatus::Completed];
+        let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
 
-        // Fetch all completed SNOS jobs in a single database call
-        let all_completed_jobs = config
-            .database()
-            .get_jobs_by_type_and_status(JobType::SnosRun, JobStatus::Completed)
+        // Get all jobs with relevant statuses
+        let db = config.database();
+        let completed_jobs = db
+            .get_jobs_by_type_and_status(JobType::SnosRun, statuses.clone())
             .await
             .wrap_err("Failed to fetch completed SNOS jobs")?;
 
-        // Find the last completed block
-        let last_completed_block = all_completed_jobs
-            .iter()
-            .filter_map(|job| match job.internal_id.parse::<u64>() {
-                Ok(block_num) => Some(block_num),
-                Err(e) => {
-                    tracing::warn!(
-                        job_id = %job.id,
-                        internal_id = %job.internal_id,
-                        error = %e,
-                        "Failed to parse job internal ID"
-                    );
-                    None
-                }
-            })
-            .max();
+        // Create set of completed block numbers for efficient lookup
+        let processed_blocks: HashSet<u64> =
+            completed_jobs.iter().filter_map(|job| parse_block_number(&job.internal_id)).collect();
 
-        let last_completed_block = match last_completed_block {
-            Some(block) => block,
-            None => {
-                tracing::info!("No previously completed SNOS jobs found, starting from min_block_to_process");
-                // We use min_block_to_process - 1 so that the first block to be processed will be min_block_to_process
-                // This ensures we don't incorrectly assume block 0 is processed when no blocks are processed
-                min_block_to_process.saturating_sub(1)
-            }
-        };
+        // Find the highest block that was already processed
+        let last_completed_block =
+            processed_blocks.iter().max().copied().unwrap_or(min_block_to_process.saturating_sub(1));
 
         tracing::debug!(last_completed_block = %last_completed_block, "Found last completed SNOS block");
 
-        // Create a HashSet of all processed blocks for efficient lookup
-        let processed_blocks: HashSet<u64> = all_completed_jobs
-            .iter()
-            .filter_map(|job| match job.internal_id.parse::<u64>() {
-                Ok(block_num) => Some(block_num),
-                Err(e) => {
-                    tracing::warn!(
-                        job_id = %job.id,
-                        internal_id = %job.internal_id,
-                        error = %e,
-                        "Failed to parse job internal ID while building processed blocks set"
-                    );
-                    None
-                }
-            })
-            .collect();
-
-        // Fetch pending and created jobs
-        let pending_jobs = config
-            .database()
-            .get_jobs_by_type_and_status(JobType::SnosRun, JobStatus::PendingRetry)
+        // Get pending/created jobs
+        let pending_jobs = db
+            .get_jobs_by_type_and_status(JobType::SnosRun, pending_statuses)
             .await
-            .wrap_err("Failed to fetch pending SNOS jobs")?;
+            .wrap_err("Failed to fetch pending/created SNOS jobs")?;
 
-        let created_jobs = config
-            .database()
-            .get_jobs_by_type_and_status(JobType::SnosRun, JobStatus::Created)
-            .await
-            .wrap_err("Failed to fetch created SNOS jobs")?;
+        // Create set of pending block numbers
+        let pending_blocks: HashSet<u64> =
+            pending_jobs.iter().filter_map(|job| parse_block_number(&job.internal_id)).collect();
 
-        // Create a set of blocks that are already in pending or created status
-        // to avoid creating duplicate jobs for these blocks
-        let pending_and_created_blocks: HashSet<u64> = pending_jobs
-            .iter()
-            .chain(created_jobs.iter())
-            .filter_map(|job| match job.internal_id.parse::<u64>() {
-                Ok(block_num) => Some(block_num),
-                Err(e) => {
-                    tracing::warn!(
-                        job_id = %job.id,
-                        internal_id = %job.internal_id,
-                        error = %e,
-                        "Failed to parse job internal ID while building pending/created blocks set"
-                    );
-                    None
-                }
-            })
-            .collect();
-
-        // Calculate total pending and created jobs
-        let total_pending_and_created: u64 = (pending_jobs.len() + created_jobs.len()) as u64;
-
-        // Check if we have a job limit from config
-        let available_job_slots = match config.service_config().max_concurrent_created_snos_jobs {
-            // If limit is set, check if we have room for more jobs
+        // Check job limits
+        let available_job_slots = match service_config.max_concurrent_created_snos_jobs {
             Some(max_jobs) => {
-                if total_pending_and_created >= max_jobs as u64 {
+                let total_pending = pending_jobs.len() as u64;
+                if total_pending >= max_jobs as u64 {
                     tracing::info!(
                         max_jobs = max_jobs,
-                        current_jobs = total_pending_and_created,
+                        current_jobs = total_pending,
                         "Maximum number of pending SNOS jobs reached. Not creating new jobs."
                     );
                     return Ok(());
                 }
-                max_jobs as u64 - total_pending_and_created
+                max_jobs as u64 - total_pending
             }
-            // If no limit is set, we can create jobs up to the max block
-            None => {
-                tracing::debug!("No maximum concurrent SNOS jobs limit specified in config");
-                max_block_to_process - last_completed_block
-            }
+            None => max_block_to_process - last_completed_block,
         };
 
-        // Get all jobs we need to create, starting with missing blocks
-        let mut jobs_to_create = Vec::new();
+        // Build block processing queue (missing blocks + new blocks)
+        let mut blocks_to_process = Vec::new();
 
         // 1. First identify missing blocks in already "completed" range
-        // Ensure we don't try to process blocks below min_block_to_process
-        let range_start = if min_block_to_process > 0 { min_block_to_process } else { 0 };
-        let missing_blocks: Vec<u64> = (range_start..=last_completed_block)
-            .filter(|block| !processed_blocks.contains(block))
-            // FIX: Also filter out blocks that are already pending or created
-            .filter(|block| !pending_and_created_blocks.contains(block))
+        let missing_blocks: Vec<u64> = (min_block_to_process..=last_completed_block)
+            .filter(|block| !processed_blocks.contains(block) && !pending_blocks.contains(block))
             .collect();
 
-        tracing::info!(
-            count = missing_blocks.len(),
-            min_block = %min_block_to_process,
-            last_completed_block = %last_completed_block,
-            "Found missing blocks before last completed block"
-        );
+        // 2. Then identify new blocks to process beyond the last completed block
+        let candidate_blocks: Vec<u64> = ((last_completed_block + 1)..=max_block_to_process)
+            .filter(|block| !pending_blocks.contains(block))
+            .collect();
 
-        // Add missing blocks to jobs queue first (they take priority)
-        let missing_blocks_to_add =
-            missing_blocks.iter().take(available_job_slots as usize).copied().collect::<Vec<_>>();
+        // First add missing blocks (they take priority)
+        let missing_blocks_to_add = missing_blocks.into_iter().take(available_job_slots as usize).collect::<Vec<_>>();
 
-        jobs_to_create.extend(missing_blocks_to_add.iter());
+        blocks_to_process.extend(missing_blocks_to_add.iter().copied());
 
-        // Calculate remaining available slots
-        let remaining_slots = if missing_blocks_to_add.len() as u64 <= available_job_slots {
-            available_job_slots - missing_blocks_to_add.len() as u64
-        } else {
-            0
-        };
+        // Calculate remaining slots
+        let remaining_slots = available_job_slots.saturating_sub(blocks_to_process.len() as u64);
 
-        // 2. If we still have slots or no limit (None), add new blocks after the last completed one
-        if remaining_slots > 0 || config.service_config().max_concurrent_created_snos_jobs.is_none() {
-            //  we need to handle the case where some blocks in our desired
-            // range are already pending/created by continuing to add more blocks beyond the initial range
-
-            // Start from the block after the last completed one
-            let block_start = max(min_block_to_process, last_completed_block + 1);
-
-            // Collect all candidate blocks from block_start up to max_block_to_process
-            // that aren't already in pending or created status
-            let candidate_blocks: Vec<u64> = (block_start..=max_block_to_process)
-                .filter(|block| !pending_and_created_blocks.contains(block))
-                .collect();
-
-            // Take only as many blocks as we have slots for
-            let new_blocks_count = if config.service_config().max_concurrent_created_snos_jobs.is_none() {
-                candidate_blocks.len() // No limit, take all candidate blocks
+        // Add new blocks if slots available
+        if remaining_slots > 0 || service_config.max_concurrent_created_snos_jobs.is_none() {
+            let new_blocks_count = if service_config.max_concurrent_created_snos_jobs.is_none() {
+                candidate_blocks.len()
             } else {
                 min(remaining_slots as usize, candidate_blocks.len())
             };
 
-            // Take the first new_blocks_count blocks from candidate_blocks
-            let new_blocks = candidate_blocks.into_iter().take(new_blocks_count).collect::<Vec<_>>();
-
-            tracing::info!(
-                new_blocks_count = %new_blocks_count,
-                remaining_slots = %remaining_slots,
-                "new blocks to add {:?}", new_blocks
-            );
-
-            if !new_blocks.is_empty() {
-                let min_block = new_blocks.first().unwrap();
-                let max_block = new_blocks.last().unwrap();
-                tracing::info!(
-                    block_start = %min_block,
-                    end_block = %max_block,
-                    count = new_blocks.len(),
-                    "Creating SNOS jobs for new blocks"
-                );
-                jobs_to_create.extend(new_blocks);
-            }
+            blocks_to_process.extend(candidate_blocks.into_iter().take(new_blocks_count));
         }
 
         // Sort blocks to ensure we process in ascending order
-        jobs_to_create.sort();
+        blocks_to_process.sort();
 
-        // Log summary before creating jobs
+        // Log summary
         tracing::info!(
-            total_jobs_to_create = jobs_to_create.len(),
+            total_jobs_to_create = blocks_to_process.len(),
             missing_blocks = missing_blocks_to_add.len(),
-            new_blocks = jobs_to_create.len() - missing_blocks_to_add.len(),
+            new_blocks = blocks_to_process.len() - missing_blocks_to_add.len(),
             "About to create SNOS jobs"
         );
 
-        let len_of_jobs = jobs_to_create.len();
-
         // Create jobs for all identified blocks
-        for block_num in jobs_to_create {
-            // Create typed metadata structure with predefined paths
-            let metadata = JobMetadata {
-                common: CommonMetadata::default(),
-                specific: JobSpecificMetadata::Snos(SnosMetadata {
-                    block_number: block_num,
-                    full_output: false,
-                    // Set the storage paths using block number
-                    cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
-                    snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
-                    program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
-                    ..Default::default() // Ensure all other fields are set to default
-                }),
-            };
+        for block_num in blocks_to_process.clone() {
+            let metadata = create_job_metadata(block_num);
 
             match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await
             {
@@ -275,10 +148,40 @@ impl JobTrigger for SnosJobTrigger {
         tracing::trace!(
             log_type = "completed",
             category = "SnosWorker",
-            jobs_created = len_of_jobs,
+            jobs_created = blocks_to_process.len(),
             "SnosWorker completed."
         );
 
         Ok(())
+    }
+}
+
+// Helper function to parse block numbers from job IDs
+fn parse_block_number(internal_id: &str) -> Option<u64> {
+    match internal_id.parse::<u64>() {
+        Ok(block_num) => Some(block_num),
+        Err(e) => {
+            tracing::warn!(
+                internal_id = %internal_id,
+                error = %e,
+                "Failed to parse job internal ID as block number"
+            );
+            None
+        }
+    }
+}
+
+// Helper function to create job metadata
+fn create_job_metadata(block_num: u64) -> JobMetadata {
+    JobMetadata {
+        common: CommonMetadata::default(),
+        specific: JobSpecificMetadata::Snos(SnosMetadata {
+            block_number: block_num,
+            full_output: false,
+            cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
+            ..Default::default()
+        }),
     }
 }

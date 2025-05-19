@@ -447,13 +447,19 @@ impl DatabaseClient for MongoDbClient {
     async fn get_jobs_by_type_and_status(
         &self,
         job_type: JobType,
-        job_status: JobStatus,
+        job_status: Vec<JobStatus>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+
+        // For MongoDB to correctly filter by multiple statuses, we need an $in query
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
-            "status": bson::to_bson(&job_status)?
+            "status": {
+                // TODO: Check that the conversion leads to valid output!
+                "$in": job_status.iter().map(|job_status| bson::to_bson(job_status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
         };
+
         let find_options = FindOptions::builder().build();
 
         tracing::debug!(job_type = ?job_type, job_status = ?job_status, category = "db_call", "Fetching jobs by type and status");
