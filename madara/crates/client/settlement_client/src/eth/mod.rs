@@ -9,7 +9,7 @@ use crate::messaging::L1toL2MessagingEventData;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
-use alloy::primitives::{keccak256, Address, B256, U256};
+use alloy::primitives::{keccak256, Address, B256, I256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
 use alloy::rpc::types::Filter;
 use alloy::sol;
@@ -138,7 +138,14 @@ impl SettlementClientTrait for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
                 },
             )?;
-        let block_number: Option<u64> = block_number._0.try_into().ok();
+        // when the block 0 is not settled yet, this should be prev block number, this would be the output from the snos as well while
+        // executing the block 0.
+        // link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
+        let block_number: Option<u64> = if block_number._0 == I256::MINUS_ONE {
+            None // initial contract state
+        } else {
+            Some(block_number._0.as_u64())
+        };
 
         let global_root =
             self.l1_core_contract.stateRoot().block(BlockId::number(latest_block_n)).call().await.map_err(

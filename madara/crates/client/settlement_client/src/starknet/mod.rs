@@ -25,6 +25,11 @@ pub mod event;
 #[cfg(test)]
 pub mod utils;
 
+// when the block 0 is not settled yet, this should be prev block number, this would be the output from the snos as well while
+// executing the block 0.
+// link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
+const INITIAL_STATE_BLOCK_NUMBER: &str = "0x800000000000011000000000000000000000000000000000000000000000000";
+
 #[derive(Debug)]
 pub struct StarknetClient {
     pub provider: Arc<JsonRpcClient<HttpTransport>>,
@@ -138,7 +143,11 @@ impl SettlementClientTrait for StarknetClient {
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let state = self.get_state_call().await?; // Returns (StateRoot, BlockNumber, BlockHash).
         let global_root = state[0];
-        let block_number = u64::try_from(state[1]).ok();
+        let block_number = if state[1] == Felt::from_hex(INITIAL_STATE_BLOCK_NUMBER).unwrap() {
+            None
+        } else {
+            u64::try_from(state[1]).ok()
+        };
         let block_hash = state[2];
 
         Ok(StateUpdate { global_root, block_number, block_hash })
