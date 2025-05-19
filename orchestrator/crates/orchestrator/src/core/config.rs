@@ -137,7 +137,9 @@ impl Config {
                 Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
         }
 
-        if let Some(max_concurrent_proof_registration_jobs) = params.service_config.max_concurrent_proof_registration_jobs {
+        if let Some(max_concurrent_proof_registration_jobs) =
+            params.service_config.max_concurrent_proof_registration_jobs
+        {
             processing_locks.proof_registration_job_processing_lock =
                 Some(Arc::new(JobProcessingState::new(max_concurrent_proof_registration_jobs)));
         }
@@ -221,7 +223,7 @@ impl Config {
         match da_params {
             DAConfig::Ethereum(ethereum_da_params) => {
                 Box::new(EthereumDaClient::new_with_args(ethereum_da_params).await)
-            },
+            }
             DAConfig::Starknet(starknet_da_params) => {
                 Box::new(StarknetDaClient::new_with_args(starknet_da_params).await)
             }

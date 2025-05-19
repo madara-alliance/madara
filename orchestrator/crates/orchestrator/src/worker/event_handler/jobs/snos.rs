@@ -92,7 +92,7 @@ impl JobHandlerTrait for SnosJobHandler {
         let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
             tracing::debug!(job_id = %job.internal_id, "Using L2 as settlement layer");
             // Get the program output from CairoPie
-            let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {;
+            let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
                 JobError::FactError(FactError::L2FactCompute)
             })?;
@@ -122,12 +122,26 @@ impl JobHandlerTrait for SnosJobHandler {
         tracing::debug!(job_id = %job.internal_id, "Storing SNOS outputs");
         match snos_output.use_kzg_da {
             Felt252::ZERO => {
-                self.store_l2(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
-                    .await?;
+                self.store_l2(
+                    internal_id.clone(),
+                    config.storage(),
+                    &snos_metadata,
+                    cairo_pie,
+                    snos_output,
+                    program_output,
+                )
+                .await?;
             }
             Felt252::ONE => {
-                self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
-                    .await?;
+                self.store(
+                    internal_id.clone(),
+                    config.storage(),
+                    &snos_metadata,
+                    cairo_pie,
+                    snos_output,
+                    program_output,
+                )
+                .await?;
             }
         }
 
@@ -189,15 +203,7 @@ impl SnosJobHandler {
         let on_chain_data = build_on_chain_data(&cairo_pie)
             .map_err(|_e| SnosError::FactCalculationError(FactError::OnChainDataCompute))?;
 
-        self.store(
-            internal_id.clone(),
-            data_storage,
-            snos_metadata,
-            cairo_pie,
-            snos_output,
-            program_output,
-        )
-            .await?;
+        self.store(internal_id.clone(), data_storage, snos_metadata, cairo_pie, snos_output, program_output).await?;
         let on_chain_data_key = snos_metadata
             .on_chain_data_path
             .as_ref()

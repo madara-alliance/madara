@@ -28,7 +28,6 @@ pub struct FactInfo {
     pub fact: B256,
 }
 
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct OnChainData {
     pub on_chain_data_hash: B256,

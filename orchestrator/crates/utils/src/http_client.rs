@@ -322,7 +322,7 @@ impl<'a> RequestBuilder<'a> {
         self.form = Some(form);
         self
     }
-    
+
     /// Sends the request with all configured parameters.
     pub async fn send(self) -> Result<Response> {
         self.client.send_request(self).await

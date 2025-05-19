@@ -157,7 +157,6 @@ impl ProverClient for AtlanticProverService {
         todo!()
     }
 
-
     // async fn submit_l2_query(&self, proof: &str, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError> {
     //     tracing::info!(
     //         log_type = "starting",
@@ -165,17 +164,17 @@ impl ProverClient for AtlanticProverService {
     //         function_type = "proof",
     //         "Submitting L2 query."
     //     );
-    // 
+    //
     //     let atlantic_job_response =
     //         self.atlantic_client.submit_l2_query(proof, &self.atlantic_api_key.clone()).await?;
-    // 
+    //
     //     tracing::info!(
     //         log_type = "completed",
     //         category = "submit_l2_query",
     //         function_type = "proof",
     //         "L2 query submitted."
     //     );
-    // 
+    //
     //     Ok(atlantic_job_response.atlantic_query_id)
     // }
 }

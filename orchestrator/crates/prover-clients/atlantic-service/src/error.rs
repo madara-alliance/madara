@@ -9,7 +9,7 @@ pub enum AtlanticError {
 
     #[error("Failed to to get status of a Atlantic job: {0}")]
     GetJobStatusFailure(#[source] reqwest::Error),
-    
+
     #[error("Failed to submit L2 query: {0}")]
     SubmitL2QueryFailure(#[source] reqwest::Error),
 

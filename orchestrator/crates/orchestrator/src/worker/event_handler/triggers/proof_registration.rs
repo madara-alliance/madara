@@ -30,17 +30,27 @@ impl JobTrigger for ProofRegistrationJobTrigger {
         );
 
         let job_type = JobType::ProofRegistration;
-        let statuses = vec![JobStatus::Created, JobStatus::LockedForProcessing, JobStatus::PendingVerification, JobStatus::PendingRetry];
+        let statuses = vec![
+            JobStatus::Created,
+            JobStatus::LockedForProcessing,
+            JobStatus::PendingVerification,
+            JobStatus::PendingRetry,
+        ];
 
         let current_jobs = config.database().get_jobs_by_type_and_statuses(job_type, statuses).await?;
-        
+
         let current_jobs_count = current_jobs.len();
         tracing::info!("Current jobs count: {}", current_jobs_count);
 
         for job in successful_proving_jobs {
             tracing::debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");
-            match JobHandlerService::create_job(JobType::ProofRegistration, job.internal_id.to_string(), job.metadata, config.clone())
-                .await
+            match JobHandlerService::create_job(
+                JobType::ProofRegistration,
+                job.internal_id.to_string(),
+                job.metadata,
+                config.clone(),
+            )
+            .await
             {
                 Ok(_) => tracing::info!(block_id = %job.internal_id, "Successfully created new proof registration job"),
                 Err(e) => {

@@ -84,7 +84,7 @@ impl AtlanticClient {
                     .path("atlantic-query")
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
-                    .form_text("layout", proof_layout)        
+                    .form_text("layout", proof_layout)
                     .form_text("result", "PROOF_GENERATION")
                     .form_text("network", atlantic_network.as_ref())
                     .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
@@ -126,12 +126,11 @@ impl AtlanticClient {
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-
         let cairo_verifier = match tokio::fs::read_to_string("build/cairo_verifier.json").await {
             Ok(content) => content,
             Err(e) => return Err(AtlanticError::FileReadError(e)),
         };
-        
+
         let response = self
             .proving_layer
             .customize_request(
@@ -157,7 +156,6 @@ impl AtlanticClient {
             false => Err(AtlanticError::SharpService(response.status())),
         }
     }
-
 
     // https://docs.herodotus.cloud/atlantic/sending-query#sending-query
     fn n_steps_to_job_size(&self, n_steps: Option<usize>) -> &'static str {

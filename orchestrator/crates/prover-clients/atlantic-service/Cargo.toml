@@ -16,12 +16,12 @@ orchestrator-gps-fact-checker.workspace = true
 orchestrator-prover-client-interface.workspace = true
 orchestrator-utils.workspace = true
 reqwest.workspace = true
-swiftness_proof_parser.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 starknet-os.workspace = true
 strum = { workspace = true }
 strum_macros = { workspace = true }
+swiftness_proof_parser.workspace = true
 tempfile.workspace = true
 thiserror.workspace = true
 tokio.workspace = true

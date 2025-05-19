@@ -382,7 +382,7 @@ orchestrator-core = { path = "orchestrator/crates/orchestrator" }
 base64ct = "=1.6.0"
 
 [patch.crates-io]
-appchain-core-contract-client = { git = "https://github.com/Mohiiit/zaun", rev="878cf6fac215c260858b070f72fb52a70bf5e460" }
+appchain-core-contract-client = { git = "https://github.com/Mohiiit/zaun", rev = "878cf6fac215c260858b070f72fb52a70bf5e460" }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 

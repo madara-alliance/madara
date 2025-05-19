@@ -55,11 +55,11 @@ once_cell = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }
-orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
 orchestrator-prover-client-interface = { workspace = true }
 orchestrator-settlement-client-interface = { workspace = true }
 orchestrator-sharp-service = { workspace = true }
+orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 prove_block = { workspace = true }
 rstest = { workspace = true }
@@ -70,9 +70,9 @@ starknet-core = { workspace = true }
 starknet-os = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
+swiftness_proof_parser = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
-swiftness_proof_parser = { workspace = true }
 tokio = { workspace = true, features = [
   "sync",
   "macros",

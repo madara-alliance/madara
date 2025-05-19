@@ -193,10 +193,7 @@ impl JobHandlerTrait for RegisterProofJob {
         300
     }
 
-    fn job_processing_lock(
-        &self,
-        config: Arc<Config>,
-    ) -> Option<Arc<JobProcessingState>> {
+    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
         config.processing_locks().proof_registration_job_processing_lock.clone()
     }
 }
