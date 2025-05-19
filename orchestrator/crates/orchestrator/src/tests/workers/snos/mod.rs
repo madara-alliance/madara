@@ -1,6 +1,6 @@
 use std::error::Error;
 use std::sync::Arc;
-
+use rstest::rstest;
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
@@ -19,20 +19,44 @@ use starknet::providers::JsonRpcClient;
 use url::Url;
 use uuid::Uuid;
 
-// Helper function to set up common test components
-async fn setup_test_components(
-    latest_block: u64,
-    completed_blocks: Vec<u64>,
-    pending_retry_blocks: Vec<u64>,
-    created_blocks: Vec<u64>,
-    expected_jobs_to_create: Vec<u64>,
+#[rstest]
+// Scenario 1:
+// Block 0 is Completed | Block 1 is PendingRetry | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 2,3 only
+// test_scenario_1_block_0_completed_block_1_pending_retry
+#[case(vec![0], vec![1], vec![], vec![2,3])]
+// Scenario 2:
+// Block 0 is Completed | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 1,2,3 only
+// test_scenario_2_block_0_completed_only
+#[case(vec![0], vec![], vec![], vec![1,2,3])]
+// Scenario 3:
+// No SNOS job for any block exists | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 0,1,2 only
+#[case(vec![], vec![], vec![], vec![0,1,2])]
+// Scenario 4:
+// Block 0,2 is Completed | Block 1 is Missed (should be created) | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 1,3,4 only
+#[case(vec![0,2], vec![], vec![], vec![1,3,4])]
+// Scenario 5:
+// Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Missed (should be created) | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 1,3 only
+#[case(vec![2], vec![0], vec![], vec![1,3])]
+// Scenario 6:
+// Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Created | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 3 only
+#[case(vec![2], vec![0], vec![1], vec![3])]
+#[tokio::test]
+async fn test_snos_worker(
+    #[case] completed_blocks: Vec<u64>,
+    #[case] pending_retry_blocks: Vec<u64>,
+    #[case] created_blocks: Vec<u64>,
+    #[case] expected_jobs_to_create: Vec<u64>,
 ) -> Result<(), Box<dyn Error>> {
     let server = MockServer::start();
     let da_client = MockDaClient::new();
     let mut db = MockDatabaseClient::new();
     let mut queue = MockQueueClient::new();
-
-    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
     // Mocking the get_job_handler function
     let mut job_handler = MockJobHandlerTrait::new();
@@ -101,7 +125,7 @@ async fn setup_test_components(
         .withf(|queue, _payload, _delay| *queue == QueueType::SnosJobProcessing);
 
     // Mock RPC response for block_number
-    let response = json!({ "id": 1, "jsonrpc": "2.0", "result": latest_block });
+    let response = json!({ "id": 1, "jsonrpc": "2.0", "result": 100 });
 
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
@@ -129,85 +153,4 @@ async fn setup_test_components(
     rpc_block_call_mock.assert();
 
     Ok(())
-}
-
-#[tokio::test]
-async fn test_scenario_1_block_0_completed_block_1_pending_retry() -> Result<(), Box<dyn Error>> {
-    // Scenario 1:
-    // Block 0 is Completed | Block 1 is PendingRetry | Max_concurrent_create_snos is 3
-    // Expected result: create jobs for block 2,3 only
-
-    let latest_block = 100; // Use a high value to ensure enough blocks available
-    let completed_blocks = vec![0];
-    let pending_retry_blocks = vec![1];
-    let created_blocks = vec![];
-    let expected_jobs_to_create = vec![2, 3];
-
-    setup_test_components(latest_block, completed_blocks, pending_retry_blocks, created_blocks, expected_jobs_to_create)
-        .await
-}
-
-#[tokio::test]
-async fn test_scenario_2_block_0_completed_only() -> Result<(), Box<dyn Error>> {
-    // Scenario 2:
-    // Block 0 is Completed | Max_concurrent_create_snos is 3
-    // Expected result: create jobs for block 1,2,3 only
-
-    let latest_block = 100;
-    let completed_blocks = vec![0];
-    let pending_retry_blocks = vec![];
-    let created_blocks = vec![];
-    let expected_jobs_to_create = vec![1, 2, 3];
-
-    setup_test_components(latest_block, completed_blocks, pending_retry_blocks, created_blocks, expected_jobs_to_create)
-        .await
-}
-
-#[tokio::test]
-async fn test_scenario_3_no_existing_jobs() -> Result<(), Box<dyn Error>> {
-    // Scenario 3:
-    // No SNOS job for any block exists | Max_concurrent_create_snos is 3
-    // Expected result: create jobs for block 0,1,2 only
-
-    let latest_block = 100;
-    let completed_blocks = vec![];
-    let pending_retry_blocks = vec![];
-    let created_blocks = vec![];
-    // Since we have no completed blocks, we start from min_block_to_process (0)
-    let expected_jobs_to_create = vec![0, 1, 2];
-
-    setup_test_components(latest_block, completed_blocks, pending_retry_blocks, created_blocks, expected_jobs_to_create)
-        .await
-}
-
-#[tokio::test]
-async fn test_scenario_4_blocks_0_2_completed_block_1_missing() -> Result<(), Box<dyn Error>> {
-    // Scenario 4:
-    // Block 0,2 is Completed | Block 1 is Missed (should be created) | Max_concurrent_create_snos is 3
-    // Expected result: create jobs for block 1,3,4 only
-
-    let latest_block = 100;
-    let completed_blocks = vec![0, 2];
-    let pending_retry_blocks = vec![];
-    let created_blocks = vec![];
-    let expected_jobs_to_create = vec![1, 3, 4];
-
-    setup_test_components(latest_block, completed_blocks, pending_retry_blocks, created_blocks, expected_jobs_to_create)
-        .await
-}
-
-#[tokio::test]
-async fn test_scenario_5_block_2_completed_block_0_pending_block_1_missing() -> Result<(), Box<dyn Error>> {
-    // Scenario 5:
-    // Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Missed (should be created) | Max_concurrent_create_snos is 3
-    // Expected result: create jobs for block 1,3 only
-
-    let latest_block = 100;
-    let completed_blocks = vec![2];
-    let pending_retry_blocks = vec![0];
-    let created_blocks = vec![];
-    let expected_jobs_to_create = vec![1, 3];
-
-    setup_test_components(latest_block, completed_blocks, pending_retry_blocks, created_blocks, expected_jobs_to_create)
-        .await
 }
