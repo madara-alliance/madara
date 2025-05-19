@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::Read;
 use std::time::{Duration, Instant};
 
-use aws_config::meta::region::RegionProviderChain;
 use chrono::{SubsecRound, Utc};
 use e2e_tests::anvil::AnvilSetup;
 use e2e_tests::mock_server::MockResponseBodyType;
