@@ -33,7 +33,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             index: 1,
             start_block: 0,
             end_block: 3,
-            size: 4,
+            num_blocks: 4,
             squashed_state_updates_path: "state_update/batch/1.json".to_string(),
             is_batch_ready: false,
             ..Default::default()
@@ -74,7 +74,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
                 .withf(move |batch| {
                     batch.start_block == block_num
                         && batch.end_block == block_num
-                        && batch.size == 1
+                        && batch.num_blocks == 1
                         && batch.squashed_state_updates_path == state_update_path
                 })
                 .returning(|batch| Ok(batch));

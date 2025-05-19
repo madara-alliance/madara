@@ -287,7 +287,7 @@ async fn database_test_update_batch() {
     // Verify the updates
     assert_eq!(updated_batch.id, batch.id);
     assert_eq!(updated_batch.index, batch.index);
-    assert_eq!(updated_batch.size, updates.end_block - batch.start_block + 1);
+    assert_eq!(updated_batch.num_blocks, updates.end_block - batch.start_block + 1);
     assert_eq!(updated_batch.start_block, batch.start_block);
     assert_eq!(updated_batch.end_block, updates.end_block);
     assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);

@@ -18,7 +18,7 @@ pub struct Batch {
     /// Index of the batch
     pub index: u64,
     /// Number of blocks in the batch
-    pub size: u64,
+    pub num_blocks: u64,
     /// Start and end block numbers of the batch (both inclusive)
     pub start_block: u64,
     pub end_block: u64,
@@ -43,7 +43,7 @@ impl Batch {
         Self {
             id: Uuid::new_v4(),
             index,
-            size: 1,
+            num_blocks: 1,
             start_block,
             end_block: start_block,
             is_batch_ready: false,

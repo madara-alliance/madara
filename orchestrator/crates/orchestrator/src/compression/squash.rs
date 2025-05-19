@@ -1,7 +1,6 @@
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use color_eyre::eyre::eyre;
-use futures::future::try_join_all;
 use futures::stream;
 use futures::stream::StreamExt;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -13,7 +12,8 @@ use starknet_core::types::{
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 100;
+const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
+const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 pub async fn squash_state_updates(
@@ -152,10 +152,8 @@ async fn process_single_contract(
     let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await;
 
     if contract_existed {
-        // Process storage entries for existing contract
-        let storage_futures: Vec<_> = storage_map
-            .clone()
-            .into_iter()
+        // Process storage entries only for an existing contract
+        let results: Vec<_> = stream::iter(storage_map)
             .map(|(key, value)| {
                 let provider = provider.clone();
                 async move {
@@ -165,13 +163,13 @@ async fn process_single_contract(
                     Ok::<_, JobError>((key, value, pre_range_value))
                 }
             })
-            .collect();
-
-        // Execute all storage checks concurrently
-        let results = try_join_all(storage_futures).await?;
+            .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
+            .collect()
+            .await;
 
         // Process results
-        for (key, value, pre_range_value) in results {
+        for result in results {
+            let (key, value, pre_range_value) = result?;
             if pre_range_value != value {
                 storage_entries.push(StorageEntry { key, value });
             }

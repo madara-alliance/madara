@@ -573,8 +573,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
-        madara_version: StarknetVersion::from_str(&get_env_var_or_default("MADARA_ORCHESTRATOR_MADARA_VERSION", "0.13.3"))
-            .unwrap_or_default(),
+        madara_version: StarknetVersion::from_str(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_VERSION",
+            "0.13.4",
+        ))
+        .unwrap_or_default(),
         snos_config,
         service_config,
         server_config,
