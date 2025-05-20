@@ -71,7 +71,7 @@ jobs:
         run: chmod +x target/release/madara
 
       - name: Build Orchestrator for tests
-        run: cargo build --release -p Orchestrator --features testing
+        run: cargo build --release -p orchestrator --features testing
 
       - name: Check Anvil Installation & run Anvil
         run: |
