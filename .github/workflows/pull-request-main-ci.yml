@@ -71,15 +71,16 @@ jobs:
   #                                ORCHESTRATOR                               #
   # ========================================================================= #
 
-  # Build Orchestrator binary
-  build-orchestrator:
+  # Check Orchestrator binary
+  # (We don't re-use the Orchestrator binary in other tests)
+  check-orchestrator:
     needs: lint-code-style
-    uses: ./.github/workflows/task-build-orchestrator.yml
+    uses: ./.github/workflows/task-check-orchestrator.yml
     secrets: inherit
 
   # Run coverage tests
   test-orchestrator:
-    needs: [build-madara, build-orchestrator]
+    needs: [build-madara, check-orchestrator]
     uses: ./.github/workflows/task-coverage-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
@@ -87,7 +88,7 @@ jobs:
 
   # Run e2e tests
   test-e2e:
-    needs: [build-madara, build-orchestrator]
+    needs: [build-madara, check-orchestrator]
     uses: ./.github/workflows/task-test-orchestrator-e2e.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
@@ -97,15 +98,16 @@ jobs:
   #                                BOOTSTRAPPER                               #
   # ========================================================================= #
 
-  # Build Bootstrapper binary
-  build-bootstrapper:
+  # Check Bootstrapper binary
+  # (We don't re-use the Bootstrapper binary in other tests)
+  check-bootstrapper:
     needs: lint-code-style
-    uses: ./.github/workflows/task-build-bootstrapper.yml
+    uses: ./.github/workflows/task-check-bootstrapper.yml
     secrets: inherit
 
   # Run coverage tests
   test-bootstrapper:
-    needs: [build-madara, build-bootstrapper]
+    needs: [build-madara, check-bootstrapper]
     uses: ./.github/workflows/task-coverage-bootstrapper.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}

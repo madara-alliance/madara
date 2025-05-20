@@ -51,7 +51,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: orchestrator-test
+          cache-key: orchestrator-e2e
 
       - name: Foundry setup
         uses: ./.github/actions/setup-foundry
@@ -90,10 +90,10 @@ jobs:
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |
-          RUST_LOG=info cargo +nightly-2024-09-05 nextest run \
-            --release                                         \
-            --features testing                                \
-            --workspace                                       \
-            --no-fail-fast                                    \
-            -E 'test(test_orchestrator_workflow)'             \
+          RUST_LOG=info cargo nextest run         \
+            --package e2e-tests                   \
+            --release                             \
+            --features testing                    \
+            --no-fail-fast                        \
+            -E 'test(test_orchestrator_workflow)' \
             test_orchestrator_workflow
