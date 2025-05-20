@@ -600,11 +600,9 @@ mod tests {
     use mc_exec::execution::TxInfo;
     use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::{
-        header::{GasPrices, L1DataAvailabilityMode},
-        MadaraPendingBlock,
-    };
+    use mp_block::{header::GasPrices, MadaraPendingBlock};
     use mp_chain_config::ChainConfig;
+    use mp_chain_config::L1DataAvailabilityMode;
     use mp_convert::ToFelt;
     use mp_rpc::{
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, DaMode, InvokeTxnV3,

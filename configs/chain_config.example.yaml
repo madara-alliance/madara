@@ -3,6 +3,10 @@ chain_name: "Starknet Mainnet"
 
 chain_id: "SN_MAIN"
 
+# The DA mode used by L1.
+# "Calldata" or "Blob"
+l1_da_mode: "Calldata"
+
 # The URL of the gateway and Feeder Gateway your nodes should sync from.
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
 gateway_url: "http://localhost:8080/gateway/"

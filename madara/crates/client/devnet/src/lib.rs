@@ -175,7 +175,7 @@ impl ChainGenesisDescription {
                         eth_l1_data_gas_price: 5,
                         strk_l1_data_gas_price: 5,
                     },
-                    l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
+                    l1_da_mode: chain_config.l1_da_mode,
                 },
                 state_diff: StateDiff {
                     storage_diffs: self.initial_storage.as_state_diff(),
@@ -217,7 +217,6 @@ mod tests {
     use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MempoolLimits, MockL1DataProvider};
 
     use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::header::L1DataAvailabilityMode;
     use mp_block::{BlockId, BlockTag};
     use mp_class::{ClassInfo, FlattenedSierraClass};
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
@@ -333,7 +332,7 @@ mod tests {
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
         let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_da_mode().return_const(L1DataAvailabilityMode::Blob);
+        l1_data_provider.expect_get_da_mode().return_const(backend.chain_config().l1_da_mode);
         l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
             eth_l1_gas_price: 128,
             strk_l1_gas_price: 128,
