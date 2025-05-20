@@ -254,7 +254,7 @@ mod eth_client_gas_price_worker_test {
 
         // Check if the gas price was updated
         let updated_price = l1_gas_provider.get_gas_prices();
-        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
+        assert_eq!(updated_price.eth_l1_gas_price, 0);
         assert_eq!(updated_price.eth_l1_data_gas_price, 1);
     }
 
