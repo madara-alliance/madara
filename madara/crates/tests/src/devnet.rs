@@ -58,7 +58,7 @@ async fn madara_devnet_add_transaction() {
         "0",
         // only produce blocks no pending txs
         "--chain-config-override",
-        "block_time=1s,pending_block_update_time=1s",
+        "block_time=1000s,pending_block_update_time=1s",
     ];
 
     let cmd_builder = MadaraCmdBuilder::new().args(*args);
