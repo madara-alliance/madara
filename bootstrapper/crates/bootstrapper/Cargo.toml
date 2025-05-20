@@ -22,15 +22,15 @@ url = "2.4.1"
 
 
 # Zaun Deps
-ethereum-instance = { git = "https://github.com/karnotxyz/zaun", package = "ethereum-instance", tag = "v1.0.1" }
-starkgate-manager-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-manager-client", tag = "v1.0.1" }
-starkgate-registry-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-registry-client", tag = "v1.0.1" }
-starknet-core-contract-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-core-contract-client", tag = "v1.0.1" }
-starknet-erc20-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-erc20-client", tag = "v1.0.1" }
-starknet-eth-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-eth-bridge-client", tag = "v1.0.1" }
-starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-proxy-client", tag = "v1.0.1" }
-starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-token-bridge-client", tag = "v1.0.1" }
-zaun-utils = { git = "https://github.com/karnotxyz/zaun", package = "utils", tag = "v1.0.1" }
+ethereum-instance = { git = "https://github.com/karnotxyz/zaun", package = "ethereum-instance", tag = "v1.0.2" }
+starkgate-manager-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-manager-client", tag = "v1.0.2" }
+starkgate-registry-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-registry-client", tag = "v1.0.2" }
+starknet-core-contract-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-core-contract-client", tag = "v1.0.2" }
+starknet-erc20-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-erc20-client", tag = "v1.0.2" }
+starknet-eth-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-eth-bridge-client", tag = "v1.0.2" }
+starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-proxy-client", tag = "v1.0.2" }
+starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-token-bridge-client", tag = "v1.0.2" }
+zaun-utils = { git = "https://github.com/karnotxyz/zaun", package = "utils", tag = "v1.0.2" }
 
 # Starknet Deps
 starknet = "0.11.0"
