@@ -90,7 +90,6 @@ WORKDIR /app
 COPY . .
 
 # Initialize and update submodules
-# RUN git submodule update --init --recursive
 
 RUN apt-get update && apt-get install -y \
     wget
