@@ -70,6 +70,9 @@ jobs:
       - name: Make Madara binary executable
         run: chmod +x target/release/madara
 
+      - name: Build Orchestrator for tests
+        run: cargo build --release -p Orchestrator --features testing
+
       - name: Check Anvil Installation & run Anvil
         run: |
           if command -v anvil &> /dev/null
