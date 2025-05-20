@@ -89,7 +89,7 @@ jobs:
   # Run e2e tests
   test-e2e:
     needs: [build-madara, check-orchestrator]
-    uses: ./.github/workflows/task-test-orchestrator-e2e.yml
+    uses: ./.github/workflows/task-e2e-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
