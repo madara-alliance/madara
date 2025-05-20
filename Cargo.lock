@@ -1213,7 +1213,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1233,7 +1233,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -6222,7 +6222,7 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "dirs",
  "ethers",
@@ -13434,7 +13434,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13448,7 +13448,7 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13589,7 +13589,7 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13726,7 +13726,7 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -13741,7 +13741,7 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13915,7 +13915,7 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -13964,7 +13964,7 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -15403,7 +15403,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.1#a15d9fd6f79c7bb51127cafb30154f2de83a7c10"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",

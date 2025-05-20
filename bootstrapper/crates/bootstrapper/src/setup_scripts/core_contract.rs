@@ -50,6 +50,8 @@ impl<'a> CoreContractStarknetL1<'a> {
         sleep(Duration::from_secs(5)).await;
         core_contract_client
             .add_implementation_core_contract(
+                // this is to include support for block 0
+                // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
                 I256::from_str("-1").unwrap(),
                 0u64.into(), // state root
                 0u64.into(), // block hash
@@ -75,6 +77,8 @@ impl<'a> CoreContractStarknetL1<'a> {
         // )
         core_contract_client
             .upgrade_to_core_contract(
+                // this is to include support for block 0
+                // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
                 I256::from_str("-1").unwrap(),
                 0u64.into(), // state root
                 0u64.into(), // block hash
