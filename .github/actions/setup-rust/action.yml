@@ -6,6 +6,10 @@ inputs:
   rust-version:
     description: Rust version to set up
     required: true
+  extra-cache:
+    description: "Whether or not to enable cached dependencies"
+    required: false
+    default: "true"
   cache-key:
     description: "Cache key used to retrieve built data. Usually matches the profile of the build"
     required: false
@@ -18,6 +22,7 @@ runs:
       uses: actions/checkout@v4
 
     - uses: actions/cache@v4
+      if: ${{ inputs.extra-cache == 'true' }}
       id: cache-cargo
       with:
         path: |
@@ -30,6 +35,7 @@ runs:
           ${{ runner.os }}-cargo-registry-
 
     - uses: actions/cache@v4
+      if: ${{ inputs.extra-cache == 'true' }}
       id: cache-build-deps
       with:
         path: |

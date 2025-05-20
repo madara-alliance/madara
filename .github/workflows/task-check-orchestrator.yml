@@ -22,7 +22,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: orchestrator
+          extra-cache: false
 
       # Check Orchestrator
       - name: Cargo build
