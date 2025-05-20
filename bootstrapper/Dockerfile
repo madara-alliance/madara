@@ -206,7 +206,6 @@ COPY --from=builder /app/src/contracts/ /app/src/contracts/
 
 
 # Set working directory
-#WORKDIR /app
 
 # Environment variables
 ENV RUST_LOG=info
