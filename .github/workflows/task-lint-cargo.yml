@@ -18,6 +18,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
+          extra-cache: false
 
       - name: Scarb setup
         uses: ./.github/actions/setup-scarb
