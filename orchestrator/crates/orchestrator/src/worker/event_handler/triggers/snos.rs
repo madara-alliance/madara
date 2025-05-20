@@ -1,4 +1,4 @@
-use std::cmp::mingit;
+use std::cmp::min;
 use std::collections::HashSet;
 use std::sync::Arc;
 
@@ -32,18 +32,17 @@ impl JobTrigger for SnosJobTrigger {
         let max_block_to_process = service_config
             .max_block_to_process
             .map_or(latest_block_from_sequencer, |max_block| min(max_block, latest_block_from_sequencer));
-        let min_block_to_process = service_config.min_block_to_process.unwrap_or(0);
+        let min_block_to_process = service_config.min_block_to_process.map_or(0, |min_block| min_block);
 
         tracing::debug!(min_block = %min_block_to_process, max_block = %max_block_to_process, "Block processing range determined");
 
-        // Fetch jobs in a single query with combined statuses
-        let statuses = vec![JobStatus::Completed];
-        let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
-
         // Get all jobs with relevant statuses
         let db = config.database();
+
+        // TODO: This process to find last_completed_block is operation heavy, i.e for big list it will take time,
+        // maybe we can ask mongodb to return in descending order
         let completed_jobs = db
-            .get_jobs_by_type_and_status(JobType::SnosRun, statuses.clone())
+            .get_jobs_by_type_and_status(JobType::SnosRun, vec![JobStatus::Completed])
             .await
             .wrap_err("Failed to fetch completed SNOS jobs")?;
 
@@ -56,6 +55,9 @@ impl JobTrigger for SnosJobTrigger {
             processed_blocks.iter().max().copied().unwrap_or(min_block_to_process.saturating_sub(1));
 
         tracing::debug!(last_completed_block = %last_completed_block, "Found last completed SNOS block");
+
+        // Fetch jobs in a single query with combined statuses
+        let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
 
         // Get pending/created jobs
         let pending_jobs = db
