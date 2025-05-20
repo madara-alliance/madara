@@ -6,7 +6,7 @@ on:
   workflow_call:
 
 jobs:
-  build-binaries:
+  check-binaries:
     permissions:
       pull-requests: write
     runs-on: karnot-arc-runner-set
@@ -25,7 +25,7 @@ jobs:
           extra-cache: false
 
       # Check Orchestrator
-      - name: Cargo build
+      - name: Cargo check
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
           cargo check -p orchestrator --release

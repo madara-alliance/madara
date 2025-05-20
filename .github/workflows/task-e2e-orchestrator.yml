@@ -93,7 +93,6 @@ jobs:
           RUST_LOG=info cargo nextest run         \
             --package e2e-tests                   \
             --release                             \
-            --features testing                    \
             --no-fail-fast                        \
             -E 'test(test_orchestrator_workflow)' \
             test_orchestrator_workflow
