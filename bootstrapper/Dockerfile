@@ -90,7 +90,6 @@ WORKDIR /app
 COPY . .
 
 # Initialize and update submodules
-# RUN git submodule update --init --recursive
 
 RUN apt-get update && apt-get install -y \
     wget
@@ -161,23 +160,23 @@ RUN npm install -g --unsafe-perm ganache@7.9.0 && \
     # Verify ganache installation and keep trying if it fails
     (for i in {1..5}; do \
     if which ganache && ganache --version; then \
-    echo "Ganache installation verified" && \
-    break; \
+        echo "Ganache installation verified" && \
+        break; \
     else \
-    echo "Attempt $i: Ganache not found, trying again..." && \
-    echo "Searching for ganache in PATH..." && \
-    find / -name ganache 2>/dev/null && \
-    # Clear npm cache and reinstall
-    npm cache clean --force && \
-    npm install -g --unsafe-perm ganache@7.9.0 && \
-    # Add environment variables
-    export PATH="/usr/local/lib/node_modules/.bin:$PATH" && \
-    # Add a small delay to let npm finish
-    sleep 5; \
+        echo "Attempt $i: Ganache not found, trying again..." && \
+        echo "Searching for ganache in PATH..." && \
+        find / -name ganache 2>/dev/null && \
+        # Clear npm cache and reinstall
+        npm cache clean --force && \
+        npm install -g --unsafe-perm ganache@7.9.0 && \
+        # Add environment variables
+        export PATH="/usr/local/lib/node_modules/.bin:$PATH" && \
+        # Add a small delay to let npm finish
+        sleep 5; \
     fi; \
     if [ $i -eq 5 ]; then \
-    echo "Failed to install ganache after 5 attempts" && \
-    exit 1; \
+        echo "Failed to install ganache after 5 attempts" && \
+        exit 1; \
     fi \
     done)
 
@@ -207,7 +206,6 @@ COPY --from=builder /app/src/contracts/ /app/src/contracts/
 
 
 # Set working directory
-#WORKDIR /app
 
 # Environment variables
 ENV RUST_LOG=info
