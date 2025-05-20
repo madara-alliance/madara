@@ -119,7 +119,7 @@ default = ["ethereum", "with_mongodb", "with_sqs"]
 ethereum = ["orchestrator-ethereum-da-client"]
 with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
-testing = []
+testing = ["orchestrator-ethereum-settlement-client/testing"]
 
 [dev-dependencies]
 hyper = { version = "0.14", features = ["full"] }
