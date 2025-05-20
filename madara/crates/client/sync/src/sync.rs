@@ -146,13 +146,9 @@ impl<P: ForwardPipeline> SyncController<P> {
     }
 
     fn target_height(&self) -> Option<u64> {
-        let mut target_block = self.current_l1_head.as_ref().map(|h| h.block_number);
-        target_block = cmp::max(
-            target_block,
-            match self.probe.last_val() {
-                Some(v) => Some(v.block_number),
-                None => return None,
-            },
+        let mut target_block = cmp::max(
+            self.current_l1_head.as_ref().and_then(|h| h.block_number),
+            self.probe.last_val().map(|v| v.block_number),
         );
 
         // Bound by stop_at_block_n
