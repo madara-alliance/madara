@@ -182,18 +182,12 @@ impl MongoDbClient {
         let vec_items: Vec<T> = cursor
             .map_err(|e| {
                 tracing::error!(error = %e, category = "db_call", "Error retrieving document");
-                DatabaseError::FailedToSerializeDocument(format!(
-                    "Failed to retrieve document: {}",
-                    e
-                ))
+                DatabaseError::FailedToSerializeDocument(format!("Failed to retrieve document: {}", e))
             })
             .and_then(|doc| {
                 futures::future::ready(mongodb::bson::from_document::<T>(doc).map_err(|e| {
                     tracing::error!(error = %e, category = "db_call", "Deserialization error");
-                    DatabaseError::FailedToSerializeDocument(format!(
-                        "Failed to deserialize document: {}",
-                        e
-                    ))
+                    DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e))
                 }))
             })
             .try_collect()

@@ -81,7 +81,7 @@ impl Resource for EventBridgeClient {
         }
         Ok(())
     }
-    
+
     /// check_if_exists - Check if the event bridge rule exists
     ///
     /// # Arguments
