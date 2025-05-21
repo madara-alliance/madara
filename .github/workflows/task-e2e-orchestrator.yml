@@ -47,16 +47,16 @@ jobs:
       - name: Load env
         uses: ./.github/actions/load-env
 
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+
       - name: Rust setup
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: orchestrator-e2e
-
-      - name: Foundry setup
-        uses: ./.github/actions/setup-foundry
-        with:
-          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
