@@ -111,6 +111,7 @@ jobs:
           ls -la target/llvm-cov-target
           ls -la target/nextest
           ls -la target/release
+          cargo nextest list --verbose
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2
