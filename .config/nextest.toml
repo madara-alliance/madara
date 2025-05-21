@@ -1,0 +1,3 @@
+[[profile.default.overrides]]
+filter = 'test(eth_client)'
+retries = { backoff = "exponential", count = 5, delay = "10s", max-delay = "60s", jitter = true }
