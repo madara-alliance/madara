@@ -141,7 +141,7 @@ pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &Q
 
     for queue_type in QueueType::iter() {
         // TODO: Handle the case of queue_identifier being an arn, either use the parse fn
-        let queue_name = queue_params.queue_identifier.replace("{}",  &queue_type.to_string());
+        let queue_name = queue_params.queue_identifier.replace("{}", &queue_type.to_string());
         sqs_client.create_queue().queue_name(queue_name).send().await?;
     }
     Ok(())

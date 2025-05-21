@@ -130,7 +130,9 @@ impl TryFrom<RunCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            queue_identifier: run_cmd.aws_sqs_args.queue_identifier
+            queue_identifier: run_cmd
+                .aws_sqs_args
+                .queue_identifier
                 .ok_or(OrchestratorError::RunCommandError("SQS Identifier is required".to_string()))?,
         })
     }
@@ -140,7 +142,9 @@ impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            queue_identifier: setup_cmd.aws_sqs_args.queue_identifier
+            queue_identifier: setup_cmd
+                .aws_sqs_args
+                .queue_identifier
                 .ok_or(OrchestratorError::SetupCommandError("SQS Identifier is required".to_string()))?,
         })
     }

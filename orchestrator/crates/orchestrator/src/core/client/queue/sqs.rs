@@ -3,8 +3,8 @@ use crate::{
     core::client::queue::QueueClient,
     types::{params::QueueArgs, queue::QueueType},
 };
-use aws_config::Region;
 use async_trait::async_trait;
+use aws_config::Region;
 use aws_config::SdkConfig;
 use aws_sdk_sqs::types::QueueAttributeName;
 use aws_sdk_sqs::Client;
@@ -41,19 +41,12 @@ impl SQS {
 
         // Set region from ARN if available
         if let Some(region) = &region {
-            sqs_config_builder = sqs_config_builder.region(
-                Region::new(region.clone())
-            );
+            sqs_config_builder = sqs_config_builder.region(Region::new(region.clone()));
         }
 
         let client = Client::from_conf(sqs_config_builder.build());
 
-        Self {
-            client: Arc::new(client),
-            queue_template,
-            queue_arn_base,
-            region,
-        }
+        Self { client: Arc::new(client), queue_template, queue_arn_base, region }
     }
 
     /// Parse a queue identifier into template string, ARN base, and region
@@ -117,10 +110,7 @@ impl SQS {
             if let Some(region) = &self.region {
                 if let Some(account_id) = self.extract_account_id_from_arn_base(arn_base) {
                     // Format: https://sqs.{region}.amazonaws.com/{account_id}/{queue_name}
-                    return Ok(format!(
-                        "https://sqs.{}.amazonaws.com/{}/{}",
-                        region, account_id, queue_name
-                    ));
+                    return Ok(format!("https://sqs.{}.amazonaws.com/{}/{}", region, account_id, queue_name));
                 }
             }
         }
@@ -158,12 +148,14 @@ impl SQS {
         // If we have an ARN base, we can construct the ARN directly
         if let Some(arn_base) = &self.queue_arn_base {
             // Extract queue name from the queue URL
-            let queue_name = queue_url.split('/').last()
+            let queue_name = queue_url
+                .split('/')
+                .last()
                 .ok_or_else(|| QueueError::FailedToGetQueueArn(format!("Invalid queue URL format: {}", queue_url)))?;
-                
+
             return Ok(format!("{}:{}", arn_base, queue_name));
         }
-        
+
         // Fall back to looking up the ARN from queue attributes
         self.get_queue_arn_from_attributes(queue_url).await
     }
