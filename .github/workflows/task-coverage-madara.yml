@@ -71,7 +71,7 @@ jobs:
 
           # Wait for Anvil to start
           echo "Waiting for Anvil to start..."
-          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+          timeout 120s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
 
           if [ $? -eq 0 ]; then
             echo "Anvil is running in url: ${{ env.ANVIL_DEFAULT_URL }}"
