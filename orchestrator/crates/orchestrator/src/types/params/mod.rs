@@ -22,8 +22,7 @@ pub struct StorageArgs {
 /// QueueArgs - Arguments used to setup queue resources
 #[derive(Debug, Clone)]
 pub struct QueueArgs {
-    pub prefix: String,
-    pub suffix: String,
+    pub queue_identifier: String, // Can be either "prefix_{}_suffix" or "arn:aws:sqs:region:account:prefix_{}_suffix"
 }
 
 /// AlertArgs - Arguments used to set up alert resources
@@ -79,7 +78,7 @@ impl TryFrom<RunCmd> for StorageArgs {
                 run_cmd
                     .aws_s3_args
                     .bucket_identifier
-                    .ok_or(OrchestratorError::SetupCommandError("Bucket name Not found".to_string()))?
+                    .ok_or(OrchestratorError::RunCommandError("Missing bucket Identifier".to_string()))?
             ),
         })
     }
@@ -95,7 +94,7 @@ impl TryFrom<SetupCmd> for StorageArgs {
                 setup_cmd
                     .aws_s3_args
                     .bucket_identifier
-                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
+                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket Identifier".to_string()))?
             ),
         })
     }
@@ -120,7 +119,7 @@ impl TryFrom<RunCmd> for AlertArgs {
         let topic = run_cmd
             .aws_sns_args
             .alert_topic_name
-            .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
+            .ok_or(OrchestratorError::RunCommandError("SNS ARN not found".to_string()))?;
         let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
         info!("SNS TOPIC: {}", alert_topic_name);
         Ok(Self { alert_topic_name })
@@ -131,11 +130,8 @@ impl TryFrom<RunCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            prefix: run_cmd.aws_config_args.aws_prefix.clone(),
-            suffix: run_cmd
-                .aws_sqs_args
-                .sqs_suffix
-                .ok_or(OrchestratorError::SetupCommandError("SQS suffix is required".to_string()))?,
+            queue_identifier: run_cmd.aws_sqs_args.queue_identifier
+                .ok_or(OrchestratorError::RunCommandError("SQS Identifier is required".to_string()))?,
         })
     }
 }
@@ -144,11 +140,8 @@ impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            prefix: setup_cmd.aws_config_args.aws_prefix.clone(),
-            suffix: setup_cmd
-                .aws_sqs_args
-                .sqs_suffix
-                .ok_or(OrchestratorError::SetupCommandError("SQS suffix is required".to_string()))?,
+            queue_identifier: setup_cmd.aws_sqs_args.queue_identifier
+                .ok_or(OrchestratorError::SetupCommandError("SQS Identifier is required".to_string()))?,
         })
     }
 }

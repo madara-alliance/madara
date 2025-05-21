@@ -8,7 +8,7 @@ pub struct AWSS3CliArgs {
     #[arg(long)]
     pub aws_s3: bool,
 
-    /// The name of the S3 bucket.
+    /// The ARN / Name of the S3 bucket.
     #[arg(env = "MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER", long, default_value = Some("mo-bucket"))]
     pub bucket_identifier: Option<String>,
 }

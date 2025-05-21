@@ -32,7 +32,8 @@ impl Resource for SQS {
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
-            let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
+            // TODO: Handle the case of queue_identifier being an arn, either use the parse fn
+            let queue_name = args.queue_identifier.replace("{}", &queue.name.to_string());
             if self.check_if_exists(queue_name.clone()).await? {
                 tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
                 continue;
@@ -80,7 +81,7 @@ impl Resource for SQS {
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let client = self.client().clone();
         for queue in QUEUES.iter() {
-            let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
+            let queue_name = args.queue_identifier.replace("{}", &queue.name.to_string());
             let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
             let result = client.get_queue_attributes().queue_url(queue_url).send().await;
             if result.is_err() {

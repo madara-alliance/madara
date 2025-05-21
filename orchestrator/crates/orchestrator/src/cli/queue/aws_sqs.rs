@@ -8,11 +8,7 @@ pub struct AWSSQSCliArgs {
     #[arg(long)]
     pub aws_sqs: bool,
 
-    /// The prefix of the queue.
-    #[arg(env = "MADARA_ORCHESTRATOR_SQS_PREFIX", long, default_value = Some("madara_orchestrator"))]
-    pub sqs_prefix: Option<String>,
-
-    /// The suffix of the queue.
-    #[arg(env = "MADARA_ORCHESTRATOR_SQS_SUFFIX", long, default_value = Some("queue"))]
-    pub sqs_suffix: Option<String>,
+    /// The ARN / Name of the queue.
+    #[arg(env = "MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER", long, default_value = Some("{}_queue"))]
+    pub queue_identifier: Option<String>,
 }

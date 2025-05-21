@@ -494,7 +494,7 @@ pub(crate) fn get_env_params() -> EnvParams {
     };
 
     let queue_params =
-        QueueArgs { prefix: prefix.clone(), suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX") };
+        QueueArgs { queue_identifier: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER") };
 
     let aws_params = AWSCredentials { region: get_env_var_or_panic("AWS_REGION") };
 
