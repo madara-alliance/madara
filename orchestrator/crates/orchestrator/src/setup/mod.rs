@@ -1,4 +1,4 @@
-use crate::cli::{Layer, SetupCmd};
+use crate::cli::SetupCmd;
 use crate::core::cloud::CloudProvider;
 use crate::setup::factory::ResourceFactory;
 use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, StorageArgs};
