@@ -52,6 +52,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-location: llvm-cov-target/release
           cache-key: orchestrator-test
 
       - name: Foundry setup
@@ -110,15 +111,6 @@ jobs:
             --test-threads=1 \
             --package "orchestrator-*" \
             --no-fail-fast
-
-      - name: Debug directories
-        run: |
-          ls -la target/
-          ls -la target/llvm-cov-target
-          ls -la target/llvm-cov-target/release
-          ls -la target/nextest
-          ls -la target/release
-          cargo nextest list --verbose
 
       - name: Upload coverage to Coveralls
         uses: coverallsapp/github-action@v2

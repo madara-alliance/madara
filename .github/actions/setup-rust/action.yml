@@ -10,6 +10,10 @@ inputs:
     description: "Whether or not to enable cached dependencies"
     required: false
     default: "true"
+  cache-location:
+    description: "Path to cached dependencies"
+    required: false
+    default: "release"
   cache-key:
     description: "Cache key used to retrieve built data. Usually matches the profile of the build"
     required: false
@@ -39,9 +43,9 @@ runs:
       id: cache-build-deps
       with:
         path: |
-          target/release/deps
-          target/release/build
-          target/release/.fingerprint
+          target/${{ inputs.cache-location }}/deps
+          target/${{ inputs.cache-location }}/build
+          target/${{ inputs.cache-location }}/.fingerprint
         key: ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
         restore-keys: |
           ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
