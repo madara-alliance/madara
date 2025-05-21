@@ -99,3 +99,11 @@ jobs:
             --no-fail-fast                        \
             -E 'test(test_orchestrator_workflow)' \
             test_orchestrator_workflow
+
+      - name: Debug directories
+        run: |
+          ls -la target/release/deps || echo "deps does not exist"
+          ls -la target/release/build || echo "build does not exist"
+          ls -la target/release/.fingerprint || echo "fingerprint does not exist"
+          ls -la target/.nextest || echo ".nextest does not exist"
+          ls -la .cargo/nextest || echo "cargo nextest does not exist"
