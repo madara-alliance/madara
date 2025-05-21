@@ -10,7 +10,7 @@ jobs:
     uses: ./.github/workflows/task-build-nightly.yml
     with:
       image-name: madara
-      image-file: ./Dockerfile
+      image-file: ./madara/Dockerfile
     permissions:
       contents: read
       attestations: write
