@@ -103,8 +103,6 @@ jobs:
       - name: Debug directories
         run: |
           ls -la target/
-          ls -la target/release/deps
-          ls -la target/release/build
-          ls -la target/release/.fingerprint
-          ls -la target/.nextest
-          ls -la .cargo/nextest
+          ls -la target/llvm-cov-target
+          ls -la target/nextest
+          ls -la target/release
