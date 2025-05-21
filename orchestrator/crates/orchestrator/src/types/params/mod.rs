@@ -16,8 +16,7 @@ use tracing::info;
 /// StorageArgs - Arguments used to setup storage resources
 #[derive(Debug, Clone)]
 pub struct StorageArgs {
-    pub bucket_identifier: String, // Can be either a bucket name or ARN
-    pub bucket_location_constraint: Option<String>,
+    pub bucket_identifier: String,
 }
 
 /// QueueArgs - Arguments used to setup queue resources
@@ -82,7 +81,6 @@ impl TryFrom<RunCmd> for StorageArgs {
                     .bucket_identifier
                     .ok_or(OrchestratorError::SetupCommandError("Bucket name Not found".to_string()))?
             ),
-            bucket_location_constraint: run_cmd.aws_s3_args.bucket_location_constraint,
         })
     }
 }
@@ -99,7 +97,6 @@ impl TryFrom<SetupCmd> for StorageArgs {
                     .bucket_identifier
                     .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
             ),
-            bucket_location_constraint: setup_cmd.aws_s3_args.bucket_location_constraint,
         })
     }
 }

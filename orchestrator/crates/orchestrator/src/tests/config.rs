@@ -491,7 +491,6 @@ pub(crate) fn get_env_params() -> EnvParams {
             get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
             get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")
         ),
-        bucket_location_constraint: None,
     };
 
     let queue_params =

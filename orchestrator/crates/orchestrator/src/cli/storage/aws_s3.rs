@@ -11,8 +11,4 @@ pub struct AWSS3CliArgs {
     /// The name of the S3 bucket.
     #[arg(env = "MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER", long, default_value = Some("mo-bucket"))]
     pub bucket_identifier: Option<String>,
-
-    /// The S3 Bucket Location Constraint.
-    #[arg(env = "MADARA_ORCHESTRATOR_AWS_BUCKET_LOCATION_CONSTRAINT", long)]
-    pub bucket_location_constraint: Option<String>,
 }
