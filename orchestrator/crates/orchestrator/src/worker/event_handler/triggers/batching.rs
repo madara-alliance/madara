@@ -39,7 +39,7 @@ impl JobTrigger for BatchingTrigger {
 
         // Getting the latest batch in DB
         let latest_batch = config.database().get_latest_batch().await?;
-        let latest_block_in_db = latest_batch.map(|batch| batch.end_block).unwrap_or(0);
+        let latest_block_in_db = latest_batch.map_or(0, |batch| batch.end_block);
 
         // Calculating the first block number to for which a batch needs to be assigned
         let first_block_to_assign_batch = config

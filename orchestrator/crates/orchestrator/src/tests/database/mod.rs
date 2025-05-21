@@ -1,7 +1,7 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{build_batch, build_job_item};
-use crate::types::batch::BatchUpdates;
+use crate::types::batch::{Batch, BatchUpdates};
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -243,15 +243,20 @@ async fn database_test_update_job() {
 
 #[rstest]
 #[tokio::test]
-async fn database_test_get_latest_batch() {
+async fn database_test_get_latest_batch(
+    #[from(build_batch)]
+    #[with(1, 100, 200)]
+    batch1: Batch,
+    #[from(build_batch)]
+    #[with(2, 210, 300)]
+    batch2: Batch,
+    #[from(build_batch)]
+    #[with(3, 301, 400)]
+    batch3: Batch,
+) {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
-
-    // Create multiple batches with different indices
-    let batch1 = build_batch(1, 100, 200);
-    let batch2 = build_batch(2, 201, 300);
-    let batch3 = build_batch(3, 301, 400);
 
     // Insert batches in non-sequential order
     database_client.create_batch(batch2.clone()).await.unwrap();
@@ -265,13 +270,14 @@ async fn database_test_get_latest_batch() {
 
 #[rstest]
 #[tokio::test]
-async fn database_test_update_batch() {
+async fn database_test_update_batch(
+    #[from(build_batch)]
+    #[with(1, 100, 200)]
+    batch: Batch,
+) {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
-
-    // Create a new batch
-    let batch = build_batch(1, 100, 200);
 
     database_client.create_batch(batch.clone()).await.unwrap();
 
@@ -298,13 +304,14 @@ async fn database_test_update_batch() {
 
 #[rstest]
 #[tokio::test]
-async fn database_test_create_batch() {
+async fn database_test_create_batch(
+    #[from(build_batch)]
+    #[with(1, 100, 200)]
+    batch: Batch,
+) {
     let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
     let config = services.config;
     let database_client = config.database();
-
-    // Create a new batch
-    let batch = build_batch(1, 100, 200);
 
     // Create the batch
     let created_batch = database_client.create_batch(batch.clone()).await.unwrap();
