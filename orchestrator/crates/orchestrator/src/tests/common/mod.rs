@@ -79,7 +79,7 @@ pub async fn drop_database(mongodb_params: &DatabaseArgs) -> color_eyre::Result<
 }
 
 pub async fn delete_storage(provider_config: Arc<CloudProvider>, s3_params: &StorageArgs) -> color_eyre::Result<()> {
-    let bucket_name = s3_params.bucket_name.clone();
+    let bucket_name = s3_params.bucket_identifier.clone();
     let aws_config = provider_config.get_aws_client_or_panic();
 
     let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);

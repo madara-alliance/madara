@@ -34,17 +34,17 @@ impl Resource for AWSS3 {
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
-        if self.check_if_exists(args.bucket_name.clone()).await? {
-            warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_name);
+        if self.check_if_exists(args.bucket_identifier.clone()).await? {
+            warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_identifier);
             return Ok(());
         }
-        info!("Creating New Bucket: {}", args.bucket_name);
+        info!("Creating New Bucket: {}", args.bucket_identifier);
 
         // Get the current region from the client config
         let region = self.client.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
         info!("Creating bucket in region: {}", region);
 
-        let mut bucket_builder = self.client.create_bucket().bucket(&args.bucket_name);
+        let mut bucket_builder = self.client.create_bucket().bucket(&args.bucket_identifier);
 
         if region != "us-east-1" {
             let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
@@ -53,7 +53,10 @@ impl Resource for AWSS3 {
         }
 
         let _result = bucket_builder.send().await.map_err(|e| {
-            OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", args.bucket_name, e))
+            OrchestratorError::ResourceSetupError(format!(
+                "Failed to create S3 bucket '{}': {:?}",
+                args.bucket_identifier, e
+            ))
         })?;
         Ok(())
     }
@@ -63,6 +66,6 @@ impl Resource for AWSS3 {
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.head_bucket().bucket(&args.bucket_name).send().await.is_ok())
+        Ok(self.client.head_bucket().bucket(&args.bucket_identifier).send().await.is_ok())
     }
 }

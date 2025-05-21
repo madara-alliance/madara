@@ -486,7 +486,7 @@ pub(crate) fn get_env_params() -> EnvParams {
     };
 
     let storage_params = StorageArgs {
-        bucket_name: format!(
+        bucket_identifier: format!(
             "{}-{}",
             get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
             get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")

@@ -16,7 +16,7 @@ use tracing::info;
 /// StorageArgs - Arguments used to setup storage resources
 #[derive(Debug, Clone)]
 pub struct StorageArgs {
-    pub bucket_name: String,
+    pub bucket_identifier: String, // Can be either a bucket name or ARN
     pub bucket_location_constraint: Option<String>,
 }
 
@@ -74,12 +74,12 @@ impl TryFrom<RunCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            bucket_name: format!(
+            bucket_identifier: format!(
                 "{}-{}",
                 run_cmd.aws_config_args.aws_prefix,
                 run_cmd
                     .aws_s3_args
-                    .bucket_name
+                    .bucket_identifier
                     .ok_or(OrchestratorError::SetupCommandError("Bucket name Not found".to_string()))?
             ),
             bucket_location_constraint: run_cmd.aws_s3_args.bucket_location_constraint,
@@ -91,12 +91,12 @@ impl TryFrom<SetupCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            bucket_name: format!(
+            bucket_identifier: format!(
                 "{}-{}",
                 setup_cmd.aws_config_args.aws_prefix,
                 setup_cmd
                     .aws_s3_args
-                    .bucket_name
+                    .bucket_identifier
                     .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
             ),
             bucket_location_constraint: setup_cmd.aws_s3_args.bucket_location_constraint,
