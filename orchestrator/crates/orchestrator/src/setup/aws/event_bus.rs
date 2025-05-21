@@ -55,6 +55,8 @@ impl Resource for EventBridgeClient {
         sleep(Duration::from_secs(15)).await;
 
         for trigger in WORKER_TRIGGERS.iter() {
+            // Proof registration is only required in L3
+            // TODO: Remove this once we have handle the pipeline with state machine
             if *trigger == WorkerTriggerType::ProofRegistration && layer != Layer::L3 {
                 continue;
             }
@@ -79,6 +81,7 @@ impl Resource for EventBridgeClient {
         }
         Ok(())
     }
+    
     /// check_if_exists - Check if the event bridge rule exists
     ///
     /// # Arguments

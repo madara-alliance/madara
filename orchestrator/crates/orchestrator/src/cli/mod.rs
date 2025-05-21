@@ -141,8 +141,8 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
-    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = Some("L2"), value_enum)]
-    pub layer: Option<Layer>,
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "L2", value_enum)]
+    pub layer: Layer,
 
     // Service
     #[clap(flatten)]
@@ -217,8 +217,8 @@ pub struct SetupCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_RESOURCE_POLL_INTERVAL", long, default_value = Some("5"))]
     pub poll_interval: Option<u64>,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = Some("L2"), value_enum)]
-    pub layer: Option<Layer>,
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "L2", value_enum)]
+    pub layer: Layer,
 }
 
 #[derive(Debug, Clone, clap::ValueEnum, PartialEq)]

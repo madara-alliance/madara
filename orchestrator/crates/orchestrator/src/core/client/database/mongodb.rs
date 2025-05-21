@@ -79,6 +79,12 @@ impl MongoDbClient {
         self.get_collection("locks")
     }
 
+    /// find_one - Find one document in a collection
+    /// # Arguments
+    /// * `collection` - The collection to find the document in
+    /// * `filter` - The filter to apply to the collection
+    /// # Returns
+    /// * `Result<Option<T>, DatabaseError>` - A Result indicating whether the operation was successful or not
     pub async fn find_one<T>(&self, collection: Collection<T>, filter: Document) -> Result<Option<T>, DatabaseError>
     where
         T: DeserializeOwned + Unpin + Send + Sync + Sized,
@@ -86,6 +92,14 @@ impl MongoDbClient {
         Ok(collection.find_one(filter, None).await?)
     }
 
+    /// update_one - Update one document in a collection
+    /// # Arguments
+    /// * `collection` - The collection to update the document in
+    /// * `filter` - The filter to apply to the collection
+    /// * `update` - The update to apply to the document
+    /// * `options` - The options to apply to the update
+    /// # Returns
+    /// * `Result<UpdateResult, DatabaseError>` - A Result indicating whether the operation was successful or not
     pub async fn update_one<T>(
         &self,
         collection: Collection<T>,
@@ -100,6 +114,12 @@ impl MongoDbClient {
         Ok(UpdateResult { matched_count: result.matched_count, modified_count: result.modified_count })
     }
 
+    /// delete_one - Delete one document in a collection
+    /// # Arguments
+    /// * `collection` - The collection to delete the document in
+    /// * `filter` - The filter to apply to the collection
+    /// # Returns
+    /// * `Result<DeleteResult, DatabaseError>` - A Result indicating whether the operation was successful or not   
     pub async fn delete_one<T>(
         &self,
         collection: Collection<T>,
@@ -111,6 +131,16 @@ impl MongoDbClient {
         let result = collection.delete_one(filter, None).await?;
         Ok(DeleteResult { deleted_count: result.deleted_count })
     }
+
+    /// find - Find multiple documents in a collection
+    /// # Arguments
+    /// * `collection` - The collection to find the documents in
+    /// * `filter` - The filter to apply to the collection
+    /// * `sort` - The sort to apply to the collection
+    /// * `limit` - The limit to apply to the collection
+    /// * `skip` - The skip to apply to the collection
+    /// * `projection` - The projection to apply to the collection
+    /// # Returns
     pub async fn find<T>(
         &self,
         collection: Collection<T>,
