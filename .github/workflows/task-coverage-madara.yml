@@ -114,9 +114,11 @@ jobs:
           fi
 
       - name: Debug directories
+        if: always()
         run: |
           ls -la target/
           ls -la target/llvm-cov-target
+          ls -la target/llvm-cov-target/release
           ls -la target/nextest
           ls -la target/release
           cargo nextest list --verbose
