@@ -11,9 +11,8 @@ use std::sync::Arc;
 #[derive(Clone, Debug)]
 pub struct AWSS3 {
     pub client: Arc<Client>,
-    // We need to keep these as Options since setup's create_setup fns passes args as None.
-    bucket_name: Option<String>,
-    region: Option<String>,
+    pub bucket_name: String,
+    pub region: Option<String>,
 }
 
 impl AWSS3 {
@@ -24,13 +23,8 @@ impl AWSS3 {
     ///
     /// # Returns
     /// * `Self` - The new instance of AWSS3.
-    pub fn new(aws_config: &SdkConfig, args: Option<&StorageArgs>) -> Self {
-        let (bucket_name, region) = if let Some(args) = args {
-            // Parse the bucket identifier to handle both ARN and name
-            Self::parse_arn_bucket_identifier(args)
-        } else {
-            (None, None)
-        };
+    pub fn new(aws_config: &SdkConfig, args: &StorageArgs) -> Self {
+        let (bucket_name, region) = Self::parse_arn_bucket_identifier(args);
 
         // Configure the S3 client with the right region if specified in ARN
         let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
@@ -51,7 +45,7 @@ impl AWSS3 {
     }
 
     /// Parse a bucket identifier (name or ARN) into bucket name and optional region
-    fn parse_arn_bucket_identifier(args: &StorageArgs) -> (Option<String>, Option<String>) {
+    fn parse_arn_bucket_identifier(args: &StorageArgs) -> (String, Option<String>) {
         let identifier = &args.bucket_identifier;
 
         // Handle standard S3 bucket ARN: arn:aws:s3:::{bucket-name}
@@ -74,21 +68,28 @@ impl AWSS3 {
                     bucket_path.to_string()
                 };
 
-                return (Some(bucket_name.to_string()), None);
+                return (bucket_name.to_string(), None);
             }
         }
 
+        let name = Self::transform_name(&args.aws_prefix, &identifier);
+
         // If not an ARN, just use as a s3 name with prefix
-        (Some(format!("{}_{}", args.aws_prefix, identifier)), None)
+        (name, None)
     }
 
     pub(crate) fn bucket_name(&self) -> Result<String, StorageError> {
-        self.bucket_name.clone().ok_or_else(|| StorageError::InvalidBucketName("Bucket name is not set".to_string()))
+        Ok(self.bucket_name.clone())
     }
 
     /// Returns the region extracted from ARN, if available
     pub fn region(&self) -> Option<String> {
         self.region.clone()
+    }
+
+    /// Returns the name formed by combining AWS_PREFIX
+    pub(crate) fn transform_name(prefix: &str, name: &str) -> String {
+        format!("{}-{}", prefix, name)
     }
 }
 

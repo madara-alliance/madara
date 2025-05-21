@@ -1,11 +1,17 @@
+use crate::types::queue::QueueType;
 use crate::{
-    core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
-    types::params::QueueArgs, OrchestratorError, OrchestratorResult,
+    core::client::queue::sqs::SQS,
+    // core::cloud::CloudProvider,
+    core::traits::resource::Resource,
+    setup::queue::QUEUES,
+    types::params::QueueArgs,
+    OrchestratorError,
+    OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
 use std::collections::HashMap;
-use std::sync::Arc;
+// use std::sync::Arc;
 
 #[async_trait]
 impl Resource for SQS {
@@ -15,13 +21,13 @@ impl Resource for SQS {
     type Error = ();
     type SetupArgs = QueueArgs;
 
-    type CheckArgs = String;
+    type CheckArgs = QueueType;
 
-    async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
-        match cloud_provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
-        }
-    }
+    // async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
+    //     match cloud_provider.as_ref() {
+    //         CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+    //     }
+    // }
 
     /// setup - Setup SQS queue
     /// check if queue exists, if not create it. This function will create all the queues defined in the QUEUES vector.
@@ -30,12 +36,12 @@ impl Resource for SQS {
     /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
-            // TODO: Handle the case of queue_identifier being an arn, either use the parse fn
-            let queue_name = args.queue_identifier.replace("{}", &queue.name.to_string());
-            if self.check_if_exists(queue_name.clone()).await? {
-                tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
+            let queue_name = self.get_queue_name(&queue.name)?;
+
+            if self.check_if_exists(queue.name.clone()).await? {
+                tracing::info!(" ⏭️️ SQS queue already exists.");
                 continue;
             }
             let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
@@ -49,7 +55,7 @@ impl Resource for SQS {
             attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
             if let Some(dlq_config) = &queue.dlq_config {
-                let dlq_url = self.get_queue_url_from_client(&queue_name).await?;
+                let dlq_url = self.get_queue_url_from_client(&queue.name).await?;
                 let dlq_arn = self.get_queue_arn(&dlq_url).await?;
                 let policy = format!(
                     r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
@@ -74,15 +80,14 @@ impl Resource for SQS {
     /// # Returns
     /// * `OrchestratorResult<bool>` - true if the queue exists, false otherwise
     ///
-    async fn check_if_exists(&self, queue_name: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.get_queue_url_from_client(queue_name.as_str()).await.is_ok())
+    async fn check_if_exists(&self, queue_type: QueueType) -> OrchestratorResult<bool> {
+        Ok(self.get_queue_url_from_client(&queue_type).await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, _args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let client = self.client().clone();
         for queue in QUEUES.iter() {
-            let queue_name = args.queue_identifier.replace("{}", &queue.name.to_string());
-            let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
+            let queue_url = self.get_queue_url_from_client(&queue.name).await?;
             let result = client.get_queue_attributes().queue_url(queue_url).send().await;
             if result.is_err() {
                 return Ok(false);

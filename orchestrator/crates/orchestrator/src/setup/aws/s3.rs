@@ -1,11 +1,11 @@
 use crate::core::client::storage::s3::AWSS3;
-use crate::core::cloud::CloudProvider;
+// use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;
 use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
 use aws_sdk_s3::Error as S3Error;
-use std::sync::Arc;
+// use std::sync::Arc;
 use tracing::{info, warn};
 
 #[async_trait]
@@ -15,36 +15,41 @@ impl Resource for AWSS3 {
     type TeardownResult = ();
     type Error = S3Error;
     type SetupArgs = StorageArgs;
-    type CheckArgs = String;
+    type CheckArgs = ();
 
-    /// create_setup creates a new S3 client and returns an instance of AWSS3
-    ///
-    /// # Arguments
-    /// * `cloud_provider` - The cloud provider configuration.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<Self>` - The result of the setup operation.
-    ///
-    async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
-        match cloud_provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
-        }
-    }
+    // /// create_setup creates a new S3 client and returns an instance of AWSS3
+    // ///
+    // /// # Arguments
+    // /// * `cloud_provider` - The cloud provider configuration.
+    // ///
+    // /// # Returns
+    // /// * `OrchestratorResult<Self>` - The result of the setup operation.
+    // ///
+    // async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
+    //     match cloud_provider.as_ref() {
+    //         CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+    //     }
+    // }
+    //
     /// Set up a new S3 bucket
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self) -> OrchestratorResult<Self::SetupResult> {
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
-        if self.check_if_exists(args.bucket_identifier.clone()).await? {
-            warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_identifier);
+        // TODO: We would want to skip the setup if the bucket_identifier is an ARN !
+
+        let bucket_name = self.bucket_name()?;
+
+        if self.check_if_exists(()).await? {
+            warn!(" ⏭️  S3 bucket '{}' already exists", bucket_name);
             return Ok(());
         }
-        info!("Creating New Bucket: {}", args.bucket_identifier);
+        info!("Creating New Bucket: {}", bucket_name);
 
         // Get the current region from the client config
         let region = self.client.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
         info!("Creating bucket in region: {}", region);
 
-        let mut bucket_builder = self.client.create_bucket().bucket(&args.bucket_identifier);
+        let mut bucket_builder = self.client.create_bucket().bucket(&bucket_name);
 
         if region != "us-east-1" {
             let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
@@ -53,16 +58,13 @@ impl Resource for AWSS3 {
         }
 
         let _result = bucket_builder.send().await.map_err(|e| {
-            OrchestratorError::ResourceSetupError(format!(
-                "Failed to create S3 bucket '{}': {:?}",
-                args.bucket_identifier, e
-            ))
+            OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", bucket_name, e))
         })?;
         Ok(())
     }
 
-    async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
+    async fn check_if_exists(&self, _args: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.client.head_bucket().bucket(self.bucket_name.clone()).send().await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {

@@ -1,11 +1,11 @@
 use crate::core::client::SNS;
-use crate::core::cloud::CloudProvider;
+// use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AlertArgs;
 use crate::{OrchestratorError, OrchestratorResult};
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use async_trait::async_trait;
-use std::sync::Arc;
+// use std::sync::Arc;
 
 #[async_trait]
 impl Resource for SNS {
@@ -14,24 +14,19 @@ impl Resource for SNS {
     type TeardownResult = ();
     type Error = ();
     type SetupArgs = AlertArgs;
-    type CheckArgs = String;
+    type CheckArgs = ();
 
-    async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
-        match provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
-        }
-    }
+    // async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
+    //     match provider.as_ref() {
+    //         CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+    //     }
+    // }
 
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let alert_topic_arn = args.topic_identifier;
-        tracing::info!("Topic ARN: {}", alert_topic_arn);
+    async fn setup(&self) -> OrchestratorResult<Self::SetupResult> {
+        // TODO: We would want to skip the setup if the bucket_identifier is an ARN !
 
-        // Extract topic name from ARN or use the full string if it's just a name
-        let alert_topic_name = if alert_topic_arn.starts_with("arn:aws:sns:") {
-            alert_topic_arn.split(':').last().ok_or_else(|| anyhow!("Invalid ARN format"))?.to_string()
-        } else {
-            alert_topic_arn.clone()
-        };
+        let alert_topic_name = self.topic_name.clone();
+        tracing::info!("Topic Name: {}", alert_topic_name);
 
         // Validate topic name before proceeding
         if !self.is_valid_topic_name(&alert_topic_name) {
@@ -42,8 +37,8 @@ impl Resource for SNS {
         }
 
         // Check if a topic exists using ARN
-        if self.check_if_exists(alert_topic_arn.clone()).await? {
-            tracing::warn!(" ⏭️ SNS topic already exists. Topic ARN: {}", alert_topic_arn);
+        if self.check_if_exists(()).await? {
+            tracing::warn!(" ⏭️ SNS topic already exists.");
             return Ok(());
         }
 
@@ -56,8 +51,9 @@ impl Resource for SNS {
         Ok(())
     }
 
-    async fn check_if_exists(&self, alert_topic_arn: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(alert_topic_arn).send().await.is_ok())
+    async fn check_if_exists(&self, _args: Self::CheckArgs) -> OrchestratorResult<bool> {
+        // Ok(self.client.get_topic_attributes().topic_arn(alert_topic_arn).send().await.is_ok())
+        Ok(self.get_topic_arn().await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {

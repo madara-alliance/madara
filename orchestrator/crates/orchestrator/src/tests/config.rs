@@ -1,7 +1,3 @@
-use std::net::SocketAddr;
-use std::str::FromStr as _;
-use std::sync::Arc;
-
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
@@ -33,6 +29,9 @@ use orchestrator_sharp_service::SharpValidatedArgs;
 use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use std::net::SocketAddr;
+use std::str::FromStr as _;
+use std::sync::Arc;
 use url::Url;
 // Inspiration : https://rust-unofficial.github.io/patterns/patterns/creational/builder.html
 // TestConfigBuilder allows to heavily customise the global configs based on the test's requirement.
@@ -303,15 +302,17 @@ pub mod implement_client {
     use crate::core::client::queue::MockQueueClient;
     use crate::core::client::storage::MockStorageClient;
     use crate::core::client::AlertClient;
+    use crate::core::client::AWSS3;
     use crate::core::cloud::CloudProvider;
     use crate::core::config::Config;
     use crate::core::traits::resource::Resource;
     use crate::core::{DatabaseClient, QueueClient, StorageClient};
-    use crate::tests::common::{delete_storage, get_storage_client};
+    use crate::tests::common::delete_storage;
     use crate::types::params::da::DAConfig;
     use crate::types::params::database::DatabaseArgs;
     use crate::types::params::settlement::SettlementConfig;
     use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
+    use crate::OrchestratorError;
 
     macro_rules! implement_mock_client_conversion {
         ($client_type:ident, $mock_variant:ident) => {
@@ -388,10 +389,17 @@ pub mod implement_client {
             ConfigType::Actual => {
                 // Delete the Storage before use
                 delete_storage(provider_config.clone(), storage_cfg).await.expect("Could not delete storage");
-                let storage = get_storage_client(provider_config.clone()).await;
+
+                let storage = match provider_config.as_ref() {
+                    CloudProvider::AWS(aws_config) => {
+                        let s3 = AWSS3::new(aws_config, &storage_cfg);
+                        Ok::<_, OrchestratorError>(s3)
+                    }
+                    .unwrap(),
+                };
                 // First set up the storage
                 println!("Setting up the storage , {:?}", storage_cfg);
-                storage.setup(storage_cfg.clone()).await.unwrap();
+                storage.setup().await.unwrap();
                 Config::build_storage_client(storage_cfg, provider_config).await.expect("error creating storage client")
             }
             ConfigType::Dummy => Box::new(MockStorageClient::new()),

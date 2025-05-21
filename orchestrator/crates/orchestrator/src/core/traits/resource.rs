@@ -1,7 +1,7 @@
-use super::super::cloud::CloudProvider;
+// use super::super::cloud::CloudProvider;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
-use std::sync::Arc;
+// use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 /// Resource trait
@@ -22,14 +22,14 @@ pub trait Resource: Send + Sync {
     type CheckArgs: Send + Sync;
 
     /// create_setup - create a new setup Reference
-    async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self>
-    where
-        Self: Sized;
+    // async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self>
+    // where
+    //     Self: Sized;
 
     /// setup - Setup the resource
     /// This function will check if the resource exists, if not create it.
     /// This function will also create any dependent resources that are needed.
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
+    async fn setup(&self) -> OrchestratorResult<Self::SetupResult>;
     /// check - Check if the resource exists, check only for individual resources
     async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
     /// ready - Check if all the resource is created and ready to use

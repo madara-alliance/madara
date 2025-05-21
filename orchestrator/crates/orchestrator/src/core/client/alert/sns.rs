@@ -8,8 +8,7 @@ use std::sync::{Arc, OnceLock};
 
 pub struct SNS {
     pub client: Arc<Client>,
-    // We need to keep these as Options since setup's create_setup fns passes args as None.
-    topic_name: Option<String>,       // The topic name
+    pub topic_name: String,           // The topic name
     region: Option<String>,           // Region extracted from ARN (if provided)
     account_id: Option<String>,       // Account ID extracted from ARN (if provided)
     topic_arn: Arc<OnceLock<String>>, // Cached resolved ARN
@@ -24,13 +23,8 @@ impl SNS {
     ///
     /// # Returns
     /// * `Self` - The SNS client.
-    pub(crate) fn new(aws_config: &SdkConfig, args: Option<&AlertArgs>) -> Self {
-        let (topic_name, region, account_id) = if let Some(args) = args {
-            // Parse the queue identifier to handle both ARN and template formats
-            Self::parse_arn_topic_identifier(args)
-        } else {
-            (None, None, None)
-        };
+    pub(crate) fn new(aws_config: &SdkConfig, args: &AlertArgs) -> Self {
+        let (topic_name, region, account_id) = Self::parse_arn_topic_identifier(args);
 
         // Configure SNS client with the right region if specified in ARN
         let mut sns_config_builder = aws_sdk_sns::config::Builder::from(aws_config);
@@ -47,7 +41,7 @@ impl SNS {
 
     /// Parse a topic identifier (name or ARN) to extract components
     /// Returns: (topic_identifier, region, account_id)
-    fn parse_arn_topic_identifier(args: &AlertArgs) -> (Option<String>, Option<String>, Option<String>) {
+    fn parse_arn_topic_identifier(args: &AlertArgs) -> (String, Option<String>, Option<String>) {
         let identifier = &args.topic_identifier;
 
         // Check if the identifier is an SNS ARN
@@ -60,17 +54,19 @@ impl SNS {
                 let region = parts[3].to_string();
                 let account_id = parts[4].to_string();
 
-                return (Some(parts[5].to_string()), Some(region), Some(account_id));
+                return (parts[5].to_string(), Some(region), Some(account_id));
             }
         }
 
+        let name = Self::transform_name(&args.aws_prefix, &identifier);
+
         // If not an ARN, just use as a topic name with prefix
-        (Some(format!("{}_{}", args.aws_prefix, identifier)), None, None)
+        (name, None, None)
     }
 
     /// Constructs an ARN from components if available, or returns the original identifier
     fn construct_arn_if_possible(&self) -> Option<String> {
-        if let (Some(topic_name), Some(region), Some(account_id)) = (&self.topic_name, &self.region, &self.account_id) {
+        if let (topic_name, Some(region), Some(account_id)) = (&self.topic_name, &self.region, &self.account_id) {
             Some(format!("arn:aws:sns:{}:{}:{}", region, account_id, topic_name))
         } else {
             None
@@ -95,16 +91,13 @@ impl SNS {
             return Ok(arn);
         }
 
-        // Check if we have a topic name to look up
-        let topic_name = self.topic_name.as_ref().ok_or(AlertError::TopicNameEmpty)?;
-
         // Look up the ARN by listing topics and matching the name
         let resp = self.client.list_topics().send().await.map_err(AlertError::ListTopicsError)?;
 
         for topic in resp.topics() {
             if let Some(arn) = topic.topic_arn() {
                 let parts: Vec<&str> = arn.split(':').collect();
-                if parts.len() == 6 && parts[5] == topic_name {
+                if parts.len() == 6 && parts[5] == self.topic_name {
                     let arn_string = arn.to_string();
                     let _ = self.topic_arn.set(arn_string.clone());
                     return Ok(arn_string);
@@ -113,7 +106,12 @@ impl SNS {
         }
 
         // If we got here, the topic wasn't found
-        Err(AlertError::TopicNotFound(topic_name.clone()))
+        Err(AlertError::TopicNotFound(self.topic_name.clone()))
+    }
+
+    /// Returns the name formed by combining AWS_PREFIX
+    pub fn transform_name(prefix: &str, name: &str) -> String {
+        format!("{}_{}", prefix, name)
     }
 }
 

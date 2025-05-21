@@ -1,13 +1,13 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
-use crate::core::cloud::CloudProvider;
+// use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;
 use crate::types::params::CronArgs;
 use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
 use lazy_static::lazy_static;
-use std::sync::Arc;
+// use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -29,11 +29,11 @@ impl Resource for EventBridgeClient {
     type SetupArgs = CronArgs;
     type CheckArgs = (EventBridgeType, WorkerTriggerType, String);
 
-    async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
-        match provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
-        }
-    }
+    // async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
+    //     match provider.as_ref() {
+    //         CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+    //     }
+    // }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let trigger_arns = self

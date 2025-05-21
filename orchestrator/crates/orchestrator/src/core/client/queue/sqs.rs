@@ -16,10 +16,9 @@ use std::time::Duration;
 #[derive(Clone, Debug)]
 pub struct SQS {
     pub client: Arc<Client>,
-    // We need to keep these as Options since setup's create_setup fns passes args as None.
-    queue_template_name: Option<String>, // The template string with "{}" placeholder for queue type
-    queue_arn_base: Option<String>,      // Base ARN for constructing queue ARNs
-    region: Option<String>,              // Region extracted from ARN
+    queue_template_name: String, // The template string with "{}" placeholder for queue type
+    queue_arn_base: Option<String>, // Base ARN for constructing queue ARNs
+    region: Option<String>,      // Region extracted from ARN
 }
 
 impl SQS {
@@ -29,13 +28,8 @@ impl SQS {
     /// * `args` - The queue arguments, containing a queue_identifier that may be an ARN template or simple template.
     /// # Returns
     /// * `Self` - The SQS client.
-    pub fn new(aws_config: &SdkConfig, args: Option<&QueueArgs>) -> Self {
-        let (queue_template_name, queue_arn_base, region) = if let Some(args) = args {
-            // Parse the queue identifier to handle both ARN and template formats
-            Self::parse_arn_queue_identifier(args)
-        } else {
-            (None, None, None)
-        };
+    pub fn new(aws_config: &SdkConfig, args: &QueueArgs) -> Self {
+        let (queue_template_name, queue_arn_base, region) = Self::parse_arn_queue_identifier(args);
 
         // Configure SQS client with the right region if specified in ARN
         let mut sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
@@ -52,7 +46,7 @@ impl SQS {
 
     /// Parse a queue identifier into template string, ARN base, and region
     /// Returns: (queue_name_with_prefix, arn_base, region)
-    fn parse_arn_queue_identifier(args: &QueueArgs) -> (Option<String>, Option<String>, Option<String>) {
+    fn parse_arn_queue_identifier(args: &QueueArgs) -> (String, Option<String>, Option<String>) {
         let identifier = &args.queue_identifier;
 
         if identifier.starts_with("arn:aws:sqs:") {
@@ -66,12 +60,13 @@ impl SQS {
                 let queue_name = parts[5];
                 let arn_base = format!("arn:aws:sqs:{}:{}", region, account_id);
 
-                return (Some(queue_name.to_string()), Some(arn_base), Some(region));
+                return (queue_name.to_string(), Some(arn_base), Some(region));
             }
         }
 
+        let name = Self::transform_template_name(&args.aws_prefix, &identifier);
         // If not an ARN, just use as a queue name with prefix
-        (Some(format!("{}_{}", args.aws_prefix, identifier)), None, None)
+        (name, None, None)
     }
 
     pub fn client(&self) -> Arc<Client> {
@@ -85,12 +80,7 @@ impl SQS {
     /// get_queue_name - Get the queue name by replacing the placeholder in the template
     /// The queue name is constructed by replacing {} with the queue type
     pub fn get_queue_name(&self, queue_type: &QueueType) -> Result<String, QueueError> {
-        if let Some(queue_template_name) = self.queue_template_name.clone() {
-            // Replace the placeholder with the queue type
-            Ok(queue_template_name.replace("{}", &queue_type.to_string()))
-        } else {
-            Err(QueueError::MissingRootParameter("Queue template is not set".to_string()))
-        }
+        Ok(self.queue_template_name.replace("{}", &queue_type.to_string()))
     }
 
     /// get_queue_url - Get the queue URL
@@ -109,7 +99,7 @@ impl SQS {
         }
 
         // Fall back to lookup if we couldn't construct it from the ARN
-        self.get_queue_url_from_client(queue_name.as_str()).await
+        self.get_queue_url_from_client(queue_type).await
     }
 
     /// Extract account ID from ARN base
@@ -124,15 +114,15 @@ impl SQS {
 
     /// get_queue_url_from_client - Get the queue URL from the client
     /// This function returns the queue URL based on the queue name.
-    pub async fn get_queue_url_from_client(&self, queue_name: &str) -> Result<String, QueueError> {
+    pub async fn get_queue_url_from_client(&self, queue_type: &QueueType) -> Result<String, QueueError> {
         Ok(self
             .client()
             .get_queue_url()
-            .queue_name(queue_name)
+            .queue_name(self.get_queue_name(queue_type)?)
             .send()
             .await?
             .queue_url()
-            .ok_or_else(|| QueueError::FailedToGetQueueUrl(queue_name.to_string()))?
+            .ok_or_else(|| QueueError::FailedToGetQueueUrl(queue_type.to_string()))?
             .to_string())
     }
 
@@ -169,6 +159,11 @@ impl SQS {
             },
             None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
         }
+    }
+
+    /// Returns the name formed by combining AWS_PREFIX
+    pub fn transform_template_name(prefix: &str, name: &str) -> String {
+        format!("{}_{}", prefix, name)
     }
 }
 

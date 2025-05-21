@@ -29,11 +29,11 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
 
     let queue_arn = queue_attributes.attributes().unwrap().get(&QueueArn).unwrap();
 
-    let topic_identifier = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
+    let topic_identifier = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER");
     let aws_prefix = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
 
     let alert_config = AlertArgs { aws_prefix, topic_identifier };
-    let sns = SNS::new(services.provider_config.get_aws_client_or_panic(), Some(&alert_config));
+    let sns = SNS::new(services.provider_config.get_aws_client_or_panic(), &alert_config);
 
     let sns_arn = sns.get_topic_arn().await.unwrap();
 

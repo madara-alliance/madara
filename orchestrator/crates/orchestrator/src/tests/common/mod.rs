@@ -4,7 +4,7 @@ use std::sync::Arc;
 
 use crate::core::client::{MongoDbClient, AWSS3};
 use crate::core::cloud::CloudProvider;
-use crate::core::traits::resource::Resource;
+use crate::core::traits::resource::Resource as _;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata};
@@ -156,8 +156,4 @@ pub async fn get_sqs_client(provider_config: Arc<CloudProvider>) -> aws_sdk_sqs:
 #[derive(Deserialize, Debug)]
 pub struct MessagePayloadType {
     pub(crate) id: Uuid,
-}
-
-pub async fn get_storage_client(provider_config: Arc<CloudProvider>) -> AWSS3 {
-    AWSS3::create_setup(provider_config).await.unwrap()
 }
