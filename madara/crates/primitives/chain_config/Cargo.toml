@@ -21,8 +21,8 @@ starknet-types-core.workspace = true
 starknet_api.workspace = true
 
 # Madara
-mp-utils.workspace = true
 mp-rpc = { workspace = true }
+mp-utils.workspace = true
 
 # Other
 anyhow.workspace = true
