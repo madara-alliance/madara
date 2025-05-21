@@ -486,15 +486,14 @@ pub(crate) fn get_env_params() -> EnvParams {
     };
 
     let storage_params = StorageArgs {
-        bucket_identifier: format!(
-            "{}-{}",
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")
-        ),
+        aws_prefix: prefix.clone(),
+        bucket_identifier: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER"),
     };
 
-    let queue_params =
-        QueueArgs { queue_identifier: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER") };
+    let queue_params = QueueArgs {
+        aws_prefix: prefix.clone(),
+        queue_identifier: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER"),
+    };
 
     let aws_params = AWSCredentials { region: get_env_var_or_panic("AWS_REGION") };
 
@@ -503,9 +502,10 @@ pub(crate) fn get_env_params() -> EnvParams {
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
     });
 
-    let alert_topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
-
-    let alert_params = AlertArgs { alert_topic_name };
+    let alert_params = AlertArgs {
+        aws_prefix: prefix.clone(),
+        topic_identifier: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER"),
+    };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))

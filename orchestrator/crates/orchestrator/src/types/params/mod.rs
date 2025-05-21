@@ -11,24 +11,26 @@ use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::{RunCmd, SetupCmd};
 use crate::OrchestratorError;
 pub use otel::OTELConfig;
-use tracing::info;
 
 /// StorageArgs - Arguments used to setup storage resources
 #[derive(Debug, Clone)]
 pub struct StorageArgs {
+    pub aws_prefix: String,
     pub bucket_identifier: String,
 }
 
 /// QueueArgs - Arguments used to setup queue resources
 #[derive(Debug, Clone)]
 pub struct QueueArgs {
+    pub aws_prefix: String,
     pub queue_identifier: String, // Can be either "prefix_{}_suffix" or "arn:aws:sqs:region:account:prefix_{}_suffix"
 }
 
 /// AlertArgs - Arguments used to set up alert resources
 #[derive(Debug, Clone)]
 pub struct AlertArgs {
-    pub alert_topic_name: String,
+    pub aws_prefix: String,
+    pub topic_identifier: String, // Can be either a topic name or ARN
 }
 
 /// CronArgs - Arguments used to setup cron resources
@@ -68,34 +70,28 @@ impl TryFrom<SetupCmd> for MiscellaneousArgs {
     }
 }
 
-impl TryFrom<RunCmd> for StorageArgs {
-    type Error = OrchestratorError;
-    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        Ok(Self {
-            bucket_identifier: format!(
-                "{}-{}",
-                run_cmd.aws_config_args.aws_prefix,
-                run_cmd
-                    .aws_s3_args
-                    .bucket_identifier
-                    .ok_or(OrchestratorError::RunCommandError("Missing bucket Identifier".to_string()))?
-            ),
-        })
-    }
-}
-
 impl TryFrom<SetupCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            bucket_identifier: format!(
-                "{}-{}",
-                setup_cmd.aws_config_args.aws_prefix,
-                setup_cmd
-                    .aws_s3_args
-                    .bucket_identifier
-                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket Identifier".to_string()))?
-            ),
+            aws_prefix: setup_cmd.aws_config_args.aws_prefix,
+            bucket_identifier: setup_cmd
+                .aws_s3_args
+                .bucket_identifier
+                .ok_or(OrchestratorError::SetupCommandError("Missing S3 bucket Identifier".to_string()))?,
+        })
+    }
+}
+
+impl TryFrom<RunCmd> for StorageArgs {
+    type Error = OrchestratorError;
+    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
+        Ok(Self {
+            aws_prefix: run_cmd.aws_config_args.aws_prefix,
+            bucket_identifier: run_cmd
+                .aws_s3_args
+                .bucket_identifier
+                .ok_or(OrchestratorError::RunCommandError("Missing S3 bucket Identifier".to_string()))?,
         })
     }
 }
@@ -103,37 +99,25 @@ impl TryFrom<SetupCmd> for StorageArgs {
 impl TryFrom<SetupCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let topic = setup_cmd
-            .aws_sns_args
-            .alert_topic_name
-            .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        let alert_topic_name = format!("{}_{}", setup_cmd.aws_config_args.aws_prefix, topic);
-        info!("SNS TOPIC: {}", alert_topic_name);
-        Ok(Self { alert_topic_name })
+        Ok(Self {
+            aws_prefix: setup_cmd.aws_config_args.aws_prefix,
+            topic_identifier: setup_cmd
+                .aws_sns_args
+                .topic_identifier
+                .ok_or(OrchestratorError::SetupCommandError("Missing SNS Alert Identifier".to_string()))?,
+        })
     }
 }
 
 impl TryFrom<RunCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let topic = run_cmd
-            .aws_sns_args
-            .alert_topic_name
-            .ok_or(OrchestratorError::RunCommandError("SNS ARN not found".to_string()))?;
-        let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
-        info!("SNS TOPIC: {}", alert_topic_name);
-        Ok(Self { alert_topic_name })
-    }
-}
-
-impl TryFrom<RunCmd> for QueueArgs {
-    type Error = OrchestratorError;
-    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            queue_identifier: run_cmd
-                .aws_sqs_args
-                .queue_identifier
-                .ok_or(OrchestratorError::RunCommandError("SQS Identifier is required".to_string()))?,
+            aws_prefix: run_cmd.aws_config_args.aws_prefix,
+            topic_identifier: run_cmd
+                .aws_sns_args
+                .topic_identifier
+                .ok_or(OrchestratorError::SetupCommandError("Missing SNS Alert Identifier".to_string()))?,
         })
     }
 }
@@ -142,10 +126,24 @@ impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
+            aws_prefix: setup_cmd.aws_config_args.aws_prefix,
             queue_identifier: setup_cmd
                 .aws_sqs_args
                 .queue_identifier
-                .ok_or(OrchestratorError::SetupCommandError("SQS Identifier is required".to_string()))?,
+                .ok_or(OrchestratorError::SetupCommandError("Missing SQS Queue is required".to_string()))?,
+        })
+    }
+}
+
+impl TryFrom<RunCmd> for QueueArgs {
+    type Error = OrchestratorError;
+    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
+        Ok(Self {
+            aws_prefix: run_cmd.aws_config_args.aws_prefix,
+            queue_identifier: run_cmd
+                .aws_sqs_args
+                .queue_identifier
+                .ok_or(OrchestratorError::RunCommandError("Missing SQS Queue is required".to_string()))?,
         })
     }
 }

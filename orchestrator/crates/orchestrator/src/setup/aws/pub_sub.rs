@@ -23,7 +23,7 @@ impl Resource for SNS {
     }
 
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let alert_topic_arn = args.alert_topic_name;
+        let alert_topic_arn = args.topic_identifier;
         tracing::info!("Topic ARN: {}", alert_topic_arn);
 
         // Extract topic name from ARN or use the full string if it's just a name
@@ -61,7 +61,7 @@ impl Resource for SNS {
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(&args.alert_topic_name).send().await.is_ok())
+        Ok(self.client.get_topic_attributes().topic_arn(&args.topic_identifier).send().await.is_ok())
     }
 }
 

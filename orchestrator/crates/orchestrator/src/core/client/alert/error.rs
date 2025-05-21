@@ -8,6 +8,9 @@ pub enum AlertError {
     #[error("Topic ARN is empty")]
     TopicARNEmpty,
 
+    #[error("Topic Name is empty")]
+    TopicNameEmpty,
+
     #[error("Unable to extract topic name : {0}")]
     UnableToExtractTopicName(String),
 

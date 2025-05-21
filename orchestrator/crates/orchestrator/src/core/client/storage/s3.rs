@@ -10,7 +10,8 @@ use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 pub struct AWSS3 {
-    pub(crate) client: Arc<Client>,
+    pub client: Arc<Client>,
+    // We need to keep these as Options since setup's create_setup fns passes args as None.
     bucket_name: Option<String>,
     region: Option<String>,
 }
@@ -26,8 +27,7 @@ impl AWSS3 {
     pub fn new(aws_config: &SdkConfig, args: Option<&StorageArgs>) -> Self {
         let (bucket_name, region) = if let Some(args) = args {
             // Parse the bucket identifier to handle both ARN and name
-            let (name, region) = Self::parse_bucket_identifier(&args.bucket_identifier);
-            (Some(name), region)
+            Self::parse_arn_bucket_identifier(args)
         } else {
             (None, None)
         };
@@ -51,36 +51,34 @@ impl AWSS3 {
     }
 
     /// Parse a bucket identifier (name or ARN) into bucket name and optional region
-    fn parse_bucket_identifier(identifier: &str) -> (String, Option<String>) {
-        // Check if the identifier is an ARN
-        if identifier.starts_with("arn:aws:s3:") {
-            // Parse the ARN to extract region and bucket name
+    fn parse_arn_bucket_identifier(args: &StorageArgs) -> (Option<String>, Option<String>) {
+        let identifier = &args.bucket_identifier;
+
+        // Handle standard S3 bucket ARN: arn:aws:s3:::{bucket-name}
+        if identifier.starts_with("arn:aws:s3:::") {
             let parts: Vec<&str> = identifier.split(':').collect();
 
+            // Standard S3 ARN has format arn:aws:s3:::{bucket-name}
+            // After splitting by ':', we expect parts[0]="arn", parts[1]="aws",
+            // parts[2]="s3", parts[3]="", parts[4]="", parts[5]="{bucket-name}"
             if parts.len() >= 6 {
-                let region = if !parts[3].is_empty() { Some(parts[3].to_string()) } else { None };
+                let bucket_path = parts[5];
 
-                // Handle different ARN formats
-                let bucket_name = if parts[5].contains('/') {
-                    // Format: arn:aws:s3:region:account-id:bucket/bucket-name
-                    let resource_parts: Vec<&str> = parts[5].split('/').collect();
-                    if resource_parts[0] == "bucket" && resource_parts.len() > 1 {
-                        resource_parts[1].to_string()
-                    } else {
-                        // Just use the whole resource part as bucket name
-                        parts[5].to_string()
-                    }
+                // If there's a path separator in the bucket name part,
+                // extract just the bucket name (everything before first '/')
+                let bucket_name = if bucket_path.contains('/') {
+                    let name = bucket_path.split('/').next().unwrap_or(bucket_path);
+                    format!("{}_{}", args.aws_prefix, name)
                 } else {
-                    // Format: arn:aws:s3:::bucket-name
-                    parts[5].to_string()
+                    format!("{}_{}", args.aws_prefix, bucket_path)
                 };
 
-                return (bucket_name, region);
+                return (Some(bucket_name.to_string()), None);
             }
         }
 
-        // If not an ARN or parsing failed, just use the identifier as the bucket name
-        (identifier.to_string(), None)
+        // If not a standard S3 ARN or parsing failed, just use the identifier as the bucket name
+        (Some(identifier.to_string()), None)
     }
 
     pub(crate) fn bucket_name(&self) -> Result<String, StorageError> {
@@ -104,7 +102,6 @@ impl StorageClient for AWSS3 {
     /// * `Result<Bytes, StorageError>` - The result of the get operation.
     async fn get_data(&self, key: &str) -> Result<Bytes, StorageError> {
         let output = self.client.get_object().bucket(self.bucket_name()?).key(key).send().await?;
-
         let data = output.body.collect().await.map_err(|e| StorageError::ObjectStreamError(e.to_string()))?;
 
         Ok(data.into_bytes())
@@ -119,7 +116,6 @@ impl StorageClient for AWSS3 {
     /// * `Result<(), StorageError>` - The result of the put operation.
     async fn put_data(&self, data: Bytes, key: &str) -> Result<(), StorageError> {
         self.client.put_object().bucket(self.bucket_name()?).key(key).body(data.into()).send().await?;
-
         Ok(())
     }
 

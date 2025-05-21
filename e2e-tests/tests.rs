@@ -137,8 +137,8 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
     let queue_params = QueueArgs {
-        prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-        suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
+        aws_prefix: prefix.clone(),
+        queue_identifier: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER"),
     };
 
     let mut setup_config = Setup::new(l2_block_number.clone()).await;
