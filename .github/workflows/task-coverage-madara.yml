@@ -51,8 +51,20 @@ jobs:
         with:
           foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
 
+      - name: Debug directories
+        run: |
+          ls -la target
+          ls -la target/llvm-cov-target/
+          ls -la target/llvm-cov-target/release
+
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Debug directories
+        run: |
+          ls -la target
+          ls -la target/llvm-cov-target/
+          ls -la target/llvm-cov-target/release
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
