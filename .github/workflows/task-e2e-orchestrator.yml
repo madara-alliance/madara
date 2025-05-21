@@ -99,10 +99,3 @@ jobs:
             --no-fail-fast                        \
             -E 'test(test_orchestrator_workflow)' \
             test_orchestrator_workflow
-
-      - name: Debug directories
-        run: |
-          ls -la target/
-          ls -la target/nextest
-          ls -la target/release
-          cargo nextest list --verbose

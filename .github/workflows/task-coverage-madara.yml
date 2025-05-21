@@ -45,29 +45,11 @@ jobs:
           cache-location: llvm-cov-target/release
           cache-key: madara-test
 
-      - name: Debug directories
-        run: |
-          ls -la target
-          ls -la target/llvm-cov-target/
-          ls -la target/llvm-cov-target/release
-
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
-      - name: Debug directories
-        run: |
-          ls -la target
-          ls -la target/llvm-cov-target/
-          ls -la target/llvm-cov-target/release
-
       - name: Install nextest
         uses: taiki-e/install-action@nextest
-
-      - name: Debug directories
-        run: |
-          ls -la target
-          ls -la target/llvm-cov-target/
-          ls -la target/llvm-cov-target/release
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
@@ -99,12 +81,6 @@ jobs:
             exit 1
           fi
 
-      - name: Debug directories
-        run: |
-          ls -la target
-          ls -la target/llvm-cov-target/
-          ls -la target/llvm-cov-target/release
-
       - name: Run tests with coverage
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
@@ -126,12 +102,6 @@ jobs:
               --package "mp-*" \
               --package "m-proc-*" \
               --no-fail-fast
-
-      - name: Debug directories
-        run: |
-          ls -la target
-          ls -la target/llvm-cov-target/
-          ls -la target/llvm-cov-target/release
 
       - name: Kill Anvil
         if: always()
