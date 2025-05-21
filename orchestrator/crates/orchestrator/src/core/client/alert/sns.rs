@@ -55,17 +55,17 @@ impl SNS {
             let parts: Vec<&str> = identifier.split(':').collect();
 
             // Standard SNS ARN has format arn:aws:sns:{region}:{account-id}:{topic-name}
+            // // Note: We don't add AWS_PREFIX if we received the whole ARN !
             if parts.len() == 6 {
                 let region = parts[3].to_string();
                 let account_id = parts[4].to_string();
-                let topic_name = format!("{}{}", args.aws_prefix, parts[5]);
 
-                return (Some(topic_name), Some(region), Some(account_id));
+                return (Some(parts[5].to_string()), Some(region), Some(account_id));
             }
         }
 
         // If not an ARN, just use as a topic name with prefix
-        (Some(format!("{}{}", args.aws_prefix, identifier)), None, None)
+        (Some(format!("{}_{}", args.aws_prefix, identifier)), None, None)
     }
 
     /// Constructs an ARN from components if available, or returns the original identifier

@@ -59,18 +59,18 @@ impl SQS {
             let parts: Vec<&str> = identifier.split(':').collect();
 
             // Standard SQS ARN has format arn:aws:sqs:{region}:{account-id}:{queue-name}
+            // Note: We don't add AWS_PREFIX if we received the whole ARN !
             if parts.len() >= 6 {
                 let region = parts[3].to_string();
                 let account_id = parts[4].to_string();
                 let queue_name = parts[5];
-                let prefixed_name = format!("{}_{}", args.aws_prefix, queue_name);
                 let arn_base = format!("arn:aws:sqs:{}:{}", region, account_id);
 
-                return (Some(prefixed_name), Some(arn_base), Some(region));
+                return (Some(queue_name.to_string()), Some(arn_base), Some(region));
             }
         }
 
-        // If not an ARN or parsing failed, prefix the whole identifier
+        // If not an ARN, just use as a queue name with prefix
         (Some(format!("{}_{}", args.aws_prefix, identifier)), None, None)
     }
 

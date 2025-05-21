@@ -61,6 +61,7 @@ impl AWSS3 {
             // Standard S3 ARN has format arn:aws:s3:::{bucket-name}
             // After splitting by ':', we expect parts[0]="arn", parts[1]="aws",
             // parts[2]="s3", parts[3]="", parts[4]="", parts[5]="{bucket-name}"
+            // Note: We don't add AWS_PREFIX if we received the whole ARN !
             if parts.len() >= 6 {
                 let bucket_path = parts[5];
 
@@ -68,17 +69,17 @@ impl AWSS3 {
                 // extract just the bucket name (everything before first '/')
                 let bucket_name = if bucket_path.contains('/') {
                     let name = bucket_path.split('/').next().unwrap_or(bucket_path);
-                    format!("{}_{}", args.aws_prefix, name)
+                    name.to_string()
                 } else {
-                    format!("{}_{}", args.aws_prefix, bucket_path)
+                    bucket_path.to_string()
                 };
 
                 return (Some(bucket_name.to_string()), None);
             }
         }
 
-        // If not a standard S3 ARN or parsing failed, just use the identifier as the bucket name
-        (Some(identifier.to_string()), None)
+        // If not an ARN, just use as a s3 name with prefix
+        (Some(format!("{}_{}", args.aws_prefix, identifier)), None)
     }
 
     pub(crate) fn bucket_name(&self) -> Result<String, StorageError> {
