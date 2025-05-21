@@ -496,11 +496,11 @@ impl DatabaseClient for MongoDbClient {
         };
         let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
 
-        let mut updates = update.to_document()?;
+        let updates = update.to_document()?;
 
         // remove null values from the updates
         let mut non_null_updates = Document::new();
-        updates.iter_mut().for_each(|(k, v)| {
+        updates.iter().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
             }
@@ -522,12 +522,12 @@ impl DatabaseClient for MongoDbClient {
         // Find a batch and update it
         let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
         match result {
-            Some(b) => {
+            Some(updated_batch) => {
                 // Update done
                 let attributes = [KeyValue::new("db_operation_name", "update_batch")];
                 let duration = start.elapsed();
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                Ok(b)
+                Ok(updated_batch)
             }
             None => {
                 // Not found

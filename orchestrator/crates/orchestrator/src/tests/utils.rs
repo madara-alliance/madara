@@ -1,4 +1,5 @@
 use chrono::{SubsecRound, Utc};
+use rstest::fixture;
 use uuid::Uuid;
 
 // use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
@@ -76,7 +77,12 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
     }
 }
 
-pub fn build_batch(index: u64, start_block: u64, end_block: u64) -> Batch {
+#[fixture]
+pub fn build_batch(
+    #[default(1)] index: u64,
+    #[default(100)] start_block: u64,
+    #[default(200)] end_block: u64,
+) -> Batch {
     Batch {
         id: Uuid::new_v4(),
         index,
