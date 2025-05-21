@@ -204,7 +204,9 @@ async fn test_follows_l1(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap(), None);
     assert!(!ctx.backend.has_pending_block().unwrap());
 
-    l1_snd.send(Some(StateUpdate { block_hash: felt!("0x12"), block_number: 2, global_root: Felt::ZERO })).unwrap();
+    l1_snd
+        .send(Some(StateUpdate { block_hash: felt!("0x12"), block_number: Some(2), global_root: Felt::ZERO }))
+        .unwrap();
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 2 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
 
