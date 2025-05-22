@@ -1,33 +1,41 @@
-use std::{convert::Infallible, sync::Arc};
-
-use hyper::{body::Incoming, Method, Request, Response};
-use mc_db::MadaraBackend;
-use mc_rpc::providers::AddTransactionProvider;
-use mp_utils::service::ServiceContext;
-
 use super::handler::{
     handle_add_transaction, handle_get_block, handle_get_block_traces, handle_get_class_by_hash,
     handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key,
     handle_get_signature, handle_get_state_update,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
+use crate::handler::handle_add_validated_transaction;
+use crate::service::GatewayServerConfig;
+use hyper::{body::Incoming, Method, Request, Response};
+use mc_db::MadaraBackend;
+use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
+use mp_utils::service::ServiceContext;
+use std::{convert::Infallible, sync::Arc};
 
 // Main router to redirect to the appropriate sub-router
 pub(crate) async fn main_router(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
+    submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     ctx: ServiceContext,
-    feeder_gateway_enable: bool,
-    gateway_enable: bool,
+    config: GatewayServerConfig,
 ) -> Result<Response<String>, Infallible> {
     let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
-    match (path.as_ref(), feeder_gateway_enable, gateway_enable) {
+    match (path.as_ref(), config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
-        (path, true, _) if path.starts_with("feeder_gateway/") => {
-            feeder_gateway_router(req, path, backend, add_transaction_provider, ctx).await
+        (path, true, _) if path.starts_with("gateway/") => {
+            Ok(gateway_router(req, path, add_transaction_provider).await?)
         }
-        (path, _, true) if path.starts_with("gateway/") => gateway_router(req, path, add_transaction_provider).await,
+        (path, true, _) if path.starts_with("feeder_gateway/") => {
+            Ok(feeder_gateway_router(req, path, backend, add_transaction_provider, ctx).await?)
+        }
+        (path, _, true)
+            if path.starts_with("madara/trusted_add_validated_transaction")
+                && config.enable_trusted_add_validated_transaction =>
+        {
+            Ok(handle_add_validated_transaction(req, submit_validated).await.unwrap_or_else(Into::into))
+        }
         (path, false, _) if path.starts_with("feeder_gateway/") => Ok(service_unavailable_response("Feeder Gateway")),
         (path, _, false) if path.starts_with("gateway/") => Ok(service_unavailable_response("Feeder")),
         _ => {
@@ -42,7 +50,7 @@ async fn feeder_gateway_router(
     req: Request<Incoming>,
     path: &str,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
     ctx: ServiceContext,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
@@ -81,7 +89,7 @@ async fn feeder_gateway_router(
 async fn gateway_router(
     req: Request<Incoming>,
     path: &str,
-    add_transaction_provider: Arc<dyn AddTransactionProvider>,
+    add_transaction_provider: Arc<dyn SubmitTransaction>,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
         (&Method::POST, "gateway/add_transaction") => {

@@ -1,4 +1,5 @@
 use crate::contract_db::ContractDbBlockUpdate;
+use crate::db_block_id::DbBlockId;
 use crate::events_bloom_filter::EventBloomWriter;
 use crate::Column;
 use crate::DatabaseExt;
@@ -51,18 +52,16 @@ fn store_events_to_receipts(
 }
 
 impl MadaraBackend {
-    /// Add a new block to the db, calling the `on_block` handler that handles flushes and backups when they are enabled,
+    /// Add a new block to the db, calling the `on_full_block_imported` handler that handles flushes and backups when they are enabled,
     /// and update all the statuses.
     /// When using the MadaraBackend API to store new blocks, you either have the choice of using this simple function to store
-    /// an entire new block, or, you are responsible for calling the `store_xxx`, applying global state, and calling the on_block
+    /// an entire new block, or, you are responsible for calling the `store_xxx`, applying global state, and calling the on_full_block_imported
     /// function when the full block is stored in the backend.
     ///
-    /// This function takes a PendingFullBlock because the commitments can only be computed once we applied the state to the global
+    /// This function takes a PendingFullBlock because the commitments can only be computed once we have applied the state to the global
     /// tries. This function will close the block and compute the commitments.
     ///
     /// The function returns the new computed block_hash.
-    ///
-    /// `pre_v0_13_2_hash_override`: when true, we will compute the post-v0.13.2 commitments when given a pre-v0.13.2 block.
     pub async fn add_full_block_with_classes(
         &self,
         block: PendingFullBlock,
@@ -85,7 +84,9 @@ impl MadaraBackend {
         );
         let block_hash = block.block_hash;
 
-        self.store_full_block(block)?;
+        let events = block.events.clone();
+
+        let block_info = self.store_full_block(block)?;
         self.head_status.headers.set_current(Some(block_n));
         self.head_status.transactions.set_current(Some(block_n));
         self.head_status.state_diffs.set_current(Some(block_n));
@@ -96,15 +97,15 @@ impl MadaraBackend {
 
         self.head_status.global_trie.set_current(Some(block_n));
 
-        self.on_block(block_n).await?;
+        self.on_full_block_imported(block_info.into(), events).await?;
         self.flush()?;
 
         Ok(block_hash)
     }
 
-    fn store_full_block(&self, block: FullBlock) -> Result<(), MadaraStorageError> {
+    fn store_full_block(&self, block: FullBlock) -> Result<MadaraBlockInfo, MadaraStorageError> {
         let block_n = block.header.block_number;
-        self.store_block_header(BlockHeaderWithSignatures {
+        let block_info = self.store_block_header(BlockHeaderWithSignatures {
             header: block.header,
             block_hash: block.block_hash,
             consensus_signatures: vec![],
@@ -112,6 +113,16 @@ impl MadaraBackend {
         self.store_transactions(block_n, block.transactions)?;
         self.store_state_diff(block_n, block.state_diff)?;
         self.store_events(block_n, block.events)?;
+        Ok(block_info)
+    }
+
+    pub fn store_pending_block_with_classes(
+        &self,
+        block: PendingFullBlock,
+        converted_classes: &[ConvertedClass],
+    ) -> Result<(), MadaraStorageError> {
+        self.class_db_store_pending(converted_classes)?;
+        self.store_pending_block(block)?;
         Ok(())
     }
 
@@ -124,12 +135,14 @@ impl MadaraBackend {
         let mut inner = MadaraBlockInner { transactions, receipts };
         store_events_to_receipts(&mut inner.receipts, block.events)?;
 
-        self.block_db_store_pending(&MadaraPendingBlock { info, inner }, &block.state_diff)?;
+        self.block_db_store_pending(&MadaraPendingBlock { info: info.clone(), inner }, &block.state_diff)?;
         self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
+
+        self.watch_blocks.update_pending(info.into());
         Ok(())
     }
 
-    pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<(), MadaraStorageError> {
+    pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<MadaraBlockInfo, MadaraStorageError> {
         // Clear pending block when storing a new block header. This is the best place to do it IMO since
         // it would make no sense to be able to store a block header if there is also a pending block, and
         // we want to be sure to clear the pending block if we restart the sync pipeline.
@@ -148,7 +161,7 @@ impl MadaraBackend {
         tx.put_cf(&block_hash_to_block_n, &bincode::serialize(&header.block_hash)?, &block_n_encoded);
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
-        Ok(())
+        Ok(info)
     }
 
     pub fn store_transactions(
@@ -256,12 +269,14 @@ impl MadaraBackend {
         let block_n = block.info.block_n();
         let state_diff_cpy = state_diff.clone();
 
-        // Clear in every case, even when storing a pending block
-        self.clear_pending_block()?;
-
         let task_block_db = || match block.info {
             MadaraMaybePendingBlockInfo::Pending(info) => {
-                self.block_db_store_pending(&MadaraPendingBlock { info, inner: block.inner }, &state_diff_cpy)
+                self.block_db_store_pending(
+                    &MadaraPendingBlock { info: info.clone(), inner: block.inner },
+                    &state_diff_cpy,
+                )?;
+                self.watch_blocks.update_pending(info.into());
+                Ok(())
             }
             MadaraMaybePendingBlockInfo::NotPending(info) => {
                 self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)
@@ -303,6 +318,19 @@ impl MadaraBackend {
     }
 
     pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {
+        let parent_block = if let Some(block_n) = self.get_latest_block_n()? {
+            Some(
+                self.get_block_info(&DbBlockId::Number(block_n))?
+                    .ok_or(MadaraStorageError::InconsistentStorage("Can't find block info".into()))?
+                    .into_closed()
+                    .ok_or(MadaraStorageError::InconsistentStorage(
+                        "Got a pending block when trying to get a closed one".into(),
+                    ))?,
+            )
+        } else {
+            None
+        };
+        self.watch_blocks.clear_pending(parent_block.as_ref());
         self.block_db_clear_pending()?;
         self.contract_db_clear_pending()?;
         self.class_db_clear_pending()?;

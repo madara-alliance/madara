@@ -76,7 +76,7 @@ async fn test_storage_proof_trie_log() {
 
 async fn test_storage_proof_inner(node: MadaraCmd) {
     let client = reqwest::Client::new();
-    let mut ret: serde_json::Value = client.post(node.rpc_url.clone()).json(&serde_json::json!({
+    let mut ret: serde_json::Value = client.post(node.rpc_url.clone().unwrap()).json(&serde_json::json!({
         "jsonrpc": "2.0",
         "method": "starknet_getStorageProof",
         "params": {
@@ -222,7 +222,7 @@ async fn test_storage_proof_inner(node: MadaraCmd) {
 
     // non membership proof, and more in the past.
     let mut ret: serde_json::Value = client
-        .post(node.rpc_url.clone())
+        .post(node.rpc_url.clone().unwrap())
         .json(&serde_json::json!({
             "jsonrpc": "2.0",
             "method": "starknet_getStorageProof",

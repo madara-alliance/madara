@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
 use crate::events_bloom_filter::{EventBloomReader, EventBloomSearcher};
 use crate::MadaraStorageError;
@@ -65,12 +67,16 @@ impl MadaraBackend {
 
     // DB read operations
 
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    // #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     fn tx_hash_to_block_n(&self, tx_hash: &Felt) -> Result<Option<u64>> {
         let col = self.db.get_column(Column::TxHashToBlockN);
         let res = self.db.get_cf(&col, bincode::serialize(tx_hash)?)?;
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
+        // If the block_n is partial (past the latest_full_block_n), we not return it.
+        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+            return Ok(None);
+        }
         Ok(Some(block_n))
     }
 
@@ -80,6 +86,10 @@ impl MadaraBackend {
         let res = self.db.get_cf(&col, bincode::serialize(block_hash)?)?;
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
+        // If the block_n is partial (past the latest_full_block_n), we not return it.
+        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+            return Ok(None);
+        }
         Ok(Some(block_n))
     }
 
@@ -118,7 +128,7 @@ impl MadaraBackend {
     // Pending block quirk: We should act as if there is always a pending block in db, to match
     //  juno and pathfinder's handling of pending blocks.
 
-    fn get_pending_block_info(&self) -> Result<MadaraPendingBlockInfo> {
+    pub(crate) fn get_pending_block_info_from_db(&self) -> Result<MadaraPendingBlockInfo> {
         let col = self.db.get_column(Column::BlockStorageMeta);
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
             // See pending block quirk
@@ -266,12 +276,9 @@ impl MadaraBackend {
         tx.put_cf(&block_n_to_state_diff, &block_n_encoded, bincode::serialize(state_diff)?);
 
         // susbcribers
-        if self.sender_block_info.receiver_count() > 0 {
-            if let Err(e) = self.sender_block_info.send(block.info.clone()) {
-                tracing::debug!("Failed to send block info to subscribers: {e}");
-            }
-        }
-        if self.sender_event.receiver_count() > 0 {
+        self.watch_blocks.on_new_block(block.info.clone().into());
+
+        if self.watch_events.receiver_count() > 0 {
             let block_number = block.info.header.block_number;
             let block_hash = block.info.block_hash;
 
@@ -285,7 +292,7 @@ impl MadaraBackend {
                 })
                 .enumerate()
                 .for_each(|(event_index, (transaction_hash, event))| {
-                    if let Err(e) = self.sender_event.publish(EventWithInfo {
+                    if let Err(e) = self.watch_events.publish(EventWithInfo {
                         event: event.clone(),
                         block_hash: Some(block_hash),
                         block_number: Some(block_number),
@@ -310,7 +317,9 @@ impl MadaraBackend {
 
     fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
-            RawDbBlockId::Pending => Ok(Some(MadaraMaybePendingBlockInfo::Pending(self.get_pending_block_info()?))),
+            RawDbBlockId::Pending => {
+                Ok(Some(MadaraMaybePendingBlockInfo::Pending(Arc::unwrap_or_clone(self.latest_pending_block()))))
+            }
             RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
@@ -367,16 +376,6 @@ impl MadaraBackend {
         self.storage_to_info(&ty)
     }
 
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn subscribe_block_info(&self) -> tokio::sync::broadcast::Receiver<mp_block::MadaraBlockInfo> {
-        self.sender_block_info.subscribe()
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EventWithInfo> {
-        self.sender_event.subscribe(from_address)
-    }
-
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
     pub fn get_block_inner(&self, id: &impl DbBlockIdResolvable) -> Result<Option<MadaraBlockInner>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
@@ -403,7 +402,7 @@ impl MadaraBackend {
                 Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
             None => {
-                let info = self.get_pending_block_info()?;
+                let info = Arc::unwrap_or_clone(self.latest_pending_block());
                 let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
                 Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
@@ -421,7 +420,7 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
-                let info = self.get_pending_block_info()?;
+                let info = Arc::unwrap_or_clone(self.latest_pending_block());
                 let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
                 let inner = self.get_pending_block_inner()?;
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))

@@ -18,7 +18,7 @@ pub async fn trace_block_transactions(
     let block = starknet.get_block(&block_id)?;
 
     if block.info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
-        return Err(StarknetRpcApiError::UnsupportedTxnVersion);
+        return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
     let exec_context = ExecutionContext::new_at_block_start(Arc::clone(&starknet.backend), &block.info)?;

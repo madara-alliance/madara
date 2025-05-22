@@ -9,7 +9,7 @@ use crate::messaging::L1toL2MessagingEventData;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
-use alloy::primitives::{keccak256, Address, B256, U256};
+use alloy::primitives::{keccak256, Address, B256, I256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
 use alloy::rpc::types::Filter;
 use alloy::sol;
@@ -138,7 +138,14 @@ impl SettlementClientTrait for EthereumClient {
                     EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
                 },
             )?;
-        let block_number: u64 = block_number._0.as_u64();
+        // when the block 0 is not settled yet, this should be prev block number, this would be the output from the snos as well while
+        // executing the block 0.
+        // link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
+        let block_number: Option<u64> = if block_number._0 == I256::MINUS_ONE {
+            None // initial contract state
+        } else {
+            Some(block_number._0.as_u64())
+        };
 
         let global_root =
             self.l1_core_contract.stateRoot().block(BlockId::number(latest_block_n)).call().await.map_err(
@@ -325,7 +332,10 @@ impl SettlementClientTrait for EthereumClient {
 #[cfg(test)]
 pub mod eth_client_getter_test {
     use super::*;
-    use alloy::primitives::U256;
+    use alloy::primitives::{I256, U256};
+    use httpmock::Method::POST;
+    use httpmock::MockServer;
+    use serde_json::json;
     use std::sync::Arc;
     use tokio;
 
@@ -394,7 +404,7 @@ pub mod eth_client_getter_test {
         assert_eq!(
             state_update,
             StateUpdate {
-                block_number: L2_BLOCK_NUMBER,
+                block_number: Some(L2_BLOCK_NUMBER),
                 global_root: U256::from_str_radix(L2_STATE_ROOT, 10)
                     .expect("Should parse the predefined L2 state root")
                     .to_felt(),
@@ -403,6 +413,53 @@ pub mod eth_client_getter_test {
                     .to_felt()
             }
         )
+    }
+
+    #[tokio::test]
+    async fn test_get_current_core_contract_state_with_initial_block_number() {
+        // Set up mock server to simulate L1 node
+        let server = MockServer::start();
+
+        // Mock the RPC endpoint to return -1 as int256 (all f's in hex)
+        let rpc_mock = server.mock(|when, then| {
+            when.method(POST).path("/");
+            then.status(200).header("content-type", "application/json").json_body(json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "result": "0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"
+            }));
+        });
+
+        // Set up client with mock server
+        let config = EthereumClientConfig {
+            url: server.url("/").parse().unwrap(),
+            l1_core_address: Address::parse_checksummed("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4", None).unwrap(),
+        };
+
+        let provider = ProviderBuilder::new().on_http(config.url);
+        let contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
+        let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract };
+
+        // Call contract and verify we get -1 as int256
+        let block_number = eth_client
+            .l1_core_contract
+            .stateBlockNumber()
+            .block(BlockId::number(10000))
+            .call()
+            .await
+            .map_err(|e| -> SettlementClientError {
+                EthereumClientError::Contract(format!("Failed to get state block number: {e:#}")).into()
+            })
+            .unwrap();
+
+        assert_eq!(block_number._0, I256::MINUS_ONE);
+
+        // Verify that converting -1 to u64 returns None
+        let block_number: Option<u64> = block_number._0.try_into().ok();
+        assert!(block_number.is_none());
+
+        // Verify mock was called
+        rpc_mock.assert();
     }
 }
 
@@ -423,8 +480,8 @@ mod l1_messaging_tests {
     };
     use blockifier::transaction::transaction_execution::Transaction;
     use mc_db::DatabaseService;
-    use mc_mempool::MempoolProvider;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+    use mc_mempool::Mempool;
+    use mc_mempool::{MempoolConfig, MempoolProvider};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::*;
@@ -540,14 +597,7 @@ mod l1_messaging_tests {
         // Initialize database service
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
-        let l1_gas_setter = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-
-        let mempool = Arc::new(Mempool::new(
-            Arc::clone(db.backend()),
-            Arc::clone(&l1_data_provider),
-            MempoolLimits::for_testing(),
-        ));
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
@@ -601,7 +651,7 @@ mod l1_messaging_tests {
 
         let expected_nonce = Nonce(Felt::from_dec_str("0").expect("failed to parse nonce string"));
 
-        let current_nonce = mempool.backend.get_l1_messaging_nonce_latest().unwrap().unwrap();
+        let current_nonce = db.backend().get_l1_messaging_nonce_latest().unwrap().unwrap();
         assert_eq!(current_nonce, expected_nonce);
 
         // Check that the L1 message correctly trigger an L1 handler tx, which is accepted in Mempool
@@ -903,7 +953,7 @@ mod eth_client_event_subscription_test {
 
         // Wait for get_initial_state
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 662702);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(662702));
 
         let block_in_db = backend.get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
         assert_eq!(block_in_db, Some(662702), "Block in DB does not match expected L2 block number");
@@ -911,7 +961,7 @@ mod eth_client_event_subscription_test {
         let _ = contract.fireEvent().send().await.expect("Should successfully fire state update event");
 
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 662703);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(662703));
 
         // Verify the block number
         let block_in_db = backend

@@ -11,3 +11,4 @@ orchestrator/pathfinder/
 orchestrator/orchestrator_venv/
 orchestrator/build/
 orchestrator/node_modules/
+lib/
