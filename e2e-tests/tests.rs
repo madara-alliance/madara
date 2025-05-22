@@ -4,7 +4,6 @@ use std::fs::File;
 use std::io::Read;
 use std::time::{Duration, Instant};
 
-use aws_config::meta::region::RegionProviderChain;
 use chrono::{SubsecRound, Utc};
 use e2e_tests::anvil::AnvilSetup;
 use e2e_tests::mock_server::MockResponseBodyType;
@@ -13,6 +12,7 @@ use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
+use orchestrator::core::client::SQS;
 use orchestrator::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -137,7 +137,6 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
     let queue_params = QueueArgs {
-        queue_base_url: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL"),
         prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
         suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
     };
@@ -316,23 +315,17 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
 /// as soon as it is picked up by orchestrator
 pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs) -> color_eyre::Result<()> {
     let message = JobQueueMessage { id };
-    put_message_in_queue(
-        message,
-        format!(
-            "{}/{}_{}_{}",
-            queue_params.queue_base_url,
-            queue_params.prefix,
-            QueueType::SnosJobProcessing,
-            queue_params.suffix
-        ),
-    )
-    .await?;
+
+    let config = aws_config::from_env().load().await;
+    let queue = SQS::new(&config, Some(&queue_params));
+    let queue_name = format!("{}_{}_{}", queue_params.prefix, QueueType::SnosJobProcessing, queue_params.suffix);
+    let queue_url = queue.get_queue_url_from_client(queue_name.as_str()).await?;
+    put_message_in_queue(message, queue_url).await?;
     Ok(())
 }
 
 pub async fn put_message_in_queue(message: JobQueueMessage, queue_url: String) -> color_eyre::Result<()> {
-    let region_provider = RegionProviderChain::default_provider().or_else("us-east-1");
-    let config = aws_config::from_env().region(region_provider).load().await;
+    let config = aws_config::from_env().load().await;
     let client = aws_sdk_sqs::Client::new(&config);
 
     let rsp = client.send_message().queue_url(queue_url).message_body(serde_json::to_string(&message)?).send().await?;

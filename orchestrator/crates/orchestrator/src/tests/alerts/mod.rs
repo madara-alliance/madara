@@ -1,11 +1,11 @@
-use std::time::Duration;
-
+use crate::core::client::SNS;
 use crate::tests::common::{get_sns_client, get_sqs_client};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::OrchestratorError;
+use crate::types::params::AlertArgs;
 use aws_sdk_sqs::types::QueueAttributeName::QueueArn;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
+use std::time::Duration;
 use tokio::time::sleep;
 
 pub const SNS_ALERT_TEST_QUEUE: &str = "orchestrator_sns_alert_testing_queue";
@@ -28,16 +28,13 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
         sqs_client.get_queue_attributes().queue_url(queue_url).attribute_names(QueueArn).send().await.unwrap();
 
     let queue_arn = queue_attributes.attributes().unwrap().get(&QueueArn).unwrap();
-    let prefix = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
 
-    let arn = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_ARN");
-    let pos = arn
-        .rfind(':')
-        .ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))
-        .expect("error");
-    let sns_arn = format!("{}:{}_{}", &arn[..pos], prefix, &arn[pos + 1..]);
+    let alert_topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
+    let alert_config = AlertArgs { alert_topic_name };
+    let sns = SNS::new(services.provider_config.get_aws_client_or_panic(), Some(&alert_config));
 
-    // subscribing the queue with the alerts
+    let sns_arn = sns.get_topic_arn().await.unwrap();
+
     sns_client.subscribe().topic_arn(sns_arn).protocol("sqs").endpoint(queue_arn).send().await.unwrap();
 
     let message_to_send = "Hello World :)";
