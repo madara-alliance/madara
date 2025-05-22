@@ -242,37 +242,44 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // verify that the last settled block is indeed the one we expect to be
         let expected_last_block_number = block_numbers.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
 
-        let out_last_block_number =
-            settlement_client.get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?.unwrap_or(0);
+        let last_settled_block_number =
+            settlement_client.get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
 
-        let block_status = if out_last_block_number == *expected_last_block_number {
-            tracing::info!(
-                log_type = "completed",
-                category = "state_update",
-                function_type = "verify_job",
-                job_id = %job.id,
-                block_no = %internal_id,
-                last_settled_block = %out_last_block_number,
-                "Last settled block verified."
-            );
-            SettlementVerificationStatus::Verified
-        } else {
-            tracing::warn!(
-                log_type = "failed/rejected",
-                category = "state_update",
-                function_type = "verify_job",
-                job_id = %job.id,
-                block_no = %internal_id,
-                expected = %expected_last_block_number,
-                actual = %out_last_block_number,
-                "Last settled block mismatch."
-            );
-            SettlementVerificationStatus::Rejected(format!(
-                "Last settle bock expected was {} but found {}",
-                expected_last_block_number, out_last_block_number
-            ))
-        };
-        Ok(block_status.into())
+        match last_settled_block_number {
+            Some(block_num) => {
+                let block_status = if block_num == *expected_last_block_number {
+                    tracing::info!(
+                        log_type = "completed",
+                        category = "state_update",
+                        function_type = "verify_job",
+                        job_id = %job.id,
+                        block_no = %internal_id,
+                        last_settled_block = %block_num,
+                        "Last settled block verified."
+                    );
+                    SettlementVerificationStatus::Verified
+                } else {
+                    tracing::warn!(
+                        log_type = "failed/rejected",
+                        category = "state_update",
+                        function_type = "verify_job",
+                        job_id = %job.id,
+                        block_no = %internal_id,
+                        expected = %expected_last_block_number,
+                        actual = %block_num,
+                        "Last settled block mismatch."
+                    );
+                    SettlementVerificationStatus::Rejected(format!(
+                        "Last settle bock expected was {} but found {}",
+                        expected_last_block_number, block_num
+                    ))
+                };
+                Ok(block_status.into())
+            }
+            None => {
+                panic!("Incorrect state after settling blocks")
+            }
+        }
     }
 
     fn max_process_attempts(&self) -> u64 {
@@ -295,6 +302,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 impl StateUpdateJobHandler {
     /// Validate that the list of block numbers to process is valid.
     async fn validate_block_numbers(&self, config: Arc<Config>, block_numbers: &[u64]) -> Result<(), JobError> {
+        // if any block is settled then previous block number should be just before that
+        // if no block is settled (confirmed by special number) then the block to settle should be 0
+
         if block_numbers.is_empty() {
             Err(StateUpdateError::BlockNumberNotFound)?;
         }
@@ -304,16 +314,16 @@ impl StateUpdateJobHandler {
         if !is_sorted(block_numbers) {
             Err(StateUpdateError::UnsortedBlockNumbers)?;
         }
+
         // Check for gap between the last settled block and the first block to settle
-        let last_settled_block: u64 = config
-            .settlement_client()
-            .get_last_settled_block()
-            .await
-            .map_err(|e| JobError::Other(OtherError(e)))?
-            .unwrap_or(0);
-        if last_settled_block + 1 != block_numbers[0] {
-            Err(StateUpdateError::GapBetweenFirstAndLastBlock)?;
+        let last_settled_block: Option<u64> =
+            config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
+        let expected_first_block = last_settled_block.map_or(0, |num| num + 1);
+
+        if block_numbers[0] != expected_first_block {
+            return Err(StateUpdateError::GapBetweenFirstAndLastBlock.into());
         }
+
         Ok(())
     }
 
