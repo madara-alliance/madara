@@ -2,10 +2,11 @@ mod compare;
 
 use crate::compression::blob::convert_to_biguint;
 use crate::compression::stateless::decompress;
+use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::jobs::batching_job::compare::compare_data_json;
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
-use crate::tests::utils::read_data_json_from_file;
+use crate::tests::utils::{read_blob_from_file, read_data_json_from_file};
 use crate::types::batch::{ClassDeclaration, ContractUpdate, DataJson, StorageUpdate};
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -21,9 +22,9 @@ use std::collections::HashMap;
 use url::Url;
 
 #[rstest]
-#[case("src/tests/jobs/batching_job/blob/datajson/")]
+#[case("src/tests/jobs/batching_job/test_data/blob/8373665/", "0.13.5")]
 #[tokio::test]
-async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String) -> Result<()> {
+async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String, #[case] version: &str) -> Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
@@ -43,25 +44,47 @@ async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String) -> R
 
     assert!(result.is_ok());
 
-    let real_data_json = read_data_json_from_file(format!("{datajson_dir}7791723.txt"))?;
-    let mut generated_blob_1 =
-        get_felt_vec(&hex::encode(services.config.storage().get_data("blob/batch/1/1.txt").await?))?;
-    let mut generated_blob_2 =
-        get_felt_vec(&hex::encode(services.config.storage().get_data("blob/batch/1/2.txt").await?))?;
-    generated_blob_1.append(&mut generated_blob_2);
+    let generated_data_json = get_data_json_from_s3_paths(
+        vec!["blob/batch/1/1.txt", "blob/batch/1/2.txt"],
+        services.config.storage(),
+        version,
+    )
+    .await?;
 
-    let generated_blob = convert_biguints_to_felts(&generated_blob_1)?;
-
-    let decompressed_felts = decompress(&generated_blob)?;
-    let decompressed_biguints = convert_to_biguint(&decompressed_felts);
-
-    let generated_data_json = parse_state_diffs(&decompressed_biguints, "0.13.4");
+    let real_data_json =
+        get_data_json_from_files(vec![&format!("{datajson_dir}1.txt"), &format!("{datajson_dir}2.txt")], version)?;
 
     let report = compare_data_json(&real_data_json, &generated_data_json);
 
     assert!(report.is_ok());
 
     Ok(())
+}
+
+async fn get_data_json_from_s3_paths(
+    s3_paths: Vec<&str>,
+    storage: &dyn StorageClient,
+    version: &str,
+) -> Result<DataJson> {
+    let mut blob: Vec<BigUint> = Vec::new();
+    for path in s3_paths {
+        blob.append(&mut get_felt_vec(&hex::encode(storage.get_data(path).await?))?);
+    }
+    get_data_json_from_vec_biguints(&blob, version)
+}
+
+fn get_data_json_from_files(file_paths: Vec<&str>, version: &str) -> Result<DataJson> {
+    let mut blob: Vec<BigUint> = Vec::new();
+    for path in file_paths {
+        blob.append(&mut get_felt_vec(&read_blob_from_file(path)?)?);
+    }
+    get_data_json_from_vec_biguints(&blob, version)
+}
+
+fn get_data_json_from_vec_biguints(data: &Vec<BigUint>, version: &str) -> Result<DataJson> {
+    let vec_felts = convert_biguints_to_felts(&data)?;
+    let decompressed = convert_to_biguint(&decompress(&vec_felts)?);
+    Ok(parse_state_diffs(&decompressed, version))
 }
 
 fn get_felt_vec(hex_str: &str) -> Result<Vec<BigUint>> {

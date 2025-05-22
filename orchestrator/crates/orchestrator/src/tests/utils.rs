@@ -88,14 +88,14 @@ pub fn build_batch(index: u64, start_block: u64, end_block: u64) -> Batch {
     }
 }
 
-pub fn read_blob_from_file(file_path: String) -> Result<String> {
+pub fn read_blob_from_file(file_path: &str) -> Result<String> {
     let mut file = File::open(file_path)?;
     let mut blob = String::new();
     file.read_to_string(&mut blob)?;
     Ok(blob)
 }
 
-pub fn read_data_json_from_file(file_path: String) -> Result<DataJson> {
+pub fn read_data_json_from_file(file_path: &str) -> Result<DataJson> {
     let mut file = File::open(file_path)?;
     let mut data_json_str = String::new();
     file.read_to_string(&mut data_json_str)?;
