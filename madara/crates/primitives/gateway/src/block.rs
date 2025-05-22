@@ -1,8 +1,6 @@
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
-use mp_block::{
-    header::{L1DataAvailabilityMode, PendingHeader},
-    FullBlock, PendingFullBlock, TransactionWithReceipt,
-};
+use mp_block::{header::PendingHeader, FullBlock, PendingFullBlock, TransactionWithReceipt};
+use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
 use mp_receipt::EventWithTransactionHash;

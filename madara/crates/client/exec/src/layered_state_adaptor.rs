@@ -140,10 +140,10 @@ mod tests {
     use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use mc_db::MadaraBackend;
     use mp_block::{
-        header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader},
+        header::{BlockTimestamp, GasPrices, PendingHeader},
         PendingFullBlock,
     };
-    use mp_chain_config::{ChainConfig, StarknetVersion};
+    use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
     use mp_convert::{Felt, ToFelt};
     use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 

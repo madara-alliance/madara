@@ -1,8 +1,8 @@
 use blockifier::{state::cached_state::StateMaps, transaction::transaction_execution::Transaction};
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_mempool::L1DataProvider;
-use mp_block::header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader};
-use mp_chain_config::StarknetVersion;
+use mp_block::header::{BlockTimestamp, GasPrices, PendingHeader};
+use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use mp_state_update::{
@@ -152,7 +152,7 @@ pub(crate) fn create_execution_context(
         block_timestamp: SystemTime::now(),
         protocol_version: backend.chain_config().latest_protocol_version,
         l1_gas_price: l1_data_provider.get_gas_prices(),
-        l1_da_mode: l1_data_provider.get_da_mode(),
+        l1_da_mode: backend.chain_config().l1_da_mode,
         block_n,
     }
 }

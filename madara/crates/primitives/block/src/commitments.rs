@@ -189,7 +189,9 @@ pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode};
+    use crate::header::{BlockTimestamp, GasPrices};
+    use mp_chain_config::L1DataAvailabilityMode;
+
     use mp_convert::ToFelt;
     use rstest::*;
     use starknet_api::{core::ChainId, felt};
