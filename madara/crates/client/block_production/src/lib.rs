@@ -600,10 +600,7 @@ mod tests {
     use mc_exec::execution::TxInfo;
     use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::{
-        header::{GasPrices, L1DataAvailabilityMode},
-        MadaraPendingBlock,
-    };
+    use mp_block::{header::GasPrices, MadaraPendingBlock};
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_rpc::{
@@ -701,7 +698,6 @@ mod tests {
         genesis.build_and_store(&backend).await.unwrap();
 
         let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_da_mode().return_const(L1DataAvailabilityMode::Blob);
         l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
             eth_l1_gas_price: 128,
             strk_l1_gas_price: 128,
