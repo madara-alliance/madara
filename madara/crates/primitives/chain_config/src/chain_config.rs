@@ -26,7 +26,7 @@ use url::Url;
 
 use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
 
-use crate::StarknetVersion;
+use crate::{L1DataAvailabilityMode, StarknetVersion};
 
 pub mod eth_core_contract_address {
     pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
@@ -72,6 +72,9 @@ pub struct ChainConfig {
     /// Human readable chain name, for displaying to the console.
     pub chain_name: String,
     pub chain_id: ChainId,
+
+    /// The DA mode supported by L1.
+    pub l1_da_mode: L1DataAvailabilityMode,
 
     // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
     pub feeder_gateway_url: Url,
@@ -185,6 +188,8 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Mainnet".into(),
             chain_id: ChainId::Mainnet,
+            // Since L1 here is Ethereum, that supports Blob.
+            l1_da_mode: L1DataAvailabilityMode::Blob,
             feeder_gateway_url: Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
             native_fee_token_address: ContractAddress(
