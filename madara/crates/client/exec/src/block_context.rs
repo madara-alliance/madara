@@ -156,33 +156,6 @@ impl ExecutionContext {
         Self::new(backend, block_info, latest_visible_block, header_block_id)
     }
 
-    pub fn new_on_pending(backend: Arc<MadaraBackend>) -> Result<Self, Error> {
-        let pending_block = backend.latest_pending_block();
-        let versioned_constants =
-            backend.chain_config().exec_constants_by_protocol_version(pending_block.header.protocol_version)?;
-        let chain_info = backend.chain_config().blockifier_chain_info();
-        Ok(Self {
-            block_context: BlockContext::new(
-                BlockInfo {
-                    block_number: BlockNumber(backend.get_latest_block_n()?.map(|n| n + 1).unwrap_or(/* genesis */ 0)),
-                    block_timestamp: BlockTimestamp(pending_block.header.block_timestamp.0),
-                    sequencer_address: pending_block
-                        .header
-                        .sequencer_address
-                        .try_into()
-                        .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
-                    gas_prices: (&pending_block.header.l1_gas_price).into(),
-                    use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
-                },
-                chain_info,
-                versioned_constants,
-                backend.chain_config().bouncer_config.clone(),
-            ),
-            latest_visible_block: Some(DbBlockId::Pending),
-            backend,
-        })
-    }
-
     fn new(
         backend: Arc<MadaraBackend>,
         block_info: &MadaraMaybePendingBlockInfo,
