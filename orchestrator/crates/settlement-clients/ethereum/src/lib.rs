@@ -385,6 +385,7 @@ impl SettlementClient for EthereumSettlementClient {
         let block_number = self.core_contract_client.state_block_number().await?;
         let minus_one = alloy_primitives::I256::from_str("-1")?;
         // Check if block_number is -1
+        // Meaning that no state update has happened yet.
         if block_number == minus_one {
             return Ok(None);
         }

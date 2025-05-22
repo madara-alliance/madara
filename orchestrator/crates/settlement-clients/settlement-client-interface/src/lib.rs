@@ -4,7 +4,6 @@ use mockall::automock;
 use mockall::predicate::*;
 
 pub const SETTLEMENT_SETTINGS_NAME: &str = "settlement_settings";
-pub const SPECIAL_BLOCK_NUMBER: &str = "0x800000000000011000000000000000000000000000000000000000000000000";
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SettlementVerificationStatus {

@@ -15,7 +15,7 @@ use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
-use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus, SPECIAL_BLOCK_NUMBER};
+use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
 use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
 use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;
@@ -252,10 +252,13 @@ impl SettlementClient for StarknetSettlementClient {
             return Err(eyre!("Could not fetch last block number from core contract."));
         }
 
-        let special_number: Felt = Felt::from_hex(SPECIAL_BLOCK_NUMBER)?;
         let last_block_number: Felt = block_number[1];
 
-        if last_block_number == special_number {
+        // Why Felt::MAX ?
+        // https://github.com/starkware-libs/cairo-lang/blob/a86e92bfde9c171c0856d7b46580c66e004922f3/src/starkware/starknet/solidity/StarknetState.sol#L19-L39
+        // https://docs.rs/starknet-types-core/latest/starknet_types_core/felt/struct.Felt.html
+        // If the last_block_number is 0, then we return None, stating that no state update has happened yet.
+        if last_block_number == Felt::MAX {
             return Ok(None);
         }
 
