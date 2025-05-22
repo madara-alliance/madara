@@ -23,6 +23,7 @@ use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
 use strum::IntoEnumIterator as _;
+use crate::core::client::storage::s3::InnerAWSS3;
 
 #[fixture]
 pub fn default_job_item() -> JobItem {
@@ -156,6 +157,6 @@ pub struct MessagePayloadType {
     pub(crate) id: Uuid,
 }
 
-pub async fn get_storage_client(provider_config: Arc<CloudProvider>) -> AWSS3 {
-    AWSS3::create_setup(provider_config).await.unwrap()
+pub async fn get_storage_client(provider_config: Arc<CloudProvider>) -> InnerAWSS3 {
+    InnerAWSS3::create_setup(provider_config).await.unwrap()
 }

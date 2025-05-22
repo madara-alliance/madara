@@ -13,9 +13,68 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
+
+#[derive(Clone, Debug)]
+pub(crate) struct InnerSQS(pub(crate) Arc<Client>);
+
+impl InnerSQS {
+    /// Creates a new instance of InnerSQS with the provided AWS configuration.
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    ///
+    /// # Returns
+    /// * `Self` - The new instance of InnerSQS.
+    pub fn new(aws_config: &SdkConfig) -> Self {
+        let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
+        let client = Client::from_conf(sqs_config_builder.build());
+        Self(Arc::new(client))
+    }
+
+    pub fn client(&self) -> Arc<Client> {
+        self.0.clone()
+    }
+
+
+    /// get_queue_url_from_client - Get the queue URL from the client
+    /// This function returns the queue URL based on the queue name.
+    pub async fn get_queue_url_from_client(&self, queue_name: &str) -> Result<String, QueueError> {
+        Ok(self
+            .client()
+            .get_queue_url()
+            .queue_name(queue_name)
+            .send()
+            .await?
+            .queue_url()
+            .ok_or_else(|| QueueError::FailedToGetQueueUrl(queue_name.to_string()))?
+            .to_string())
+    }
+
+
+    /// get_queue_arn - Get the queue ARN from the queue URL
+    /// This function returns the queue ARN based on the queue URL.
+    pub async fn get_queue_arn(&self, queue_url: &str) -> Result<String, QueueError> {
+        let attributes = self
+            .client()
+            .get_queue_attributes()
+            .queue_url(queue_url)
+            .attribute_names(QueueAttributeName::QueueArn)
+            .send()
+            .await?;
+
+        match attributes.attributes() {
+            Some(attributes) => match attributes.get(&QueueAttributeName::QueueArn) {
+                Some(arn) => Ok(arn.to_string()),
+                None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
+            },
+            None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
+        }
+    }
+}
+
+
 #[derive(Clone, Debug)]
 pub struct SQS {
-    client: Arc<Client>,
+    inner: InnerSQS,
     queue_url: Option<Url>,
     prefix: Option<String>,
     suffix: Option<String>,
@@ -30,10 +89,8 @@ impl SQS {
     /// # Returns
     /// * `Self` - The SQS client.
     pub fn new(aws_config: &SdkConfig, args: Option<&QueueArgs>) -> Self {
-        let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
-        let client = Client::from_conf(sqs_config_builder.build());
         Self {
-            client: Arc::new(client),
+            inner: InnerSQS::new(aws_config),
             queue_url: args.and_then(|a| Url::parse(&a.queue_base_url).ok()),
             prefix: args.map(|a| a.prefix.clone()),
             suffix: args.map(|a| a.suffix.clone()),
@@ -41,7 +98,7 @@ impl SQS {
     }
 
     pub fn client(&self) -> Arc<Client> {
-        self.client.clone()
+        self.inner.client()
     }
     pub fn queue_url(&self) -> Option<Url> {
         self.queue_url.clone()
@@ -84,39 +141,6 @@ impl SQS {
         ))
     }
 
-    /// get_queue_url_from_client - Get the queue URL from the client
-    /// This function returns the queue URL based on the queue name.
-    pub async fn get_queue_url_from_client(&self, queue_name: &str) -> Result<String, QueueError> {
-        Ok(self
-            .client()
-            .get_queue_url()
-            .queue_name(queue_name)
-            .send()
-            .await?
-            .queue_url()
-            .ok_or_else(|| QueueError::FailedToGetQueueUrl(queue_name.to_string()))?
-            .to_string())
-    }
-
-    /// get_queue_arn - Get the queue ARN from the queue URL
-    /// This function returns the queue ARN based on the queue URL.
-    pub async fn get_queue_arn(&self, queue_url: &str) -> Result<String, QueueError> {
-        let attributes = self
-            .client()
-            .get_queue_attributes()
-            .queue_url(queue_url)
-            .attribute_names(QueueAttributeName::QueueArn)
-            .send()
-            .await?;
-
-        match attributes.attributes() {
-            Some(attributes) => match attributes.get(&QueueAttributeName::QueueArn) {
-                Some(arn) => Ok(arn.to_string()),
-                None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
-            },
-            None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
-        }
-    }
 }
 
 #[async_trait]

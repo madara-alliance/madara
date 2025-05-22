@@ -1,7 +1,8 @@
-use crate::core::client::event_bus::event_bridge::EventBridgeClient;
-use crate::core::client::SNS;
+use crate::core::client::alert::sns::InnerAWSSNS;
+use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
+use crate::core::client::queue::sqs::InnerSQS;
+use crate::core::client::storage::s3::InnerAWSS3;
 use crate::{
-    core::client::{queue::sqs::SQS, storage::s3::AWSS3},
     core::cloud::CloudProvider,
     core::traits::resource::Resource,
     setup::wrapper::ResourceWrapper,
@@ -30,7 +31,7 @@ pub struct S3ResourceCreator;
 #[async_trait]
 impl ResourceCreator for S3ResourceCreator {
     async fn create_resource_client(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let s3 = AWSS3::create_setup(cloud_provider.clone()).await?;
+        let s3 = InnerAWSS3::create_setup(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, s3, ResourceType::Storage))
     }
 }
@@ -41,7 +42,7 @@ pub struct SQSResourceCreator;
 #[async_trait]
 impl ResourceCreator for SQSResourceCreator {
     async fn create_resource_client(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let sqs = SQS::create_setup(cloud_provider.clone()).await?;
+        let sqs = InnerSQS::create_setup(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, sqs, ResourceType::Queue))
     }
 }
@@ -52,7 +53,7 @@ pub struct SNSResourceCreator;
 #[async_trait]
 impl ResourceCreator for SNSResourceCreator {
     async fn create_resource_client(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let sns = SNS::create_setup(cloud_provider.clone()).await?;
+        let sns = InnerAWSSNS::create_setup(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, sns, ResourceType::PubSub))
     }
 }
@@ -63,7 +64,7 @@ pub struct EventBridgeResourceCreator;
 #[async_trait]
 impl ResourceCreator for EventBridgeResourceCreator {
     async fn create_resource_client(&self, cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<ResourceWrapper> {
-        let eb_client = EventBridgeClient::create_setup(cloud_provider.clone()).await?;
+        let eb_client = InnerAWSEventBridge::create_setup(cloud_provider.clone()).await?;
         Ok(ResourceWrapper::new(cloud_provider, eb_client, ResourceType::EventBus))
     }
 }

@@ -6,8 +6,29 @@ use std::sync::Arc;
 use super::AlertError;
 use crate::{core::client::alert::AlertClient, types::params::AlertArgs};
 
+
+/// AWSS3 is a struct that represents an AWS S3 client.
+#[derive(Clone, Debug)]
+pub(crate) struct InnerAWSSNS(pub(crate) Arc<Client>);
+
+impl InnerAWSSNS {
+    /// Creates a new instance of InnerAWSS3 with the provided AWS configuration.
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    ///
+    /// # Returns
+    /// * `Self` - The new instance of InnerAWSS3.
+    pub fn new(aws_config: &SdkConfig) -> Self {
+        Self(Arc::new(Client::new(aws_config)))
+    }
+    pub fn client(&self) -> &Client {
+        self.0.as_ref()
+    }
+}
+
+
 pub struct SNS {
-    pub client: Arc<Client>,
+    pub inner: InnerAWSSNS,
     pub topic_arn: Option<String>,
 }
 
@@ -22,7 +43,7 @@ impl SNS {
     /// # Returns
     /// * `Self` - The SNS client.
     pub(crate) fn new(aws_config: &SdkConfig, args: Option<&AlertArgs>) -> Self {
-        Self { client: Arc::new(Client::new(aws_config)), topic_arn: args.map(|a| a.endpoint.clone()) }
+        Self { inner: InnerAWSSNS::new(aws_config), topic_arn: args.map(|a| a.endpoint.clone()) }
     }
 
     /// get_topic_arn return the topic name, if empty it will return an error
@@ -32,6 +53,10 @@ impl SNS {
     /// * `Result<String, AlertError>` - The topic arn.
     pub fn get_topic_arn(&self) -> Result<String, AlertError> {
         self.topic_arn.clone().ok_or(AlertError::TopicARNEmpty)
+    }
+    
+    pub fn client(&self) -> &Client {
+        self.inner.client()
     }
 }
 
@@ -47,7 +72,7 @@ impl AlertClient for SNS {
     ///
     /// * `Result<(), AlertError>` - The result of the send operation.
     async fn send_message(&self, message_body: String) -> Result<(), AlertError> {
-        self.client.publish().topic_arn(self.get_topic_arn()?).message(message_body).send().await?;
+        self.client().publish().topic_arn(self.get_topic_arn()?).message(message_body).send().await?;
         Ok(())
     }
 

@@ -1,14 +1,15 @@
 use crate::{
-    core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
+    core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
     types::params::QueueArgs, OrchestratorError, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
 use std::collections::HashMap;
 use std::sync::Arc;
+use crate::core::client::queue::sqs::InnerSQS;
 
 #[async_trait]
-impl Resource for SQS {
+impl Resource for InnerSQS {
     type SetupResult = ();
     type CheckResult = bool;
     type TeardownResult = ();
@@ -19,7 +20,7 @@ impl Resource for SQS {
 
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config)),
         }
     }
 

@@ -1,4 +1,3 @@
-use crate::core::client::SNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AlertArgs;
@@ -6,9 +5,10 @@ use crate::{OrchestratorError, OrchestratorResult};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;
 use std::sync::Arc;
+use crate::core::client::alert::sns::InnerAWSSNS;
 
 #[async_trait]
-impl Resource for SNS {
+impl Resource for InnerAWSSNS {
     type SetupResult = ();
     type CheckResult = bool;
     type TeardownResult = ();
@@ -18,7 +18,7 @@ impl Resource for SNS {
 
     async fn create_setup(provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config)),
         }
     }
 
@@ -48,7 +48,7 @@ impl Resource for SNS {
         }
 
         // Create topic using the validated name
-        let response = self.client.create_topic().name(topic_name).send().await.context("Failed to create topic")?;
+        let response = self.client().create_topic().name(topic_name).send().await.context("Failed to create topic")?;
 
         let new_topic_arn = response.topic_arn().context("Failed to get topic ARN")?;
         tracing::info!("SNS topic created. Topic ARN: {}", new_topic_arn);
@@ -56,15 +56,15 @@ impl Resource for SNS {
     }
 
     async fn check_if_exists(&self, topic_arn: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(topic_arn).send().await.is_ok())
+        Ok(self.client().get_topic_attributes().topic_arn(topic_arn).send().await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.get_topic_attributes().topic_arn(&args.endpoint).send().await.is_ok())
+        Ok(self.client().get_topic_attributes().topic_arn(&args.endpoint).send().await.is_ok())
     }
 }
 
-impl SNS {
+impl InnerAWSSNS {
     fn is_valid_topic_name(&self, name: &str) -> bool {
         // AWS SNS topic name requirements:
         // - Can include numbers, letters, hyphens, and underscores

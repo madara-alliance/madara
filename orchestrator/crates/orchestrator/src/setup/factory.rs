@@ -1,5 +1,7 @@
-use crate::core::client::event_bus::event_bridge::EventBridgeClient;
-use crate::core::client::SNS;
+use crate::core::client::alert::sns::InnerAWSSNS;
+use crate::core::client::event_bus::event_bridge::{InnerAWSEventBridge};
+use crate::core::client::queue::sqs::InnerSQS;
+use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{
     EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator,
@@ -7,8 +9,6 @@ use crate::setup::creator::{
 };
 use crate::types::params::MiscellaneousArgs;
 use crate::{
-    core::client::storage::s3::AWSS3,
-    core::client::SQS,
     core::cloud::CloudProvider,
     types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs},
     OrchestratorError, OrchestratorResult,
@@ -94,7 +94,7 @@ impl ResourceFactory {
                 let result: OrchestratorResult<()> = async {
                     match resource_type {
                         ResourceType::Storage => {
-                            let rs = resource.downcast_mut::<AWSS3>().ok_or(OrchestratorError::SetupError(
+                            let rs = resource.downcast_mut::<InnerAWSS3>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to AWSS3".to_string(),
                             ))?;
                             rs.setup(storage_params.clone()).await?;
@@ -103,7 +103,7 @@ impl ResourceFactory {
                             Ok(())
                         }
                         ResourceType::Queue => {
-                            let rs = resource.downcast_mut::<SQS>().ok_or(OrchestratorError::SetupError(
+                            let rs = resource.downcast_mut::<InnerSQS>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to SQS".to_string(),
                             ))?;
                             rs.setup(queue_params.clone()).await?;
@@ -121,7 +121,7 @@ impl ResourceFactory {
                             while start_time.elapsed() < timeout_duration {
                                 if is_queue_ready_clone.load(Ordering::Acquire) {
                                     info!(" ✅ Queue is ready, setting up SNS");
-                                    let rs = resource.downcast_mut::<SNS>().ok_or(OrchestratorError::SetupError(
+                                    let rs = resource.downcast_mut::<InnerAWSSNS>().ok_or(OrchestratorError::SetupError(
                                         "Failed to downcast resource to SNS".to_string(),
                                     ))?;
                                     rs.setup(alert_params.clone()).await?;
@@ -148,7 +148,7 @@ impl ResourceFactory {
                             while start_time.elapsed() < timeout_duration {
                                 if is_queue_ready_clone.load(Ordering::Acquire) {
                                     info!(" ✅ Queue is ready, setting up EventBridge");
-                                    let rs = resource.downcast_mut::<EventBridgeClient>().ok_or(
+                                    let rs = resource.downcast_mut::<InnerAWSEventBridge>().ok_or(
                                         OrchestratorError::SetupError(
                                             "Failed to downcast resource to EventBridge".to_string(),
                                         ),

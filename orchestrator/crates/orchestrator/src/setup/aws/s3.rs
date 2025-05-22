@@ -1,4 +1,4 @@
-use crate::core::client::storage::s3::AWSS3;
+use crate::core::client::storage::s3::{InnerAWSS3};
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;
@@ -9,7 +9,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 
 #[async_trait]
-impl Resource for AWSS3 {
+impl Resource for InnerAWSS3 {
     type SetupResult = ();
     type CheckResult = bool;
     type TeardownResult = ();
@@ -27,7 +27,7 @@ impl Resource for AWSS3 {
     ///
     async fn create_setup(cloud_provider: Arc<CloudProvider>) -> OrchestratorResult<Self> {
         match cloud_provider.as_ref() {
-            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config, None)),
+            CloudProvider::AWS(aws_config) => Ok(Self::new(aws_config)),
         }
     }
     /// Set up a new S3 bucket
@@ -41,10 +41,10 @@ impl Resource for AWSS3 {
         info!("Creating New Bucket: {}", args.bucket_name);
 
         // Get the current region from the client config
-        let region = self.client.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
+        let region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
         info!("Creating bucket in region: {}", region);
 
-        let mut bucket_builder = self.client.create_bucket().bucket(&args.bucket_name);
+        let mut bucket_builder = self.0.create_bucket().bucket(&args.bucket_name);
 
         if region != "us-east-1" {
             let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
@@ -59,10 +59,10 @@ impl Resource for AWSS3 {
     }
 
     async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
+        Ok(self.0.head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.client.head_bucket().bucket(&args.bucket_name).send().await.is_ok())
+        Ok(self.0.head_bucket().bucket(&args.bucket_name).send().await.is_ok())
     }
 }
