@@ -9,7 +9,7 @@ pub struct AWSSNSCliArgs {
     pub aws_sns: bool,
 
     /// The ARN of the SNS topic.
-    #[arg(env = "MADARA_ORCHESTRATOR_AWS_SNS_ARN", long, default_value = Some("arn:aws:sns:us-east-1:000000000000:mo-arn")
+    #[arg(env = "MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME", long, default_value = Some("arn")
     )]
-    pub sns_arn: Option<String>,
+    pub alert_topic_name: Option<String>,
 }
