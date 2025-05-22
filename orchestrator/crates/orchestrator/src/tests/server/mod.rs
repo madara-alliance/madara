@@ -6,13 +6,13 @@ use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
 
-use crate::queue::init_consumers;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::worker::initialize_worker;
 
 #[rstest]
 #[tokio::test]
 async fn test_health_endpoint() {
-    dotenvy::from_filename("../.env.test").expect("Failed to load the .env.test file");
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
     let services = TestConfigBuilder::new().configure_api_server(ConfigType::Actual).build().await;
 
@@ -35,5 +35,5 @@ async fn test_health_endpoint() {
 #[tokio::test]
 async fn test_init_consumer() {
     let services = TestConfigBuilder::new().build().await;
-    assert!(init_consumers(services.config).await.is_ok());
+    assert!(initialize_worker(services.config).await.is_ok());
 }

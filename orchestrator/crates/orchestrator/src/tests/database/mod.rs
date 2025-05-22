@@ -1,10 +1,10 @@
-use rstest::*;
-
-use crate::jobs::metadata::JobSpecificMetadata;
-use crate::jobs::types::{JobItemUpdates, JobStatus, JobType};
-use crate::jobs::JobError;
+use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
+use crate::types::jobs::job_updates::JobItemUpdates;
+use crate::types::jobs::metadata::JobSpecificMetadata;
+use crate::types::jobs::types::{JobStatus, JobType};
+use rstest::*;
 
 #[rstest]
 #[tokio::test]
@@ -28,9 +28,9 @@ async fn database_create_job_works() {
         build_job_item(JobType::ProofCreation, JobStatus::Created, 3),
     ];
 
-    database_client.create_job_item(job_vec[0].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[1].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[2].clone()).await.unwrap();
+    database_client.create_job(job_vec[0].clone()).await.unwrap();
+    database_client.create_job(job_vec[1].clone()).await.unwrap();
+    database_client.create_job(job_vec[2].clone()).await.unwrap();
 
     let get_job_1 =
         database_client.get_job_by_internal_id_and_type("1", &JobType::ProofCreation).await.unwrap().unwrap();
@@ -60,15 +60,14 @@ async fn database_create_job_with_job_exists_fails() {
     // same job type and internal id
     let job_two = build_job_item(JobType::ProofCreation, JobStatus::LockedForProcessing, 1);
 
-    database_client.create_job_item(job_one).await.unwrap();
+    database_client.create_job(job_one).await.unwrap();
 
-    let result = database_client.create_job_item(job_two).await;
+    let result = database_client.create_job(job_two).await;
 
-    assert_eq!(
-        result.unwrap_err(),
-        JobError::JobAlreadyExists { internal_id: "1".to_string(), job_type: JobType::ProofCreation }
-    );
-    // fetch job to see status wasn't updated
+    // let result_err = result.unwrap_err();
+
+    assert!(matches!(result, Err(DatabaseError::ItemAlreadyExists(_))));
+    // fetch job to see the status wasn't updated
     let fetched_job =
         database_client.get_job_by_internal_id_and_type("1", &JobType::ProofCreation).await.unwrap().unwrap();
     assert_eq!(fetched_job.status, JobStatus::Created);
@@ -100,13 +99,13 @@ async fn database_get_jobs_without_successor_works(#[case] is_successor: bool) {
         build_job_item(JobType::ProofCreation, JobStatus::Created, 3),
     ];
 
-    database_client.create_job_item(job_vec[0].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[1].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[2].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[3].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[5].clone()).await.unwrap();
+    database_client.create_job(job_vec[0].clone()).await.unwrap();
+    database_client.create_job(job_vec[1].clone()).await.unwrap();
+    database_client.create_job(job_vec[2].clone()).await.unwrap();
+    database_client.create_job(job_vec[3].clone()).await.unwrap();
+    database_client.create_job(job_vec[5].clone()).await.unwrap();
     if is_successor {
-        database_client.create_job_item(job_vec[4].clone()).await.unwrap();
+        database_client.create_job(job_vec[4].clone()).await.unwrap();
     }
 
     let jobs_without_successor = database_client
@@ -141,9 +140,9 @@ async fn database_get_last_successful_job_by_type_works() {
         build_job_item(JobType::SnosRun, JobStatus::Completed, 3),
     ];
 
-    database_client.create_job_item(job_vec[0].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[1].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[2].clone()).await.unwrap();
+    database_client.create_job(job_vec[0].clone()).await.unwrap();
+    database_client.create_job(job_vec[1].clone()).await.unwrap();
+    database_client.create_job(job_vec[2].clone()).await.unwrap();
 
     let last_successful_job = database_client.get_latest_job_by_type(JobType::SnosRun).await.unwrap().unwrap();
 
@@ -172,12 +171,12 @@ async fn database_get_jobs_after_internal_id_by_job_type_works() {
         build_job_item(JobType::SnosRun, JobStatus::Completed, 6),
     ];
 
-    database_client.create_job_item(job_vec[0].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[1].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[2].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[3].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[4].clone()).await.unwrap();
-    database_client.create_job_item(job_vec[5].clone()).await.unwrap();
+    database_client.create_job(job_vec[0].clone()).await.unwrap();
+    database_client.create_job(job_vec[1].clone()).await.unwrap();
+    database_client.create_job(job_vec[2].clone()).await.unwrap();
+    database_client.create_job(job_vec[3].clone()).await.unwrap();
+    database_client.create_job(job_vec[4].clone()).await.unwrap();
+    database_client.create_job(job_vec[5].clone()).await.unwrap();
 
     let jobs_after_internal_id = database_client
         .get_jobs_after_internal_id_by_job_type(JobType::SnosRun, JobStatus::Completed, "2".to_string())
@@ -197,7 +196,7 @@ async fn database_test_update_job() {
     let database_client = config.database();
 
     let job = build_job_item(JobType::DataSubmission, JobStatus::Created, 456);
-    database_client.create_job_item(job.clone()).await.unwrap();
+    database_client.create_job(job.clone()).await.unwrap();
 
     let job_id = job.id;
 

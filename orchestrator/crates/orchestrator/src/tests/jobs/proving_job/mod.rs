@@ -14,25 +14,26 @@ use url::Url;
 use uuid::Uuid;
 
 use super::super::common::default_job_item;
-use crate::constants::CAIRO_PIE_FILE_NAME;
-use crate::data_storage::MockDataStorage;
-use crate::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata};
-use crate::jobs::proving_job::ProvingJob;
-use crate::jobs::types::{JobItem, JobStatus, JobType};
-use crate::jobs::Job;
+use crate::core::client::storage::MockStorageClient;
 use crate::tests::config::TestConfigBuilder;
+use crate::types::constant::CAIRO_PIE_FILE_NAME;
+use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::metadata::{
+    CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata,
+};
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::proving::ProvingJobHandler;
+use crate::worker::event_handler::jobs::JobHandlerTrait;
 
 #[rstest]
 #[tokio::test]
 async fn test_create_job() {
-    let services = TestConfigBuilder::new().build().await;
-
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata::default()),
     };
 
-    let job = ProvingJob.create_job(services.config.clone(), String::from("0"), metadata).await;
+    let job = ProvingJobHandler.create_job(String::from("0"), metadata).await;
     assert!(job.is_ok());
 
     let job = job.unwrap();
@@ -58,7 +59,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
         ..Default::default()
     });
 
-    assert!(ProvingJob.verify_job(services.config, &mut job_item).await.is_ok());
+    assert!(ProvingJobHandler.verify_job(services.config, &mut job_item).await.is_ok());
 }
 
 #[rstest]
@@ -77,7 +78,7 @@ async fn test_process_job() {
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
 
-    let mut storage = MockDataStorage::new();
+    let mut storage = MockStorageClient::new();
     let buffer_bytes = Bytes::from(buffer);
     let cairo_pie_path = format!("0/{}", CAIRO_PIE_FILE_NAME);
     storage.expect_get_data().with(eq(cairo_pie_path.clone())).return_once(move |_| Ok(buffer_bytes));
@@ -92,14 +93,14 @@ async fn test_process_job() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Proving(ProvingMetadata {
-            input_path: Some(ProvingInputTypePath::CairoPie(cairo_pie_path)),
+            input_path: Some(ProvingInputType::CairoPie(cairo_pie_path)),
             ensure_on_chain_registration: Some("fact".to_string()),
             ..Default::default()
         }),
     };
 
     assert_eq!(
-        ProvingJob
+        ProvingJobHandler
             .process_job(
                 services.config,
                 &mut JobItem {
