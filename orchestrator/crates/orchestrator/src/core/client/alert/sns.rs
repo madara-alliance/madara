@@ -6,7 +6,6 @@ use std::sync::Arc;
 use super::AlertError;
 use crate::{core::client::alert::AlertClient, types::params::AlertArgs};
 
-
 /// AWSS3 is a struct that represents an AWS S3 client.
 #[derive(Clone, Debug)]
 pub(crate) struct InnerAWSSNS(pub(crate) Arc<Client>);
@@ -25,7 +24,6 @@ impl InnerAWSSNS {
         self.0.as_ref()
     }
 }
-
 
 pub struct SNS {
     pub inner: InnerAWSSNS,
@@ -54,7 +52,7 @@ impl SNS {
     pub fn get_topic_arn(&self) -> Result<String, AlertError> {
         self.topic_arn.clone().ok_or(AlertError::TopicARNEmpty)
     }
-    
+
     pub fn client(&self) -> &Client {
         self.inner.client()
     }

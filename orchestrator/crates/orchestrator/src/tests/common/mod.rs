@@ -2,6 +2,7 @@ pub mod constants;
 
 use std::sync::Arc;
 
+use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::client::{MongoDbClient, AWSS3};
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -23,7 +24,6 @@ use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
 use strum::IntoEnumIterator as _;
-use crate::core::client::storage::s3::InnerAWSS3;
 
 #[fixture]
 pub fn default_job_item() -> JobItem {

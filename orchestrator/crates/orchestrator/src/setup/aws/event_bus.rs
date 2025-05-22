@@ -1,5 +1,5 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
-use crate::core::client::event_bus::event_bridge::{InnerAWSEventBridge};
+use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;
@@ -29,7 +29,6 @@ pub struct TriggerArns {
     queue_arn: String,
     role_arn: String,
 }
-
 
 #[async_trait]
 impl Resource for InnerAWSEventBridge {
@@ -116,8 +115,6 @@ impl Resource for InnerAWSEventBridge {
         Ok(self.eb_client.describe_rule().name(&args.trigger_rule_name).send().await.is_ok())
     }
 }
-
-
 
 impl InnerAWSEventBridge {
     /// get_queue_arn - Get the ARN of a queue

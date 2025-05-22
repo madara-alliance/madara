@@ -13,7 +13,6 @@ use std::sync::Arc;
 use std::time::Duration;
 use url::Url;
 
-
 #[derive(Clone, Debug)]
 pub(crate) struct InnerSQS(pub(crate) Arc<Client>);
 
@@ -34,7 +33,6 @@ impl InnerSQS {
         self.0.clone()
     }
 
-
     /// get_queue_url_from_client - Get the queue URL from the client
     /// This function returns the queue URL based on the queue name.
     pub async fn get_queue_url_from_client(&self, queue_name: &str) -> Result<String, QueueError> {
@@ -48,7 +46,6 @@ impl InnerSQS {
             .ok_or_else(|| QueueError::FailedToGetQueueUrl(queue_name.to_string()))?
             .to_string())
     }
-
 
     /// get_queue_arn - Get the queue ARN from the queue URL
     /// This function returns the queue ARN based on the queue URL.
@@ -70,7 +67,6 @@ impl InnerSQS {
         }
     }
 }
-
 
 #[derive(Clone, Debug)]
 pub struct SQS {
@@ -140,7 +136,6 @@ impl SQS {
                 .ok_or_else(|| QueueError::MissingRootParameter("Queue suffix is not set".to_string()))?
         ))
     }
-
 }
 
 #[async_trait]

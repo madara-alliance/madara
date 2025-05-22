@@ -3,10 +3,7 @@ use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::storage::s3::InnerAWSS3;
 use crate::{
-    core::cloud::CloudProvider,
-    core::traits::resource::Resource,
-    setup::wrapper::ResourceWrapper,
-    OrchestratorResult,
+    core::cloud::CloudProvider, core::traits::resource::Resource, setup::wrapper::ResourceWrapper, OrchestratorResult,
 };
 use async_trait::async_trait;
 use std::sync::Arc;

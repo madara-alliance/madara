@@ -1,4 +1,4 @@
-use crate::core::client::storage::s3::{InnerAWSS3};
+use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;

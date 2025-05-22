@@ -7,7 +7,6 @@ use aws_sdk_s3::Client;
 use bytes::Bytes;
 use std::sync::Arc;
 
-
 /// AWSS3 is a struct that represents an AWS S3 client.
 #[derive(Clone, Debug)]
 pub(crate) struct InnerAWSS3(pub(crate) Arc<Client>);
@@ -48,7 +47,7 @@ impl AWSS3 {
     pub(crate) fn bucket_name(&self) -> Result<String, StorageError> {
         self.bucket_name.clone().ok_or_else(|| StorageError::InvalidBucketName("Bucket name is not set".to_string()))
     }
-    
+
     pub(crate) fn client(&self) -> &Client {
         self.inner.0.as_ref()
     }

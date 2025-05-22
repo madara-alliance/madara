@@ -1,5 +1,5 @@
 use crate::core::client::alert::sns::InnerAWSSNS;
-use crate::core::client::event_bus::event_bridge::{InnerAWSEventBridge};
+use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::traits::resource::Resource;
@@ -121,9 +121,9 @@ impl ResourceFactory {
                             while start_time.elapsed() < timeout_duration {
                                 if is_queue_ready_clone.load(Ordering::Acquire) {
                                     info!(" ✅ Queue is ready, setting up SNS");
-                                    let rs = resource.downcast_mut::<InnerAWSSNS>().ok_or(OrchestratorError::SetupError(
-                                        "Failed to downcast resource to SNS".to_string(),
-                                    ))?;
+                                    let rs = resource.downcast_mut::<InnerAWSSNS>().ok_or(
+                                        OrchestratorError::SetupError("Failed to downcast resource to SNS".to_string()),
+                                    )?;
                                     rs.setup(alert_params.clone()).await?;
                                     rs.poll(
                                         alert_params,

@@ -1,12 +1,12 @@
+use crate::core::client::queue::sqs::InnerSQS;
 use crate::{
-    core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
-    types::params::QueueArgs, OrchestratorError, OrchestratorResult,
+    core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES, types::params::QueueArgs,
+    OrchestratorError, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::core::client::queue::sqs::InnerSQS;
 
 #[async_trait]
 impl Resource for InnerSQS {
