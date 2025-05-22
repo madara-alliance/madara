@@ -172,7 +172,7 @@ impl ExecutionContext {
                         .try_into()
                         .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
                     gas_prices: (&pending_block.header.l1_gas_price).into(),
-                    use_kzg_da: pending_block.header.l1_da_mode == backend.chain_config().l1_da_mode,
+                    use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
                 },
                 chain_info,
                 versioned_constants,
@@ -215,7 +215,7 @@ impl ExecutionContext {
                 .try_into()
                 .map_err(|_| Error::InvalidSequencerAddress(sequencer_address))?,
             gas_prices: (&l1_gas_price).into(),
-            use_kzg_da: l1_da_mode == backend.chain_config().l1_da_mode,
+            use_kzg_da: l1_da_mode == L1DataAvailabilityMode::Blob,
         };
 
         Ok(ExecutionContext {
