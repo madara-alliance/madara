@@ -31,7 +31,7 @@ use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
-use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
+use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_default, get_env_var_or_panic};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
@@ -556,10 +556,9 @@ pub(crate) fn get_env_params() -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS")
-        .expect("Couldn't get max concurrent proving jobs");
-    let max_concurrent_created_snos_jobs: Option<usize> =
-        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+    let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
+    let max_concurrent_created_snos_jobs: u64 =
+        env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
 
     let service_config = ServiceParams {
         max_block_to_process: max_block,

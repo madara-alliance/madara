@@ -70,20 +70,17 @@ impl JobTrigger for SnosJobTrigger {
             pending_jobs.iter().filter_map(|job| parse_block_number(&job.internal_id)).collect();
 
         // Check job limits
-        let available_job_slots = match service_config.max_concurrent_created_snos_jobs {
-            Some(max_jobs) => {
-                let total_pending = pending_jobs.len() as u64;
-                if total_pending >= max_jobs as u64 {
-                    tracing::info!(
-                        max_jobs = max_jobs,
-                        current_jobs = total_pending,
-                        "Maximum number of pending SNOS jobs reached. Not creating new jobs."
-                    );
-                    return Ok(());
-                }
-                max_jobs as u64 - total_pending
+        let available_job_slots = {
+            let total_pending = pending_jobs.len() as u64;
+            if total_pending >= service_config.max_concurrent_created_snos_jobs {
+                tracing::info!(
+                    max_jobs = service_config.max_concurrent_created_snos_jobs,
+                    current_jobs = total_pending,
+                    "Maximum number of pending SNOS jobs reached. Not creating new jobs."
+                );
+                return Ok(());
             }
-            None => max_block_to_process - last_completed_block,
+            service_config.max_concurrent_created_snos_jobs - total_pending
         };
 
         // Build block processing queue (missing blocks + new blocks)
@@ -108,13 +105,8 @@ impl JobTrigger for SnosJobTrigger {
         let remaining_slots = available_job_slots.saturating_sub(blocks_to_process.len() as u64);
 
         // Add new blocks if slots available
-        if remaining_slots > 0 || service_config.max_concurrent_created_snos_jobs.is_none() {
-            let new_blocks_count = if service_config.max_concurrent_created_snos_jobs.is_none() {
-                candidate_blocks.len()
-            } else {
-                min(remaining_slots as usize, candidate_blocks.len())
-            };
-
+        if remaining_slots > 0 {
+            let new_blocks_count = min(remaining_slots as usize, candidate_blocks.len());
             blocks_to_process.extend(candidate_blocks.into_iter().take(new_blocks_count));
         }
 

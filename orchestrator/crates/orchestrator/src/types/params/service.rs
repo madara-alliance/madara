@@ -5,7 +5,7 @@ use crate::cli::service::ServiceCliArgs;
 pub struct ServiceParams {
     pub max_block_to_process: Option<u64>,
     pub min_block_to_process: Option<u64>,
-    pub max_concurrent_created_snos_jobs: Option<usize>,
+    pub max_concurrent_created_snos_jobs: u64,
     pub max_concurrent_snos_jobs: Option<usize>,
     pub max_concurrent_proving_jobs: Option<usize>,
 }

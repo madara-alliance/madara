@@ -428,7 +428,6 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let filter = doc! {
             "status": {
-                // TODO: Check that the conversion leads to valid output!
                 "$in": status.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }
         };
@@ -455,7 +454,6 @@ impl DatabaseClient for MongoDbClient {
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
             "status": {
-                // TODO: Check that the conversion leads to valid output!
                 "$in": job_status.iter().map(|job_status| bson::to_bson(job_status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }
         };
