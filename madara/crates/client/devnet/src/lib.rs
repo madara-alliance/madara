@@ -596,13 +596,7 @@ mod tests {
 
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), notif);
-            if !chain
-                .backend
-                .get_block_info(&BlockId::Tag(BlockTag::Pending))
-                .unwrap()
-                .unwrap()
-                .tx_hashes()
-                .is_empty()
+            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
             {
                 break;
             }
