@@ -1,4 +1,5 @@
 use core::num::NonZeroU128;
+use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
 use serde::Deserialize;
 use serde::Serialize;
@@ -134,25 +135,6 @@ impl GasPrices {
         mp_rpc::ResourcePrice {
             price_in_fri: self.strk_l1_data_gas_price.into(),
             price_in_wei: self.eth_l1_data_gas_price.into(),
-        }
-    }
-}
-
-#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "UPPERCASE")]
-pub enum L1DataAvailabilityMode {
-    #[serde(alias = "Calldata")]
-    Calldata,
-    #[serde(alias = "Blob")]
-    #[default]
-    Blob,
-}
-
-impl From<L1DataAvailabilityMode> for mp_rpc::L1DaMode {
-    fn from(value: L1DataAvailabilityMode) -> Self {
-        match value {
-            L1DataAvailabilityMode::Calldata => Self::Calldata,
-            L1DataAvailabilityMode::Blob => Self::Blob,
         }
     }
 }
