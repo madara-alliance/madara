@@ -1,5 +1,5 @@
 //! TODO: this should be in the backend
-use mp_block::header::{GasPrices, L1DataAvailabilityMode};
+use mp_block::header::GasPrices;
 use mp_oracle::Oracle;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -118,7 +118,6 @@ impl Default for GasPriceProvider {
 pub trait L1DataProvider: Send + Sync {
     fn get_gas_prices(&self) -> GasPrices;
     fn get_gas_prices_last_update(&self) -> SystemTime;
-    fn get_da_mode(&self) -> L1DataAvailabilityMode;
 }
 
 /// This trait enables the block production task to fill in the L1 info.
@@ -130,9 +129,5 @@ impl L1DataProvider for GasPriceProvider {
 
     fn get_gas_prices_last_update(&self) -> SystemTime {
         *self.last_update.lock().expect("Failed to acquire lock")
-    }
-
-    fn get_da_mode(&self) -> L1DataAvailabilityMode {
-        L1DataAvailabilityMode::Blob
     }
 }
