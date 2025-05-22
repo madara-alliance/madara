@@ -3,11 +3,11 @@ use jsonrpsee::core::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
 use mp_block::{
-    header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader},
+    header::{BlockTimestamp, GasPrices, PendingHeader},
     Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlockInfo,
 };
-use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };

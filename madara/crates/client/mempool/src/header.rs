@@ -14,6 +14,6 @@ pub fn make_pending_header(
         block_timestamp: BlockTimestamp::now(),
         protocol_version: chain_config.latest_protocol_version,
         l1_gas_price: l1_info.get_gas_prices(),
-        l1_da_mode: l1_info.get_da_mode(),
+        l1_da_mode: chain_config.l1_da_mode,
     }
 }

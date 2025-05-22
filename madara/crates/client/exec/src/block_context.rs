@@ -8,7 +8,8 @@ use blockifier::{
     state::cached_state::CachedState,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
+use mp_block::MadaraMaybePendingBlockInfo;
+
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use std::sync::Arc;
 
@@ -118,7 +119,7 @@ impl ExecutionContext {
                         .try_into()
                         .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
                     gas_prices: (&pending_block.header.l1_gas_price).into(),
-                    use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
+                    use_kzg_da: pending_block.header.l1_da_mode == backend.chain_config().l1_da_mode,
                 },
                 chain_info,
                 versioned_constants,
@@ -167,7 +168,7 @@ impl ExecutionContext {
                 .try_into()
                 .map_err(|_| Error::InvalidSequencerAddress(sequencer_address))?,
             gas_prices: (&l1_gas_price).into(),
-            use_kzg_da: l1_da_mode == L1DataAvailabilityMode::Blob,
+            use_kzg_da: l1_da_mode == backend.chain_config().l1_da_mode,
         };
 
         Ok(ExecutionContext {

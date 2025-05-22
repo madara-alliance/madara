@@ -9747,6 +9747,7 @@ dependencies = [
  "anyhow",
  "blockifier",
  "lazy_static",
+ "mp-rpc",
  "mp-utils",
  "primitive-types",
  "rstest 0.18.2",
