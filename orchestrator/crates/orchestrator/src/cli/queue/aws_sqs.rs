@@ -12,11 +12,7 @@ pub struct AWSSQSCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_SQS_PREFIX", long, default_value = Some("madara_orchestrator"))]
     pub sqs_prefix: Option<String>,
 
-    /// The suffix of the queue.    
+    /// The suffix of the queue.
     #[arg(env = "MADARA_ORCHESTRATOR_SQS_SUFFIX", long, default_value = Some("queue"))]
     pub sqs_suffix: Option<String>,
-
-    /// The QUEUE url
-    #[arg(env = "MADARA_ORCHESTRATOR_SQS_BASE_QUEUE_URL", long)]
-    pub queue_base_url: Option<String>,
 }
