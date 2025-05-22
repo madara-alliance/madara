@@ -331,7 +331,7 @@ mod tests {
     async fn chain_with_mempool_limits_and_block_time(
         mempool_limits: MempoolLimits,
         block_time: Duration,
-        pending_block_update_time: Duration,
+        pending_block_update_time: Option<Duration>,
     ) -> DevnetForTesting {
         let mut chain_config = ChainConfig::madara_devnet();
         chain_config.block_time = block_time;
@@ -424,7 +424,13 @@ mod tests {
         let mut notifications = block_production.subscribe_state_notifications();
         let _task =
             AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        for _ in 0..10 {
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
+            {
+                break;
+            }
+        }
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 
@@ -446,26 +452,20 @@ mod tests {
     }
 
     #[rstest]
-    #[case::should_fail_no_fund(false, false, Duration::from_millis(500), Duration::from_secs(500000), false)]
+    #[case::should_fail_no_fund(false, false, Some(Duration::from_millis(500)), Duration::from_secs(500000), false)]
     #[case::should_work_all_in_pending_block(
         true,
         false,
-        Duration::from_millis(500),
+        Some(Duration::from_millis(500)),
         Duration::from_secs(500000),
         true
     )]
-    #[case::should_work_across_block_boundary(
-        true,
-        true,
-        Duration::from_secs(500000),
-        Duration::from_millis(500),
-        true
-    )]
+    #[case::should_work_across_block_boundary(true, true, None, Duration::from_millis(500), true)]
     #[tokio::test]
     async fn test_account_deploy(
         #[case] transfer_fees: bool,
         #[case] wait_block_time: bool,
-        #[case] pending_update_time: Duration,
+        #[case] pending_update_time: Option<Duration>,
         #[case] block_time: Duration,
         #[case] should_work: bool,
     ) {
@@ -524,10 +524,24 @@ mod tests {
                 .await
                 .unwrap();
             tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
-            if wait_block_time {
-                assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+            let notif = if wait_block_time {
+                BlockProductionStateNotification::ClosedBlock
             } else {
-                assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+                BlockProductionStateNotification::UpdatedPendingBlock
+            };
+
+            for _ in 0..10 {
+                assert_eq!(notifications.recv().await.unwrap(), notif);
+                if !chain
+                    .backend
+                    .get_block_info(&BlockId::Tag(BlockTag::Pending))
+                    .unwrap()
+                    .unwrap()
+                    .tx_hashes()
+                    .is_empty()
+                {
+                    break;
+                }
             }
         }
 
@@ -574,10 +588,24 @@ mod tests {
 
         let res = res.unwrap();
 
-        if wait_block_time {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+        let notif = if wait_block_time {
+            BlockProductionStateNotification::ClosedBlock
         } else {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            BlockProductionStateNotification::UpdatedPendingBlock
+        };
+
+        for _ in 0..10 {
+            assert_eq!(notifications.recv().await.unwrap(), notif);
+            if !chain
+                .backend
+                .get_block_info(&BlockId::Tag(BlockTag::Pending))
+                .unwrap()
+                .unwrap()
+                .tx_hashes()
+                .is_empty()
+            {
+                break;
+            }
         }
 
         assert_eq!(res.contract_address, account.address);
@@ -645,7 +673,14 @@ mod tests {
         let mut notifications = block_production.subscribe_state_notifications();
         let _task =
             AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+
+        for _ in 0..10 {
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
+            {
+                break;
+            }
+        }
 
         let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
 

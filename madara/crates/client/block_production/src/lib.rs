@@ -4,6 +4,7 @@ use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
 use blockifier::state::cached_state::{StateMaps, StorageEntry};
 use executor::{BatchExecutionResult, ExecutorCommand, ExecutorCommandError, ExecutorMessage};
+use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
@@ -437,10 +438,12 @@ impl BlockProductionTask {
         )
         .context("Starting executor thread")?;
 
-        let mut interval_pending_block_update =
-            tokio::time::interval(self.backend.chain_config().pending_block_update_time);
-        interval_pending_block_update.reset(); // Skip the immediate first tick.
-        interval_pending_block_update.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+        let mut interval_pending_block_update = self.backend.chain_config().pending_block_update_time.map(|t| {
+            let mut int = tokio::time::interval(t);
+            int.reset(); // Skip the immediate first tick.
+            int.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            int
+        });
 
         // Batcher task is handled in a separate tokio task.
         let mempool = Arc::clone(&self.mempool);
@@ -499,7 +502,7 @@ impl BlockProductionTask {
                 }
 
                 // Update the pending block in db periodically.
-                _ = interval_pending_block_update.tick() => {
+                Some(_) = OptionFuture::from(interval_pending_block_update.as_mut().map(|int| int.tick())) => {
                     self.store_pending_block().context("Storing pending block")?;
                 }
 
@@ -574,7 +577,7 @@ pub(crate) mod tests {
     #[rstest::fixture]
     pub(crate) async fn devnet_setup(
         #[default(Duration::from_secs(30))] block_time: Duration,
-        #[default(Duration::from_secs(2))] pending_block_update_time: Duration,
+        #[default(Some(Duration::from_secs(2)))] pending_block_update_time: Option<Duration>,
         #[default(false)] use_bouncer_weights: bool,
     ) -> (
         Arc<MadaraBackend>,
@@ -1730,7 +1733,7 @@ pub(crate) mod tests {
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_on_pending_block_tick_closes_block(
         #[future]
-        #[with(Duration::from_secs(1), Duration::from_secs(60000), true)]
+        #[with(Duration::from_secs(1), None, true)]
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
@@ -1933,7 +1936,7 @@ pub(crate) mod tests {
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_start_block_production_task_pending_tick_too_small(
         #[future]
-        #[with(Duration::from_secs(30), Duration::default(), false)]
+        #[with(Duration::from_secs(30), Some(Duration::default()), false)]
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
@@ -1986,7 +1989,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_state_diff_has_block_n_min_10(
         #[future]
-        #[with(Duration::from_secs(3000000000), Duration::from_secs(3000000000), false)]
+        #[with(Duration::from_secs(3000000000), None, false)]
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,

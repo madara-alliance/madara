@@ -92,8 +92,8 @@ pub struct ChainConfigOverridesInner {
     pub latest_protocol_version: StarknetVersion,
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub block_time: Duration,
-    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
-    pub pending_block_update_time: Duration,
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
+    pub pending_block_update_time: Option<Duration>,
     #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,

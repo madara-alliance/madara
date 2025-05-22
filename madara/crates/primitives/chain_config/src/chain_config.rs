@@ -90,6 +90,16 @@ impl Default for BlockProductionConfig {
     }
 }
 
+fn starknet_version_latest() -> StarknetVersion {
+    StarknetVersion::LATEST
+}
+fn default_pending_block_update_time() -> Option<Duration> {
+    Some(Duration::from_millis(500))
+}
+fn default_block_time() -> Duration {
+    Duration::from_secs(30)
+}
+
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
@@ -109,15 +119,16 @@ pub struct ChainConfig {
     /// For starknet, this is the ETH ERC-20 contract on starknet.
     pub parent_fee_token_address: ContractAddress,
 
-    /// BTreeMap ensures order.
     #[serde(default)]
     pub versioned_constants: ChainVersionedConstants,
 
-    #[serde(deserialize_with = "deserialize_starknet_version")]
+    /// Produce blocks using for this starknet protocol version.
+    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
-    #[serde(deserialize_with = "deserialize_duration")]
+    /// Default: 30s.
+    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
     pub block_time: Duration,
 
     /// Do not produce empty blocks.
@@ -128,8 +139,10 @@ pub struct ChainConfig {
 
     /// Only used for block production.
     /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
-    #[serde(deserialize_with = "deserialize_duration")]
-    pub pending_block_update_time: Duration,
+    /// When none, no pending block will be produced.
+    /// Default: 500ms.
+    #[serde(default = "default_pending_block_update_time", deserialize_with = "deserialize_optional_duration")]
+    pub pending_block_update_time: Option<Duration>,
 
     /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
@@ -196,10 +209,10 @@ impl ChainConfig {
         if self.sequencer_address == ContractAddress::default() {
             bail!("Sequencer address cannot be 0x0 for block production.")
         }
-        if self.block_time.as_millis() == 0 {
+        if self.block_time.is_zero() {
             bail!("Block time cannot be zero for block production.")
         }
-        if self.pending_block_update_time.as_millis() == 0 {
+        if self.pending_block_update_time.is_some_and(|t| t.is_zero()) {
             bail!("Pending block update time cannot be zero for block production.")
         }
         Ok(())
@@ -237,7 +250,7 @@ impl ChainConfig {
 
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
-            pending_block_update_time: Duration::from_secs(2),
+            pending_block_update_time: Some(Duration::from_millis(500)),
 
             no_empty_blocks: false,
 
@@ -337,11 +350,6 @@ impl ChainConfig {
         }
     }
 
-    /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
-    pub fn n_pending_ticks_per_block(&self) -> usize {
-        (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
-    }
-
     pub fn exec_constants_by_protocol_version(
         &self,
         version: StarknetVersion,
@@ -367,6 +375,7 @@ impl ChainConfig {
 
 // TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
 // proper page about tuning the block production performance.
+/// BTreeMap ensures order.
 #[derive(Debug)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
@@ -575,7 +584,7 @@ mod tests {
 
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
-        assert_eq!(chain_config.pending_block_update_time, Duration::from_secs(2));
+        assert_eq!(chain_config.pending_block_update_time, Some(Duration::from_secs(2)));
 
         // Check bouncer config
         assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
