@@ -699,7 +699,6 @@ mod tests {
         genesis.build_and_store(&backend).await.unwrap();
 
         let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_da_mode().return_const(L1DataAvailabilityMode::Blob);
         l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
             eth_l1_gas_price: 128,
             strk_l1_gas_price: 128,

@@ -332,7 +332,6 @@ mod tests {
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
         let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_da_mode().return_const(backend.chain_config().l1_da_mode);
         l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
             eth_l1_gas_price: 128,
             strk_l1_gas_price: 128,
