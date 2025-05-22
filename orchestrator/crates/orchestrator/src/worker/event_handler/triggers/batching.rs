@@ -3,7 +3,7 @@ use crate::compression::squash::squash_state_updates;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::{Config, StarknetVersion};
-use crate::core::{DatabaseClient, StorageClient};
+use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchUpdates};
@@ -11,9 +11,9 @@ use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDA
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
-use num_bigint::BigUint;
 use starknet::core::types::{BlockId, StateUpdate};
-use starknet::providers::Provider;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::Felt;
 use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
@@ -103,7 +103,15 @@ impl BatchingTrigger {
         }
 
         if let Some(state_update) = state_update {
-            self.close_batch(&batch, &state_update, false, &config).await?;
+            self.close_batch(
+                &batch,
+                &state_update,
+                false,
+                &config,
+                batch.start_block.saturating_sub(1),
+                config.madara_client(),
+            )
+            .await?;
         }
 
         Ok(())
@@ -140,14 +148,28 @@ impl BatchingTrigger {
                         )
                         .await?;
 
-                        let compressed_state_update =
-                            self.compress_state_update(&squashed_state_update, config.params.madara_version).await?;
+                        let compressed_state_update = self
+                            .compress_state_update(
+                                &squashed_state_update,
+                                config.params.madara_version,
+                                current_batch.start_block.saturating_sub(1),
+                                provider,
+                            )
+                            .await?;
 
                         if compressed_state_update.len() > MAX_BLOB_SIZE {
                             // We cannot add the current block in this batch
 
                             // Close the current batch - store the state update, blob info in storage and update DB
-                            self.close_batch(&current_batch, &prev_state_update, true, config).await?;
+                            self.close_batch(
+                                &current_batch,
+                                &prev_state_update,
+                                true,
+                                config,
+                                current_batch.start_block.saturating_sub(1),
+                                provider,
+                            )
+                            .await?;
 
                             // Start a new batch
                             let new_batch = Batch::create(
@@ -184,6 +206,8 @@ impl BatchingTrigger {
         state_update: &StateUpdate,
         is_batch_ready: bool,
         config: &Arc<Config>,
+        pre_range_block: u64,
+        provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<(), JobError> {
         // Get the database
         let database = config.database();
@@ -191,7 +215,8 @@ impl BatchingTrigger {
         // Get the storage client
         let storage = config.storage();
 
-        let compressed_state_update = self.compress_state_update(state_update, config.params.madara_version).await?;
+        let compressed_state_update =
+            self.compress_state_update(state_update, config.params.madara_version, pre_range_block, provider).await?;
         try_join!(
             // Update state update and blob for the batch in storage
             self.store_state_update(storage, state_update, batch),
@@ -221,10 +246,14 @@ impl BatchingTrigger {
         &self,
         state_update: &StateUpdate,
         madara_version: StarknetVersion,
+        pre_range_block: u64,
+        provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<Vec<Felt>, JobError> {
         // Perform stateful compression
         let state_update = if madara_version >= StarknetVersion::V0_13_4 {
-            stateful_compress(state_update).map_err(|err| JobError::Other(OtherError(err)))?
+            stateful_compress(state_update, pre_range_block, provider)
+                .await
+                .map_err(|err| JobError::Other(OtherError(err)))?
         } else {
             state_update.clone()
         };
