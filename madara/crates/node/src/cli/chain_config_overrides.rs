@@ -9,7 +9,7 @@ use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_chain_config::{
     deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
-    ChainConfig, StarknetVersion,
+    ChainConfig, L1DataAvailabilityMode, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -84,6 +84,7 @@ pub struct ChainConfigOverrideParams {
 pub struct ChainConfigOverridesInner {
     pub chain_name: String,
     pub chain_id: ChainId,
+    pub l1_da_mode: L1DataAvailabilityMode,
     pub feeder_gateway_url: Url,
     pub gateway_url: Url,
     pub native_fee_token_address: ContractAddress,
@@ -113,6 +114,7 @@ impl ChainConfigOverrideParams {
         let mut chain_config_overrides = serde_yaml::to_value(ChainConfigOverridesInner {
             chain_name: chain_config.chain_name,
             chain_id: chain_config.chain_id,
+            l1_da_mode: chain_config.l1_da_mode,
             native_fee_token_address: chain_config.native_fee_token_address,
             parent_fee_token_address: chain_config.parent_fee_token_address,
             latest_protocol_version: chain_config.latest_protocol_version,
@@ -163,6 +165,7 @@ impl ChainConfigOverrideParams {
         Ok(ChainConfig {
             chain_name: chain_config_overrides.chain_name,
             chain_id: chain_config_overrides.chain_id,
+            l1_da_mode: chain_config_overrides.l1_da_mode,
             feeder_gateway_url: chain_config_overrides.feeder_gateway_url,
             gateway_url: chain_config_overrides.gateway_url,
             native_fee_token_address: chain_config_overrides.native_fee_token_address,
