@@ -1,4 +1,3 @@
-use crate::core::client::event_bus::EventBusClient;
 use aws_config::SdkConfig;
 use std::sync::Arc;
 

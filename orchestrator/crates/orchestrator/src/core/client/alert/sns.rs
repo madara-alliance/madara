@@ -26,7 +26,7 @@ impl InnerAWSSNS {
 }
 
 pub struct SNS {
-    pub inner: InnerAWSSNS,
+    inner: InnerAWSSNS,
     pub topic_arn: Option<String>,
 }
 

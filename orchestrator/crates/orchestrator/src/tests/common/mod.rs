@@ -3,7 +3,7 @@ pub mod constants;
 use std::sync::Arc;
 
 use crate::core::client::storage::s3::InnerAWSS3;
-use crate::core::client::{MongoDbClient, AWSS3};
+use crate::core::client::MongoDbClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::external_id::ExternalId;
@@ -157,6 +157,6 @@ pub struct MessagePayloadType {
     pub(crate) id: Uuid,
 }
 
-pub async fn get_storage_client(provider_config: Arc<CloudProvider>) -> InnerAWSS3 {
+pub(crate) async fn get_storage_client(provider_config: Arc<CloudProvider>) -> InnerAWSS3 {
     InnerAWSS3::create_setup(provider_config).await.unwrap()
 }
