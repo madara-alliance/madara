@@ -9,6 +9,7 @@ pub mod factory {
     use mockall::automock;
 
     use crate::types::jobs::types::JobType;
+    use crate::worker::event_handler::jobs::proof_registration::RegisterProofJob;
     use crate::worker::event_handler::jobs::{
         da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler,
         JobHandlerTrait,
@@ -57,11 +58,12 @@ pub mod factory {
     ///   `get_job_handler`. This is needed because `MockJob` doesn't implement Clone
     pub async fn get_job_handler(job_type: &JobType) -> Arc<Box<dyn JobHandlerTrait>> {
         let job: Box<dyn JobHandlerTrait> = match job_type {
-            JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::SnosRun => Box::new(SnosJobHandler),
             JobType::ProofCreation => Box::new(ProvingJobHandler),
+            JobType::ProofRegistration => Box::new(RegisterProofJob),
+            JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
-            _ => unimplemented!("Job type not implemented yet."),
+            // _ => unimplemented!("Job type not implemented yet."),
         };
 
         Arc::new(job)

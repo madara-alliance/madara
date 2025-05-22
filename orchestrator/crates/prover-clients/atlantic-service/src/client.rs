@@ -85,6 +85,7 @@ impl AtlanticClient {
                     .query_param("apiKey", atlantic_api_key.as_ref())
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("layout", proof_layout)
+                    .form_text("result", "PROOF_GENERATION")
                     .form_text("network", atlantic_network.as_ref())
                     .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                     .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
@@ -115,6 +116,47 @@ impl AtlanticClient {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
             Err(AtlanticError::SharpService(response.status()))
+        }
+    }
+
+    pub async fn submit_l2_query(
+        &self,
+        proof: &str,
+        cairo_verifier: &str,
+        proof_layout: LayoutName,
+        n_steps: Option<usize>,
+        atlantic_network: impl AsRef<str>,
+        atlantic_api_key: &str,
+    ) -> Result<AtlanticAddJobResponse, AtlanticError> {
+        let proof_layout = match proof_layout {
+            LayoutName::recursive_with_poseidon => "recursive_with_poseidon",
+            _ => proof_layout.to_str(),
+        };
+
+        let response = self
+            .proving_layer
+            .customize_request(
+                self.client
+                    .request()
+                    .method(Method::POST)
+                    .path("atlantic-query")
+                    .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
+                    .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json")
+                    .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json")
+                    .form_text("layout", proof_layout)
+                    .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+                    .form_text("network", atlantic_network.as_ref())
+                    .form_text("result", "PROOF_VERIFICATION_ON_L2")
+                    .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
+                    .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str()),
+            )
+            .send()
+            .await
+            .map_err(AtlanticError::AddJobFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            false => Err(AtlanticError::SharpService(response.status())),
         }
     }
 

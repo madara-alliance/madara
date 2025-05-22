@@ -21,6 +21,13 @@ pub trait ProverClient: Send + Sync {
         fact: Option<String>,
         cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError>;
+    async fn get_proof(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError>;
+    async fn submit_l2_query(
+        &self,
+        task_id: &str,
+        fact: &str,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError>;
 }
 
 pub enum Task {
@@ -52,4 +59,8 @@ pub enum ProverClientError {
     FailedToCreateTempFile(String),
     #[error("Failed to write file: {0}")]
     FailedToWriteFile(String),
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("Invalid proof format: {0}")]
+    InvalidProofFormat(String),
 }

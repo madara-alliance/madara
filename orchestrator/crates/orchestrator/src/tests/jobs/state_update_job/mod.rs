@@ -104,7 +104,7 @@ async fn test_process_job_works(
             .times(1)
             .returning(|_, _, _| Ok("0xbeef".to_string()));
     }
-    settlement_client.expect_get_last_settled_block().with().returning(move || Ok(651052));
+    settlement_client.expect_get_last_settled_block().with().returning(move || Ok(Some(651052)));
     // Setting random nonce
     settlement_client.expect_get_nonce().with().returning(move || Ok(2));
 
@@ -223,7 +223,7 @@ async fn process_job_works_unit_test() {
     let mut storage_client = MockStorageClient::new();
 
     // Mock the latest block settled
-    settlement_client.expect_get_last_settled_block().returning(|| Ok(651052_u64));
+    settlement_client.expect_get_last_settled_block().returning(|| Ok(Some(651052_u64)));
 
     // TODO: have tests for update_state_calldata, only kzg for now
     let block_numbers = ["651053", "651054", "651055", "651056"];
@@ -378,7 +378,7 @@ async fn process_job_invalid_input_gap_panics() {
     let server = MockServer::start();
     let mut settlement_client = MockSettlementClient::new();
 
-    settlement_client.expect_get_last_settled_block().returning(|| Ok(4_u64));
+    settlement_client.expect_get_last_settled_block().returning(|| Ok(Some(4_u64)));
 
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),

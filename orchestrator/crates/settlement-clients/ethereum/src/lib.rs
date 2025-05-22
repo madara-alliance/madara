@@ -184,6 +184,7 @@ impl SettlementClient for EthereumSettlementClient {
     /// Should be used to update state on core contract when DA is done in calldata
     async fn update_state_calldata(
         &self,
+        _snos_output: Vec<[u8; 32]>,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
@@ -381,9 +382,16 @@ impl SettlementClient for EthereumSettlementClient {
     }
 
     /// Get the last block settled through the core contract
-    async fn get_last_settled_block(&self) -> Result<u64> {
+    async fn get_last_settled_block(&self) -> Result<Option<u64>> {
         let block_number = self.core_contract_client.state_block_number().await?;
-        Ok(block_number.try_into()?)
+        // THIS IS INCORRECT ! PLEASE DO NOT USE THIS
+        // WE NEED TO handle SPECIAL ADDRESS HERE
+        // Convert to u64 if the value exists and is > 0
+        // Return None for block number 0 (genesis/initial state)
+        match block_number.try_into()? {
+            0 => Ok(None),
+            n => Ok(Some(n)),
+        }
     }
 
     async fn get_nonce(&self) -> Result<u64> {

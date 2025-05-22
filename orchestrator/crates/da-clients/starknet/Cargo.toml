@@ -1,0 +1,16 @@
+[package]
+name = "orchestrator-starknet-da-client"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+async-trait = { workspace = true }
+color-eyre = { workspace = true }
+mockall = { workspace = true }
+orchestrator-da-client-interface = { workspace = true }
+serde = { workspace = true, features = ["derive"] }
+starknet = { workspace = true }
+url = { workspace = true }
+
+[dev-dependencies]
+tokio-test = "*"
