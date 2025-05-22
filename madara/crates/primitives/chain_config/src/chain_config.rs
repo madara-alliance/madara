@@ -110,6 +110,7 @@ pub struct ChainConfig {
     pub chain_id: ChainId,
 
     /// The DA mode supported by L1.
+    #[serde(default)]
     pub l1_da_mode: L1DataAvailabilityMode,
 
     // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
