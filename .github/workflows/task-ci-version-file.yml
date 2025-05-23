@@ -22,7 +22,7 @@ jobs:
 
   update-version-file:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, ${{ inputs.label }})
+    if: contains(github.event.pull_request.labels.*.name, inputs.label)
     permissions:
       contents: write
     steps:

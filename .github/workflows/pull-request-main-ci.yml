@@ -29,7 +29,7 @@ jobs:
     uses: ./.github/workflows/task-ci-version-file.yml
     with:
       label: db-migration
-      version-file: .db-version.yml
+      version-file: .db-versions.yml
     secrets: inherit
 
   # ========================================================================= #
@@ -42,7 +42,7 @@ jobs:
     uses: ./.github/workflows/task-ci-version-file.yml
     with:
       label: artifacts-update
-      version-file: .artifacts-version.yml
+      version-file: .artifacts-versions.yml
     secrets: inherit
 
   build-artifacts:

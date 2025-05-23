@@ -48,7 +48,7 @@ FILE="$2"
 
 command -v yq >/dev/null 2>&1 || { echo "Error: yq is required but not installed" >&2; exit 1; }
 
-[ -f "$FILE" ] || { echo "Error: $FILE not found" >&2; exit 1; }
+[ -f "$FILE" ] || { echo "Creating $FILE"; touch "$FILE" }
 
 # Check duplicate PR
 yq -e ".versions[] | select(.pr == $PR_NUMBER)" "$FILE" >/dev/null 2>&1 && {
