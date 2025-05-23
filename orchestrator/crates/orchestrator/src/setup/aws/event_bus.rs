@@ -1,6 +1,5 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::Layer;
-use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -32,6 +31,8 @@ pub struct TriggerArns {
     queue_arn: String,
     role_arn: String,
 }
+
+// TODO: Ideally I should automatically get the TARGET_QUEUE_NAME from queue params
 
 #[async_trait]
 impl Resource for InnerAWSEventBridge {
@@ -72,7 +73,7 @@ impl Resource for InnerAWSEventBridge {
                 continue;
             }
             if self
-                .check_if_exists((args.event_bridge_type.clone(), trigger.clone(), args.trigger_rule_name.clone()))
+                .check_if_exists(&(args.event_bridge_type.clone(), trigger.clone(), args.trigger_rule_name.clone()))
                 .await?
             {
                 tracing::info!(" ⏭️ Event Bridge {trigger} already exists, skipping");
@@ -101,7 +102,7 @@ impl Resource for InnerAWSEventBridge {
     /// # Returns
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule exists
     ///
-    async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool> {
+    async fn check_if_exists(&self, args: &Self::CheckArgs) -> OrchestratorResult<bool> {
         let (event_bridge_type, trigger_type, trigger_rule_name) = args;
         let trigger_name = format!("{}-{}", trigger_rule_name.clone(), trigger_type);
         match event_bridge_type {

@@ -262,22 +262,24 @@ impl TryFrom<RunCmd> for QueueArgs {
 impl TryFrom<SetupCmd> for CronArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let target_queue_name = format!(
-            "{}_{}",
-            setup_cmd.aws_config_args.aws_prefix,
+        let format_with_prefix = |name: String| -> String {
+            setup_cmd.aws_config_args.aws_prefix.as_ref().map_or(name.clone(), |prefix| format!("{}_{}", prefix, name))
+        };
+
+        let target_queue_name = format_with_prefix(
             setup_cmd
                 .aws_event_bridge_args
                 .target_queue_name
-                .ok_or(OrchestratorError::SetupCommandError("SQS prefix is required".to_string()))?,
+                .ok_or(OrchestratorError::SetupCommandError("Target queue name is required".to_string()))?,
         );
-        let trigger_rule_name = format!(
-            "{}_{}",
-            setup_cmd.aws_config_args.aws_prefix,
+
+        let trigger_rule_name = format_with_prefix(
             setup_cmd
                 .aws_event_bridge_args
                 .trigger_rule_name
                 .ok_or(OrchestratorError::SetupCommandError("Trigger rule name is required".to_string()))?,
         );
+
         Ok(Self {
             event_bridge_type: setup_cmd
                 .aws_event_bridge_args
