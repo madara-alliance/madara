@@ -1,20 +1,24 @@
 #!/bin/bash
 
 #
-# Database version management script
+# Version file management script
 #
-# This script updates the database version tracking file when schema changes occur.
-# It's typically called by CI when a PR with the 'db-migration' label is merged.
+# This script updates the version tracking file to mark changes in external
+# dependencies, for example database schema changes or cairo artifact changes.
+#
+# It's typically called by CI when a PR with a specific label, such as
+# 'db-migration', is merged.
 #
 # Requirements: yq (https://github.com/mikefarah/yq/)
 #
 # Usage:
-#   ./update-db-version.sh PR_NUMBER
+#   ./update-version-file.sh PR_NUMBER FILE
 #
 # Arguments:
 #   PR_NUMBER - The pull request number that introduced the schema changes
+#   FILE      - Path to the version file to save
 #
-# File format (.db-versions.yml):
+# File format:
 #   current_version: 41
 #   versions:
 #     - version: 41
@@ -32,15 +36,15 @@
 #   1 - PR already exists
 #
 # Example:
-#   ./update-db-version.sh 123
-#   Successfully updated DB version from 41 to 42 (PR #123)
+#   ./update-version-file.sh 123 .db-versions.yml
+#   Successfully updated '.db-versions.yml' from 41 to 42 (PR #123)
 
 set -euo pipefail
 
-FILE=".db-versions.yml"
 
-[ $# -eq 1 ] || { echo "Usage: $0 PR_NUMBER" >&2; exit 1; }
+[ $# -eq 2 ] || { echo "Usage: $0 PR_NUMBER FILE" >&2; exit 1; }
 PR_NUMBER="$1"
+FILE="$2"
 
 command -v yq >/dev/null 2>&1 || { echo "Error: yq is required but not installed" >&2; exit 1; }
 
@@ -67,4 +71,4 @@ NEW_VERSION=$((CURRENT_VERSION + 1))
 yq e ".current_version = $NEW_VERSION |
   .versions = [{\"version\": $NEW_VERSION, \"pr\": $PR_NUMBER}] + .versions" -i "$FILE"
 
-echo "Successfully updated DB version to ${NEW_VERSION} (PR #${PR_NUMBER})"
+echo "Successfully updated ${FILE} to ${NEW_VERSION} (PR #${PR_NUMBER})"

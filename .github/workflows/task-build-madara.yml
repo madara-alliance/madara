@@ -13,11 +13,11 @@ on:
 
 jobs:
   build-binaries:
-    permissions:
-      pull-requests: write
     runs-on: karnot-arc-runner-set
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
+    permissions:
+      pull-requests: write
 
     steps:
       - name: Checkout Repository

@@ -4,22 +4,22 @@ name: Task - Publish Nightly Release
 on:
   workflow_call:
     inputs:
-      registry:
-        description: Container registry domain
-        required: false
-        default: ghcr.io
-        type: string
       image-name:
         description: Name of the Docker image
         required: true
         type: string
-      nightly:
-        description: Nightly image tag
+      tag:
+        description: Image tag
         required: true
         type: string
-      nightly-sha:
-        description: Nightly image tag (with commit sha)
+      tag-version:
+        description: Image tag (with identifying version information)
         required: true
+        type: string
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
         type: string
 
 permissions:
@@ -29,7 +29,7 @@ permissions:
   id-token: write
 
 jobs:
-  publish-nightly:
+  publish-image:
     runs-on: karnot-arc-runner-set
 
     steps:
@@ -47,7 +47,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Publish nightly
+      - name: Publish image
         run: |
-          docker push ${{ inputs.nightly }}
-          docker push ${{ inputs.nightly-sha }}
+          docker push ${{ inputs.tag }}
+          docker push ${{ inputs.tag-version }}
