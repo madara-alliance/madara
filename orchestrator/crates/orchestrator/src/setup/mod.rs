@@ -19,8 +19,6 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
 
     info!("Setting up resources for Orchestrator...");
 
-    let layer = setup_cmd.layer.as_ref().unwrap_or(&Layer::L2);
-
     let queue_params = QueueArgs::try_from(setup_cmd.clone())?;
     let storage_params = StorageArgs::try_from(setup_cmd.clone())?;
     let alert_params = AlertArgs::try_from(setup_cmd.clone())?;
