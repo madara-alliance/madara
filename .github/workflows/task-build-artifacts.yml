@@ -13,10 +13,10 @@ on:
     outputs:
       artifacts:
         description: Artifacts image tag
-        value: ${{ jobs.build-artifacts.outputs.artifacts-sha }}
+        value: ${{ jobs.build-artifacts.outputs.artifacts }}
       artifacts-pr:
         description: Artifacts image tag (with pr number)
-        value: ${{ jobs.build-artifacts.outputs.artifacts-sha }}
+        value: ${{ jobs.build-artifacts.outputs.artifacts-pr }}
 
 permissions:
   contents: read
@@ -27,7 +27,8 @@ jobs:
   build-artifacts:
     runs-on: ubuntu-latest
     outputs:
-      artifacts-sha: ${{ steps.tag.outputs.artifacts-sha }}
+      artifacts: ${{ steps.tag.outputs.artifacts }}
+      artifacts-pr: ${{ steps.tag.outputs.artifacts-pr }}
 
     steps:
       - name: Checkout Repository
