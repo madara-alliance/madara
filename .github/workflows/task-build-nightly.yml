@@ -4,11 +4,6 @@ name: Task - Build And Publish Nightly Docker Image
 on:
   workflow_call:
     inputs:
-      registry:
-        description: Container registry domain
-        required: false
-        default: ghcr.io
-        type: string
       image-name:
         description: Name of the Docker image
         required: true
@@ -16,6 +11,11 @@ on:
       image-file:
         description: Dockerfile used to build the image
         required: true
+        type: string
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
         type: string
     outputs:
       nightly:

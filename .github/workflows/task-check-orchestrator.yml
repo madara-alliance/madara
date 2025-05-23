@@ -1,12 +1,16 @@
-name: Task - Lint Cargo
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Orchestrator
 
 on:
   workflow_dispatch:
   workflow_call:
 
 jobs:
-  cargo-lint:
+  check-binaries:
+    permissions:
+      pull-requests: write
     runs-on: karnot-arc-runner-set
+
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -20,15 +24,8 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
-      - name: Scarb setup
-        uses: ./.github/actions/setup-scarb
-        with:
-          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-
-      - name: Cargo fmt
-        run: cargo fmt -- --check
-
-      - name: Cargo Clippy
+      # Check Orchestrator
+      - name: Cargo check
         run: |
-          cargo clippy --workspace --no-deps -- -D warnings
-          cargo clippy --workspace --tests --no-deps -- -D warnings
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          cargo check -p orchestrator --release
