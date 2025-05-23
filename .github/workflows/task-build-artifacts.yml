@@ -41,14 +41,15 @@ jobs:
         run: make artifacts
 
       - name: Compress artifacts
-        run: tar --exclude Dockerfile -czvf artifacts.tar.gz build_artifacts/
+        run: tar --exclude Dockerfile -czvf artifacts.tar.gz build-artifacts/
 
       - name: Tags
         id: tag
         run: |
           IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/artifacts"
+          VERSION=$(yq -e ".current_version" .artifact-versions.yml)
           ARTIFACTS="$IMAGE"
-          ARTIFACTS_PR="$IMAGE:${{ github.event.number }}"
+          ARTIFACTS_PR="$IMAGE:$VERSION"
 
           echo "artifacts=$ARTIFACTS" >> $GITHUB_OUTPUT
           echo "artifacts-pr=$ARTIFACTS_PR" >> $GITHUB_OUTPUT
@@ -62,7 +63,7 @@ jobs:
         with:
           context: .
           push: false
-          file: build_artifacts/archive.docker
+          file: build-artifacts/archive.docker
           tags: |
             ${{ steps.tag.outputs.artifacts }}
             ${{ steps.tag.outputs.artifacts-pr }}
