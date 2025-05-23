@@ -1,4 +1,5 @@
 use crate::{Error, ExecutionContext, ExecutionResult, TxExecError, TxFeeEstimationError};
+use blockifier::execution::contract_class::ContractClass;
 use blockifier::fee::fee_utils::get_fee_by_gas_vector;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
@@ -120,6 +121,7 @@ pub trait TxInfo {
     fn is_only_query(&self) -> bool;
     fn deployed_contract_address(&self) -> Option<ContractAddress>;
     fn declared_class_hash(&self) -> Option<ClassHash>;
+    fn declared_contract_class(&self) -> Option<(ClassHash, ContractClass)>;
 }
 
 impl TxInfo for Transaction {
@@ -185,6 +187,13 @@ impl TxInfo for Transaction {
     fn declared_class_hash(&self) -> Option<ClassHash> {
         match self {
             Self::AccountTransaction(AccountTransaction::Declare(tx)) => Some(tx.class_hash()),
+            _ => None,
+        }
+    }
+
+    fn declared_contract_class(&self) -> Option<(ClassHash, ContractClass)> {
+        match self {
+            Self::AccountTransaction(AccountTransaction::Declare(tx)) => Some((tx.class_hash(), tx.contract_class())),
             _ => None,
         }
     }
