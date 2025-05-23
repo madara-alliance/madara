@@ -1,4 +1,6 @@
 use crate::core::client::storage::s3::InnerAWSS3;
+use crate::cli::Layer;
+use crate::core::client::storage::s3::AWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::StorageArgs;
@@ -32,7 +34,7 @@ impl Resource for InnerAWSS3 {
         }
     }
     /// Set up a new S3 bucket
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let bucket_name = match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => {
                 // Extract queue name from ARN resource part

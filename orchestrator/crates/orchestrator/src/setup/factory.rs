@@ -2,6 +2,9 @@ use crate::core::client::alert::sns::InnerAWSSNS;
 use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::storage::s3::InnerAWSS3;
+use crate::cli::Layer;
+use crate::core::client::event_bus::event_bridge::EventBridgeClient;
+use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
 use crate::setup::creator::{
     EventBridgeResourceCreator, ResourceCreator, ResourceType, S3ResourceCreator, SNSResourceCreator,
@@ -74,7 +77,7 @@ impl ResourceFactory {
     /// NOTE: this function length is a bit long, but it is necessary to maintain the order of resource creation
     /// in the future, we can refactor this function to use a more generic approach when we add more cloud providers
     /// TODO > Refactor this function to use a more generic approach when we add more cloud providers
-    pub async fn setup_resource(&self) -> OrchestratorResult<()> {
+    pub async fn setup_resource(&self, layer: &Layer) -> OrchestratorResult<()> {
         let mut resource_futures = Vec::new();
         let is_queue_ready = Arc::new(AtomicBool::new(false));
         // Use ordered_types to maintain creation order
@@ -89,7 +92,7 @@ impl ResourceFactory {
             let cron_params = self.cron_params.clone();
             let resource_type = resource_type.clone();
             let miscellaneous_params = self.miscellaneous_params.clone();
-
+            let layer = layer.clone();
             let resource_future = async move {
                 let result: OrchestratorResult<()> = async {
                     match resource_type {
@@ -97,7 +100,7 @@ impl ResourceFactory {
                             let rs = resource.downcast_mut::<InnerAWSS3>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to AWSS3".to_string(),
                             ))?;
-                            rs.setup(storage_params.clone()).await?;
+                            rs.setup(layer, storage_params.clone()).await?;
                             rs.poll(storage_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
                                 .await;
                             Ok(())
@@ -106,7 +109,7 @@ impl ResourceFactory {
                             let rs = resource.downcast_mut::<InnerSQS>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to SQS".to_string(),
                             ))?;
-                            rs.setup(queue_params.clone()).await?;
+                            rs.setup(layer, queue_params.clone()).await?;
                             let queue_ready = rs
                                 .poll(queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
                                 .await;
@@ -124,7 +127,8 @@ impl ResourceFactory {
                                     let rs = resource.downcast_mut::<InnerAWSSNS>().ok_or(
                                         OrchestratorError::SetupError("Failed to downcast resource to SNS".to_string()),
                                     )?;
-                                    rs.setup(alert_params.clone()).await?;
+                                    rs.setup(layer, alert_params.clone()).await?;
+
                                     rs.poll(
                                         alert_params,
                                         miscellaneous_params.poll_interval,
@@ -153,7 +157,7 @@ impl ResourceFactory {
                                             "Failed to downcast resource to EventBridge".to_string(),
                                         ),
                                     )?;
-                                    rs.setup(cron_params.clone()).await?;
+                                    rs.setup(layer, cron_params.clone()).await?;
                                     break;
                                 } else {
                                     info!(" Current Status of the Queue Creation is: {:?}", is_queue_ready_clone);

@@ -45,6 +45,12 @@ impl BlockTimestamp {
     }
 }
 
+impl From<SystemTime> for BlockTimestamp {
+    fn from(value: SystemTime) -> Self {
+        Self(value.duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs())
+    }
+}
+
 impl fmt::Display for BlockTimestamp {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.0)

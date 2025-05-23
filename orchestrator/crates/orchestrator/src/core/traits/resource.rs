@@ -1,4 +1,5 @@
 use super::super::cloud::CloudProvider;
+use crate::cli::Layer;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -29,13 +30,34 @@ pub trait Resource: Send + Sync {
     /// setup - Setup the resource
     /// This function will check if the resource exists, if not create it.
     /// This function will also create any dependent resources that are needed.
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
+    /// # Arguments
+    /// * `layer` - The layer to setup the resource for
+    /// * `args` - The arguments to setup the resource with
+    /// # Returns
+    /// * `OrchestratorResult<Self::SetupResult>` - A Result indicating whether the operation was successful or not
+    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
+
     /// check - Check if the resource exists, check only for individual resources
+    /// # Arguments
+    /// * `args` - The arguments to check the resource with
+    /// # Returns
+    /// * `OrchestratorResult<bool>` - A Result indicating whether the resource exists or not
     async fn check_if_exists(&self, args: &Self::CheckArgs) -> OrchestratorResult<bool>;
     /// ready - Check if all the resource is created and ready to use
+    /// # Arguments
+    /// * `args` - The arguments to check the resource with
+    /// # Returns
+    /// * `OrchestratorResult<bool>` - A Result indicating whether the resource is ready to use or not
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
-    /// check - Check if the resource is ready to use
-    /// This function will check if the resource is ready to use.
+
+    /// poll - Poll the resource until it is ready to use
+    /// This function will poll the resource until it is ready to use.
+    /// # Arguments
+    /// * `args` - The arguments to check the resource with
+    /// * `poll_interval` - The interval to check the resource with
+    /// * `timeout` - The timeout to check the resource with
+    /// # Returns
+    /// * `bool` - A boolean indicating whether the resource is ready to use or not
     async fn poll(&self, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
         let timeout_duration = Duration::from_secs(timeout);
         let start_time = Instant::now();

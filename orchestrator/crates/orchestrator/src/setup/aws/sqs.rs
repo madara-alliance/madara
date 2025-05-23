@@ -1,5 +1,6 @@
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::types::queue::QueueType;
+use crate::cli::Layer;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES, types::params::QueueArgs,
     OrchestratorError, OrchestratorResult,
@@ -33,8 +34,11 @@ impl Resource for InnerSQS {
     /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
+            if !queue.supported_layers.contains(&layer) {
+                continue;
+            }
             let queue_name = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
                     self.get_queue_name_from_type(&arn.resource, &queue.name)

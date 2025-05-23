@@ -24,7 +24,6 @@ proptest-derive.workspace = true
 proptest-state-machine.workspace = true
 bitvec.workspace = true
 tracing = { workspace = true, features = ["log"] }
-tracing-test.workspace = true
 mockall.workspace = true
 assert_matches.workspace = true
 lazy_static.workspace = true
