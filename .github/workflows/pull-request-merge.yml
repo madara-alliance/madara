@@ -25,12 +25,12 @@ jobs:
   #   secrets: inherit
 
   publish-nightly:
-    needs: [build-nightly]
-    uses: ./.github/workflows/task-publish-nightly.yml
+    needs: build-nightly
+    uses: ./.github/workflows/task-publish-image.yml
     with:
       image-name: madara
-      nightly: ${{ needs.build-nightly.outputs.nightly }}
-      nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
+      tag: ${{ needs.build-nightly.outputs.nightly }}
+      tag-version: ${{ needs.build-nightly.outputs.nightly-sha }}
     permissions:
       contents: read
       packages: write

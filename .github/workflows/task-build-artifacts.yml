@@ -1,0 +1,75 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Cairo Artifacts
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    outputs:
+      artifacts:
+        description: Artifacts image tag
+        value: ${{ jobs.build-artifacts.outputs.artifacts-sha }}
+      artifacts-pr:
+        description: Artifacts image tag (with pr number)
+        value: ${{ jobs.build-artifacts.outputs.artifacts-sha }}
+
+jobs:
+  build-artifacts:
+    runs-on: ubuntu-latest
+    outputs:
+      artifacts-sha: ${{ steps.tag.outputs.artifacts-sha }}
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Compile artifacts
+        run: make artifacts
+
+      - name: Compress artifacts
+        run: tar --exclude Dockerfile -czvf artifacts.tar.gz build_artifacts/
+
+      - name: Tags
+        id: tag
+        run: |
+          IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/artifacts"
+          PR=$(git rev-parse --short "${{ github.event.number }}")
+          ARTIFACTS="$IMAGE"
+          ARTIFACTS_PR="$IMAGE:$PR"
+
+          echo "artifacts=$ARTIFACTS" >> $GITHUB_OUTPUT
+          echo "artifacts-pr=$ARTIFACTS_PR" >> $GITHUB_OUTPUT
+
+      - name: Log in to the Container registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ inputs.registry }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: build_artifacts/archive.docker
+          tags: |
+            ${{ steps.tag.outputs.artifacts }}
+            ${{ steps.tag.outputs.artifacts-pr }}
+          outputs: type=docker,dest=${{ runner.temp }}/artifacts.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ${{ runner.temp }}/artifacts.tar

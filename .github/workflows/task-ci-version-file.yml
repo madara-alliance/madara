@@ -1,19 +1,28 @@
 ---
-name: Task - DB Version Management
+name: Task - Version File Management
 
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      label:
+        description: "Label used to trigger this workflow"
+        required: true
+        type: string
+      version-file:
+        description: "Path to the version file to update"
+        required: true
+        type: string
 
 jobs:
   db-check:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Checking DB Version ('db-migration' label only)"
+      - run: echo "Checking DB Version ('${{ inputs.label }}' label only)"
 
-  update-db-version:
+  update-version-file:
     runs-on: ubuntu-latest
-    if: contains(github.event.pull_request.labels.*.name, 'db-migration')
+    if: contains(github.event.pull_request.labels.*.name, ${{ inputs.label }})
     permissions:
       contents: write
     steps:
@@ -26,7 +35,7 @@ jobs:
         id: check_bump
         run: |
           PR_NUM="${{ github.event.pull_request.number }}"
-          if yq -e ".versions[] | select(.pr == ${PR_NUM})" .db-versions.yml > /dev/null 2>&1; then
+          if yq -e ".versions[] | select(.pr == ${PR_NUM})" ${{ inputs.version-file }} > /dev/null 2>&1; then
             echo "already_bumped=true" >> $GITHUB_OUTPUT
           else
             echo "already_bumped=false" >> $GITHUB_OUTPUT
@@ -41,13 +50,13 @@ jobs:
       - name: Update DB Version
         if: steps.check_bump.outputs.already_bumped == 'false'
         run: |
-          ./scripts/update-db-version.sh "${{ github.event.pull_request.number }}"
+          ./scripts/update-version-file.sh "${{ github.event.pull_request.number }}" ${{ inputs.version-file }}
 
       - name: Commit and Push
         if: steps.check_bump.outputs.already_bumped == 'false'
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
-            git add .db-versions.yml
+            git add ${{ inputs.version-file }}
             git commit -m "chore: bump db version"
             git push origin ${{ github.head_ref || github.ref_name }}
           fi
