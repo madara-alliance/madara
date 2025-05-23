@@ -1,6 +1,9 @@
 pub mod constants;
 
-use crate::core::client::{MongoDbClient, AWSS3};
+use crate::core::client::MongoDbClient;
+use std::sync::Arc;
+
+use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::external_id::ExternalId;
@@ -20,7 +23,6 @@ use chrono::{SubsecRound, Utc};
 use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
-use std::sync::Arc;
 use strum::IntoEnumIterator as _;
 
 #[fixture]
@@ -155,6 +157,6 @@ pub struct MessagePayloadType {
     pub(crate) id: Uuid,
 }
 
-pub async fn get_storage_client(provider_config: Arc<CloudProvider>) -> AWSS3 {
-    AWSS3::create_setup(provider_config).await.unwrap()
+pub(crate) async fn get_storage_client(provider_config: Arc<CloudProvider>) -> InnerAWSS3 {
+    InnerAWSS3::create_setup(provider_config).await.unwrap()
 }

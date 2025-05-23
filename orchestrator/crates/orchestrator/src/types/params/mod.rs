@@ -11,26 +11,101 @@ use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::{RunCmd, SetupCmd};
 use crate::OrchestratorError;
 pub use otel::OTELConfig;
-use tracing::info;
+
+pub type ResourceName = String;
+
+#[derive(Debug, Clone)]
+pub struct ARN {
+    pub partition: String,  // Usually "aws" (e.g., "aws-us-gov", "aws-cn")
+    pub service: String,    // AWS service (e.g., "s3", "sns", "sqs")
+    pub region: String,     // AWS region (e.g., "us-east-1", can be empty for global services)
+    pub account_id: String, // AWS account ID (12-digit number, can be empty for some resources)
+    pub resource: String,   // Resource identifier (e.g., "topic-name", "bucket-name", "queue-name")
+}
+impl ARN {
+    /// Parse an ARN string into its components
+    /// Format: arn:partition:service:region:account-id:resource
+    pub fn parse(arn_str: &str) -> Result<Self, &'static str> {
+        if arn_str.trim().is_empty() {
+            return Err("ARN string cannot be empty");
+        }
+
+        let parts: Vec<&str> = arn_str.split(':').collect();
+
+        if parts.len() != 6 || parts[0] != "arn" {
+            return Err("Invalid ARN format");
+        }
+
+        // Check for required non-empty fields
+        if parts[1].is_empty() {
+            return Err("Partition cannot be empty");
+        }
+
+        if parts[2].is_empty() {
+            return Err("Service cannot be empty");
+        }
+
+        if parts[5].is_empty() {
+            return Err("Resource cannot be empty");
+        }
+
+        // Note: region and account_id can be empty for some AWS services (like S3)
+
+        Ok(ARN {
+            partition: parts[1].to_string(),
+            service: parts[2].to_string(),
+            region: parts[3].to_string(),
+            account_id: parts[4].to_string(),
+            resource: parts[5].to_string(),
+        })
+    }
+
+    /// Convert the ARN back to string format
+    pub fn to_string(&self) -> String {
+        format!("arn:{}:{}:{}:{}:{}", self.partition, self.service, self.region, self.account_id, self.resource)
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum AWSResourceIdentifier {
+    ARN(ARN),
+    Name(String),
+}
 
 /// StorageArgs - Arguments used to setup storage resources
 #[derive(Debug, Clone)]
 pub struct StorageArgs {
-    pub bucket_name: String,
-    pub bucket_location_constraint: Option<String>,
+    pub bucket_identifier: AWSResourceIdentifier,
+}
+
+impl StorageArgs {
+    pub fn format_prefix_and_name(prefix: &str, name: &str) -> String {
+        format!("{}-{}", prefix, name)
+    }
 }
 
 /// QueueArgs - Arguments used to setup queue resources
 #[derive(Debug, Clone)]
 pub struct QueueArgs {
-    pub prefix: String,
-    pub suffix: String,
+    pub queue_template_identifier: AWSResourceIdentifier,
+}
+
+impl QueueArgs {
+    pub fn format_prefix_and_name(prefix: &str, name: &str) -> String {
+        format!("{}_{}", prefix, name)
+    }
 }
 
 /// AlertArgs - Arguments used to set up alert resources
 #[derive(Debug, Clone)]
 pub struct AlertArgs {
-    pub alert_topic_name: String,
+    pub alert_identifier: AWSResourceIdentifier,
+}
+
+impl AlertArgs {
+    pub fn format_prefix_and_name(prefix: &str, name: &str) -> String {
+        format!("{}_{}", prefix, name)
+    }
 }
 
 /// CronArgs - Arguments used to setup cron resources
@@ -70,111 +145,153 @@ impl TryFrom<SetupCmd> for MiscellaneousArgs {
     }
 }
 
-impl TryFrom<RunCmd> for StorageArgs {
-    type Error = OrchestratorError;
-    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        Ok(Self {
-            bucket_name: format!(
-                "{}-{}",
-                run_cmd.aws_config_args.aws_prefix,
-                run_cmd
-                    .aws_s3_args
-                    .bucket_name
-                    .ok_or(OrchestratorError::SetupCommandError("Bucket name Not found".to_string()))?
-            ),
-            bucket_location_constraint: run_cmd.aws_s3_args.bucket_location_constraint,
-        })
-    }
-}
-
 impl TryFrom<SetupCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        Ok(Self {
-            bucket_name: format!(
-                "{}-{}",
-                setup_cmd.aws_config_args.aws_prefix,
-                setup_cmd
-                    .aws_s3_args
-                    .bucket_name
-                    .ok_or(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))?
-            ),
-            bucket_location_constraint: setup_cmd.aws_s3_args.bucket_location_constraint,
-        })
+        if let Some(bucket_identifier) = &setup_cmd.aws_s3_args.bucket_identifier {
+            let identifier =
+                ARN::parse(bucket_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
+                    let name = setup_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
+                        if !prefix.is_empty() {
+                            StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                        } else {
+                            bucket_identifier.to_string()
+                        }
+                    });
+                    AWSResourceIdentifier::Name(name)
+                });
+
+            Ok(Self { bucket_identifier: identifier })
+        } else {
+            Err(OrchestratorError::SetupCommandError("Missing bucket name".to_string()))
+        }
+    }
+}
+
+impl TryFrom<RunCmd> for StorageArgs {
+    type Error = OrchestratorError;
+    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
+        if let Some(bucket_identifier) = &run_cmd.aws_s3_args.bucket_identifier {
+            let identifier =
+                ARN::parse(bucket_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
+                    let name = run_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
+                        if !prefix.is_empty() {
+                            StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                        } else {
+                            bucket_identifier.to_string()
+                        }
+                    });
+                    AWSResourceIdentifier::Name(name)
+                });
+
+            Ok(Self { bucket_identifier: identifier })
+        } else {
+            Err(OrchestratorError::RunCommandError("Missing bucket name".to_string()))
+        }
     }
 }
 
 impl TryFrom<SetupCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let topic = setup_cmd
-            .aws_sns_args
-            .alert_topic_name
-            .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        let alert_topic_name = format!("{}_{}", setup_cmd.aws_config_args.aws_prefix, topic);
-        info!("SNS TOPIC: {}", alert_topic_name);
-        Ok(Self { alert_topic_name })
+        if let Some(topic_identifier) = &setup_cmd.aws_sns_args.topic_identifier {
+            let identifier =
+                ARN::parse(topic_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
+                    let name = setup_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
+                        if !prefix.is_empty() {
+                            AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
+                        } else {
+                            topic_identifier.to_string()
+                        }
+                    });
+                    AWSResourceIdentifier::Name(name)
+                });
+
+            Ok(Self { alert_identifier: identifier })
+        } else {
+            Err(OrchestratorError::SetupCommandError("Missing alert name".to_string()))
+        }
     }
 }
 
 impl TryFrom<RunCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let topic = run_cmd
-            .aws_sns_args
-            .alert_topic_name
-            .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
-        info!("SNS TOPIC: {}", alert_topic_name);
-        Ok(Self { alert_topic_name })
-    }
-}
+        if let Some(topic_identifier) = &run_cmd.aws_sns_args.topic_identifier {
+            let identifier =
+                ARN::parse(topic_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
+                    let name = run_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
+                        AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
+                    });
+                    AWSResourceIdentifier::Name(name)
+                });
 
-impl TryFrom<RunCmd> for QueueArgs {
-    type Error = OrchestratorError;
-    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        Ok(Self {
-            prefix: run_cmd.aws_config_args.aws_prefix.clone(),
-            suffix: run_cmd
-                .aws_sqs_args
-                .sqs_suffix
-                .ok_or(OrchestratorError::SetupCommandError("SQS suffix is required".to_string()))?,
-        })
+            Ok(Self { alert_identifier: identifier })
+        } else {
+            Err(OrchestratorError::RunCommandError("Missing alert name".to_string()))
+        }
     }
 }
 
 impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        Ok(Self {
-            prefix: setup_cmd.aws_config_args.aws_prefix.clone(),
-            suffix: setup_cmd
-                .aws_sqs_args
-                .sqs_suffix
-                .ok_or(OrchestratorError::SetupCommandError("SQS suffix is required".to_string()))?,
-        })
+        if let Some(queue_identifier) = &setup_cmd.aws_sqs_args.queue_identifier {
+            let identifier =
+                ARN::parse(queue_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
+                    let name = setup_cmd.aws_config_args.aws_prefix.map_or(queue_identifier.clone(), |prefix| {
+                        QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
+                    });
+                    AWSResourceIdentifier::Name(name)
+                });
+
+            Ok(Self { queue_template_identifier: identifier })
+        } else {
+            Err(OrchestratorError::SetupCommandError("Missing queue template name".to_string()))
+        }
+    }
+}
+
+impl TryFrom<RunCmd> for QueueArgs {
+    type Error = OrchestratorError;
+    fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
+        if let Some(queue_identifier) = &run_cmd.aws_sqs_args.queue_identifier {
+            let identifier =
+                ARN::parse(queue_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
+                    let name = run_cmd.aws_config_args.aws_prefix.map_or(queue_identifier.clone(), |prefix| {
+                        QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
+                    });
+                    AWSResourceIdentifier::Name(name)
+                });
+
+            Ok(Self { queue_template_identifier: identifier })
+        } else {
+            Err(OrchestratorError::SetupCommandError("Missing queue template name".to_string()))
+        }
     }
 }
 
 impl TryFrom<SetupCmd> for CronArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let target_queue_name = format!(
-            "{}_{}",
-            setup_cmd.aws_config_args.aws_prefix,
+        let format_with_prefix = |name: String| -> String {
+            setup_cmd.aws_config_args.aws_prefix.as_ref().map_or(name.clone(), |prefix| format!("{}_{}", prefix, name))
+        };
+
+        let target_queue_name = format_with_prefix(
             setup_cmd
                 .aws_event_bridge_args
                 .target_queue_name
-                .ok_or(OrchestratorError::SetupCommandError("SQS prefix is required".to_string()))?,
+                .ok_or(OrchestratorError::SetupCommandError("Target queue name is required".to_string()))?,
         );
-        let trigger_rule_name = format!(
-            "{}_{}",
-            setup_cmd.aws_config_args.aws_prefix,
+
+        let trigger_rule_name = format_with_prefix(
             setup_cmd
                 .aws_event_bridge_args
                 .trigger_rule_name
                 .ok_or(OrchestratorError::SetupCommandError("Trigger rule name is required".to_string()))?,
         );
+
         Ok(Self {
             event_bridge_type: setup_cmd
                 .aws_event_bridge_args
