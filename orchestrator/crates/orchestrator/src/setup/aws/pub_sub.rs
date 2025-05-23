@@ -24,8 +24,8 @@ impl Resource for SNS {
     }
 
     async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let topic_arn = args.endpoint;
-        tracing::info!("Topic ARN: {}", topic_arn);
+        let alert_topic_arn = args.alert_topic_name;
+        tracing::info!("Topic ARN: {}", alert_topic_arn);
 
         // Extract topic name from ARN or use the full string if it's just a name
         let alert_topic_name = if alert_topic_arn.starts_with("arn:aws:sns:") {
