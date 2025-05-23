@@ -1,5 +1,6 @@
 chain_name: "Test devnet"
 chain_id: "MADARA_DEVNET"
+l1_da_mode: "Blob"
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
 gateway_url: "http://localhost:8080/gateway/"
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"

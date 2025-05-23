@@ -9090,6 +9090,7 @@ dependencies = [
  "assert_matches",
  "bitvec",
  "blockifier",
+ "futures",
  "lazy_static",
  "m-cairo-test-contracts",
  "mc-analytics",
@@ -9260,6 +9261,7 @@ dependencies = [
  "mp-convert",
  "mp-receipt",
  "mp-rpc",
+ "mp-state-update",
  "mp-transactions",
  "opentelemetry",
  "opentelemetry-appender-tracing",
@@ -9389,7 +9391,6 @@ dependencies = [
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "tracing-test",
 ]
 
 [[package]]
@@ -9551,7 +9552,6 @@ dependencies = [
  "tracing-core",
  "tracing-opentelemetry",
  "tracing-subscriber",
- "tracing-test",
  "url",
 ]
 
@@ -9827,6 +9827,7 @@ dependencies = [
  "anyhow",
  "blockifier",
  "lazy_static",
+ "mp-rpc",
  "mp-utils",
  "primitive-types",
  "rstest 0.18.2",

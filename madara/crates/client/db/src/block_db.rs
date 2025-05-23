@@ -150,7 +150,7 @@ impl MadaraBackend {
                             eth_l1_data_gas_price: 1,
                             strk_l1_data_gas_price: 1,
                         },
-                        l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
+                        l1_da_mode: self.chain_config.l1_da_mode,
                     },
                     tx_hashes: vec![],
                 });

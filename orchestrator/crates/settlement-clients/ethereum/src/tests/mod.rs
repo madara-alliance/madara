@@ -330,7 +330,7 @@ mod settlement_client_tests {
         );
         assert_eq!(
             ethereum_settlement_client.get_last_settled_block().await.expect("Could not get last settled block."),
-            218378
+            Some(218378)
         );
     }
 

@@ -226,7 +226,7 @@ mod tests {
                                 eth_l1_data_gas_price: 44,
                                 strk_l1_data_gas_price: 52,
                             },
-                            l1_da_mode: mp_block::header::L1DataAvailabilityMode::Blob,
+                            l1_da_mode: mp_chain_config::L1DataAvailabilityMode::Blob,
                         },
                         block_hash: Felt::from_hex_unchecked("0x1777177171"),
                         tx_hashes: vec![Felt::from_hex_unchecked("0x8888888")],

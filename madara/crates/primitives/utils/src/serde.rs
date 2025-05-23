@@ -1,9 +1,7 @@
-use std::time::Duration;
-
-use serde::{Deserialize, Deserializer};
-use url::Url;
-
 use crate::{parsers::parse_duration, parsers::parse_url};
+use serde::{Deserialize, Deserializer};
+use std::time::Duration;
+use url::Url;
 
 pub fn deserialize_duration<'de, D>(deserializer: D) -> Result<Duration, D::Error>
 where
@@ -20,6 +18,9 @@ where
     let Some(s) = Option::<String>::deserialize(deserializer)? else {
         return Ok(None);
     };
+    if s == "null" {
+        return Ok(None);
+    }
     parse_duration(&s).map_err(serde::de::Error::custom).map(Some)
 }
 

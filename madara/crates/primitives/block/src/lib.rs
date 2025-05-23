@@ -2,7 +2,9 @@
 
 use crate::header::GasPrices;
 use commitments::{BlockCommitments, CommitmentComputationContext};
-use header::{BlockTimestamp, L1DataAvailabilityMode, PendingHeader};
+use header::{BlockTimestamp, PendingHeader};
+use mp_chain_config::L1DataAvailabilityMode;
+
 use mp_chain_config::StarknetVersion;
 use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
 use mp_state_update::StateDiff;
