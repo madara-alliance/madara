@@ -1,12 +1,11 @@
-use crate::core::client::alert::sns::InnerAWSSNS;
 use crate::cli::Layer;
-use crate::core::client::SNS;
+use crate::core::client::alert::sns::InnerAWSSNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
-use crate::types::params::{AlertArgs, ARN};
-use crate::{OrchestratorError, OrchestratorResult};
-use anyhow::{anyhow, Context};
 use crate::types::params::AWSResourceIdentifier;
+use crate::types::params::AlertArgs;
+use crate::{OrchestratorError, OrchestratorResult};
+use anyhow::Context;
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -27,13 +26,8 @@ impl Resource for InnerAWSSNS {
 
     async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let alert_name = match &args.alert_identifier {
-            AWSResourceIdentifier::ARN(arn) => {
-                // Extract queue name from ARN resource part
-                arn.resource.clone()
-            }
-            AWSResourceIdentifier::Name(name) => {
-                name.to_string()
-            }
+            AWSResourceIdentifier::ARN(arn) => arn.resource.clone(),
+            AWSResourceIdentifier::Name(name) => name.to_string(),
         };
         tracing::info!("Topic Name: {}", alert_name);
 
@@ -51,13 +45,22 @@ impl Resource for InnerAWSSNS {
             return Ok(());
         }
 
-        // Create topic using the validated name
-        let response =
-            self.client().create_topic().name(alert_name).send().await.context("Failed to create topic")?;
+        // We use ARN in setup only to validate the existance of resource.
+        match &args.alert_identifier {
+            AWSResourceIdentifier::ARN(_) => {
+                tracing::info!("Checked for existing resource, exiting.");
+                Ok(())
+            }
+            AWSResourceIdentifier::Name(_) => {
+                // Create topic using the validated name
+                let response =
+                    self.client().create_topic().name(alert_name).send().await.context("Failed to create topic")?;
 
-        let new_topic_arn = response.topic_arn().context("Failed to get topic ARN")?;
-        tracing::info!("SNS topic created. Topic ARN: {}", new_topic_arn);
-        Ok(())
+                let new_topic_arn = response.topic_arn().context("Failed to get topic ARN")?;
+                tracing::info!("SNS topic created. Topic ARN: {}", new_topic_arn);
+                Ok(())
+            }
+        }
     }
 
     async fn check_if_exists(&self, alert_identifier: &Self::CheckArgs) -> OrchestratorResult<bool> {
@@ -65,9 +68,7 @@ impl Resource for InnerAWSSNS {
             AWSResourceIdentifier::ARN(arn) => {
                 Ok(self.client().get_topic_attributes().topic_arn(arn.to_string()).send().await.is_ok())
             }
-            AWSResourceIdentifier::Name(name) => {
-                Ok(self.get_topic_arn_by_name(name).await.is_ok())
-            }
+            AWSResourceIdentifier::Name(name) => Ok(self.fetch_topic_arn_by_name(name).await.is_ok()),
         }
     }
 
@@ -76,9 +77,7 @@ impl Resource for InnerAWSSNS {
             AWSResourceIdentifier::ARN(arn) => {
                 Ok(self.client().get_topic_attributes().topic_arn(arn.to_string()).send().await.is_ok())
             }
-            AWSResourceIdentifier::Name(name) => {
-                Ok(self.get_topic_arn_by_name(name).await.is_ok())
-            }
+            AWSResourceIdentifier::Name(name) => Ok(self.fetch_topic_arn_by_name(name).await.is_ok()),
         }
     }
 }

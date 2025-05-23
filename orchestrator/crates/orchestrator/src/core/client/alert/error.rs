@@ -7,7 +7,7 @@ use thiserror::Error;
 pub enum AlertError {
     #[error("Topic ARN is empty")]
     TopicARNEmpty,
-    
+
     #[error("Topic ARN is invalid")]
     TopicARNInvalid,
 

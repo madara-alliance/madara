@@ -1,6 +1,7 @@
-use crate::core::client::queue::sqs::InnerSQS;
-use crate::types::queue::QueueType;
 use crate::cli::Layer;
+use crate::core::client::queue::sqs::InnerSQS;
+use crate::types::params::AWSResourceIdentifier;
+use crate::types::queue::QueueType;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES, types::params::QueueArgs,
     OrchestratorError, OrchestratorResult,
@@ -9,7 +10,6 @@ use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
 use std::collections::HashMap;
 use std::sync::Arc;
-use crate::types::params::AWSResourceIdentifier;
 
 #[async_trait]
 impl Resource for InnerSQS {
@@ -40,19 +40,18 @@ impl Resource for InnerSQS {
                 continue;
             }
             let queue_name = match &args.queue_template_identifier {
-                AWSResourceIdentifier::ARN(arn) => {
-                    self.get_queue_name_from_type(&arn.resource, &queue.name)
-                }
-                AWSResourceIdentifier::Name(name) => {
-                    self.get_queue_name_from_type(name, &queue.name)
-                }
+                AWSResourceIdentifier::ARN(arn) => self.get_queue_name_from_type(&arn.resource, &queue.name),
+                AWSResourceIdentifier::Name(name) => self.get_queue_name_from_type(name, &queue.name),
             };
+
+            // TODO: I believe we can move the check existence at the top
 
             if self.check_if_exists(&(args.queue_template_identifier.clone(), queue.name.clone())).await? {
                 tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
                 continue;
             }
 
+            // TODO: We are not utilizing the region for creating the Queue here!
             let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
                 OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
             })?;
@@ -67,7 +66,6 @@ impl Resource for InnerSQS {
             // TODO: solve for this
             // if let Some(dlq_config) = &queue.dlq_config {
             //     // check if the dlq exists, if it does
-
 
             //     let dlq_name = format!("{}_dlq", queue_name);
 
@@ -120,7 +118,14 @@ impl Resource for InnerSQS {
         match check_args.0.clone() {
             AWSResourceIdentifier::ARN(arn) => {
                 let queue_url = self.get_queue_url_from_arn(&arn, &check_args.1)?;
-                Ok(self.client().get_queue_attributes().queue_url(queue_url).attribute_names(QueueAttributeName::QueueArn).send().await.is_ok())
+                Ok(self
+                    .client()
+                    .get_queue_attributes()
+                    .queue_url(queue_url)
+                    .attribute_names(QueueAttributeName::QueueArn)
+                    .send()
+                    .await
+                    .is_ok())
             }
             AWSResourceIdentifier::Name(name) => {
                 Ok(self.client().get_queue_url().queue_name(name).send().await.is_ok())
@@ -129,23 +134,34 @@ impl Resource for InnerSQS {
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        let client = self.client().clone();
         for queue in QUEUES.iter() {
-            let queue_name = match &args.queue_template_identifier {
+            let queue_exists = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
-                    // Extract queue name from ARN resource part
-                    arn.resource.clone()
+                    let queue_url = self.get_queue_url_from_arn(&arn, &queue.name)?;
+                    self.client()
+                        .get_queue_attributes()
+                        .queue_url(queue_url)
+                        .attribute_names(QueueAttributeName::QueueArn)
+                        .send()
+                        .await
+                        .is_ok()
                 }
                 AWSResourceIdentifier::Name(name) => {
-                    self.get_queue_name_from_type(name, &queue.name)
+                    let queue_name = self.get_queue_name_from_type(name, &queue.name);
+                    match self.get_queue_url_from_client(queue_name.as_str()).await {
+                        Ok(queue_url) => self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok(),
+                        Err(_) => false,
+                    }
                 }
             };
-            let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
-            let result = client.get_queue_attributes().queue_url(queue_url).send().await;
-            if result.is_err() {
+
+            // If any queue doesn't exist, return false immediately
+            if !queue_exists {
                 return Ok(false);
             }
         }
+
+        // All queues exist
         Ok(true)
     }
 }

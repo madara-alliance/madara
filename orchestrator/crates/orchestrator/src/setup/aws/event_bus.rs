@@ -1,7 +1,7 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
-use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
+use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;

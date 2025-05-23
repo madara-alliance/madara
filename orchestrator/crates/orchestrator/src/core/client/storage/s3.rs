@@ -1,6 +1,7 @@
 use crate::{core::client::storage::StorageClient, types::params::StorageArgs};
 
 use crate::core::client::storage::StorageError;
+use crate::types::params::AWSResourceIdentifier;
 use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_s3::Client;
@@ -24,12 +25,16 @@ impl InnerAWSS3 {
         let client = Client::from_conf(s3_config_builder.build());
         Self(Arc::new(client))
     }
+
+    pub fn client(&self) -> Arc<Client> {
+        self.0.clone()
+    }
 }
 
 #[derive(Clone, Debug)]
 pub struct AWSS3 {
     pub(crate) inner: InnerAWSS3,
-    bucket_name: Option<String>,
+    bucket_identifier: AWSResourceIdentifier,
 }
 
 impl AWSS3 {
@@ -40,12 +45,19 @@ impl AWSS3 {
     ///
     /// # Returns
     /// * `Self` - The new instance of AWSS3.
-    pub fn new(aws_config: &SdkConfig, args: Option<&StorageArgs>) -> Self {
-        Self { inner: InnerAWSS3::new(aws_config), bucket_name: args.map(|a| a.bucket_name.clone()) }
+    pub fn new(aws_config: &SdkConfig, args: &StorageArgs) -> Self {
+        Self { inner: InnerAWSS3::new(aws_config), bucket_identifier: args.bucket_identifier.clone() }
     }
 
     pub(crate) fn bucket_name(&self) -> Result<String, StorageError> {
-        self.bucket_name.clone().ok_or_else(|| StorageError::InvalidBucketName("Bucket name is not set".to_string()))
+        match &self.bucket_identifier {
+            AWSResourceIdentifier::ARN(arn) => {
+                // For S3 ARNs, the bucket name is in the resource field
+                // S3 ARN format: arn:aws:s3:::bucket-name
+                Ok(arn.resource.clone())
+            }
+            AWSResourceIdentifier::Name(name) => Ok(name.clone()),
+        }
     }
 
     pub(crate) fn client(&self) -> &Client {

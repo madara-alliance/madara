@@ -1,9 +1,12 @@
 use crate::core::client::queue::QueueError;
+use crate::types::params::AWSResourceIdentifier;
+use crate::types::params::ARN;
 use crate::{
     core::client::queue::QueueClient,
     types::{params::QueueArgs, queue::QueueType},
 };
 use async_trait::async_trait;
+use aws_config::Region;
 use aws_config::SdkConfig;
 use aws_sdk_sqs::types::QueueAttributeName;
 use aws_sdk_sqs::Client;
@@ -11,9 +14,6 @@ use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
 use std::sync::Arc;
 use std::time::Duration;
-use crate::types::params::ARN;
-use aws_config::Region;
-use crate::types::params::AWSResourceIdentifier;
 
 #[derive(Clone, Debug)]
 pub struct InnerSQS(pub Arc<Client>);
@@ -55,10 +55,7 @@ impl InnerSQS {
     pub fn get_queue_url_from_arn(&self, queue_arn: &ARN, queue_type: &QueueType) -> Result<String, QueueError> {
         // Validate that this is an SQS ARN
         if queue_arn.service != "sqs" {
-            return Err(QueueError::InvalidArn(format!(
-                "Expected SQS ARN but got service: {}",
-                queue_arn.service
-            )));
+            return Err(QueueError::InvalidArn(format!("Expected SQS ARN but got service: {}", queue_arn.service)));
         }
 
         // Validate required fields
@@ -91,7 +88,6 @@ impl InnerSQS {
 
         Ok(queue_url)
     }
-
 
     /// get_queue_arn - Get the queue ARN from the queue URL
     /// This function returns the queue ARN based on the queue URL.
@@ -139,9 +135,7 @@ impl SQS {
             AWSResourceIdentifier::ARN(arn) => {
                 // Extract region from ARN and create new config with that region
                 if !arn.region.is_empty() {
-                    aws_config.clone().into_builder()
-                        .region(Region::new(arn.region.clone()))
-                        .build()
+                    aws_config.clone().into_builder().region(Region::new(arn.region.clone())).build()
                 } else {
                     // If ARN has empty region, use original config
                     aws_config.clone()
@@ -155,7 +149,7 @@ impl SQS {
 
         Self {
             inner: InnerSQS::new(&latest_aws_config),
-            queue_template_identifier: args.queue_template_identifier.clone()
+            queue_template_identifier: args.queue_template_identifier.clone(),
         }
     }
 

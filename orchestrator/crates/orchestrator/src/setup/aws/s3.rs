@@ -1,14 +1,13 @@
-use crate::core::client::storage::s3::InnerAWSS3;
 use crate::cli::Layer;
-use crate::core::client::storage::s3::AWSS3;
+use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
+use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::StorageArgs;
 use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
 use aws_sdk_s3::Error as S3Error;
 use std::sync::Arc;
-use crate::types::params::AWSResourceIdentifier;
 use tracing::{info, warn};
 
 #[async_trait]
@@ -35,30 +34,26 @@ impl Resource for InnerAWSS3 {
     }
     /// Set up a new S3 bucket
     async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let bucket_name = match &args.bucket_identifier {
-            AWSResourceIdentifier::ARN(arn) => {
-                // Extract queue name from ARN resource part
-                arn.resource.clone()
-            }
-            AWSResourceIdentifier::Name(name) => {
-                name.to_string()
-            }
+        let (bucket_name, region) = match &args.bucket_identifier {
+            AWSResourceIdentifier::ARN(arn) => (arn.resource.clone(), arn.region.clone()),
+            AWSResourceIdentifier::Name(name) => (
+                name.to_string(),
+                self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string()),
+            ),
         };
         tracing::info!("Bucket Name: {}", bucket_name);
 
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
-        if self.check_if_exists(&bucket_name).await? {
-            warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_name);
+        if self.check_if_exists(&args.bucket_identifier).await? {
+            warn!(" ⏭️  S3 bucket '{}' already exists", bucket_name);
             return Ok(());
         }
-        info!("Creating New Bucket: {}", args.bucket_name);
 
-        // Get the current region from the client config
-        let region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
+        info!("Creating New Bucket: {}", bucket_name);
         info!("Creating bucket in region: {}", region);
 
-        let mut bucket_builder = self.0.create_bucket().bucket(&args.bucket_name);
+        let mut bucket_builder = self.0.create_bucket().bucket(&bucket_name);
 
         if region != "us-east-1" {
             let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
@@ -67,16 +62,27 @@ impl Resource for InnerAWSS3 {
         }
 
         let _result = bucket_builder.send().await.map_err(|e| {
-            OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", args.bucket_name, e))
+            OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", bucket_name, e))
         })?;
         Ok(())
     }
 
-    async fn check_if_exists(&self, bucket_name: &Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.0.head_bucket().bucket(bucket_name).send().await.is_ok())
+    // TODO: can we simplify if check_if_exists and is_ready_to_use are same ?
+    async fn check_if_exists(&self, bucket_identifier: &Self::CheckArgs) -> OrchestratorResult<bool> {
+        let bucket_name = match bucket_identifier {
+            AWSResourceIdentifier::ARN(arn) => &arn.resource,
+            AWSResourceIdentifier::Name(name) => &name,
+        };
+
+        Ok(self.client().head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.0.head_bucket().bucket(&args.bucket_name).send().await.is_ok())
+        let bucket_name = match &args.bucket_identifier {
+            AWSResourceIdentifier::ARN(arn) => &arn.resource,
+            AWSResourceIdentifier::Name(name) => &name,
+        };
+
+        Ok(self.client().head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 }
