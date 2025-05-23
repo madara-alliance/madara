@@ -1,4 +1,5 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
+use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -36,7 +37,7 @@ impl Resource for EventBridgeClient {
         }
     }
 
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let trigger_arns = self
             .create_cron(
                 args.target_queue_name.clone(),
@@ -54,6 +55,11 @@ impl Resource for EventBridgeClient {
         sleep(Duration::from_secs(15)).await;
 
         for trigger in WORKER_TRIGGERS.iter() {
+            // Proof registration is only required in L3
+            // TODO: Remove this once we have handle the pipeline with state machine
+            if *trigger == WorkerTriggerType::ProofRegistration && layer != Layer::L3 {
+                continue;
+            }
             if self
                 .check_if_exists((args.event_bridge_type.clone(), trigger.clone(), args.trigger_rule_name.clone()))
                 .await?
@@ -75,6 +81,7 @@ impl Resource for EventBridgeClient {
         }
         Ok(())
     }
+
     /// check_if_exists - Check if the event bridge rule exists
     ///
     /// # Arguments

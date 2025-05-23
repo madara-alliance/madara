@@ -298,6 +298,7 @@ pub mod implement_client {
     use starknet::providers::{JsonRpcClient, Url};
 
     use super::{ConfigType, EnvParams, MockType};
+    use crate::cli::Layer;
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
     use crate::core::client::queue::MockQueueClient;
@@ -391,7 +392,7 @@ pub mod implement_client {
                 let storage = get_storage_client(provider_config.clone()).await;
                 // First set up the storage
                 println!("Setting up the storage , {:?}", storage_cfg);
-                storage.setup(storage_cfg.clone()).await.unwrap();
+                storage.setup(Layer::L2, storage_cfg.clone()).await.unwrap();
                 Config::build_storage_client(storage_cfg, provider_config).await.expect("error creating storage client")
             }
             ConfigType::Dummy => Box::new(MockStorageClient::new()),
