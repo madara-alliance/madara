@@ -1,5 +1,11 @@
 [workspace]
-members = ["madara", "orchestrator", "e2e-tests", "bootstrapper"]
+members = [
+  "madara",
+  "orchestrator",
+  "e2e-tests",
+  "bootstrapper",
+  "build-artifacts",
+]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = ["madara", "orchestrator", "bootstrapper"]
 resolver = "2"
@@ -51,6 +57,9 @@ librocksdb-sys = "0.17.0"
 bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
   "std",
 ] }
+
+# Build
+build-version = { path = "build_artifacts/build-version" }
 
 # Madara proc macros
 m-proc-macros = { path = "madara/crates/proc-macros", default-features = false }
@@ -226,6 +235,7 @@ figment = "0.10.19"
 flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
+tar = "0.4.44"
 
 # Orchestrator
 num = { version = "0.4.1" }

@@ -95,7 +95,7 @@ DOCKER_COMPOSE := docker compose -f compose.yaml
 DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
-ARTIFACTS      := ./build_artifacts
+ARTIFACTS      := ./build-artifacts
 
 # dim white italic
 DIM            := \033[2;3;37m
