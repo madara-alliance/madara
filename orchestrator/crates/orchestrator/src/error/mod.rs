@@ -42,6 +42,10 @@ pub enum OrchestratorError {
     /// Setup Command error
     #[error("Setup Command Error: {0}")]
     SetupCommandError(String),
+    
+    /// Run Command error
+    #[error("Run Command Error: {0}")]
+    RunCommandError(String),
 
     /// Setup Command error
     #[error("Error While Downcasting from object: {0}")]

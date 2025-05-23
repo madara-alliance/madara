@@ -31,7 +31,7 @@ pub trait Resource: Send + Sync {
     /// This function will also create any dependent resources that are needed.
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
     /// check - Check if the resource exists, check only for individual resources
-    async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
+    async fn check_if_exists(&self, args: &Self::CheckArgs) -> OrchestratorResult<bool>;
     /// ready - Check if all the resource is created and ready to use
     async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
     /// check - Check if the resource is ready to use

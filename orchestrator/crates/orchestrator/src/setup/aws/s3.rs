@@ -6,6 +6,7 @@ use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
 use aws_sdk_s3::Error as S3Error;
 use std::sync::Arc;
+use crate::types::params::AWSResourceIdentifier;
 use tracing::{info, warn};
 
 #[async_trait]
@@ -15,7 +16,7 @@ impl Resource for InnerAWSS3 {
     type TeardownResult = ();
     type Error = S3Error;
     type SetupArgs = StorageArgs;
-    type CheckArgs = String;
+    type CheckArgs = AWSResourceIdentifier;
 
     /// create_setup creates a new S3 client and returns an instance of AWSS3
     ///
@@ -32,9 +33,20 @@ impl Resource for InnerAWSS3 {
     }
     /// Set up a new S3 bucket
     async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+        let bucket_name = match &args.bucket_identifier {
+            AWSResourceIdentifier::ARN(arn) => {
+                // Extract queue name from ARN resource part
+                arn.resource.clone()
+            }
+            AWSResourceIdentifier::Name(name) => {
+                name.to_string()
+            }
+        };
+        tracing::info!("Bucket Name: {}", bucket_name);
+
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
-        if self.check_if_exists(args.bucket_name.clone()).await? {
+        if self.check_if_exists(&bucket_name).await? {
             warn!(" ⏭️  S3 bucket '{}' already exists", args.bucket_name);
             return Ok(());
         }
@@ -58,7 +70,7 @@ impl Resource for InnerAWSS3 {
         Ok(())
     }
 
-    async fn check_if_exists(&self, bucket_name: Self::CheckArgs) -> OrchestratorResult<bool> {
+    async fn check_if_exists(&self, bucket_name: &Self::CheckArgs) -> OrchestratorResult<bool> {
         Ok(self.0.head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
