@@ -152,7 +152,11 @@ impl TryFrom<SetupCmd> for StorageArgs {
             let identifier =
                 ARN::parse(bucket_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
                     let name = setup_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
-                        StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                        if !prefix.is_empty() {
+                            StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                        } else {
+                            bucket_identifier.to_string()
+                        }
                     });
                     AWSResourceIdentifier::Name(name)
                 });
@@ -171,7 +175,11 @@ impl TryFrom<RunCmd> for StorageArgs {
             let identifier =
                 ARN::parse(bucket_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
                     let name = run_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
-                        StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                        if !prefix.is_empty() {
+                            StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                        } else {
+                            bucket_identifier.to_string()
+                        }
                     });
                     AWSResourceIdentifier::Name(name)
                 });
@@ -190,7 +198,11 @@ impl TryFrom<SetupCmd> for AlertArgs {
             let identifier =
                 ARN::parse(topic_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
                     let name = setup_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
-                        AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
+                        if !prefix.is_empty() {
+                            AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
+                        } else {
+                            topic_identifier.to_string()
+                        }
                     });
                     AWSResourceIdentifier::Name(name)
                 });

@@ -54,10 +54,10 @@ impl ResourceFactory {
         miscellaneous_params: MiscellaneousArgs,
     ) -> Self {
         let ordered_types = vec![
-            (ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>),
+            // (ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>),
             (ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>),
-            (ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>),
-            (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>),
+            // (ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>),
+            // (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>),
         ];
 
         ResourceFactory {

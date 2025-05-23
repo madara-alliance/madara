@@ -128,7 +128,8 @@ impl Resource for InnerSQS {
                     .is_ok())
             }
             AWSResourceIdentifier::Name(name) => {
-                Ok(self.client().get_queue_url().queue_name(name).send().await.is_ok())
+                let queue_name = self.get_queue_name_from_type(&name, &check_args.1);
+                Ok(self.client().get_queue_url().queue_name(queue_name).send().await.is_ok())
             }
         }
     }

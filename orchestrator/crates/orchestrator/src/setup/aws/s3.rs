@@ -34,14 +34,22 @@ impl Resource for InnerAWSS3 {
     }
     /// Set up a new S3 bucket
     async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+        let default_region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
         let (bucket_name, region) = match &args.bucket_identifier {
-            AWSResourceIdentifier::ARN(arn) => (arn.resource.clone(), arn.region.clone()),
-            AWSResourceIdentifier::Name(name) => (
-                name.to_string(),
-                self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string()),
-            ),
+            AWSResourceIdentifier::ARN(arn) => {
+                let region = if arn.region.is_empty() {
+                    default_region
+                } else {
+                    arn.region.to_string()  // Convert to String to match the other branch
+                };
+                (arn.resource.clone(), region)
+            },
+            AWSResourceIdentifier::Name(name) => (name.to_string(),default_region)
         };
         tracing::info!("Bucket Name: {}", bucket_name);
+
+        // it is special to s3 that it can have empty region in it's arn : e.g: arn:aws:s3:::karnot-mo-bucket
+        // in such scenarios we would want to default to provided region
 
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
