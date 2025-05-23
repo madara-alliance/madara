@@ -33,7 +33,7 @@ impl Resource for InnerAWSS3 {
         }
     }
     /// Set up a new S3 bucket
-    async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let default_region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
         let (bucket_name, region) = match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => {
@@ -85,7 +85,7 @@ impl Resource for InnerAWSS3 {
         Ok(self.client().head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let bucket_name = match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => &arn.resource,
             AWSResourceIdentifier::Name(name) => &name,

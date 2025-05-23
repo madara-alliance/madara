@@ -24,7 +24,7 @@ impl Resource for InnerAWSSNS {
         }
     }
 
-    async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let alert_name = match &args.alert_identifier {
             AWSResourceIdentifier::ARN(arn) => arn.resource.clone(),
             AWSResourceIdentifier::Name(name) => name.to_string(),
@@ -72,7 +72,7 @@ impl Resource for InnerAWSSNS {
         }
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         match &args.alert_identifier {
             AWSResourceIdentifier::ARN(arn) => {
                 Ok(self.client().get_topic_attributes().topic_arn(arn.to_string()).send().await.is_ok())

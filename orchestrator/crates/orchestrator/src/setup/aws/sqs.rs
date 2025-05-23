@@ -34,9 +34,9 @@ impl Resource for InnerSQS {
     /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
-    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
-            if !queue.supported_layers.contains(&layer) {
+            if !queue.supported_layers.contains(layer) {
                 continue;
             }
 
@@ -153,8 +153,11 @@ impl Resource for InnerSQS {
         }
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         for queue in QUEUES.iter() {
+            if !queue.supported_layers.contains(layer) {
+                continue;
+            }
             let queue_exists = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
                     let queue_url = self.get_queue_url_from_arn(&arn, &queue.name)?;
