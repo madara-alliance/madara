@@ -39,66 +39,85 @@ impl Resource for InnerSQS {
             if !queue.supported_layers.contains(&layer) {
                 continue;
             }
-            let queue_name = match &args.queue_template_identifier {
-                AWSResourceIdentifier::ARN(arn) => self.get_queue_name_from_type(&arn.resource, &queue.name),
-                AWSResourceIdentifier::Name(name) => self.get_queue_name_from_type(name, &queue.name),
-            };
 
-            // TODO: I believe we can move the check existence at the top
-
+            // It is to note that we skip just after we check if queue exists,
+            // Ideally we would want to check the DL queue policy inclusion as well.
             if self.check_if_exists(&(args.queue_template_identifier.clone(), queue.name.clone())).await? {
-                tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
+                tracing::info!(" ⏭️️ SQS queue already exists. Queue Type: {}", &queue.name);
                 continue;
             }
 
-            // TODO: We are not utilizing the region for creating the Queue here!
-            let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-                OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
-            })?;
+            match &args.queue_template_identifier {
+                AWSResourceIdentifier::ARN(arn) => {
+                    // for now we don't support creating the queue by providing expected ARN
+                    let queue_name = self.get_queue_name_from_type(&arn.resource, &queue.name);
+                    tracing::info!("Queue Arn provided, skipping setup for {}", &queue_name);
+                    continue;
+                }
 
-            let queue_url = res
-                .queue_url()
-                .ok_or_else(|| OrchestratorError::ResourceSetupError("Failed to get queue url".to_string()))?;
+                AWSResourceIdentifier::Name(name) => {
+                    let queue_name = self.get_queue_name_from_type(name, &queue.name);
 
-            let mut attributes = HashMap::new();
-            attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
+                    // Create the queue
+                    let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
+                        OrchestratorError::ResourceSetupError(format!(
+                            "Failed to create SQS queue '{}': {}",
+                            queue_name, e
+                        ))
+                    })?;
 
-            // TODO: solve for this
-            // if let Some(dlq_config) = &queue.dlq_config {
-            //     // check if the dlq exists, if it does
+                    let queue_url = res
+                        .queue_url()
+                        .ok_or_else(|| OrchestratorError::ResourceSetupError("Failed to get queue url".to_string()))?;
 
-            //     let dlq_name = format!("{}_dlq", queue_name);
+                    tracing::info!("Queue created for type {}", &queue.name);
 
-            //     // if ARN is passed for queue then same ARN
-            //     // with dlq's name should be created.
-            //     let dlq_identifier= match &args.queue_template_identifier {
-            //         AWSResourceIdentifier::ARN(arn) => {
-            //             let arn_str = arn.to_string();
+                    let mut attributes = HashMap::new();
+                    attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
-            //         }
-            //         AWSResourceIdentifier::Name(name) => {
-            //             self.get_queue_name_from_type(name, queue.name.clone())
-            //         }
-            //     }
-            //     //
-            //     //
-            //     // Create DLQ if it doesn't exist
-            //     if !self.check_if_exists(&dlq_name).await? {
-            //         self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
-            //             OrchestratorError::ResourceSetupError(format!("Failed to create DLQ '{}': {}", dlq_name, e))
-            //         })?;
-            //     }
+                    // Note: Although one should argue that we are not checking if the policy is also attached!
+                    // Good Issue to resolve!
 
-            //     let dlq_url = self.get_queue_url_from_client(&dlq_name).await?;
-            //     let dlq_arn = self.get_queue_arn(&dlq_url).await?;
-            //     let policy = format!(
-            //         r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
-            //         dlq_arn, &dlq_config.max_receive_count
-            //     );
-            //     attributes.insert(QueueAttributeName::RedrivePolicy, policy);
-            // }
+                    if let Some(dlq_config) = &queue.dlq_config {
+                        if self
+                            .check_if_exists(&(args.queue_template_identifier.clone(), dlq_config.dlq_name.clone()))
+                            .await?
+                        {
+                            tracing::info!(" ⏭️️ DL queue already exists. Queue Type: {}", &dlq_config.dlq_name);
+                            continue;
+                        }
 
-            self.client().set_queue_attributes().queue_url(queue_url).set_attributes(Some(attributes)).send().await?;
+                        // Create the dl queue
+                        let dlq_name = self.get_queue_name_from_type(name, &dlq_config.dlq_name);
+                        let dlq_res = self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
+                            OrchestratorError::ResourceSetupError(format!("Failed to create DLQ '{}': {}", dlq_name, e))
+                        })?;
+
+                        let dlq_url = dlq_res.queue_url().ok_or_else(|| {
+                            OrchestratorError::ResourceSetupError("Failed to get dl queue url".to_string())
+                        })?;
+
+                        tracing::info!("DL Queue listed for type {}", &queue.name);
+
+                        let dlq_arn = self.get_queue_arn_from_url(&dlq_url).await?;
+
+                        // Attach the dl queue policy to the queue
+                        let policy = format!(
+                            r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
+                            dlq_arn.to_string(),
+                            &dlq_config.max_receive_count
+                        );
+                        attributes.insert(QueueAttributeName::RedrivePolicy, policy);
+                    }
+                    self.client()
+                        .set_queue_attributes()
+                        .queue_url(queue_url)
+                        .set_attributes(Some(attributes))
+                        .send()
+                        .await?;
+                    tracing::info!("Setup completed for queue: {}", &queue.name);
+                }
+            }
         }
 
         Ok(())

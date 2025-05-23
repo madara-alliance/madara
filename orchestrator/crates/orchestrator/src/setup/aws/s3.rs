@@ -40,11 +40,11 @@ impl Resource for InnerAWSS3 {
                 let region = if arn.region.is_empty() {
                     default_region
                 } else {
-                    arn.region.to_string()  // Convert to String to match the other branch
+                    arn.region.to_string() // Convert to String to match the other branch
                 };
                 (arn.resource.clone(), region)
-            },
-            AWSResourceIdentifier::Name(name) => (name.to_string(),default_region)
+            }
+            AWSResourceIdentifier::Name(name) => (name.to_string(), default_region),
         };
         tracing::info!("Bucket Name: {}", bucket_name);
 

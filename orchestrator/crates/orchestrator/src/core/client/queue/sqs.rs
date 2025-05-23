@@ -91,7 +91,7 @@ impl InnerSQS {
 
     /// get_queue_arn - Get the queue ARN from the queue URL
     /// This function returns the queue ARN based on the queue URL.
-    pub async fn get_queue_arn(&self, queue_url: &str) -> Result<String, QueueError> {
+    pub async fn get_queue_arn_from_url(&self, queue_url: &str) -> Result<ARN, QueueError> {
         let attributes = self
             .client()
             .get_queue_attributes()
@@ -102,7 +102,10 @@ impl InnerSQS {
 
         match attributes.attributes() {
             Some(attributes) => match attributes.get(&QueueAttributeName::QueueArn) {
-                Some(arn) => Ok(arn.to_string()),
+                Some(arn) => {
+                    let arn = ARN::parse(arn).map_err(|_| QueueError::FailedToGetQueueArn(queue_url.to_string()))?;
+                    Ok(arn)
+                }
                 None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),
             },
             None => Err(QueueError::FailedToGetQueueArn(queue_url.to_string())),

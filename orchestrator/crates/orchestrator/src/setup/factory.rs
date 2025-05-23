@@ -55,9 +55,9 @@ impl ResourceFactory {
     ) -> Self {
         let ordered_types = vec![
             // (ResourceType::Storage, Box::new(S3ResourceCreator) as Box<dyn ResourceCreator>),
-            (ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>),
+            // (ResourceType::Queue, Box::new(SQSResourceCreator) as Box<dyn ResourceCreator>),
             // (ResourceType::EventBus, Box::new(EventBridgeResourceCreator) as Box<dyn ResourceCreator>),
-            // (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>),
+            (ResourceType::PubSub, Box::new(SNSResourceCreator) as Box<dyn ResourceCreator>),
         ];
 
         ResourceFactory {
@@ -77,7 +77,7 @@ impl ResourceFactory {
     /// TODO > Refactor this function to use a more generic approach when we add more cloud providers
     pub async fn setup_resource(&self, layer: &Layer) -> OrchestratorResult<()> {
         let mut resource_futures = Vec::new();
-        let is_queue_ready = Arc::new(AtomicBool::new(false));
+        let is_queue_ready = Arc::new(AtomicBool::new(true));
         // Use ordered_types to maintain creation order
         for (resource_type, creator) in self.ordered_types.iter() {
             info!(" ⏳ Setting up resource: {:?}", resource_type);

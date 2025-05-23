@@ -48,7 +48,7 @@ impl Resource for InnerAWSSNS {
         // We use ARN in setup only to validate the existance of resource.
         match &args.alert_identifier {
             AWSResourceIdentifier::ARN(_) => {
-                tracing::info!("Checked for existing resource, exiting.");
+                tracing::info!("Alert Arn provided, skipping setup");
                 Ok(())
             }
             AWSResourceIdentifier::Name(_) => {
