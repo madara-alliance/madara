@@ -12,13 +12,16 @@ on:
         description: Artifacts image tag (with pr number)
         value: ${{ jobs.build-artifacts.outputs.artifacts-sha }}
 
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
 jobs:
   build-artifacts:
     runs-on: ubuntu-latest
     outputs:
       artifacts-sha: ${{ steps.tag.outputs.artifacts-sha }}
-    permissions:
-      contents: write
 
     steps:
       - name: Checkout Repository

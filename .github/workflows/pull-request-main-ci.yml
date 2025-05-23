@@ -43,6 +43,10 @@ jobs:
     with:
       label: artifacts-update
       version-file: .artifact-versions.yml
+    permissions:
+      contents: read
+      attestations: write
+      id-token: write
     secrets: inherit
 
   build-artifacts:
