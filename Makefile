@@ -202,7 +202,7 @@ artifacts:
 	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@docker build -f $(ARTIFACTS)/Dockerfile -t contracts .
+	@docker build -f $(ARTIFACTS)/build.docker -t contracts .
 	@docker create --name contracts contracts do-nothing > /dev/null
 	@docker cp contracts:/artifacts/. $(ARTIFACTS)
 	@docker rm contracts > /dev/null
