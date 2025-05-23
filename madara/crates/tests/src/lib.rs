@@ -29,9 +29,10 @@ use tempfile::TempDir;
 
 async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
     mut cond: impl FnMut() -> F,
-    duration: Duration,
+    sleep_duration: Duration,
     max_attempts: u32,
 ) -> R {
+    let start = Instant::now();
     let mut attempt = 0;
     loop {
         let err = match cond().await {
@@ -41,10 +42,10 @@ async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
 
         attempt += 1;
         if attempt >= max_attempts {
-            panic!("No answer from the node after {duration:?}: {err:#}");
+            panic!("Condition not satisfied after {:?}: {err:#}", start.elapsed());
         }
 
-        tokio::time::sleep(duration).await;
+        tokio::time::sleep(sleep_duration).await;
     }
 }
 

@@ -9,7 +9,7 @@ use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_chain_config::{
     deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
-    ChainConfig, L1DataAvailabilityMode, StarknetVersion,
+    BlockProductionConfig, ChainConfig, L1DataAvailabilityMode, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -93,9 +93,8 @@ pub struct ChainConfigOverridesInner {
     pub latest_protocol_version: StarknetVersion,
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub block_time: Duration,
-    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
-    pub pending_block_update_time: Duration,
-    pub execution_batch_size: usize,
+    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
+    pub pending_block_update_time: Option<Duration>,
     #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
@@ -105,6 +104,8 @@ pub struct ChainConfigOverridesInner {
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+    pub no_empty_blocks: bool,
+    pub block_production_concurrency: BlockProductionConfig,
 }
 
 impl ChainConfigOverrideParams {
@@ -120,7 +121,6 @@ impl ChainConfigOverrideParams {
             latest_protocol_version: chain_config.latest_protocol_version,
             block_time: chain_config.block_time,
             pending_block_update_time: chain_config.pending_block_update_time,
-            execution_batch_size: chain_config.execution_batch_size,
             bouncer_config: chain_config.bouncer_config,
             sequencer_address: chain_config.sequencer_address,
             eth_core_contract_address: chain_config.eth_core_contract_address,
@@ -130,6 +130,8 @@ impl ChainConfigOverrideParams {
             mempool_tx_max_age: chain_config.mempool_tx_max_age,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
+            no_empty_blocks: chain_config.no_empty_blocks,
+            block_production_concurrency: chain_config.block_production_concurrency,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -173,7 +175,6 @@ impl ChainConfigOverrideParams {
             latest_protocol_version: chain_config_overrides.latest_protocol_version,
             block_time: chain_config_overrides.block_time,
             pending_block_update_time: chain_config_overrides.pending_block_update_time,
-            execution_batch_size: chain_config_overrides.execution_batch_size,
             bouncer_config: chain_config_overrides.bouncer_config,
             sequencer_address: chain_config_overrides.sequencer_address,
             eth_core_contract_address: chain_config_overrides.eth_core_contract_address,
@@ -183,6 +184,8 @@ impl ChainConfigOverrideParams {
             mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,
+            no_empty_blocks: chain_config_overrides.no_empty_blocks,
+            block_production_concurrency: chain_config_overrides.block_production_concurrency,
         })
     }
 }

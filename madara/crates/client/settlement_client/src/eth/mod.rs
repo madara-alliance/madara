@@ -481,7 +481,7 @@ mod l1_messaging_tests {
     use blockifier::transaction::transaction_execution::Transaction;
     use mc_db::DatabaseService;
     use mc_mempool::Mempool;
-    use mc_mempool::{MempoolConfig, MempoolProvider};
+    use mc_mempool::MempoolConfig;
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::*;
@@ -658,7 +658,7 @@ mod l1_messaging_tests {
         // As it has the first nonce (and no other L1 message was received before) we can take it from Mempool
         // TODO: we can add a test case on which a message with Nonce = 1 is being received before this one
         // and check we cant take it until the first on is processed
-        let (handler_tx, _handler_tx_hash) = match mempool.tx_take().unwrap().tx {
+        let (handler_tx, _handler_tx_hash) = match mempool.get_consumer().await.next().unwrap().tx {
             Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
             Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
         };

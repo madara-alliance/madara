@@ -1,9 +1,23 @@
+//! Note: We are NOT using fs read for constants, as they NEED to be included in the resulting
+//! binary. Otherwise, using the madara binary without cloning the repo WILL crash, and that's very very bad.
+//! The binary needs to be self contained! We need to be able to ship madara as a single binary, without
+//! the user needing to clone the repo.
+//! Only use `fs` for constants when writing tests.
+
+use crate::{L1DataAvailabilityMode, StarknetVersion};
+use anyhow::{bail, Context, Result};
+use blockifier::blockifier::config::ConcurrencyConfig;
+use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::context::{ChainInfo, FeeTokenAddresses};
+use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
+use lazy_static::__Deref;
+use mp_utils::crypto::ZeroingPrivateKey;
+use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
+use serde::de::{MapAccess, Visitor};
+use serde::{Deserialize, Deserializer, Serialize};
+use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
+use starknet_types_core::felt::Felt;
 use std::fmt;
-// Note: We are NOT using fs read for constants, as they NEED to be included in the resulting
-// binary. Otherwise, using the madara binary without cloning the repo WILL crash, and that's very very bad.
-// The binary needs to be self contained! We need to be able to ship madara as a single binary, without
-// the user needing to clone the repo.
-// Only use `fs` for constants when writing tests.
 use std::str::FromStr;
 use std::{
     collections::BTreeMap,
@@ -12,21 +26,7 @@ use std::{
     path::Path,
     time::Duration,
 };
-
-use anyhow::{bail, Context, Result};
-use blockifier::bouncer::{BouncerWeights, BuiltinCount};
-use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
-use lazy_static::__Deref;
-use mp_utils::crypto::ZeroingPrivateKey;
-use serde::de::{MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
-use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
-use starknet_types_core::felt::Felt;
 use url::Url;
-
-use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
-
-use crate::{L1DataAvailabilityMode, StarknetVersion};
 
 pub mod eth_core_contract_address {
     pub const MAINNET: &str = "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4";
@@ -63,6 +63,42 @@ lazy_static::lazy_static! {
         serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize)]
+#[serde(default)]
+pub struct BlockProductionConfig {
+    /// Disable optimistic parallel execution.
+    pub disable_concurrency: bool,
+    /// Number of workers. Defaults to the number of cores in the system.
+    pub n_workers: usize,
+    pub batch_size: usize,
+}
+
+impl BlockProductionConfig {
+    pub fn blockifier_config(&self) -> ConcurrencyConfig {
+        ConcurrencyConfig { enabled: !self.disable_concurrency, n_workers: self.n_workers, chunk_size: self.batch_size }
+    }
+}
+
+impl Default for BlockProductionConfig {
+    fn default() -> Self {
+        Self {
+            disable_concurrency: false,
+            n_workers: std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1),
+            batch_size: 1024,
+        }
+    }
+}
+
+fn starknet_version_latest() -> StarknetVersion {
+    StarknetVersion::LATEST
+}
+fn default_pending_block_update_time() -> Option<Duration> {
+    Some(Duration::from_millis(500))
+}
+fn default_block_time() -> Duration {
+    Duration::from_secs(30)
+}
+
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
@@ -74,6 +110,7 @@ pub struct ChainConfig {
     pub chain_id: ChainId,
 
     /// The DA mode supported by L1.
+    #[serde(default)]
     pub l1_da_mode: L1DataAvailabilityMode,
 
     // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
@@ -85,27 +122,30 @@ pub struct ChainConfig {
     /// For starknet, this is the ETH ERC-20 contract on starknet.
     pub parent_fee_token_address: ContractAddress,
 
-    /// BTreeMap ensures order.
     #[serde(default)]
     pub versioned_constants: ChainVersionedConstants,
 
-    #[serde(deserialize_with = "deserialize_starknet_version")]
+    /// Produce blocks using for this starknet protocol version.
+    #[serde(default = "starknet_version_latest", deserialize_with = "deserialize_starknet_version")]
     pub latest_protocol_version: StarknetVersion,
 
     /// Only used for block production.
-    #[serde(deserialize_with = "deserialize_duration")]
+    /// Default: 30s.
+    #[serde(default = "default_block_time", deserialize_with = "deserialize_duration")]
     pub block_time: Duration,
+
+    /// Do not produce empty blocks.
+    /// Warning: If a chain does not produce blocks regularily, estimate_fee RPC may behave incorrectly as its gas prices
+    /// are based on the latest block on chain.
+    #[serde(default)]
+    pub no_empty_blocks: bool,
 
     /// Only used for block production.
     /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
-    #[serde(deserialize_with = "deserialize_duration")]
-    pub pending_block_update_time: Duration,
-
-    /// Only used for block production.
-    /// Block production is handled in batches; each batch will pop this number of transactions from the mempool. This is
-    /// primarily useful for optimistic parallelization.
-    /// A value too high may have a performance impact - you will need some testing to find the best value for your network.
-    pub execution_batch_size: usize,
+    /// When none, no pending block will be produced.
+    /// Default: 500ms.
+    #[serde(default = "default_pending_block_update_time", deserialize_with = "deserialize_optional_duration")]
+    pub pending_block_update_time: Option<Duration>,
 
     /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
@@ -138,6 +178,10 @@ pub struct ChainConfig {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+
+    /// Configuration for parallel execution in Blockifier. Only used for block production.
+    #[serde(default)]
+    pub block_production_concurrency: BlockProductionConfig,
 }
 
 impl ChainConfig {
@@ -165,15 +209,14 @@ impl ChainConfig {
 
     /// Verify that the chain config is valid for block production.
     pub fn precheck_block_production(&self) -> anyhow::Result<()> {
-        // block_time != 0 implies that n_pending_ticks_per_block != 0.
         if self.sequencer_address == ContractAddress::default() {
             bail!("Sequencer address cannot be 0x0 for block production.")
         }
-        if self.block_time.as_millis() == 0 {
+        if self.block_time.is_zero() {
             bail!("Block time cannot be zero for block production.")
         }
-        if self.pending_block_update_time.as_millis() == 0 {
-            bail!("Block time cannot be zero for block production.")
+        if self.pending_block_update_time.is_some_and(|t| t.is_zero()) {
+            bail!("Pending block update time cannot be zero for block production.")
         }
         Ok(())
     }
@@ -212,9 +255,9 @@ impl ChainConfig {
 
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
-            pending_block_update_time: Duration::from_secs(2),
+            pending_block_update_time: Some(Duration::from_millis(500)),
 
-            execution_batch_size: 16,
+            no_empty_blocks: false,
 
             bouncer_config: BouncerConfig {
                 block_max_capacity: BouncerWeights {
@@ -250,6 +293,8 @@ impl ChainConfig {
             mempool_tx_limit: 10_000,
             mempool_declare_tx_limit: 20,
             mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
+
+            block_production_concurrency: BlockProductionConfig::default(),
         }
     }
 
@@ -310,11 +355,6 @@ impl ChainConfig {
         }
     }
 
-    /// This is the number of pending ticks (see [`ChainConfig::pending_block_update_time`]) in a block.
-    pub fn n_pending_ticks_per_block(&self) -> usize {
-        (self.block_time.as_millis() / self.pending_block_update_time.as_millis()) as usize
-    }
-
     pub fn exec_constants_by_protocol_version(
         &self,
         version: StarknetVersion,
@@ -326,10 +366,21 @@ impl ChainConfig {
         }
         Err(UnsupportedProtocolVersion(version))
     }
+
+    pub fn blockifier_chain_info(&self) -> ChainInfo {
+        ChainInfo {
+            chain_id: self.chain_id.clone(),
+            fee_token_addresses: FeeTokenAddresses {
+                strk_fee_token_address: self.native_fee_token_address,
+                eth_fee_token_address: self.parent_fee_token_address,
+            },
+        }
+    }
 }
 
 // TODO: the motivation for these doc comments is to move them into a proper app chain developer documentation, with a
 // proper page about tuning the block production performance.
+/// BTreeMap ensures order.
 #[derive(Debug)]
 pub struct ChainVersionedConstants(pub BTreeMap<StarknetVersion, VersionedConstants>);
 
@@ -538,7 +589,7 @@ mod tests {
 
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
-        assert_eq!(chain_config.pending_block_update_time, Duration::from_secs(2));
+        assert_eq!(chain_config.pending_block_update_time, Some(Duration::from_secs(2)));
 
         // Check bouncer config
         assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
