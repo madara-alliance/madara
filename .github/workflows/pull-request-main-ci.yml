@@ -42,7 +42,7 @@ jobs:
     uses: ./.github/workflows/task-ci-version-file.yml
     with:
       label: artifacts-update
-      version-file: .artifacts-versions.yml
+      version-file: .artifact-versions.yml
     secrets: inherit
 
   build-artifacts:
