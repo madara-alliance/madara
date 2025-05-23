@@ -34,45 +34,44 @@ impl Resource for InnerAWSS3 {
     }
     /// Set up a new S3 bucket
     async fn setup(&self, _layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        let default_region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
-        let (bucket_name, region) = match &args.bucket_identifier {
-            AWSResourceIdentifier::ARN(arn) => {
-                let region = if arn.region.is_empty() {
-                    default_region
-                } else {
-                    arn.region.to_string() // Convert to String to match the other branch
-                };
-                (arn.resource.clone(), region)
-            }
-            AWSResourceIdentifier::Name(name) => (name.to_string(), default_region),
-        };
-        tracing::info!("Bucket Name: {}", bucket_name);
+        // Check if the bucket already exists
+        // If it does, return the existing bucket name and location
+        if self.check_if_exists(&args.bucket_identifier).await? {
+            warn!(" ⏭️  S3 bucket already exists, skipping creation");
+            return Ok(());
+        }
 
         // it is special to s3 that it can have empty region in it's arn : e.g: arn:aws:s3:::karnot-mo-bucket
         // in such scenarios we would want to default to provided region
 
-        // Check if the bucket already exists
-        // If it does, return the existing bucket name and location
-        if self.check_if_exists(&args.bucket_identifier).await? {
-            warn!(" ⏭️  S3 bucket '{}' already exists", bucket_name);
-            return Ok(());
+        match &args.bucket_identifier {
+            AWSResourceIdentifier::ARN(arn) => {
+                tracing::info!("Bucket Arn provided, skipping setup for {}", &arn.resource);
+                Ok(())
+            }
+            AWSResourceIdentifier::Name(bucket_name) => {
+                let region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
+
+                info!("Creating New Bucket: {}", bucket_name);
+
+                let mut bucket_builder = self.0.create_bucket().bucket(bucket_name);
+
+                if region != "us-east-1" {
+                    let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
+                    let cfg =
+                        aws_sdk_s3::types::CreateBucketConfiguration::builder().location_constraint(constraint).build();
+                    bucket_builder = bucket_builder.create_bucket_configuration(cfg);
+                }
+
+                let _result = bucket_builder.send().await.map_err(|e| {
+                    OrchestratorError::ResourceSetupError(format!(
+                        "Failed to create S3 bucket '{}': {:?}",
+                        bucket_name, e
+                    ))
+                })?;
+                Ok(())
+            }
         }
-
-        info!("Creating New Bucket: {}", bucket_name);
-        info!("Creating bucket in region: {}", region);
-
-        let mut bucket_builder = self.0.create_bucket().bucket(&bucket_name);
-
-        if region != "us-east-1" {
-            let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());
-            let cfg = aws_sdk_s3::types::CreateBucketConfiguration::builder().location_constraint(constraint).build();
-            bucket_builder = bucket_builder.create_bucket_configuration(cfg);
-        }
-
-        let _result = bucket_builder.send().await.map_err(|e| {
-            OrchestratorError::ResourceSetupError(format!("Failed to create S3 bucket '{}': {:?}", bucket_name, e))
-        })?;
-        Ok(())
     }
 
     // TODO: can we simplify if check_if_exists and is_ready_to_use are same ?
