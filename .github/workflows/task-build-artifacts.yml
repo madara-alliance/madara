@@ -4,6 +4,12 @@ name: Task - Build Cairo Artifacts
 on:
   workflow_dispatch:
   workflow_call:
+    inputs:
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
+        type: string
     outputs:
       artifacts:
         description: Artifacts image tag
