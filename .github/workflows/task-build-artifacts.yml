@@ -37,9 +37,8 @@ jobs:
         id: tag
         run: |
           IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/artifacts"
-          PR=$(git rev-parse --short "${{ github.event.number }}")
           ARTIFACTS="$IMAGE"
-          ARTIFACTS_PR="$IMAGE:$PR"
+          ARTIFACTS_PR="$IMAGE:${{ github.event.number }}"
 
           echo "artifacts=$ARTIFACTS" >> $GITHUB_OUTPUT
           echo "artifacts-pr=$ARTIFACTS_PR" >> $GITHUB_OUTPUT
