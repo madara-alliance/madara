@@ -512,6 +512,7 @@ impl BlockImporterCtx {
             error,
             context: format!("Storing events for {block_n}").into(),
         })?;
+
         Ok(())
     }
 
