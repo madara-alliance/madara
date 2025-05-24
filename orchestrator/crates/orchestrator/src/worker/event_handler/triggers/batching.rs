@@ -108,7 +108,7 @@ impl BatchingTrigger {
                 &state_update,
                 false,
                 &config,
-                batch.start_block.saturating_sub(1),
+                end_block_number,
                 config.madara_client(),
             )
             .await?;
@@ -152,7 +152,7 @@ impl BatchingTrigger {
                             .compress_state_update(
                                 &squashed_state_update,
                                 config.params.madara_version,
-                                current_batch.start_block.saturating_sub(1),
+                                block_number.saturating_sub(1),
                                 provider,
                             )
                             .await?;
@@ -166,7 +166,7 @@ impl BatchingTrigger {
                                 &prev_state_update,
                                 true,
                                 config,
-                                current_batch.start_block.saturating_sub(1),
+                                block_number.saturating_sub(1),
                                 provider,
                             )
                             .await?;

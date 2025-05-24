@@ -1,35 +1,82 @@
-use color_eyre::Result;
+use color_eyre::{eyre, Result};
 use futures::{stream, StreamExt};
 use starknet::core::types::{
     ContractStorageDiffItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem, StateUpdate, StorageEntry,
 };
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError};
-use starknet_core::types::{BlockId, StarknetError};
-use std::collections::HashMap;
+use starknet_core::types::{BlockId, DeclaredClassItem, StarknetError};
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 const SPECIAL_ADDRESS: &str = "0x2";
-const MAPPING_START: &str = "0x80";
-const GLOBAL_COUNTER_SLOT: &str = "0x0";
+const MAPPING_START: &str = "0x80";  // 128
 
 /// Represents a mapping from one value to another
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 struct ValueMapping {
-    provider: Arc<JsonRpcClient<HttpTransport>>,
     mappings: HashMap<Felt, Felt>,
-    pre_range_block: u64,
 }
 
 impl ValueMapping {
-    /// Creates a new ValueMapping from storage entries at the special address
-    fn from_special_address(
+    /// Creates a new ValueMapping using state update and provider
+    async fn from_state_update_or_provider(
         state_update: &StateUpdate,
         pre_range_block: u64,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
-    ) -> Self {
-        let mut mappings = HashMap::new();
+    ) -> Result<Self> {
+        let mut mappings: HashMap<Felt, Felt> = HashMap::new();
+        let mut keys: HashSet<Felt> = HashSet::new();
 
+        // Collecting all the keys for which mapping might be required
+        state_update.state_diff.storage_diffs.iter().for_each(|diff| {
+            // Skip the special address
+            if ValueMapping::skip(diff.address) {
+                return;
+            }
+            keys.insert(diff.address);
+            diff.storage_entries.iter().for_each(|entry| {
+                keys.insert(entry.key);
+            });
+        });
+        state_update.state_diff.deployed_contracts.iter().for_each(|contract| {
+            keys.insert(contract.address);
+        });
+        state_update.state_diff.nonces.iter().for_each(|nonce| {
+            keys.insert(nonce.contract_address);
+        });
+        state_update.state_diff.replaced_classes.iter().for_each(|replaced_class| {
+            keys.insert(replaced_class.contract_address);
+        });
+
+        // Fetch the values for the keys from the special address (0x2) or the provider
+        let special_address_mappings = ValueMapping::get_special_address_mappings(state_update)?;
+
+        let fetch_results: Vec<_> = stream::iter(keys)
+            .map(|key| {
+                let special_address_mappings = special_address_mappings.clone();
+                async move {
+                    match special_address_mappings.get(&key).cloned() {
+                        Some(value) => Ok((key, value)),
+                        None => {
+                            Ok((key, ValueMapping::get_value_from_provider(provider, &key, pre_range_block).await?))
+                        }
+                    }
+                }
+            })
+            .buffer_unordered(3000)
+            .collect()
+            .await;
+
+        for (key, value) in parse_results(fetch_results)? {
+            mappings.insert(key, value);
+        }
+
+        Ok(ValueMapping { mappings })
+    }
+
+    /// get_special_address_mappings create a hashmap from the storage mappings at the special address
+    fn get_special_address_mappings(state_update: &StateUpdate) -> Result<HashMap<Felt, Felt>> {
         // Find the special address storage entries
         if let Some(special_contract) = state_update
             .state_diff
@@ -37,49 +84,51 @@ impl ValueMapping {
             .iter()
             .find(|diff| diff.address == Felt::from_hex(SPECIAL_ADDRESS).unwrap())
         {
+            let mut mappings: HashMap<Felt, Felt> = HashMap::new();
+
             // Add each key-value pair to our mapping, ignoring the global counter-slot
             for entry in &special_contract.storage_entries {
-                if entry.key != Felt::from_hex(GLOBAL_COUNTER_SLOT).unwrap() {
+                if !ValueMapping::skip(entry.key) {
                     mappings.insert(entry.key, entry.value);
                 }
             }
-        }
 
-        ValueMapping { mappings, provider: provider.clone(), pre_range_block }
+            Ok(mappings)
+        } else {
+            Err(eyre::eyre!("Special address not found in state update"))
+        }
     }
 
-    async fn get_value(&self, value: &Felt) -> Result<Felt, ProviderError> {
-        match self
-            .provider
-            .get_storage_at(Felt::from_hex(SPECIAL_ADDRESS).unwrap(), value, BlockId::Number(self.pre_range_block))
+    /// skip determines if we can skip a contract or storage address from stateful compression mapping
+    fn skip(address: Felt) -> bool {
+        address < Felt::from_hex(MAPPING_START).unwrap()
+    }
+
+    /// get_value_from_provider returns the mapping for a key after fetching it from the provider
+    async fn get_value_from_provider(
+        provider: &Arc<JsonRpcClient<HttpTransport>>,
+        key: &Felt,
+        pre_range_block: u64,
+    ) -> Result<Felt, ProviderError> {
+        if ValueMapping::skip(*key) {
+            return Ok(key.clone());
+        }
+        match provider
+            .get_storage_at(Felt::from_hex(SPECIAL_ADDRESS).unwrap(), key, BlockId::Number(pre_range_block))
             .await
         {
-            Ok(value) => {
-                Ok(value)
-            }
+            Ok(value) => Ok(value),
             Err(e) => Err(ProviderError::StarknetError(StarknetError::UnexpectedError(format!(
                 "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-                SPECIAL_ADDRESS, value, self.pre_range_block, e
+                SPECIAL_ADDRESS, key, pre_range_block, e
             )))),
         }
     }
 
-    /// Maps a value using the stored mappings
-    // async fn map_value(&self, value: &Felt) -> Result<Felt> {
-    //     Ok(self.mappings.get(value).cloned().unwrap_or(*value))
-    // }
-
-    async fn map_value(&mut self, value: &Felt) -> Result<Felt, ProviderError> {
-        if *value < Felt::from_hex(MAPPING_START).unwrap() {
-            return Ok(value.clone());
-        }
+    fn get_value(&self, value: &Felt) -> Result<Felt> {
         match self.mappings.get(value).cloned() {
             Some(value) => Ok(value),
-            None => {
-                let key = self.get_value(value).await?;
-                self.mappings.insert(key, value.clone());
-                Ok(key)
-            }
+            None => Err(eyre::eyre!("Value not found in mapping: {}", value)),
         }
     }
 }
@@ -87,9 +136,9 @@ impl ValueMapping {
 /// Compresses a state update using stateful compression
 ///
 /// This function:
-/// 1. Extracts mapping information from the special address (0x2)
+/// 1. Extracts mapping information from the special address (0x2) and provider
 /// 2. Use this mapping to transform other addresses and values
-/// 3. Preserves the special address entries as-is
+/// 3. Preserves all the entries in special addresses (<128) as it is
 ///
 /// # Arguments
 /// * `state_update` - StateUpdate to compress
@@ -103,134 +152,59 @@ pub async fn compress(
 ) -> Result<StateUpdate> {
     let mut state_update = state_update.clone();
 
-    // Create mapping from the special address
-    let mut mapping = ValueMapping::from_special_address(&state_update, pre_range_block, provider);
+    let mapping = ValueMapping::from_state_update_or_provider(&state_update, pre_range_block, provider).await?;
 
-    // Create a new storage diffs vector
+    // Process storage diffs
     let mut new_storage_diffs = Vec::new();
-
-    // Process each contract's storage diffs
     for diff in state_update.state_diff.storage_diffs {
-        if skip_contract(diff.address) {
-            // Preserve special address entries as-is
+        if ValueMapping::skip(diff.address) {
             new_storage_diffs.push(diff);
             continue;
         }
 
-        // Map the contract address
-        // println!("getting mapping for contract {}", diff.address);
-        let mapped_address = mapping.map_value(&diff.address).await?;
+        let mapped_address = mapping.get_value(&diff.address)?;
+        let mut mapped_entries = Vec::new();
 
-        // Map storage entries
-        let mapped_entry_results: Vec<_> = stream::iter(diff.storage_entries)
-            .map(|entry| {
-                let mut mapping = mapping.clone();
-                async move { Ok(StorageEntry { key: mapping.map_value(&entry.key).await?, value: entry.value }) }
-            })
-            .buffer_unordered(4000)
-            .collect()
-            .await;
+        for entry in diff.storage_entries {
+            mapped_entries.push(StorageEntry { key: mapping.get_value(&entry.key)?, value: entry.value });
+        }
 
-        // Create a new storage diff with mapped values
-        new_storage_diffs.push(ContractStorageDiffItem {
-            address: mapped_address,
-            storage_entries: parse_results(mapped_entry_results)?,
-        });
+        new_storage_diffs.push(ContractStorageDiffItem { address: mapped_address, storage_entries: mapped_entries });
     }
-
-    // Update storage diffs in state update
     state_update.state_diff.storage_diffs = new_storage_diffs;
 
-    // Map other fields that need mapping
-    let deployed_contract_results: Vec<_> = stream::iter(state_update.state_diff.deployed_contracts)
-        .map(|item| {
-            let mut mapping = mapping.clone();
-            async move {
-                Ok(DeployedContractItem {
-                    address: mapping.map_value(&item.address).await?,
-                    // class_hash: mapping.map_value(&item.class_hash).await?,
-                    class_hash: item.class_hash,
-                })
-            }
-        })
-        .buffer_unordered(4000)
-        .collect()
-        .await;
+    // Process deployed contracts
+    let mut new_deployed_contracts = Vec::new();
+    for item in state_update.state_diff.deployed_contracts {
+        new_deployed_contracts
+            .push(DeployedContractItem { address: mapping.get_value(&item.address)?, class_hash: item.class_hash });
+    }
+    state_update.state_diff.deployed_contracts = new_deployed_contracts;
 
-    // let declared_class_results: Vec<_> = stream::iter(state_update.state_diff.declared_classes)
-    //     .map(|item| {
-    //         let mut mapping = mapping.clone();
-    //         async move {
-    //             Ok(DeclaredClassItem {
-    //                 class_hash: mapping.map_value(&item.class_hash).await?,
-    //                 compiled_class_hash: mapping.map_value(&item.compiled_class_hash).await?,
-    //             })
-    //         }
-    //     })
-    //     .buffer_unordered(100)
-    //     .collect()
-    //     .await;
+    // Declared class remain as it is as it only contains class hashes
 
-    // Map nonces
-    let nonce_results: Vec<_> = stream::iter(state_update.state_diff.nonces)
-        .map(|item| {
-            let mut mapping = mapping.clone();
-            async move {
-                Ok(NonceUpdate {
-                    contract_address: mapping.map_value(&item.contract_address).await?,
-                    // nonce: mapping.map_value(&item.nonce).await?,
-                    nonce: item.nonce,
-                })
-            }
-        })
-        .buffer_unordered(4000)
-        .collect()
-        .await;
+    // Process nonces
+    let mut new_nonces = Vec::new();
+    for item in state_update.state_diff.nonces {
+        new_nonces
+            .push(NonceUpdate { contract_address: mapping.get_value(&item.contract_address)?, nonce: item.nonce });
+    }
+    state_update.state_diff.nonces = new_nonces;
 
-    // Map replaced classes
-    let replaced_class_results: Vec<_> = stream::iter(state_update.state_diff.replaced_classes)
-        .map(|item| {
-            let mut mapping = mapping.clone();
-            async move {
-                Ok(ReplacedClassItem {
-                    contract_address: mapping.map_value(&item.contract_address).await?,
-                    // class_hash: mapping.map_value(&item.class_hash).await?,
-                    class_hash: item.class_hash,
-                })
-            }
-        })
-        .buffer_unordered(4000)
-        .collect()
-        .await;
+    // Process replaced classes
+    let mut new_replaced_classes = Vec::new();
+    for item in state_update.state_diff.replaced_classes {
+        new_replaced_classes.push(ReplacedClassItem {
+            contract_address: mapping.get_value(&item.contract_address)?,
+            class_hash: item.class_hash,
+        });
+    }
+    state_update.state_diff.replaced_classes = new_replaced_classes;
 
-    // Map deprecated declared classes
-    // let deprecated_declared_class_results: Vec<_> = stream::iter(state_update.state_diff.deprecated_declared_classes)
-    //     .map(|class_hash| {
-    //         let mut mapping = mapping.clone();
-    //         async move { Ok(mapping.map_value(&class_hash).await?) }
-    //     })
-    //     .buffer_unordered(100)
-    //     .collect()
-    //     .await;
-
-    state_update.state_diff.deployed_contracts = parse_results(deployed_contract_results)?;
-    // state_update.state_diff.declared_classes = parse_results(declared_class_results)?;
-    state_update.state_diff.nonces = parse_results(nonce_results)?;
-    state_update.state_diff.replaced_classes = parse_results(replaced_class_results)?;
-    // state_update.state_diff.deprecated_declared_classes = parse_results(deprecated_declared_class_results)?;
-
-    // Map block hashes and roots if needed
-    state_update.block_hash = state_update.block_hash;
-    state_update.new_root = state_update.new_root;
-    state_update.old_root = state_update.old_root;
+    // Deprecated declared classes remain as it is as it only contains class hashes
+    // block_hash, new_root and old_root remain as it is
 
     Ok(state_update)
-}
-
-fn skip_contract(address: Felt) -> bool {
-    let res = address < Felt::from_hex(MAPPING_START).unwrap();
-    // println!("skipping contract {}? {}", address, res);
-    res
 }
 
 fn parse_results<T>(results: Vec<Result<T>>) -> Result<Vec<T>> {
