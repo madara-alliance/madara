@@ -79,7 +79,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
                 })
                 .returning(|batch| Ok(batch));
         } else {
-            db.expect_update_batch()
+            db.expect_update_or_create_batch()
                 .withf(move |batch, updates| {
                     batch.end_block == block_num - 1
                         && updates.end_block == block_num
