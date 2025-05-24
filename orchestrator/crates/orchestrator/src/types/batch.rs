@@ -4,7 +4,7 @@ use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_b
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-#[derive(Serialize, Debug)]
+#[derive(Serialize, Debug, Clone)]
 pub struct BatchUpdates {
     pub end_block: u64,
     pub is_batch_ready: bool,
@@ -13,7 +13,7 @@ pub struct BatchUpdates {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct Batch {
     /// Unique identifier for the batch
-    #[cfg_attr(feature = "with_mongodb", serde(with = "uuid_1_as_binary"))]
+    #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
     pub id: Uuid,
     /// Index of the batch
     pub index: u64,

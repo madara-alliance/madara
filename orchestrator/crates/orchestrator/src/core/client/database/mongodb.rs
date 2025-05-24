@@ -489,7 +489,7 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn update_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "id": batch.id,
@@ -531,7 +531,7 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 // Not found
-                tracing::warn!(batch_id = %batch.id, category = "db_call", "Failed to update batch");
+                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to update batch");
                 Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", batch.id)))
             }
         }
@@ -549,10 +549,13 @@ impl DatabaseClient for MongoDbClient {
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(batch)
             }
-            Err(err) => Err(DatabaseError::InsertFailed(format!(
-                "Failed to insert batch {} with id {}: {}",
-                batch.index, batch.id, err
-            ))),
+            Err(err) => {
+                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
+                Err(DatabaseError::InsertFailed(format!(
+                    "Failed to insert batch {} with id {}: {}",
+                    batch.index, batch.id, err
+                )))
+            },
         }
     }
 }
