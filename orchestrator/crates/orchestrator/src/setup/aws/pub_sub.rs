@@ -23,7 +23,7 @@ impl Resource for SNS {
         }
     }
 
-    async fn setup(&self, _layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
 
         let alert_topic_arn = args.alert_topic_name;
         tracing::info!("Topic ARN: {}", alert_topic_arn);
@@ -62,7 +62,7 @@ impl Resource for SNS {
         Ok(self.client.get_topic_attributes().topic_arn(alert_topic_arn).send().await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         Ok(self.client.get_topic_attributes().topic_arn(&args.alert_topic_name).send().await.is_ok())
     }
 }
