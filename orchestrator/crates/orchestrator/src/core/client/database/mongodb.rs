@@ -698,7 +698,7 @@ impl DatabaseClient for MongoDbClient {
                     "Failed to insert batch {} with id {}: {}",
                     batch.index, batch.id, err
                 )))
-            },
+            }
         }
     }
 }
