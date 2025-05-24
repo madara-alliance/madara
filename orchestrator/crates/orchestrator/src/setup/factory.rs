@@ -98,18 +98,28 @@ impl ResourceFactory {
                             let rs = resource.downcast_mut::<AWSS3>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to AWSS3".to_string(),
                             ))?;
-                            rs.setup(layer, storage_params.clone()).await?;
-                            rs.poll(storage_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
-                                .await;
+                            rs.setup(&layer, storage_params.clone()).await?;
+                            rs.poll(
+                                &layer,
+                                storage_params,
+                                miscellaneous_params.poll_interval,
+                                miscellaneous_params.timeout,
+                            )
+                            .await;
                             Ok(())
                         }
                         ResourceType::Queue => {
                             let rs = resource.downcast_mut::<SQS>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to SQS".to_string(),
                             ))?;
-                            rs.setup(layer, queue_params.clone()).await?;
+                            rs.setup(&layer, queue_params.clone()).await?;
                             let queue_ready = rs
-                                .poll(queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
+                                .poll(
+                                    &layer,
+                                    queue_params,
+                                    miscellaneous_params.poll_interval,
+                                    miscellaneous_params.timeout,
+                                )
                                 .await;
                             is_queue_ready_clone.store(queue_ready, Ordering::Release);
                             Ok(())
@@ -125,8 +135,9 @@ impl ResourceFactory {
                                     let rs = resource.downcast_mut::<SNS>().ok_or(OrchestratorError::SetupError(
                                         "Failed to downcast resource to SNS".to_string(),
                                     ))?;
-                                    rs.setup(layer, alert_params.clone()).await?;
+                                    rs.setup(&layer, alert_params.clone()).await?;
                                     rs.poll(
+                                        &layer,
                                         alert_params,
                                         miscellaneous_params.poll_interval,
                                         miscellaneous_params.timeout,
@@ -154,7 +165,7 @@ impl ResourceFactory {
                                             "Failed to downcast resource to EventBridge".to_string(),
                                         ),
                                     )?;
-                                    rs.setup(layer, cron_params.clone()).await?;
+                                    rs.setup(&layer, cron_params.clone()).await?;
                                     break;
                                 } else {
                                     info!(" Current Status of the Queue Creation is: {:?}", is_queue_ready_clone);

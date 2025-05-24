@@ -18,4 +18,6 @@ pub enum DatabaseError {
     UpdateFailed(String),
     #[error("Failed to serialize document: {0}")]
     FailedToSerializeDocument(String),
+    #[error("Failed to insert document: {0}")]
+    InsertFailed(String),
 }
