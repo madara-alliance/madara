@@ -99,8 +99,13 @@ impl ResourceFactory {
                                 "Failed to downcast resource to AWSS3".to_string(),
                             ))?;
                             rs.setup(&layer, storage_params.clone()).await?;
-                            rs.poll(&layer, storage_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
-                                .await;
+                            rs.poll(
+                                &layer,
+                                storage_params,
+                                miscellaneous_params.poll_interval,
+                                miscellaneous_params.timeout,
+                            )
+                            .await;
                             Ok(())
                         }
                         ResourceType::Queue => {
@@ -109,7 +114,12 @@ impl ResourceFactory {
                             ))?;
                             rs.setup(&layer, queue_params.clone()).await?;
                             let queue_ready = rs
-                                .poll(&layer, queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
+                                .poll(
+                                    &layer,
+                                    queue_params,
+                                    miscellaneous_params.poll_interval,
+                                    miscellaneous_params.timeout,
+                                )
                                 .await;
                             is_queue_ready_clone.store(queue_ready, Ordering::Release);
                             Ok(())
