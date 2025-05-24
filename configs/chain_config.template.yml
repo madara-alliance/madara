@@ -1,5 +1,6 @@
 chain_name: ""
 chain_id: ""
+l1_da_mode: ""
 feeder_gateway_url: ""
 gateway_url: ""
 native_fee_token_address: ""

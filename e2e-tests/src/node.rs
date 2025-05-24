@@ -55,6 +55,7 @@ impl Orchestrator {
             .arg("--features")
             .arg("testing")
             .arg(mode_str)
+            .arg("--layer=l2")
             .arg("--aws")
             .arg("--aws-s3")
             .arg("--aws-sqs")
