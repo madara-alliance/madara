@@ -1,18 +1,19 @@
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
-    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit, TransactionReceipt,
+    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, MsgToL2, PriceUnit, TransactionReceipt,
 };
 use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
 use blockifier::transaction::{
-    account_transaction::AccountTransaction,
-    objects::{FeeType, GasVector, HasRelatedFeeType, TransactionExecutionInfo},
+    account_transaction::AccountTransaction as BlockifierAccountTransaction,
+    objects::{HasRelatedFeeType, TransactionExecutionInfo},
     transaction_execution::Transaction,
-    transactions::L1HandlerTransaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
-use serde::{Deserialize, Serialize};
-use sha3::{Digest, Keccak256};
+use starknet_api::block::FeeType;
+use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
+use starknet_api::execution_resources::GasVector;
+use starknet_api::transaction::L1HandlerTransaction;
 use starknet_core::types::Hash256;
 use starknet_types_core::felt::Felt;
 use std::convert::TryFrom;
@@ -20,18 +21,14 @@ use thiserror::Error;
 
 fn blockifier_tx_fee_type(tx: &Transaction) -> FeeType {
     match tx {
-        Transaction::AccountTransaction(tx) => tx.fee_type(),
-        Transaction::L1HandlerTransaction(tx) => tx.fee_type(),
+        Transaction::Account(tx) => tx.fee_type(),
+        Transaction::L1Handler(tx) => tx.fee_type(),
     }
 }
 fn blockifier_tx_hash(tx: &Transaction) -> Felt {
     match tx {
-        Transaction::AccountTransaction(tx) => match tx {
-            AccountTransaction::Declare(tx) => tx.tx_hash.0,
-            AccountTransaction::DeployAccount(tx) => tx.tx_hash.0,
-            AccountTransaction::Invoke(tx) => tx.tx_hash.0,
-        },
-        Transaction::L1HandlerTransaction(tx) => tx.tx_hash.0,
+        Transaction::Account(tx) => *tx.tx_hash(),
+        Transaction::L1Handler(tx) => tx.tx_hash.0,
     }
 }
 
@@ -43,38 +40,6 @@ pub enum L1HandlerMessageError {
     FromAddressOutOfRange,
     #[error("Invalid nonce")]
     InvalidNonce,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub struct MsgToL2 {
-    pub from_address: Felt,
-    pub to_address: Felt,
-    pub selector: Felt,
-    pub payload: Vec<Felt>,
-    pub nonce: Option<Felt>,
-}
-
-// Specification reference: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#hashing_l1-l2
-// Example implementation in starknet-rs: https://github.com/xJonathanLEI/starknet-rs/blob/master/starknet-core/src/types/msg.rs#L28
-//
-// Key Differences:
-// - In starknet-rs, padding is applied to the `from_address` and `nonce` fields. This is necessary because the `from_address` is an Ethereum address (20 bytes) and the `nonce` is a u64 (8 bytes).
-// - In this implementation, padding for `from_address` and `nonce` is not required. Both fields are converted to `felt252`, which naturally fits the required size.
-// - Padding is only applied to the payload length, which is a u64 (8 bytes), to ensure proper alignment.
-impl MsgToL2 {
-    pub fn compute_hash(&self) -> Hash256 {
-        let mut hasher = Keccak256::new();
-        hasher.update(self.from_address.to_bytes_be());
-        hasher.update(self.to_address.to_bytes_be());
-        hasher.update(self.nonce.unwrap_or_default().to_bytes_be());
-        hasher.update(self.selector.to_bytes_be());
-        hasher.update([0u8; 24]); // Padding
-        hasher.update((self.payload.len() as u64).to_be_bytes());
-        self.payload.iter().for_each(|felt| hasher.update(felt.to_bytes_be()));
-        let bytes = hasher.finalize().as_slice().try_into().expect("Byte array length mismatch");
-        Hash256::from_bytes(bytes)
-    }
 }
 
 impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
@@ -94,14 +59,14 @@ impl TryFrom<&mp_transactions::L1HandlerTransaction> for MsgToL2 {
 }
 
 fn get_l1_handler_message_hash(tx: &L1HandlerTransaction) -> Result<Hash256, L1HandlerMessageError> {
-    let (from_address, payload) = tx.tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
+    let (from_address, payload) = tx.calldata.0.split_first().ok_or(L1HandlerMessageError::EmptyCalldata)?;
 
-    let nonce = Some(tx.tx.nonce.0);
+    let nonce = Some(tx.nonce.0);
 
     let message = MsgToL2 {
         from_address: *from_address,
-        to_address: tx.tx.contract_address.into(),
-        selector: tx.tx.entry_point_selector.0,
+        to_address: tx.contract_address.into(),
+        selector: tx.entry_point_selector.0,
         payload: payload.into(),
         nonce,
     };
@@ -120,7 +85,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         FeeType::Strk => PriceUnit::Fri,
     };
 
-    let actual_fee = FeePayment { amount: res.transaction_receipt.fee.into(), unit: price_unit };
+    let actual_fee = FeePayment { amount: res.receipt.fee.into(), unit: price_unit };
     let transaction_hash = blockifier_tx_hash(tx);
 
     let messages_sent = recursive_call_info_iter(res)
@@ -167,18 +132,18 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         bitwise_builtin_applications: get_applications(&BuiltinName::bitwise),
         keccak_builtin_applications: get_applications(&BuiltinName::keccak),
         segment_arena_builtin: get_applications(&BuiltinName::segment_arena),
-        data_availability: res.transaction_receipt.da_gas.into(),
-        total_gas_consumed: res.transaction_receipt.gas.into(),
+        data_availability: res.receipt.da_gas.into(),
+        total_gas_consumed: res.receipt.gas.into(),
     };
 
     let execution_result = if let Some(reason) = &res.revert_error {
-        ExecutionResult::Reverted { reason: reason.into() }
+        ExecutionResult::Reverted { reason: reason.to_string() }
     } else {
         ExecutionResult::Succeeded
     };
 
     match tx {
-        Transaction::AccountTransaction(AccountTransaction::Declare(_)) => {
+        Transaction::Account(BlockifierAccountTransaction { tx: ApiAccountTransaction::Declare(_), .. }) => {
             TransactionReceipt::Declare(DeclareTransactionReceipt {
                 transaction_hash,
                 actual_fee,
@@ -188,7 +153,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 execution_result,
             })
         }
-        Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) => {
+        Transaction::Account(BlockifierAccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) => {
             TransactionReceipt::DeployAccount(DeployAccountTransactionReceipt {
                 transaction_hash,
                 actual_fee,
@@ -199,7 +164,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 contract_address: tx.contract_address.into(),
             })
         }
-        Transaction::AccountTransaction(AccountTransaction::Invoke(_)) => {
+        Transaction::Account(BlockifierAccountTransaction { tx: ApiAccountTransaction::Invoke(_), .. }) => {
             TransactionReceipt::Invoke(InvokeTransactionReceipt {
                 transaction_hash,
                 actual_fee,
@@ -209,7 +174,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
                 execution_result,
             })
         }
-        Transaction::L1HandlerTransaction(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
+        Transaction::L1Handler(tx) => TransactionReceipt::L1Handler(L1HandlerTransactionReceipt {
             transaction_hash,
             actual_fee,
             messages_sent,
@@ -218,14 +183,14 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
             execution_result,
             // This should not panic unless blockifier gives a garbage receipt.
             // TODO: we should have a soft error here just in case.
-            message_hash: get_l1_handler_message_hash(tx).expect("Error getting l1 handler message hash"),
+            message_hash: get_l1_handler_message_hash(&tx.tx).expect("Error getting l1 handler message hash"),
         }),
     }
 }
 
 impl From<GasVector> for L1Gas {
     fn from(value: GasVector) -> Self {
-        L1Gas { l1_gas: value.l1_gas as _, l1_data_gas: value.l1_data_gas as _ }
+        L1Gas { l1_gas: value.l1_gas.0 as _, l1_data_gas: value.l1_data_gas.0 as _ }
     }
 }
 
@@ -253,7 +218,7 @@ mod events_logic_tests {
             execute_call_info: None,
             fee_transfer_call_info: Some(call_2),
             revert_error: None,
-            transaction_receipt: Default::default(),
+            receipt: Default::default(),
         })
         .flat_map(|call| {
             call.execution.events.iter().map(|event| Event {
@@ -271,12 +236,10 @@ mod events_logic_tests {
 
     fn create_call_info(event_number: u32, inner_calls: Vec<CallInfo>) -> CallInfo {
         CallInfo {
-            call: Default::default(),
             execution: execution(vec![ordered_event(event_number as usize)]),
-            resources: Default::default(),
             inner_calls,
             storage_read_values: vec![],
-            accessed_storage_keys: Default::default(),
+            ..Default::default()
         }
     }
 

@@ -61,8 +61,8 @@ pub fn execution_result_to_tx_trace(
         segment_arena_builtin: computation_resources.segment_arena_builtin,
         steps: computation_resources.steps,
         data_availability: mp_rpc::DataAvailability {
-            l1_gas: execution_info.transaction_receipt.da_gas.l1_gas,
-            l1_data_gas: execution_info.transaction_receipt.da_gas.l1_data_gas,
+            l1_gas: execution_info.receipt.da_gas.l1_gas.0 as _,
+            l1_data_gas: execution_info.receipt.da_gas.l1_data_gas.0 as _,
         },
     };
 
@@ -86,7 +86,7 @@ pub fn execution_result_to_tx_trace(
         TransactionType::InvokeFunction => mp_rpc::TransactionTrace::Invoke(mp_rpc::InvokeTransactionTrace {
             validate_invocation,
             execute_invocation: if let Some(e) = &execution_info.revert_error {
-                mp_rpc::ExecuteInvocation::Anon(mp_rpc::RevertedInvocation { revert_reason: e.clone() })
+                mp_rpc::ExecuteInvocation::Anon(mp_rpc::RevertedInvocation { revert_reason: e.to_string() })
             } else {
                 mp_rpc::ExecuteInvocation::FunctionInvocation(
                     execute_function_invocation
@@ -118,9 +118,9 @@ fn try_get_funtion_invocation_from_call_info(
         call_info.inner_calls.iter().map(try_get_funtion_invocation_from_call_info).collect::<Result<_, _>>()?;
 
     let entry_point_type = match call_info.call.entry_point_type {
-        starknet_api::deprecated_contract_class::EntryPointType::Constructor => mp_rpc::EntryPointType::Constructor,
-        starknet_api::deprecated_contract_class::EntryPointType::External => mp_rpc::EntryPointType::External,
-        starknet_api::deprecated_contract_class::EntryPointType::L1Handler => mp_rpc::EntryPointType::L1Handler,
+        starknet_api::contract_class::EntryPointType::Constructor => mp_rpc::EntryPointType::Constructor,
+        starknet_api::contract_class::EntryPointType::External => mp_rpc::EntryPointType::External,
+        starknet_api::contract_class::EntryPointType::L1Handler => mp_rpc::EntryPointType::L1Handler,
     };
 
     let call_type = match call_info.call.call_type {

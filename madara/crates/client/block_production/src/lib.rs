@@ -145,7 +145,7 @@ impl CurrentPendingState {
                 }
 
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
-                let converted_tx = TransactionWithHash::from(blockifier_tx.clone_blockifier_transaction());
+                let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
                 self.block.events.extend(
                     receipt
@@ -561,7 +561,7 @@ pub(crate) mod tests {
         // that when loaded, the block will close after one transaction
         // is added to it, to test the pending tick closing the block
         BouncerWeights {
-            gas: 1000000,
+            l1_gas: 1000000,
             message_segment_length: 10000,
             n_events: 10000,
             state_diff_size: 10000,
@@ -760,7 +760,12 @@ pub(crate) mod tests {
         });
 
         let (blockifier_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+            .into_blockifier(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                true,
+                true,
+            )
             .unwrap();
         let signature = contract.secret.sign(&blockifier_tx.tx_hash().0).unwrap();
 
@@ -814,7 +819,12 @@ pub(crate) mod tests {
         });
 
         let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+            .into_blockifier(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                true,
+                true,
+            )
             .unwrap();
         let signature = contract_sender.secret.sign(&blockifier_tx.tx_hash()).unwrap();
 

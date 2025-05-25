@@ -7,9 +7,9 @@ use blockifier::{
     blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
     state::errors::StateError,
     transaction::{
-        account_transaction::AccountTransaction,
         errors::{TransactionExecutionError, TransactionPreValidationError},
         transaction_execution::Transaction as BTransaction,
+        transaction_types::TransactionType,
     },
 };
 use mc_db::MadaraBackend;
@@ -79,6 +79,7 @@ impl From<TransactionExecutorError> for SubmitTransactionError {
             E::BlockFull => rejected(ValidateFailure, format!("{err:#}")),
             E::StateError(err) => err.into(),
             E::TransactionExecutionError(err) => err.into(),
+            E::CompressionError(err) => rejected(ValidateFailure, format!("{err:#}")),
         }
     }
 }
@@ -93,7 +94,8 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             err @ E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
             err @ (E::ExecutionError { .. }
             | E::ValidateTransactionError { .. }
-            | E::ContractConstructorExecutionFailed { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::ContractConstructorExecutionFailed { .. }
+            | E::PanicInValidate { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ (E::FeeCheckError(_)
             | E::FromStr(_)
             | E::InvalidValidateReturnData { .. }
@@ -103,7 +105,9 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::TryFromIntError(_)
             | E::TransactionTooLarge) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
-            err @ E::InvalidSegmentStructure(_, _) => rejected(InvalidProgram, format!("{err:#}")),
+            err @ (E::InvalidSegmentStructure(_, _) | E::ProgramError { .. }) => {
+                rejected(InvalidProgram, format!("{err:#}"))
+            }
             E::StateError(err) => err.into(),
         }
     }
@@ -132,7 +136,7 @@ impl From<ToBlockifierError> for SubmitTransactionError {
             }
             err @ E::CompiledClassHashMismatch { .. } => rejected(InvalidCompiledClassHash, format!("{err:#}")),
             err @ E::Base64ToCairoError(_) => rejected(InvalidContractClass, format!("{err:#}")),
-            E::ConvertContractClassError(error) => rejected(InvalidContractClass, format!("{error:#}")),
+            E::ConvertClassToApiError(error) => rejected(InvalidContractClass, format!("{error:#}")),
             E::MissingClass => rejected(InvalidContractClass, "Missing class"),
         }
     }
@@ -200,8 +204,7 @@ impl TransactionValidator {
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
         let deploy_account_skip_validation =
-            matches!(tx, BTransaction::AccountTransaction(AccountTransaction::Invoke(_)))
-                && tx.nonce().to_felt() == Felt::ONE;
+            tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE;
 
         let tx_hash = tx.tx_hash().to_felt();
 
@@ -209,7 +212,7 @@ impl TransactionValidator {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
 
             // Perform validations
-            if let BTransaction::AccountTransaction(account_tx) = tx.clone_blockifier_transaction() {
+            if let BTransaction::Account(account_tx) = tx.clone() {
                 let mut validator = self.backend.new_transaction_validator()?;
                 validator.perform_validations(account_tx, deploy_account_skip_validation)?
             }
@@ -233,6 +236,8 @@ impl SubmitTransaction for TransactionValidator {
         let (btx, class) = tx.into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
+            true,
+            true, // TODO: did we want disabled charge fee for declare v0?
         )?;
 
         let res = ClassAndTxnHash {
@@ -249,9 +254,12 @@ impl SubmitTransaction for TransactionValidator {
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::Declare(tx);
+        let validate = !tx.is_query(); // Did we want to accept query only transactions?
         let (btx, class) = tx.into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
+            validate,
+            true,
         )?;
 
         let res = ClassAndTxnHash {
@@ -268,9 +276,12 @@ impl SubmitTransaction for TransactionValidator {
     ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::DeployAccount(tx);
+        let validate = !tx.is_query(); // Did we want to accept query only transactions?
         let (btx, class) = tx.into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
+            validate,
+            true,
         )?;
 
         let res = ContractAndTxnHash {
@@ -290,9 +301,12 @@ impl SubmitTransaction for TransactionValidator {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::Invoke(tx);
+        let validate = !tx.is_query(); // Did we want to accept query only transactions?
         let (btx, class) = tx.into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
+            validate,
+            true,
         )?;
 
         let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().to_felt() };

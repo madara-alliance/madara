@@ -1,66 +1,26 @@
 //! Executor thread internal logic.
 
-use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
+use std::{collections::HashMap, mem, sync::Arc};
+
 use anyhow::Context;
 use blockifier::{
-    blockifier::transaction_executor::{TransactionExecutor, TransactionExecutorResult},
-    execution::contract_class::ContractClass,
-    state::{
-        cached_state::{StateMaps, StorageEntry},
-        state_api::State,
-    },
-    transaction::objects::TransactionExecutionInfo,
+    blockifier::transaction_executor::TransactionExecutor,
+    state::{cached_state::StorageEntry, state_api::State},
 };
 use futures::future::OptionFuture;
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_exec::{execution::TxInfo, LayeredStateAdaptor, MadaraBackendExecutionExt};
-use mc_mempool::L1DataProvider;
-use mp_convert::{Felt, ToFelt};
+use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
-use std::{collections::HashMap, mem, sync::Arc};
 use tokio::{
     sync::{broadcast, mpsc},
     time::Instant,
 };
 
-// TODO(blockifier_update): When updating blockifier, remove the following lines! (TransactionExecutionOutput and blockifier_v0_8_0_fix_results).
-//
-// The reason is, in the new blockifier update, TransactionExecutor::execute_txs does not return `Vec<TransactionExecutorResult<TransactionExecutionInfo>>`
-// anymore. Instead, it returns `Vec<TransactionExecutorResult<TransactionExecutionOutput>>`, where they define `TransactionExecutionOutput` as the type alias
-// `type TransactionExecutionOutput = (TransactionExecutionInfo, StateMaps)`. This new StateMaps field is the state diff produced for the corresponding TransactionExecutionInfo.
-// This version of the crate was made to use this new `TransactionExecutionOutput`; but since we decided to split the blockifier update and the block production refactor into separate
-// PRs, we need this glue for the time being.
-//
-// This is completely temporary.
-pub type TransactionExecutionOutput = (TransactionExecutionInfo, StateMaps);
-fn blockifier_v0_8_0_fix_results(
-    state: &mut ExecutorStateExecuting,
-    results: Vec<TransactionExecutorResult<TransactionExecutionInfo>>,
-) -> anyhow::Result<Vec<TransactionExecutorResult<TransactionExecutionOutput>>> {
-    // HACK: We can't get the state diff for individual transactions, nor can we get the state diff for the current batch.
-    // We need to cheat by getting the state diff for the whole block, and we put that state diff as the state diff of the first transaction of the batch.
-    // This works because the upstream task will be merging the same state diff multiple times, which always results in the same state diff.
-    let state = state.executor.block_state.as_mut().expect("Block state taken");
+use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mc_exec::{execution::TxInfo, LayeredStateAdaptor, MadaraBackendExecutionExt};
+use mc_mempool::L1DataProvider;
+use mp_convert::{Felt, ToFelt};
 
-    let mut added = false;
-    // It is not an error if added remains false, it just means there was no tx added to the block in this batch.
-    // No need to output state diff in that case.
-    results
-        .into_iter()
-        .map(|r| match r {
-            TransactionExecutorResult::Ok(res) => anyhow::Ok(TransactionExecutorResult::Ok((
-                res,
-                if !added {
-                    added = true;
-                    state.to_state_diff().context("Converting to state diff")?
-                } else {
-                    StateMaps::default()
-                },
-            ))),
-            TransactionExecutorResult::Err(r) => anyhow::Ok(TransactionExecutorResult::Err(r)),
-        })
-        .collect()
-}
+use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
@@ -222,7 +182,7 @@ impl ExecutorThread {
     fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorThreadState> {
         let mut cached_state = state.executor.block_state.take().expect("Executor block state already taken");
 
-        let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?;
+        let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?.state_maps;
         let mut cached_adaptor = cached_state.state;
         cached_adaptor.finish_block(state_diff, mem::take(&mut state.declared_classes))?;
 
@@ -349,9 +309,6 @@ impl ExecutorThread {
 
             // Execute the transactions.
             let blockifier_results = execution_state.executor.execute_txs(&to_exec.txs);
-
-            // TODO(blockifier_update): Remove the following line when updating blockifier.
-            let blockifier_results = blockifier_v0_8_0_fix_results(execution_state, blockifier_results)?;
 
             let exec_duration = exec_start_time.elapsed();
 
