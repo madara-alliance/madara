@@ -1,18 +1,21 @@
-use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdaptor};
+use std::sync::Arc;
+
 use blockifier::{
     blockifier::{
-        block::BlockInfo, config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
-        transaction_executor::TransactionExecutor,
+        config::TransactionExecutorConfig,
+        stateful_validator::StatefulValidator,
+        transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
     },
     context::BlockContext,
     state::cached_state::CachedState,
 };
+use starknet_api::block::{BlockInfo, BlockNumber, BlockTimestamp};
+
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::MadaraMaybePendingBlockInfo;
-
 use mp_chain_config::L1DataAvailabilityMode;
-use starknet_api::block::{BlockNumber, BlockTimestamp};
-use std::sync::Arc;
+
+use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdaptor};
 
 /// Extension trait that provides execution capabilities on the madara backend.
 pub trait MadaraBackendExecutionExt {
@@ -42,6 +45,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
             ),
             TransactionExecutorConfig {
                 concurrency_config: self.chain_config().block_production_concurrency.blockifier_config(),
+                stack_size: DEFAULT_STACK_SIZE,
             },
         ))
     }
@@ -84,7 +88,7 @@ impl ExecutionContext {
         TransactionExecutor::new(
             self.init_cached_state(),
             self.block_context.clone(),
-            TransactionExecutorConfig { concurrency_config: Default::default() },
+            TransactionExecutorConfig { concurrency_config: Default::default(), stack_size: DEFAULT_STACK_SIZE },
         )
     }
 

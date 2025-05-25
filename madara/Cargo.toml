@@ -124,11 +124,12 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = "=0.8.0"
-starknet_api = "0.13.0-rc.1"
-cairo-lang-starknet-classes = "2.7.0"
-cairo-lang-utils = "2.7.0"
-cairo-vm = "=1.0.1"
+blockifier = "=0.14.0-rc.3"
+starknet_api = "=0.14.0-rc.3"
+cairo-lang-starknet-classes = "=2.10.0"
+cairo-lang-utils = "=2.10.0"
+cairo-vm = "=1.0.2"
+cairo-native = "0.3.3"
 
 alloy = { version = "0.8.3", features = [
   "node-bindings",

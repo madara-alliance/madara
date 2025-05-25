@@ -659,8 +659,8 @@ mod l1_messaging_tests {
         // TODO: we can add a test case on which a message with Nonce = 1 is being received before this one
         // and check we cant take it until the first on is processed
         let (handler_tx, _handler_tx_hash) = match mempool.get_consumer().await.next().unwrap().tx {
-            Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
-            Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
+            Transaction::L1Handler(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
+            Transaction::Account(_) => panic!("Expecting L1 handler transaction"),
         };
 
         assert_eq!(handler_tx.nonce, expected_nonce);
