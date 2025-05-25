@@ -77,7 +77,7 @@ tokio = { workspace = true, features = [
   "rt-multi-thread",
   "rt",
 ] }
-
+rand = { workspace = true }
 orchestrator-utils = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }

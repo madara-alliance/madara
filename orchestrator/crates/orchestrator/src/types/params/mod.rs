@@ -9,6 +9,8 @@ pub mod snos;
 
 use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::{RunCmd, SetupCmd};
+use crate::core::client::queue::sqs::InnerSQS;
+use crate::types::queue::QueueType;
 use crate::OrchestratorError;
 pub use otel::OTELConfig;
 
@@ -111,9 +113,9 @@ impl AlertArgs {
 /// CronArgs - Arguments used to setup cron resources
 #[derive(Debug, Clone)]
 pub struct CronArgs {
+    pub target_queue_identifier: AWSResourceIdentifier,
     pub event_bridge_type: EventBridgeType,
-    pub target_queue_name: String,
-    pub cron_time: String,
+    pub cron_time: u64,
     pub trigger_rule_name: String,
     pub trigger_role_name: String,
     pub trigger_policy_name: String,
@@ -274,43 +276,59 @@ impl TryFrom<RunCmd> for QueueArgs {
 impl TryFrom<SetupCmd> for CronArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let format_with_prefix = |name: String| -> String {
-            setup_cmd.aws_config_args.aws_prefix.as_ref().map_or(name.clone(), |prefix| format!("{}_{}", prefix, name))
+        let target_queue_identifier = if let Some(queue_identifier) = &setup_cmd.aws_sqs_args.queue_identifier {
+            let identifier = ARN::parse(queue_identifier)
+                .map(|arn| {
+                    // creating queue with it's type name
+                    let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, &QueueType::WorkerTrigger);
+                    let updated_arn = ARN {
+                        partition: arn.partition,
+                        service: arn.service,
+                        region: arn.region,
+                        account_id: arn.account_id,
+                        resource: queue_name,
+                    };
+                    AWSResourceIdentifier::ARN(updated_arn)
+                })
+                .unwrap_or_else(|_| {
+                    let name =
+                        setup_cmd.aws_config_args.aws_prefix.clone().map_or(queue_identifier.clone(), |prefix| {
+                            QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
+                        });
+                    let updated_name = InnerSQS::get_queue_name_from_type(&name, &QueueType::WorkerTrigger);
+                    AWSResourceIdentifier::Name(updated_name)
+                });
+            identifier
+        } else {
+            return Err(OrchestratorError::SetupCommandError("Missing queue template name".to_string()));
         };
 
-        let target_queue_name = format_with_prefix(
-            setup_cmd
-                .aws_event_bridge_args
-                .target_queue_name
-                .ok_or(OrchestratorError::SetupCommandError("Target queue name is required".to_string()))?,
-        );
+        // let's create the RULE, ROLE, POLICY with format : {aws_prefix}-{mo-wt}-{rule/role/policy}
+        // mo-wt stands for madara-orchestrator worker trigger.
 
-        let trigger_rule_name = format_with_prefix(
-            setup_cmd
-                .aws_event_bridge_args
-                .trigger_rule_name
-                .ok_or(OrchestratorError::SetupCommandError("Trigger rule name is required".to_string()))?,
-        );
+        let prefix = setup_cmd.aws_config_args.aws_prefix.clone();
+        let prefix_str = match &prefix {
+            Some(p) => format!("{}-", p),
+            None => String::new(),
+        };
+
+        let trigger_rule_name = format!("{}mo-wt-rule", prefix_str);
+        let trigger_role_name = format!("{}mo-wt-role", prefix_str);
+        let trigger_policy_name = format!("{}mo-wt-policy", prefix_str);
 
         Ok(Self {
+            target_queue_identifier,
+            trigger_role_name,
+            trigger_rule_name,
+            trigger_policy_name,
             event_bridge_type: setup_cmd
                 .aws_event_bridge_args
                 .event_bridge_type
                 .ok_or(OrchestratorError::SetupCommandError("Event Bridge type is required".to_string()))?,
-            target_queue_name,
             cron_time: setup_cmd
                 .aws_event_bridge_args
-                .cron_time
+                .interval_seconds
                 .ok_or(OrchestratorError::SetupCommandError("Cron time is required".to_string()))?,
-            trigger_rule_name,
-            trigger_role_name: setup_cmd
-                .aws_event_bridge_args
-                .trigger_role_name
-                .ok_or(OrchestratorError::SetupCommandError("Trigger role name is required".to_string()))?,
-            trigger_policy_name: setup_cmd
-                .aws_event_bridge_args
-                .trigger_policy_name
-                .ok_or(OrchestratorError::SetupCommandError("Trigger policy name is required".to_string()))?,
         })
     }
 }

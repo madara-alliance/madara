@@ -46,6 +46,12 @@ impl FromStr for WorkerTriggerType {
     }
 }
 
+impl WorkerTriggerType {
+    pub fn to_lowercase(&self) -> String {
+        self.to_string().to_lowercase()
+    }
+}
+
 // TODO : Need to check why serde deserializer was failing here.
 // TODO : Remove this custom deserializer.
 /// Implemented a custom deserializer as when using serde json deserializer

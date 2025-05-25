@@ -50,13 +50,13 @@ impl Resource for InnerSQS {
             match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
                     // for now we don't support creating the queue by providing expected ARN
-                    let queue_name = self.get_queue_name_from_type(&arn.resource, &queue.name);
+                    let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, &queue.name);
                     tracing::info!("Queue Arn provided, skipping setup for {}", &queue_name);
                     continue;
                 }
 
                 AWSResourceIdentifier::Name(name) => {
-                    let queue_name = self.get_queue_name_from_type(name, &queue.name);
+                    let queue_name = InnerSQS::get_queue_name_from_type(name, &queue.name);
 
                     // Create the queue
                     let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
@@ -88,7 +88,7 @@ impl Resource for InnerSQS {
                         }
 
                         // Create the dl queue
-                        let dlq_name = self.get_queue_name_from_type(name, &dlq_config.dlq_name);
+                        let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
                         let dlq_res = self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
                             OrchestratorError::ResourceSetupError(format!("Failed to create DLQ '{}': {}", dlq_name, e))
                         })?;
@@ -147,7 +147,7 @@ impl Resource for InnerSQS {
                     .is_ok())
             }
             AWSResourceIdentifier::Name(name) => {
-                let queue_name = self.get_queue_name_from_type(&name, &check_args.1);
+                let queue_name = InnerSQS::get_queue_name_from_type(&name, &check_args.1);
                 Ok(self.client().get_queue_url().queue_name(queue_name).send().await.is_ok())
             }
         }
@@ -170,7 +170,7 @@ impl Resource for InnerSQS {
                         .is_ok()
                 }
                 AWSResourceIdentifier::Name(name) => {
-                    let queue_name = self.get_queue_name_from_type(name, &queue.name);
+                    let queue_name = InnerSQS::get_queue_name_from_type(name, &queue.name);
                     match self.get_queue_url_from_client(queue_name.as_str()).await {
                         Ok(queue_url) => self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok(),
                         Err(_) => false,

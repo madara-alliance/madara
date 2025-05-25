@@ -83,7 +83,7 @@ impl InnerSQS {
             queue_arn.region,
             domain,
             queue_arn.account_id,
-            self.get_queue_name_from_type(queue_arn.resource.as_str(), queue_type)
+            InnerSQS::get_queue_name_from_type(queue_arn.resource.as_str(), queue_type)
         );
 
         Ok(queue_url)
@@ -114,7 +114,7 @@ impl InnerSQS {
 
     /// get_queue_name_from_type - Get the queue specific name from it's type
     /// This function returns the queue name based on the queue type provided
-    pub fn get_queue_name_from_type(&self, name: &str, queue_type: &QueueType) -> String {
+    pub fn get_queue_name_from_type(name: &str, queue_type: &QueueType) -> String {
         name.replace("{}", &queue_type.to_string())
     }
 }
@@ -177,7 +177,7 @@ impl SQS {
             }
         };
 
-        Ok(self.inner.get_queue_name_from_type(template, queue_type))
+        Ok(InnerSQS::get_queue_name_from_type(template, queue_type))
     }
 }
 

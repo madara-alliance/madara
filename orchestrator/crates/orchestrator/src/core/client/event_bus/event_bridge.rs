@@ -1,6 +1,8 @@
 use aws_config::SdkConfig;
 use std::sync::Arc;
 
+use crate::types::jobs::WorkerTriggerType;
+
 /// EventBridgeClient is a struct that represents an AWS EventBridge client.
 pub(crate) struct InnerAWSEventBridge {
     pub(crate) eb_client: Arc<aws_sdk_eventbridge::Client>,
@@ -23,5 +25,9 @@ impl InnerAWSEventBridge {
             queue_client: Arc::new(aws_sdk_sqs::Client::new(aws_config)),
             iam_client: Arc::new(aws_sdk_iam::Client::new(aws_config)),
         }
+    }
+
+    pub fn get_trigger_name_from_trigger_type(trigger_rule_name: &str, trigger_type: &WorkerTriggerType) -> String {
+        format!("{}-{}", trigger_rule_name, trigger_type.to_lowercase())
     }
 }

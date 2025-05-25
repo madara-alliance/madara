@@ -1,10 +1,13 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
 use crate::cli::Layer;
+use crate::core::client::event_bus::error::EventBusError;
 use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
+use crate::core::client::queue::QueueError;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;
-use crate::types::params::CronArgs;
+use crate::types::params::ARN;
+use crate::types::params::{AWSResourceIdentifier, CronArgs};
 use crate::{OrchestratorError, OrchestratorResult};
 use anyhow::Error;
 use async_trait::async_trait;
@@ -12,6 +15,7 @@ use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target as EventBri
 use aws_sdk_scheduler::types::{FlexibleTimeWindow, FlexibleTimeWindowMode, Target};
 use aws_sdk_sqs::types::QueueAttributeName;
 use lazy_static::lazy_static;
+use rand::Rng;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -28,8 +32,8 @@ lazy_static! {
 
 #[derive(Debug, Clone)]
 pub struct TriggerArns {
-    queue_arn: String,
-    role_arn: String,
+    queue_arn: ARN,
+    role_arn: ARN,
 }
 
 // TODO: Ideally I should automatically get the TARGET_QUEUE_NAME from queue params
@@ -50,18 +54,15 @@ impl Resource for InnerAWSEventBridge {
     }
 
     async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+        // TODO: ideally this should also be created after check_if_exists returns false
         let trigger_arns = self
-            .create_cron(
-                args.target_queue_name.clone(),
-                args.trigger_role_name.clone(),
-                args.trigger_policy_name.clone(),
-            )
+            .create_cron(&args.target_queue_identifier, &args.trigger_role_name, &args.trigger_policy_name)
             .await
             .map_err(|e| {
                 OrchestratorError::SetupCommandError(format!(
                     "Failed to create cron: {:?} for queue: {:?}",
                     e,
-                    args.target_queue_name.clone()
+                    args.target_queue_identifier.clone()
                 ))
             })?;
         sleep(Duration::from_secs(15)).await;
@@ -83,9 +84,7 @@ impl Resource for InnerAWSEventBridge {
                     &trigger_arns,
                     args.trigger_rule_name.clone(),
                     args.event_bridge_type.clone(),
-                    Duration::from_secs(args.cron_time.clone().parse::<u64>().map_err(|e| {
-                        OrchestratorError::SetupCommandError(format!("Failed to parse the cron time: {:?}", e))
-                    })?),
+                    Duration::from_secs(args.cron_time),
                 )
                 .await
                 .expect("Failed to add Event Bus target queue");
@@ -104,7 +103,8 @@ impl Resource for InnerAWSEventBridge {
     ///
     async fn check_if_exists(&self, args: &Self::CheckArgs) -> OrchestratorResult<bool> {
         let (event_bridge_type, trigger_type, trigger_rule_name) = args;
-        let trigger_name = format!("{}-{}", trigger_rule_name.clone(), trigger_type);
+        let trigger_name = Self::get_trigger_name_from_trigger_type(trigger_rule_name, trigger_type);
+
         match event_bridge_type {
             EventBridgeType::Rule => Ok(self.eb_client.describe_rule().name(trigger_name).send().await.is_ok()),
             EventBridgeType::Schedule => {
@@ -135,23 +135,30 @@ impl InnerAWSEventBridge {
     ///
     /// # Returns
     /// * `String` - The ARN of the queue
-    async fn get_queue_arn(&self, queue_name: &str) -> Result<String, Error> {
-        let queue_url = self.queue_client.get_queue_url().queue_name(queue_name).send().await?;
-        let queue_attributes = self
-            .queue_client
-            .get_queue_attributes()
-            .queue_url(queue_url.queue_url.unwrap())
-            .attribute_names(QueueAttributeName::QueueArn)
-            .send()
-            .await?;
-        queue_attributes
-            .attributes()
-            .and_then(|attrs| attrs.get(&QueueAttributeName::QueueArn))
-            .map(String::from)
-            .ok_or_else(|| Error::msg("Queue ARN not found"))
+    async fn get_queue_arn(&self, target_queue_identifier: &AWSResourceIdentifier) -> Result<ARN, Error> {
+        // if arn is provided return that, else find
+        match target_queue_identifier {
+            AWSResourceIdentifier::ARN(arn) => Ok(arn.clone()),
+            AWSResourceIdentifier::Name(queue_name) => {
+                let queue_url = self.queue_client.get_queue_url().queue_name(queue_name).send().await?;
+                let queue_attributes = self
+                    .queue_client
+                    .get_queue_attributes()
+                    .queue_url(queue_url.queue_url.unwrap())
+                    .attribute_names(QueueAttributeName::QueueArn)
+                    .send()
+                    .await?;
+                let arn_str = queue_attributes
+                    .attributes()
+                    .and_then(|attrs| attrs.get(&QueueAttributeName::QueueArn))
+                    .map(String::from)
+                    .ok_or_else(|| Error::msg("Queue ARN not found"))?;
+                Ok(ARN::parse(&arn_str).map_err(|_| QueueError::FailedToGetQueueArn(queue_name.clone()))?)
+            }
+        }
     }
 
-    async fn create_iam_role(&self, role_name: &str) -> Result<String, Error> {
+    async fn create_iam_role(&self, role_name: &str) -> Result<ARN, Error> {
         let assume_role_policy = r#"{
             "Version": "2012-10-17",
             "Statement": [{
@@ -162,6 +169,8 @@ impl InnerAWSEventBridge {
                 "Action": "sts:AssumeRole"
             }]
         }"#;
+
+        tracing::info!("Creating #1 Event Bridge role : {}", role_name);
         let create_role_resp = self
             .iam_client
             .create_role()
@@ -169,15 +178,17 @@ impl InnerAWSEventBridge {
             .assume_role_policy_document(assume_role_policy)
             .send()
             .await?;
+        tracing::info!("Creating Event Bridge role : {}", role_name);
         let role = create_role_resp.role().ok_or_else(|| Error::msg("Failed to create IAM role"))?;
-        Ok(role.arn().to_string())
+
+        Ok(ARN::parse(role.arn()).map_err(|_| EventBusError::InvalidArn(role.arn().to_string()))?)
     }
 
     async fn create_and_attach_sqs_policy(
         &self,
         policy_name: &str,
         role_name: &str,
-        queue_arn: &str,
+        queue_arn: &ARN,
     ) -> Result<(), Error> {
         let policy_document = format!(
             r#"{{
@@ -188,14 +199,16 @@ impl InnerAWSEventBridge {
                 "Resource": "{}"
             }}]
         }}"#,
-            queue_arn
+            queue_arn.to_string()
         );
+        tracing::info!("Creating Event Bridge policy: {} ", policy_name);
         let create_policy_resp =
             self.iam_client.create_policy().policy_name(policy_name).policy_document(&policy_document).send().await?;
         let policy = create_policy_resp.policy().ok_or_else(|| Error::msg("Failed to create policy"))?;
 
         let policy_arn = policy.arn().ok_or_else(|| Error::msg("Failed to get policy ARN"))?;
 
+        tracing::info!("Attaching Event Bridge policy {} to role {} ", policy_name, role_name);
         self.iam_client.attach_role_policy().role_name(role_name).policy_arn(policy_arn).send().await?;
 
         Ok(())
@@ -203,16 +216,29 @@ impl InnerAWSEventBridge {
 
     pub async fn create_cron(
         &self,
-        target_queue_name: String,
-        trigger_role_name: String,
-        trigger_policy_name: String,
+        target_queue_identifier: &AWSResourceIdentifier,
+        trigger_role_name: &String,
+        trigger_policy_name: &String,
     ) -> Result<TriggerArns, Error> {
-        let queue_arn = self.get_queue_arn(&target_queue_name).await?;
+        let queue_arn = self.get_queue_arn(target_queue_identifier).await?;
 
-        let role_name = format!("{}-{}", trigger_role_name, uuid::Uuid::new_v4());
+        tracing::info!("Heemank #1 {}", queue_arn.to_string());
+
+        // creating a 4 length unique ID, used same in both role and policy.
+        let short_id = format!("{:04x}", rand::thread_rng().gen::<u16>());
+
+        let role_name = format!("{}-{}", trigger_role_name, short_id);
+
+        tracing::info!("Heemank #2 {}", &role_name);
+
         let role_arn = self.create_iam_role(&role_name).await?;
 
-        let policy_name = format!("{}-{}", trigger_policy_name, uuid::Uuid::new_v4());
+        tracing::info!("Heemank #2.5 {}", &role_arn.to_string());
+
+        let policy_name = format!("{}-{}", trigger_policy_name, short_id);
+
+        tracing::info!("Heemank #3 {}", &policy_name);
+
         self.create_and_attach_sqs_policy(&policy_name, &role_name, &queue_arn).await?;
 
         Ok(TriggerArns { queue_arn, role_arn })
@@ -254,7 +280,8 @@ impl InnerAWSEventBridge {
         cron_time: Duration,
     ) -> color_eyre::Result<()> {
         let message = trigger_type.clone().to_string();
-        let trigger_name = format!("{}-{}", trigger_rule_name.clone(), trigger_type);
+        let trigger_name = Self::get_trigger_name_from_trigger_type(&trigger_rule_name, trigger_type);
+        tracing::info!("Creating Event Bridge Rule trigger: {} ", trigger_name);
 
         match event_bridge_type.clone() {
             EventBridgeType::Rule => {
@@ -264,7 +291,7 @@ impl InnerAWSEventBridge {
                 self.eb_client
                     .put_rule()
                     .name(trigger_name.clone())
-                    .schedule_expression("rate(1 minute)")
+                    .schedule_expression(Self::duration_to_rate_string(cron_time))
                     .state(RuleState::Enabled)
                     .send()
                     .await?;
@@ -275,7 +302,7 @@ impl InnerAWSEventBridge {
                     .targets(
                         EventBridgeTarget::builder()
                             .id(uuid::Uuid::new_v4().to_string())
-                            .arn(trigger_arns.queue_arn.clone())
+                            .arn(trigger_arns.queue_arn.to_string().clone())
                             .input_transformer(input_transformer.clone())
                             .build()?,
                     )
@@ -290,11 +317,12 @@ impl InnerAWSEventBridge {
 
                 // Create target for SQS queue
                 let target = Target::builder()
-                    .arn(trigger_arns.queue_arn.clone())
-                    .role_arn(trigger_arns.role_arn.clone())
+                    .arn(trigger_arns.queue_arn.to_string().clone())
+                    .role_arn(trigger_arns.role_arn.to_string().clone())
                     .input(message)
                     .build()?;
 
+                tracing::info!("Creating Event Bridge Schedule trigger: {} ", trigger_name);
                 // Create the schedule
                 self.scheduler_client
                     .create_schedule()
