@@ -1,13 +1,17 @@
 [workspace]
 members = [
-  "madara",
+  # "madara",
   "orchestrator",
   "e2e-tests",
   "bootstrapper",
   "build-artifacts",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
-default-members = ["madara", "orchestrator", "bootstrapper"]
+default-members = [
+  # "madara",
+  "orchestrator",
+  "bootstrapper"
+]
 resolver = "2"
 
 [workspace.package]
