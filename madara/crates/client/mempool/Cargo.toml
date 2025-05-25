@@ -47,11 +47,8 @@ mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
 mp-oracle.workspace = true
-mp-receipt.workspace = true
-mp-rpc.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
-mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true
@@ -62,11 +59,8 @@ starknet_api.workspace = true
 anyhow.workspace = true
 async-trait.workspace = true
 mockall = { workspace = true, optional = true }
-reqwest.workspace = true
-serde.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
-tokio-util.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

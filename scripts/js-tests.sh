@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cargo build --bin madara --release
+cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 ./target/release/madara    \
   --name madara            \
   --base-path ../madara_db \
