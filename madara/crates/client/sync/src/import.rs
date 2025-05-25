@@ -379,7 +379,12 @@ impl BlockImporterCtx {
                 Ok(ConvertedClass::Sierra(SierraConvertedClass {
                     class_hash,
                     info: SierraClassInfo { contract_class: sierra.contract_class, compiled_class_hash },
-                    compiled: Arc::new(compiled_class),
+                    compiled: Arc::new((&compiled_class).try_into().map_err(|e| {
+                        BlockImportError::CompilationClassError {
+                            class_hash,
+                            error: ClassCompilationError::ParsingProgramJsonFailed(e),
+                        }
+                    })?),
                 }))
             }
             ClassInfo::Legacy(legacy) => {

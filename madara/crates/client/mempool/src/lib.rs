@@ -368,19 +368,21 @@ pub(crate) mod tests {
     #[rstest::fixture]
     pub fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V0(
-                            starknet_api::transaction::InvokeTransactionV0 {
-                                contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                                ..Default::default()
-                            },
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        only_query: false,
-                    },
-                ),
+            blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                        starknet_api::executable_transaction::InvokeTransaction {
+                            tx: starknet_api::transaction::InvokeTransaction::V0(
+                                starknet_api::transaction::InvokeTransactionV0 {
+                                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                                    ..Default::default()
+                                },
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+                },
             ),
             TxTimestamp::now(),
             None,
@@ -390,16 +392,18 @@ pub(crate) mod tests {
     #[rstest::fixture]
     pub fn tx_account_v1_invalid() -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V1(
-                            starknet_api::transaction::InvokeTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        only_query: true,
-                    },
-                ),
+            blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::Invoke(
+                        starknet_api::executable_transaction::InvokeTransaction {
+                            tx: starknet_api::transaction::InvokeTransaction::V1(
+                                starknet_api::transaction::InvokeTransactionV1::default(),
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+                },
             ),
             TxTimestamp::now(),
             None,
@@ -409,17 +413,19 @@ pub(crate) mod tests {
     #[rstest::fixture]
     pub fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
-                    blockifier::transaction::transactions::DeployAccountTransaction {
-                        tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                            starknet_api::transaction::DeployAccountTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                        only_query: false,
-                    },
-                ),
+            blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx: starknet_api::executable_transaction::AccountTransaction::DeployAccount(
+                        starknet_api::executable_transaction::DeployAccountTransaction {
+                            tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                                starknet_api::transaction::DeployAccountTransactionV1::default(),
+                            ),
+                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                        },
+                    ),
+                    execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
+                },
             ),
             TxTimestamp::now(),
             None,
@@ -429,14 +435,13 @@ pub(crate) mod tests {
     #[rstest::fixture]
     fn tx_l1_handler_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(
-                blockifier::transaction::transactions::L1HandlerTransaction {
+            blockifier::transaction::transaction_execution::Transaction::L1Handler(
+                starknet_api::executable_transaction::L1HandlerTransaction {
                     tx: starknet_api::transaction::L1HandlerTransaction {
                         contract_address: ContractAddress::try_from(contract_address).unwrap(),
                         ..Default::default()
                     },
-                    tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    paid_fee_on_l1: starknet_api::transaction::Fee::default(),
+                    ..Default::default()
                 },
             ),
             TxTimestamp::now(),
