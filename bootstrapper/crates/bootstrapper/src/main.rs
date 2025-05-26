@@ -74,6 +74,37 @@ pub enum CoreContractMode {
 // TODO :                 There is a lot of optional stuff in the config which is needed if we run
 // TODO : (continued.)    individual commands. We need to think of a better design.
 #[derive(Serialize, Deserialize, Clone)]
+pub struct IntermediateConfigFile {
+    pub eth_rpc: Option<String>,
+    pub eth_priv_key: Option<String>,
+    pub rollup_seq_url: String,
+    pub rollup_declare_v0_seq_url: String,
+    pub rollup_priv_key: Option<String>,
+    pub eth_chain_id: u64,
+    pub l1_deployer_address: String,
+    pub l1_wait_time: String,
+    pub sn_os_program_hash: String,
+    pub config_hash_version: String,
+    pub app_chain_id: String,
+    pub fee_token_address: String,
+    pub native_fee_token_address: String,
+    pub cross_chain_wait_time: u64,
+    pub l1_multisig_address: String,
+    pub l2_multisig_address: String,
+    pub verifier_address: String,
+    pub operator_address: String,
+    pub dev: bool,
+    pub core_contract_mode: CoreContractMode,
+    pub l2_deployer_address: Option<String>,
+    pub core_contract_address: Option<String>,
+    pub core_contract_implementation_address: Option<String>,
+    pub udc_address: Option<String>,
+    pub l1_eth_bridge_address: Option<String>,
+    pub l2_eth_token_proxy_address: Option<String>,
+    pub l2_eth_bridge_proxy_address: Option<String>,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
 pub struct ConfigFile {
     pub eth_rpc: String,
     pub eth_priv_key: String,
@@ -104,14 +135,14 @@ pub struct ConfigFile {
     pub l2_eth_bridge_proxy_address: Option<String>,
 }
 
-impl Default for ConfigFile {
+impl Default for IntermediateConfigFile {
     fn default() -> Self {
         Self {
-            eth_rpc: "http://127.0.0.1:8545".to_string(),
-            eth_priv_key: "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+            eth_rpc: None,
+            eth_priv_key: None,
             rollup_seq_url: "http://127.0.0.1:19944".to_string(),
             rollup_declare_v0_seq_url: "http://127.0.0.1:19943".to_string(),
-            rollup_priv_key: "0xabcd".to_string(),
+            rollup_priv_key: None,
             eth_chain_id: 31337,
             l1_deployer_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
             l1_wait_time: "15".to_string(),
@@ -138,23 +169,99 @@ impl Default for ConfigFile {
     }
 }
 
+impl TryFrom<IntermediateConfigFile> for ConfigFile {
+    type Error = color_eyre::Report;
+
+    fn try_from(intermediate: IntermediateConfigFile) -> Result<Self, Self::Error> {
+        Ok(Self {
+            eth_rpc: intermediate
+                .eth_rpc
+                .ok_or_else(|| color_eyre::eyre::eyre!("ETH_RPC must be provided in config file or environment"))?,
+            eth_priv_key: intermediate.eth_priv_key.ok_or_else(|| {
+                color_eyre::eyre::eyre!("ETH_PRIVATE_KEY must be provided in config file or environment")
+            })?,
+            rollup_priv_key: intermediate.rollup_priv_key.ok_or_else(|| {
+                color_eyre::eyre::eyre!("ROLLUP_PRIVATE_KEY must be provided in config file or environment")
+            })?,
+            // Copy over all the non-optional fields directly
+            rollup_seq_url: intermediate.rollup_seq_url,
+            rollup_declare_v0_seq_url: intermediate.rollup_declare_v0_seq_url,
+            eth_chain_id: intermediate.eth_chain_id,
+            l1_deployer_address: intermediate.l1_deployer_address,
+            l1_wait_time: intermediate.l1_wait_time,
+            sn_os_program_hash: intermediate.sn_os_program_hash,
+            config_hash_version: intermediate.config_hash_version,
+            app_chain_id: intermediate.app_chain_id,
+            fee_token_address: intermediate.fee_token_address,
+            native_fee_token_address: intermediate.native_fee_token_address,
+            cross_chain_wait_time: intermediate.cross_chain_wait_time,
+            l1_multisig_address: intermediate.l1_multisig_address,
+            l2_multisig_address: intermediate.l2_multisig_address,
+            verifier_address: intermediate.verifier_address,
+            operator_address: intermediate.operator_address,
+            dev: intermediate.dev,
+            core_contract_mode: intermediate.core_contract_mode,
+            // Copy over all the optional fields directly
+            l2_deployer_address: intermediate.l2_deployer_address,
+            core_contract_address: intermediate.core_contract_address,
+            core_contract_implementation_address: intermediate.core_contract_implementation_address,
+            udc_address: intermediate.udc_address,
+            l1_eth_bridge_address: intermediate.l1_eth_bridge_address,
+            l2_eth_token_proxy_address: intermediate.l2_eth_token_proxy_address,
+            l2_eth_bridge_proxy_address: intermediate.l2_eth_bridge_proxy_address,
+        })
+    }
+}
+
+#[derive(Clone)]
+pub struct EnvConfig {
+    pub eth_rpc: Option<String>,
+    pub eth_priv_key: Option<String>,
+    pub rollup_priv_key: Option<String>,
+}
+
+impl EnvConfig {
+    pub fn from_env() -> Self {
+        Self {
+            eth_rpc: std::env::var("ETH_RPC").ok(),
+            eth_priv_key: std::env::var("ETH_PRIVATE_KEY").ok(),
+            rollup_priv_key: std::env::var("ROLLUP_PRIVATE_KEY").ok(),
+        }
+    }
+}
+
 #[tokio::main]
-pub async fn main() {
+pub async fn main() -> color_eyre::Result<()> {
     env_logger::init();
     dotenv().ok();
 
     let args = CliArgs::parse();
+    let env_config = EnvConfig::from_env();
 
     println!("{color_red}{}{color_reset}", BANNER);
 
     // Load config from file or use defaults
-    let mut config_file = match args.config {
+    let mut intermediate_config = match args.config {
         Some(path) => {
             let file = File::open(path).expect("Failed to open config file");
             serde_json::from_reader(file).expect("Failed to parse config file")
         }
-        None => ConfigFile::default(),
+        None => IntermediateConfigFile::default(),
     };
+
+    // Override config values with environment values if they exist
+    if let Some(eth_rpc) = env_config.eth_rpc {
+        intermediate_config.eth_rpc = Some(eth_rpc);
+    }
+    if let Some(eth_priv_key) = env_config.eth_priv_key {
+        intermediate_config.eth_priv_key = Some(eth_priv_key);
+    }
+    if let Some(rollup_priv_key) = env_config.rollup_priv_key {
+        intermediate_config.rollup_priv_key = Some(rollup_priv_key);
+    }
+
+    // Convert to final config, which will validate required fields
+    let mut config_file = ConfigFile::try_from(intermediate_config)?;
 
     let clients = Clients::init_from_config(&config_file).await;
 
@@ -226,6 +333,7 @@ pub async fn main() {
         serde_json::to_writer_pretty(file, &output).unwrap();
         println!("✅ Bootstrap output saved to {}", output_file);
     }
+    Ok(())
 }
 
 fn get_core_contract_client(config_file: &ConfigFile, clients: &Clients) -> CoreContractStarknetL1Output {
