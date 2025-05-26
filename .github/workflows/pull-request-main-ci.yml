@@ -49,7 +49,7 @@ jobs:
     needs: update-version-artifacts
     uses: ./.github/workflows/task-build-artifacts.yml
     with:
-      should_run: needs.update-version-artifacts.outputs.update == 'true'
+      should_run: ${{ needs.update-version-artifacts.outputs.update }}
     permissions:
       contents: read
       attestations: write
@@ -64,7 +64,7 @@ jobs:
       image-name: artifacts
       tag: ${{ needs.build-artifacts.outputs.artifacts }}
       tag-version: ${{ needs.build-artifacts.outputs.artifacts-pr }}
-      should_run: needs.update-version-artifacts.outputs.update == 'true'
+      should_run: ${{ needs.update-version-artifacts.outputs.update }}
     permissions:
       contents: read
       packages: write
