@@ -1,7 +1,5 @@
 pub mod constants;
 
-use std::sync::Arc;
-
 use crate::core::client::{MongoDbClient, AWSS3};
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -22,6 +20,7 @@ use chrono::{SubsecRound, Utc};
 use mongodb::Client;
 use rstest::*;
 use serde::Deserialize;
+use std::sync::Arc;
 use strum::IntoEnumIterator as _;
 
 #[fixture]
@@ -61,9 +60,9 @@ pub async fn create_sns_arn(
     provider_config: Arc<CloudProvider>,
     aws_sns_params: &AlertArgs,
 ) -> Result<(), SdkError<CreateTopicError>> {
-    let topic_name = aws_sns_params.endpoint.split(":").last().unwrap();
+    let alert_topic_name = aws_sns_params.alert_topic_name.split(":").last().unwrap();
     let sns_client = get_sns_client(provider_config.get_aws_client_or_panic()).await;
-    sns_client.create_topic().name(topic_name).send().await?;
+    sns_client.create_topic().name(alert_topic_name).send().await?;
     Ok(())
 }
 

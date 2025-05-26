@@ -11,12 +11,10 @@ use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
 use std::sync::Arc;
 use std::time::Duration;
-use url::Url;
 
 #[derive(Clone, Debug)]
 pub struct SQS {
     client: Arc<Client>,
-    queue_url: Option<Url>,
     prefix: Option<String>,
     suffix: Option<String>,
 }
@@ -34,7 +32,6 @@ impl SQS {
         let client = Client::from_conf(sqs_config_builder.build());
         Self {
             client: Arc::new(client),
-            queue_url: args.and_then(|a| Url::parse(&a.queue_base_url).ok()),
             prefix: args.map(|a| a.prefix.clone()),
             suffix: args.map(|a| a.suffix.clone()),
         }
@@ -43,28 +40,11 @@ impl SQS {
     pub fn client(&self) -> Arc<Client> {
         self.client.clone()
     }
-    pub fn queue_url(&self) -> Option<Url> {
-        self.queue_url.clone()
-    }
     pub fn prefix(&self) -> Option<String> {
         self.prefix.clone()
     }
     pub fn suffix(&self) -> Option<String> {
         self.suffix.clone()
-    }
-
-    /// get_queue_url - Get the queue URL
-    /// This function returns the queue URL based on the queue type and the queue base URL
-    /// The queue URL is constructed as follows:
-    /// queue_base_url/queue_name
-    pub fn get_queue_url(&self, queue_type: QueueType) -> Result<String, QueueError> {
-        Ok(format!(
-            "{}/{}",
-            self.queue_url
-                .clone()
-                .ok_or_else(|| QueueError::MissingRootParameter("Queue URL is not set".to_string()))?,
-            self.get_queue_name(queue_type)?
-        ))
     }
 
     /// get_queue_name - Get the queue name
@@ -138,7 +118,8 @@ impl QueueClient for SQS {
     /// This function returns the producer for the given queue.
     /// The producer is used to send messages to the queue.
     async fn get_producer(&self, queue: QueueType) -> Result<SqsProducer, QueueError> {
-        let queue_url = self.get_queue_url(queue)?;
+        let queue_name = self.get_queue_name(queue)?;
+        let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
         let producer =
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_producer().await?;
         Ok(producer)
@@ -148,7 +129,8 @@ impl QueueClient for SQS {
     /// This function returns the consumer for the given queue.
     /// The consumer is used to receive messages from the queue.
     async fn get_consumer(&self, queue: QueueType) -> Result<SqsConsumer, QueueError> {
-        let queue_url = self.get_queue_url(queue)?;
+        let queue_name = self.get_queue_name(queue)?;
+        let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
         let consumer =
             SqsBackend::builder(SqsConfig { queue_dsn: queue_url, override_endpoint: true }).build_consumer().await?;
         Ok(consumer)

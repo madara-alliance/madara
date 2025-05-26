@@ -295,6 +295,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 impl StateUpdateJobHandler {
     /// Validate that the list of block numbers to process is valid.
     async fn validate_block_numbers(&self, config: Arc<Config>, block_numbers: &[u64]) -> Result<(), JobError> {
+        // if any block is settled then previous block number should be just before that
+        // if no block is settled (confirmed by special number) then the block to settle should be 0
+
         if block_numbers.is_empty() {
             Err(StateUpdateError::BlockNumberNotFound)?;
         }
