@@ -507,7 +507,9 @@ pub(crate) fn get_env_params() -> EnvParams {
     });
 
     let alert_params = AlertArgs {
-        alert_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER")),
+        alert_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER",
+        )),
     };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
