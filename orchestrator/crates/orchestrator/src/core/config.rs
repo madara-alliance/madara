@@ -211,12 +211,8 @@ impl Config {
         params: &ConfigParam,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => {
-                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
-            }
-            ProverConfig::Atlantic(atlantic_params) => {
-                Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
-            }
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
         }
     }
 

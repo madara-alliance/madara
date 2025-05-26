@@ -6,7 +6,7 @@ use crate::AtlanticValidatedArgs;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::Method;
-use tracing::{debug, trace};
+use tracing::debug;
 use url::Url;
 
 #[derive(Debug, strum_macros::EnumString)]

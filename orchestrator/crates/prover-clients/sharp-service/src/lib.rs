@@ -35,8 +35,6 @@ pub struct SharpValidatedArgs {
 pub struct SharpProverService {
     sharp_client: SharpClient,
     fact_checker: FactChecker,
-    // TODO:L3 remove this since we are moving this to arguments
-    proof_layout: LayoutName,
 }
 
 #[async_trait]
@@ -176,21 +174,21 @@ impl ProverClient for SharpProverService {
 }
 
 impl SharpProverService {
-    pub fn new(sharp_client: SharpClient, fact_checker: FactChecker, proof_layout: &LayoutName) -> Self {
-        Self { sharp_client, fact_checker, proof_layout: proof_layout.to_owned() }
+    pub fn new(sharp_client: SharpClient, fact_checker: FactChecker) -> Self {
+        Self { sharp_client, fact_checker }
     }
 
-    pub fn new_with_args(sharp_params: &SharpValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn new_with_args(sharp_params: &SharpValidatedArgs) -> Self {
         let sharp_client = SharpClient::new_with_args(sharp_params.sharp_url.clone(), sharp_params);
         let fact_checker = FactChecker::new(
             sharp_params.sharp_rpc_node_url.clone(),
             sharp_params.gps_verifier_contract_address.clone(),
             sharp_params.sharp_settlement_layer.clone(),
         );
-        Self::new(sharp_client, fact_checker, proof_layout)
+        Self::new(sharp_client, fact_checker)
     }
 
-    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs) -> Self {
         let sharp_client = SharpClient::new_with_args(
             format!("http://127.0.0.1:{}", port).parse().expect("Failed to create sharp client with the given params"),
             sharp_params,
@@ -200,6 +198,6 @@ impl SharpProverService {
             sharp_params.gps_verifier_contract_address.clone(),
             sharp_params.sharp_settlement_layer.clone(),
         );
-        Self::new(sharp_client, fact_checker, proof_layout)
+        Self::new(sharp_client, fact_checker)
     }
 }
