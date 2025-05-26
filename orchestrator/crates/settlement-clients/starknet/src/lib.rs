@@ -8,8 +8,7 @@ use std::sync::Arc;
 use appchain_core_contract_client::clients::StarknetCoreContractClient;
 use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::Context;
+use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
 use lazy_static::lazy_static;
 use mockall::automock;
@@ -117,7 +116,7 @@ lazy_static! {
     // https://github.com/keep-starknet-strange/piltover
     // It should get added to match the solidity implementation of the core contract.
     pub static ref CONTRACT_READ_STATE_BLOCK_NUMBER: Felt =
-        get_selector_from_name("stateBlockNumber").expect("Invalid update state selector");
+        get_selector_from_name("get_state").expect("Invalid update state selector");
 }
 
 // TODO: Note that we already have an implementation of the appchain core contract client available
@@ -151,7 +150,7 @@ impl SettlementClient for StarknetSettlementClient {
             function_type = "calldata",
             "Updating state with calldata."
         );
-        let _snos_output = slice_slice_u8_to_vec_field(snos_output.as_slice());
+        let snos_output = slice_slice_u8_to_vec_field(snos_output.as_slice());
         let program_output = slice_slice_u8_to_vec_field(program_output.as_slice());
         let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
@@ -164,7 +163,7 @@ impl SettlementClient for StarknetSettlementClient {
         // let invoke_result = core_contract.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
 
         let invoke_result = core_contract
-            .update_state(program_output, onchain_data_hash, size)// snos_output,
+            .update_state(snos_output, program_output, onchain_data_hash, size)// snos_output,
             .await
             .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
         tracing::info!(

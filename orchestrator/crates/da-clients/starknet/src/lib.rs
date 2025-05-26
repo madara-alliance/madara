@@ -27,7 +27,11 @@ pub struct StarknetDaClient {
 impl StarknetDaClient {
     pub async fn new_with_args(starknet_da_params: &StarknetDaValidatedArgs) -> Self {
         let client = JsonRpcClient::new(HttpTransport::new(
-            Url::from_str(starknet_da_params.starknet_da_rpc_url.as_str()).expect("invalid url provided"),
+            Url::from_str(starknet_da_params.starknet_da_rpc_url.as_str())
+                .inspect_err(|e| {
+                    tracing::error!("Failed to parse Starknet DA RPC URL: {}", e);
+                })
+                .expect("invalid url provided"),
         ));
         Self { provider: Arc::new(client) }
     }

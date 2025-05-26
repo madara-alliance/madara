@@ -3,30 +3,28 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata, SnosMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use async_trait::async_trait;
-use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::{eyre, WrapErr};
 use color_eyre::Result;
-use itertools::Itertools;
 use orchestrator_prover_client_interface::TaskStatus;
 use std::fs::File;
 use std::io::Write;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 
-pub struct RegisterProofJob;
+pub struct RegisterProofJobHandler;
 
 #[async_trait]
-impl JobHandlerTrait for RegisterProofJob {
+impl JobHandlerTrait for RegisterProofJobHandler {
     #[tracing::instrument(fields(category = "proof_registry"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> std::result::Result<JobItem, JobError> {
         tracing::info!(log_type = "starting", category = "proof_registry", function_type = "create_job",  block_no = %internal_id, "Proof Registry job creation started.");
-        let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id.clone(), JobType::ProofRegistration, JobStatus::Created, metadata);
         tracing::info!(log_type = "completed", category = "proving", function_type = "create_job",  block_no = %internal_id, "Proving job created.");
         Ok(job_item)
     }

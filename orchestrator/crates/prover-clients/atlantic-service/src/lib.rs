@@ -18,7 +18,6 @@ use url::Url;
 
 use crate::client::AtlanticClient;
 use crate::error::AtlanticError;
-use crate::types::AtlanticAddJobResponse;
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -37,6 +36,7 @@ pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
     pub fact_checker: Option<FactChecker>,
     pub atlantic_api_key: String,
+    // TODO:L3 remove this since we are moving this to arguments
     pub proof_layout: LayoutName,
     pub atlantic_network: String,
 }
@@ -44,21 +44,30 @@ pub struct AtlanticProverService {
 #[async_trait]
 impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self, task))]
-    async fn submit_task(&self, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_task(
+        &self,
+        task: Task,
+        proof_layout: LayoutName,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
             function_type = "cairo_pie",
             "Submitting Cairo PIE task."
         );
+        println!("task: {:?}", n_steps);
         match task {
             Task::CairoPie(cairo_pie) => {
+                println!("unwrap the cairo pie");
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();
                 cairo_pie
-                    .write_zip_file(pie_file_path)
+                    .write_zip_file(pie_file_path, true)
                     .map_err(|e| ProverClientError::FailedToWriteFile(e.to_string()))?;
+
+                println!("pie_file_path: {:?}", pie_file_path);
 
                 // sleep for 2 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -66,12 +75,14 @@ impl ProverClient for AtlanticProverService {
                     .atlantic_client
                     .add_job(
                         pie_file_path,
-                        self.proof_layout,
+                        proof_layout,
                         self.atlantic_api_key.clone(),
                         n_steps,
                         self.atlantic_network.clone(),
                     )
                     .await?;
+                println!("atlantic_job_response: {:?}", atlantic_job_response);
+
                 // sleep for 10 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
@@ -136,22 +147,24 @@ impl ProverClient for AtlanticProverService {
         }
     }
     async fn get_proof(&self, task_id: &str, _fact: &str) -> Result<String, ProverClientError> {
-        let proof_path =
-            format!("https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json", task_id);
-        let client = reqwest::Client::new();
-        let response =
-            client.get(&proof_path).send().await.map_err(|e| ProverClientError::NetworkError(e.to_string()))?;
-        let response_text = response.text().await.map_err(|e| ProverClientError::NetworkError(e.to_string()))?;
+        let proof = self.atlantic_client.get_proof_by_task_id(task_id).await?;
 
         // Verify if it's a valid proof format
-        let _: StarkProof =
-            parse(response_text.clone()).map_err(|e| ProverClientError::InvalidProofFormat(e.to_string()))?;
+        let _: StarkProof = parse(proof.clone()).map_err(|e| ProverClientError::InvalidProofFormat(e.to_string()))?;
 
         // save the proof to a file
         let mut file = File::create("proof1.json").unwrap();
-        file.write_all(response_text.as_bytes()).unwrap();
-        Ok(response_text)
+        file.write_all(proof.as_bytes()).unwrap();
+        Ok(proof)
     }
+
+    /// Submit a L2 query to the Atlantic service
+    ///
+    /// # Arguments
+    /// * `task_id` - The task id of the proof to submit
+    /// * `proof` - The proof to submit
+    /// * `n_steps` - The number of steps to submit
+    ///
     async fn submit_l2_query(
         &self,
         _task_id: &str,
@@ -164,21 +177,20 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
-        let cairo_verifier = match tokio::fs::read_to_string("build/cairo_verifier.json").await {
+        let current_dir = std::env::current_dir().map_err(|e| ProverClientError::Internal(Box::new(e)))?;
+        tracing::debug!("Current directory: {}", current_dir.display());
+
+        let verifier_path = current_dir.join("./orchestrator/build/os_latest.json");
+        tracing::debug!("Looking for verifier at: {}", verifier_path.display());
+
+        let cairo_verifier = match tokio::fs::read_to_string(&verifier_path).await {
             Ok(content) => content,
             Err(e) => return Err(ProverClientError::from(AtlanticError::FileReadError(e))),
         };
 
         let atlantic_job_response = self
             .atlantic_client
-            .submit_l2_query(
-                proof,
-                cairo_verifier.as_str(),
-                self.proof_layout,
-                n_steps,
-                &self.atlantic_network,
-                &self.atlantic_api_key,
-            )
+            .submit_l2_query(proof, cairo_verifier.as_str(), n_steps, &self.atlantic_network, &self.atlantic_api_key)
             .await?;
 
         tracing::info!(

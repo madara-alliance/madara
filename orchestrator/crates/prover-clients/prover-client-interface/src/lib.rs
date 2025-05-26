@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use mockall::automock;
 use orchestrator_gps_fact_checker::FactCheckerError;
@@ -9,12 +10,17 @@ use orchestrator_gps_fact_checker::FactCheckerError;
 ///   inputs)
 /// - Register the proof onchain (individiual proof facts available for each task)
 ///
-/// A common Madara workflow would be single task per block (SNOS execution result) or per block
+/// A common Madara workflow would be a single task per block (SNOS execution result) or per block
 /// span (SNAR).
 #[automock]
 #[async_trait]
 pub trait ProverClient: Send + Sync {
-    async fn submit_task(&self, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError>;
+    async fn submit_task(
+        &self,
+        task: Task,
+        proof_layout: LayoutName,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError>;
     async fn get_task_status(
         &self,
         task_id: &str,

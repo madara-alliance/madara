@@ -44,6 +44,6 @@ pub struct SharpCliArgs {
     pub gps_verifier_contract_address: Option<String>,
 
     /// Settlement layer for Sharp.
-    #[arg(env = "MADARA_ORCHESTRATOR_PROOF_SETTLEMENT_LAYER", long, default_value = "ethereum")]
-    pub settlement_layer: Option<String>,
+    #[arg(env = "MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER", long)]
+    pub sharp_settlement_layer: Option<String>,
 }

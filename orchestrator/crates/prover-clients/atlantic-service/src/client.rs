@@ -1,15 +1,13 @@
 use std::path::Path;
 
+use crate::error::AtlanticError;
+use crate::types::{AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse};
+use crate::AtlanticValidatedArgs;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::Method;
+use tracing::{debug, trace};
 use url::Url;
-
-use crate::error::AtlanticError;
-use crate::types::{
-    AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStep,
-};
-use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {
@@ -26,14 +24,14 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL1.to_string())
+        request
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
+        request
     }
 }
 
@@ -75,10 +73,15 @@ impl AtlanticClient {
             _ => proof_layout.to_str(),
         };
 
-        let response = self
-            .proving_layer
-            .customize_request(
-                self.client
+        debug!(
+            "Submitting job with layout: {}, n_steps: {}, network: {}, ",
+            proof_layout,
+            self.n_steps_to_job_size(n_steps),
+            atlantic_network.as_ref()
+        );
+
+        let api = self.proving_layer.customize_request(
+            self.client
                     .request()
                     .method(Method::POST)
                     .path("atlantic-query")
@@ -86,18 +89,17 @@ impl AtlanticClient {
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("layout", proof_layout)
                     .form_text("result", "PROOF_GENERATION")
-                    .form_text("network", atlantic_network.as_ref())
+                    // .form_text("network", atlantic_network.as_ref())
                     .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                     .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
                     .form_file("pieFile", pie_file, "pie.zip")?,
-            )
-            .send()
-            .await
-            .map_err(AtlanticError::AddJobFailure)?;
+        );
+        tracing::debug!("Request: {:?}", api);
+        let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::SharpService(response.status())),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 
@@ -115,7 +117,28 @@ impl AtlanticClient {
         if response.status().is_success() {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
-            Err(AtlanticError::SharpService(response.status()))
+            Err(AtlanticError::AtlanticService(response.status()))
+        }
+    }
+
+    // get_proof_by_task_id - is a endpoint to get the proof from the herodotus service
+    // Args:
+    // task_id - the task id of the proof to get
+    // Returns:
+    // The proof as a string if the request is successful, otherwise an error is returned
+    pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
+        // Note: It seems this code will be replaced by the proper API once it is available
+        debug!("Getting proof for task_id: {}", task_id);
+        let proof_path =
+            format!("https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json", task_id);
+        let client = reqwest::Client::new();
+        let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
+
+        if response.status().is_success() {
+            let response_text = response.text().await.map_err(AtlanticError::GetJobResultFailure)?;
+            Ok(response_text)
+        } else {
+            Err(AtlanticError::AtlanticService(response.status()))
         }
     }
 
@@ -123,15 +146,11 @@ impl AtlanticClient {
         &self,
         proof: &str,
         cairo_verifier: &str,
-        proof_layout: LayoutName,
         n_steps: Option<usize>,
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        let proof_layout = match proof_layout {
-            LayoutName::recursive_with_poseidon => "recursive_with_poseidon",
-            _ => proof_layout.to_str(),
-        };
+        let proof_layout = LayoutName::recursive_with_poseidon.to_str();
 
         let response = self
             .proving_layer
@@ -147,7 +166,7 @@ impl AtlanticClient {
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("network", atlantic_network.as_ref())
                     .form_text("result", "PROOF_VERIFICATION_ON_L2")
-                    .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
+                    .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
                     .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str()),
             )
             .send()
@@ -156,7 +175,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::SharpService(response.status())),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 
