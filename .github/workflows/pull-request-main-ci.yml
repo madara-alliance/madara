@@ -45,8 +45,14 @@ jobs:
       version-file: .artifact-versions.yml
     secrets: inherit
 
+  debug:
+    needs: update-version-artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo ${{ needs.update-version-artifacts.outputs.update }}
+
   build-artifacts:
-    if: contains(github.event.pull_request.labels.*.name, 'artifacts-update')
+    if: needs.update-version-artifacts.outputs.update == true
     needs: update-version-artifacts
     uses: ./.github/workflows/task-build-artifacts.yml
     permissions:
@@ -56,8 +62,8 @@ jobs:
     secrets: inherit
 
   publish-artifacts:
-    if: contains(github.event.pull_request.labels.*.name, 'artifacts-update')
-    needs: build-artifacts
+    if: needs.update-version-artifacts.outputs.update == true
+    needs: [update-version-artifacts, build-artifacts]
     uses: ./.github/workflows/task-publish-image.yml
     with:
       image-name: artifacts

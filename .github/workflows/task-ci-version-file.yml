@@ -13,21 +13,25 @@ on:
         description: "Path to the version file to update"
         required: true
         type: string
+    outputs:
+      update:
+        description: "Whether or not the version file was updated"
+        value: ${{ jobs.update-version-file.outputs.update }}
 
 jobs:
-  db-check:
+  check:
     runs-on: ubuntu-latest
     steps:
-      - run: |
-         echo "Checking DB Version ('${{ inputs.label }}' label only)"
-         ACTIVE=${{ contains(github.event.pull_request.labels.*.name, inputs.label) }}
-         echo $ACTIVE
+      - run: echo "Checking DB Version ('${{ inputs.label }}' label only)"
 
   update-version-file:
     runs-on: ubuntu-latest
     if: contains(github.event.pull_request.labels.*.name, inputs.label)
+    outputs:
+      update: ${{ steps.check_bump.outputs.update }}
     permissions:
       contents: write
+
     steps:
       - uses: actions/checkout@v4
         with:
@@ -39,24 +43,24 @@ jobs:
         run: |
           PR_NUM="${{ github.event.pull_request.number }}"
           if yq -e ".versions[] | select(.pr == ${PR_NUM})" ${{ inputs.version-file }} > /dev/null 2>&1; then
-            echo "already_bumped=true" >> $GITHUB_OUTPUT
+            echo "update=true" >> $GITHUB_OUTPUT
           else
-            echo "already_bumped=false" >> $GITHUB_OUTPUT
+            echo "update=false" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure Git
-        if: steps.check_bump.outputs.already_bumped == 'false'
+        if: steps.check_bump.outputs.update == 'false'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: Update DB Version
-        if: steps.check_bump.outputs.already_bumped == 'false'
+        if: steps.check_bump.outputs.update == 'false'
         run: |
           ./scripts/update-version-file.sh "${{ github.event.pull_request.number }}" ${{ inputs.version-file }}
 
       - name: Commit and Push
-        if: steps.check_bump.outputs.already_bumped == 'false'
+        if: steps.check_bump.outputs.update == 'false'
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git add ${{ inputs.version-file }}
