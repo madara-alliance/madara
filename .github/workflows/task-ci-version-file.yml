@@ -18,7 +18,10 @@ jobs:
   db-check:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Checking DB Version ('${{ inputs.label }}' label only)"
+      - run: |
+         echo "Checking DB Version ('${{ inputs.label }}' label only)"
+         ACTIVE=${{ contains(github.event.pull_request.labels.*.name, inputs.label) }}
+         echo $ACTIVE
 
   update-version-file:
     runs-on: ubuntu-latest
