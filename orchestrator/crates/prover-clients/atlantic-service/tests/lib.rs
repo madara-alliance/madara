@@ -37,8 +37,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
     });
 
     // Configure the service to use mock server
-    let atlantic_service =
-        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
+    let atlantic_service = AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params);
 
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
@@ -67,7 +66,7 @@ async fn atlantic_client_get_task_status_works() {
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
     };
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params);
 
     let atlantic_query_id = "01JPMKV7WFP4JTC0TTQSEAM9GW";
     let task_result = atlantic_service.atlantic_client.get_job_status(atlantic_query_id).await;
@@ -94,7 +93,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     };
 
     // Create the Atlantic service with actual configuration
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params);
 
     // Load the Cairo PIE from the test data
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;

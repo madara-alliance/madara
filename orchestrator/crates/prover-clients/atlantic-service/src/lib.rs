@@ -36,8 +36,6 @@ pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
     pub fact_checker: Option<FactChecker>,
     pub atlantic_api_key: String,
-    // TODO:L3 remove this since we are moving this to arguments
-    pub proof_layout: LayoutName,
     pub atlantic_network: String,
 }
 
@@ -208,17 +206,10 @@ impl AtlanticProverService {
     pub fn new(
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,
-        proof_layout: &LayoutName,
         atlantic_network: String,
         fact_checker: Option<FactChecker>,
     ) -> Self {
-        Self {
-            atlantic_client,
-            fact_checker,
-            atlantic_api_key,
-            proof_layout: proof_layout.to_owned(),
-            atlantic_network,
-        }
+        Self { atlantic_client, fact_checker, atlantic_api_key, atlantic_network }
     }
 
     /// Creates a new instance of `AtlanticProverService` with the given parameters.
@@ -230,7 +221,7 @@ impl AtlanticProverService {
     ///
     /// # Returns
     /// * `AtlanticProverService` - A new instance of the service.
-    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
@@ -247,13 +238,12 @@ impl AtlanticProverService {
         Self::new(
             atlantic_client,
             atlantic_params.atlantic_api_key.clone(),
-            proof_layout,
             atlantic_params.atlantic_network.clone(),
             fact_checker,
         )
     }
 
-    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
         let fact_checker = if atlantic_params.atlantic_mock_fact_hash.eq("true") {
@@ -265,6 +255,6 @@ impl AtlanticProverService {
                 atlantic_params.atlantic_settlement_layer.clone(),
             ))
         };
-        Self::new(atlantic_client, "random_api_key".to_string(), proof_layout, "TESTNET".to_string(), fact_checker)
+        Self::new(atlantic_client, "random_api_key".to_string(), "TESTNET".to_string(), fact_checker)
     }
 }
