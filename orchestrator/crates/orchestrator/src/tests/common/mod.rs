@@ -1,5 +1,6 @@
 pub mod constants;
 
+use crate::core::client::queue::sqs::InnerSQS;
 use crate::core::client::MongoDbClient;
 use std::sync::Arc;
 
@@ -62,7 +63,7 @@ pub async fn create_sns_arn(
     provider_config: Arc<CloudProvider>,
     aws_sns_params: &AlertArgs,
 ) -> Result<(), SdkError<CreateTopicError>> {
-    let alert_topic_name = aws_sns_params.alert_topic_name.split(":").last().unwrap();
+    let alert_topic_name = aws_sns_params.alert_identifier.to_string();
     let sns_client = get_sns_client(provider_config.get_aws_client_or_panic()).await;
     sns_client.create_topic().name(alert_topic_name).send().await?;
     Ok(())
@@ -79,7 +80,7 @@ pub async fn drop_database(mongodb_params: &DatabaseArgs) -> color_eyre::Result<
 }
 
 pub async fn delete_storage(provider_config: Arc<CloudProvider>, s3_params: &StorageArgs) -> color_eyre::Result<()> {
-    let bucket_name = s3_params.bucket_name.clone();
+    let bucket_name = s3_params.bucket_identifier.to_string();
     let aws_config = provider_config.get_aws_client_or_panic();
 
     let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
@@ -140,7 +141,8 @@ pub async fn create_queues(provider_config: Arc<CloudProvider>, queue_params: &Q
     }
 
     for queue_type in QueueType::iter() {
-        let queue_name = format!("{}_{}_{}", queue_params.prefix, queue_type, queue_params.suffix);
+        let queue_name =
+            InnerSQS::get_queue_name_from_type(&queue_params.queue_template_identifier.to_string(), &queue_type);
         sqs_client.create_queue().queue_name(queue_name).send().await?;
     }
     Ok(())

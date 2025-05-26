@@ -18,7 +18,7 @@ use crate::types::params::prover::ProverConfig;
 use crate::types::params::service::{ServerParams, ServiceParams};
 use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
-use crate::types::params::{AlertArgs, OTELConfig, QueueArgs, StorageArgs};
+use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::utils::helpers::ProcessingLocks;
 use alloy::primitives::Address;
 use axum::Router;
@@ -30,7 +30,7 @@ use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
-use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
+use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_optional_or_panic, get_env_var_or_panic};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
@@ -480,34 +480,35 @@ pub struct EnvParams {
 }
 
 pub(crate) fn get_env_params() -> EnvParams {
-    let prefix = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
     let db_params = DatabaseArgs {
         connection_uri: get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"),
         database_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME"),
     };
 
     let storage_params = StorageArgs {
-        bucket_name: format!(
+        bucket_identifier: AWSResourceIdentifier::Name(format!(
             "{}-{}",
             get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")
-        ),
-        bucket_location_constraint: None,
+            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
+        )),
     };
 
-    let queue_params =
-        QueueArgs { prefix: prefix.clone(), suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX") };
+    let queue_params = QueueArgs {
+        queue_template_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER",
+        )),
+    };
 
-    let aws_params = AWSCredentials { region: get_env_var_or_panic("AWS_REGION") };
+    let aws_params = AWSCredentials { prefix: get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX") };
 
     let da_params = DAConfig::Ethereum(EthereumDaValidatedArgs {
         ethereum_da_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
     });
 
-    let alert_topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
-
-    let alert_params = AlertArgs { alert_topic_name };
+    let alert_params = AlertArgs {
+        alert_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME")),
+    };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))

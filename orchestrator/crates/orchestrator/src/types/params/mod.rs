@@ -61,10 +61,11 @@ impl ARN {
             resource: parts[5].to_string(),
         })
     }
+}
 
-    /// Convert the ARN back to string format
-    pub fn to_string(&self) -> String {
-        format!("arn:{}:{}:{}:{}:{}", self.partition, self.service, self.region, self.account_id, self.resource)
+impl fmt::Display for ARN {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "arn:{}:{}:{}:{}:{}", self.partition, self.service, self.region, self.account_id, self.resource)
     }
 }
 
@@ -72,6 +73,16 @@ impl ARN {
 pub enum AWSResourceIdentifier {
     ARN(ARN),
     Name(String),
+}
+
+use std::fmt;
+impl fmt::Display for AWSResourceIdentifier {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            AWSResourceIdentifier::ARN(arn) => write!(f, "{}", arn.to_string()),
+            AWSResourceIdentifier::Name(name) => write!(f, "{}", name),
+        }
+    }
 }
 
 /// StorageArgs - Arguments used to setup storage resources
