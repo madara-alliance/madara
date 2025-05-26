@@ -165,8 +165,9 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
 fn build_artifacts(root: &RootDir) -> Result<(), BuildError> {
     let err_msg = "Failed to build artifacts, make sure that docker and GNU make are installed";
 
-    let mut make = std::process::Command::new("make");
-    let cmd = make.args(["-C", &root.0.to_string_lossy(), "artifacts"]);
+    let root = root.0.to_string_lossy();
+    let mut make = std::process::Command::new("sh");
+    let cmd = make.arg("-c").arg(format!("yes | make -C {root} artifacts"));
     cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd, err_msg))
 }
 

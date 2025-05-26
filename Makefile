@@ -203,9 +203,7 @@ artifacts:
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
 	@docker build -f $(ARTIFACTS)/build.docker -t contracts .
-	@docker create --name contracts contracts do-nothing > /dev/null
-	@docker cp contracts:/artifacts/. $(ARTIFACTS)
-	@docker rm contracts > /dev/null
+	@ID=$$(docker create contracts do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
 
 .PHONY: check
 check:
