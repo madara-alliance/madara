@@ -21,6 +21,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 # Madara
 mc-analytics = { workspace = true }
 mp-block = { workspace = true }
+mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
@@ -37,6 +38,7 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
+ahash.workspace = true
 anyhow.workspace = true
 bincode = { workspace = true }
 bitvec = { workspace = true }
@@ -72,10 +74,13 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 
 [dev-dependencies]
+proptest = { workspace = true }
+serde_json = { workspace = true }
 tempfile = "3.10"
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
 rstest = { workspace = true }
+rand = { workspace = true }
 
 [features]
 default = []
