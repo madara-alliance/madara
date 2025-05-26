@@ -35,12 +35,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
-          path: .
 
       - name: debug
-        run: |
-          ls -la
-          ls -la build-artifacts
+        run: ls -la build-artifacts
 
       - name: Install dependencies
         run: |

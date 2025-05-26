@@ -73,9 +73,12 @@ jobs:
           name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
           path: target/release/madara
 
+      - name: debug
+        run: ls -la build-artifacts
+
       # Upload cairo artifacts
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
           name: build-artifacts-${{ steps.generate-binary-hash.outputs.cairo-hash }}
-          path: build-artifacts/
+          path: build-artifacts/**
