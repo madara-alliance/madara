@@ -1,3 +1,4 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Workflow - Pull Request Main
 
@@ -99,7 +100,7 @@ jobs:
   # Run coverage tests
   test-madara:
     needs: build-madara
-    uses: ./.github/workflows/task-coverage-madara.yml
+    uses: ./.github/workflows/task-test-madara.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
@@ -132,13 +133,13 @@ jobs:
   # Run coverage tests
   test-orchestrator:
     needs: [build-madara, check-orchestrator]
-    uses: ./.github/workflows/task-coverage-orchestrator.yml
+    uses: ./.github/workflows/task-test-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
   # Run e2e tests
-  test-e2e:
+  e2e-orchestrator:
     needs: [build-madara, check-orchestrator]
     uses: ./.github/workflows/task-e2e-orchestrator.yml
     with:
@@ -159,7 +160,7 @@ jobs:
   # Run coverage tests
   test-bootstrapper:
     needs: [build-madara, check-bootstrapper]
-    uses: ./.github/workflows/task-coverage-bootstrapper.yml
+    uses: ./.github/workflows/task-test-bootstrapper.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit

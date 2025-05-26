@@ -1,4 +1,6 @@
-name: Task - Orchestrator Coverage
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Integration Tests and Coverage (Orchestrator)
 
 # This workflow runs tests and generates code coverage reports
 # for the Orchestrator component
@@ -17,7 +19,7 @@ on:
         required: true
 
 jobs:
-  orchestrator_coverage:
+  test-orchestrator:
     runs-on: karnot-arc-runner-set
 
     services:

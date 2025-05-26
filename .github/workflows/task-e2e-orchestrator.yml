@@ -1,4 +1,6 @@
-name: Task - Test E2E
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Test E2E (Orchestrator)
 
 # This workflow runs end-to-end tests for the Orchestrator
 # against the Madara binary to ensure full integration testing
@@ -17,7 +19,7 @@ on:
         required: true
 
 jobs:
-  test-e2e:
+  e2e-orchestrator:
     runs-on: karnot-arc-runner-set
 
     services:

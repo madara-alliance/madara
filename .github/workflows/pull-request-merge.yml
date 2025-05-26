@@ -1,3 +1,4 @@
+---
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Workflow - Pull Request Main (merge)
 
@@ -6,6 +7,10 @@ on:
   merge_group:
 
 jobs:
+  # ========================================================================= #
+  #                              NIGHTLY RELEASE                              #
+  # ========================================================================= #
+
   build-nightly:
     uses: ./.github/workflows/task-build-nightly.yml
     with:
@@ -37,3 +42,31 @@ jobs:
       attestations: write
       id-token: write
     secrets: inherit
+
+  # ========================================================================= #
+  #                                MERGE QUEUE                                #
+  # ========================================================================= #
+
+  # Run coverage tests (Madara)
+  test-madara:
+    uses: ./.github/workflows/task-do-nothing-test-madara.yml
+
+  # Run coverage tests (Orchestrator)
+  test-orchestrator:
+    uses: ./.github/workflows/task-do-nothing-test-orchestrator.yml
+
+  # Run e2e tests (Orchestrator)
+  test-e2e:
+    uses: ./.github/workflows/task-do-nothing-e2e-orchestrator.yml
+
+  # Run coverage tests (Bootstrapper)
+  test-bootstrapper:
+    uses: ./.github/workflows/task-do-nothing-test-bootstrapper.yml
+
+  # Run JavaScript tests
+  test-js:
+    uses: ./.github/workflows/task-do-nothing-test-js.yml
+
+  # Run CLI tests
+  test-cli:
+    uses: ./.github/workflows/task-do-nothing-test-cli.yml

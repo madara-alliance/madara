@@ -1,4 +1,6 @@
-name: Task - Bootstrapper Coverage
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Integration Tests and Coverage (Bootstrapper)
 
 # This workflow runs integration tests and generates code coverage
 # reports for the Madara codebase
@@ -17,7 +19,7 @@ on:
         required: false
 
 jobs:
-  test-with-coverage-bootstrapper:
+  test-bootstrapper:
     permissions:
       pull-requests: write
     runs-on: karnot-arc-runner-set
