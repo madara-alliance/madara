@@ -65,6 +65,5 @@ This repository makes use of the [Github Merge Queue] to separate test runs into
 
 Due to the way in which the merge queue works on Github, you will see a lot of stub actions repeated throughout certain tasks: these actions can be recognized by their prefix `task-do-nothing`. For more context as to why this is needed, check out [this comment].
 
-
 [Github Merge Queue]: https://docs.github.com/en/repositories/configuring-branches-and-merges-in-your-repository/configuring-pull-request-merges/managing-a-merge-queue
 [this comment]: https://github.com/madara-alliance/madara/pull/633#discussion_r2086165929
