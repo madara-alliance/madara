@@ -62,16 +62,6 @@ lazy_static! {
             supported_layers: vec![Layer::L3]
         },
         QueueConfig {
-            name: QueueType::ProofRegistrationJobProcessing,
-            visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
-        },
-        QueueConfig {
-            name: QueueType::ProofRegistrationJobVerification,
-            visibility_timeout: 300,
-            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure })
-        },
-        QueueConfig {
             name: QueueType::DataSubmissionJobProcessing,
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),

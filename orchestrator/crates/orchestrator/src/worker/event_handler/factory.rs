@@ -9,10 +9,9 @@ pub mod factory {
     use mockall::automock;
 
     use crate::types::jobs::types::JobType;
-    use crate::worker::event_handler::jobs::proof_registration::RegisterProofJob;
     use crate::worker::event_handler::jobs::{
-        da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler,
-        JobHandlerTrait,
+        da::DAJobHandler, proof_registration::RegisterProofJobHandler, proving::ProvingJobHandler,
+        snos::SnosJobHandler, state_update::StateUpdateJobHandler, JobHandlerTrait,
     };
 
     /// To get the job handler
@@ -60,7 +59,7 @@ pub mod factory {
         let job: Box<dyn JobHandlerTrait> = match job_type {
             JobType::SnosRun => Box::new(SnosJobHandler),
             JobType::ProofCreation => Box::new(ProvingJobHandler),
-            JobType::ProofRegistration => Box::new(RegisterProofJob),
+            JobType::ProofRegistration => Box::new(RegisterProofJobHandler),
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
             // _ => unimplemented!("Job type not implemented yet."),

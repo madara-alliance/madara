@@ -282,6 +282,7 @@ impl<'a> RequestBuilder<'a> {
 
     /// Adds a text part to the multipart form.
     pub fn form_text(mut self, key: &str, value: &str) -> Self {
+        tracing::debug!("Adding form text: {} = {}", key, value);
         let form = match self.form.take() {
             Some(existing_form) => existing_form.text(key.to_string(), value.to_string()),
             None => Form::new().text(key.to_string(), value.to_string()),

@@ -44,7 +44,8 @@ async fn atlantic_client_submit_task_when_mock_works() {
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
 
     // We don't need to send the steps because it's a mock fact hash.
-    let task_result = atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), None).await;
+    let task_result =
+        atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), LayoutName::all_cairo, None).await;
 
     assert!(task_result.is_ok());
     submit_mock.assert();
@@ -102,7 +103,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
         // We don't need to send the steps because it's a mock fact hash.
-        .submit_task(Task::CairoPie(Box::new(cairo_pie)), None)
+        .submit_task(Task::CairoPie(Box::new(cairo_pie)), LayoutName::all_cairo, None)
         .await
         .expect("Failed to submit task to Atlantic service");
 

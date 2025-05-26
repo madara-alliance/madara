@@ -4,7 +4,6 @@ use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::ON_CHAIN_DATA_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -25,6 +24,7 @@ use starknet_os::io::output::StarknetOsOutput;
 use std::io::Read;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
+use tracing::{debug, error};
 
 pub struct SnosJobHandler;
 
@@ -61,26 +61,28 @@ impl JobHandlerTrait for SnosJobHandler {
             block_no = %internal_id,
             "SNOS job processing started."
         );
-
+        debug!(job_id = %job.internal_id, "Processing SNOS job");
         // Get SNOS metadata
-        let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into()?;
+        let snos_metadata: SnosMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
+            error!(job_id = %job.internal_id, error = %e, "Failed to convert metadata to SnosMetadata");
+        })?;
+
+        debug!("SNOS metadata retrieved {:?}", snos_metadata);
 
         // Get block number from metadata
         let block_number = snos_metadata.block_number;
-        tracing::debug!(job_id = %job.internal_id, block_number = %block_number, "Retrieved block number from metadata");
+        debug!(job_id = %job.internal_id, block_number = %block_number, "Retrieved block number from metadata");
 
         let snos_url = config.snos_config().rpc_for_snos.to_string();
         let snos_url = snos_url.trim_end_matches('/');
-        tracing::debug!(job_id = %job.internal_id, "Calling prove_block function");
+        debug!(job_id = %job.internal_id, "Calling prove_block function");
 
         let (cairo_pie, snos_output) =
-            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, snos_metadata.full_output)
-                .await
-                .map_err(|e| {
-                    tracing::error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
-                    SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
-                })?;
-        tracing::debug!(job_id = %job.internal_id, "prove_block function completed successfully");
+            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, true).await.map_err(|e| {
+                error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
+                SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
+            })?;
+        debug!(job_id = %job.internal_id, "prove_block function completed successfully");
 
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
         // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
@@ -90,28 +92,28 @@ impl JobHandlerTrait for SnosJobHandler {
         // And in case of KZG flag == 1 :
         //      we calculate the fact info
         let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
-            tracing::debug!(job_id = %job.internal_id, "Using L2 as settlement layer");
+            debug!(job_id = %job.internal_id, "Using L2 as settlement layer");
             // Get the program output from CairoPie
             let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
-                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
+                error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
                 JobError::FactError(FactError::L2FactCompute)
             })?;
             let program_output = get_program_output(&cairo_pie).map_err(|e| {
-                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
+                error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
                 JobError::FactError(FactError::ProgramOutputCompute)
             })?;
             (fact_hash, program_output)
         } else if snos_output.use_kzg_da == Felt252::ONE {
-            tracing::debug!(job_id = %job.internal_id, "Using L1 as settlement layer");
+            debug!(job_id = %job.internal_id, "Using L1 as settlement layer");
             // Get the program output from CairoPie
             let fact_info = get_fact_info(&cairo_pie, None)?;
             (fact_info.fact, fact_info.program_output)
         } else {
-            tracing::error!(job_id = %job.internal_id, "Invalid KZG flag");
+            error!(job_id = %job.internal_id, "Invalid KZG flag");
             return Err(JobError::from(SnosError::UnsupportedKZGFlag));
         };
 
-        tracing::debug!(job_id = %job.internal_id, "Fact info calculated successfully");
+        debug!(job_id = %job.internal_id, "Fact info calculated successfully");
 
         // Update the metadata with new paths and fact info
         if let JobSpecificMetadata::Snos(metadata) = &mut job.metadata.specific {
@@ -119,7 +121,7 @@ impl JobHandlerTrait for SnosJobHandler {
             metadata.snos_n_steps = Some(cairo_pie.execution_resources.n_steps);
         }
 
-        tracing::debug!(job_id = %job.internal_id, "Storing SNOS outputs");
+        debug!(job_id = %job.internal_id, "Storing SNOS outputs");
         if snos_output.use_kzg_da == Felt252::ZERO {
             // Store the on-chain data path
             self.store_l2(
@@ -204,7 +206,7 @@ impl SnosJobHandler {
         let on_chain_data_vec = serde_json::to_vec(&on_chain_data).map_err(|e| {
             SnosError::OnChainDataUnserializable { internal_id: internal_id.to_string(), message: e.to_string() }
         })?;
-        data_storage.put_data(on_chain_data_vec.into(), &on_chain_data_key).await.map_err(|e| {
+        data_storage.put_data(on_chain_data_vec.into(), on_chain_data_key).await.map_err(|e| {
             SnosError::OnChainDataUnstorable { internal_id: internal_id.to_string(), message: e.to_string() }
         })?;
         Ok(())
@@ -275,8 +277,7 @@ impl SnosJobHandler {
     /// Converts the [CairoPie] input as a zip file and returns it as [Bytes].
     async fn cairo_pie_to_zip_bytes(&self, cairo_pie: CairoPie) -> Result<Bytes> {
         let mut cairo_pie_zipfile = NamedTempFile::new()?;
-        // TODO:L3 Validation of true
-        cairo_pie.write_zip_file(cairo_pie_zipfile.path())?;
+        cairo_pie.write_zip_file(cairo_pie_zipfile.path(), true)?;
         drop(cairo_pie); // Drop cairo_pie to release the memory
         let cairo_pie_zip_bytes = self.tempfile_to_bytes_streaming(&mut cairo_pie_zipfile).await?;
         cairo_pie_zipfile.close()?;
@@ -310,6 +311,7 @@ impl SnosJobHandler {
     /// Converts a [NamedTempFile] to [Bytes].
     /// This function reads the file in chunks and appends them to the buffer.
     /// This is useful when the file is too large to be read in one go.
+    #[allow(dead_code)]
     fn tempfile_to_bytes(&self, tmp_file: &mut NamedTempFile) -> Result<Bytes> {
         let mut buffer = Vec::new();
         tmp_file.as_file_mut().read_to_end(&mut buffer)?;

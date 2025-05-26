@@ -1,11 +1,6 @@
 use std::cmp::{max, min};
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use color_eyre::eyre::WrapErr;
-use opentelemetry::KeyValue;
-use starknet::providers::Provider;
-
 use crate::core::config::Config;
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
@@ -15,6 +10,11 @@ use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
+use async_trait::async_trait;
+use color_eyre::eyre::WrapErr;
+use opentelemetry::KeyValue;
+use starknet::providers::Provider;
+use tracing::{debug, info, warn};
 
 pub struct SnosJobTrigger;
 
@@ -26,15 +26,15 @@ impl JobTrigger for SnosJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "SnosWorker", "SnosWorker started.");
 
+        // Fetch the latest block number from the Starknet chain
         let provider = config.madara_client();
-        let block_number_provider = provider.block_number().await?;
+        let block_number = provider.block_number().await?;
+        debug!("Latest block number from Starknet: {}", block_number);
 
-        let latest_block_number = config
-            .service_config()
-            .max_block_to_process
-            .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
+        let latest_block_number =
+            config.service_config().max_block_to_process.map_or(block_number, |max_block| min(max_block, block_number));
 
-        tracing::debug!(latest_block_number = %latest_block_number, "Fetched latest block number from starknet");
+        debug!(latest_block_number = %latest_block_number, "Fetched latest block number from starknet");
 
         let latest_job_in_db = config.database().get_latest_job_by_type(JobType::SnosRun).await?;
 
@@ -51,6 +51,8 @@ impl JobTrigger for SnosJobTrigger {
             .service_config()
             .min_block_to_process
             .map_or(latest_job_id, |min_block| max(min_block, latest_job_id));
+
+        debug!(start_block_number = %block_start, end_block_number = %latest_block_number, "Creating SNOS jobs for blocks in range");
 
         for block_num in block_start..latest_block_number + 1 {
             // Create typed metadata structure with predefined paths
@@ -70,9 +72,9 @@ impl JobTrigger for SnosJobTrigger {
 
             match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await
             {
-                Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
+                Ok(_) => info!(block_id = %block_num, "Snos Worker Trigger Completed"),
                 Err(e) => {
-                    tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
+                    warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),

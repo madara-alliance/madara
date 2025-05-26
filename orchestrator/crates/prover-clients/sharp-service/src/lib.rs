@@ -35,13 +35,19 @@ pub struct SharpValidatedArgs {
 pub struct SharpProverService {
     sharp_client: SharpClient,
     fact_checker: FactChecker,
+    // TODO:L3 remove this since we are moving this to arguments
     proof_layout: LayoutName,
 }
 
 #[async_trait]
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
-    async fn submit_task(&self, task: Task, _n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_task(
+        &self,
+        task: Task,
+        proof_layout: LayoutName,
+        _n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -52,7 +58,7 @@ impl ProverClient for SharpProverService {
             Task::CairoPie(cairo_pie) => {
                 let encoded_pie =
                     starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
-                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
+                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",
@@ -155,15 +161,15 @@ impl ProverClient for SharpProverService {
         }
     }
 
-    async fn get_proof(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError> {
+    async fn get_proof(&self, _task_id: &str, _fact: &str) -> Result<String, ProverClientError> {
         todo!()
     }
 
     async fn submit_l2_query(
         &self,
-        task_id: &str,
-        fact: &str,
-        n_steps: Option<usize>,
+        _task_id: &str,
+        _fact: &str,
+        _n_steps: Option<usize>,
     ) -> Result<String, ProverClientError> {
         todo!()
     }

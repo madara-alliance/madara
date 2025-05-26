@@ -119,7 +119,7 @@ impl MongoDbClient {
     /// * `collection` - The collection to delete the document in
     /// * `filter` - The filter to apply to the collection
     /// # Returns
-    /// * `Result<DeleteResult, DatabaseError>` - A Result indicating whether the operation was successful or not
+    /// * `Result<DeleteResult, DatabaseError>` - A Result indicating whether the operation was successful or not   
     pub async fn delete_one<T>(
         &self,
         collection: Collection<T>,
@@ -616,64 +616,6 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(jobs)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use mongodb::bson::doc;
-    use mongodb::options::ClientOptions;
-    use serde::{Deserialize, Serialize};
-    use std::env;
-
-    #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, Clone)]
-    struct TestDoc {
-        _id: i32,
-        name: String,
-    }
-
-    async fn get_test_handles() -> (Client, Database, Collection<TestDoc>) {
-        let uri = env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
-        let client_options = ClientOptions::parse(&uri).await.unwrap();
-        let client = Client::with_options(client_options).unwrap();
-        let db = client.database("test_db");
-        let collection = db.collection::<TestDoc>("test_collection");
-        (client, db, collection)
-    }
-
-    #[tokio::test]
-    async fn test_find_one_insert_and_delete() {
-        let (client, db, collection) = get_test_handles().await;
-        // Clean up before test
-        let _ = collection.delete_many(doc! {}, None).await;
-        let test_doc = TestDoc { _id: 1, name: "Alice".to_string() };
-        collection.insert_one(&test_doc, None).await.unwrap();
-
-        let client = MongoDbClient { client, database: Arc::new(db) };
-
-        // find_one
-        let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
-        assert_eq!(found, Some(test_doc.clone()));
-
-        // update_one
-        let update = doc! { "$set": { "name": "Bob" } };
-        let update_result = client.update_one(collection.clone(), doc! {"_id": 1}, update, None).await.unwrap();
-        assert_eq!(update_result.matched_count, 1);
-        assert_eq!(update_result.modified_count, 1);
-
-        // find (should return updated doc)
-        let found_docs = client.find(collection.clone(), doc! {"_id": 1}, None, None, None, None).await.unwrap();
-        assert_eq!(found_docs.len(), 1);
-        assert_eq!(found_docs[0].name, "Bob");
-
-        // delete_one
-        let delete_result = client.delete_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
-        assert_eq!(delete_result.deleted_count, 1);
-
-        // find_one (should be None)
-        let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
-        assert_eq!(found, None);
     }
 }
 

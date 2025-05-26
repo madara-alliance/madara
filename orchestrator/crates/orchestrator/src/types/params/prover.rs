@@ -46,7 +46,7 @@ impl TryFrom<RunCmd> for ProverConfig {
                     gps_verifier_contract_address: sharp_args.gps_verifier_contract_address.ok_or_else(|| {
                         OrchestratorError::SetupCommandError("GPS verifier contract address is required".to_string())
                     })?,
-                    sharp_settlement_layer: sharp_args.settlement_layer.ok_or_else(|| {
+                    sharp_settlement_layer: sharp_args.sharp_settlement_layer.ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Sharp settlement layer is required".to_string())
                     })?,
                 }))

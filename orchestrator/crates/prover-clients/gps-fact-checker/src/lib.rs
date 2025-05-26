@@ -80,3 +80,15 @@ impl FactChecker {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settlement_layer_from_str() {
+        assert_eq!(SettlementLayer::from_str("ethereum").unwrap(), SettlementLayer::Ethereum);
+        assert_eq!(SettlementLayer::from_str("starknet").unwrap(), SettlementLayer::Starknet);
+        assert!(SettlementLayer::from_str("invalid").is_err());
+    }
+}

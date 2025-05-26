@@ -11,6 +11,7 @@ orchestrator-da-client-interface = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 starknet = { workspace = true }
 url = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "*"

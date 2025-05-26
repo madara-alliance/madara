@@ -14,6 +14,7 @@ use crate::error::ConsumptionError;
 use crate::types::error::TypeError;
 use crate::types::jobs::types::{JobStatus, JobType};
 use da_error::DaError;
+use orchestrator_prover_client_interface::ProverClientError;
 use proving::ProvingError;
 use state_update::StateUpdateError;
 use thiserror::Error;
@@ -100,4 +101,8 @@ pub enum JobError {
     /// Indicates an error occurred while extracting the processing lock
     #[error("Error extracting processing lock: {0}")]
     LockError(String),
+
+    /// Indicates an error occurred while submitting a task to the prover client
+    #[error("Error submitting task to prover client: {0}")]
+    ProverClientError(#[from] ProverClientError),
 }
