@@ -45,12 +45,6 @@ jobs:
       version-file: .artifact-versions.yml
     secrets: inherit
 
-  debug:
-    needs: update-version-artifacts
-    runs-on: ubuntu-latest
-    steps:
-      - run: echo ${{ needs.update-version-artifacts.outputs.update }}
-
   build-artifacts:
     if: needs.update-version-artifacts.outputs.update == 'true'
     needs: update-version-artifacts
@@ -82,13 +76,13 @@ jobs:
 
   # Run Rust-specific linters
   lint-rust:
-    needs: [update-version-db, update-version-artifacts]
+    needs: [update-version-db, publish-artifacts]
     uses: ./.github/workflows/task-lint-cargo.yml
     secrets: inherit
 
   # Run linters for code style and quality
   lint-code-style:
-    needs: [update-version-db, update-version-artifacts]
+    needs: [update-version-db, publish-artifacts]
     uses: ./.github/workflows/task-lint-code-style.yml
 
   # ========================================================================= #
@@ -115,6 +109,7 @@ jobs:
     uses: ./.github/workflows/task-test-js.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
 
   # Run CLI tests against the built binary
   test-cli:

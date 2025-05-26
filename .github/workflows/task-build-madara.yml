@@ -10,12 +10,16 @@ on:
       madara-binary-hash:
         description: "Hash of the built madara binary"
         value: ${{ jobs.build-binaries.outputs.madara-binary-hash }}
+      cairo-artifacts-hash:
+        description: "Hash of the cairo artifacts"
+        value: ${{ jobs.build-binaries.outputs.cairo-artifacts-hash }}
 
 jobs:
   build-binaries:
     runs-on: karnot-arc-runner-set
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
+      cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
     permissions:
       pull-requests: write
 
@@ -56,9 +60,22 @@ jobs:
           echo "madara-hash=$HASH" >> $GITHUB_OUTPUT
           echo "Hash of the madara is: $HASH (with timestamp: $TIMESTAMP)"
 
+          # Path to the cairo artifacts
+          ARTIFACTS_PATH=./artifacts.tar.gz
+          HASH=$(echo "$TIMESTAMP" | cat - $ARTIFACTS_PATH | sha256sum | awk '{ print $1 }')
+          echo "cairo-hash=$HASH" >> $GITHUB_OUTPUT
+          echo "Hash of cairo artifacts is: $HASH (with timestamp: $TIMESTAMP)"
+
       # Upload Madara binary as artifact
       - name: Upload Madara binary
         uses: actions/upload-artifact@v4
         with:
           name: madara-binary-${{ steps.generate-binary-hash.outputs.madara-hash }}
           path: target/release/madara
+
+      # Upload cairo artifacts
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-artifacts-${{ steps.generate-binary-hash.outputs.cairo-hash }}
+          path: build-artifacts/
