@@ -43,24 +43,24 @@ jobs:
         run: |
           PR_NUM="${{ github.event.pull_request.number }}"
           if yq -e ".versions[] | select(.pr == ${PR_NUM})" ${{ inputs.version-file }} > /dev/null 2>&1; then
-            echo "update=true" >> $GITHUB_OUTPUT
-          else
             echo "update=false" >> $GITHUB_OUTPUT
+          else
+            echo "update=true" >> $GITHUB_OUTPUT
           fi
 
       - name: Configure Git
-        if: steps.check_bump.outputs.update == 'false'
+        if: steps.check_bump.outputs.update == 'true'
         run: |
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
 
       - name: Update DB Version
-        if: steps.check_bump.outputs.update == 'false'
+        if: steps.check_bump.outputs.update == 'true'
         run: |
           ./scripts/update-version-file.sh "${{ github.event.pull_request.number }}" ${{ inputs.version-file }}
 
       - name: Commit and Push
-        if: steps.check_bump.outputs.update == 'false'
+        if: steps.check_bump.outputs.update == 'true'
         run: |
           if [[ -n "$(git status --porcelain)" ]]; then
             git add ${{ inputs.version-file }}

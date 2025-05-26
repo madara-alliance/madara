@@ -52,7 +52,7 @@ jobs:
       - run: echo ${{ needs.update-version-artifacts.outputs.update }}
 
   build-artifacts:
-    if: needs.update-version-artifacts.outputs.update == true
+    if: needs.update-version-artifacts.outputs.update == 'true'
     needs: update-version-artifacts
     uses: ./.github/workflows/task-build-artifacts.yml
     permissions:
@@ -62,7 +62,7 @@ jobs:
     secrets: inherit
 
   publish-artifacts:
-    if: needs.update-version-artifacts.outputs.update == true
+    if: needs.update-version-artifacts.outputs.update == 'true'
     needs: [update-version-artifacts, build-artifacts]
     uses: ./.github/workflows/task-publish-image.yml
     with:
