@@ -150,7 +150,8 @@ fn kill_process_on_port(port: u16) {
 }
 
 fn get_test_config_file() -> ConfigFile {
-    ConfigFile::default()
+    let intermediate_config = IntermediateConfigFile::default();
+    ConfigFile::try_from(intermediate_config).expect("Failed to convert intermediate config to final config")
 }
 
 async fn wait_for_madara() -> color_eyre::Result<()> {

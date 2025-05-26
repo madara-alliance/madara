@@ -1,5 +1,5 @@
 {
- "rollup_seq_url": "http://127.0.0.1:9944",
+  "rollup_seq_url": "http://127.0.0.1:9944",
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
   "eth_chain_id": 31337,
