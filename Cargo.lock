@@ -10806,6 +10806,7 @@ dependencies = [
  "appchain-core-contract-client",
  "async-std",
  "async-trait",
+ "build-version",
  "c-kzg",
  "color-eyre",
  "crypto-bigint 0.5.5",
