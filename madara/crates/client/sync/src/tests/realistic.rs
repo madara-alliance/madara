@@ -12,7 +12,6 @@ use mp_utils::service::ServiceContext;
 use rstest::{fixture, rstest};
 use starknet_api::felt;
 use std::sync::Arc;
-use tracing_test::traced_test;
 
 struct TestContext {
     backend: Arc<MadaraBackend>,
@@ -66,7 +65,6 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// This test makes sure that the pipeline actually imports stuff, so that we're sure that we
 /// didn't forget to call the store functions in the backend.
 ///
@@ -218,7 +216,6 @@ fn ctx_mainnet(gateway_mock: GatewayMock) -> TestContext {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// Mainnet has some classes in the very early history that don't appear in the
 /// state diff. This test ensures we import them, but it also test the general correctness
 /// for the mainnet block 0.
