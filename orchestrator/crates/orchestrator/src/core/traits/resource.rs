@@ -35,7 +35,7 @@ pub trait Resource: Send + Sync {
     /// * `args` - The arguments to setup the resource with
     /// # Returns
     /// * `OrchestratorResult<Self::SetupResult>` - A Result indicating whether the operation was successful or not
-    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
+    async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult>;
 
     /// check - Check if the resource exists, check only for individual resources
     /// # Arguments
@@ -49,7 +49,7 @@ pub trait Resource: Send + Sync {
     /// * `args` - The arguments to check the resource with
     /// # Returns
     /// * `OrchestratorResult<bool>` - A Result indicating whether the resource is ready to use or not
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
+    async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool>;
 
     /// poll - Poll the resource until it is ready to use
     /// This function will poll the resource until it is ready to use.
@@ -59,12 +59,12 @@ pub trait Resource: Send + Sync {
     /// * `timeout` - The timeout to check the resource with
     /// # Returns
     /// * `bool` - A boolean indicating whether the resource is ready to use or not
-    async fn poll(&self, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
+    async fn poll(&self, layer: &Layer, args: Self::SetupArgs, poll_interval: u64, timeout: u64) -> bool {
         let timeout_duration = Duration::from_secs(timeout);
         let start_time = Instant::now();
 
         while start_time.elapsed() < timeout_duration {
-            match self.is_ready_to_use(&args).await {
+            match self.is_ready_to_use(layer, &args).await {
                 Ok(true) => return true,
                 Ok(false) => {
                     tokio::time::sleep(Duration::from_secs(poll_interval)).await;
