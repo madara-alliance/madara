@@ -8903,6 +8903,9 @@ dependencies = [
 [[package]]
 name = "m-cairo-test-contracts"
 version = "0.8.0"
+dependencies = [
+ "build-version",
+]
 
 [[package]]
 name = "m-proc-macros"
