@@ -8,5 +8,5 @@ workspace = true
 
 [dependencies]
 flate2.workspace = true
-tempfile.workspace = true
 tar.workspace = true
+tempfile.workspace = true
