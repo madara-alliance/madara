@@ -42,7 +42,7 @@ impl JobTrigger for SnosJobTrigger {
         // TODO: This process to find last_completed_block is operation heavy, i.e for big list it will take time,
         // maybe we can ask mongodb to return in descending order
         let completed_jobs = db
-            .get_jobs_by_type_and_status(JobType::SnosRun, vec![JobStatus::Completed])
+            .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], vec![JobStatus::Completed], None)
             .await
             .wrap_err("Failed to fetch completed SNOS jobs")?;
 
@@ -61,7 +61,7 @@ impl JobTrigger for SnosJobTrigger {
 
         // Get pending/created jobs
         let pending_jobs = db
-            .get_jobs_by_type_and_status(JobType::SnosRun, pending_statuses)
+            .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], pending_statuses, None)
             .await
             .wrap_err("Failed to fetch pending/created SNOS jobs")?;
 

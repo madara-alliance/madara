@@ -67,9 +67,9 @@ async fn test_snos_worker(
         let uuid = Uuid::new_v4();
         completed_job_items.push(get_job_item_mock_by_id(block_num.to_string(), uuid));
     }
-    db.expect_get_jobs_by_type_and_status()
-        .with(eq(JobType::SnosRun), eq(vec![JobStatus::Completed]))
-        .returning(move |_, _| Ok(completed_job_items.clone()));
+    db.expect_get_jobs_by_types_and_statuses()
+        .with(eq(vec![JobType::SnosRun]), eq(vec![JobStatus::Completed]), eq(None))
+        .returning(move |_, _, _| Ok(completed_job_items.clone()));
 
     // Mock get_job_by_internal_id_and_type to always return None
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
@@ -84,9 +84,9 @@ async fn test_snos_worker(
         })
         .collect();
 
-    db.expect_get_jobs_by_type_and_status()
-        .with(eq(JobType::SnosRun), eq(vec![JobStatus::PendingRetry, JobStatus::Created]))
-        .returning(move |_, _| Ok(pending_and_created_job_items.clone()));
+    db.expect_get_jobs_by_types_and_statuses()
+        .with(eq(vec![JobType::SnosRun]), eq(vec![JobStatus::PendingRetry, JobStatus::Created]), eq(None))
+        .returning(move |_, _, _| Ok(pending_and_created_job_items.clone()));
 
     // Setup job creation expectations for each expected job
     for &block_num in &expected_jobs_to_create {

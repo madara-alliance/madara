@@ -119,7 +119,7 @@ impl MongoDbClient {
     /// * `collection` - The collection to delete the document in
     /// * `filter` - The filter to apply to the collection
     /// # Returns
-    /// * `Result<DeleteResult, DatabaseError>` - A Result indicating whether the operation was successful or not   
+    /// * `Result<DeleteResult, DatabaseError>` - A Result indicating whether the operation was successful or not
     pub async fn delete_one<T>(
         &self,
         collection: Collection<T>,
@@ -563,55 +563,39 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    async fn get_jobs_by_statuses(
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_jobs_by_types_and_statuses(
         &self,
-        status: Vec<JobStatus>,
+        job_type: Vec<JobType>,
+        job_status: Vec<JobStatus>,
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
+
+        let serialized_job_type: Result<Vec<Bson>, _> = job_type.iter()
+            .map(|job_type| bson::to_bson(job_type))
+            .collect();
+
+        let serialized_statuses: Result<Vec<Bson>, _> = job_status.iter()
+            .map(|status| bson::to_bson(status))
+            .collect();
+
         let filter = doc! {
+            "job_type": {
+                "$in": serialized_job_type?
+            },
             "status": {
-                "$in": status.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+                "$in": serialized_statuses?
             }
         };
 
         let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
-        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved jobs by statuses");
-        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_statuses")];
+        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved jobs by type and statuses");
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_types_and_status")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(jobs)
-    }
-
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
-    async fn get_jobs_by_type_and_status(
-        &self,
-        job_type: JobType,
-        job_status: Vec<JobStatus>,
-    ) -> Result<Vec<JobItem>, DatabaseError> {
-        let start = Instant::now();
-
-        // For MongoDB to correctly filter by multiple statuses, we need an $in query
-        let filter = doc! {
-            "job_type": bson::to_bson(&job_type)?,
-            "status": {
-                "$in": job_status.iter().map(|job_status| bson::to_bson(job_status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
-            }
-        };
-
-        let find_options = FindOptions::builder().build();
-
-        tracing::debug!(job_type = ?job_type, job_status = ?job_status, category = "db_call", "Fetching jobs by type and status");
-
-        let cursor = self.get_job_collection().find(filter, find_options).await?;
-        let jobs: Vec<JobItem> = cursor.try_collect().await?;
-
-        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_status")];
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-
         Ok(jobs)
     }
 }
