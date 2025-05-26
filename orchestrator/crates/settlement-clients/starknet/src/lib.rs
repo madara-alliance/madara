@@ -8,16 +8,14 @@ use std::sync::Arc;
 use appchain_core_contract_client::clients::StarknetCoreContractClient;
 use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
-use color_eyre::eyre::eyre;
-use color_eyre::eyre::Context;
+use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
-use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
 use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
-use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
+use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus, U256};
 use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
@@ -58,29 +56,49 @@ impl StarknetSettlementClient {
         let provider: Arc<JsonRpcClient<HttpTransport>> =
             Arc::new(JsonRpcClient::new(HttpTransport::new(settlement_cfg.starknet_rpc_url.clone())));
 
-        let public_key = settlement_cfg.starknet_account_address.clone().to_string();
-        let signer_address = Felt::from_hex(&public_key).expect("invalid signer address");
+        let signer_address = Felt::from_hex(&settlement_cfg.starknet_account_address).expect("Invalid signer address");
 
-        // TODO: Very insecure way of building the signer. Needs to be adjusted.
-        let private_key = settlement_cfg.starknet_private_key.clone();
-        let signer = Felt::from_hex(&private_key).expect("Invalid private key");
-        let signer = LocalWallet::from(SigningKey::from_secret_scalar(signer));
+        let private_key = Felt::from_hex(&settlement_cfg.starknet_private_key).expect("Invalid private key");
+        let signing_key = SigningKey::from_secret_scalar(private_key);
+        let signer = LocalWallet::from(signing_key);
 
-        let core_contract_address = Felt::from_hex(&settlement_cfg.starknet_cairo_core_contract_address.to_string())
+        let core_contract_address = Felt::from_hex(&settlement_cfg.starknet_cairo_core_contract_address)
             .expect("Invalid core contract address");
 
-        let mut account = SingleOwnerAccount::new(
-            provider.clone(),
-            signer.clone(),
-            signer_address,
-            provider.chain_id().await.expect("Failed to get chain id"),
-            ExecutionEncoding::New,
-        );
-        account.set_block_id(BlockId::Tag(BlockTag::Pending));
-        let account: Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>> = Arc::new(account);
+        let chain_id = provider.chain_id().await.expect("Failed to get chain id");
 
-        let starknet_core_contract_client: StarknetCoreContractClient =
-            StarknetCoreContractClient::new(core_contract_address, account.clone());
+        let mut account =
+            SingleOwnerAccount::new(provider.clone(), signer, signer_address, chain_id, ExecutionEncoding::New);
+
+        // Set block ID to Pending like in the reference implementation
+        account.set_block_id(BlockId::Tag(BlockTag::Pending));
+        let account = Arc::new(account);
+
+        let starknet_core_contract_client = StarknetCoreContractClient::new(core_contract_address, account.clone());
+
+        // let public_key = settlement_cfg.starknet_account_address.clone().to_string();
+        // let signer_address = Felt::from_hex(&public_key).expect("invalid signer address");
+        //
+        // // TODO: Very insecure way of building the signer. Needs to be adjusted.
+        // let private_key = settlement_cfg.starknet_private_key.clone();
+        // let signer = Felt::from_hex(&private_key).expect("Invalid private key");
+        // let signer = LocalWallet::from(SigningKey::from_secret_scalar(signer));
+        //
+        // let core_contract_address = Felt::from_hex(&settlement_cfg.starknet_cairo_core_contract_address.to_string())
+        //     .expect("Invalid core contract address");
+        //
+        // let mut account = SingleOwnerAccount::new(
+        //     provider.clone(),
+        //     signer.clone(),
+        //     signer_address,
+        //     provider.chain_id().await.expect("Failed to get chain id"),
+        //     ExecutionEncoding::New,
+        // );
+        // account.set_block_id(BlockId::Tag(BlockTag::Pending));
+        // let account: Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>> = Arc::new(account);
+        //
+        // let starknet_core_contract_client: StarknetCoreContractClient =
+        //     StarknetCoreContractClient::new(core_contract_address, account.clone());
 
         StarknetSettlementClient {
             account,
@@ -98,7 +116,7 @@ lazy_static! {
     // https://github.com/keep-starknet-strange/piltover
     // It should get added to match the solidity implementation of the core contract.
     pub static ref CONTRACT_READ_STATE_BLOCK_NUMBER: Felt =
-        get_selector_from_name("stateBlockNumber").expect("Invalid update state selector");
+        get_selector_from_name("get_state").expect("Invalid update state selector");
 }
 
 // TODO: Note that we already have an implementation of the appchain core contract client available
@@ -121,6 +139,7 @@ impl SettlementClient for StarknetSettlementClient {
     /// Should be used to update state on core contract when DA is done in calldata
     async fn update_state_calldata(
         &self,
+        snos_output: Vec<[u8; 32]>,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
@@ -131,11 +150,22 @@ impl SettlementClient for StarknetSettlementClient {
             function_type = "calldata",
             "Updating state with calldata."
         );
+        let snos_output = slice_slice_u8_to_vec_field(snos_output.as_slice());
         let program_output = slice_slice_u8_to_vec_field(program_output.as_slice());
         let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
-        let onchain_data_size = crypto_bigint::U256::from_be_bytes(onchain_data_size).into();
-        let invoke_result = core_contract.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
+
+        let low = u128::from_be_bytes(onchain_data_size[16..32].try_into()?);
+        let high = u128::from_be_bytes(onchain_data_size[0..16].try_into()?);
+        let size = U256::from_words(low, high);
+
+        // let onchain_data_size = crypto_bigint::U256::from_be_bytes(onchain_data_size).into();
+        // let invoke_result = core_contract.update_state(program_output, onchain_data_hash, onchain_data_size).await?;
+
+        let invoke_result = core_contract
+            .update_state(snos_output, program_output, onchain_data_hash, size)// snos_output,
+            .await
+            .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
         tracing::info!(
             log_type = "completed",
             category = "update_state",
@@ -252,19 +282,15 @@ impl SettlementClient for StarknetSettlementClient {
             return Err(eyre!("Could not fetch last block number from core contract."));
         }
 
-        let last_block_number: Felt = block_number[1];
+        let special_number =
+            Felt::from_hex("0x800000000000011000000000000000000000000000000000000000000000000").unwrap();
 
-        // Why Felt::MAX ?
-        // https://github.com/starkware-libs/cairo-lang/blob/a86e92bfde9c171c0856d7b46580c66e004922f3/src/starkware/starknet/solidity/StarknetState.sol#L19-L39
-        // https://docs.rs/starknet-types-core/latest/starknet_types_core/felt/struct.Felt.html
-        // When last_block_number is 0, then we return None, stating that no state update has happened yet.
-        if last_block_number == Felt::MAX {
+        let last_block_number = block_number[1];
+        if last_block_number == special_number {
             return Ok(None);
         }
 
-        let converted_value = u64_from_felt(block_number[1]).wrap_err("Failed to convert to u64")?;
-
-        Ok(Some(converted_value))
+        Ok(Some(u64_from_felt(block_number[1]).expect("Failed to convert to u64")))
     }
 
     /// Returns the nonce for the wallet in use.

@@ -31,9 +31,9 @@ impl Resource for SQS {
     /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
-    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
-            if !queue.supported_layers.contains(&layer) {
+            if !queue.supported_layers.contains(layer) {
                 continue;
             }
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
@@ -81,9 +81,12 @@ impl Resource for SQS {
         Ok(self.get_queue_url_from_client(queue_name.as_str()).await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let client = self.client().clone();
         for queue in QUEUES.iter() {
+            if !queue.supported_layers.contains(layer) {
+                continue;
+            }
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
             let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
             let result = client.get_queue_attributes().queue_url(queue_url).send().await;

@@ -21,7 +21,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
 
         let successful_proving_jobs = config
             .database()
-            .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::DataSubmission)
+            .get_jobs_without_successor(JobType::ProofRegistration, JobStatus::Completed, JobType::DataSubmission)
             .await?;
 
         for proving_job in successful_proving_jobs {

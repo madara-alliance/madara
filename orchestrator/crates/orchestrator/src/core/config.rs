@@ -1,15 +1,16 @@
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
 
+use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
-use orchestrator_settlement_client_interface::SettlementClient;
-
 use orchestrator_prover_client_interface::ProverClient;
+use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
+use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
@@ -103,39 +104,46 @@ impl Config {
 
     /// new - create config from the run command
     pub async fn from_run_cmd(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
-        let cloud_provider = CloudProvider::try_from(run_cmd.clone())?;
+        let cloud_provider =
+            CloudProvider::try_from(run_cmd.clone()).context("Failed to create cloud provider from run command")?;
         let provider_config = Arc::new(cloud_provider);
 
-        let db: DatabaseArgs = DatabaseArgs::try_from(run_cmd.clone())?;
-        let storage_args: StorageArgs = StorageArgs::try_from(run_cmd.clone())?;
-        let alert_args: AlertArgs = AlertArgs::try_from(run_cmd.clone())?;
-        let queue_args: QueueArgs = QueueArgs::try_from(run_cmd.clone())?;
+        let db: DatabaseArgs =
+            DatabaseArgs::try_from(run_cmd.clone()).context("Failed to create database args from run command")?;
+        let storage_args: StorageArgs =
+            StorageArgs::try_from(run_cmd.clone()).context("Failed to create storage args from run command")?;
+        let alert_args: AlertArgs =
+            AlertArgs::try_from(run_cmd.clone()).context("Failed to create alert args from run command")?;
+        let queue_args: QueueArgs =
+            QueueArgs::try_from(run_cmd.clone()).context("Failed to create queue args from run command")?;
 
-        let prover_config = ProverConfig::try_from(run_cmd.clone())?;
-        let da_config = DAConfig::try_from(run_cmd.clone())?;
-        let settlement_config = SettlementConfig::try_from(run_cmd.clone())?;
+        let prover_config =
+            ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
+        let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
+        let settlement_config = SettlementConfig::try_from(run_cmd.clone())
+            .context("Failed to create settlement config from run command")?;
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
-            snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())?,
-            prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())?,
+            snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())
+                .context("Failed to get SNOS layout name")?,
+            prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
+                .context("Failed to get prover layout name")?,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
         let mut processing_locks = ProcessingLocks::default();
 
-        if let Some(max_concurrent_snos_jobs) = params.service_config.max_concurrent_snos_jobs {
-            processing_locks.snos_job_processing_lock =
-                Some(Arc::new(JobProcessingState::new(max_concurrent_snos_jobs)));
-        }
+        let service_config = &params.service_config;
+        let make_lock = |max_jobs| Some(Arc::new(JobProcessingState::new(max_jobs)));
 
-        if let Some(max_concurrent_proving_jobs) = params.service_config.max_concurrent_proving_jobs {
-            processing_locks.proving_job_processing_lock =
-                Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
-        }
+        processing_locks.snos_job_processing_lock = service_config.max_concurrent_snos_jobs.and_then(make_lock);
+        processing_locks.proving_job_processing_lock = service_config.max_concurrent_proving_jobs.and_then(make_lock);
+        processing_locks.proof_registration_job_processing_lock =
+            service_config.max_concurrent_proof_registration_jobs.and_then(make_lock);
 
         let database = Self::build_database_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
@@ -203,12 +211,8 @@ impl Config {
         params: &ConfigParam,
     ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => {
-                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
-            }
-            ProverConfig::Atlantic(atlantic_params) => {
-                Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
-            }
+            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
         }
     }
 
@@ -216,6 +220,9 @@ impl Config {
         match da_params {
             DAConfig::Ethereum(ethereum_da_params) => {
                 Box::new(EthereumDaClient::new_with_args(ethereum_da_params).await)
+            }
+            DAConfig::Starknet(starknet_da_params) => {
+                Box::new(StarknetDaClient::new_with_args(starknet_da_params).await)
             }
         }
     }

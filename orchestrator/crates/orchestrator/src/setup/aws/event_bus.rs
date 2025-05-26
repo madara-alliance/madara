@@ -37,7 +37,7 @@ impl Resource for EventBridgeClient {
         }
     }
 
-    async fn setup(&self, layer: Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         let trigger_arns = self
             .create_cron(
                 args.target_queue_name.clone(),
@@ -57,7 +57,7 @@ impl Resource for EventBridgeClient {
         for trigger in WORKER_TRIGGERS.iter() {
             // Proof registration is only required in L3
             // TODO: Remove this once we have handle the pipeline with state machine
-            if *trigger == WorkerTriggerType::ProofRegistration && layer != Layer::L3 {
+            if *trigger == WorkerTriggerType::ProofRegistration && layer.clone() != Layer::L3 {
                 continue;
             }
             if self
@@ -109,7 +109,7 @@ impl Resource for EventBridgeClient {
     ///
     /// # Returns
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule is ready to use
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         Ok(self.eb_client.describe_rule().name(&args.trigger_rule_name).send().await.is_ok())
     }
 }

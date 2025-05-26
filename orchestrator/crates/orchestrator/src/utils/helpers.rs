@@ -53,6 +53,7 @@ where
 pub struct ProcessingLocks {
     pub snos_job_processing_lock: Option<Arc<JobProcessingState>>,
     pub proving_job_processing_lock: Option<Arc<JobProcessingState>>,
+    pub proof_registration_job_processing_lock: Option<Arc<JobProcessingState>>,
 }
 
 /// JobProcessingState is a struct that holds the state of the job processing lock
