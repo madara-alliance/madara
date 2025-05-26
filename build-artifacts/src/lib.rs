@@ -1,3 +1,5 @@
+#![allow(clippy::print_stdout)]
+
 const VERSION_FILE_DB: &str = ".db-versions.yml";
 const VERSION_FILE_ARTIFACTS: &str = ".artifact-versions.yml";
 
@@ -86,8 +88,8 @@ pub fn get_version(version_file: &impl VersionFile) -> Result<u32, BuildError> {
 
     let current_version = parse_version(&content)?;
 
-    println!("cargo:rerun-if-changed={}", path.display());
-    println!("cargo:rustc-env={env}={current_version}");
+    println!("cargo::rerun-if-changed={}", path.display());
+    println!("cargo::rustc-env={env}={current_version}");
 
     Ok(current_version)
 }
@@ -150,7 +152,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
 
     // Remove container
     let mut docker = std::process::Command::new("docker");
-    let cmd = docker.args(["rm", &format!("{container}")]);
+    let cmd = docker.args(["rm", container]);
     cmd.status()
         .expect(err_msg)
         .success()
