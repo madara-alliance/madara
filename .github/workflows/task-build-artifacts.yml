@@ -5,15 +5,15 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
-      should_run:
-        required: false
-        default: true
-        type: boolean
       registry:
         description: Container registry domain
         required: false
         default: ghcr.io
         type: string
+      should_run:
+        required: false
+        default: true
+        type: boolean
     outputs:
       artifacts:
         description: Artifacts image tag

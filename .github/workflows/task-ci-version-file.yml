@@ -17,6 +17,7 @@ on:
       update:
         description: "Whether or not the version file was updated"
         value: ${{ jobs.update-version-file.outputs.update }}
+        type: boolean
 
 jobs:
   check:

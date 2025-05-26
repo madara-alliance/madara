@@ -57,7 +57,6 @@ jobs:
     secrets: inherit
 
   publish-artifacts:
-    if: needs.update-version-artifacts.outputs.update == 'true'
     needs: [update-version-artifacts, build-artifacts]
     uses: ./.github/workflows/task-publish-image.yml
     with:
