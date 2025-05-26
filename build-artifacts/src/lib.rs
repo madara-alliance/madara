@@ -95,64 +95,88 @@ pub fn get_version(version_file: &impl VersionFile) -> Result<u32, BuildError> {
 pub fn get_or_compile_artifacts(parent_levels: usize) -> Result<(), BuildError> {
     let (root, version_file_artifacts) = get_paths_artifact(parent_levels)?;
 
-    if let Ok(true) = std::fs::exists(version_file_artifacts.path()) {
+    let archive = root.0.join("artifacts.tar.gz");
+    if let Ok(true) = std::fs::exists(archive) {
         return Ok(());
     }
 
-    get_artifacts(&root, &version_file_artifacts).or_else(|_error| build_artifacts(&root))
+    get_artifacts(&root, &version_file_artifacts).or_else(|err| build_artifacts(&root).map_err(|_| err))
 }
 
 fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(), BuildError> {
     let err_msg = "Failed to download artifacts, make sure that docker is installed";
-    let err_handl = |cmd: &mut std::process::Command| {
-        BuildError::Cmd(
-            cmd.output().map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or(err_msg.to_string()),
-        )
-    };
 
     let version = get_version(artifacts)?;
     let image = format!("ghcr.io/madara-alliance/artifacts:{version}");
-    let mut docker = std::process::Command::new("docker");
 
     let root = &root.0;
-    let path_artifacts = artifacts.path();
 
     // Download image
+    let mut docker = std::process::Command::new("docker");
     let cmd = docker.args(["pull", &image]);
-    cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd))?;
+    cmd.status()
+        .expect(err_msg)
+        .success()
+        .then_some(())
+        .ok_or_else(|| err_handl(cmd, "Failed to download artifacts"))?;
 
     // Create extraction container
-    let cmd = docker.args(["create", "--name", "artifacts", &image, "do-nothing"]);
-    cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd))?;
+    let mut docker = std::process::Command::new("docker");
+    let cmd = docker.args(["create", &image, "do-nothing"]);
+    cmd.status()
+        .expect(err_msg)
+        .success()
+        .then_some(())
+        .ok_or_else(|| err_handl(cmd, "Failed to create extraction container"))?;
+
+    let output = cmd.output().unwrap();
+    let container = String::from_utf8_lossy(&output.stdout);
+    let container = container.trim_end_matches("\n");
 
     // Copy artifacts from container
-    let cmd = docker.args(["cp", "artifacts:/artifacts.tar.gz", &root.to_string_lossy()]);
-    cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd))?;
+    let mut docker = std::process::Command::new("docker");
+    let cmd = docker.args(["cp", &format!("{container}:/artifacts.tar.gz"), &root.to_string_lossy()]);
+    cmd.status()
+        .expect(err_msg)
+        .success()
+        .then_some(())
+        .ok_or_else(|| err_handl(cmd, "Failed to copy artifacts from extraction container"))?;
 
     // Extract artifacts
     let artifacts = std::fs::File::open(root.join("artifacts.tar.gz")).map_err(BuildError::Io)?;
     let decoder = flate2::read::GzDecoder::new(artifacts);
     let mut archive = tar::Archive::new(decoder);
-    archive.unpack(path_artifacts).map_err(BuildError::Io)?;
+    archive.unpack(root).map_err(BuildError::Io)?;
 
     // Remove container
-    let cmd = docker.args(["rm", "artifacts"]);
-    cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd))?;
+    let mut docker = std::process::Command::new("docker");
+    let cmd = docker.args(["rm", &format!("{container}")]);
+    cmd.status()
+        .expect(err_msg)
+        .success()
+        .then_some(())
+        .ok_or_else(|| err_handl(cmd, "Failed to remove extraction container"))?;
 
     Ok(())
 }
 
 fn build_artifacts(root: &RootDir) -> Result<(), BuildError> {
     let err_msg = "Failed to build artifacts, make sure that docker and GNU make are installed";
-    let err_handl = |cmd: &mut std::process::Command| {
-        BuildError::Cmd(
-            cmd.output().map(|o| String::from_utf8_lossy(&o.stderr).to_string()).unwrap_or(err_msg.to_string()),
-        )
-    };
 
     let mut make = std::process::Command::new("make");
     let cmd = make.args(["-C", &root.0.to_string_lossy(), "artifacts"]);
-    cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd))
+    cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd, err_msg))
+}
+
+fn err_handl(cmd: &mut std::process::Command, msg: &str) -> BuildError {
+    println!("carg::warning={msg}: {cmd:?}");
+    match cmd.output() {
+        Ok(o) => {
+            let stderr = String::from_utf8_lossy(&o.stderr).to_string();
+            BuildError::Cmd(stderr)
+        }
+        Err(_) => BuildError::Cmd(msg.to_string()),
+    }
 }
 
 fn parse_version(content: &str) -> Result<u32, BuildError> {

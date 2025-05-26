@@ -59,7 +59,7 @@ bonsai-trie = { default-features = false, git = "https://github.com/madara-allia
 ] }
 
 # Build
-build-version = { path = "build_artifacts/build-version" }
+build-version = { path = "build-artifacts" }
 
 # Madara proc macros
 m-proc-macros = { path = "madara/crates/proc-macros", default-features = false }

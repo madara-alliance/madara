@@ -67,3 +67,6 @@ inline_colorization = "0.1.6"
 lazy_static = "1.4.0"
 subxt-lightclient = { version = "0.35.3", optional = true, default-features = false }
 tempfile = "3.10.1"
+
+[build-dependencies]
+build-version.workspace = true

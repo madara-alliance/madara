@@ -9,6 +9,7 @@ pub fn main() {
     generate_cargo_keys();
     rerun_if_git_head_changed();
 }
+
 pub fn generate_cargo_keys() {
     let commit = if let Ok(hash) = std::env::var("GIT_COMMIT_HASH") {
         Cow::from(hash.trim().split_at_checked(11).map(|s| s.0).unwrap_or(&hash).to_owned())

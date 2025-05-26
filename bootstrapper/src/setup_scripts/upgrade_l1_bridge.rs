@@ -19,8 +19,8 @@ abigen!(
     ]",
 );
 
-abigen!(EthereumNewBridge, "../build_artifacts/starkgate_latest/eth_bridge_upgraded.json");
-abigen!(EthereumNewBridgeEIC, "../build_artifacts/starkgate_latest/eic_eth_bridge.json");
+abigen!(EthereumNewBridge, "../build-artifacts/starkgate_latest/eth_bridge_upgraded.json");
+abigen!(EthereumNewBridgeEIC, "../build-artifacts/starkgate_latest/eic_eth_bridge.json");
 
 /// Upgrades the L1 Ethereum bridge implementation with a new version, including deployment of new
 /// contracts and configuration of administrative roles.
