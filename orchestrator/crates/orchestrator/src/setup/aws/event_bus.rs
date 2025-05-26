@@ -222,22 +222,14 @@ impl InnerAWSEventBridge {
     ) -> Result<TriggerArns, Error> {
         let queue_arn = self.get_queue_arn(target_queue_identifier).await?;
 
-        tracing::info!("Heemank #1 {}", queue_arn.to_string());
-
         // creating a 4 length unique ID, used same in both role and policy.
         let short_id = format!("{:04x}", rand::thread_rng().gen::<u16>());
 
         let role_name = format!("{}-{}", trigger_role_name, short_id);
 
-        tracing::info!("Heemank #2 {}", &role_name);
-
         let role_arn = self.create_iam_role(&role_name).await?;
 
-        tracing::info!("Heemank #2.5 {}", &role_arn.to_string());
-
         let policy_name = format!("{}-{}", trigger_policy_name, short_id);
-
-        tracing::info!("Heemank #3 {}", &policy_name);
 
         self.create_and_attach_sqs_policy(&policy_name, &role_name, &queue_arn).await?;
 
