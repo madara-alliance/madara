@@ -1,3 +1,4 @@
+use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
@@ -74,7 +75,7 @@ impl ResourceFactory {
     /// NOTE: this function length is a bit long, but it is necessary to maintain the order of resource creation
     /// in the future, we can refactor this function to use a more generic approach when we add more cloud providers
     /// TODO > Refactor this function to use a more generic approach when we add more cloud providers
-    pub async fn setup_resource(&self) -> OrchestratorResult<()> {
+    pub async fn setup_resource(&self, layer: &Layer) -> OrchestratorResult<()> {
         let mut resource_futures = Vec::new();
         let is_queue_ready = Arc::new(AtomicBool::new(false));
         // Use ordered_types to maintain creation order
@@ -89,7 +90,7 @@ impl ResourceFactory {
             let cron_params = self.cron_params.clone();
             let resource_type = resource_type.clone();
             let miscellaneous_params = self.miscellaneous_params.clone();
-
+            let layer = layer.clone();
             let resource_future = async move {
                 let result: OrchestratorResult<()> = async {
                     match resource_type {
@@ -97,18 +98,28 @@ impl ResourceFactory {
                             let rs = resource.downcast_mut::<AWSS3>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to AWSS3".to_string(),
                             ))?;
-                            rs.setup(storage_params.clone()).await?;
-                            rs.poll(storage_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
-                                .await;
+                            rs.setup(&layer, storage_params.clone()).await?;
+                            rs.poll(
+                                &layer,
+                                storage_params,
+                                miscellaneous_params.poll_interval,
+                                miscellaneous_params.timeout,
+                            )
+                            .await;
                             Ok(())
                         }
                         ResourceType::Queue => {
                             let rs = resource.downcast_mut::<SQS>().ok_or(OrchestratorError::SetupError(
                                 "Failed to downcast resource to SQS".to_string(),
                             ))?;
-                            rs.setup(queue_params.clone()).await?;
+                            rs.setup(&layer, queue_params.clone()).await?;
                             let queue_ready = rs
-                                .poll(queue_params, miscellaneous_params.poll_interval, miscellaneous_params.timeout)
+                                .poll(
+                                    &layer,
+                                    queue_params,
+                                    miscellaneous_params.poll_interval,
+                                    miscellaneous_params.timeout,
+                                )
                                 .await;
                             is_queue_ready_clone.store(queue_ready, Ordering::Release);
                             Ok(())
@@ -124,8 +135,9 @@ impl ResourceFactory {
                                     let rs = resource.downcast_mut::<SNS>().ok_or(OrchestratorError::SetupError(
                                         "Failed to downcast resource to SNS".to_string(),
                                     ))?;
-                                    rs.setup(alert_params.clone()).await?;
+                                    rs.setup(&layer, alert_params.clone()).await?;
                                     rs.poll(
+                                        &layer,
                                         alert_params,
                                         miscellaneous_params.poll_interval,
                                         miscellaneous_params.timeout,
@@ -153,7 +165,7 @@ impl ResourceFactory {
                                             "Failed to downcast resource to EventBridge".to_string(),
                                         ),
                                     )?;
-                                    rs.setup(cron_params.clone()).await?;
+                                    rs.setup(&layer, cron_params.clone()).await?;
                                     break;
                                 } else {
                                     info!(" Current Status of the Queue Creation is: {:?}", is_queue_ready_clone);

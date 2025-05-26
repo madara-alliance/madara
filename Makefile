@@ -12,6 +12,11 @@ Usage:
 
 Targets:
 
+  [ SETUP ]
+
+  - setup-l2           Setup orchestrator with L2 layer (default)
+  - setup-l3           Setup orchestrator with L3 layer
+
   [ RUNNING MADARA ]
 
   Runs Madara, automatically pulling the required image if it is not already
@@ -456,3 +461,13 @@ pre-push:
 .PHONY: git-hook
 git-hook:
 	@git config core.hooksPath .githooks
+
+.PHONY: setup-l2
+setup-l2:
+	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
+	@cargo run --package orchestrator-core -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+
+.PHONY: setup-l3
+setup-l3:
+	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
+	@cargo run --package orchestrator-core -- setup  --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule

@@ -195,6 +195,7 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 
 blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
   "testing",
+  "concurrency",
 ] }
 starknet_api = "=0.13.0-rc.1"
 cairo-lang-starknet-classes = "=2.8.4"
