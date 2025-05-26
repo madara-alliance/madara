@@ -24,7 +24,7 @@ on:
       should_run:
         required: false
         default: true
-        type: boolean
+        type: string
 
 permissions:
   contents: read
