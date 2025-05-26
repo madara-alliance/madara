@@ -56,7 +56,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: orchestrator-e2e
+          extra-cache: false
 
       - name: Install nextest
         uses: taiki-e/install-action@nextest
