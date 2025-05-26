@@ -72,10 +72,7 @@ impl InnerSQS {
         }
 
         // Handle different AWS partitions
-        let domain = match queue_arn.partition.as_str() {
-            // Default fallback
-            _ => "amazonaws.com",
-        };
+        let domain = "amazonaws.com";
 
         // Construct the queue URL
         let queue_url = format!(

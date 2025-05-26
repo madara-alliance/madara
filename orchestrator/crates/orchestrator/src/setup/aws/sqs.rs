@@ -99,13 +99,12 @@ impl Resource for InnerSQS {
 
                         tracing::info!("DL Queue listed for type {}", &queue.name);
 
-                        let dlq_arn = self.get_queue_arn_from_url(&dlq_url).await?;
+                        let dlq_arn = self.get_queue_arn_from_url(dlq_url).await?;
 
                         // Attach the dl queue policy to the queue
                         let policy = format!(
                             r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
-                            dlq_arn.to_string(),
-                            &dlq_config.max_receive_count
+                            dlq_arn, &dlq_config.max_receive_count
                         );
                         attributes.insert(QueueAttributeName::RedrivePolicy, policy);
                     }
@@ -160,7 +159,7 @@ impl Resource for InnerSQS {
             }
             let queue_exists = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
-                    let queue_url = self.get_queue_url_from_arn(&arn, &queue.name)?;
+                    let queue_url = self.get_queue_url_from_arn(arn, &queue.name)?;
                     self.client()
                         .get_queue_attributes()
                         .queue_url(queue_url)

@@ -79,7 +79,7 @@ use std::fmt;
 impl fmt::Display for AWSResourceIdentifier {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            AWSResourceIdentifier::ARN(arn) => write!(f, "{}", arn.to_string()),
+            AWSResourceIdentifier::ARN(arn) => write!(f, "{}", arn),
             AWSResourceIdentifier::Name(name) => write!(f, "{}", name),
         }
     }
@@ -162,17 +162,16 @@ impl TryFrom<SetupCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         if let Some(bucket_identifier) = &setup_cmd.aws_s3_args.bucket_identifier {
-            let identifier =
-                ARN::parse(bucket_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
-                    let name = setup_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
-                        if !prefix.is_empty() {
-                            StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
-                        } else {
-                            bucket_identifier.to_string()
-                        }
-                    });
-                    AWSResourceIdentifier::Name(name)
+            let identifier = ARN::parse(bucket_identifier).map(AWSResourceIdentifier::ARN).unwrap_or_else(|_| {
+                let name = setup_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
+                    if !prefix.is_empty() {
+                        StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                    } else {
+                        bucket_identifier.to_string()
+                    }
                 });
+                AWSResourceIdentifier::Name(name)
+            });
 
             Ok(Self { bucket_identifier: identifier })
         } else {
@@ -185,17 +184,16 @@ impl TryFrom<RunCmd> for StorageArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         if let Some(bucket_identifier) = &run_cmd.aws_s3_args.bucket_identifier {
-            let identifier =
-                ARN::parse(bucket_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
-                    let name = run_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
-                        if !prefix.is_empty() {
-                            StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
-                        } else {
-                            bucket_identifier.to_string()
-                        }
-                    });
-                    AWSResourceIdentifier::Name(name)
+            let identifier = ARN::parse(bucket_identifier).map(AWSResourceIdentifier::ARN).unwrap_or_else(|_| {
+                let name = run_cmd.aws_config_args.aws_prefix.map_or(bucket_identifier.clone(), |prefix| {
+                    if !prefix.is_empty() {
+                        StorageArgs::format_prefix_and_name(&prefix, bucket_identifier)
+                    } else {
+                        bucket_identifier.to_string()
+                    }
                 });
+                AWSResourceIdentifier::Name(name)
+            });
 
             Ok(Self { bucket_identifier: identifier })
         } else {
@@ -208,17 +206,16 @@ impl TryFrom<SetupCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         if let Some(topic_identifier) = &setup_cmd.aws_sns_args.topic_identifier {
-            let identifier =
-                ARN::parse(topic_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
-                    let name = setup_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
-                        if !prefix.is_empty() {
-                            AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
-                        } else {
-                            topic_identifier.to_string()
-                        }
-                    });
-                    AWSResourceIdentifier::Name(name)
+            let identifier = ARN::parse(topic_identifier).map(AWSResourceIdentifier::ARN).unwrap_or_else(|_| {
+                let name = setup_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
+                    if !prefix.is_empty() {
+                        AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
+                    } else {
+                        topic_identifier.to_string()
+                    }
                 });
+                AWSResourceIdentifier::Name(name)
+            });
 
             Ok(Self { alert_identifier: identifier })
         } else {
@@ -231,13 +228,12 @@ impl TryFrom<RunCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         if let Some(topic_identifier) = &run_cmd.aws_sns_args.topic_identifier {
-            let identifier =
-                ARN::parse(topic_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
-                    let name = run_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
-                        AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
-                    });
-                    AWSResourceIdentifier::Name(name)
+            let identifier = ARN::parse(topic_identifier).map(AWSResourceIdentifier::ARN).unwrap_or_else(|_| {
+                let name = run_cmd.aws_config_args.aws_prefix.map_or(topic_identifier.clone(), |prefix| {
+                    AlertArgs::format_prefix_and_name(&prefix, topic_identifier)
                 });
+                AWSResourceIdentifier::Name(name)
+            });
 
             Ok(Self { alert_identifier: identifier })
         } else {
@@ -250,13 +246,12 @@ impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         if let Some(queue_identifier) = &setup_cmd.aws_sqs_args.queue_identifier {
-            let identifier =
-                ARN::parse(queue_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
-                    let name = setup_cmd.aws_config_args.aws_prefix.map_or(queue_identifier.clone(), |prefix| {
-                        QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
-                    });
-                    AWSResourceIdentifier::Name(name)
+            let identifier = ARN::parse(queue_identifier).map(AWSResourceIdentifier::ARN).unwrap_or_else(|_| {
+                let name = setup_cmd.aws_config_args.aws_prefix.map_or(queue_identifier.clone(), |prefix| {
+                    QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
                 });
+                AWSResourceIdentifier::Name(name)
+            });
 
             Ok(Self { queue_template_identifier: identifier })
         } else {
@@ -269,13 +264,12 @@ impl TryFrom<RunCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         if let Some(queue_identifier) = &run_cmd.aws_sqs_args.queue_identifier {
-            let identifier =
-                ARN::parse(queue_identifier).map(|arn| AWSResourceIdentifier::ARN(arn)).unwrap_or_else(|_| {
-                    let name = run_cmd.aws_config_args.aws_prefix.map_or(queue_identifier.clone(), |prefix| {
-                        QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
-                    });
-                    AWSResourceIdentifier::Name(name)
+            let identifier = ARN::parse(queue_identifier).map(AWSResourceIdentifier::ARN).unwrap_or_else(|_| {
+                let name = run_cmd.aws_config_args.aws_prefix.map_or(queue_identifier.clone(), |prefix| {
+                    QueueArgs::format_prefix_and_name(&prefix, queue_identifier)
                 });
+                AWSResourceIdentifier::Name(name)
+            });
 
             Ok(Self { queue_template_identifier: identifier })
         } else {
@@ -288,7 +282,7 @@ impl TryFrom<SetupCmd> for CronArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         let target_queue_identifier = if let Some(queue_identifier) = &setup_cmd.aws_sqs_args.queue_identifier {
-            let identifier = ARN::parse(queue_identifier)
+            ARN::parse(queue_identifier)
                 .map(|arn| {
                     // creating queue with it's type name
                     let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, &QueueType::WorkerTrigger);
@@ -308,8 +302,7 @@ impl TryFrom<SetupCmd> for CronArgs {
                         });
                     let updated_name = InnerSQS::get_queue_name_from_type(&name, &QueueType::WorkerTrigger);
                     AWSResourceIdentifier::Name(updated_name)
-                });
-            identifier
+                })
         } else {
             return Err(OrchestratorError::SetupCommandError("Missing queue template name".to_string()));
         };

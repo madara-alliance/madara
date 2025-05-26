@@ -78,7 +78,7 @@ impl Resource for InnerAWSS3 {
     async fn check_if_exists(&self, bucket_identifier: &Self::CheckArgs) -> OrchestratorResult<bool> {
         let bucket_name = match bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => &arn.resource,
-            AWSResourceIdentifier::Name(name) => &name,
+            AWSResourceIdentifier::Name(name) => name,
         };
 
         Ok(self.client().head_bucket().bucket(bucket_name).send().await.is_ok())
@@ -87,7 +87,7 @@ impl Resource for InnerAWSS3 {
     async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let bucket_name = match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => &arn.resource,
-            AWSResourceIdentifier::Name(name) => &name,
+            AWSResourceIdentifier::Name(name) => name,
         };
 
         Ok(self.client().head_bucket().bucket(bucket_name).send().await.is_ok())

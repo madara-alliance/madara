@@ -199,7 +199,7 @@ impl InnerAWSEventBridge {
                 "Resource": "{}"
             }}]
         }}"#,
-            queue_arn.to_string()
+            queue_arn
         );
         tracing::info!("Creating Event Bridge policy: {} ", policy_name);
         let create_policy_resp =
