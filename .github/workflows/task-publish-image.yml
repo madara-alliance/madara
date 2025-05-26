@@ -21,6 +21,10 @@ on:
         required: false
         default: ghcr.io
         type: string
+      should_run:
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -29,8 +33,14 @@ permissions:
   id-token: write
 
 jobs:
+  check:
+    runs-on: karnot-arc-runner-set
+    steps:
+      - run: echo "Publishing ${{ inputs.tag-version }}"
+
   publish-image:
     runs-on: karnot-arc-runner-set
+    if: inputs.should_run == 'true'
 
     steps:
       - name: Download ${{ inputs.image-name }}

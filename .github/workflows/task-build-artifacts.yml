@@ -5,6 +5,10 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
+      should_run:
+        required: false
+        default: true
+        type: boolean
       registry:
         description: Container registry domain
         required: false
@@ -24,8 +28,14 @@ permissions:
   id-token: write
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Building ${{ inputs.artifacts-pr }}"
+
   build-artifacts:
     runs-on: ubuntu-latest
+    if: inputs.should_run == 'true'
     outputs:
       artifacts: ${{ steps.tag.outputs.artifacts }}
       artifacts-pr: ${{ steps.tag.outputs.artifacts-pr }}
