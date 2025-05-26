@@ -27,7 +27,7 @@ use orchestrator::types::params::database::DatabaseArgs;
 use orchestrator::types::params::QueueArgs;
 use orchestrator::types::queue::QueueType;
 use orchestrator::worker::parser::job_queue_message::JobQueueMessage;
-use orchestrator_utils::env_utils::get_env_var_or_panic;
+use orchestrator_utils::env_utils::{get_env_var_optional_or_panic, get_env_var_or_panic};
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -137,10 +137,21 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     println!("Loading .env file");
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
-    let queue_params = QueueArgs {
-        queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(get_env_var_or_panic(
-            "MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER",
-        )),
+    let aws_prefix = get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
+
+    let queue_params = match aws_prefix {
+        Some(prefix) => QueueArgs {
+            queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(format!(
+                "{}_{}",
+                prefix,
+                get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER",)
+            )),
+        },
+        None => QueueArgs {
+            queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(get_env_var_or_panic(
+                "MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER",
+            )),
+        },
     };
 
     let mut setup_config = Setup::new(l2_block_number.clone()).await;
@@ -324,6 +335,7 @@ pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs)
         &queue_params.queue_template_identifier.to_string(),
         &QueueType::SnosJobProcessing,
     );
+    println!("HEEMANK : queue_name {}", queue_name);
     let queue_url = queue.inner.get_queue_url_from_client(queue_name.as_str()).await?;
     put_message_in_queue(message, queue_url).await?;
     Ok(())
