@@ -3,8 +3,11 @@ use crate::core::client::queue::sqs::InnerSQS;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::queue::QueueType;
 use crate::{
-    core::cloud::CloudProvider, core::traits::resource::Resource, types::params::QueueArgs,
-    OrchestratorError, OrchestratorResult, queue_control::QUEUES
+    core::client::queue::sqs::SQS,
+    core::cloud::CloudProvider,
+    core::traits::resource::Resource,
+    types::{params::QueueArgs, queue_control::QUEUES},
+    OrchestratorError, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
