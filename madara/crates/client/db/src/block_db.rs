@@ -1,16 +1,18 @@
 use std::sync::Arc;
 
 use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
+use crate::events_bloom_filter::{EventBloomReader, EventBloomSearcher};
 use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, SyncStatus, WriteBatchWithTransaction};
 use anyhow::Context;
+use mp_block::event_with_info::{drain_block_events, event_match_filter, EventWithInfo};
 use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
-    MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
+    BlockId, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlock, MadaraPendingBlockInfo,
 };
-use mp_rpc::EmittedEvent;
 use mp_state_update::StateDiff;
+use rocksdb::{Direction, IteratorMode};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 
@@ -288,12 +290,14 @@ impl MadaraBackend {
                     let tx_hash = receipt.transaction_hash();
                     receipt.events().iter().map(move |event| (tx_hash, event))
                 })
-                .for_each(|(transaction_hash, event)| {
-                    if let Err(e) = self.watch_events.publish(EmittedEvent {
-                        event: event.clone().into(),
+                .enumerate()
+                .for_each(|(event_index, (transaction_hash, event))| {
+                    if let Err(e) = self.watch_events.publish(EventWithInfo {
+                        event: event.clone(),
                         block_hash: Some(block_hash),
                         block_number: Some(block_number),
                         transaction_hash,
+                        event_index_in_block: event_index,
                     }) {
                         tracing::debug!("Failed to send event to subscribers: {e}");
                     }
@@ -422,6 +426,112 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
         }
+    }
+
+    /// Retrieves an iterator over event bloom filters starting from the specified block.
+    ///
+    /// This method returns an iterator that yields (block_number, bloom_filter) pairs,
+    /// allowing for efficient filtering of potential blocks containing matching events.
+    /// Only blocks containing events will have bloom filters, which is why we return
+    /// the block number with each filter - this allows us to identify gaps in the sequence
+    /// where blocks had no events.
+    ///
+    /// Note: The caller should consume this iterator quickly to avoid pinning RocksDB
+    /// resources for an extended period.
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    fn get_event_filter_stream(
+        &self,
+        block_n: u64,
+    ) -> Result<impl Iterator<Item = Result<(u64, EventBloomReader)>> + '_> {
+        let col = self.db.get_column(Column::EventBloom);
+        let key = bincode::serialize(&block_n)?;
+        let iter_mode = IteratorMode::From(&key, Direction::Forward);
+        let iter = self.db.iterator_cf(&col, iter_mode);
+
+        Ok(iter.map(|kvs| {
+            kvs.map_err(MadaraStorageError::from).and_then(|(key, value)| {
+                let stored_block_n: u64 = bincode::deserialize(&key).map_err(MadaraStorageError::from)?;
+                let bloom = bincode::deserialize(&value).map_err(MadaraStorageError::from)?;
+                Ok((stored_block_n, bloom))
+            })
+        }))
+    }
+
+    /// Retrieves events that match the specified filter criteria within a block range.
+    ///
+    /// This implementation uses a two-phase filtering approach:
+    /// 1. First use bloom filters to quickly identify blocks that *might* contain matching events
+    /// 2. Then retrieve and process only those candidate blocks
+    ///
+    /// The method processes blocks incrementally to avoid keeping RocksDB iterators open for too long.
+    ///
+    /// ### Returns
+    /// - A vector of events that match the filter criteria, up to `max_events` in size.
+    /// - The returned events are collected across multiple blocks within the specified range.
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_filtered_events(
+        &self,
+        start_block: u64,
+        start_event_index: usize,
+        end_block: u64,
+        from_address: Option<&Felt>,
+        keys_pattern: Option<&[Vec<Felt>]>,
+        max_events: usize,
+    ) -> Result<Vec<EventWithInfo>> {
+        let key_filter = EventBloomSearcher::new(from_address, keys_pattern);
+
+        let mut events_infos = Vec::new();
+
+        let mut current_block = start_block;
+
+        'event_block_research: while current_block <= end_block && events_infos.len() < max_events {
+            'bloom_research: {
+                // Scope the filter stream iterator to ensure it's dropped promptly
+                let filter_event_stream = self.get_event_filter_stream(current_block)?;
+
+                for filter_block in filter_event_stream {
+                    let (block_n, bloom_filter) = filter_block?;
+
+                    // Stop if we've gone beyond the requested range
+                    if block_n > end_block {
+                        break 'event_block_research;
+                    }
+
+                    // Use the bloom filter to quickly check if the block might contain relevant events.
+                    // - This avoids unnecessary block retrieval if no matching events exist.
+                    if key_filter.search(&bloom_filter) {
+                        current_block = block_n;
+                        break 'bloom_research;
+                    }
+                }
+                // If no bloom filter was found, there's no more blocks whith events to process in DB.
+                break 'event_block_research;
+            } // RocksDB iterator is dropped here
+
+            // Retrieve the full block data since we now suspect it contains relevant events.
+            let block =
+                self.get_block(&BlockId::Number(current_block))?.ok_or(MadaraStorageError::InconsistentStorage(
+                    format!("Bloom filter found but block not found for block {current_block}").into(),
+                ))?;
+
+            // Determine starting event index based on whether we're continuing from a previous query
+            let skip_events = if current_block == start_block { start_event_index } else { 0 };
+
+            // Extract matching events from the block
+            let mut iter = drain_block_events(block)
+                .enumerate()
+                .skip(skip_events)
+                .filter(|(_, event)| event_match_filter(&event.event, from_address, keys_pattern));
+
+            // Take exactly enough events to fill the requested chunk size.
+            events_infos.extend(iter.by_ref().take(max_events - events_infos.len()).map(|(_, event)| event));
+
+            current_block = current_block
+                .checked_add(1)
+                .ok_or(MadaraStorageError::InconsistentStorage("Block number overflow".into()))?;
+        }
+
+        Ok(events_infos)
     }
 
     pub fn get_starting_block(&self) -> Option<u64> {

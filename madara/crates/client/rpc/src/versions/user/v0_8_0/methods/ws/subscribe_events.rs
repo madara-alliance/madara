@@ -1,9 +1,9 @@
-use crate::{
-    errors::{ErrorExtWs, StarknetWsApiError},
-    utils::event_match_filter,
-    versions::user::v0_7_1::methods::read::get_events::drain_block_events,
+use crate::errors::{ErrorExtWs, StarknetWsApiError};
+use mp_block::{
+    event_with_info::{drain_block_events, event_match_filter},
+    BlockId,
 };
-use mp_block::BlockId;
+use mp_rpc::EmittedEvent;
 use starknet_types_core::felt::Felt;
 
 use super::BLOCK_PAST_LIMIT;
@@ -44,7 +44,7 @@ pub async fn subscribe_events(
             for event in drain_block_events(block)
                 .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             {
-                let msg = jsonrpsee::SubscriptionMessage::from_json(&event)
+                let msg = jsonrpsee::SubscriptionMessage::from_json(&EmittedEvent::from(event))
                     .or_internal_server_error("Failed to create response message")?;
                 sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
             }
@@ -56,7 +56,7 @@ pub async fn subscribe_events(
             event = rx.recv() => {
                 let event = event.or_internal_server_error("Failed to retrieve event")?;
                 if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
-                    let msg = jsonrpsee::SubscriptionMessage::from_json(&event)
+                    let msg = jsonrpsee::SubscriptionMessage::from_json(&EmittedEvent::from(event))
                         .or_internal_server_error("Failed to create response message")?;
                     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
                 }

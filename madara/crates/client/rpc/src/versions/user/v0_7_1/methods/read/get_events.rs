@@ -1,10 +1,10 @@
-use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, BlockTag, EventWithInfo};
 use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
-use crate::utils::event_match_filter;
+use crate::utils::ResultExt;
 use crate::Starknet;
 
 /// Returns all events matching the given filter.
@@ -30,19 +30,17 @@ use crate::Starknet;
 pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
-    let chunk_size = filter.chunk_size;
+    let chunk_size = filter.chunk_size as usize;
 
-    if let Some(keys) = &keys {
-        if keys.len() > MAX_EVENTS_KEYS {
-            return Err(StarknetRpcApiError::TooManyKeysInFilter);
-        }
+    if keys.as_ref().map(|k| k.iter().map(|pattern| pattern.len()).sum()).unwrap_or(0) > MAX_EVENTS_KEYS {
+        return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
-    if chunk_size > MAX_EVENTS_CHUNK_SIZE as u64 {
+    if chunk_size > MAX_EVENTS_CHUNK_SIZE {
         return Err(StarknetRpcApiError::PageSizeTooBig);
     }
 
     // Get the block numbers for the requested range
-    let (from_block, to_block, latest_block) = block_range(starknet, filter.from_block, filter.to_block)?;
+    let (from_block, to_block, _) = block_range(starknet, filter.from_block, filter.to_block)?;
 
     let continuation_token = match filter.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?,
@@ -55,43 +53,38 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest)
     }
 
     let from_block = continuation_token.block_n;
-    let mut filtered_events: Vec<EmittedEvent> = Vec::new();
+    let from_event_n = continuation_token.event_n as usize;
 
-    for current_block in from_block..=to_block {
-        let (_pending, block) = if current_block <= latest_block {
-            (false, starknet.get_block(&BlockId::Number(current_block))?)
-        } else {
-            (true, starknet.get_block(&BlockId::Tag(BlockTag::Pending))?)
-        };
+    let mut events_infos = starknet
+        .backend
+        .get_filtered_events(from_block, from_event_n, to_block, from_address.as_ref(), keys.as_deref(), chunk_size + 1)
+        .or_internal_server_error("Error getting filtered events")?;
 
-        let block_filtered_events: Vec<EmittedEvent> = drain_block_events(block)
-            .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
-            .collect();
-
-        if current_block == from_block && (block_filtered_events.len() as u64) < continuation_token.event_n {
-            return Err(StarknetRpcApiError::InvalidContinuationToken);
-        }
-
-        #[allow(clippy::iter_skip_zero)]
-        let block_filtered_reduced_events: Vec<EmittedEvent> = block_filtered_events
-            .into_iter()
-            .skip(if current_block == from_block { continuation_token.event_n as usize } else { 0 })
-            .take(chunk_size as usize - filtered_events.len())
-            .collect();
-
-        let num_events = block_filtered_reduced_events.len();
-
-        filtered_events.extend(block_filtered_reduced_events);
-
-        if filtered_events.len() == chunk_size as usize {
-            let event_n =
-                if current_block == from_block { continuation_token.event_n + chunk_size } else { num_events as u64 };
-            let token = Some(ContinuationToken { block_n: current_block, event_n }.to_string());
-
-            return Ok(EventsChunk { events: filtered_events, continuation_token: token });
-        }
+    let mut continuation_token = None;
+    if events_infos.len() > chunk_size {
+        continuation_token = events_infos.pop().and_then(|event_info| match event_info {
+            EventWithInfo { block_number: Some(block_n), event_index_in_block, .. } => {
+                Some(ContinuationToken { block_n, event_n: (event_index_in_block + 1) as u64 })
+            }
+            _ => None,
+        });
     }
-    Ok(EventsChunk { events: filtered_events, continuation_token: None })
+
+    Ok(EventsChunk {
+        events: events_infos
+            .into_iter()
+            .map(|event_info| EmittedEvent {
+                event: Event {
+                    from_address: event_info.event.from_address,
+                    event_content: EventContent { keys: event_info.event.keys, data: event_info.event.data },
+                },
+                block_hash: event_info.block_hash,
+                block_number: event_info.block_number,
+                transaction_hash: event_info.transaction_hash,
+            })
+            .collect(),
+        continuation_token: continuation_token.map(|token| token.to_string()),
+    })
 }
 
 fn block_range(
@@ -111,42 +104,4 @@ fn block_range(
         None => latest_block_n,
     };
     Ok((from_block_n, to_block_n, latest_block_n))
-}
-
-/// Extracts and iterates over all events emitted within a block.
-///
-/// This function processes all transactions in a given block (whether pending or confirmed)
-/// and returns an iterator over their emitted events. Each event is enriched with its
-/// contextual information including block details and the transaction that generated it.
-///
-/// # Arguments
-///
-/// * `block` - A reference to either a pending or confirmed block (`MadaraMaybePendingBlock`)
-///
-/// # Returns
-///
-/// Returns an iterator yielding `EmittedEvent` items. Each item contains:
-/// - The event data (from address, keys, and associated data)
-/// - Block context (hash and number, if the block is confirmed)
-/// - Transaction hash that generated the event
-pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EmittedEvent> {
-    let (block_hash, block_number) = match &block.info {
-        MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
-        MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
-    };
-
-    let tx_hash_and_events = block.inner.receipts.into_iter().flat_map(|receipt| {
-        let tx_hash = receipt.transaction_hash();
-        receipt.into_events().into_iter().map(move |events| (tx_hash, events))
-    });
-
-    tx_hash_and_events.map(move |(transaction_hash, event)| EmittedEvent {
-        event: Event {
-            from_address: event.from_address,
-            event_content: EventContent { keys: event.keys, data: event.data },
-        },
-        block_hash,
-        block_number,
-        transaction_hash,
-    })
 }
