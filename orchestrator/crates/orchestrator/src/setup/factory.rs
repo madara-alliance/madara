@@ -1,4 +1,3 @@
-use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;

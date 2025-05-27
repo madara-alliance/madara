@@ -1,4 +1,3 @@
-use crate::cli::Layer;
 use crate::core::client::SNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;

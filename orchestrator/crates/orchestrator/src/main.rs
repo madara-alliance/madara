@@ -1,4 +1,3 @@
-use anyhow::{Context, Result};
 use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
@@ -9,10 +8,9 @@ use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
 use orchestrator::worker::initialize_worker;
-use orchestrator::OrchestratorError;
 use orchestrator::OrchestratorResult;
 use std::sync::Arc;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info};
 
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
@@ -61,18 +59,19 @@ async fn main() {
     }
 }
 
-async fn run_orchestrator(run_cmd: &RunCmd) -> Result<()> {
-    let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone()).context("Failed to create OTEL config")?;
-    let instrumentation = OrchestratorInstrumentation::new(&config).context("Failed to initialize instrumentation")?;
+async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
+    let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
+    let instrumentation = OrchestratorInstrumentation::new(&config)?;
     info!("Starting orchestrator service");
 
-    let config = Arc::new(Config::from_run_cmd(run_cmd).await.context("Failed to create config from run command")?);
+    let config = Arc::new(Config::from_run_cmd(run_cmd).await?);
+    debug!("Configuration initialized");
 
     // Run the server in a separate tokio spawn task
-    setup_server(config.clone()).await.context("Failed to setup server")?;
+    setup_server(config.clone()).await?;
 
     debug!("Application router initialized");
-    initialize_worker(config.clone()).await.context("Failed to initialize worker")?;
+    initialize_worker(config.clone()).await?;
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
 
@@ -83,7 +82,6 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> Result<()> {
 }
 
 /// setup_orchestrator - Initializes the orchestrator with the provided configuration
-#[instrument(skip(setup_cmd), fields(args = ?setup_cmd))]
 async fn setup_orchestrator(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
-    setup(setup_cmd).await.map_err(|e| OrchestratorError::from(e))
+    setup(setup_cmd).await
 }

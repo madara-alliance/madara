@@ -1,4 +1,3 @@
-use crate::cli::Layer;
 use crate::types::queue::QueueType;
 use crate::types::Layer;
 use lazy_static::lazy_static;

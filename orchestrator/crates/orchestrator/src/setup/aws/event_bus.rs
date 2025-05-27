@@ -1,5 +1,4 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
-use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
