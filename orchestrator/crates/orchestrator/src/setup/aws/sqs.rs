@@ -1,4 +1,4 @@
-use crate::cli::Layer;
+use crate::types::Layer;
 use crate::{
     core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
     types::params::QueueArgs, OrchestratorError, OrchestratorResult,

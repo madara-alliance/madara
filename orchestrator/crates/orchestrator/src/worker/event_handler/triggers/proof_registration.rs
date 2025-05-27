@@ -18,9 +18,9 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             category = "ProofRegistrationWorker",
             "ProofRegistrationWorker started."
         );
+        let db = config.database();
 
-        let successful_proving_jobs = config
-            .database()
+        let successful_proving_jobs = db
             .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::ProofRegistration)
             .await?;
 
@@ -29,7 +29,6 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             successful_proving_jobs.len()
         );
 
-        let job_type = JobType::ProofRegistration;
         let statuses = vec![
             JobStatus::Created,
             JobStatus::LockedForProcessing,
@@ -37,7 +36,7 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             JobStatus::PendingRetry,
         ];
 
-        let current_jobs = config.database().get_jobs_by_type_and_statuses(job_type, statuses).await?;
+        let current_jobs = db.get_jobs_by_type_and_statuses(&JobType::ProofRegistration, statuses).await?;
 
         let current_jobs_count = current_jobs.len();
         tracing::info!("Current jobs count: {}", current_jobs_count);

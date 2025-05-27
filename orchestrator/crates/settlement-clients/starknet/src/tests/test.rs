@@ -1,10 +1,7 @@
-use std::env;
-use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
 use color_eyre::eyre::eyre;
-use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::{fixture, rstest};
 use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};

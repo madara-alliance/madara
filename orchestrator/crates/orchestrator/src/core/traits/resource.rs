@@ -1,5 +1,5 @@
 use super::super::cloud::CloudProvider;
-use crate::cli::Layer;
+use crate::types::Layer;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
 use std::sync::Arc;

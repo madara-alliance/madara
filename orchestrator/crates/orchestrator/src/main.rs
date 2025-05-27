@@ -21,7 +21,7 @@ static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    init_logging("orchestrator");
+    init_logging();
     info!("Starting orchestrator");
     let cli = Cli::parse();
 

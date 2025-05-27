@@ -1,6 +1,7 @@
 use crate::core::config::Config;
 use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
+use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
 use color_eyre::eyre::eyre;
 use futures::future::try_join_all;
@@ -32,7 +33,10 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     pub async fn run(&self) -> EventSystemResult<()> {
-        self.run_l2().await
+        match self.config.layer() {
+            Layer::L3 => self.run_l3().await,
+            Layer::L2 => self.run_l2().await,
+        }
     }
 
     /// create_event_handler - Create an event handler
@@ -51,6 +55,25 @@ impl WorkerController {
     /// # Returns
     /// * `Vec<QueueType>` - A list of queues for L2 network
     fn get_l2_queues() -> Vec<QueueType> {
+        vec![
+            QueueType::SnosJobProcessing,
+            QueueType::ProvingJobProcessing,
+            QueueType::DataSubmissionJobProcessing,
+            QueueType::UpdateStateJobProcessing,
+            QueueType::SnosJobVerification,
+            QueueType::ProvingJobVerification,
+            QueueType::DataSubmissionJobVerification,
+            QueueType::UpdateStateJobVerification,
+            QueueType::WorkerTrigger,
+            QueueType::JobHandleFailure,
+        ]
+    }
+
+    /// get_l3_queues - Get the list of queues for L3 network
+    /// This function returns a list of queues for L3 network
+    /// # Returns
+    /// * `Vec<QueueType>` - A list of queues for L3 network
+    fn get_l3_queues() -> Vec<QueueType> {
         vec![
             QueueType::SnosJobProcessing,
             QueueType::ProvingJobProcessing,
@@ -87,6 +110,26 @@ impl WorkerController {
         Ok(())
     }
 
+    /// run_l3 - Run the WorkerController for L3 Madara Network
+    /// This function runs the WorkerController for L3 and handles events
+    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// # Returns
+    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
+    /// # Errors
+    /// * `EventSystemError` - If there is an error during the operation
+    pub async fn run_l3(&self) -> EventSystemResult<()> {
+        let mut tokio_threads = vec![];
+        for queue_type in Self::get_l3_queues().into_iter() {
+            let queue_type = queue_type.clone();
+            let self_clone = self.clone();
+            tokio_threads.push(tokio::spawn(async move {
+                self_clone.create_span(&queue_type).await;
+            }));
+        }
+        try_join_all(tokio_threads).await?;
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self), fields(q = %q))]
     async fn create_span(&self, q: &QueueType) {
         // info_span!("worker", q = ?q);
@@ -103,17 +146,6 @@ impl WorkerController {
             },
             Err(e) => tracing::error!("🚨Failed to create handler: {:?}", e),
         };
-    }
-
-    /// run_l3 - Run the WorkerController for L3 Madara Network
-    /// This function runs the WorkerController for L3 and handles events
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
-    /// # Returns
-    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
-    /// # Errors
-    /// * `EventSystemError` - If there is an error during the operation
-    pub async fn run_l3(&self) -> EventSystemResult<()> {
-        Ok(())
     }
 
     /// trigger_graceful_shutdown - Trigger a graceful shutdown

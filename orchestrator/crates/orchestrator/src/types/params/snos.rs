@@ -9,6 +9,6 @@ pub struct SNOSParams {
 
 impl From<SNOSCliArgs> for SNOSParams {
     fn from(args: SNOSCliArgs) -> Self {
-        Self { rpc_for_snos: args.rpc_for_snos, snos_full_output: args.snos_full_output }
+        Self { rpc_for_snos: args.rpc_for_snos, snos_full_output: args.snos_full_output.unwrap_or(false) }
     }
 }

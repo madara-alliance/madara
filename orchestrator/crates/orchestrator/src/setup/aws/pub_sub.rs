@@ -1,8 +1,8 @@
-use crate::cli::Layer;
 use crate::core::client::SNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AlertArgs;
+use crate::types::Layer;
 use crate::{OrchestratorError, OrchestratorResult};
 use anyhow::{anyhow, Context};
 use async_trait::async_trait;

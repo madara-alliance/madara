@@ -8876,7 +8876,7 @@ dependencies = [
  "serde_yaml",
  "starknet-core 0.12.0",
  "starknet-providers 0.12.0",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tower 0.4.13",
@@ -9078,7 +9078,7 @@ dependencies = [
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9120,7 +9120,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9167,7 +9167,7 @@ dependencies = [
  "starknet-core 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tokio",
  "tracing",
  "tracing-core",
@@ -9222,7 +9222,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rstest 0.18.2",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9334,7 +9334,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tokio-util",
@@ -9372,7 +9372,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9422,7 +9422,7 @@ dependencies = [
  "starknet-providers 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9447,7 +9447,7 @@ dependencies = [
  "mp-convert",
  "mp-rpc",
  "mp-transactions",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -9493,7 +9493,7 @@ dependencies = [
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9742,7 +9742,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
  "tracing-core",
@@ -9765,7 +9765,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
  "url",
@@ -9813,7 +9813,7 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
 ]
 
@@ -9874,7 +9874,7 @@ dependencies = [
  "sha3",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -9921,7 +9921,7 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -14091,29 +14091,6 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
-dependencies = [
- "bitvec",
- "cairo-lang-starknet-classes 2.8.2",
- "derive_more 0.99.18",
- "hex",
- "indexmap 2.6.0",
- "itertools 0.12.1",
- "once_cell",
- "primitive-types",
- "serde",
- "serde_json",
- "sha3",
- "starknet-crypto 0.5.2",
- "starknet-types-core",
- "strum 0.24.1",
- "strum_macros 0.24.3",
- "thiserror 1.0.65",
-]
-
-[[package]]
-name = "starknet_api"
-version = "0.13.0-rc.1"
 source = "git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb#17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb"
 dependencies = [
  "bitvec",
@@ -16340,3 +16317,8 @@ dependencies = [
 name = "appchain-core-contract-client"
 version = "0.1.0"
 source = "git+https://github.com/Mohiiit/zaun?rev=878cf6fac215c260858b070f72fb52a70bf5e460#878cf6fac215c260858b070f72fb52a70bf5e460"
+
+[[patch.unused]]
+name = "starknet_api"
+version = "0.13.0-rc.1"
+source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"

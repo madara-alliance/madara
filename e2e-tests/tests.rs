@@ -279,10 +279,10 @@ pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: 
     let snos_metadata = SnosMetadata {
         block_number: l2_block_number.parse().expect("Invalid block number"),
         full_output: false,
-        cairo_pie_path: Some(format!("{}/{}", l2_block_number.clone(), CAIRO_PIE_FILE_NAME)),
-        on_chain_data_path: Some(format!("{}/{}", l2_block_number.clone(), ON_CHAIN_DATA_FILE_NAME)),
-        snos_output_path: Some(format!("{}/{}", l2_block_number.clone(), SNOS_OUTPUT_FILE_NAME)),
-        program_output_path: Some(format!("{}/{}", l2_block_number.clone(), PROGRAM_OUTPUT_FILE_NAME)),
+        cairo_pie_path: Some(format!("{}/{}", &l2_block_number, CAIRO_PIE_FILE_NAME)),
+        on_chain_data_path: Some(format!("{}/{}", &l2_block_number, ON_CHAIN_DATA_FILE_NAME)),
+        snos_output_path: Some(format!("{}/{}", &l2_block_number, SNOS_OUTPUT_FILE_NAME)),
+        program_output_path: Some(format!("{}/{}", &l2_block_number, PROGRAM_OUTPUT_FILE_NAME)),
         snos_fact: None,
         snos_n_steps: None,
     };

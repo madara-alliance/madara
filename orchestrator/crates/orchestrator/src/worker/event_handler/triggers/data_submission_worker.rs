@@ -2,6 +2,7 @@ use crate::core::config::Config;
 use crate::types::constant::BLOB_DATA_FILE_NAME;
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::Layer;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -19,9 +20,14 @@ impl JobTrigger for DataSubmissionJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "DataSubmissionWorker", "DataSubmissionWorker started.");
 
+        let previous_job_type = match config.layer() {
+            Layer::L2 => JobType::ProofCreation,
+            Layer::L3 => JobType::ProofRegistration,
+        };
+
         let successful_proving_jobs = config
             .database()
-            .get_jobs_without_successor(JobType::ProofRegistration, JobStatus::Completed, JobType::DataSubmission)
+            .get_jobs_without_successor(previous_job_type, JobStatus::Completed, JobType::DataSubmission)
             .await?;
 
         for proving_job in successful_proving_jobs {

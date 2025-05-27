@@ -132,8 +132,15 @@ impl JobHandlerTrait for ProvingJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
+                if fact.is_none() {
+                    tracing::error!(
+                        job_id = %job.internal_id,
+                        "Fact is None, cannot fetch proof without a fact"
+                    );
+                    return Err(JobError::Other(OtherError(eyre!("Fact is None, cannot fetch proof without a fact"))));
+
+                }
                 // If proof download path is specified, store the proof
-                // TODO:L3 review the unwrap
                 let fetched_proof =
                     config.prover_client().get_proof(&task_id, &fact.unwrap()).await.inspect_err(|e| {
                         tracing::error!(

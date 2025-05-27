@@ -19,6 +19,7 @@ use url::Url;
 
 use crate::core::error::OrchestratorCoreResult;
 use crate::types::params::database::DatabaseArgs;
+use crate::types::Layer;
 use crate::{
     cli::RunCmd,
     core::client::{
@@ -51,6 +52,7 @@ pub struct ConfigParam {
 /// The app config. It can be accessed from anywhere inside the service
 /// by calling `config` function. 33
 pub struct Config {
+    layer: Layer,
     /// The orchestrator config
     params: ConfigParam,
     /// The Madara client to get data from the node
@@ -77,6 +79,7 @@ impl Config {
     #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub(crate) fn new(
+        layer: Layer,
         params: ConfigParam,
         madara_client: Arc<JsonRpcClient<HttpTransport>>,
         database: Box<dyn DatabaseClient>,
@@ -89,6 +92,7 @@ impl Config {
         settlement_client: Box<dyn SettlementClient>,
     ) -> Self {
         Self {
+            layer,
             params,
             madara_client,
             database,
@@ -123,6 +127,8 @@ impl Config {
         let settlement_config = SettlementConfig::try_from(run_cmd.clone())
             .context("Failed to create settlement config from run command")?;
 
+        let layer = run_cmd.layer.clone();
+
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
@@ -156,6 +162,7 @@ impl Config {
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
         Ok(Self {
+            layer,
             params,
             madara_client: Arc::new(rpc_client),
             database,
@@ -167,6 +174,11 @@ impl Config {
             processing_locks,
             settlement_client,
         })
+    }
+
+    /// Returns the layer of the config
+    pub fn layer(&self) -> &Layer {
+        &self.layer
     }
 
     pub(crate) async fn build_database_client(

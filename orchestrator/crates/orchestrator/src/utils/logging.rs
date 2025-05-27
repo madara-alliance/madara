@@ -8,14 +8,8 @@ use tracing_subscriber::registry::LookupSpan;
 use tracing_subscriber::{fmt, EnvFilter, Registry};
 
 // Pretty formatter is formatted for console readability
-struct PrettyFormatter {
-    service_name: String,
-}
-impl PrettyFormatter {
-    fn new(service_name: &str) -> Self {
-        Self { service_name: service_name.into() }
-    }
-}
+struct PrettyFormatter;
+
 
 impl<S, N> FormatEvent<S, N> for PrettyFormatter
 where
@@ -54,8 +48,6 @@ where
 
             write!(writer, "{}{:<20}:{:<4} {}", file_color, display_name, line, reset)?;
         }
-
-        // write!(writer, "{}[service={}]{} ", fixed_field_color, self.service_name, reset)?;
 
         // Add queue_type from span if available
         if let Some(span) = ctx.lookup_current() {
@@ -129,7 +121,7 @@ impl tracing::field::Visit for FieldExtractor {
 /// - JsonFormatter for json logging (for integration with orchestrator)
 ///
 /// This will also install color_eyre to handle the panic in the application
-pub fn init_logging(service_name: &str) {
+pub fn init_logging() {
     color_eyre::install().expect("Unable to install color_eyre");
     // let env_filter = EnvFilter::from_default_env();
     let env_filter = EnvFilter::builder()
@@ -141,7 +133,7 @@ pub fn init_logging(service_name: &str) {
         .with_thread_names(true)
         .with_thread_ids(true)
         .with_target(false)
-        .event_format(PrettyFormatter::new(service_name));
+        .event_format(PrettyFormatter);
 
     let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
 

@@ -202,7 +202,7 @@ blockifier = { git = "https://github.com/byteZorvin/sequencer", branch = "madara
   "testing",
   "concurrency",
 ] }
-starknet_api = "=0.13.0-rc.1"
+starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo"}
 cairo-lang-starknet-classes = "=2.8.2"
 cairo-lang-utils = "=2.8.2"
 

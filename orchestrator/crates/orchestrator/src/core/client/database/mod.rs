@@ -64,7 +64,7 @@ pub trait DatabaseClient: Send + Sync {
     /// This method is used to get jobs by their type and statuses.
     async fn get_jobs_by_type_and_statuses(
         &self,
-        job_type: JobType,
+        job_type: &JobType,
         job_statuses: Vec<JobStatus>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
 }
