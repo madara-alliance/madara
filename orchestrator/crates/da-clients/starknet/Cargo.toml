@@ -12,6 +12,7 @@ serde = { workspace = true, features = ["derive"] }
 starknet = { workspace = true }
 tracing = { workspace = true }
 url = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 tokio-test = "*"

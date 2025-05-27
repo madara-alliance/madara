@@ -300,6 +300,7 @@ pub mod implement_client {
     use starknet::providers::{JsonRpcClient, Url};
 
     use super::{ConfigType, EnvParams, MockType};
+    use crate::cli::Layer;
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
     use crate::core::client::queue::MockQueueClient;

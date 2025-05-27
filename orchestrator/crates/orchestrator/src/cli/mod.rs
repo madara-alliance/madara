@@ -225,3 +225,9 @@ pub struct SetupCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_RESOURCE_POLL_INTERVAL", long, default_value = Some("5"))]
     pub poll_interval: Option<u64>,
 }
+
+#[derive(Debug, Clone, clap::ValueEnum, PartialEq)]
+pub enum Layer {
+    L2,
+    L3,
+}
