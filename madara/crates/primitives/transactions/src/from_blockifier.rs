@@ -5,47 +5,57 @@ use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 impl From<BTransaction> for TransactionWithHash {
     fn from(tx: BTransaction) -> TransactionWithHash {
         match tx {
-            BTransaction::AccountTransaction(tx) => tx.into(),
-            BTransaction::L1HandlerTransaction(tx) => tx.into(),
+            BTransaction::Account(tx) => tx.tx.into(),
+            BTransaction::L1Handler(tx) => tx.into(),
         }
     }
 }
 
-use blockifier::transaction::account_transaction::AccountTransaction as BAccountTransaction;
-impl From<BAccountTransaction> for TransactionWithHash {
-    fn from(tx: BAccountTransaction) -> TransactionWithHash {
+use starknet_api::executable_transaction::Transaction as ApiTransaction;
+impl From<ApiTransaction> for TransactionWithHash {
+    fn from(tx: ApiTransaction) -> TransactionWithHash {
         match tx {
-            BAccountTransaction::Declare(tx) => tx.into(),
-            BAccountTransaction::DeployAccount(tx) => tx.into(),
-            BAccountTransaction::Invoke(tx) => tx.into(),
+            ApiTransaction::Account(tx) => tx.into(),
+            ApiTransaction::L1Handler(tx) => tx.into(),
         }
     }
 }
 
-use blockifier::transaction::transactions::DeclareTransaction as BDeclareTransaction;
-impl From<BDeclareTransaction> for TransactionWithHash {
-    fn from(tx: BDeclareTransaction) -> TransactionWithHash {
+use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
+impl From<ApiAccountTransaction> for TransactionWithHash {
+    fn from(tx: ApiAccountTransaction) -> TransactionWithHash {
+        match tx {
+            ApiAccountTransaction::Declare(tx) => tx.into(),
+            ApiAccountTransaction::DeployAccount(tx) => tx.into(),
+            ApiAccountTransaction::Invoke(tx) => tx.into(),
+        }
+    }
+}
+
+use starknet_api::executable_transaction::DeclareTransaction as ApiDeclareTransaction;
+impl From<ApiDeclareTransaction> for TransactionWithHash {
+    fn from(tx: ApiDeclareTransaction) -> TransactionWithHash {
         TransactionWithHash { transaction: Transaction::Declare(tx.tx.into()), hash: *tx.tx_hash }
     }
 }
 
-use blockifier::transaction::transactions::DeployAccountTransaction as BDeployAccountTransaction;
-impl From<BDeployAccountTransaction> for TransactionWithHash {
-    fn from(tx: BDeployAccountTransaction) -> TransactionWithHash {
+use starknet_api::executable_transaction::DeployAccountTransaction as ApiDeployAccountTransaction;
+impl From<ApiDeployAccountTransaction> for TransactionWithHash {
+    fn from(tx: ApiDeployAccountTransaction) -> TransactionWithHash {
         TransactionWithHash { transaction: Transaction::DeployAccount(tx.tx.into()), hash: *tx.tx_hash }
     }
 }
 
-use blockifier::transaction::transactions::InvokeTransaction as BInvokeTransaction;
-impl From<BInvokeTransaction> for TransactionWithHash {
-    fn from(tx: BInvokeTransaction) -> TransactionWithHash {
+use starknet_api::executable_transaction::InvokeTransaction as ApiInvokeTransaction;
+impl From<ApiInvokeTransaction> for TransactionWithHash {
+    fn from(tx: ApiInvokeTransaction) -> TransactionWithHash {
         TransactionWithHash { transaction: Transaction::Invoke(tx.tx.into()), hash: *tx.tx_hash }
     }
 }
 
-use blockifier::transaction::transactions::L1HandlerTransaction as BL1HandlerTransaction;
-impl From<BL1HandlerTransaction> for TransactionWithHash {
-    fn from(tx: BL1HandlerTransaction) -> TransactionWithHash {
+use starknet_api::executable_transaction::L1HandlerTransaction as ApiL1HandlerTransaction;
+impl From<ApiL1HandlerTransaction> for TransactionWithHash {
+    fn from(tx: ApiL1HandlerTransaction) -> TransactionWithHash {
         TransactionWithHash { transaction: Transaction::L1Handler(tx.tx.into()), hash: *tx.tx_hash }
     }
 }
