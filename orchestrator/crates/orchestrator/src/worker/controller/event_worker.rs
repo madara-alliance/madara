@@ -40,9 +40,8 @@ impl EventWorker {
     /// * `EventWorker` - A new EventWorker instance
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> Self {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
-        let queue_control = QUEUES.get(&queue_type)
-            .map(|q| q.queue_control.clone().unwrap_or_default())
-            .unwrap_or_default();
+        let queue_control =
+            QUEUES.get(&queue_type).map(|q| q.queue_control.clone().unwrap_or_default()).unwrap_or_default();
         Self { queue_type, config, queue_control }
     }
 
@@ -59,9 +58,9 @@ impl EventWorker {
         match consumer.receive().await {
             Ok(delivery) => Ok(Some(delivery)),
             Err(QueueError::NoData) => Ok(None),
-            Err(e) => Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue { 
-                error_msg: e.to_string() 
-            }))
+            Err(e) => {
+                Err(EventSystemError::from(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() }))
+            }
         }
     }
 
@@ -76,10 +75,8 @@ impl EventWorker {
     /// * Returns an EventSystemError if the message cannot be parsed
     fn parse_message(&self, message: &Delivery) -> EventSystemResult<ParsedMessage> {
         match self.queue_type {
-            QueueType::WorkerTrigger => WorkerTriggerMessage::parse_message(message)
-                .map(ParsedMessage::WorkerTrigger),
-            _ => JobQueueMessage::parse_message(message)
-                .map(ParsedMessage::JobQueue),
+            QueueType::WorkerTrigger => WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger),
+            _ => JobQueueMessage::parse_message(message).map(ParsedMessage::JobQueue),
         }
     }
 
@@ -96,8 +93,11 @@ impl EventWorker {
         if let ParsedMessage::WorkerTrigger(worker_mes) = message {
             let span = info_span!("worker_trigger", q = %self.queue_type, worker_id = %worker_mes.worker);
             let _guard = span.enter();
-            let worker_handler = JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_mes.worker.clone());
-            worker_handler.run_worker_if_enabled(self.config.clone()).await
+            let worker_handler =
+                JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_mes.worker.clone());
+            worker_handler
+                .run_worker_if_enabled(self.config.clone())
+                .await
                 .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
             Ok(())
         } else {
@@ -120,13 +120,12 @@ impl EventWorker {
         if let ParsedMessage::JobQueue(queue_message) = message {
             let span = info_span!("job_handle_failure", q = %self.queue_type, worker_id = %queue_message.id);
             let _guard = span.enter();
-            JobHandlerService::handle_job_failure(queue_message.id, self.config.clone()).await
+            JobHandlerService::handle_job_failure(queue_message.id, self.config.clone())
+                .await
                 .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
             Ok(())
         } else {
-            Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!(
-                "Expected JobQueue message"
-            )))))
+            Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!("Expected JobQueue message")))))
         }
     }
 
@@ -146,19 +145,19 @@ impl EventWorker {
             let _guard = span.enter();
             match job_state {
                 JobState::Processing => {
-                    JobHandlerService::process_job(queue_message.id, self.config.clone()).await
+                    JobHandlerService::process_job(queue_message.id, self.config.clone())
+                        .await
                         .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
                 }
                 JobState::Verification => {
-                    JobHandlerService::verify_job(queue_message.id, self.config.clone()).await
+                    JobHandlerService::verify_job(queue_message.id, self.config.clone())
+                        .await
                         .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
                 }
             }
             Ok(())
         } else {
-            Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!(
-                "Expected JobQueue message"
-            )))))
+            Err(EventSystemError::from(ConsumptionError::Other(OtherError::from(eyre!("Expected JobQueue message")))))
         }
     }
 
@@ -220,10 +219,7 @@ impl EventWorker {
                     tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
                     (
                         format!("Job {job_id:?} handling failed: {error}"),
-                        ConsumptionError::FailedToHandleJob { 
-                            job_id: *job_id, 
-                            error_msg: error.to_string() 
-                        },
+                        ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
                     )
                 }
             };
@@ -291,7 +287,7 @@ impl EventWorker {
         let mut tasks = JoinSet::new();
         let max_concurrent_tasks = self.queue_control.max_message_count.unwrap_or(10) as usize;
         info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
-        
+
         loop {
             while tasks.len() >= max_concurrent_tasks {
                 if let Some(Err(e)) = tasks.join_next().await {
@@ -300,20 +296,16 @@ impl EventWorker {
             }
 
             match self.get_message().await {
-                Ok(Some(message)) => {
-                    match self.parse_message(&message) {
-                        Ok(parsed_message) => {
-                            let worker = self.clone();
-                            let parsed_message = parsed_message.clone();
-                            tasks.spawn(async move {
-                                worker.process_message(message, parsed_message).await
-                            });
-                        }
-                        Err(e) => {
-                            error!("Failed to parse message: {:?}", e);
-                        }
+                Ok(Some(message)) => match self.parse_message(&message) {
+                    Ok(parsed_message) => {
+                        let worker = self.clone();
+                        let parsed_message = parsed_message.clone();
+                        tasks.spawn(async move { worker.process_message(message, parsed_message).await });
                     }
-                }
+                    Err(e) => {
+                        error!("Failed to parse message: {:?}", e);
+                    }
+                },
                 Ok(None) => {
                     sleep(Duration::from_secs(1)).await;
                 }
