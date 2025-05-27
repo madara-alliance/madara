@@ -325,5 +325,3 @@ impl EventWorker {
         }
     }
 }
-
-

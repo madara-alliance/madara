@@ -6,7 +6,6 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
@@ -416,9 +415,6 @@ impl JobHandlerTrait for DAJobHandler {
     fn verification_polling_delay_seconds(&self) -> u64 {
         60
     }
-    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -429,13 +425,13 @@ pub mod test {
     use std::io::Read;
 
     use crate::worker::event_handler::jobs::da::DAJobHandler;
-    use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
     use httpmock::prelude::*;
     use majin_blob_core::blob;
     use majin_blob_types::serde;
     use orchestrator_da_client_interface::MockDaClient;
     use rstest::rstest;
+    use ::serde::{Deserialize, Serialize};
     use serde_json::json;
     use starknet::core::types::{
         ContractStorageDiffItem, DeployedContractItem, Felt, NonceUpdate, StateDiff, StateUpdate, StorageEntry,
