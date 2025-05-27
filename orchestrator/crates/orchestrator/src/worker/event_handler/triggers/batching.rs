@@ -23,7 +23,7 @@ impl JobTrigger for BatchingTrigger {
     /// 2. Fetch the last batch and check its `end_block`
     /// 3. Assign batches to all the remaining blocks and store the squashed state update in storage
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::trace!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
+        tracing::info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
 
         // Getting the latest block number from Starknet
         let provider = config.madara_client();
@@ -47,10 +47,10 @@ impl JobTrigger for BatchingTrigger {
             .min_block_to_process
             .map_or(latest_block_in_db, |min_block| max(min_block, latest_block_in_db));
 
-        for block_num in first_block_to_assign_batch..last_block_to_assign_batch + 1 {
+        for block_num in first_block_to_assign_batch..=last_block_to_assign_batch {
             self.assign_batch_to_block(block_num, config.clone()).await?;
         }
-        tracing::trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
+        tracing::info!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
         Ok(())
     }
 }
@@ -104,7 +104,7 @@ impl BatchingTrigger {
                             database
                                 .update_batch(
                                     &batch,
-                                    &BatchUpdates { end_block: batch.end_block, is_batch_ready: true },
+                                    BatchUpdates { end_block: batch.end_block, is_batch_ready: true },
                                 )
                                 .await?;
 
@@ -184,7 +184,7 @@ impl BatchingTrigger {
             .put_data(Bytes::from(serde_json::to_string(&state_update)?), &self.get_state_update_file_name(batch.index))
             .await?;
         // Update batch status in the database
-        database.update_batch(&batch, &BatchUpdates { end_block, is_batch_ready }).await?;
+        database.update_batch(&batch, BatchUpdates { end_block, is_batch_ready }).await?;
         Ok(())
     }
 }

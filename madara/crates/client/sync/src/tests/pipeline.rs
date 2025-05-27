@@ -6,20 +6,19 @@ use crate::{
     gateway::ForwardSyncConfig,
     import::{BlockImporter, BlockValidationConfig},
     sync::ServiceEvent,
-    util::{AbortOnDrop, ServiceStateSender},
+    util::ServiceStateSender,
     SyncControllerConfig,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_settlement_client::state_update::StateUpdate;
 use mp_chain_config::ChainConfig;
 use mp_state_update::DeclaredClassItem;
-use mp_utils::service::ServiceContext;
+use mp_utils::{service::ServiceContext, AbortOnDrop};
 use rstest::{fixture, rstest};
 use starknet_api::felt;
 use starknet_core::types::Felt;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
-use tracing_test::traced_test;
 
 struct TestContext {
     backend: Arc<MadaraBackend>,
@@ -44,7 +43,6 @@ fn ctx(gateway_mock: GatewayMock) -> TestContext {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// The pipeline should follow the mock_header_latest.
 async fn test_probed(mut ctx: TestContext) {
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
@@ -103,7 +101,6 @@ async fn test_probed(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 async fn test_pending_block_update(mut ctx: TestContext) {
     // 1. No pending block.
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
@@ -176,7 +173,6 @@ async fn test_pending_block_update(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// First, make the pipeline sync to block 0.
 /// Then, send an l1 head update, the pipeline should follow.
 async fn test_follows_l1(mut ctx: TestContext) {
@@ -208,7 +204,9 @@ async fn test_follows_l1(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap(), None);
     assert!(!ctx.backend.has_pending_block().unwrap());
 
-    l1_snd.send(Some(StateUpdate { block_hash: felt!("0x12"), block_number: 2, global_root: Felt::ZERO })).unwrap();
+    l1_snd
+        .send(Some(StateUpdate { block_hash: felt!("0x12"), block_number: Some(2), global_root: Felt::ZERO }))
+        .unwrap();
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 2 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
 
@@ -221,7 +219,6 @@ async fn test_follows_l1(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// Pending block is disabled.
 async fn test_no_pending(mut ctx: TestContext) {
     ctx.gateway_mock.mock_block(0, felt!("0x10"), felt!("0x0"));
@@ -249,7 +246,6 @@ async fn test_no_pending(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// The pipeline should stop once fully synced.
 async fn test_stop_on_sync(mut ctx: TestContext) {
     ctx.gateway_mock.mock_class(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
@@ -299,7 +295,6 @@ async fn test_stop_on_sync(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// The pipeline should stop once at block_n.
 async fn test_stop_at_block_n(mut ctx: TestContext) {
     ctx.gateway_mock.mock_class(m_cairo_test_contracts::TEST_CONTRACT_SIERRA);
@@ -351,7 +346,6 @@ async fn test_stop_at_block_n(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// The pipeline should stop once fully synced.
 /// Unsure: should we also sync the pending block? it's debatable
 async fn test_global_stop(mut ctx: TestContext) {
@@ -396,7 +390,6 @@ async fn test_global_stop(mut ctx: TestContext) {
 
 #[rstest]
 #[tokio::test]
-#[traced_test]
 /// Test that we import the class if it's declared in a pending block. For classes declared in closed blocks,
 /// it is already tested in the realistic tests.
 async fn test_pending_declared_class(mut ctx: TestContext) {
