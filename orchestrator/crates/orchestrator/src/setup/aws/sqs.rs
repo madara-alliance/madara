@@ -1,3 +1,4 @@
+use crate::cli::Layer;
 use crate::{
     core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
     types::params::QueueArgs, OrchestratorError, OrchestratorResult,
@@ -30,19 +31,18 @@ impl Resource for SQS {
     /// For example, if the queue name is "test_queue", the dead letter queue name will be "test_queue_dlq".
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         for queue in QUEUES.iter() {
+            if !queue.supported_layers.contains(layer) {
+                continue;
+            }
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
-            let queue_url = format!("{}/{}", args.queue_base_url, queue_name);
-            if self.check_if_exists(queue_url.clone()).await? {
-                tracing::info!(" ⏭️️ SQS queue already exists. Queue URL: {}", queue_url);
+            if self.check_if_exists(queue_name.clone()).await? {
+                tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
                 continue;
             }
             let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-                OrchestratorError::ResourceSetupError(format!(
-                    "Failed to create SQS queue '{}': {}",
-                    args.queue_base_url, e
-                ))
+                OrchestratorError::ResourceSetupError(format!("Failed to create SQS queue '{}': {}", queue_name, e))
             })?;
             let queue_url = res
                 .queue_url()
@@ -77,15 +77,18 @@ impl Resource for SQS {
     /// # Returns
     /// * `OrchestratorResult<bool>` - true if the queue exists, false otherwise
     ///
-    async fn check_if_exists(&self, queue_url: Self::CheckArgs) -> OrchestratorResult<bool> {
-        Ok(self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok())
+    async fn check_if_exists(&self, queue_name: Self::CheckArgs) -> OrchestratorResult<bool> {
+        Ok(self.get_queue_url_from_client(queue_name.as_str()).await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let client = self.client().clone();
         for queue in QUEUES.iter() {
+            if !queue.supported_layers.contains(layer) {
+                continue;
+            }
             let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
-            let queue_url = format!("{}/{}", args.queue_base_url, queue_name);
+            let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
             let result = client.get_queue_attributes().queue_url(queue_url).send().await;
             if result.is_err() {
                 return Ok(false);

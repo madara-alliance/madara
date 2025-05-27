@@ -28,23 +28,23 @@ impl JobTrigger for BatchingTrigger {
     /// 2. Fetch the last batch and check its `end_block`
     /// 3. Assign batches to all the remaining blocks and store the squashed state update in storage
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::trace!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
+        tracing::info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
 
         // Getting the latest block number from Starknet
         let provider = config.madara_client();
         let block_number_provider = provider.block_number().await?;
 
-        // Calculating the last block number to for which a batch needs to be assigned
+        // Calculating the latest block number that needs to be assigned to a batch
         let last_block_to_assign_batch = config
             .service_config()
             .max_block_to_process
             .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
-        tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Fetched latest block number from starknet");
+        tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch.");
 
         // Getting the latest batch in DB
         let latest_batch = config.database().get_latest_batch().await?;
-        let latest_block_in_db = latest_batch.map(|batch| batch.end_block).unwrap_or(0);
+        let latest_block_in_db = latest_batch.map_or(0, |batch| batch.end_block);
 
         // Calculating the first block number to for which a batch needs to be assigned
         let first_block_to_assign_batch = config

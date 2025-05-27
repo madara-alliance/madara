@@ -1,11 +1,13 @@
-use jsonrpsee::core::{async_trait, RpcResult};
+use crate::Starknet;
+use jsonrpsee::core::async_trait;
 use mc_db::MadaraBackend;
+use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
 use mp_block::{
-    header::{BlockTimestamp, GasPrices, L1DataAvailabilityMode, PendingHeader},
+    header::{BlockTimestamp, GasPrices, PendingHeader},
     Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlockInfo,
 };
-use mp_chain_config::{ChainConfig, StarknetVersion};
+use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
@@ -23,33 +25,34 @@ use rstest::fixture;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-use crate::{providers::AddTransactionProvider, Starknet};
-
 #[cfg(test)]
 pub struct TestTransactionProvider;
 
 #[cfg(test)]
 #[async_trait]
-impl AddTransactionProvider for TestTransactionProvider {
-    async fn add_declare_v0_transaction(
+impl SubmitTransaction for TestTransactionProvider {
+    async fn submit_declare_v0_transaction(
         &self,
         _declare_v0_transaction: BroadcastedDeclareTxnV0,
-    ) -> RpcResult<ClassAndTxnHash> {
+    ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
         unimplemented!()
     }
-    async fn add_declare_transaction(&self, _declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash> {
+    async fn submit_declare_transaction(
+        &self,
+        _declare_transaction: BroadcastedDeclareTxn,
+    ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
         unimplemented!()
     }
-    async fn add_deploy_account_transaction(
+    async fn submit_deploy_account_transaction(
         &self,
         _deploy_account_transaction: BroadcastedDeployAccountTxn,
-    ) -> RpcResult<ContractAndTxnHash> {
+    ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
         unimplemented!()
     }
-    async fn add_invoke_transaction(
+    async fn submit_invoke_transaction(
         &self,
         _invoke_transaction: BroadcastedInvokeTxn,
-    ) -> RpcResult<AddInvokeTransactionResult> {
+    ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         unimplemented!()
     }
 }

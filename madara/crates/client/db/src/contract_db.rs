@@ -54,9 +54,9 @@ impl ContractDbBlockUpdate {
 }
 
 // NB: Columns cf needs prefix extractor of these length during creation
-pub(crate) const CONTRACT_STORAGE_PREFIX_EXTRACTOR: usize = 64;
-pub(crate) const CONTRACT_CLASS_HASH_PREFIX_EXTRACTOR: usize = 32;
-pub(crate) const CONTRACT_NONCES_PREFIX_EXTRACTOR: usize = 32;
+pub(crate) const CONTRACT_STORAGE_PREFIX_LEN: usize = 64;
+pub(crate) const CONTRACT_CLASS_HASH_PREFIX_LEN: usize = 32;
+pub(crate) const CONTRACT_NONCES_PREFIX_LEN: usize = 32;
 
 const LAST_KEY: &[u8] = &[0xFF; 64];
 
@@ -188,45 +188,6 @@ impl MadaraBackend {
             let key = [key.as_ref(), &block_number.to_be_bytes() as &[u8]].concat();
             tx.put_cf(col, key, bincode::serialize(&value)?);
         }
-        Ok(())
-    }
-
-    #[tracing::instrument(skip(self, block_number, value, tx), fields(module = "ContractDB"))]
-    pub(crate) fn contract_db_store_block_no_rayon(
-        &self,
-        block_number: u64,
-        value: ContractDbBlockUpdate,
-        tx: &mut WriteBatchWithTransaction,
-    ) -> Result<(), MadaraStorageError> {
-        let block_number = u32::try_from(block_number).map_err(|_| MadaraStorageError::InvalidBlockNumber)?;
-
-        let contract_to_class_hash_col = self.db.get_column(Column::ContractToClassHashes);
-        let contract_to_nonces_col = self.db.get_column(Column::ContractToNonces);
-        let contract_storage_col = self.db.get_column(Column::ContractStorage);
-
-        self.contract_db_store_chunk(
-            &contract_to_class_hash_col,
-            block_number,
-            value.contract_class_updates.into_iter().map(|(k, v)| (k.to_bytes_be(), v)),
-            tx,
-        )?;
-        self.contract_db_store_chunk(
-            &contract_to_nonces_col,
-            block_number,
-            value.contract_nonces_updates.into_iter().map(|(k, v)| (k.to_bytes_be(), v)),
-            tx,
-        )?;
-        self.contract_db_store_chunk(
-            &contract_storage_col,
-            block_number,
-            value.contract_kv_updates.into_iter().map(|((k1, k2), v)| {
-                let mut key = [0u8; 64];
-                key[..32].copy_from_slice(k1.to_bytes_be().as_ref());
-                key[32..].copy_from_slice(k2.to_bytes_be().as_ref());
-                (key, v)
-            }),
-            tx,
-        )?;
         Ok(())
     }
 

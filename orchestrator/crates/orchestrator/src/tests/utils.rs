@@ -1,4 +1,14 @@
 use crate::types::batch::{Batch, ClassDeclaration, ContractUpdate, DataJson, StorageUpdate};
+use chrono::{SubsecRound, Utc};
+use rstest::fixture;
+use uuid::Uuid;
+
+// use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+// use crate::jobs::metadata::{
+//     CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
+//     StateUpdateMetadata,
+// };
+// use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -9,14 +19,12 @@ use crate::types::jobs::metadata::{
     StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-use chrono::{SubsecRound, Utc};
 use color_eyre::Result;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::Read;
-use uuid::Uuid;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
     let metadata = match job_type {
@@ -73,7 +81,12 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
     }
 }
 
-pub fn build_batch(index: u64, start_block: u64, end_block: u64) -> Batch {
+#[fixture]
+pub fn build_batch(
+    #[default(1)] index: u64,
+    #[default(100)] start_block: u64,
+    #[default(200)] end_block: u64,
+) -> Batch {
     Batch {
         id: Uuid::new_v4(),
         index,

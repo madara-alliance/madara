@@ -245,7 +245,6 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[tokio::test]
     #[case::single_mpt_single_value(vec![
         ContractStorageTestInput::new(Felt::TWO, Felt::ONE, Felt::THREE)
     ])]
@@ -279,6 +278,7 @@ mod tests {
         ContractStorageTestInput::new(Felt::from(444), Felt::from(5), Felt::from(55)),
         ContractStorageTestInput::new(Felt::from(555), Felt::from(5), Felt::from(55)),
     ])]
+    #[tokio::test]
     /// Tests `get_storage_proof()` as it relates to contract storage tries. This includes testing
     /// multiple contract storage MPTs to ensure that it provides proofs for each.
     async fn test_contract_storage_trie_proof(
@@ -387,7 +387,6 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[tokio::test]
     #[case(vec![
         (Felt::TWO, Felt::TWO)
     ])]
@@ -402,6 +401,7 @@ mod tests {
         (Felt::from_hex_unchecked("0x0100000000000000000000000000000000000000000000000000000000000000"), Felt::from(33)),
         (Felt::from_hex_unchecked("0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), Felt::from(44)),
     ])]
+    #[tokio::test]
     /// Tests the class trie, ensuring the validity of the proof and that it maches the global
     /// class trie root.
     async fn test_class_trie_proof(
@@ -449,7 +449,6 @@ mod tests {
     }
 
     #[rstest::rstest]
-    #[tokio::test]
     #[case(vec![
         (Felt::TWO, Felt::TWO)
     ])]
@@ -459,6 +458,7 @@ mod tests {
         (Felt::from_hex_unchecked("0x0100000000000000000000000000000000000000000000000000000000000000"), Felt::from(33)),
         (Felt::from_hex_unchecked("0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff"), Felt::from(44)),
     ])]
+    #[tokio::test]
     /// Tests the contract trie, ensuring the validity of the proof and that it maches the global
     /// contract trie root.
     async fn test_contract_trie_proof(

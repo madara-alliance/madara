@@ -1,13 +1,11 @@
-use std::time::{Duration, SystemTime};
-
+use crate::MempoolTransaction;
 use blockifier::transaction::transaction_types::TransactionType;
 use mc_exec::execution::TxInfo;
 use mp_chain_config::ChainConfig;
+use mp_transactions::validated::TxTimestamp;
+use std::time::Duration;
 
-use crate::MempoolTransaction;
-
-#[derive(Debug)]
-#[cfg_attr(any(test, feature = "testing"), derive(Clone))]
+#[derive(Debug, Clone)]
 pub struct MempoolLimits {
     pub max_transactions: usize,
     pub max_declare_transactions: usize,
@@ -35,7 +33,7 @@ impl MempoolLimits {
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub(crate) struct MempoolLimiter {
     pub config: MempoolLimits,
-    current_transactions: usize,
+    pub current_transactions: usize,
     current_declare_transactions: usize,
 }
 
@@ -54,7 +52,7 @@ pub(crate) struct TransactionCheckedLimits {
     check_tx_limit: bool,
     check_declare_limit: bool,
     check_age: bool,
-    tx_arrived_at: SystemTime,
+    tx_arrived_at: TxTimestamp,
 }
 
 impl TransactionCheckedLimits {
@@ -126,8 +124,8 @@ impl MempoolLimiter {
     pub fn tx_age_exceeded(&self, to_check: &TransactionCheckedLimits) -> bool {
         let Some(max_age) = self.config.max_age else { return false };
         if to_check.check_age {
-            let current_time = SystemTime::now();
-            if to_check.tx_arrived_at < current_time.checked_sub(max_age).unwrap_or(SystemTime::UNIX_EPOCH) {
+            let current_time = TxTimestamp::now();
+            if to_check.tx_arrived_at < current_time.checked_sub(max_age).unwrap_or(TxTimestamp::UNIX_EPOCH) {
                 return true;
             }
         }

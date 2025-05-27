@@ -41,7 +41,7 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
         ),
         cloud_provider => Err(OrchestratorError::InvalidCloudProviderError(cloud_provider.to_string()))?,
     };
-    resources.setup_resource().await?;
+    resources.setup_resource(&setup_cmd.layer).await?;
 
     Ok(())
 }

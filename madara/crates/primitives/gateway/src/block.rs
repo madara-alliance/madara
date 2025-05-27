@@ -1,8 +1,6 @@
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
-use mp_block::{
-    header::{L1DataAvailabilityMode, PendingHeader},
-    FullBlock, PendingFullBlock, TransactionWithReceipt,
-};
+use mp_block::{header::PendingHeader, FullBlock, PendingFullBlock, TransactionWithReceipt};
+use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
 use mp_receipt::EventWithTransactionHash;
@@ -39,6 +37,7 @@ fn protocol_version(
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockHeader {
     pub block_number: u64,
@@ -91,7 +90,7 @@ impl ProviderBlockPendingMaybe {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlock {
     pub block_hash: Felt,
@@ -218,7 +217,7 @@ impl ProviderBlock {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockPending {
     pub parent_block_hash: Felt,
@@ -297,7 +296,7 @@ impl ProviderBlockPending {
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockSignature {
     pub block_hash: Felt,
@@ -306,7 +305,7 @@ pub struct ProviderBlockSignature {
 
 #[serde_as]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[cfg_attr(test, derive(Eq))]
 pub struct ResourcePrice {
     #[serde_as(as = "U128AsHex")]
@@ -317,7 +316,7 @@ pub struct ResourcePrice {
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-// #[serde(deny_unknown_fields)] // TODO(v0.13.4): Re-add this attribute when v0.13.4 is supported.
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub enum BlockStatus {
     Pending,
     Aborted,

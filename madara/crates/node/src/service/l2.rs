@@ -1,4 +1,4 @@
-use crate::cli::L2SyncParams;
+use crate::cli::l2::L2SyncParams;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_rpc::versions::admin::v0_1_0::MadaraStatusRpcApiV0_1_0Client;
@@ -118,7 +118,7 @@ impl Service for SyncService {
                     this.db_backend.clone(),
                     importer.clone(),
                     gateway,
-                    SyncControllerConfig::default().stop_on_sync(true),
+                    SyncControllerConfig::default().stop_on_sync(true).no_pending_block(true),
                     mc_sync::gateway::ForwardSyncConfig::default()
                         .disable_tries(this.params.disable_tries)
                         .keep_pre_v0_13_2_hashes(this.params.keep_pre_v0_13_2_hashes()),

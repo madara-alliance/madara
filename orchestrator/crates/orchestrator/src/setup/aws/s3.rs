@@ -1,3 +1,4 @@
+use crate::cli::Layer;
 use crate::core::client::storage::s3::AWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
@@ -31,7 +32,7 @@ impl Resource for AWSS3 {
         }
     }
     /// Set up a new S3 bucket
-    async fn setup(&self, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
+    async fn setup(&self, _layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
         if self.check_if_exists(args.bucket_name.clone()).await? {
@@ -62,7 +63,7 @@ impl Resource for AWSS3 {
         Ok(self.client.head_bucket().bucket(bucket_name).send().await.is_ok())
     }
 
-    async fn is_ready_to_use(&self, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         Ok(self.client.head_bucket().bucket(&args.bucket_name).send().await.is_ok())
     }
 }

@@ -25,13 +25,12 @@ pub struct StorageArgs {
 pub struct QueueArgs {
     pub prefix: String,
     pub suffix: String,
-    pub queue_base_url: String,
 }
 
 /// AlertArgs - Arguments used to set up alert resources
 #[derive(Debug, Clone)]
 pub struct AlertArgs {
-    pub endpoint: String,
+    pub alert_topic_name: String,
 }
 
 /// CronArgs - Arguments used to setup cron resources
@@ -108,29 +107,26 @@ impl TryFrom<SetupCmd> for StorageArgs {
 impl TryFrom<SetupCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
-        let arn = setup_cmd
+        let topic = setup_cmd
             .aws_sns_args
-            .sns_arn
+            .alert_topic_name
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        let pos =
-            arn.rfind(':').ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))?;
-        let sns_arn = format!("{}:{}_{}", &arn[..pos], setup_cmd.aws_config_args.aws_prefix, &arn[pos + 1..]);
-        info!("SNS ARN: {}", sns_arn);
-        Ok(Self { endpoint: sns_arn })
+        let alert_topic_name = format!("{}_{}", setup_cmd.aws_config_args.aws_prefix, topic);
+        info!("SNS TOPIC: {}", alert_topic_name);
+        Ok(Self { alert_topic_name })
     }
 }
 
 impl TryFrom<RunCmd> for AlertArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
-        let arn = run_cmd
+        let topic = run_cmd
             .aws_sns_args
-            .sns_arn
+            .alert_topic_name
             .ok_or(OrchestratorError::SetupCommandError("SNS ARN not found".to_string()))?;
-        let pos =
-            arn.rfind(':').ok_or_else(|| OrchestratorError::SetupCommandError("Invalid ARN format".to_string()))?;
-        let sns_arn = format!("{}:{}_{}", &arn[..pos], run_cmd.aws_config_args.aws_prefix, &arn[pos + 1..]);
-        Ok(Self { endpoint: sns_arn })
+        let alert_topic_name = format!("{}_{}", run_cmd.aws_config_args.aws_prefix, topic);
+        info!("SNS TOPIC: {}", alert_topic_name);
+        Ok(Self { alert_topic_name })
     }
 }
 
@@ -138,10 +134,6 @@ impl TryFrom<RunCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(run_cmd: RunCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            queue_base_url: run_cmd
-                .aws_sqs_args
-                .queue_base_url
-                .ok_or(OrchestratorError::SetupCommandError("Queue base URL is required".to_string()))?,
             prefix: run_cmd.aws_config_args.aws_prefix.clone(),
             suffix: run_cmd
                 .aws_sqs_args
@@ -155,10 +147,6 @@ impl TryFrom<SetupCmd> for QueueArgs {
     type Error = OrchestratorError;
     fn try_from(setup_cmd: SetupCmd) -> Result<Self, Self::Error> {
         Ok(Self {
-            queue_base_url: setup_cmd
-                .aws_sqs_args
-                .queue_base_url
-                .ok_or(OrchestratorError::SetupCommandError("Queue base URL is required".to_string()))?,
             prefix: setup_cmd.aws_config_args.aws_prefix.clone(),
             suffix: setup_cmd
                 .aws_sqs_args

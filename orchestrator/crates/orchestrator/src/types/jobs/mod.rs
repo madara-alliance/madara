@@ -10,7 +10,7 @@ use std::str::FromStr;
 use strum_macros::Display;
 use thiserror::Error;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display, strum_macros::EnumString)]
 #[strum(serialize_all = "PascalCase")]
 pub enum WorkerTriggerType {
     Snos,
@@ -30,21 +30,6 @@ pub struct WorkerTriggerMessage {
 pub enum WorkerTriggerTypeError {
     #[error("Unknown WorkerTriggerType: {0}")]
     UnknownType(String),
-}
-
-impl FromStr for WorkerTriggerType {
-    type Err = WorkerTriggerTypeError;
-
-    fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
-            "Proving" => Ok(WorkerTriggerType::Proving),
-            "Snos" => Ok(WorkerTriggerType::Snos),
-            "ProofRegistration" => Ok(WorkerTriggerType::ProofRegistration),
-            "DataSubmission" => Ok(WorkerTriggerType::DataSubmission),
-            "UpdateState" => Ok(WorkerTriggerType::UpdateState),
-            _ => Err(WorkerTriggerTypeError::UnknownType(s.to_string())),
-        }
-    }
 }
 
 // TODO : Need to check why serde deserializer was failing here.

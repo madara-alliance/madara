@@ -1,17 +1,77 @@
-use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error};
+use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdaptor};
 use blockifier::{
     blockifier::{
-        config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
+        block::BlockInfo, config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
         transaction_executor::TransactionExecutor,
     },
-    context::{BlockContext, ChainInfo, FeeTokenAddresses},
+    context::BlockContext,
     state::cached_state::CachedState,
 };
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_block::{header::L1DataAvailabilityMode, MadaraMaybePendingBlockInfo};
+use mp_block::MadaraMaybePendingBlockInfo;
+
+use mp_chain_config::L1DataAvailabilityMode;
 use starknet_api::block::{BlockNumber, BlockTimestamp};
 use std::sync::Arc;
 
+/// Extension trait that provides execution capabilities on the madara backend.
+pub trait MadaraBackendExecutionExt {
+    /// Executor used for producing blocks.
+    fn new_executor_for_block_production(
+        self: &Arc<Self>,
+        state_adaptor: LayeredStateAdaptor,
+        block_info: BlockInfo,
+    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error>;
+    /// Executor used for validating transactions on top of the pending block.
+    fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error>;
+}
+
+impl MadaraBackendExecutionExt for MadaraBackend {
+    fn new_executor_for_block_production(
+        self: &Arc<Self>,
+        state_adaptor: LayeredStateAdaptor,
+        block_info: BlockInfo,
+    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error> {
+        Ok(TransactionExecutor::new(
+            state_adaptor.into(),
+            BlockContext::new(
+                block_info,
+                self.chain_config().blockifier_chain_info(),
+                self.chain_config().exec_constants_by_protocol_version(self.chain_config().latest_protocol_version)?,
+                self.chain_config().bouncer_config.clone(),
+            ),
+            TransactionExecutorConfig {
+                concurrency_config: self.chain_config().block_production_concurrency.blockifier_config(),
+            },
+        ))
+    }
+
+    fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error> {
+        let pending_block = self.latest_pending_block();
+        let block_n = self.get_latest_block_n()?.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        Ok(StatefulValidator::create(
+            CachedState::new(BlockifierStateAdapter::new(Arc::clone(self), block_n, Some(DbBlockId::Pending))),
+            BlockContext::new(
+                BlockInfo {
+                    block_number: BlockNumber(block_n),
+                    block_timestamp: BlockTimestamp(pending_block.header.block_timestamp.0),
+                    sequencer_address: pending_block
+                        .header
+                        .sequencer_address
+                        .try_into()
+                        .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
+                    gas_prices: (&pending_block.header.l1_gas_price).into(),
+                    use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
+                },
+                self.chain_config().blockifier_chain_info(),
+                self.chain_config().exec_constants_by_protocol_version(pending_block.header.protocol_version)?,
+                self.chain_config().bouncer_config.clone(),
+            ),
+        ))
+    }
+}
+
+// TODO: deprecate this struct (only used for reexecution, which IMO should also go into MadaraBackendExecutionExt)
 pub struct ExecutionContext {
     pub(crate) backend: Arc<MadaraBackend>,
     pub(crate) block_context: BlockContext,
@@ -20,11 +80,10 @@ pub struct ExecutionContext {
 }
 
 impl ExecutionContext {
-    pub fn tx_executor(&self) -> TransactionExecutor<BlockifierStateAdapter> {
+    pub fn executor_for_block_production(&self) -> TransactionExecutor<BlockifierStateAdapter> {
         TransactionExecutor::new(
             self.init_cached_state(),
             self.block_context.clone(),
-            // No concurrency yet.
             TransactionExecutorConfig { concurrency_config: Default::default() },
         )
     }
@@ -121,14 +180,8 @@ impl ExecutionContext {
         };
 
         let versioned_constants = backend.chain_config().exec_constants_by_protocol_version(protocol_version)?;
-        let chain_info = ChainInfo {
-            chain_id: backend.chain_config().chain_id.clone(),
-            fee_token_addresses: FeeTokenAddresses {
-                strk_fee_token_address: backend.chain_config().native_fee_token_address,
-                eth_fee_token_address: backend.chain_config().parent_fee_token_address,
-            },
-        };
-        let block_info = blockifier::blockifier::block::BlockInfo {
+        let chain_info = backend.chain_config().blockifier_chain_info();
+        let block_info = BlockInfo {
             block_number: BlockNumber(block_number),
             block_timestamp: BlockTimestamp(block_timestamp.0),
             sequencer_address: sequencer_address

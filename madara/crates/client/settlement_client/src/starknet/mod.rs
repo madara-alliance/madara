@@ -25,6 +25,11 @@ pub mod event;
 #[cfg(test)]
 pub mod utils;
 
+// when the block 0 is not settled yet, this should be prev block number, this would be the output from the snos as well while
+// executing the block 0.
+// link: https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
+const INITIAL_STATE_BLOCK_NUMBER: &str = "0x800000000000011000000000000000000000000000000000000000000000000";
+
 #[derive(Debug)]
 pub struct StarknetClient {
     pub provider: Arc<JsonRpcClient<HttpTransport>>,
@@ -138,9 +143,11 @@ impl SettlementClientTrait for StarknetClient {
     async fn get_current_core_contract_state(&self) -> Result<StateUpdate, SettlementClientError> {
         let state = self.get_state_call().await?; // Returns (StateRoot, BlockNumber, BlockHash).
         let global_root = state[0];
-        let block_number = u64::try_from(state[1]).map_err(|e| -> SettlementClientError {
-            StarknetClientError::Conversion(format!("Failed to convert state[1] to block number u64: {e:#}")).into()
-        })?;
+        let block_number = if state[1] == Felt::from_hex(INITIAL_STATE_BLOCK_NUMBER).unwrap() {
+            None
+        } else {
+            u64::try_from(state[1]).ok()
+        };
         let block_hash = state[2];
 
         Ok(StateUpdate { global_root, block_number, block_hash })
@@ -194,8 +201,11 @@ impl SettlementClientTrait for StarknetClient {
                         StarknetClientError::MissingField("block_hash").into()
                     })?;
 
-                    let formatted_event =
-                        StateUpdate { block_number, global_root: *global_root, block_hash: *block_hash };
+                    let formatted_event = StateUpdate {
+                        block_number: Some(block_number),
+                        global_root: *global_root,
+                        block_hash: *block_hash,
+                    };
 
                     worker.update_state(formatted_event).map_err(|e| -> SettlementClientError {
                         StarknetClientError::StateSync { message: e.to_string(), block_number }.into()
@@ -578,7 +588,7 @@ pub mod starknet_client_tests {
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
             StateUpdate {
-                block_number: 99,
+                block_number: Some(99),
                 global_root: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
                 block_hash: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
             },
@@ -589,7 +599,7 @@ pub mod starknet_client_tests {
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
             StateUpdate {
-                block_number: 100,
+                block_number: Some(100),
                 global_root: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
                 block_hash: Felt::from_hex("0xdeadbeef").expect("Should parse valid test hex value"),
             },
@@ -617,7 +627,7 @@ pub mod starknet_client_tests {
         let block_number = send_state_update(
             &fixture.context.account,
             fixture.context.deployed_appchain_contract_address,
-            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event },
+            StateUpdate { block_number: Some(100), global_root: global_root_event, block_hash: block_hash_event },
         )
         .await?;
         poll_on_block_completion(block_number, fixture.context.account.provider(), 100).await?;
@@ -626,7 +636,7 @@ pub mod starknet_client_tests {
             fixture.client.get_current_core_contract_state().await.expect("issue while getting the state");
         assert_eq!(
             state_update,
-            StateUpdate { block_number: 100, global_root: global_root_event, block_hash: block_hash_event }
+            StateUpdate { block_number: Some(100), global_root: global_root_event, block_hash: block_hash_event }
         );
 
         Ok(())
@@ -670,7 +680,7 @@ mod starknet_client_messaging_test {
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use mc_db::DatabaseService;
-    use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolLimits};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::{fixture, rstest};
@@ -713,14 +723,7 @@ mod starknet_client_messaging_test {
         })
         .await?;
 
-        let l1_gas_setter = GasPriceProvider::new();
-        let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-
-        let mempool = Arc::new(Mempool::new(
-            Arc::clone(db.backend()),
-            Arc::clone(&l1_data_provider),
-            MempoolLimits::for_testing(),
-        ));
+        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
 
         // Return all resources bundled together
         Ok(StarknetClientTextFixture {
@@ -889,7 +892,7 @@ mod starknet_client_event_subscription_test {
 
         // Wait for get_initial_state
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 0);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(0));
 
         // Verify the block number
         let block_in_db = db
@@ -903,7 +906,7 @@ mod starknet_client_event_subscription_test {
             &context.account,
             context.deployed_appchain_contract_address,
             StateUpdate {
-                block_number: 100,
+                block_number: Some(100),
                 global_root: Felt::from_hex("0xbeef")?,
                 block_hash: Felt::from_hex("0xbeef")?,
             },
@@ -912,7 +915,7 @@ mod starknet_client_event_subscription_test {
 
         // Wait for changed
         recv.changed().await.unwrap();
-        assert_eq!(recv.borrow().as_ref().unwrap().block_number, 100);
+        assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(100));
 
         // Verify the block number
         let block_in_db = db
