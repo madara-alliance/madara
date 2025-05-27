@@ -7,7 +7,6 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::helpers::JobProcessingState;
 use crate::utils::COMPILED_OS;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::get_fact_info;
@@ -126,10 +125,6 @@ impl JobHandlerTrait for SnosJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         1
-    }
-
-    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        config.processing_locks().snos_job_processing_lock.clone()
     }
 }
 
