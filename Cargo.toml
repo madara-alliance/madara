@@ -66,6 +66,7 @@ m-proc-macros = { path = "madara/crates/proc-macros", default-features = false }
 
 # Madara primtitives
 mp-block = { path = "madara/crates/primitives/block", default-features = false }
+mp-bloom-filter = { path = "madara/crates/primitives/bloom_filter", default-features = false }
 mp-convert = { path = "madara/crates/primitives/convert", default-features = false }
 mp-transactions = { path = "madara/crates/primitives/transactions", default-features = false }
 mp-class = { path = "madara/crates/primitives/class", default-features = false }
@@ -195,6 +196,8 @@ primitive-types = "0.12"
 rand = "0.8"
 crypto-bigint = "0.5.5"
 zeroize = "1.8"
+ahash = "0.8"
+twox-hash = "2.1"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
@@ -218,6 +221,7 @@ httpmock = "0.7.0"
 mockall = "0.13.0"
 fdlimit = "0.3.0"
 assert_matches = "1.5"
+criterion = { version = "0.5", features = ["html_reports"] }
 
 # Macros
 indoc = "2"
