@@ -4,20 +4,14 @@ use std::time::Duration;
 use color_eyre::eyre::eyre;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::{fixture, rstest};
-use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
-use starknet::contract::ContractFactory;
-use starknet::core::types::contract::{CompiledClass, SierraClass};
-use starknet::core::types::{
-    BlockId, BlockTag, DeclareTransactionResult, Felt, FunctionCall, InvokeTransactionResult, StarknetError,
-    TransactionExecutionStatus, TransactionStatus,
-};
-use starknet::macros::{felt, selector};
+use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::core::types::{BlockId, BlockTag, Felt, StarknetError, TransactionExecutionStatus, TransactionStatus};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError, Url};
 use starknet::signers::{LocalWallet, SigningKey};
 
 use super::setup::{wait_for_cond, MadaraCmd, MadaraCmdBuilder};
-use crate::{LocalWalletSignerMiddleware, StarknetSettlementClient, StarknetSettlementValidatedArgs};
+use crate::{LocalWalletSignerMiddleware, StarknetSettlementValidatedArgs};
 
 #[fixture]
 pub async fn spin_up_madara() -> MadaraCmd {
@@ -30,6 +24,7 @@ pub async fn spin_up_madara() -> MadaraCmd {
     node
 }
 
+#[allow(dead_code)]
 async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Felt, duration: Duration) -> bool {
     let result = wait_for_cond(
         || async {

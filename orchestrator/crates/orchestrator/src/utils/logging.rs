@@ -10,7 +10,6 @@ use tracing_subscriber::{fmt, EnvFilter, Registry};
 // Pretty formatter is formatted for console readability
 struct PrettyFormatter;
 
-
 impl<S, N> FormatEvent<S, N> for PrettyFormatter
 where
     S: Subscriber + for<'a> LookupSpan<'a>,
@@ -129,11 +128,8 @@ pub fn init_logging() {
         .parse("orchestrator=trace")
         .expect("Invalid filter directive and Logger control");
 
-    let fmt_layer = fmt::layer()
-        .with_thread_names(true)
-        .with_thread_ids(true)
-        .with_target(false)
-        .event_format(PrettyFormatter);
+    let fmt_layer =
+        fmt::layer().with_thread_names(true).with_thread_ids(true).with_target(false).event_format(PrettyFormatter);
 
     let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
 

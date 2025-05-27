@@ -1,6 +1,3 @@
-use std::collections::HashMap;
-use std::sync::Arc;
-
 use crate::core::config::Config;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
@@ -20,7 +17,8 @@ use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use starknet_core::types::Felt;
-use starknet_os::io::output::{ContractChanges, StarknetOsOutput};
+use starknet_os::io::output::StarknetOsOutput;
+use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::debug;
 
@@ -417,110 +415,6 @@ pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {
             bytes
         })
         .collect()
-}
-
-fn convert_snos_output_into_bytes_vec(snos: StarknetOsOutput) -> Vec<[u8; 32]> {
-    let mut snos_vec = Vec::new();
-
-    snos_vec.push(snos.initial_root.to_bytes_be());
-    snos_vec.push(snos.final_root.to_bytes_be());
-    snos_vec.push(snos.prev_block_number.to_bytes_be());
-    snos_vec.push(snos.new_block_number.to_bytes_be());
-    snos_vec.push(snos.prev_block_hash.to_bytes_be());
-    snos_vec.push(snos.new_block_hash.to_bytes_be());
-    snos_vec.push(snos.os_program_hash.to_bytes_be());
-    snos_vec.push(snos.starknet_os_config_hash.to_bytes_be());
-    snos_vec.push(snos.use_kzg_da.to_bytes_be());
-    snos_vec.push(snos.full_output.to_bytes_be());
-
-    // Processing Messages to L1
-    snos_vec.push(usize_to_bytes(snos.messages_to_l1.len()));
-    for messages in snos.messages_to_l1 {
-        snos_vec.push(messages.to_bytes_be());
-    }
-
-    // Processing Messages to L2
-    snos_vec.push(usize_to_bytes(snos.messages_to_l2.len()));
-    for messages in snos.messages_to_l2 {
-        snos_vec.push(messages.to_bytes_be());
-    }
-
-    let state_diff = snos.state_diff.unwrap();
-    let classes = state_diff.classes;
-    let contract_changes = state_diff.contract_changes;
-
-    // Processing Contract Changes
-    snos_vec.push(usize_to_bytes(contract_changes.len()));
-    for contract in contract_changes {
-        snos_vec.extend(convert_contract_changes_into_vec(contract));
-    }
-
-    // Processing Class Changes
-    snos_vec.extend(convert_class_changes_into_vec(classes, snos.full_output));
-
-    snos_vec
-}
-
-fn convert_contract_changes_into_vec(contract_changes: ContractChanges) -> Vec<[u8; 32]> {
-    let mut result = Vec::new();
-
-    result.push(contract_changes.addr.to_bytes_be());
-
-    // Calculate the bound (2^64)
-    let bound = Felt252::from(18446744073709551616u128);
-
-    // Calculate was_class_updated
-    let was_class_updated = if contract_changes.class_hash.is_some() { Felt252::ONE } else { Felt252::ZERO };
-
-    // Pack the values:
-    // new_value = (was_class_updated * bound + new_state_nonce)
-    // value = new_value * bound + n_actual_updates
-    let new_value = was_class_updated * bound + contract_changes.nonce;
-    let n_actual_updates = Felt252::from(contract_changes.storage_changes.len());
-    let packed_value = new_value * bound + n_actual_updates;
-
-    result.push(packed_value.to_bytes_be());
-
-    if let Some(class_hash) = contract_changes.class_hash {
-        result.push(class_hash.to_bytes_be());
-    }
-
-    // Sort the keys to ensure consistent ordering
-    let mut storage_entries: Vec<_> = contract_changes.storage_changes.iter().collect();
-    storage_entries.sort_by_key(|&(k, _)| k);
-
-    for (key, value) in storage_entries {
-        result.push(key.to_bytes_be());
-        result.push(value.to_bytes_be());
-    }
-
-    result
-}
-
-fn convert_class_changes_into_vec(changes: HashMap<Felt252, Felt252>, full_output: Felt252) -> Vec<[u8; 32]> {
-    let mut result = Vec::new();
-
-    result.push(Felt252::from(changes.len()).to_bytes_be());
-
-    // Add all changes in sorted order for deterministic output
-    let mut sorted_changes: Vec<_> = changes.iter().collect();
-    sorted_changes.sort_by_key(|&(k, _)| k);
-
-    for (class_hash, compiled_class_hash) in sorted_changes {
-        // Add class_hash
-        result.push(class_hash.to_bytes_be());
-
-        // If full_output is true, add a dummy value
-        // This matches the Cairo code's behavior where it reads and discards a value
-        if full_output == Felt252::ONE {
-            result.push(Felt252::ZERO.to_bytes_be()); // or another appropriate dummy value
-        }
-
-        // Add compiled_class_hash
-        result.push(compiled_class_hash.to_bytes_be());
-    }
-
-    result
 }
 
 fn usize_to_bytes(n: usize) -> [u8; 32] {

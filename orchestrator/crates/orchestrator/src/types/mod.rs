@@ -5,7 +5,6 @@ pub mod params;
 pub mod queue;
 pub mod worker;
 
-
 #[derive(Debug, Clone, clap::ValueEnum, PartialEq)]
 pub enum Layer {
     L2,

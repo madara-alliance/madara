@@ -138,7 +138,6 @@ impl JobHandlerTrait for ProvingJobHandler {
                         "Fact is None, cannot fetch proof without a fact"
                     );
                     return Err(JobError::Other(OtherError(eyre!("Fact is None, cannot fetch proof without a fact"))));
-
                 }
                 // If proof download path is specified, store the proof
                 let fetched_proof =

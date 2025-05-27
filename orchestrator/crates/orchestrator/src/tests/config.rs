@@ -362,7 +362,7 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params, &params.orchestrator_params),
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -532,18 +532,19 @@ pub(crate) fn get_env_params() -> EnvParams {
     };
 
     let parse_number = |var: &str| -> Option<u64> {
-        get_env_var_optional(var)
-            .unwrap_or_else(|_| panic!("Couldn't get {}", var))
-            .and_then(|s| s.parse().ok())
+        get_env_var_optional(var).unwrap_or_else(|_| panic!("Couldn't get {}", var)).and_then(|s| s.parse().ok())
     };
 
     let service_config = ServiceParams {
         max_block_to_process: parse_number("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS"),
-        min_block_to_process: parse_number("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS"), 
+        min_block_to_process: parse_number("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS"),
         max_concurrent_snos_jobs: parse_number("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS").map(|n| n as usize),
-        max_concurrent_proving_jobs: parse_number("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS").map(|n| n as usize),
-        max_concurrent_proof_registration_jobs: parse_number("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROOF_REGISTRATION_JOBS")
+        max_concurrent_proving_jobs: parse_number("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS")
             .map(|n| n as usize),
+        max_concurrent_proof_registration_jobs: parse_number(
+            "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROOF_REGISTRATION_JOBS",
+        )
+        .map(|n| n as usize),
     };
 
     let server_config = ServerParams {

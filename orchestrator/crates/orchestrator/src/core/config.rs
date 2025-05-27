@@ -157,7 +157,7 @@ impl Config {
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(&prover_config, &params);
+        let prover_client = Self::build_prover_service(&prover_config);
         let da_client = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -218,10 +218,7 @@ impl Config {
     /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
-    pub(crate) fn build_prover_service(
-        prover_params: &ProverConfig,
-        params: &ConfigParam,
-    ) -> Box<dyn ProverClient + Send + Sync> {
+    pub(crate) fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
