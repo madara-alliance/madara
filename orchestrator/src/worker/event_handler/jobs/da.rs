@@ -425,13 +425,13 @@ pub mod test {
     use std::io::Read;
 
     use crate::worker::event_handler::jobs::da::DAJobHandler;
-    use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
     use httpmock::prelude::*;
     use majin_blob_core::blob;
     use majin_blob_types::serde;
     use orchestrator_da_client_interface::MockDaClient;
     use rstest::rstest;
+    use ::serde::{Deserialize, Serialize};
     use serde_json::json;
     use starknet::core::types::{
         ContractStorageDiffItem, DeployedContractItem, Felt, NonceUpdate, StateDiff, StateUpdate, StorageEntry,
