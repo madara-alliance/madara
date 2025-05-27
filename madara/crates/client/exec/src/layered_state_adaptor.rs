@@ -210,7 +210,7 @@ mod tests {
                         sequencer_address: backend.chain_config().sequencer_address.to_felt(),
                         block_timestamp: BlockTimestamp::now(),
                         protocol_version: StarknetVersion::LATEST,
-                        l1_gas_price: GasPrices::default(),
+                        gas_prices: GasPrices::default(),
                         l1_da_mode: L1DataAvailabilityMode::Calldata,
                     },
                     state_diff: StateDiff {

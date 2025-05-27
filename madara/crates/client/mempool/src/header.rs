@@ -13,7 +13,7 @@ pub fn make_pending_header(
         sequencer_address: **chain_config.sequencer_address,
         block_timestamp: BlockTimestamp::now(),
         protocol_version: chain_config.latest_protocol_version,
-        l1_gas_price: l1_info.get_gas_prices(),
+        gas_prices: l1_info.get_gas_prices(),
         l1_da_mode: chain_config.l1_da_mode,
     }
 }
