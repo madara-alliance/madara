@@ -1,10 +1,7 @@
 use crate::cli::Layer;
 use crate::{
-    core::client::queue::sqs::SQS,
-    core::cloud::CloudProvider,
-    core::traits::resource::Resource,
-    types::{params::QueueArgs, q_control::QUEUES},
-    OrchestratorError, OrchestratorResult,
+    core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource,
+    types::{params::QueueArgs, q_control::QUEUES}, OrchestratorError, OrchestratorResult
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
