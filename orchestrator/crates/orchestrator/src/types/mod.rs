@@ -4,3 +4,4 @@ pub mod jobs;
 pub mod params;
 pub mod queue;
 pub mod worker;
+pub mod q_control;

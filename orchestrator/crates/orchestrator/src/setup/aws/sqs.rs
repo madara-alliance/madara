@@ -1,7 +1,7 @@
 use crate::cli::Layer;
 use crate::{
-    core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES,
-    types::params::QueueArgs, OrchestratorError, OrchestratorResult,
+    core::client::queue::sqs::SQS, core::cloud::CloudProvider, core::traits::resource::Resource,
+    types::{params::QueueArgs, q_control::QUEUES}, OrchestratorError, OrchestratorResult
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;
@@ -32,11 +32,12 @@ impl Resource for SQS {
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        for queue in QUEUES.iter() {
+        let queue_fn = |q_type| format!("{}_{}_{}", args.prefix, q_type, args.suffix);
+        for (queue_type, queue) in QUEUES.iter() {
             if !queue.supported_layers.contains(layer) {
                 continue;
             }
-            let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
+            let queue_name = queue_fn(queue_type);
             if self.check_if_exists(queue_name.clone()).await? {
                 tracing::info!(" ⏭️️ SQS queue already exists. Queue Name: {}", queue_name);
                 continue;
@@ -52,7 +53,8 @@ impl Resource for SQS {
             attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
             if let Some(dlq_config) = &queue.dlq_config {
-                let dlq_url = self.get_queue_url_from_client(&queue_name).await?;
+                let dql_queue_name = queue_fn(&dlq_config.dlq_name);
+                let dlq_url = self.get_queue_url_from_client(&dql_queue_name).await?;
                 let dlq_arn = self.get_queue_arn(&dlq_url).await?;
                 let policy = format!(
                     r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
@@ -83,11 +85,11 @@ impl Resource for SQS {
 
     async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let client = self.client().clone();
-        for queue in QUEUES.iter() {
+        for (query_type, queue) in QUEUES.iter() {
             if !queue.supported_layers.contains(layer) {
                 continue;
             }
-            let queue_name = format!("{}_{}_{}", args.prefix, queue.name, args.suffix);
+            let queue_name = format!("{}_{}_{}", args.prefix, query_type, args.suffix);
             let queue_url = self.get_queue_url_from_client(queue_name.as_str()).await?;
             let result = client.get_queue_attributes().queue_url(queue_url).send().await;
             if result.is_err() {
