@@ -58,12 +58,6 @@ runs:
         components: cargo, clippy, rustfmt
         rustflags: ""
 
-    - name: Rust target
-      shell: bash
-      run: |
-        rustc --version --verbose
-        rustc --print cfg
-
     - name: Install dependencies
       shell: bash
       run: |
