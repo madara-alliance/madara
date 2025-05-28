@@ -15,7 +15,7 @@ export ANVIL_DEFAULT_PORT=8545
 
 subshell() {
   # We need to build madara first so that we can launch it in mc-e2e-tests.
-  cargo build --bin madara --profile dev
+  CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml --bin madara --profile dev
 
   # Run the tests
   if cargo nextest run "${@:-"--workspace"}"; then

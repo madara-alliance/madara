@@ -1,7 +1,7 @@
 use mp_convert::hex_serde::{U128AsHex, U64AsHex};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use starknet_api::transaction::TransactionVersion;
+use starknet_api::{block::FeeType, transaction::TransactionVersion};
 use starknet_types_core::{felt::Felt, hash::StarkHash};
 
 mod from_blockifier;
@@ -12,7 +12,6 @@ mod to_blockifier;
 mod to_starknet_types;
 
 pub mod compute_hash;
-pub mod utils;
 pub mod validated;
 
 pub use to_blockifier::*;
@@ -211,11 +210,11 @@ impl Transaction {
         !matches!(self, Transaction::L1Handler(_))
     }
 
-    pub fn fee_type(&self) -> blockifier::transaction::objects::FeeType {
+    pub fn fee_type(&self) -> FeeType {
         if self.is_l1_handler() || self.version() < TransactionVersion::THREE {
-            blockifier::transaction::objects::FeeType::Eth
+            FeeType::Eth
         } else {
-            blockifier::transaction::objects::FeeType::Strk
+            FeeType::Strk
         }
     }
 
@@ -840,13 +839,13 @@ mod tests {
     #[test]
     fn test_tx_fee_type() {
         let tx: Transaction = L1HandlerTransaction::default().into();
-        assert!(matches!(tx.fee_type(), blockifier::transaction::objects::FeeType::Eth));
+        assert!(matches!(tx.fee_type(), FeeType::Eth));
 
         let tx: Transaction = InvokeTransactionV0::default().into();
-        assert!(matches!(tx.fee_type(), blockifier::transaction::objects::FeeType::Eth));
+        assert!(matches!(tx.fee_type(), FeeType::Eth));
 
         let tx: Transaction = InvokeTransactionV3::default().into();
-        assert!(matches!(tx.fee_type(), blockifier::transaction::objects::FeeType::Strk));
+        assert!(matches!(tx.fee_type(), FeeType::Strk));
     }
 
     #[test]

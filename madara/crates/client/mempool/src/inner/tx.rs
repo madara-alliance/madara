@@ -14,6 +14,7 @@ use std::fmt;
 /// by the [Mempool]
 ///
 /// [Mempool]: super::super::Mempool
+#[derive(Clone)]
 pub struct MempoolTransaction {
     pub tx: Transaction,
     /// Time at which the transaction was inserted into the mempool (+ or -)
@@ -47,18 +48,6 @@ impl fmt::Debug for MempoolTransaction {
     }
 }
 
-impl Clone for MempoolTransaction {
-    fn clone(&self) -> Self {
-        Self {
-            tx: self.tx.clone_blockifier_transaction(),
-            arrived_at: self.arrived_at,
-            converted_class: self.converted_class.clone(),
-            nonce: self.nonce,
-            nonce_next: self.nonce_next,
-        }
-    }
-}
-
 impl MempoolTransaction {
     pub fn new_from_blockifier_tx(
         tx: Transaction,
@@ -71,9 +60,6 @@ impl MempoolTransaction {
         Ok(Self { tx, arrived_at, converted_class, nonce, nonce_next })
     }
 
-    pub fn clone_tx(&self) -> Transaction {
-        self.tx.clone_blockifier_transaction()
-    }
     pub fn nonce(&self) -> Nonce {
         self.tx.nonce()
     }

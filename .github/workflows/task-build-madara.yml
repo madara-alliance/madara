@@ -75,8 +75,10 @@ jobs:
         run: |
           export GIT_COMMIT_HASH=$GITHUB_SHA
           # We build the whole workspace to ensure nothing broke.
-          # Builds "madara", the "orchestrator" and the "m-cairo-test-contracts" package
+          # Builds the "orchestrator" and the "m-cairo-test-contracts" package
           cargo build --release --workspace
+          # Builds "madara"
+          CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --release
 
       # Generate hash for the Madara binary
       - name: Generate binary hashes

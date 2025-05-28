@@ -33,7 +33,6 @@ mc-settlement-client = { workspace = true }
 mc-submit-tx = { workspace = true }
 mc-sync = { workspace = true }
 mc-telemetry = { workspace = true }
-mp-block = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-oracle = { workspace = true }
 mp-rpc = { workspace = true }
@@ -62,7 +61,6 @@ serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
 serde_yaml.workspace = true
 starknet-core.workspace = true
-starknet-providers.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tower.workspace = true

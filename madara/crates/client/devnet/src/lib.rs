@@ -1,5 +1,4 @@
 use anyhow::Context;
-use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_db::MadaraBackend;
 use mp_block::{
     header::{GasPrices, PendingHeader},
@@ -9,6 +8,7 @@ use mp_chain_config::ChainConfig;
 use mp_class::ClassInfoWithHash;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use starknet_api::abi::abi_utils::get_storage_var_address;
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::{
@@ -208,7 +208,13 @@ impl ChainGenesisDescription {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    use std::sync::Arc;
+    use std::time::Duration;
+
     use assert_matches::assert_matches;
+    use rstest::rstest;
+    use starknet_core::types::contract::SierraClass;
 
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
@@ -231,10 +237,6 @@ mod tests {
     use mp_transactions::BroadcastedTransactionExt;
     use mp_utils::service::ServiceContext;
     use mp_utils::AbortOnDrop;
-    use rstest::rstest;
-    use starknet_core::types::contract::SierraClass;
-    use std::sync::Arc;
-    use std::time::Duration;
 
     struct DevnetForTesting {
         backend: Arc<MadaraBackend>,
@@ -254,6 +256,8 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    true,
+                    true,
                 )
                 .unwrap();
             let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
@@ -280,6 +284,8 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    true,
+                    true,
                 )
                 .unwrap();
             let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
@@ -304,6 +310,8 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    true,
+                    true,
                 )
                 .unwrap();
             let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
