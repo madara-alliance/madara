@@ -46,8 +46,8 @@ pub struct DeleteResult {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
-pub struct BlockNumberStruct {
-    pub block_number: u64,
+pub struct MissingBlocksResponse {
+    pub missing_blocks: Vec<u64>,
 }
 
 pub trait FromPipeline<T>: Sized {
@@ -589,8 +589,7 @@ impl DatabaseClient for MongoDbClient {
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
-        let serialized_job_type: Result<Vec<Bson>, _> =
-            job_type.iter().map(bson::to_bson).collect();
+        let serialized_job_type: Result<Vec<Bson>, _> = job_type.iter().map(bson::to_bson).collect();
 
         let serialized_statuses: Result<Vec<Bson>, _> = job_status.iter().map(bson::to_bson).collect();
 
@@ -641,27 +640,41 @@ impl DatabaseClient for MongoDbClient {
         let job_type_bson = mongodb::bson::to_bson(&job_type)?;
 
         // Construct the aggregation pipeline
+        // Construct the aggregation pipeline
         let pipeline = vec![
-            // Stage 1: Match jobs by type and block number range
             doc! {
-                "$match": {
-                    "job_type": job_type_bson,
-                    "metadata.specific.block_number": {
-                        "$gte": lower_cap,
-                        "$lt": upper_cap
-                    }
+                "$facet": {
+                    "existing_data": [
+                        doc! {
+                            "$match": {
+                                "job_type": job_type_bson,
+                                "metadata.specific.block_number": {
+                                    "$gte": lower_cap,
+                                    "$lte": upper_cap
+                                }
+                            }
+                        },
+                        doc! {
+                            "$group": {
+                                "_id": null,
+                                "existing_blocks": {
+                                    "$addToSet": "$metadata.specific.block_number"
+                                }
+                            }
+                        }
+                    ]
                 }
             },
-            // Stage 2: Group all existing block numbers into a set
             doc! {
-                "$group": {
-                    "_id": null,
+                "$project": {
                     "existing_blocks": {
-                        "$addToSet": "$metadata.specific.block_number"
+                        "$ifNull": [
+                            { "$arrayElemAt": ["$existing_data.existing_blocks", 0] },
+                            []
+                        ]
                     }
                 }
             },
-            // Stage 3: Create the complete range of expected block numbers
             doc! {
                 "$addFields": {
                     "complete_range": {
@@ -669,28 +682,14 @@ impl DatabaseClient for MongoDbClient {
                     }
                 }
             },
-            // Stage 4: Calculate missing blocks using set difference
             doc! {
                 "$project": {
                     "missing_blocks": {
                         "$setDifference": [
                             "$complete_range",
-                            {
-                                "$ifNull": ["$existing_blocks", []]
-                            }
+                            "$existing_blocks"
                         ]
                     }
-                }
-            },
-            // Stage 5: Unwind the missing_blocks array to get individual documents
-            doc! {
-                "$unwind": "$missing_blocks"
-            },
-            // Stage 6: Project only the missing block number
-            doc! {
-                "$project": {
-                    "_id": 0,
-                    "block_number": "$missing_blocks"
                 }
             },
         ];
@@ -706,11 +705,15 @@ impl DatabaseClient for MongoDbClient {
         let collection: Collection<JobItem> = self.get_job_collection();
 
         // Execute pipeline and extract block numbers
-        let block_number_structs = self
-            .execute_pipeline::<JobItem, BlockNumberStruct, Vec<BlockNumberStruct>>(collection, pipeline, None)
+        let missing_blocks_response = self
+            .execute_pipeline::<JobItem, MissingBlocksResponse, Vec<MissingBlocksResponse>>(collection, pipeline, None)
             .await?;
 
-        let block_numbers: Vec<u64> = block_number_structs.into_iter().map(|b| b.block_number).collect();
+        tracing::info!("missing_blocks_response {:?}", missing_blocks_response);
+
+        let mut block_numbers = missing_blocks_response[0].missing_blocks.clone();
+
+        block_numbers.sort();
 
         Ok(block_numbers)
     }
