@@ -28,7 +28,7 @@ mp-convert.workspace = true
 mp-utils.workspace = true
 
 # Starknet
-blockifier = { workspace = true, features = ["testing"] }
+blockifier.workspace = true
 starknet-types-core.workspace = true
 starknet_api.workspace = true
 
@@ -82,6 +82,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 default = []
 
 [dev-dependencies]
+blockifier = { workspace = true, features = ["testing"] }
 rand.workspace = true
 rstest.workspace = true
 tempfile.workspace = true
