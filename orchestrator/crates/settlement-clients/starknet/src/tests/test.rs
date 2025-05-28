@@ -27,13 +27,7 @@ pub async fn spin_up_madara() -> MadaraCmd {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
     tracing::debug!("Spinning up Madara");
     let mut node = MadaraCmdBuilder::new()
-        .args([
-            "--devnet",
-            "--no-l1-sync",
-            "--chain-config-path=/Users/mohit/Desktop/karnot/madara/configs/presets/devnet.yaml",
-            "--rpc-cors",
-            "all",
-        ])
+        .args(["--devnet", "--no-l1-sync", "--chain-config-path=./src/tests/devnet.yaml", "--rpc-cors", "all"])
         .run();
     node.wait_for_ready().await;
     node
@@ -49,8 +43,6 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
                 }
                 _ => Err(eyre!("Unknown error")),
             };
-
-            println!("receipt: {:?}", receipt);
 
             match receipt {
                 Ok(TransactionStatus::Received) => Err(eyre!("Transaction not yet received")),
@@ -154,7 +146,6 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     tracing::debug!("declare tx hash {:?}", declare_tx_hash);
 
     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
-    println!("is_success: {:?}", is_success);
     assert!(is_success, "Declare transaction failed");
 
     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
@@ -187,7 +178,6 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
         Duration::from_secs(2),
     )
     .await;
-    println!("is_success: {:?}", is_success);
     assert!(is_success, "Update state transaction failed/reverted");
     let call_result = account
         .provider()
