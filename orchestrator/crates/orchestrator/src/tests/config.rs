@@ -528,11 +528,11 @@ pub(crate) fn get_env_params() -> EnvParams {
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
     };
 
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS").expect("Couldn't get max block");
-    let max_block: Option<u64> = env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<u64>().unwrap()) });
+    let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
+    let max_block: u64 = env.parse::<u64>().unwrap();
 
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").expect("Couldn't get min block");
-    let min_block: Option<u64> = env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<u64>().unwrap()) });
+    let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS");
+    let min_block: u64 = env.parse::<u64>().unwrap();
 
     let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS")
         .expect("Couldn't get max concurrent snos jobs");

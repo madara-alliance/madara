@@ -37,7 +37,7 @@ pub fn get_job_item_mock_by_id(id: String, uuid: Uuid) -> JobItem {
         id: uuid,
         internal_id: id.clone(),
         job_type: JobType::SnosRun,
-        status: JobStatus::Created,
+        status: JobStatus::Completed,
         external_id: ExternalId::Number(0),
         metadata,
         version: 0,

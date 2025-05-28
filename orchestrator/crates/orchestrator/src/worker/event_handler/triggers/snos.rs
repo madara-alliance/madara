@@ -21,11 +21,16 @@ impl JobTrigger for SnosJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
         // Get the minimum and the maximum bounds
 
+        println!("HEEMANK #1");
+
         // Get provider and fetch latest block number from sequencer
-        let provider = config.madara_client();
+        // let provider = config.madara_client();
         // Will always be in range 0..u64::MAX
         let latest_created_block_from_sequencer =
-            provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")?;
+            // provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")?;
+            100000;
+
+        println!("HEEMANK #2 {}",latest_created_block_from_sequencer);
 
         // Get processing boundaries from config
         let service_config = config.service_config();
@@ -36,6 +41,8 @@ impl JobTrigger for SnosJobTrigger {
 
         let mut available_slots = service_config.max_concurrent_created_snos_jobs;
 
+        println!("HEEMANK #3 {} {} {}", max_block_to_process_bound, min_block_to_process_bound, available_slots);
+
         // Get all jobs with relevant statuses
         let db = config.database();
 
@@ -43,6 +50,10 @@ impl JobTrigger for SnosJobTrigger {
             db.get_latest_job_by_type_and_status(JobType::SnosRun, JobStatus::Completed).await?;
         let latest_completed_state_update_job_block_number =
             db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await?;
+
+        println!("HEEMANK #3.1 {:?}", latest_completed_snos_job_block_number);
+        println!("HEEMANK #3.2 {:?}", latest_completed_state_update_job_block_number);
+
 
         let lower_limit_inclusive = match latest_completed_state_update_job_block_number {
             None => min_block_to_process_bound,
@@ -60,7 +71,7 @@ impl JobTrigger for SnosJobTrigger {
         };
 
         let middle_limit = match latest_completed_snos_job_block_number {
-            None => max_block_to_process_bound,
+            None => min_block_to_process_bound,
             Some(job_item) => min(
                 max_block_to_process_bound,
                 match job_item.metadata.specific {
@@ -74,6 +85,8 @@ impl JobTrigger for SnosJobTrigger {
 
         let upper_limit_inclusive = min(max_block_to_process_bound, latest_created_block_from_sequencer);
 
+        println!("HEEMANK #4 {} {} {}", lower_limit_inclusive, middle_limit, upper_limit_inclusive);
+
         // Step 1 : Decrease slots by already number of already existing PendingRetry & Created jobs
 
         let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
@@ -85,15 +98,21 @@ impl JobTrigger for SnosJobTrigger {
             .wrap_err("Failed to fetch pending/created SNOS jobs")?
             .len();
 
+        println!("HEEMANK #4.5 {} {}", available_slots,  pending_jobs_length);
+
         available_slots = available_slots.saturating_sub(pending_jobs_length as u64);
 
+
+        println!("HEEMANK #5 {}", available_slots);
+
         if available_slots <= 0 {
-            tracing::info!("All slots occupied by pre-existing jobs, skipping creation");
+            println!("All slots occupied by pre-existing jobs, skipping creation");
             return Ok(());
         }
 
         // Step 2 : Get the missing blocks list and consume available_slots many to create jobs for.
 
+        println!("HEEMANK #5.1 {}", &available_slots);
         // TODO: why do we need to send as i64
         let missing_block_numbers_list = db
             .get_missing_block_numbers_by_type_and_caps(
@@ -103,52 +122,85 @@ impl JobTrigger for SnosJobTrigger {
             )
             .await?;
 
+        println!("HEEMANK #5.5 {}", &missing_block_numbers_list.len());
+
         // Creting the list of blocks to process for as a space defined vector.
         let mut block_numbers_to_pocesss: Vec<u64> =
             missing_block_numbers_list.into_iter().take(available_slots as usize).collect();
 
         available_slots = available_slots.saturating_sub(block_numbers_to_pocesss.len() as u64);
 
-        if available_slots <= 0 {
-            tracing::info!("All slots occupied by pre-existing jobs, skipping creation");
-            return Ok(());
+        println!("HEEMANK #5.7 {}", &available_slots);
+
+        if available_slots > 0 {
+            // Step 3 : Get the new blocks list that we can possibly process.
+
+            let mut start_block = middle_limit + 1;
+            let end_block: u64 = upper_limit_inclusive;
+
+            // Special Case when no previous blocks exists;
+            // So we make middle_limit inclusive.
+            if middle_limit == 0 {
+                start_block = middle_limit;
+            }
+
+            // list of all the blocks between start_blokc and upper_limit_inclusive
+            // that are not having any snos jobs.
+            // take into the block_numbers_to_pocesss from that.
+
+            println!("HEEMANK #5.8 {} {}", start_block, end_block);
+
+            let missing_block_numbers_after_middle = db
+                .get_missing_block_numbers_by_type_and_caps(
+                    JobType::SnosRun,
+                    i64::try_from(start_block)?,
+                    i64::try_from(end_block)?,
+                )
+                .await?;
+            println!("HEEMANK #5.9 {:?}", &missing_block_numbers_after_middle);
+
+
+            if missing_block_numbers_after_middle.len() > 0 {
+                // we got blocks
+                // Creting the list of blocks to process for as a space defined vector.
+
+                block_numbers_to_pocesss =
+                    missing_block_numbers_after_middle.into_iter().take(available_slots as usize).collect();
+
+            } else {
+                // there are no such blocks
+                // either completely empty
+                // so we need to create the jobs!
+                println!("HEEMANK #5.91 {:?} {}", &(start_block + available_slots), upper_limit_inclusive );
+
+                block_numbers_to_pocesss
+                    .extend(start_block..(min(start_block + available_slots, upper_limit_inclusive)));
+                // or completely done
+                // so we need not do anything
+                // can't happen since then last_completed_snos == max_limit.
+            }
+
+            println!("HEEMANK #5.10 {:?}", block_numbers_to_pocesss);
+
+
         }
 
-        // Step 3 : Get the new blocks list that we can possible process.
+        println!("HEEMANK #6 {}", available_slots);
 
-        // All the blocks in range of available_slots after the middle limit +1 are to be processed.
-        block_numbers_to_pocesss
-            .extend((middle_limit + 1)..(min(middle_limit + 1 + available_slots, upper_limit_inclusive)));
 
         // Sort blocks to ensure we process in ascending order
         block_numbers_to_pocesss.sort();
 
-        tracing::info!("About to create {} snos jobs", &block_numbers_to_pocesss.len());
+        println!("HEEMANK #7");
 
-        tracing::info!("About to create all {:?} snos jobs", &block_numbers_to_pocesss);
+        println!("About to create {} snos jobs", &block_numbers_to_pocesss.len());
+        println!("About to create all {:?} snos jobs", &block_numbers_to_pocesss);
 
-        // Create jobs for all identified blocks
-        for block_num in block_numbers_to_pocesss.clone() {
-            let metadata = create_job_metadata(block_num);
-
-            match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await
-            {
-                Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
-                Err(e) => {
-                    tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
-                    let attributes = [
-                        KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
-                        KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                    ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
-                }
-            }
-        }
+        create_jobs_snos(config, block_numbers_to_pocesss).await?;
 
         tracing::trace!(
             log_type = "completed",
             category = "SnosWorker",
-            jobs_created = &block_numbers_to_pocesss.len(),
             "SnosWorker completed."
         );
 
@@ -156,20 +208,27 @@ impl JobTrigger for SnosJobTrigger {
     }
 }
 
-// // Helper function to parse block numbers from job IDs
-// fn parse_block_number(internal_id: &str) -> Option<u64> {
-//     match internal_id.parse::<u64>() {
-//         Ok(block_num) => Some(block_num),
-//         Err(e) => {
-//             tracing::warn!(
-//                 internal_id = %internal_id,
-//                 error = %e,
-//                 "Failed to parse job internal ID as block number"
-//             );
-//             None
-//         }
-//     }
-// }
+async fn create_jobs_snos(config: Arc<Config> , block_numbers_to_pocesss: Vec<u64>) -> Result<()> {
+    // Create jobs for all identified blocks
+    for block_num in block_numbers_to_pocesss {
+        let metadata = create_job_metadata(block_num);
+
+        match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await
+        {
+            Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
+            Err(e) => {
+                tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
+                let attributes = [
+                    KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
+                    KeyValue::new("operation_type", format!("{:?}", "create_job")),
+                ];
+                ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+            }
+        }
+    }
+    Ok(())
+}
+
 
 // Helper function to create job metadata
 fn create_job_metadata(block_num: u64) -> JobMetadata {
