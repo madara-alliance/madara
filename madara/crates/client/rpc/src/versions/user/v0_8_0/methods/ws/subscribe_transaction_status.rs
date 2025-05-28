@@ -62,13 +62,34 @@ impl<'a> SubscriptionState<'a> {
 
         if let Some((block_info, _idx)) = block_info {
             match block_info {
-                mp_block::MadaraMaybePendingBlockInfo::Pending(_) => {
+                mp_block::MadaraMaybePendingBlockInfo::Pending(block_info) => {
+                    let parent_hash = block_info.header.parent_block_hash;
+                    let block_number = common
+                        .starknet
+                        .backend
+                        .get_block_n(&mp_block::BlockId::Hash(parent_hash))
+                        .or_internal_server_error("Failed to get parent block number")?
+                        .unwrap_or_default()
+                        .saturating_add(1);
                     common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
-                    Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, channel: todo!() }))
+                    let channel = common.starknet.backend.subscribe_last_confirmed_block();
+                    Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel }))
                 }
-                mp_block::MadaraMaybePendingBlockInfo::NotPending(_) => {
-                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
-                    Ok(Self::None)
+                mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+                    let block_number = block_info.header.block_number;
+                    let confirmed = common
+                        .starknet
+                        .backend
+                        .get_l1_last_confirmed_block()
+                        .or_internal_server_error("Error retrieving last confirmed block")?;
+                    if confirmed.is_some_and(|n| block_number <= n) {
+                        common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
+                        Ok(Self::None)
+                    } else {
+                        common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                        let channel = common.starknet.backend.subscribe_last_confirmed_block();
+                        Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel }))
+                    }
                 }
             }
         } else {
@@ -77,15 +98,18 @@ impl<'a> SubscriptionState<'a> {
     }
 
     /// ```text
-    ///          ┌────┐
-    ///        ┌►│None├─────────────────────────────────────────────►──┐
-    ///        │ └────┘                                                │
-    /// ┌─────┐│ ┌────────────┐  ┌────────────────┐  ┌────────────────┐│ ┌───┐
-    /// │START├┴►│WaitReceived├─►│WaitAcceptedOnL2├┬►│WaitAcceptedOnL1├┼►│END│
-    /// └─────┘  └────────────┘  └────────────────┘│ └────────────────┘│ └───┘
-    ///                                            │ ┌────────┐        │
-    ///                                            └►│Rejected├─────►──┘
-    ///                                              └────────┘
+    ///
+    ///             ┌────┐
+    ///          ┌─►│None├────────────────────────────────────────────────────────┐
+    ///          │  └────┘                                                        │
+    ///          │                                                                │
+    ///          │             ┌──┐                   ┌──┐                   ┌──┐ │
+    /// ┌─────┐  │  ┌──────────▼─┐│    ┌──────────────▼─┐│    ┌──────────────▼─┐│ │  ┌───┐
+    /// │START├──┴─►│WaitReceived├┴───►│WaitAcceptedOnL2├┴─┬─►│WaitAcceptedOnL1├┴─┼─►│END│
+    /// └─────┘     └────────────┘     └────────────────┘  │  └────────────────┘  │  └───┘
+    ///                                                    │  ┌────────┐          │
+    ///                                                    └─►│Rejected├──────────┘
+    ///                                                       └────────┘
     ///
     /// ```
     async fn drive(&mut self) -> Result<(), crate::errors::StarknetWsApiError> {
