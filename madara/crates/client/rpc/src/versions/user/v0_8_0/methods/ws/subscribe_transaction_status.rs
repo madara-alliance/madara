@@ -5,6 +5,7 @@ use crate::errors::ErrorExtWs;
 /// Supported statuses are:
 ///
 /// - **Received**: tx has been inserted into the mempool.
+/// - **Rejected**: tx was included into a block but failed execution.
 /// - **Accepted on L2**: tx has been inserted into the pending block.
 /// - **Accepted on L1**: tx has been finalized on L1.
 ///
@@ -25,53 +26,99 @@ pub async fn subscribe_transaction_status(
     transaction_hash: mp_convert::Felt,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-    let mut state = SubscriptionState::new(starknet, &sink, transaction_hash);
+    let mut state = SubscriptionState::new(starknet, &sink, transaction_hash).await?;
 
     // TODO: timeout should be based off a constant in chain config
     let timeout = tokio::time::timeout(std::time::Duration::from_secs(300), state.drive());
 
     tokio::select! {
-        res = timeout => res.or_internal_server_error("Failed to timeout on transaction status")?,
+        res = timeout => res.or_else_internal_server_error(|| {
+            format!("SubscribeTransactionStatus timed out on {transaction_hash:#x}")
+        })?,
         _ = sink.closed() => Ok(())
     }
 }
 
+#[derive(Default)]
 enum SubscriptionState<'a> {
-    Received(StateTransitionReceived<'a>),
-    AcceptedOnL2(StateTransitionAcceptedOnL2<'a>),
-    AcceptedOnL1(StateTransitionAcceptedOnL1<'a>),
+    #[default]
+    None,
+    WaitReceived(StateTransitionReceived<'a>),
+    WaitAcceptedOnL2(StateTransitionAcceptedOnL2<'a>),
+    WaitAcceptedOnL1(StateTransitionAcceptedOnL1<'a>),
 }
 
 impl<'a> SubscriptionState<'a> {
-    fn new(
+    async fn new(
         starknet: &'a crate::Starknet,
         subscription_sink: &'a jsonrpsee::core::server::SubscriptionSink,
         transaction_hash: mp_convert::Felt,
-    ) -> Self {
-        todo!()
+    ) -> Result<Self, crate::errors::StarknetWsApiError> {
+        let common = StateTransitionCommon { starknet, subscription_sink, transaction_hash };
+        let block_info =
+            starknet.backend.find_tx_hash_block_info(&transaction_hash).or_else_internal_server_error(|| {
+                format!("Error looking for block info associated to tx {transaction_hash:#x}")
+            })?;
+
+        if let Some((block_info, _idx)) = block_info {
+            match block_info {
+                mp_block::MadaraMaybePendingBlockInfo::Pending(_) => {
+                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                    Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, channel: todo!() }))
+                }
+                mp_block::MadaraMaybePendingBlockInfo::NotPending(_) => {
+                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
+                    Ok(Self::None)
+                }
+            }
+        } else {
+            Ok(Self::WaitReceived(StateTransitionReceived { common, channel: todo!() }))
+        }
     }
 
+    /// ```text
+    ///          ┌────┐
+    ///        ┌►│None├─────────────────────────────────────────────►──┐
+    ///        │ └────┘                                                │
+    /// ┌─────┐│ ┌────────────┐  ┌────────────────┐  ┌────────────────┐│ ┌───┐
+    /// │START├┴►│WaitReceived├─►│WaitAcceptedOnL2├┬►│WaitAcceptedOnL1├┼►│END│
+    /// └─────┘  └────────────┘  └────────────────┘│ └────────────────┘│ └───┘
+    ///                                            │ ┌────────┐        │
+    ///                                            └►│Rejected├─────►──┘
+    ///                                              └────────┘
+    ///
+    /// ```
     async fn drive(&mut self) -> Result<(), crate::errors::StarknetWsApiError> {
         loop {
-            match self {
-                SubscriptionState::Received(state) => {
-                    if let Some(state) = state.transition().await? {
-                        state.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
-                        *self = Self::AcceptedOnL2(state);
+            match std::mem::take(self) {
+                Self::None => return Ok(()),
+                Self::WaitReceived(state) => match state.transition().await? {
+                    StateTransitionResult::State(s) => *self = Self::WaitReceived(s),
+                    StateTransitionResult::Transition(s) => {
+                        s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
+                        *self = Self::WaitAcceptedOnL2(s);
                     }
-                }
-                SubscriptionState::AcceptedOnL2(state) => {
-                    if let Some(state) = state.transition().await? {
-                        state.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
-                        *self = Self::AcceptedOnL1(state);
-                    }
-                }
-                SubscriptionState::AcceptedOnL1(state) => {
-                    if let Some(state) = state.transition().await? {
-                        state.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
+                },
+                Self::WaitAcceptedOnL2(state) => match state.transition().await? {
+                    StateTransitionResult::State(s) => *self = Self::WaitAcceptedOnL2(s),
+                    StateTransitionResult::Transition(s) => match s {
+                        StateMatrixAcceptedOnL2::Rejected(s) => {
+                            s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Rejected).await?;
+                            return Ok(());
+                        }
+                        StateMatrixAcceptedOnL2::AcceptedOnL2(s) => {
+                            s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                            *self = Self::WaitAcceptedOnL1(s);
+                        }
+                    },
+                },
+                Self::WaitAcceptedOnL1(state) => match state.transition().await? {
+                    StateTransitionResult::State(s) => *self = Self::WaitAcceptedOnL1(s),
+                    StateTransitionResult::Transition(s) => {
+                        s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
                         return Ok(());
                     }
-                }
+                },
             }
         }
     }
@@ -86,12 +133,21 @@ struct StateTransitionReceived<'a> {
     common: StateTransitionCommon<'a>,
     channel: tokio::sync::broadcast::Receiver<mp_convert::Felt>,
 }
+struct StateTransitionRejected<'a> {
+    common: StateTransitionCommon<'a>,
+}
 struct StateTransitionAcceptedOnL2<'a> {
     common: StateTransitionCommon<'a>,
     channel: tokio::sync::watch::Receiver<mp_convert::Felt>,
 }
 struct StateTransitionAcceptedOnL1<'a> {
     common: StateTransitionCommon<'a>,
+    channel: tokio::sync::watch::Receiver<mp_convert::Felt>,
+}
+
+enum StateMatrixAcceptedOnL2<'a> {
+    AcceptedOnL2(StateTransitionAcceptedOnL1<'a>),
+    Rejected(StateTransitionRejected<'a>),
 }
 
 impl<'a> StateTransitionCommon<'a> {
@@ -116,32 +172,41 @@ impl<'a> StateTransitionCommon<'a> {
     }
 }
 
-trait StateTransition {
-    type TransitionTo: StateTransition;
-
-    async fn transition(&mut self) -> Result<Option<Self::TransitionTo>, crate::errors::StarknetWsApiError>;
+enum StateTransitionResult<S1: StateTransition, S2> {
+    State(S1),
+    Transition(S2),
 }
+trait StateTransition: Sized {
+    type TransitionTo;
 
+    async fn transition(
+        self,
+    ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError>;
+}
 impl<'a> StateTransition for StateTransitionReceived<'a> {
     type TransitionTo = StateTransitionAcceptedOnL2<'a>;
 
-    async fn transition(&mut self) -> Result<Option<Self::TransitionTo>, crate::errors::StarknetWsApiError> {
+    async fn transition(
+        self,
+    ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
         todo!()
     }
 }
-
 impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
-    type TransitionTo = StateTransitionAcceptedOnL1<'a>;
+    type TransitionTo = StateMatrixAcceptedOnL2<'a>;
 
-    async fn transition(&mut self) -> Result<Option<Self::TransitionTo>, crate::errors::StarknetWsApiError> {
+    async fn transition(
+        self,
+    ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
         todo!()
     }
 }
-
 impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
     type TransitionTo = StateTransitionAcceptedOnL1<'a>;
 
-    async fn transition(&mut self) -> Result<Option<Self::TransitionTo>, crate::errors::StarknetWsApiError> {
+    async fn transition(
+        self,
+    ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
         todo!()
     }
 }
