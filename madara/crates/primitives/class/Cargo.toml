@@ -25,8 +25,8 @@ mp-rpc = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true }
-cairo-vm = { workspace = true }
 cairo-native = { workspace = true, optional = true }
+cairo-vm = { workspace = true }
 casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.10.0" }
 casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
 casm-compiler-v1_0_0-rc0 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }

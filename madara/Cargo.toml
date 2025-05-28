@@ -26,7 +26,7 @@ members = [
   "crates/primitives/utils",
   "crates/proc-macros",
   "crates/tests",
-  "crates/cairo-test-contracts"
+  "crates/cairo-test-contracts",
 ]
 resolver = "2"
 
@@ -72,7 +72,9 @@ license = "Apache-2.0"
 [workspace.dependencies]
 rocksdb = "0.22"
 librocksdb-sys = "0.17.0"
-bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = ["std"] }
+bonsai-trie = { default-features = false, git = "https://github.com/madara-alliance/bonsai-trie", branch = "oss", features = [
+  "std",
+] }
 
 # Madara proc macros
 m-proc-macros = { path = "crates/proc-macros", default-features = false }

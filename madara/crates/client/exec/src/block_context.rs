@@ -36,7 +36,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
         block_info: BlockInfo,
     ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error> {
         Ok(TransactionExecutor::new(
-            state_adaptor.into(),
+            CachedState::new(state_adaptor),
             BlockContext::new(
                 block_info,
                 self.chain_config().blockifier_chain_info(),
