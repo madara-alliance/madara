@@ -138,11 +138,15 @@ struct StateTransitionRejected<'a> {
 }
 struct StateTransitionAcceptedOnL2<'a> {
     common: StateTransitionCommon<'a>,
-    channel: tokio::sync::watch::Receiver<std::sync::Arc<mp_block::MadaraPendingBlockInfo>>,
+    channel: mc_db::PendingBlockReceiver,
 }
 struct StateTransitionAcceptedOnL1<'a> {
     common: StateTransitionCommon<'a>,
-    channel: tokio::sync::watch::Receiver<mp_convert::Felt>,
+    block_number: u64,
+    channel: mc_db::LastConfirmedBlockReceived,
+}
+struct StateTransitionEnd<'a> {
+    common: StateTransitionCommon<'a>,
 }
 
 enum StateMatrixAcceptedOnL2<'a> {
@@ -204,10 +208,20 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
     ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
         let Self { common, mut channel } = self;
 
+        channel.changed().await.or_internal_server_error("Error waiting for watch channel update")?;
+
         let block_info = std::sync::Arc::clone(&channel.borrow_and_update());
         if block_info.tx_hashes.iter().find(|hash| *hash == &common.transaction_hash).is_some() {
-            let channel = todo!();
-            let transition = StateTransitionAcceptedOnL1 { common, channel };
+            let channel = common.starknet.backend.subscribe_last_confirmed_block();
+            let parent_hash = block_info.header.parent_block_hash;
+            let block_number = common
+                .starknet
+                .backend
+                .get_block_n(&mp_block::BlockId::Hash(parent_hash))
+                .or_internal_server_error("Failed to get parent block number")?
+                .unwrap_or_default()
+                .saturating_add(1);
+            let transition = StateTransitionAcceptedOnL1 { common, block_number, channel };
             Ok(StateTransitionResult::Transition(Self::TransitionTo::WaitAcceptedOnL1(transition)))
         } else {
             let block_info = common
@@ -218,22 +232,50 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                     format!("Error looking for block info associated to tx {:#x}", common.transaction_hash)
                 })?;
 
-            if block_info.is_some() {
-                let channel = todo!();
-                let transition = Self::TransitionTo::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, channel });
-                Ok(StateTransitionResult::Transition(transition))
-            } else {
-                Ok(StateTransitionResult::State(Self { common, channel }))
+            match block_info {
+                Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
+                    let channel = common.starknet.backend.subscribe_last_confirmed_block();
+                    let parent_hash = block_info.header.parent_block_hash;
+                    let block_number = common
+                        .starknet
+                        .backend
+                        .get_block_n(&mp_block::BlockId::Hash(parent_hash))
+                        .or_internal_server_error("Failed to get parent block number")?
+                        .unwrap_or_default()
+                        .saturating_add(1);
+                    let transition = StateTransitionAcceptedOnL1 { common, block_number, channel };
+                    Ok(StateTransitionResult::Transition(Self::TransitionTo::WaitAcceptedOnL1(transition)))
+                }
+                Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
+                    let channel = common.starknet.backend.subscribe_last_confirmed_block();
+                    let block_number = block_info.header.block_number;
+                    let transition = Self::TransitionTo::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 {
+                        common,
+                        block_number,
+                        channel,
+                    });
+                    Ok(StateTransitionResult::Transition(transition))
+                }
+                None => Ok(StateTransitionResult::State(Self { common, channel })),
             }
         }
     }
 }
 impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
-    type TransitionTo = StateTransitionAcceptedOnL1<'a>;
+    type TransitionTo = StateTransitionEnd<'a>;
 
     async fn transition(
         self,
     ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
-        todo!()
+        let Self { common, block_number, mut channel } = self;
+
+        channel.changed().await.or_internal_server_error("Error waiting for watch channel update")?;
+
+        let confirmed = channel.borrow_and_update().to_owned();
+        if confirmed.is_some_and(|n| block_number <= n) {
+            Ok(StateTransitionResult::Transition(Self::TransitionTo { common }))
+        } else {
+            Ok(StateTransitionResult::State(Self { common, block_number, channel }))
+        }
     }
 }
