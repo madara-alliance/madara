@@ -106,7 +106,7 @@ impl<'a> SubscriptionState<'a> {
                             s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Rejected).await?;
                             return Ok(());
                         }
-                        StateMatrixAcceptedOnL2::AcceptedOnL2(s) => {
+                        StateMatrixAcceptedOnL2::WaitAcceptedOnL1(s) => {
                             s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
                             *self = Self::WaitAcceptedOnL1(s);
                         }
@@ -138,7 +138,7 @@ struct StateTransitionRejected<'a> {
 }
 struct StateTransitionAcceptedOnL2<'a> {
     common: StateTransitionCommon<'a>,
-    channel: tokio::sync::watch::Receiver<mp_convert::Felt>,
+    channel: tokio::sync::watch::Receiver<std::sync::Arc<mp_block::MadaraPendingBlockInfo>>,
 }
 struct StateTransitionAcceptedOnL1<'a> {
     common: StateTransitionCommon<'a>,
@@ -146,7 +146,7 @@ struct StateTransitionAcceptedOnL1<'a> {
 }
 
 enum StateMatrixAcceptedOnL2<'a> {
-    AcceptedOnL2(StateTransitionAcceptedOnL1<'a>),
+    WaitAcceptedOnL1(StateTransitionAcceptedOnL1<'a>),
     Rejected(StateTransitionRejected<'a>),
 }
 
@@ -189,7 +189,11 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
     async fn transition(
         self,
     ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
-        todo!()
+        let Self { common, channel } = self;
+        Ok(StateTransitionResult::Transition(Self::TransitionTo {
+            channel: common.starknet.backend.subscribe_pending_block(),
+            common,
+        }))
     }
 }
 impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
@@ -198,7 +202,30 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
     async fn transition(
         self,
     ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
-        todo!()
+        let Self { common, mut channel } = self;
+
+        let block_info = std::sync::Arc::clone(&channel.borrow_and_update());
+        if block_info.tx_hashes.iter().find(|hash| *hash == &common.transaction_hash).is_some() {
+            let channel = todo!();
+            let transition = StateTransitionAcceptedOnL1 { common, channel };
+            Ok(StateTransitionResult::Transition(Self::TransitionTo::WaitAcceptedOnL1(transition)))
+        } else {
+            let block_info = common
+                .starknet
+                .backend
+                .find_tx_hash_block_info(&common.transaction_hash)
+                .or_else_internal_server_error(|| {
+                    format!("Error looking for block info associated to tx {:#x}", common.transaction_hash)
+                })?;
+
+            if block_info.is_some() {
+                let channel = todo!();
+                let transition = Self::TransitionTo::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, channel });
+                Ok(StateTransitionResult::Transition(transition))
+            } else {
+                Ok(StateTransitionResult::State(Self { common, channel }))
+            }
+        }
     }
 }
 impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
