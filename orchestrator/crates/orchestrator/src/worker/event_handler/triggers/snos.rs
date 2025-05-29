@@ -19,8 +19,6 @@ pub struct SnosJobTrigger;
 #[async_trait]
 impl JobTrigger for SnosJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
-        println!("HEEMANK #1: Starting Snos Worker");
-
         // // // Part 1: Defining Variables // // //
 
         // Get provider and fetch latest block number from sequencer
@@ -29,17 +27,12 @@ impl JobTrigger for SnosJobTrigger {
         let latest_created_block_from_sequencer =
             provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")?;
 
-        println!("HEEMANK #2: latest_created_block_from_sequencer is {}", &latest_created_block_from_sequencer);
-
         // Get processing boundaries from config
         let service_config = config.service_config();
         // Will always be in range 0..u64::MAX
         let max_block_to_process_bound = service_config.max_block_to_process;
         // Will always be in range 0..u64::MAX
         let min_block_to_process_bound = service_config.min_block_to_process;
-
-        println!("HEEMANK #3 max_block_to_process_bound is {}", &max_block_to_process_bound);
-        println!("HEEMANK #4 min_block_to_process_bound is {}", &min_block_to_process_bound);
 
         // Get all jobs with relevant statuses
         let db = config.database();
@@ -50,7 +43,7 @@ impl JobTrigger for SnosJobTrigger {
                 Some(job_item) => match job_item.metadata.specific {
                     JobSpecificMetadata::Snos(metadata) => Some(metadata.block_number),
                     _ => {
-                        panic! {"This case should never have been executed!"}
+                        panic! {"This SNOS case should never have been executed!"}
                     }
                 },
             };
@@ -63,13 +56,10 @@ impl JobTrigger for SnosJobTrigger {
                         Some(*metadata.blocks_to_settle.iter().max().unwrap_or(&0_u64))
                     }
                     _ => {
-                        panic! {"This case should never have been executed!"}
+                        panic! {"This STATEUPDATE case should never have been executed!"}
                     }
                 },
             };
-
-        println!("HEEMANK #5 latest_snos_completed_block_number {:?}", latest_snos_completed_block_number);
-        println!("HEEMANK #6 latest_su_completed_block_number {:?}", latest_su_completed_block_number);
 
         let lower_limit = match latest_su_completed_block_number {
             None => min_block_to_process_bound,
@@ -79,10 +69,6 @@ impl JobTrigger for SnosJobTrigger {
         let middle_limit_optn = latest_snos_completed_block_number;
 
         let upper_limit = min(latest_created_block_from_sequencer, max_block_to_process_bound);
-
-        println!("HEEMANK #7 lower_limit {:?}", lower_limit);
-        println!("HEEMANK #8 middle_limit {:?}", middle_limit_optn);
-        println!("HEEMANK #9 upper_limit {:?}", upper_limit);
 
         // // // Part 2: Calculating Available Slots // // //
 
@@ -98,12 +84,7 @@ impl JobTrigger for SnosJobTrigger {
             .wrap_err("Failed to fetch pending / created SNOS jobs")?
             .len();
 
-        println!("HEEMANK #10 available_slots {:?}", available_slots);
-        println!("HEEMANK #11 pending_jobs_length {:?}", pending_jobs_length);
-
         available_slots = available_slots.saturating_sub(pending_jobs_length as u64);
-
-        println!("HEEMANK #12 available_slots after removing pending_jobs {:?}", available_slots);
 
         if available_slots <= 0 {
             tracing::warn!("All slots occupied by pre-existing jobs, skipping SNOS job creation!");
@@ -131,11 +112,7 @@ impl JobTrigger for SnosJobTrigger {
             // create_jobs_snos
             let blocks_taken: Vec<u64> = candidate_blocks.into_iter().take(available_slots as usize).collect();
             available_slots = available_slots.saturating_sub(blocks_taken.len() as u64);
-            tracing::info!(
-                "Creating SNOS jobs for {} blocks, with {} left slots",
-                &blocks_taken.len(),
-                available_slots
-            );
+            tracing::info!("Creating SNOS jobs for {:?} blocks, with {} left slots", &blocks_taken, available_slots);
             create_jobs_snos(config, blocks_taken).await?;
             return Ok(());
         }
@@ -170,6 +147,10 @@ impl JobTrigger for SnosJobTrigger {
         if available_slots <= 0 {
             // Create the jobs here directly and return!
             tracing::info!("All available slots are now full, creating jobs for blocks");
+            tracing::info!(
+                "All available slots are now full, creating jobs for blocks {:?}",
+                &block_numbers_to_pocesss,
+            );
             create_jobs_snos(config, block_numbers_to_pocesss).await?;
             return Ok(());
         }
@@ -198,8 +179,8 @@ impl JobTrigger for SnosJobTrigger {
 
         // Create the jobs here directly and return!
         tracing::info!(
-            "Creating SNOS jobs for {} blocks, with {} left slots",
-            &block_numbers_to_pocesss.len(),
+            "Creating SNOS jobs for {:?} blocks, with {} left slots",
+            &block_numbers_to_pocesss,
             available_slots
         );
         create_jobs_snos(config, block_numbers_to_pocesss).await?;
@@ -213,7 +194,7 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
         let metadata = create_job_metadata(block_num);
 
         match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
-            Ok(_) => tracing::info!(block_id = %block_num, "Successfully created new Snos job"),
+            Ok(_) => tracing::info!("Successfully created new Snos job: {}", block_num),
             Err(e) => {
                 tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
                 let attributes = [
