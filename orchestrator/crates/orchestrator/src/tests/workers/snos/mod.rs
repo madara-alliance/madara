@@ -11,6 +11,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
 use mockall::predicate::eq;
 use orchestrator_da_client_interface::MockDaClient;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -25,9 +26,6 @@ use uuid::Uuid;
 // Scenario 1: Block 0 is Completed | Block 1 is PendingRetry | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 2,3 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     Some(0), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -39,9 +37,6 @@ use uuid::Uuid;
 // Scenario 2: Block 0 is Completed | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 1,2,3 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     Some(0), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -53,9 +48,6 @@ use uuid::Uuid;
 // Scenario 3: No SNOS job for any block exists | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 0,1,2 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     None,   // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -67,9 +59,6 @@ use uuid::Uuid;
 // Scenario 4: Block 0,2 is Completed | Block 1 is Missed | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 1,3,4 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -81,9 +70,6 @@ use uuid::Uuid;
 // Scenario 5: Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Missed | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 1,3 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -95,9 +81,6 @@ use uuid::Uuid;
 // Scenario 6: Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Created | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 3 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -109,9 +92,6 @@ use uuid::Uuid;
 // Scenario 7: Block 4 is Created | latest_snos_completed & latest_state_transition_completed is 3  | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 3 only
 #[case(
-    0,      // min_block_limit
-    3,      // max_concurrent_jobs
-    999,    // max_block_limit
     100,    // latest_sequencer_block
     Some(3), // latest_snos_completed
     Some(3),   // latest_state_transition_completed
@@ -122,9 +102,6 @@ use uuid::Uuid;
 )]
 #[tokio::test]
 async fn test_snos_worker_scenarios(
-    #[case] min_block_limit: u64,
-    #[case] max_concurrent_jobs: u64,
-    #[case] max_block_limit: u64,
     #[case] latest_sequencer_block: u64,
     #[case] latest_snos_completed: Option<u64>,
     #[case] latest_state_transition_completed: Option<u64>,
@@ -133,6 +110,9 @@ async fn test_snos_worker_scenarios(
     #[case] pending_blocks: Vec<u64>,
     #[case] expected_jobs_to_create: Vec<u64>,
 ) -> Result<(), Box<dyn Error>> {
+    dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
+    let min_block_limit = get_env_var_or_panic("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").parse::<u64>()?;
+
     // Setup mock server and clients
     let server = MockServer::start();
     let da_client = MockDaClient::new();
@@ -200,7 +180,6 @@ async fn test_snos_worker_scenarios(
     let missing_second_clone = missing_blocks_second_half.clone();
     let latest_snos_clone = latest_snos_completed;
     let latest_state_clone = latest_state_transition_completed;
-    let min_block_clone = min_block_limit;
 
     let call_counter = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let call_counter_clone = Arc::clone(&call_counter);
@@ -221,8 +200,8 @@ async fn test_snos_worker_scenarios(
 
             if let Some(middle_limit) = latest_snos_clone {
                 let actual_lower_limit = match latest_state_clone {
-                    None => min_block_clone,
-                    Some(state_block) => std::cmp::max(min_block_clone, state_block),
+                    None => min_block_limit,
+                    Some(state_block) => std::cmp::max(min_block_limit, state_block),
                 };
 
                 // First call: check for missing blocks in first half [lower_limit, middle_limit]
@@ -274,11 +253,6 @@ async fn test_snos_worker_scenarios(
     let provider = JsonRpcClient::new(HttpTransport::new(
         Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
     ));
-
-    // Set environment variables for this test
-    env::set_var("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS", max_block_limit.to_string());
-    env::set_var("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS", min_block_limit.to_string());
-    env::set_var("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", max_concurrent_jobs.to_string());
 
     // Build test configuration
     let services = TestConfigBuilder::new()
