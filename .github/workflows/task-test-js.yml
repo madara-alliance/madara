@@ -39,11 +39,6 @@ jobs:
           name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
           path: build-artifacts/
 
-      - name: debug
-        run: |
-          ls -la
-          ls -la build-artifacts
-
       - name: Install dependencies
         run: |
           if ! command -v nc 2>&1 >/dev/null; then

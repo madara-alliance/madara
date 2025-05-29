@@ -37,11 +37,6 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara
 
-      - name: Debug
-        run: |
-          ls -la
-          cat .cargo/config.toml
-
       # Build Madara
       - name: Cargo build
         run: |

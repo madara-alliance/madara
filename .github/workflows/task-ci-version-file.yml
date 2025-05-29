@@ -23,7 +23,7 @@ jobs:
   check:
     runs-on: ubuntu-latest
     steps:
-      - run: echo "Checking DB Version ('${{ inputs.label }}' label only)"
+      - run: echo "Checking Version File ('${{ inputs.label }}' label only)"
 
   update-version-file:
     runs-on: ubuntu-latest
@@ -55,7 +55,7 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
 
-      - name: Update DB Version
+      - name: Update Version File
         if: steps.check_bump.outputs.update == 'true'
         run: |
           ./scripts/update-version-file.sh "${{ github.event.pull_request.number }}" ${{ inputs.version-file }}

@@ -94,6 +94,24 @@ pub fn get_version(version_file: &impl VersionFile) -> Result<u32, BuildError> {
     Ok(current_version)
 }
 
+/// Parent levels just refer to the number of directory levels above the current CARGO_DIR which are
+/// needed to reach the directory root. So for example:
+///
+/// ```text
+/// .
+/// |
+/// |-bootsrapper/            # 1
+/// |  |-build.rs             # parent-level = 1
+/// |  |-Cargo.toml
+/// |
+/// |-madara/                 # 4
+///    |-crates/              # 3
+///        |-client/          # 2
+///           |-db/           # 1
+///              |-build.rs
+///              |-Cargo.toml # parent-level = 4
+///
+/// ```
 pub fn get_or_compile_artifacts(parent_levels: usize) -> Result<(), BuildError> {
     let (root, version_file_artifacts) = get_paths_artifact(parent_levels)?;
 
