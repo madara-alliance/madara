@@ -1,7 +1,7 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BlockHashAndNumber, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, EventFilterWithPageRequest, EventsChunk,
     FeeEstimate, FunctionCall, MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs,

@@ -1,6 +1,6 @@
 use mp_block::MadaraMaybePendingBlockInfo;
 use mp_receipt::ExecutionResult;
-use mp_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
+use mp_rpc::v0_7_1::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};

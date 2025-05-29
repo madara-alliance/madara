@@ -93,7 +93,7 @@ impl<'a> SubscriptionState<'a> {
                 let block_number = common
                     .starknet
                     .backend
-                    .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                    .get_block_n(&mp_rpc::v0_7_1::BlockId::Hash(block_info.header.parent_block_hash))
                     .or_else_internal_server_error(|| {
                         format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
                     })?
@@ -253,7 +253,7 @@ impl StateTransitionCommon<'_> {
         &self,
         status: mp_rpc::v0_7_1::TxnStatus,
     ) -> Result<(), crate::errors::StarknetWsApiError> {
-        let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.tx_hash, status };
+        let txn_status = mp_rpc::v0_8_1::NewTxnStatus { transaction_hash: self.tx_hash, status };
         let item = super::SubscriptionItem::new(self.sink.subscription_id(), txn_status);
         let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
             format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
@@ -353,7 +353,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                     break common
                         .starknet
                         .backend
-                        .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                        .get_block_n(&mp_rpc::v0_7_1::BlockId::Hash(block_info.header.parent_block_hash))
                         .or_else_internal_server_error(|| {
                             format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
                         })?

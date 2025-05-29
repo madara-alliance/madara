@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
-use crate::{Address, DeprecatedContractClass, Signature};
+use crate::v0_7_1::{Address, DeprecatedContractClass, Signature};
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct BroadcastedDeclareTxnV0 {

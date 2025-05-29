@@ -6,7 +6,7 @@ impl ExecutionContext {
         &self,
         executions_result: &ExecutionResult,
         tip: Tip,
-    ) -> mp_rpc::FeeEstimate {
+    ) -> mp_rpc::v0_7_1::FeeEstimate {
         let gas_price_vector = self.block_context.block_info().gas_prices.gas_price_vector(&executions_result.fee_type);
         let minimal_gas_vector = executions_result.minimal_l1_gas.unwrap_or_default();
         let gas_vector = executions_result.execution_info.receipt.gas;
@@ -27,11 +27,11 @@ impl ExecutionContext {
         let overall_fee = gas_vector.cost(gas_price_vector, tip);
 
         let unit = match executions_result.fee_type {
-            FeeType::Eth => mp_rpc::PriceUnit::Wei,
-            FeeType::Strk => mp_rpc::PriceUnit::Fri,
+            FeeType::Eth => mp_rpc::v0_7_1::PriceUnit::Wei,
+            FeeType::Strk => mp_rpc::v0_7_1::PriceUnit::Fri,
         };
 
-        mp_rpc::FeeEstimate {
+        mp_rpc::v0_7_1::FeeEstimate {
             gas_consumed: gas_vector.l1_gas.0.into(),
             gas_price: gas_price_vector.l1_gas_price.get().0.into(),
             data_gas_consumed: gas_vector.l1_data_gas.0.into(),

@@ -118,9 +118,8 @@ async fn send_block_header(
     block_info: mp_block::MadaraBlockInfo,
     block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
-    let header = mp_rpc::BlockHeader::from(block_info);
-    let item = super::SubscriptionItem::new(sink.subscription_id(), header);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+    let header = mp_rpc::v0_7_1::BlockHeader::from(block_info);
+    let msg = jsonrpsee::SubscriptionMessage::from_json(&header)
         .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
 
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
@@ -133,15 +132,17 @@ mod test {
     use super::*;
 
     use jsonrpsee::ws_client::WsClientBuilder;
+    use mp_rpc::v0_8_1::BlockHeader;
     use starknet_types_core::felt::Felt;
 
     use crate::{
         test_utils::rpc_test_setup,
         versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
+        versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
         Starknet,
     };
 
-    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = mp_rpc::v0_7_1::BlockHeader> + '_ {
+    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = BlockHeader> + '_ {
         (0..).map(|n| {
             backend
                 .store_block(
@@ -169,7 +170,7 @@ mod test {
                 .into_closed()
                 .expect("Retrieving block info");
 
-            mp_rpc::BlockHeader::from(block_info)
+            BlockHeader::from(block_info)
         })
     }
 
