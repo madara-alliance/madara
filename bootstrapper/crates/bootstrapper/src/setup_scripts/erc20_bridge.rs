@@ -60,7 +60,6 @@ impl<'a> Erc20Bridge<'a> {
         log::info!("🌗 ERC20 Class Hash declared : {:?}", erc20_cairo_one_class_hash);
         save_to_json("erc20_cairo_one_class_hash", &JsonValueType::StringType(erc20_cairo_one_class_hash.to_string()))
             .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let token_bridge = StarknetTokenBridge::deploy(self.core_contract.client().clone(), self.arg_config.dev).await;
 
@@ -98,7 +97,6 @@ impl<'a> Erc20Bridge<'a> {
             token_bridge
                 .initialize(self.core_contract.address(), hexstring_to_address(&self.arg_config.l1_deployer_address))
                 .await;
-            sleep(Duration::from_secs(20)).await;
         } else {
             token_bridge
                 .setup_permissions_with_bridge_l1(
@@ -106,11 +104,8 @@ impl<'a> Erc20Bridge<'a> {
                     hexstring_to_address(&self.arg_config.l1_multisig_address),
                 )
                 .await;
-            sleep(Duration::from_secs(20)).await;
             token_bridge.add_implementation_token_bridge(self.core_contract.address()).await;
-            sleep(Duration::from_secs(20)).await;
             token_bridge.upgrade_to_token_bridge(self.core_contract.address()).await;
-            sleep(Duration::from_secs(20)).await;
         }
 
         token_bridge
