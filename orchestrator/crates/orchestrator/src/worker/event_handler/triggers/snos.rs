@@ -1,6 +1,3 @@
-use std::sync::Arc;
-use std::u64;
-
 use crate::core::config::Config;
 use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
@@ -13,6 +10,7 @@ use color_eyre::eyre::{Result, WrapErr};
 use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
+use std::sync::Arc;
 
 pub struct SnosJobTrigger;
 
@@ -86,7 +84,7 @@ impl JobTrigger for SnosJobTrigger {
 
         available_slots = available_slots.saturating_sub(pending_jobs_length as u64);
 
-        if available_slots <= 0 {
+        if available_slots == 0 {
             tracing::warn!("All slots occupied by pre-existing jobs, skipping SNOS job creation!");
             return Ok(());
         }
@@ -144,7 +142,7 @@ impl JobTrigger for SnosJobTrigger {
             available_slots = available_slots.saturating_sub(block_numbers_to_pocesss.len() as u64);
         };
 
-        if available_slots <= 0 {
+        if available_slots == 0 {
             // Create the jobs here directly and return!
             tracing::info!("All available slots are now full, creating jobs for blocks");
             tracing::info!(
