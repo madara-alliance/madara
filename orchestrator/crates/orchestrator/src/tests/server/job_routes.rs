@@ -18,7 +18,6 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueNameForJobType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::{JobHandlerTrait, MockJobHandlerTrait};
-use crate::worker::initialize_worker;
 use crate::worker::parser::job_queue_message::JobQueueMessage;
 
 #[fixture]
@@ -204,11 +203,4 @@ async fn test_trigger_retry_job_not_allowed(
     // Verify no message was added to the queue
     let queue_result = config.queue().consume_message_from_queue(job_type.process_queue_name()).await;
     assert!(queue_result.is_err(), "Queue should be empty - no message should be added for non-Failed jobs");
-}
-
-#[rstest]
-#[tokio::test]
-async fn test_init_consumer() {
-    let services = TestConfigBuilder::new().build().await;
-    assert!(initialize_worker(services.config).await.is_ok());
 }

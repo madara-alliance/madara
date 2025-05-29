@@ -31,9 +31,23 @@ async fn test_health_endpoint() {
     assert_eq!(res, 2);
 }
 
+/// This test case will make sure that the consumers are initialized correctly.
+/// and not validate on the queue client data validation and other think to be done wrt to queue business logic.
+/// Reason to add timeout login we have try_join_all in this code block which will wait for all the consumers to be Completed
+/// [which is not going to happen anytime soon].
+/// Better is to wait for some time and understand that the consumers are initialized correctly.
 #[rstest]
 #[tokio::test]
 async fn test_init_consumer() {
-    let services = TestConfigBuilder::new().build().await;
-    assert!(initialize_worker(services.config).await.is_ok());
+    let services = TestConfigBuilder::new().configure_queue_client(ConfigType::Actual).build().await;
+
+    let result = tokio::select! {
+        res = initialize_worker(services.config) => res,
+        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
+            println!("Timed out waiting for consumers to initialize");
+            Ok(())
+        }
+    };
+
+    assert!(result.is_ok(), "Failed to initialize consumers: {:?}", result.err());
 }
