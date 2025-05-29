@@ -72,7 +72,7 @@ pub trait DatabaseClient: Send + Sync {
         upper_cap: u64,
         limit: Option<i64>,
     ) -> Result<Vec<u64>, DatabaseError>;
-  
+
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
     /// update_batch - Update the bath

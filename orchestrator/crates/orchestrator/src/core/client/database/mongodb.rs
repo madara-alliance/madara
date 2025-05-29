@@ -10,8 +10,8 @@ use async_trait::async_trait;
 use chrono::{SubsecRound, Utc};
 use futures::TryStreamExt;
 use mongodb::bson::{doc, Bson, Document};
-use mongodb::options::{AggregateOptions,FindOneAndUpdateOptions,
-  FindOneOptions, FindOptions, InsertOneOptions, ReturnDocument, UpdateOptions,
+use mongodb::options::{
+    AggregateOptions, FindOneAndUpdateOptions, FindOptions, InsertOneOptions, ReturnDocument, UpdateOptions,
 };
 use mongodb::{bson, Client, Collection, Database};
 use opentelemetry::KeyValue;
@@ -217,7 +217,7 @@ impl MongoDbClient {
     /// * `pipeline` - The aggregation pipeline to execute
     /// * `options` - Optional aggregation options
     /// # Returns
-    /// * `Result<Vec<T>, DatabaseError>` - A Result containing the pipeline results or an error
+    /// * `Result<Vec<R>, DatabaseError>` - A Result containing the pipeline results or an error
     pub async fn execute_pipeline<T, R>(
         &self,
         collection: Collection<T>,
@@ -403,6 +403,7 @@ impl DatabaseClient for MongoDbClient {
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
         let pipeline = vec![
             doc! {
                 "$match": {
@@ -433,11 +434,23 @@ impl DatabaseClient for MongoDbClient {
 
         let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
 
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type")];
+        let duration = start.elapsed();
+
         // Convert Vec<JobItem> to Option<JobItem>
         match results.len() {
-            0 => Ok(None),
-            1 => Ok(results.into_iter().next()),
-            n => Err(DatabaseError::FailedToSerializeDocument(format!("Expected at most 1 result, got {}", n))),
+            0 => {
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(None)
+            }
+            1 => {
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(results.into_iter().next())
+            }
+            n => {
+                tracing::error!("Expected at most 1 result, got {}", n);
+                Err(DatabaseError::FailedToSerializeDocument(format!("Expected at most 1 result, got {}", n)))
+            }
         }
     }
 
@@ -467,6 +480,7 @@ impl DatabaseClient for MongoDbClient {
         job_a_status: JobStatus,
         job_b_type: JobType,
     ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
         // Convert enums to Bson strings
         let job_a_type_bson = Bson::String(format!("{:?}", job_a_type));
         let job_a_status_bson = Bson::String(format!("{:?}", job_a_status));
@@ -517,8 +531,14 @@ impl DatabaseClient for MongoDbClient {
             "Fetching jobs without successor"
         );
 
-        // Changed from 3 type parameters to 2
-        self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await
+        let result = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
+
+        tracing::debug!(job_count = result.len(), category = "db_call", "Retrieved jobs without successor");
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_successor")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(result)
     }
 
     // #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
@@ -624,6 +644,7 @@ impl DatabaseClient for MongoDbClient {
         upper_cap: u64,
         limit: Option<i64>,
     ) -> Result<Vec<u64>, DatabaseError> {
+        let start = Instant::now();
         // Converting params to Bson
         let job_type_bson = mongodb::bson::to_bson(&job_type)?;
         let upper_cap_bson = mongodb::bson::to_bson(&upper_cap)?;
@@ -683,13 +704,15 @@ impl DatabaseClient for MongoDbClient {
             },
         ];
 
-        if let Some(limit_value) = limit { pipeline.push(doc! {
+        if let Some(limit_value) = limit {
+            pipeline.push(doc! {
                 "$project": {
                     "missing_blocks": {
                         "$slice": ["$missing_blocks", limit_value]
                     }
                 }
-            }); }
+            });
+        }
 
         tracing::debug!(
             job_type = ?job_type,
@@ -705,6 +728,8 @@ impl DatabaseClient for MongoDbClient {
         let missing_blocks_response =
             self.execute_pipeline::<JobItem, MissingBlocksResponse>(collection, pipeline, None).await?;
 
+        tracing::debug!(job_count = missing_blocks_response.len(), category = "db_call", "Retrieved missing jobs");
+
         // Handle the case where we might not get any results
         let block_numbers = if missing_blocks_response.is_empty() {
             Vec::new()
@@ -713,6 +738,10 @@ impl DatabaseClient for MongoDbClient {
             block_numbers.sort();
             block_numbers
         };
+
+        let attributes = [KeyValue::new("db_operation_name", "get_missing_block_numbers_by_type_and_caps")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(block_numbers)
     }

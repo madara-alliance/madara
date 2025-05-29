@@ -100,6 +100,17 @@ use uuid::Uuid;
     vec![4], // pending_blocks (block 4 Created, consumes 1 slot)
     vec![5,6] // expected_jobs (only 1 slot left for new block)
 )]
+// Scenario 8: Block 1 is Created | latest_snos_completed is 2 & latest_state_transition_completed is None | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 3 only
+#[case(
+    3,      // latest_sequencer_block
+    Some(2), // latest_snos_completed
+    None,   // latest_state_transition_completed
+    vec![0], // missing_blocks_first_half (no missing blocks to create)
+    vec![3,4,5,6,7,8,9,10], // missing_blocks_second_half
+    vec![1], // pending_blocks (block 1 Created, consumes 1 slot)
+    vec![0,3] // expected_jobs (only 2 slot left for new block)
+)]
 #[tokio::test]
 async fn test_snos_worker_scenarios(
     #[case] latest_sequencer_block: u64,
@@ -351,11 +362,8 @@ async fn test_snos_worker_simple_scenarios(
     let expected_jobs_clone = expected_jobs.clone();
     db.expect_get_missing_block_numbers_by_type_and_caps().returning(move |_, lower, upper, _| {
         // Return the expected jobs within the requested range
-        let range_jobs: Vec<u64> = expected_jobs_clone
-            .iter()
-            .filter(|&&block| block >= lower && block <= upper)
-            .copied()
-            .collect();
+        let range_jobs: Vec<u64> =
+            expected_jobs_clone.iter().filter(|&&block| block >= lower && block <= upper).copied().collect();
         Ok(range_jobs)
     });
 
