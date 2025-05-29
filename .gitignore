@@ -80,3 +80,5 @@ test-artifacts/madara
 venv
 artifacts
 !build-artifacts
+madara-l2-db/
+*.log

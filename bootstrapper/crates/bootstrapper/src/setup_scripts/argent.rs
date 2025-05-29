@@ -1,12 +1,8 @@
-use std::time::Duration;
-
-use serde::Serialize;
-use starknet::core::types::Felt;
-use tokio::time::sleep;
-
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
 use crate::utils::constants::{ARGENT_ACCOUNT_CASM_PATH, ARGENT_ACCOUNT_SIERRA_PATH};
 use crate::utils::{save_to_json, JsonValueType};
+use serde::Serialize;
+use starknet::core::types::Felt;
 
 pub struct ArgentSetup<'a> {
     account: RpcAccount<'a>,
@@ -31,7 +27,6 @@ impl<'a> ArgentSetup<'a> {
         .await;
         log::info!("📣 Argent Hash Declared");
         save_to_json("argent_class_hash", &JsonValueType::StringType(argent_class_hash.to_string())).unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         ArgentSetupOutput { argent_class_hash }
     }
