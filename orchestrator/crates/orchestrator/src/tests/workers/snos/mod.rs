@@ -16,7 +16,6 @@ use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
-use std::env;
 use std::error::Error;
 use std::sync::Arc;
 use url::Url;
@@ -112,7 +111,7 @@ use uuid::Uuid;
     vec![0,3] // expected_jobs (only 2 slot left for new block)
 )]
 #[tokio::test]
-async fn test_snos_worker_scenarios(
+async fn test_snos_worker(
     #[case] latest_sequencer_block: u64,
     #[case] latest_snos_completed: Option<u64>,
     #[case] latest_state_transition_completed: Option<u64>,
@@ -282,141 +281,5 @@ async fn test_snos_worker_scenarios(
         latest_snos_completed, pending_blocks, expected_jobs_to_create
     );
 
-    Ok(())
-}
-
-// Additional helper test for the simple scenarios
-#[rstest]
-// Simple test cases that match the original scenarios more directly
-#[case(vec![0], vec![1], vec![], vec![2, 3], "Block 0 completed, Block 1 pending")]
-#[case(vec![0], vec![], vec![], vec![1, 2, 3], "Block 0 completed only")]
-#[case(vec![], vec![], vec![], vec![0, 1, 2], "No SNOS jobs exist")]
-#[case(vec![0, 2], vec![], vec![], vec![1, 3, 4], "Blocks 0,2 completed, missing 1")]
-#[case(vec![2], vec![0], vec![], vec![1, 3], "Block 2 completed, Block 0 pending, missing 1")]
-#[case(vec![2], vec![0, 1], vec![], vec![3], "Block 2 completed, Blocks 0,1 pending")]
-#[tokio::test]
-async fn test_snos_worker_simple_scenarios(
-    #[case] completed_blocks: Vec<u64>,
-    #[case] pending_blocks: Vec<u64>,
-    #[case] created_blocks: Vec<u64>,
-    #[case] expected_jobs: Vec<u64>,
-    #[case] description: &str,
-) -> Result<(), Box<dyn Error>> {
-    // This is a simplified test that focuses on the core logic
-    // without the complexity of the full parameter set
-
-    // Set up environment
-    env::set_var("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS", "999");
-    env::set_var("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS", "0");
-    env::set_var("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "3");
-
-    let server = MockServer::start();
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let mut queue = MockQueueClient::new();
-    let mut job_handler = MockJobHandlerTrait::new();
-
-    // Mock sequencer response
-    let sequencer_response = json!({"id": 1, "jsonrpc": "2.0", "result": 100});
-    let _rpc_mock = server.mock(|when, then| {
-        when.path("/").body_includes("starknet_blockNumber");
-        then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
-    });
-
-    // Determine latest completed SNOS block
-    let latest_snos_completed = completed_blocks.iter().max().copied();
-    let latest_snos_job = latest_snos_completed.map(|block_num| {
-        let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
-        job_item.metadata.specific =
-            JobSpecificMetadata::Snos(SnosMetadata { block_number: block_num, ..Default::default() });
-        job_item.status = JobStatus::Completed;
-        job_item
-    });
-
-    db.expect_get_latest_job_by_type_and_status()
-        .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
-        .returning(move |_, _| Ok(latest_snos_job.clone()));
-
-    // No StateTransition jobs for simple scenarios
-    db.expect_get_latest_job_by_type_and_status()
-        .with(eq(JobType::StateTransition), eq(JobStatus::Completed))
-        .returning(|_, _| Ok(None));
-
-    // Mock pending jobs
-    let all_pending_blocks: Vec<u64> = pending_blocks.iter().chain(created_blocks.iter()).copied().collect();
-    let pending_job_items: Vec<_> = all_pending_blocks
-        .iter()
-        .map(|block_num| {
-            let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
-            job_item.status =
-                if pending_blocks.contains(block_num) { JobStatus::PendingRetry } else { JobStatus::Created };
-            job_item
-        })
-        .collect();
-
-    db.expect_get_jobs_by_types_and_statuses()
-        .with(eq(vec![JobType::SnosRun]), eq(vec![JobStatus::PendingRetry, JobStatus::Created]), eq(None))
-        .returning(move |_, _, _| Ok(pending_job_items.clone()));
-
-    // Mock missing blocks logic - this is the key part that needs to match your algorithm
-    let expected_jobs_clone = expected_jobs.clone();
-    db.expect_get_missing_block_numbers_by_type_and_caps().returning(move |_, lower, upper, _| {
-        // Return the expected jobs within the requested range
-        let range_jobs: Vec<u64> =
-            expected_jobs_clone.iter().filter(|&&block| block >= lower && block <= upper).copied().collect();
-        Ok(range_jobs)
-    });
-
-    // Mock job creation for expected jobs
-    for &block_num in &expected_jobs {
-        let uuid = Uuid::new_v4();
-        let block_num_str = block_num.to_string();
-        let job_item = get_job_item_mock_by_id(block_num_str.clone(), uuid);
-
-        job_handler.expect_create_job().with(eq(block_num_str.clone()), mockall::predicate::always()).returning({
-            let job_item = job_item.clone();
-            move |_, _| Ok(job_item.clone())
-        });
-
-        db.expect_create_job()
-            .withf({
-                let block_num_str = block_num_str.clone();
-                move |item| item.internal_id == block_num_str
-            })
-            .returning({
-                let job_item = job_item.clone();
-                move |_| Ok(job_item.clone())
-            });
-    }
-
-    // Setup job handler context
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context();
-    ctx.expect().with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
-
-    // Mock queue operations
-    queue
-        .expect_send_message()
-        .times(expected_jobs.len())
-        .returning(|_, _, _| Ok(()))
-        .withf(|queue, _, _| *queue == QueueType::SnosJobProcessing);
-
-    // Setup provider and config
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        Url::parse(&format!("http://localhost:{}", server.port())).expect("Failed to parse URL"),
-    ));
-
-    let services = TestConfigBuilder::new()
-        .configure_starknet_client(provider.into())
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .build()
-        .await;
-
-    // Run the SNOS worker
-    crate::worker::event_handler::triggers::snos::SnosJobTrigger.run_worker(services.config).await?;
-
-    println!("✅ Test completed: {}", description);
     Ok(())
 }

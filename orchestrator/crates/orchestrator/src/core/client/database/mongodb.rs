@@ -506,7 +506,7 @@ impl DatabaseClient for MongoDbClient {
                                 "$expr": {
                                     "$and": [
                                         { "$eq": ["$job_type", job_b_type_bson] },
-                                        { "$eq": ["$internal_id", "$internal_id"] }
+                                        { "$eq": ["$internal_id", "$$internal_id"] }
                                     ]
                                 }
                             }
@@ -596,18 +596,19 @@ impl DatabaseClient for MongoDbClient {
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
-        let serialized_job_type: Result<Vec<Bson>, _> = job_type.iter().map(bson::to_bson).collect();
+        let mut filter = doc! {};
 
-        let serialized_statuses: Result<Vec<Bson>, _> = job_status.iter().map(bson::to_bson).collect();
+        // Only add job_type filter if the vector is not empty
+        if !job_type.is_empty() {
+            let serialized_job_type: Result<Vec<Bson>, _> = job_type.iter().map(bson::to_bson).collect();
+            filter.insert("job_type", doc! { "$in": serialized_job_type? });
+        }
 
-        let filter = doc! {
-            "job_type": {
-                "$in": serialized_job_type?
-            },
-            "status": {
-                "$in": serialized_statuses?
-            }
-        };
+        // Only add status filter if the vector is not empty
+        if !job_status.is_empty() {
+            let serialized_statuses: Result<Vec<Bson>, _> = job_status.iter().map(bson::to_bson).collect();
+            filter.insert("status", doc! { "$in": serialized_statuses? });
+        }
 
         let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
 

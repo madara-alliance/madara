@@ -46,18 +46,16 @@ impl JobTrigger for SnosJobTrigger {
                 },
             };
 
-        let latest_su_completed_block_number = match db
-            .get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed)
-            .await?
-        {
-            None => None,
-            Some(job_item) => match job_item.metadata.specific {
-                JobSpecificMetadata::StateUpdate(metadata) => metadata.blocks_to_settle.iter().max().copied(),
-                _ => {
-                    panic! {"This case should never have happened!"}
-                }
-            },
-        };
+        let latest_su_completed_block_number =
+            match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
+                None => None,
+                Some(job_item) => match job_item.metadata.specific {
+                    JobSpecificMetadata::StateUpdate(metadata) => metadata.blocks_to_settle.iter().max().copied(),
+                    _ => {
+                        panic! {"This case should never have happened!"}
+                    }
+                },
+            };
 
         let lower_limit = match latest_su_completed_block_number {
             None => min_block_to_process_bound,
