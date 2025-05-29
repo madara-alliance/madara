@@ -41,23 +41,23 @@ impl JobTrigger for SnosJobTrigger {
                 Some(job_item) => match job_item.metadata.specific {
                     JobSpecificMetadata::Snos(metadata) => Some(metadata.block_number),
                     _ => {
-                        panic! {"This case should never have been executed!"}
+                        panic! {"This case should never have happened!"}
                     }
                 },
             };
 
-        let latest_su_completed_block_number =
-            match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
-                None => None,
-                Some(job_item) => match job_item.metadata.specific {
-                    JobSpecificMetadata::StateUpdate(metadata) => {
-                        Some(*metadata.blocks_to_settle.iter().max().unwrap_or(&0_u64))
-                    }
-                    _ => {
-                        panic! {"This case should never have been executed!"}
-                    }
-                },
-            };
+        let latest_su_completed_block_number = match db
+            .get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed)
+            .await?
+        {
+            None => None,
+            Some(job_item) => match job_item.metadata.specific {
+                JobSpecificMetadata::StateUpdate(metadata) => metadata.blocks_to_settle.iter().max().copied(),
+                _ => {
+                    panic! {"This case should never have happened!"}
+                }
+            },
+        };
 
         let lower_limit = match latest_su_completed_block_number {
             None => min_block_to_process_bound,
@@ -76,14 +76,14 @@ impl JobTrigger for SnosJobTrigger {
 
         let mut available_slots = service_config.max_concurrent_created_snos_jobs;
 
-        // Decrease slots by already number of already existing PendingRetry & Created jobs
+        // Decrease slots by number of already existing PendingRetry & Created jobs
         let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
 
         // Get pending/created jobs
         let pending_jobs_length = db
             .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], pending_statuses, None)
             .await
-            .wrap_err("Failed to fetch pending / created SNOS jobs")?
+            .wrap_err("Failed to fetch pending SNOS jobs")?
             .len();
 
         available_slots = available_slots.saturating_sub(pending_jobs_length as u64);
@@ -99,8 +99,8 @@ impl JobTrigger for SnosJobTrigger {
         // The only variables we are to be concerned with from now are
         // lower_limit, middle_limit_optn, upper_limit and available_slots
 
-        // Case: middle_limit_optn is NONE
-        // lower limit can be 0, any, u64::MAX
+        // Case: middle_limit_optn is NONE, i.e no snos job has completed till now.
+        // lower limit can be [0...u64::MAX]
         if middle_limit_optn.is_none() {
             // create jobs for all blocks in range [lower_limit, upper_limit] - blocks already having a Snos Job
             let candidate_blocks = db
@@ -111,12 +111,16 @@ impl JobTrigger for SnosJobTrigger {
                     Some(i64::try_from(available_slots)?),
                 )
                 .await?;
-            // blocks.take(available_slots) into block_numbers_to_pocesss
+
+            assert!(candidate_blocks.len() <= available_slots as usize);
+
             // create_jobs_snos
-            let blocks_taken: Vec<u64> = candidate_blocks.into_iter().take(available_slots as usize).collect();
-            available_slots = available_slots.saturating_sub(blocks_taken.len() as u64);
-            tracing::info!("Creating SNOS jobs for {:?} blocks, with {} left slots", &blocks_taken, available_slots);
-            create_jobs_snos(config, blocks_taken).await?;
+            tracing::info!(
+                "Creating SNOS jobs for {:?} blocks, with {} left slots",
+                &candidate_blocks,
+                available_slots
+            );
+            create_jobs_snos(config, candidate_blocks).await?;
             return Ok(());
         }
 
@@ -124,7 +128,7 @@ impl JobTrigger for SnosJobTrigger {
             middle_limit_optn.expect("middle_limit_optn should not be None at this point");
         let mut block_numbers_to_pocesss: Vec<u64> = Vec::new();
 
-        // // // Part 4: Calculating jobs withing first half // // //
+        // // // Part 4a: Calculating jobs withing first half // // //
 
         // Case 1: lower_limit > last_completed_snos_block_no : Skip, do nothing
         // Case 2: lower_limit == last_completed_snos_block_no == 0 : Skip, already processed
@@ -132,7 +136,6 @@ impl JobTrigger for SnosJobTrigger {
 
         if lower_limit <= last_completed_snos_block_no && (last_completed_snos_block_no != 0) {
             // Get the missing blocks list and consume available_slots many to create jobs for.
-            // TODO: why do we need to send as i64
             let missing_block_numbers_list = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
@@ -142,15 +145,14 @@ impl JobTrigger for SnosJobTrigger {
                 )
                 .await?;
 
-            let blocks_taken: Vec<u64> =
-                missing_block_numbers_list.into_iter().take(available_slots as usize).collect();
-            block_numbers_to_pocesss.extend(blocks_taken);
-            available_slots = available_slots.saturating_sub(block_numbers_to_pocesss.len() as u64);
+            assert!(missing_block_numbers_list.len() <= available_slots as usize);
+
+            available_slots = available_slots.saturating_sub(missing_block_numbers_list.len() as u64);
+            block_numbers_to_pocesss.extend(missing_block_numbers_list);
         };
 
         if available_slots == 0 {
             // Create the jobs here directly and return!
-            tracing::info!("All available slots are now full, creating jobs for blocks");
             tracing::info!(
                 "All available slots are now full, creating jobs for blocks {:?}",
                 &block_numbers_to_pocesss,
@@ -159,7 +161,7 @@ impl JobTrigger for SnosJobTrigger {
             return Ok(());
         }
 
-        // // // Part 5: Calculating jobs withing second half // // //
+        // // // Part 4b: Calculating jobs withing second half // // //
 
         // Case 1: last_completed_snos_block_no > upper_limit : Skip, do nothing
         // Case 2: last_completed_snos_block_no = upper_limit : Skip, nothing to do
@@ -167,7 +169,6 @@ impl JobTrigger for SnosJobTrigger {
 
         if last_completed_snos_block_no < upper_limit {
             // Get the candidate blocks list and consume available_slots many to create jobs for.
-            // TODO: why do we need to send as i64
             let candidate_blocks = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
@@ -177,9 +178,10 @@ impl JobTrigger for SnosJobTrigger {
                 )
                 .await?;
 
-            let blocks_taken: Vec<u64> = candidate_blocks.into_iter().take(available_slots as usize).collect();
-            block_numbers_to_pocesss.extend(blocks_taken);
-            available_slots = available_slots.saturating_sub(block_numbers_to_pocesss.len() as u64);
+            assert!(candidate_blocks.len() <= available_slots as usize);
+
+            available_slots = available_slots.saturating_sub(candidate_blocks.len() as u64);
+            block_numbers_to_pocesss.extend(candidate_blocks);
         };
 
         // Create the jobs here directly and return!

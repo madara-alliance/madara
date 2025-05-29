@@ -74,7 +74,7 @@ use uuid::Uuid;
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
     vec![1], // missing_blocks_first_half (missing 1 in range [0, 2], 0 is pending)
-    vec![3, 4], // missing_blocks_second_half (blocks after 2)
+    vec![3], // missing_blocks_second_half (blocks after 2)
     vec![0], // pending_blocks (block 0 is PendingRetry, consumes 1 slot)
     vec![1, 3] // expected_jobs (fill missing 1, then one new block due to slot constraint)
 )]
@@ -96,7 +96,7 @@ use uuid::Uuid;
     Some(3), // latest_snos_completed
     Some(3),   // latest_state_transition_completed
     vec![], // missing_blocks_first_half (no missing blocks to create)
-    vec![5,6,7,8,9,10], // missing_blocks_second_half (no missing blocks to create)
+    vec![5,6], // missing_blocks_second_half (no missing blocks to create)
     vec![4], // pending_blocks (block 4 Created, consumes 1 slot)
     vec![5,6] // expected_jobs (only 1 slot left for new block)
 )]
@@ -107,7 +107,7 @@ use uuid::Uuid;
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
     vec![0], // missing_blocks_first_half (no missing blocks to create)
-    vec![3,4,5,6,7,8,9,10], // missing_blocks_second_half
+    vec![3], // missing_blocks_second_half
     vec![1], // pending_blocks (block 1 Created, consumes 1 slot)
     vec![0,3] // expected_jobs (only 2 slot left for new block)
 )]

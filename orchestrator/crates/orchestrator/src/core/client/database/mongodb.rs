@@ -622,17 +622,13 @@ impl DatabaseClient for MongoDbClient {
     /// function to get missing block numbers for jobs within a specified range.
     ///
     /// `job_type` : Type of job to check for missing blocks.
-    ///
     /// `lower_cap` : The minimum block number (inclusive).
-    ///
     /// `upper_cap` : The maximum block number (exclusive, following MongoDB $range behavior).
     ///
     /// Returns a vector of missing block numbers within the specified range.
     ///
     /// Eg:
-    ///
     /// Getting missing SNOS jobs between blocks 2000 and 70000
-    ///
     /// job_type : SnosRun
     /// lower_cap : 2000
     /// upper_cap : 70000
@@ -647,8 +643,18 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         // Converting params to Bson
         let job_type_bson = mongodb::bson::to_bson(&job_type)?;
-        let upper_cap_bson = mongodb::bson::to_bson(&upper_cap)?;
-        let lower_cap_bson = mongodb::bson::to_bson(&lower_cap)?;
+
+        // NOTE: This implementation is limited by mongodb's capbility to not support u64.
+        // i.e it will fail if upper_limit / lower_limit exceeds u32::MAX.
+
+        let lower_limit = u32::try_from(lower_cap).map_err(|e| {
+            tracing::error!(error = %e, category = "db_call", "Deserialization error");
+            DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
+        })?;
+        let upper_limti = u32::try_from(upper_cap).map_err(|e| {
+            tracing::error!(error = %e, category = "db_call", "Deserialization error");
+            DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
+        })?;
 
         // Constructing the aggregation pipeline
         let mut pipeline = vec![
@@ -659,8 +665,8 @@ impl DatabaseClient for MongoDbClient {
                             "$match": {
                                 "job_type": job_type_bson,
                                 "metadata.specific.block_number": {
-                                    "$gte": lower_cap_bson.clone(),
-                                    "$lte": upper_cap_bson.clone()
+                                    "$gte": lower_limit,
+                                    "$lte": upper_limti
                                 }
                             }
                         },
@@ -688,7 +694,7 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$addFields": {
                     "complete_range": {
-                        "$range": [lower_cap_bson, upper_cap_bson]
+                        "$range": [lower_limit, upper_limti]
                     }
                 }
             },
