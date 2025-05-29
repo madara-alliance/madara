@@ -1,6 +1,7 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::tests::utils::build_job_item;
+use crate::tests::utils::{build_batch, build_job_item};
+use crate::types::batch::{Batch, BatchUpdates};
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -238,4 +239,87 @@ async fn database_test_update_job() {
     } else {
         panic!("Job not found in Database.")
     }
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_test_get_latest_batch(
+    #[from(build_batch)]
+    #[with(1, 100, 200)]
+    batch1: Batch,
+    #[from(build_batch)]
+    #[with(2, 210, 300)]
+    batch2: Batch,
+    #[from(build_batch)]
+    #[with(3, 301, 400)]
+    batch3: Batch,
+) {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Insert batches in non-sequential order
+    database_client.create_batch(batch2.clone()).await.unwrap();
+    database_client.create_batch(batch1.clone()).await.unwrap();
+    database_client.create_batch(batch3.clone()).await.unwrap();
+
+    // Get latest batch should return batch3 since it has the highest index
+    let latest_batch = database_client.get_latest_batch().await.unwrap().unwrap();
+    assert_eq!(latest_batch, batch3);
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_test_update_batch(
+    #[from(build_batch)]
+    #[with(1, 100, 200)]
+    batch: Batch,
+) {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    database_client.create_batch(batch.clone()).await.unwrap();
+
+    // Waiting for sometime to ensure updated_at is different after the update
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+
+    // Create updates for the batch
+    let updates = BatchUpdates { end_block: 250, is_batch_ready: batch.is_batch_ready };
+
+    // Update the batch
+    let updated_batch = database_client.update_batch(&batch, updates.clone()).await.unwrap();
+
+    // Verify the updates
+    assert_eq!(updated_batch.id, batch.id);
+    assert_eq!(updated_batch.index, batch.index);
+    assert_eq!(updated_batch.size, updates.end_block - batch.start_block + 1);
+    assert_eq!(updated_batch.start_block, batch.start_block);
+    assert_eq!(updated_batch.end_block, updates.end_block);
+    assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);
+    assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
+    assert_eq!(updated_batch.created_at, batch.created_at);
+    assert_ne!(updated_batch.updated_at, batch.updated_at);
+}
+
+#[rstest]
+#[tokio::test]
+async fn database_test_create_batch(
+    #[from(build_batch)]
+    #[with(1, 100, 200)]
+    batch: Batch,
+) {
+    let services = TestConfigBuilder::new().configure_database(ConfigType::Actual).build().await;
+    let config = services.config;
+    let database_client = config.database();
+
+    // Create the batch
+    let created_batch = database_client.create_batch(batch.clone()).await.unwrap();
+
+    // Verify the created batch matches the input
+    assert_eq!(created_batch, batch);
+
+    // Verify we can retrieve the batch
+    let retrieved_batch = database_client.get_latest_batch().await.unwrap().unwrap();
+    assert_eq!(retrieved_batch, batch);
 }

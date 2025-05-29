@@ -1,3 +1,4 @@
+pub(crate) mod batching;
 pub(crate) mod data_submission_worker;
 pub(crate) mod proof_registration;
 pub(crate) mod proving;
