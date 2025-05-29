@@ -41,7 +41,7 @@ impl JobTrigger for SnosJobTrigger {
                 Some(job_item) => match job_item.metadata.specific {
                     JobSpecificMetadata::Snos(metadata) => Some(metadata.block_number),
                     _ => {
-                        panic! {"This SNOS case should never have been executed!"}
+                        panic! {"This case should never have been executed!"}
                     }
                 },
             };
@@ -54,7 +54,7 @@ impl JobTrigger for SnosJobTrigger {
                         Some(*metadata.blocks_to_settle.iter().max().unwrap_or(&0_u64))
                     }
                     _ => {
-                        panic! {"This STATEUPDATE case should never have been executed!"}
+                        panic! {"This case should never have been executed!"}
                     }
                 },
             };
@@ -66,7 +66,11 @@ impl JobTrigger for SnosJobTrigger {
 
         let middle_limit_optn = latest_snos_completed_block_number;
 
-        let upper_limit = min(latest_created_block_from_sequencer, max_block_to_process_bound);
+        let upper_limit = match max_block_to_process_bound {
+            Some(bound) => min(latest_created_block_from_sequencer, bound),
+            // No limit, use sequencer value
+            None => latest_created_block_from_sequencer,
+        };
 
         // // // Part 2: Calculating Available Slots // // //
 
@@ -102,8 +106,9 @@ impl JobTrigger for SnosJobTrigger {
             let candidate_blocks = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
-                    i64::try_from(lower_limit)?,
-                    i64::try_from(upper_limit)?,
+                    lower_limit,
+                    upper_limit,
+                    Some(i64::try_from(available_slots)?),
                 )
                 .await?;
             // blocks.take(available_slots) into block_numbers_to_pocesss
@@ -131,8 +136,9 @@ impl JobTrigger for SnosJobTrigger {
             let missing_block_numbers_list = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
-                    i64::try_from(lower_limit)?,
-                    i64::try_from(last_completed_snos_block_no)?,
+                    lower_limit,
+                    last_completed_snos_block_no,
+                    Some(i64::try_from(available_slots)?),
                 )
                 .await?;
 
@@ -165,8 +171,9 @@ impl JobTrigger for SnosJobTrigger {
             let candidate_blocks = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
-                    i64::try_from(last_completed_snos_block_no)?,
-                    i64::try_from(upper_limit)?,
+                    last_completed_snos_block_no,
+                    upper_limit,
+                    Some(i64::try_from(available_slots)?),
                 )
                 .await?;
 

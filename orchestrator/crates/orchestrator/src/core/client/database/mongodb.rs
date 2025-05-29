@@ -50,32 +50,6 @@ pub struct MissingBlocksResponse {
     pub missing_blocks: Vec<u64>,
 }
 
-pub trait FromPipeline<T>: Sized {
-    /// Turn a Vec<T> (all of the pipeline’s results) into `Self`.
-    fn from_vec(results: Vec<T>) -> Result<Self, DatabaseError>;
-}
-
-// impl for Vec<T> stays just the same:
-impl<T> FromPipeline<T> for Vec<T> {
-    fn from_vec(results: Vec<T>) -> Result<Self, DatabaseError> {
-        Ok(results)
-    }
-}
-
-// impl for Option<T>: take the first element, or None
-impl<T> FromPipeline<T> for Option<T> {
-    fn from_vec(mut results: Vec<T>) -> Result<Self, DatabaseError> {
-        match results.len() {
-            0 => Ok(None),
-            1 => Ok(Some(results.remove(0))),
-            _ => Err(DatabaseError::FailedToSerializeDocument(format!(
-                "Expected at most one result, got {}",
-                results.len()
-            ))),
-        }
-    }
-}
-
 /// MongoDB client implementation
 pub struct MongoDbClient {
     client: Client,
@@ -237,16 +211,15 @@ impl MongoDbClient {
     /// * `options` - Optional aggregation options
     /// # Returns
     /// * `Result<Vec<T>, DatabaseError>` - A Result containing the pipeline results or an error
-    pub async fn execute_pipeline<T, K, O>(
+    pub async fn execute_pipeline<T, R>(
         &self,
         collection: Collection<T>,
         pipeline: Vec<Document>,
         options: Option<AggregateOptions>,
-    ) -> Result<O, DatabaseError>
+    ) -> Result<Vec<R>, DatabaseError>
     where
         T: serde::de::DeserializeOwned + Unpin + Send + Sync + Sized,
-        K: serde::de::DeserializeOwned + Unpin + Send + Sync + Sized,
-        O: FromPipeline<K>,
+        R: serde::de::DeserializeOwned + Unpin + Send + Sync + Sized,
     {
         let start = std::time::Instant::now();
 
@@ -257,13 +230,13 @@ impl MongoDbClient {
         );
 
         let cursor = collection.aggregate(pipeline, options).await?;
-        let vec_items: Vec<K> = cursor
+        let vec_items: Vec<R> = cursor
             .map_err(|e| {
                 tracing::error!(error = %e, category = "db_call", "Error executing pipeline");
                 DatabaseError::FailedToSerializeDocument(format!("Failed to execute pipeline: {}", e))
             })
             .and_then(|doc| {
-                futures::future::ready(mongodb::bson::from_document::<K>(doc).map_err(|e| {
+                futures::future::ready(mongodb::bson::from_document::<R>(doc).map_err(|e| {
                     tracing::error!(error = %e, category = "db_call", "Deserialization error");
                     DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
                 }))
@@ -282,8 +255,7 @@ impl MongoDbClient {
         let attrs = [KeyValue::new("db_operation_name", "execute_pipeline")];
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attrs);
 
-        // The magic conversion happens here:
-        O::from_vec(vec_items)
+        Ok(vec_items)
     }
 }
 
@@ -452,7 +424,14 @@ impl DatabaseClient for MongoDbClient {
 
         tracing::debug!(job_type = ?job_type, category = "db_call", "Fetching latest job by type");
 
-        self.execute_pipeline::<JobItem, JobItem, Option<JobItem>>(self.get_job_collection(), pipeline, None).await
+        let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
+
+        // Convert Vec<JobItem> to Option<JobItem>
+        match results.len() {
+            0 => Ok(None),
+            1 => Ok(results.into_iter().next()),
+            n => Err(DatabaseError::FailedToSerializeDocument(format!("Expected at most 1 result, got {}", n))),
+        }
     }
 
     /// function to get jobs that don't have a successor job.
@@ -531,7 +510,8 @@ impl DatabaseClient for MongoDbClient {
             "Fetching jobs without successor"
         );
 
-        self.execute_pipeline::<JobItem, JobItem, Vec<JobItem>>(self.get_job_collection(), pipeline, None).await
+        // Changed from 3 type parameters to 2
+        self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await
     }
 
     // #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
@@ -633,15 +613,17 @@ impl DatabaseClient for MongoDbClient {
     async fn get_missing_block_numbers_by_type_and_caps(
         &self,
         job_type: JobType,
-        lower_cap: i64,
-        upper_cap: i64,
+        lower_cap: u64,
+        upper_cap: u64,
+        limit: Option<i64>,
     ) -> Result<Vec<u64>, DatabaseError> {
-        // Convert job_type to Bson
+        // Converting params to Bson
         let job_type_bson = mongodb::bson::to_bson(&job_type)?;
+        let upper_cap_bson = mongodb::bson::to_bson(&upper_cap)?;
+        let lower_cap_bson = mongodb::bson::to_bson(&lower_cap)?;
 
-        // Construct the aggregation pipeline
-        // Construct the aggregation pipeline
-        let pipeline = vec![
+        // Constructing the aggregation pipeline
+        let mut pipeline = vec![
             doc! {
                 "$facet": {
                     "existing_data": [
@@ -649,8 +631,8 @@ impl DatabaseClient for MongoDbClient {
                             "$match": {
                                 "job_type": job_type_bson,
                                 "metadata.specific.block_number": {
-                                    "$gte": lower_cap,
-                                    "$lte": upper_cap
+                                    "$gte": lower_cap_bson.clone(),
+                                    "$lte": upper_cap_bson.clone()
                                 }
                             }
                         },
@@ -678,7 +660,7 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$addFields": {
                     "complete_range": {
-                        "$range": [lower_cap, upper_cap]
+                        "$range": [lower_cap_bson, upper_cap_bson]
                     }
                 }
             },
@@ -694,6 +676,14 @@ impl DatabaseClient for MongoDbClient {
             },
         ];
 
+        if let Some(limit_value) = limit { pipeline.push(doc! {
+                "$project": {
+                    "missing_blocks": {
+                        "$slice": ["$missing_blocks", limit_value]
+                    }
+                }
+            }); }
+
         tracing::debug!(
             job_type = ?job_type,
             lower_cap = lower_cap,
@@ -705,15 +695,17 @@ impl DatabaseClient for MongoDbClient {
         let collection: Collection<JobItem> = self.get_job_collection();
 
         // Execute pipeline and extract block numbers
-        let missing_blocks_response = self
-            .execute_pipeline::<JobItem, MissingBlocksResponse, Vec<MissingBlocksResponse>>(collection, pipeline, None)
-            .await?;
+        let missing_blocks_response =
+            self.execute_pipeline::<JobItem, MissingBlocksResponse>(collection, pipeline, None).await?;
 
-        tracing::info!("missing_blocks_response {:?}", missing_blocks_response);
-
-        let mut block_numbers = missing_blocks_response[0].missing_blocks.clone();
-
-        block_numbers.sort();
+        // Handle the case where we might not get any results
+        let block_numbers = if missing_blocks_response.is_empty() {
+            Vec::new()
+        } else {
+            let mut block_numbers = missing_blocks_response[0].missing_blocks.clone();
+            block_numbers.sort();
+            block_numbers
+        };
 
         Ok(block_numbers)
     }
@@ -733,7 +725,7 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$match": {
                     "job_type": job_type_bson,
-                    "status":   status_bson,
+                    "status": status_bson,
                 }
             },
             // Stage 2: Sort by block_number descending
@@ -750,13 +742,20 @@ impl DatabaseClient for MongoDbClient {
             job_type = ?job_type,
             job_status = ?job_status,
             category = "db_call",
-            "Fetching missing jobs by type and caps"
+            "Fetching latest job by type and status"
         );
 
         let collection: Collection<JobItem> = self.get_job_collection();
 
-        // Execute pipeline and extract block numbers
-        self.execute_pipeline::<JobItem, JobItem, Option<JobItem>>(collection, pipeline, None).await
+        // Execute pipeline and convert Vec<JobItem> to Option<JobItem>
+        let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
+
+        // Convert Vec<JobItem> to Option<JobItem>
+        match results.len() {
+            0 => Ok(None),
+            1 => Ok(results.into_iter().next()),
+            n => Err(DatabaseError::FailedToSerializeDocument(format!("Expected at most 1 result, got {}", n))),
+        }
     }
 }
 

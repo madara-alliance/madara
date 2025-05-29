@@ -67,7 +67,8 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_missing_block_numbers_by_type_and_caps(
         &self,
         job_type: JobType,
-        lower_cap: i64,
-        upper_cap: i64,
+        lower_cap: u64,
+        upper_cap: u64,
+        limit: Option<i64>,
     ) -> Result<Vec<u64>, DatabaseError>;
 }

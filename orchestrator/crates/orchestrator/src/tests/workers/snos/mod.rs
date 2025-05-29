@@ -185,12 +185,12 @@ async fn test_snos_worker_scenarios(
     let call_counter_clone = Arc::clone(&call_counter);
 
     db.expect_get_missing_block_numbers_by_type_and_caps()
-        .withf(move |job_type, _, _| *job_type == JobType::SnosRun)
+        .withf(move |job_type, _, _, _| *job_type == JobType::SnosRun)
         .times(0..=2) // May be called 0, 1, or 2 times depending on the scenario
-        .returning(move |_, lower, upper| {
+        .returning(move |_, lower, upper, _| {
             let call_num = call_counter_clone.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            let lower_bound = lower as u64;
-            let upper_bound = upper as u64;
+            let lower_bound = lower;
+            let upper_bound = upper;
 
             // Determine which call this is based on the parameters
             if latest_snos_clone.is_none() {
@@ -349,11 +349,11 @@ async fn test_snos_worker_simple_scenarios(
 
     // Mock missing blocks logic - this is the key part that needs to match your algorithm
     let expected_jobs_clone = expected_jobs.clone();
-    db.expect_get_missing_block_numbers_by_type_and_caps().returning(move |_, lower, upper| {
+    db.expect_get_missing_block_numbers_by_type_and_caps().returning(move |_, lower, upper, _| {
         // Return the expected jobs within the requested range
         let range_jobs: Vec<u64> = expected_jobs_clone
             .iter()
-            .filter(|&&block| block >= lower as u64 && block <= upper as u64)
+            .filter(|&&block| block >= lower && block <= upper)
             .copied()
             .collect();
         Ok(range_jobs)

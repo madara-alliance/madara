@@ -529,7 +529,7 @@ pub(crate) fn get_env_params() -> EnvParams {
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
-    let max_block: u64 = env.parse::<u64>().unwrap();
+    let max_block: Option<u64> = Some(env.parse::<u64>().unwrap());
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS");
     let min_block: u64 = env.parse::<u64>().unwrap();
