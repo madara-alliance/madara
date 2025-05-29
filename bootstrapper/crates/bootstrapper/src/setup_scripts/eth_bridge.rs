@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::time::Duration;
 
 use ethers::abi::Address;
 use serde::Serialize;
@@ -7,7 +6,6 @@ use starknet::accounts::{Account, ConnectedAccount};
 use starknet::core::types::Felt;
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
-use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::core_contract::CoreContract;
@@ -56,6 +54,7 @@ impl<'a> EthBridge<'a> {
     }
 
     pub async fn setup(&self) -> EthBridgeSetupOutput {
+        // Declare a proxy
         let legacy_proxy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(PROXY_LEGACY_PATH),
             self.arg_config.rollup_declare_v0_seq_url.clone(),
@@ -66,6 +65,7 @@ impl<'a> EthBridge<'a> {
         save_to_json("legacy_proxy_class_hash", &JsonValueType::StringType(legacy_proxy_class_hash.to_string()))
             .unwrap();
 
+        // Starkgate proxy declaration
         let starkgate_proxy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(STARKGATE_PROXY_PATH),
             self.arg_config.rollup_declare_v0_seq_url.clone(),
@@ -76,6 +76,7 @@ impl<'a> EthBridge<'a> {
         save_to_json("starkgate_proxy_class_hash", &JsonValueType::StringType(starkgate_proxy_class_hash.to_string()))
             .unwrap();
 
+        // Erc20 legacy class declaration
         let erc20_legacy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(ERC20_LEGACY_PATH),
             self.arg_config.rollup_declare_v0_seq_url.clone(),
@@ -157,6 +158,7 @@ impl<'a> EthBridge<'a> {
         log::info!("✴️ ETH Bridge L2 deployment completed [Eth Bridge Address (L2) : {:?}]", l2_bridge_address);
         save_to_json("ETH_l2_bridge_address", &JsonValueType::StringType(l2_bridge_address.to_string())).unwrap();
 
+        // Deploy a token on l2 that will become the ETH
         let eth_address = deploy_eth_token_on_l2(
             self.clients.provider_l2(),
             eth_proxy_address,
@@ -167,7 +169,7 @@ impl<'a> EthBridge<'a> {
         .await;
 
         log::info!("✴️ L2 ETH token deployment successful.");
-        // save_to_json("l2_eth_address", &JsonValueType::StringType(eth_address.to_string()))?;
+        save_to_json("l2_eth_address", &JsonValueType::StringType(eth_address.to_string())).unwrap();
         if self.arg_config.dev {
             eth_bridge.initialize(self.core_contract.address()).await;
         } else {
@@ -196,7 +198,7 @@ impl<'a> EthBridge<'a> {
                 self.arg_config.dev,
             )
             .await;
-        log::info!("✴️ ETH Bridge setup on L1 completed");
+        log::info!("✴️ ETH Bridge setup completed");
 
         EthBridgeSetupOutput {
             l2_legacy_proxy_class_hash: legacy_proxy_class_hash,

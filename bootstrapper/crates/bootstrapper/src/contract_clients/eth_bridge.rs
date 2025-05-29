@@ -220,18 +220,6 @@ impl StarknetLegacyEthBridge {
         l2_deployer_address: &str,
         account: &RpcAccount<'_>,
     ) {
-        log::info!("reached here");
-        let tx = invoke_contract(
-            l2_bridge_address,
-            "initialize",
-            vec![Felt::from_dec_str("1").unwrap(), Felt::from_hex(l2_deployer_address).unwrap()],
-            account,
-        )
-        .await;
-
-        log::info!("🎡 setup_l2_bridge : l2 bridge initialized //");
-        wait_for_transaction(rpc_provider, tx.transaction_hash, "setup_l2_bridge : initialize").await.unwrap();
-
         let tx = invoke_contract(l2_bridge_address, "set_l2_token", vec![erc20_address], account).await;
 
         log::info!("🎡 setup_l2_bridge : l2 token set //");
