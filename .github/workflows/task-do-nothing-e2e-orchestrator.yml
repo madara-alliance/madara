@@ -1,0 +1,14 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Test E2E (Orchestrator)
+
+on:
+  workflow_call:
+
+jobs:
+  e2e-orchestrator:
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - name: Stub
+        run: exit 0

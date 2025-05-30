@@ -1,0 +1,12 @@
+[package]
+name = "build-version"
+version = "1.0.0"
+edition.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+flate2.workspace = true
+tar.workspace = true
+tempfile.workspace = true
