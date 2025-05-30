@@ -112,7 +112,15 @@ pub fn get_version(version_file: &impl VersionFile) -> Result<u32, BuildError> {
 ///              |-Cargo.toml # parent-level = 4
 ///
 /// ```
+///
+/// Note that if the env variable `RUST_BUILD_DOCKER` is present at compile time this will disable
+/// compiling the artifacts with this build script. This is used to avoid re-compiling artifacts
+/// after they have been linked as a docker volume and causing docker-in-docker errors.
 pub fn get_or_compile_artifacts(parent_levels: usize) -> Result<(), BuildError> {
+    if std::env::var("RUST_BUILD_DOCKER").is_ok() {
+        return Ok(());
+    }
+
     let (root, version_file_artifacts) = get_paths_artifact(parent_levels)?;
 
     let archive = root.0.join("artifacts.tar.gz");
