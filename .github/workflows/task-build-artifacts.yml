@@ -1,0 +1,96 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Cairo Artifacts
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      registry:
+        description: Container registry domain
+        required: false
+        default: ghcr.io
+        type: string
+      should_run:
+        required: false
+        default: true
+        type: string
+    outputs:
+      artifacts:
+        description: Artifacts image tag
+        value: ${{ jobs.build-artifacts.outputs.artifacts }}
+      artifacts-pr:
+        description: Artifacts image tag (with pr number)
+        value: ${{ jobs.build-artifacts.outputs.artifacts-pr }}
+
+permissions:
+  contents: read
+  attestations: write
+  id-token: write
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Building ${{ inputs.artifacts-pr }}"
+
+  build-artifacts:
+    runs-on: ubuntu-latest
+    if: inputs.should_run == 'true'
+    outputs:
+      artifacts: ${{ steps.tag.outputs.artifacts }}
+      artifacts-pr: ${{ steps.tag.outputs.artifacts-pr }}
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Compile artifacts
+        run: make artifacts
+
+      - name: Compress artifacts
+        run: |
+          tar \
+            --exclude archive.docker \
+            --exclude build.docker \
+            --exclude cairo_artifacts \
+            --exclude Cargo.toml \
+            --exclude src \
+            -czvf artifacts.tar.gz build-artifacts/
+
+      - name: Tags
+        id: tag
+        run: |
+          IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/artifacts"
+          VERSION=$(yq -e ".current_version" .artifact-versions.yml)
+          ARTIFACTS="$IMAGE"
+          ARTIFACTS_PR="$IMAGE:$VERSION"
+
+          echo "artifacts=$ARTIFACTS" >> $GITHUB_OUTPUT
+          echo "artifacts-pr=$ARTIFACTS_PR" >> $GITHUB_OUTPUT
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          file: build-artifacts/archive.docker
+          tags: |
+            ${{ steps.tag.outputs.artifacts }}
+            ${{ steps.tag.outputs.artifacts-pr }}
+          outputs: type=docker,dest=${{ runner.temp }}/artifacts.tar
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: artifacts
+          path: ${{ runner.temp }}/artifacts.tar

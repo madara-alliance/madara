@@ -35,6 +35,7 @@ mc-settlement-client.workspace = true
 mc-telemetry.workspace = true
 
 mp-block.workspace = true
+mp-bloom-filter.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
