@@ -1,4 +1,4 @@
-import { CompiledSierra, CompiledSierraCasm, json } from "starknet";
+import { type CompiledSierra, type CompiledSierraCasm, json } from "starknet";
 const fs = require("node:fs");
 const path = require("node:path");
 
