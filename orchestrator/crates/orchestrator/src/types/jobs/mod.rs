@@ -32,6 +32,27 @@ pub enum WorkerTriggerTypeError {
     UnknownType(String),
 }
 
+impl FromStr for WorkerTriggerType {
+    type Err = WorkerTriggerTypeError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "Proving" => Ok(WorkerTriggerType::Proving),
+            "Snos" => Ok(WorkerTriggerType::Snos),
+            "ProofRegistration" => Ok(WorkerTriggerType::ProofRegistration),
+            "DataSubmission" => Ok(WorkerTriggerType::DataSubmission),
+            "UpdateState" => Ok(WorkerTriggerType::UpdateState),
+            _ => Err(WorkerTriggerTypeError::UnknownType(s.to_string())),
+        }
+    }
+}
+
+impl WorkerTriggerType {
+    pub fn to_lowercase(&self) -> String {
+        self.to_string().to_lowercase()
+    }
+}
+
 // TODO : Need to check why serde deserializer was failing here.
 // TODO : Remove this custom deserializer.
 /// Implemented a custom deserializer as when using serde json deserializer
