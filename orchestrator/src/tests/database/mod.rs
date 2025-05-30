@@ -288,16 +288,17 @@ async fn database_test_update_batch(
     let updates = BatchUpdates { end_block: 250, is_batch_ready: batch.is_batch_ready };
 
     // Update the batch
-    let updated_batch = database_client.update_batch(&batch, updates.clone()).await.unwrap();
+    let updated_batch = database_client.update_or_create_batch(&batch, &updates).await.unwrap();
 
     // Verify the updates
     assert_eq!(updated_batch.id, batch.id);
     assert_eq!(updated_batch.index, batch.index);
-    assert_eq!(updated_batch.size, updates.end_block - batch.start_block + 1);
+    assert_eq!(updated_batch.num_blocks, updates.end_block - batch.start_block + 1);
     assert_eq!(updated_batch.start_block, batch.start_block);
     assert_eq!(updated_batch.end_block, updates.end_block);
     assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);
     assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
+    assert_eq!(updated_batch.blob_path, batch.blob_path);
     assert_eq!(updated_batch.created_at, batch.created_at);
     assert_ne!(updated_batch.updated_at, batch.updated_at);
 }
