@@ -6,7 +6,7 @@ on:
   workflow_call:
 
 jobs:
-  publish-nightly:
+  publish-image:
     runs-on: karnot-arc-runner-set
 
     steps:

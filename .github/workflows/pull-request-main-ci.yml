@@ -176,4 +176,4 @@ jobs:
   #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
   publish-nightly:
-    uses: ./.github/workflows/task-do-nothing-publish-nightly.yml
+    uses: ./.github/workflows/task-do-nothing-publish-image.yml
