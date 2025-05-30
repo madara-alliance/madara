@@ -10,7 +10,7 @@ use std::str::FromStr;
 use strum_macros::Display;
 use thiserror::Error;
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display)]
+#[derive(Debug, Serialize, Deserialize, PartialEq, Clone, Display, strum_macros::EnumString)]
 #[strum(serialize_all = "PascalCase")]
 pub enum WorkerTriggerType {
     Snos,
@@ -18,6 +18,7 @@ pub enum WorkerTriggerType {
     ProofRegistration,
     DataSubmission,
     UpdateState,
+    Batching,
 }
 
 #[derive(Debug, Serialize, Clone)]

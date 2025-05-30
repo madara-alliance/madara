@@ -32,6 +32,6 @@ pub enum JobType {
     ProofCreation,
     /// Verifying the proof on the base layer
     ProofRegistration,
-    /// Updaing the state root on the base layer
+    /// Updating the state root on the base layer
     StateTransition,
 }

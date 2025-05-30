@@ -26,7 +26,8 @@ lazy_static! {
         WorkerTriggerType::Proving,
         WorkerTriggerType::ProofRegistration,
         WorkerTriggerType::DataSubmission,
-        WorkerTriggerType::UpdateState
+        WorkerTriggerType::UpdateState,
+        WorkerTriggerType::Batching,
     ];
 }
 
