@@ -1,0 +1,70 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Version File Management
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      label:
+        description: "Label used to trigger this workflow"
+        required: true
+        type: string
+      version-file:
+        description: "Path to the version file to update"
+        required: true
+        type: string
+    outputs:
+      update:
+        description: "Whether or not the version file was updated"
+        value: ${{ jobs.update-version-file.outputs.update }}
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "Checking Version File ('${{ inputs.label }}' label only)"
+
+  update-version-file:
+    runs-on: ubuntu-latest
+    if: contains(github.event.pull_request.labels.*.name, inputs.label)
+    outputs:
+      update: ${{ steps.check_bump.outputs.update }}
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.head_ref || github.ref_name }}
+
+      - uses: dcarbone/install-yq-action@v1
+      - name: Check if PR already bumped
+        id: check_bump
+        run: |
+          PR_NUM="${{ github.event.pull_request.number }}"
+          if yq -e ".versions[] | select(.pr == ${PR_NUM})" ${{ inputs.version-file }} > /dev/null 2>&1; then
+            echo "update=false" >> $GITHUB_OUTPUT
+          else
+            echo "update=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Configure Git
+        if: steps.check_bump.outputs.update == 'true'
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+
+      - name: Update Version File
+        if: steps.check_bump.outputs.update == 'true'
+        run: |
+          ./scripts/update-version-file.sh "${{ github.event.pull_request.number }}" ${{ inputs.version-file }}
+
+      - name: Commit and Push
+        if: steps.check_bump.outputs.update == 'true'
+        run: |
+          if [[ -n "$(git status --porcelain)" ]]; then
+            git add ${{ inputs.version-file }}
+            git commit -m "chore: bump ${{ inputs.version-file }}"
+            git push origin ${{ github.head_ref || github.ref_name }}
+          fi

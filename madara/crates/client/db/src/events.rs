@@ -1,5 +1,5 @@
 use crate::MadaraBackend;
-use mp_rpc::EmittedEvent;
+use mp_block::EventWithInfo;
 use starknet_types_core::felt::Felt;
 
 /// EventChannels manages a highly efficient and scalable pub/sub system for events with 16 specific channels
@@ -19,10 +19,10 @@ use starknet_types_core::felt::Felt;
 /// by subscribing to the corresponding channel.
 pub struct EventChannels {
     /// Broadcast channel that receives all events regardless of their sender's address
-    all_channels: tokio::sync::broadcast::Sender<EmittedEvent>,
+    all_channels: tokio::sync::broadcast::Sender<EventWithInfo>,
     /// Array of 16 broadcast channels, each handling events from a subset of sender addresses
     /// The target channel for an event is determined by the sender's address mapping
-    specific_channels: [tokio::sync::broadcast::Sender<EmittedEvent>; 16],
+    specific_channels: [tokio::sync::broadcast::Sender<EventWithInfo>; 16],
 }
 
 impl EventChannels {
@@ -72,7 +72,7 @@ impl EventChannels {
     /// 2. Subscribes to the corresponding specific channel
     ///
     /// This means you'll receive events from all senders whose addresses map to the same channel
-    pub fn subscribe(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
+    pub fn subscribe(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EventWithInfo> {
         match from_address {
             Some(address) => {
                 let channel_index = self.calculate_channel_index(&address);
@@ -94,8 +94,8 @@ impl EventChannels {
     /// * `Err` - If the event couldn't be sent
     pub fn publish(
         &self,
-        event: EmittedEvent,
-    ) -> Result<usize, Box<tokio::sync::broadcast::error::SendError<EmittedEvent>>> {
+        event: EventWithInfo,
+    ) -> Result<usize, Box<tokio::sync::broadcast::error::SendError<EventWithInfo>>> {
         let channel_index = self.calculate_channel_index(&event.event.from_address);
         let specific_channel = &self.specific_channels[channel_index];
 
@@ -139,7 +139,7 @@ impl EventChannels {
 
 impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "EventsChannel"))]
-    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EmittedEvent> {
+    pub fn subscribe_events(&self, from_address: Option<Felt>) -> tokio::sync::broadcast::Receiver<EventWithInfo> {
         self.watch_events.subscribe(from_address)
     }
 }

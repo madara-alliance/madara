@@ -41,11 +41,11 @@ use bonsai_trie::{BonsaiStorage, BonsaiStorageConfig};
 use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use events::EventChannels;
+use mp_block::EventWithInfo;
 use mp_block::MadaraBlockInfo;
 use mp_chain_config::ChainConfig;
 use mp_convert::Felt;
 use mp_receipt::EventWithTransactionHash;
-use mp_rpc::EmittedEvent;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId};
 use rocksdb::backup::{BackupEngine, BackupEngineOptions};
 use rocksdb::{
@@ -64,6 +64,7 @@ mod chain_head;
 mod db_version;
 mod error;
 mod events;
+mod events_bloom_filter;
 mod rocksdb_options;
 mod rocksdb_snapshot;
 mod snapshots;
@@ -154,6 +155,8 @@ pub enum Column {
     BlockHashToBlockN,
     /// One To One
     BlockNToStateDiff,
+    /// block_n => bloom filter for events
+    EventBloom,
     /// Meta column for block storage (sync tip, pending block)
     BlockStorageMeta,
 
@@ -224,6 +227,7 @@ impl Column {
             BlockHashToBlockN,
             BlockStorageMeta,
             BlockNToStateDiff,
+            EventBloom,
             ClassInfo,
             ClassCompiled,
             PendingClassInfo,
@@ -260,6 +264,7 @@ impl Column {
             BlockHashToBlockN => "block_hash_to_block_n",
             BlockStorageMeta => "block_storage_meta",
             BlockNToStateDiff => "block_n_to_state_diff",
+            EventBloom => "event_bloom",
             BonsaiContractsTrie => "bonsai_contracts_trie",
             BonsaiContractsFlat => "bonsai_contracts_flat",
             BonsaiContractsLog => "bonsai_contracts_log",
@@ -285,6 +290,12 @@ impl Column {
             MempoolTransactions => "mempool_transactions",
         }
     }
+}
+
+#[cfg(test)]
+#[test]
+fn test_column_all() {
+    assert_eq!(Column::ALL.len(), Column::NUM_COLUMNS);
 }
 
 pub trait DatabaseExt {
@@ -585,12 +596,13 @@ impl MadaraBackend {
         self.head_status.set_latest_full_block_n(Some(block_n));
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
 
-        for event in events {
-            if let Err(e) = self.watch_events.publish(EmittedEvent {
-                event: event.event.into(),
+        for (index, event) in events.into_iter().enumerate() {
+            if let Err(e) = self.watch_events.publish(EventWithInfo {
+                event: event.event,
                 block_hash: Some(block_info.block_hash),
                 block_number: Some(block_info.header.block_number),
                 transaction_hash: event.transaction_hash,
+                event_index_in_block: index,
             }) {
                 tracing::debug!("Failed to send event to subscribers: {e}");
             }

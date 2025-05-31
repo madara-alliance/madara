@@ -1,0 +1,70 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-action.json
+name: Action - Setup Rust
+description: Sets up the Rust environment with a configurable toolchain
+
+inputs:
+  rust-version:
+    description: Rust version to set up
+    required: true
+  extra-cache:
+    description: "Whether or not to enable cached dependencies"
+    required: false
+    default: "true"
+  cache-location:
+    description: "Path to cached dependencies"
+    required: false
+    default: "release"
+  cache-key:
+    description: "Cache key used to retrieve built data. Usually matches the profile of the build"
+    required: false
+    default: "cache"
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - uses: actions/cache@v4
+      if: ${{ inputs.extra-cache == 'true' }}
+      id: cache-cargo
+      with:
+        path: |
+          ~/.cargo/bin
+          ~/.cargo/registry
+          ~/.cargo/git
+        key: ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+        restore-keys: |
+          ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}
+          ${{ runner.os }}-cargo-registry-
+
+    - uses: actions/cache@v4
+      if: ${{ inputs.extra-cache == 'true' }}
+      id: cache-build-deps
+      with:
+        path: |
+          target/${{ inputs.cache-location }}/deps
+          target/${{ inputs.cache-location }}/build
+          target/${{ inputs.cache-location }}/.fingerprint
+        key: ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
+        restore-keys: |
+          ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
+          ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}
+
+    - name: Setup Rust toolchain
+      uses: actions-rust-lang/setup-rust-toolchain@v1
+      with:
+        toolchain: ${{ inputs.rust-version }}
+        components: cargo, clippy, rustfmt
+        rustflags: ""
+
+    - name: Install dependencies
+      shell: bash
+      run: |
+        sudo apt-get update -y && sudo apt-get install -y \
+          clang llvm libudev-dev protobuf-compiler gcc g++ build-essential libssl-dev pkg-config curl wget git libgmp3-dev netcat-openbsd
+
+    - name: Setup mold
+      uses: rui314/setup-mold@v1
+      with:
+        make-default: true

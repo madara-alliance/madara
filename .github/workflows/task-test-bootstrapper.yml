@@ -1,0 +1,127 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Integration Tests and Coverage (Bootstrapper)
+
+# This workflow runs integration tests and generates code coverage
+# reports for the Madara codebase
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+    secrets:
+      ETH_FORK_URL:
+        required: true
+      GITHUB_GATEWAY_KEY:
+        required: false
+
+jobs:
+  test-bootstrapper:
+    permissions:
+      pull-requests: write
+    runs-on: karnot-arc-runner-set
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-location: llvm-cov-target/release
+          cache-key: bootstrapper-test
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - name: Make Madara binary executable
+        run: chmod +x target/release/madara
+
+      - name: Prepare Madara Environment (Bootstrapper)
+        run: |
+          mv target/release/madara ./madara-binary
+          echo "MADARA_BOOTSTRAPPER_MADARA_BINARY_PATH=$(pwd)/madara-binary" >> $GITHUB_ENV
+          echo "Binary path: $(pwd)/madara-binary"
+
+          # Add environment variable for devnet.yaml file path
+          echo "MADARA_BOOTSTRAPPER_CONFIG_PATH=$(pwd)/configs/presets/devnet.yaml" >> $GITHUB_ENV
+          echo "Config path: $(pwd)/configs/presets/devnet.yaml"
+
+          # Verify the config file exists
+          if [ -f "$(pwd)/configs/presets/devnet.yaml" ]; then
+            echo "Config file exists at specified path"
+          else
+            echo "Config file NOT found at specified path!"
+            ls -la $(pwd)/configs/presets/
+          fi
+
+      - name: Start Anvil with fork
+        run: |
+          nohup anvil \
+            --code-size-limit 300000 \
+            --port ${{ env.ANVIL_DEFAULT_PORT }} &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          echo "Waiting for Anvil to start..."
+          timeout 30s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+
+          if [ $? -eq 0 ]; then
+            echo "Anvil is running in url: ${{ env.ANVIL_DEFAULT_URL }}"
+          else
+            echo "Failed to connect to Anvil within timeout"
+            exit 1
+          fi
+
+      - name: Run tests with coverage
+        continue-on-error: false
+        run: |
+          export COVERAGE_BIN=$(realpath target/release/bootstrapper)
+          rm -f target/bootstrapper-* lcov.info
+
+          # run tests for bootstrapper crate
+          RUST_LOG=info cargo llvm-cov nextest \
+                  --release \
+                  --lcov \
+                  --output-path lcov.info \
+                  --package "bootstrapper" \
+                  --no-fail-fast
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info
+          debug: true
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
