@@ -241,8 +241,6 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let processing_locks = ProcessingLocks::default();
-
         let config = Arc::new(Config::new(
             Layer::L2,
             params.orchestrator_params,
@@ -253,7 +251,6 @@ impl TestConfigBuilder {
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         ));
 
