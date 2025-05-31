@@ -20,7 +20,6 @@ use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::types::Layer;
-use crate::utils::helpers::ProcessingLocks;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -535,13 +534,6 @@ pub(crate) fn get_env_params() -> EnvParams {
     let service_config = ServiceParams {
         max_block_to_process: parse_number("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS"),
         min_block_to_process: parse_number("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS"),
-        max_concurrent_snos_jobs: parse_number("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS").map(|n| n as usize),
-        max_concurrent_proving_jobs: parse_number("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS")
-            .map(|n| n as usize),
-        max_concurrent_proof_registration_jobs: parse_number(
-            "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROOF_REGISTRATION_JOBS",
-        )
-        .map(|n| n as usize),
     };
 
     let server_config = ServerParams {
