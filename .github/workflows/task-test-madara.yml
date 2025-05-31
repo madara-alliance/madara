@@ -1,0 +1,124 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Integration Tests and Coverage (Madara)
+
+# This workflow runs integration tests and generates code coverage
+# reports for the Madara codebase
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      proptest-cases:
+        description: "Number of test cases for property testing"
+        required: false
+        type: string
+        default: "10"
+      madara-binary-hash:
+        description: "Hash used to retrieve the artifact"
+        required: true
+        type: string
+    secrets:
+      ETH_FORK_URL:
+        required: true
+      GITHUB_GATEWAY_KEY:
+        required: false
+
+jobs:
+  test-madara:
+    permissions:
+      pull-requests: write
+    runs-on: karnot-arc-runner-set
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-location: llvm-cov-target/release
+          cache-key: madara-test
+
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@cargo-llvm-cov
+
+      - name: Install nextest
+        uses: taiki-e/install-action@nextest
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+      - run: chmod +x target/release/madara
+
+      - name: Start Anvil with fork
+        run: |
+          nohup anvil \
+            --fork-url ${{ secrets.ETH_FORK_URL }} \
+            --fork-block-number ${{ env.ANVIL_FORK_BLOCK_NUMBER }} \
+            --timeout 300000 \
+            --port ${{ env.ANVIL_DEFAULT_PORT }} \
+            --fork-retry-backoff 30000 &
+
+          # Store the PID for later cleanup
+          echo "ANVIL_PID=$!" >> $GITHUB_ENV
+
+          # Wait for Anvil to start
+          echo "Waiting for Anvil to start..."
+          timeout 120s bash -c 'until curl -s -X POST --data "{\"jsonrpc\":\"2.0\",\"method\":\"eth_chainId\",\"params\":[],\"id\":1}" -H "Content-Type: application/json" ${{ env.ANVIL_DEFAULT_URL }} &>/dev/null; do sleep 2; echo "Retrying..."; done'
+
+          if [ $? -eq 0 ]; then
+            echo "Anvil is running in url: ${{ env.ANVIL_DEFAULT_URL }}"
+          else
+            echo "Failed to connect to Anvil within timeout"
+            exit 1
+          fi
+
+      - name: Run tests with coverage
+        env:
+          ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}
+          GATEWAY_KEY: ${{ secrets.GITHUB_GATEWAY_KEY || '' }}
+          PROPTEST_CASES: ${{ inputs.proptest-cases }}
+          LLVM_PROFILE_FILE: "madara-%p-%m.profraw"
+          ANVIL_URL: ${{ env.ANVIL_DEFAULT_URL }}
+        run: |
+          export COVERAGE_BIN=$(realpath target/release/madara)
+          rm -f target/madara-* lcov.info
+
+          # run tests for madara client / primitive crates
+          cargo llvm-cov nextest \
+              --release \
+              --features testing \
+              --lcov \
+              --output-path lcov.info \
+              --package "mc-*" \
+              --package "mp-*" \
+              --package "m-proc-*" \
+              --no-fail-fast
+
+      - name: Kill Anvil
+        if: always()
+        run: |
+          if [ -n "$ANVIL_PID" ]; then
+            echo "Stopping Anvil with PID: $ANVIL_PID"
+            kill $ANVIL_PID || true
+            echo "Anvil stopped"
+          else
+            echo "No Anvil PID found"
+          fi
+
+      - name: Upload coverage to Coveralls
+        uses: coverallsapp/github-action@v2
+        with:
+          parallel-finished: true
+          files: lcov.info
+          debug: true

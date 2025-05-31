@@ -3,4 +3,5 @@
 .github
 .vscode
 scripts
-target
+target/
+*Dockerfile
