@@ -89,7 +89,6 @@ WORKDIR /app
 COPY . .
 
 # Initialize and update submodules
-RUN git submodule update --init --recursive
 
 RUN apt-get update && apt-get install -y \
     wget
@@ -114,14 +113,14 @@ RUN cd lib/starkgate-contracts-old && \
     ganache-cli --version && \
     # Start ganache-cli in background with specific host and port
     nohup ganache-cli \
-        --host 0.0.0.0 \
-        --port 8545 \
-        --networkId 1234 \
-        --accounts 10 \
-        --defaultBalanceEther 1000 \
-        --mnemonic "test test test test test test test test test test test junk" \
-        --db /tmp/ganache_db \
-        > ganache.log 2>&1 & \
+    --host 0.0.0.0 \
+    --port 8545 \
+    --networkId 1234 \
+    --accounts 10 \
+    --defaultBalanceEther 1000 \
+    --mnemonic "test test test test test test test test test test test junk" \
+    --db /tmp/ganache_db \
+    > ganache.log 2>&1 & \
     # Store PID and wait
     GANACHE_PID=$! && \
     echo "Started Ganache with PID: $GANACHE_PID" && \
@@ -159,25 +158,25 @@ RUN curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
 RUN npm install -g --unsafe-perm ganache@7.9.0 && \
     # Verify ganache installation and keep trying if it fails
     (for i in {1..5}; do \
-        if which ganache && ganache --version; then \
-            echo "Ganache installation verified" && \
-            break; \
-        else \
-            echo "Attempt $i: Ganache not found, trying again..." && \
-            echo "Searching for ganache in PATH..." && \
-            find / -name ganache 2>/dev/null && \
-            # Clear npm cache and reinstall
-            npm cache clean --force && \
-            npm install -g --unsafe-perm ganache@7.9.0 && \
-            # Add environment variables
-            export PATH="/usr/local/lib/node_modules/.bin:$PATH" && \
-            # Add a small delay to let npm finish
-            sleep 5; \
-        fi; \
-        if [ $i -eq 5 ]; then \
-            echo "Failed to install ganache after 5 attempts" && \
-            exit 1; \
-        fi \
+    if which ganache && ganache --version; then \
+        echo "Ganache installation verified" && \
+        break; \
+    else \
+        echo "Attempt $i: Ganache not found, trying again..." && \
+        echo "Searching for ganache in PATH..." && \
+        find / -name ganache 2>/dev/null && \
+        # Clear npm cache and reinstall
+        npm cache clean --force && \
+        npm install -g --unsafe-perm ganache@7.9.0 && \
+        # Add environment variables
+        export PATH="/usr/local/lib/node_modules/.bin:$PATH" && \
+        # Add a small delay to let npm finish
+        sleep 5; \
+    fi; \
+    if [ $i -eq 5 ]; then \
+        echo "Failed to install ganache after 5 attempts" && \
+        exit 1; \
+    fi \
     done)
 
 # Generate other artifacts
@@ -195,14 +194,17 @@ RUN . "$HOME/.asdf/asdf.sh" && \
 RUN cargo build --release --workspace --bin madara-bootstrapper
 
 # Runtime stage
-FROM debian:buster-slim
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y curl
 
 # Copy only the compiled binary and artifacts
 COPY --from=builder /app/target/release/madara-bootstrapper /usr/local/bin/
 COPY --from=builder /app/artifacts /app/artifacts
+COPY --from=builder /app/src/contracts/ /app/src/contracts/
+
 
 # Set working directory
-WORKDIR /app
 
 # Environment variables
 ENV RUST_LOG=info

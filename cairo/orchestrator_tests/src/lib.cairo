@@ -2,6 +2,7 @@
 pub trait IPiltover<TContractState> {
     fn update_state(
         ref self: TContractState,
+        snos_output: Span<felt252>,
         program_output: Span<felt252>,
         onchain_data_hash: felt252,
         onchain_data_size: u256
@@ -22,6 +23,7 @@ mod Piltover {
     impl IPiltoverImpl of super::IPiltover<ContractState> {
         fn update_state(
             ref self: ContractState,
+            snos_output: Span<felt252>,
             program_output: Span<felt252>,
             onchain_data_hash: felt252,
             onchain_data_size: u256
