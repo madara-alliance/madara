@@ -62,6 +62,11 @@ impl ARN {
             }
         }
 
+        // accountID can be empty for iam
+        if parts[2] != "iam" && parts[3].is_empty() {
+            return Err("Region cannot be empty");
+        }
+
         Ok(ARN {
             partition: parts[1].to_string(),
             service: parts[2].to_string(),

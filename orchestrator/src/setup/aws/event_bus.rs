@@ -191,7 +191,7 @@ impl InnerAWSEventBridge {
         tracing::info!("Creating Event Bridge role : {}", role_name);
         let role = create_role_resp.role().ok_or_else(|| Error::msg("Failed to create IAM role"))?;
 
-        Ok(ARN::parse(role.arn()).map_err(|_| EventBusError::InvalidArn(role.arn().to_string()))?)
+        Ok(ARN::parse(role.arn()).map_err(|e| EventBusError::InvalidArn(format!("ARN: {}, {}", role.arn(), e)))?)
     }
 
     async fn create_and_attach_sqs_policy(
