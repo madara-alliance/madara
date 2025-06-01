@@ -63,7 +63,6 @@ impl ARN {
             }
         }
 
-
         Ok(ARN {
             partition: parts[1].to_string(),
             service: parts[2].to_string(),
