@@ -28,7 +28,7 @@ env_logger = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 log = { workspace = true }
 mongodb = { workspace = true }
-orchestrator-core = { workspace = true }
+orchestrator = { workspace = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 reqwest = { workspace = true, features = ["json"] }

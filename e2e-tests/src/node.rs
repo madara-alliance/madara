@@ -50,7 +50,7 @@ impl Orchestrator {
         command
             .arg("run")
             .arg("--release")
-            .arg("--bin")
+            .arg("-p")
             .arg("orchestrator")
             .arg("--features")
             .arg("testing")
