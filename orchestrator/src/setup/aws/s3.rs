@@ -41,11 +41,12 @@ impl Resource for InnerAWSS3 {
             return Ok(());
         }
 
-        // it is special to s3 that it can have empty region in it's arn : e.g: arn:aws:s3:::karnot-mo-bucket
+        // s3 can have empty region in it's arn : e.g: arn:aws:s3:::mo-bucket
         // in such scenarios we would want to default to provided region
 
         match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => {
+                // If ARN is provided in setup, we only check if it exists
                 tracing::info!("Bucket Arn provided, skipping setup for {}", &arn.resource);
                 Ok(())
             }
@@ -85,11 +86,6 @@ impl Resource for InnerAWSS3 {
     }
 
     async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        let bucket_name = match &args.bucket_identifier {
-            AWSResourceIdentifier::ARN(arn) => &arn.resource,
-            AWSResourceIdentifier::Name(name) => name,
-        };
-
-        Ok(self.client().head_bucket().bucket(bucket_name).send().await.is_ok())
+        Ok(self.check_if_exists(&args.bucket_identifier).await?)
     }
 }

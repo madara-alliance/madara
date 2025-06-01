@@ -11,7 +11,7 @@ pub struct AWSS3CliArgs {
     /// The ARN / Name of the S3 bucket.
     /// ARN: arn:aws:s3:::name
     /// We don't need to provide the region and accountID in s3
-    /// because s3 is unique globally across accounts
+    /// because s3 is unique globally.
     #[arg(env = "MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER", long, default_value = Some("mo-bucket"))]
     pub bucket_identifier: Option<String>,
 }

@@ -137,6 +137,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     println!("Loading .env file");
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
+    // E2E tests assume that we are not passing ARNS
     let aws_prefix = get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
 
     let queue_params = match aws_prefix {
@@ -335,7 +336,6 @@ pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs)
         &queue_params.queue_template_identifier.to_string(),
         &QueueType::SnosJobProcessing,
     );
-    println!("HEEMANK : queue_name {}", queue_name);
     let queue_url = queue.inner.get_queue_url_from_client(queue_name.as_str()).await?;
     put_message_in_queue(message, queue_url).await?;
     Ok(())

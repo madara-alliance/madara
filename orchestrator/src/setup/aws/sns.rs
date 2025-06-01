@@ -68,29 +68,13 @@ impl Resource for InnerAWSSNS {
             AWSResourceIdentifier::ARN(arn) => {
                 Ok(self.client().get_topic_attributes().topic_arn(arn.to_string()).send().await.is_ok())
             }
-            AWSResourceIdentifier::Name(name) => Ok(self.fetch_topic_arn_by_name(name).await.is_ok()),
+            AWSResourceIdentifier::Name(name) => Ok(self.fetch_topic_arn_by_name_via_client(name).await.is_ok()),
         }
     }
 
     async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        match &args.alert_identifier {
-            AWSResourceIdentifier::ARN(arn) => {
-                Ok(self.client().get_topic_attributes().topic_arn(arn.to_string()).send().await.is_ok())
-            }
-            AWSResourceIdentifier::Name(name) => Ok(self.fetch_topic_arn_by_name(name).await.is_ok()),
-        }
+        Ok(self.check_if_exists(&args.alert_identifier).await?)
     }
 }
 
-impl InnerAWSSNS {
-    fn is_valid_topic_name(&self, name: &str) -> bool {
-        // AWS SNS topic name requirements:
-        // - Can include numbers, letters, hyphens, and underscores
-        // - Length between 1 and 256
-        if name.is_empty() || name.len() > 256 {
-            return false;
-        }
-
-        name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
-    }
-}
+impl InnerAWSSNS {}

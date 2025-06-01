@@ -58,19 +58,6 @@ impl InnerSQS {
             return Err(QueueError::InvalidArn(format!("Expected SQS ARN but got service: {}", queue_arn.service)));
         }
 
-        // Validate required fields
-        if queue_arn.region.is_empty() {
-            return Err(QueueError::InvalidArn("SQS ARN must have a region".to_string()));
-        }
-
-        if queue_arn.account_id.is_empty() {
-            return Err(QueueError::InvalidArn("SQS ARN must have an account ID".to_string()));
-        }
-
-        if queue_arn.resource.is_empty() {
-            return Err(QueueError::InvalidArn("SQS ARN must have a queue name".to_string()));
-        }
-
         // Handle different AWS partitions
         let domain = "amazonaws.com";
 
@@ -137,12 +124,12 @@ impl SQS {
                 if !arn.region.is_empty() {
                     aws_config.clone().into_builder().region(Region::new(arn.region.clone())).build()
                 } else {
-                    // If ARN has empty region, use original config
+                    // If ARN has empty region, use provided config
                     aws_config.clone()
                 }
             }
             AWSResourceIdentifier::Name(_) => {
-                // Use original config for name-based identifier
+                // Use provided config for name-based identifier
                 aws_config.clone()
             }
         };

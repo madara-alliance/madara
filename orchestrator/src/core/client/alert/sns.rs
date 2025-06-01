@@ -32,7 +32,7 @@ impl InnerAWSSNS {
     /// # Returns
     ///
     /// * `Result<ARN, AlertError>` - The topic arn.
-    pub async fn fetch_topic_arn_by_name(&self, topic_name: &String) -> Result<ARN, AlertError> {
+    pub async fn fetch_topic_arn_by_name_via_client(&self, topic_name: &String) -> Result<ARN, AlertError> {
         let resp = self.client().list_topics().send().await.map_err(AlertError::ListTopicsError)?;
 
         for topic in resp.topics() {
@@ -50,6 +50,17 @@ impl InnerAWSSNS {
         }
 
         Err(AlertError::TopicNotFound(topic_name.to_string()))
+    }
+
+    pub fn is_valid_topic_name(&self, name: &str) -> bool {
+        // AWS SNS topic name requirements:
+        // - Can include numbers, letters, hyphens, and underscores
+        // - Length between 1 and 256
+        if name.is_empty() || name.len() > 256 {
+            return false;
+        }
+
+        name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
     }
 }
 
@@ -76,12 +87,12 @@ impl SNS {
                 if !arn.region.is_empty() {
                     aws_config.clone().into_builder().region(Region::new(arn.region.clone())).build()
                 } else {
-                    // If ARN has empty region, use original config
+                    // If ARN has empty region, use provided config
                     aws_config.clone()
                 }
             }
             AWSResourceIdentifier::Name(_) => {
-                // Use original config for name-based identifier
+                // Use provided config for name-based identifier
                 aws_config.clone()
             }
         };
@@ -107,7 +118,7 @@ impl SNS {
         // Get ARN based on identifier type
         let arn = match &self.alert_identifier {
             AWSResourceIdentifier::ARN(arn) => arn.clone(),
-            AWSResourceIdentifier::Name(name) => self.inner.fetch_topic_arn_by_name(name).await?,
+            AWSResourceIdentifier::Name(name) => self.inner.fetch_topic_arn_by_name_via_client(name).await?,
         };
 
         // Cache and return
@@ -135,19 +146,4 @@ impl AlertClient for SNS {
         self.client().publish().topic_arn(self.get_topic_arn().await?).message(message_body).send().await?;
         Ok(())
     }
-
-    // /// get_topic_name gets the topic name from the SNS topic ARN.
-    // ///
-    // /// # Returns
-    // ///
-    // /// * `Result<String, AlertError>` - The topic name.
-    // async fn get_topic_name(&self) -> Result<String, AlertError> {
-    //     Ok(self
-    //         .get_topic_arn()
-    //         .await?
-    //         .split(":")
-    //         .last()
-    //         .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn().await?))?
-    //         .to_string())
-    // }
 }

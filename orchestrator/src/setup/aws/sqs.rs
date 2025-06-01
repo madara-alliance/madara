@@ -40,8 +40,9 @@ impl Resource for InnerSQS {
                 continue;
             }
 
+            // Good first issue to resolve!
             // It is to note that we skip just after we check if queue exists,
-            // Ideally we would want to check the DL queue policy inclusion as well.
+            // Ideally we would want to check the DL queue & policy inclusion as well.
             if self.check_if_exists(&(args.queue_template_identifier.clone(), queue.name.clone())).await? {
                 tracing::info!(" ⏭️️ SQS queue already exists. Queue Type: {}", &queue.name);
                 continue;
@@ -49,7 +50,7 @@ impl Resource for InnerSQS {
 
             match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
-                    // for now we don't support creating the queue by providing expected ARN
+                    // If ARN is provided, we just check if it exists
                     let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, &queue.name);
                     tracing::info!("Queue Arn provided, skipping setup for {}", &queue_name);
                     continue;
@@ -75,9 +76,6 @@ impl Resource for InnerSQS {
 
                     let mut attributes = HashMap::new();
                     attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
-
-                    // Note: Although one should argue that we are not checking if the policy is also attached!
-                    // Good Issue to resolve!
 
                     if let Some(dlq_config) = &queue.dlq_config {
                         if self

@@ -75,7 +75,11 @@ impl Resource for InnerAWSEventBridge {
                 continue;
             }
             if self
-                .check_if_exists(&(args.event_bridge_type.clone(), trigger.clone(), args.trigger_rule_name.clone()))
+                .check_if_exists(&(
+                    args.event_bridge_type.clone(),
+                    trigger.clone(),
+                    args.trigger_rule_template_name.clone(),
+                ))
                 .await?
             {
                 tracing::info!(" ⏭️ Event Bridge {trigger} already exists, skipping");
@@ -83,7 +87,7 @@ impl Resource for InnerAWSEventBridge {
                 self.add_cron_target_queue(
                     trigger,
                     &trigger_arns,
-                    args.trigger_rule_name.clone(),
+                    args.trigger_rule_template_name.clone(),
                     args.event_bridge_type.clone(),
                     Duration::from_secs(args.cron_time),
                 )
@@ -103,8 +107,8 @@ impl Resource for InnerAWSEventBridge {
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule exists
     ///
     async fn check_if_exists(&self, args: &Self::CheckArgs) -> OrchestratorResult<bool> {
-        let (event_bridge_type, trigger_type, trigger_rule_name) = args;
-        let trigger_name = Self::get_trigger_name_from_trigger_type(trigger_rule_name, trigger_type);
+        let (event_bridge_type, trigger_type, trigger_rule_template_name) = args;
+        let trigger_name = Self::get_trigger_name_from_trigger_type(trigger_rule_template_name, trigger_type);
 
         match event_bridge_type {
             EventBridgeType::Rule => Ok(self.eb_client.describe_rule().name(trigger_name).send().await.is_ok()),
@@ -123,7 +127,12 @@ impl Resource for InnerAWSEventBridge {
     /// # Returns
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule is ready to use
     async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        Ok(self.eb_client.describe_rule().name(&args.trigger_rule_name).send().await.is_ok())
+        let mut flag = false;
+        for trigger_type in WORKER_TRIGGERS.iter() {
+            let trigger_name = Self::get_trigger_name_from_trigger_type(&args.trigger_rule_template_name, trigger_type);
+            flag = flag && self.eb_client.describe_rule().name(trigger_name).send().await.is_ok()
+        }
+        Ok(flag)
     }
 }
 
@@ -137,7 +146,7 @@ impl InnerAWSEventBridge {
     /// # Returns
     /// * `String` - The ARN of the queue
     async fn get_queue_arn(&self, target_queue_identifier: &AWSResourceIdentifier) -> Result<ARN, Error> {
-        // if arn is provided return that, else find
+        // if ARN is not provided, we'll fetch the arn using name from the default region.
         match target_queue_identifier {
             AWSResourceIdentifier::ARN(arn) => Ok(arn.clone()),
             AWSResourceIdentifier::Name(queue_name) => {
@@ -268,12 +277,12 @@ impl InnerAWSEventBridge {
         &self,
         trigger_type: &WorkerTriggerType,
         trigger_arns: &TriggerArns,
-        trigger_rule_name: String,
+        trigger_rule_template_name: String,
         event_bridge_type: EventBridgeType,
         cron_time: Duration,
     ) -> color_eyre::Result<()> {
         let message = trigger_type.clone().to_string();
-        let trigger_name = Self::get_trigger_name_from_trigger_type(&trigger_rule_name, trigger_type);
+        let trigger_name = Self::get_trigger_name_from_trigger_type(&trigger_rule_template_name, trigger_type);
         tracing::info!("Creating Event Bridge Rule trigger: {} ", trigger_name);
 
         match event_bridge_type.clone() {

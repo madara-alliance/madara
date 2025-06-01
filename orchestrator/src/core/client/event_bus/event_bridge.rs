@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use crate::types::jobs::WorkerTriggerType;
 
-/// EventBridgeClient is a struct that represents an AWS EventBridge client.
+/// InnerAWSEventBridge is a struct that represents an AWS EventBridge client.
 pub(crate) struct InnerAWSEventBridge {
     pub(crate) eb_client: Arc<aws_sdk_eventbridge::Client>,
     pub(crate) scheduler_client: Arc<aws_sdk_scheduler::Client>,

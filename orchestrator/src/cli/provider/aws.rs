@@ -3,7 +3,6 @@ use serde::Serialize;
 
 /// Parameters used to config AWS.
 #[derive(Debug, Clone, Args, Serialize)]
-// #[group(requires_all = ["aws_region"])]
 pub struct AWSConfigCliArgs {
     /// Use this flag to enable AWS provider.
     #[arg(long)]
