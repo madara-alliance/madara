@@ -904,7 +904,6 @@ impl DatabaseClient for MongoDbClient {
     }
 }
 
-
 // Generic utility function to convert Vec<T> to Option<T>
 fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Option<T>, DatabaseError> {
     match results.len() {
@@ -914,17 +913,15 @@ fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Opti
             tracing::error!("Expected at most 1 result, got {} for operation: {}", n, operation_name);
             Err(DatabaseError::FailedToSerializeDocument(format!(
                 "Expected at most 1 result, got {} for operation: {}",
-                n,
-                operation_name
+                n, operation_name
             )))
         }
     }
 }
 
-
 #[cfg(test)]
 mod tests {
-    use crate::tests::config::ConfigType;
+    
 
     use super::*;
     use mongodb::bson::doc;
@@ -980,5 +977,4 @@ mod tests {
         let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
         assert_eq!(found, None);
     }
-
 }
