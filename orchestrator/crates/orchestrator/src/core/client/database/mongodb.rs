@@ -437,21 +437,10 @@ impl DatabaseClient for MongoDbClient {
         let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type")];
         let duration = start.elapsed();
 
-        // Convert Vec<JobItem> to Option<JobItem>
-        match results.len() {
-            0 => {
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                Ok(None)
-            }
-            1 => {
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                Ok(results.into_iter().next())
-            }
-            n => {
-                tracing::error!("Expected at most 1 result, got {}", n);
-                Err(DatabaseError::FailedToSerializeDocument(format!("Expected at most 1 result, got {}", n)))
-            }
-        }
+        let result = vec_to_single_result(results, "get_latest_job_by_type")?;
+
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
     }
 
     /// function to get jobs that don't have a successor job.
@@ -652,7 +641,7 @@ impl DatabaseClient for MongoDbClient {
             tracing::error!(error = %e, category = "db_call", "Deserialization error");
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
-        let upper_limti = u32::try_from(upper_cap).map_err(|e| {
+        let upper_limit = u32::try_from(upper_cap).map_err(|e| {
             tracing::error!(error = %e, category = "db_call", "Deserialization error");
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
@@ -667,7 +656,7 @@ impl DatabaseClient for MongoDbClient {
                                 "job_type": job_type_bson,
                                 "metadata.specific.block_number": {
                                     "$gte": lower_limit,
-                                    "$lte": upper_limti
+                                    "$lte": upper_limit
                                 }
                             }
                         },
@@ -695,7 +684,7 @@ impl DatabaseClient for MongoDbClient {
             doc! {
                 "$addFields": {
                     "complete_range": {
-                        "$range": [lower_limit, upper_limti]
+                        "$range": [lower_limit, upper_limit]
                     }
                 }
             },
@@ -753,11 +742,14 @@ impl DatabaseClient for MongoDbClient {
         Ok(block_numbers)
     }
 
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type_and_status(
         &self,
         job_type: JobType,
         job_status: JobStatus,
     ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
         // Convert job_type to Bson
         let job_type_bson = mongodb::bson::to_bson(&job_type)?;
         let status_bson = mongodb::bson::to_bson(&job_status)?;
@@ -793,12 +785,13 @@ impl DatabaseClient for MongoDbClient {
         // Execute pipeline and convert Vec<JobItem> to Option<JobItem>
         let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
 
-        // Convert Vec<JobItem> to Option<JobItem>
-        match results.len() {
-            0 => Ok(None),
-            1 => Ok(results.into_iter().next()),
-            n => Err(DatabaseError::FailedToSerializeDocument(format!("Expected at most 1 result, got {}", n))),
-        }
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
+
+        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
+
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
     }
 
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
@@ -911,8 +904,28 @@ impl DatabaseClient for MongoDbClient {
     }
 }
 
+
+// Generic utility function to convert Vec<T> to Option<T>
+fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Option<T>, DatabaseError> {
+    match results.len() {
+        0 => Ok(None),
+        1 => Ok(results.into_iter().next()),
+        n => {
+            tracing::error!("Expected at most 1 result, got {} for operation: {}", n, operation_name);
+            Err(DatabaseError::FailedToSerializeDocument(format!(
+                "Expected at most 1 result, got {} for operation: {}",
+                n,
+                operation_name
+            )))
+        }
+    }
+}
+
+
 #[cfg(test)]
 mod tests {
+    use crate::tests::config::ConfigType;
+
     use super::*;
     use mongodb::bson::doc;
     use mongodb::options::ClientOptions;
@@ -967,4 +980,5 @@ mod tests {
         let found = client.find_one(collection.clone(), doc! {"_id": 1}).await.unwrap();
         assert_eq!(found, None);
     }
+
 }

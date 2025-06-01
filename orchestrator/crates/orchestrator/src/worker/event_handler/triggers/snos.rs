@@ -27,7 +27,7 @@ impl JobTrigger for SnosJobTrigger {
 
         // Get processing boundaries from config
         let service_config = config.service_config();
-        // Will always be in range 0..u64::MAX
+        // Will always be in range 0..u64::MAX or None.
         let max_block_to_process_bound = service_config.max_block_to_process;
         // Will always be in range 0..u64::MAX
         let min_block_to_process_bound = service_config.min_block_to_process;
@@ -182,7 +182,8 @@ impl JobTrigger for SnosJobTrigger {
             block_numbers_to_pocesss.extend(candidate_blocks);
         };
 
-        // Create the jobs here directly and return!
+        // // // Part 5: Creating the jobs // // //
+
         tracing::info!(
             "Creating SNOS jobs for {:?} blocks, with {} left slots",
             &block_numbers_to_pocesss,
