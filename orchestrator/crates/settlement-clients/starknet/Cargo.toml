@@ -45,3 +45,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 async-std.workspace = true
 serde_json.workspace = true
 tokio-test = "*"
+
+[build-dependencies]
+build-version.workspace = true

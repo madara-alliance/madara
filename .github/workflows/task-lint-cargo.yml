@@ -1,56 +1,36 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Lint Cargo
 
 on:
   workflow_dispatch:
   workflow_call:
-    inputs:
-      bootstrapper-artifacts-hash:
-        description: "Hash used to retrieve the artifact"
-        required: true
-        type: string
 
 jobs:
   cargo-lint:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
-      # Setup the environment with all necessary dependencies
-      - uses: ./.github/actions/load-env
+      - name: Load env
+        uses: ./.github/actions/load-env
 
-      # Setup the rust environment
-      - uses: ./.github/actions/rust-setup
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
         with:
-          cache-key: ${{ env.BUILD_RUST_CACHE_KEY }}
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
-          install-mold: false
-          install-scarb: true
-          install-foundry: true
-          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
-          install-node: true
-          node-version: ${{ env.BUILD_NODE_VERSION }}
-          install-ganache: true
-          ganache-version: ${{ env.BUILD_GANACHE_VERSION }}
-          install-solc: true
-          solc-version: ${{ env.BUILD_SOLC_VERSION }}
-          python-version: ${{ env.BUILD_PYTHON_VERSION }}
-          build-snos: true
+          extra-cache: false
 
-      - name: Download Bootstrapper artifacts
-        uses: actions/download-artifact@v4
+      - name: Scarb setup
+        uses: ./.github/actions/setup-scarb
         with:
-          name: bootstrapper-artifacts-${{ inputs.bootstrapper-artifacts-hash }}
-          path: artifacts
+          scarb-version: ${{ env.BUILD_SCARB_VERSION }}
 
-      - name: Madara Format and clippy
+      - name: Cargo fmt
+        run: cargo fmt -- --check
+
+      - name: Cargo Clippy
         run: |
-          cargo fmt -- --check
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
-      - name: Orchestrator Format and clippy
-        working-directory: orchestrator
-        run: |
-          cargo clippy --workspace --exclude madara --features testing --no-deps -- -D warnings
-          cargo clippy --workspace --exclude madara --features testing --tests --no-deps -- -D warnings

@@ -1,0 +1,32 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Bootstrapper
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+jobs:
+  check-binaries:
+    permissions:
+      pull-requests: write
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          extra-cache: false
+
+      # Check Bootstrapper
+      - name: Cargo check
+        run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          cargo check -p bootstrapper --release
