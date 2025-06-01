@@ -1,10 +1,10 @@
 use crate::cli::cron::event_bridge::EventBridgeType;
-use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::jobs::WorkerTriggerType;
 use crate::types::params::CronArgs;
+use crate::types::Layer;
 use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
 use lazy_static::lazy_static;

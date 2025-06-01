@@ -1,6 +1,9 @@
 pub mod client;
 pub mod error;
 pub mod types;
+
+use std::fs::File;
+use std::io::Write;
 use std::str::FromStr;
 
 pub use crate::types::AtlanticQueryStatus;
@@ -9,10 +12,12 @@ use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
+use crate::error::AtlanticError;
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -31,28 +36,36 @@ pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
     pub fact_checker: Option<FactChecker>,
     pub atlantic_api_key: String,
-    pub proof_layout: LayoutName,
     pub atlantic_network: String,
 }
 
 #[async_trait]
 impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self, task))]
-    async fn submit_task(&self, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_task(
+        &self,
+        task: Task,
+        proof_layout: LayoutName,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
             function_type = "cairo_pie",
             "Submitting Cairo PIE task."
         );
+        println!("task: {:?}", n_steps);
         match task {
             Task::CairoPie(cairo_pie) => {
+                println!("unwrap the cairo pie");
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();
                 cairo_pie
-                    .write_zip_file(pie_file_path)
+                    .write_zip_file(pie_file_path, true)
                     .map_err(|e| ProverClientError::FailedToWriteFile(e.to_string()))?;
+
+                println!("pie_file_path: {:?}", pie_file_path);
 
                 // sleep for 2 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
@@ -60,12 +73,14 @@ impl ProverClient for AtlanticProverService {
                     .atlantic_client
                     .add_job(
                         pie_file_path,
-                        self.proof_layout,
+                        proof_layout,
                         self.atlantic_api_key.clone(),
                         n_steps,
                         self.atlantic_network.clone(),
                     )
                     .await?;
+                println!("atlantic_job_response: {:?}", atlantic_job_response);
+
                 // sleep for 10 seconds to make sure the job is submitted
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
@@ -129,23 +144,68 @@ impl ProverClient for AtlanticProverService {
             }
         }
     }
+    async fn get_proof(&self, task_id: &str, _fact: &str) -> Result<String, ProverClientError> {
+        let proof = self.atlantic_client.get_proof_by_task_id(task_id).await?;
+
+        // Verify if it's a valid proof format
+        let _: StarkProof = parse(proof.clone()).map_err(|e| ProverClientError::InvalidProofFormat(e.to_string()))?;
+        Ok(proof)
+    }
+
+    /// Submit a L2 query to the Atlantic service
+    ///
+    /// # Arguments
+    /// * `task_id` - The task id of the proof to submit
+    /// * `proof` - The proof to submit
+    /// * `n_steps` - The number of steps to submit
+    ///
+    async fn submit_l2_query(
+        &self,
+        _task_id: &str,
+        proof: &str,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
+        tracing::info!(
+            log_type = "starting",
+            category = "submit_l2_query",
+            function_type = "proof",
+            "Submitting L2 query."
+        );
+        let current_dir = std::env::current_dir().map_err(|e| ProverClientError::Internal(Box::new(e)))?;
+        tracing::debug!("Current directory: {}", current_dir.display());
+
+        let verifier_path = current_dir.join("./orchestrator/build/os_latest.json");
+        tracing::debug!("Looking for verifier at: {}", verifier_path.display());
+
+        let cairo_verifier = match tokio::fs::read_to_string(&verifier_path).await {
+            Ok(content) => content,
+            Err(e) => return Err(ProverClientError::from(AtlanticError::FileReadError(e))),
+        };
+
+        let atlantic_job_response = self
+            .atlantic_client
+            .submit_l2_query(proof, cairo_verifier.as_str(), n_steps, &self.atlantic_network, &self.atlantic_api_key)
+            .await?;
+
+        tracing::info!(
+            log_type = "completed",
+            category = "submit_l2_query",
+            function_type = "proof",
+            "L2 query submitted."
+        );
+
+        Ok(atlantic_job_response.atlantic_query_id)
+    }
 }
 
 impl AtlanticProverService {
     pub fn new(
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,
-        proof_layout: &LayoutName,
         atlantic_network: String,
         fact_checker: Option<FactChecker>,
     ) -> Self {
-        Self {
-            atlantic_client,
-            fact_checker,
-            atlantic_api_key,
-            proof_layout: proof_layout.to_owned(),
-            atlantic_network,
-        }
+        Self { atlantic_client, fact_checker, atlantic_api_key, atlantic_network }
     }
 
     /// Creates a new instance of `AtlanticProverService` with the given parameters.
@@ -157,7 +217,7 @@ impl AtlanticProverService {
     ///
     /// # Returns
     /// * `AtlanticProverService` - A new instance of the service.
-    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn new_with_args(atlantic_params: &AtlanticValidatedArgs) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
@@ -167,19 +227,19 @@ impl AtlanticProverService {
             Some(FactChecker::new(
                 atlantic_params.atlantic_rpc_node_url.clone(),
                 atlantic_params.atlantic_verifier_contract_address.clone(),
+                atlantic_params.atlantic_settlement_layer.clone(),
             ))
         };
 
         Self::new(
             atlantic_client,
             atlantic_params.atlantic_api_key.clone(),
-            proof_layout,
             atlantic_params.atlantic_network.clone(),
             fact_checker,
         )
     }
 
-    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
         let fact_checker = if atlantic_params.atlantic_mock_fact_hash.eq("true") {
@@ -188,8 +248,9 @@ impl AtlanticProverService {
             Some(FactChecker::new(
                 atlantic_params.atlantic_rpc_node_url.clone(),
                 atlantic_params.atlantic_verifier_contract_address.clone(),
+                atlantic_params.atlantic_settlement_layer.clone(),
             ))
         };
-        Self::new(atlantic_client, "random_api_key".to_string(), proof_layout, "TESTNET".to_string(), fact_checker)
+        Self::new(atlantic_client, "random_api_key".to_string(), "TESTNET".to_string(), fact_checker)
     }
 }

@@ -1,4 +1,3 @@
-use crate::cli::Layer;
 use crate::core::client::event_bus::event_bridge::EventBridgeClient;
 use crate::core::client::SNS;
 use crate::core::traits::resource::Resource;
@@ -7,6 +6,7 @@ use crate::setup::creator::{
     SQSResourceCreator,
 };
 use crate::types::params::MiscellaneousArgs;
+use crate::types::Layer;
 use crate::{
     core::client::storage::s3::AWSS3,
     core::client::SQS,
