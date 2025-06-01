@@ -921,7 +921,6 @@ fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Opti
 
 #[cfg(test)]
 mod tests {
-    
 
     use super::*;
     use mongodb::bson::doc;
