@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::core::config::Config;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -7,6 +5,7 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
+use std::sync::Arc;
 
 pub struct ProofRegistrationJobTrigger;
 
@@ -28,18 +27,6 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             "Found {} successful proving jobs without proof registration jobs",
             successful_proving_jobs.len()
         );
-
-        let statuses = vec![
-            JobStatus::Created,
-            JobStatus::LockedForProcessing,
-            JobStatus::PendingVerification,
-            JobStatus::PendingRetry,
-        ];
-
-        let current_jobs = db.get_jobs_by_type_and_statuses(&JobType::ProofRegistration, statuses).await?;
-
-        let current_jobs_count = current_jobs.len();
-        tracing::info!("Current jobs count: {}", current_jobs_count);
 
         for job in successful_proving_jobs {
             tracing::debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");

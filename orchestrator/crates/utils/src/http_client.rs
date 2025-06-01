@@ -12,25 +12,6 @@
 //! any type that implements the Serialize trait, allowing for flexible payload structures including
 //! strings, numbers, objects, and arrays. For binary data or other formats, the implementation
 //! would need to be modified.
-//!
-//! # Examples
-//! ```
-//! use orchestrator_utils::http_client::HttpClient;
-//!
-//! let client = HttpClient::builder("https://api.example.com")
-//!     .default_header("Authorization", "Bearer token")
-//!     .default_query_param("version", "v1")
-//!     .default_body_param("tenant=main")
-//!     .build()?;
-//!
-//! let response = client
-//!     .request()
-//!     .method(Method::POST)
-//!     .path("/api/data")
-//!     .query_param("id", "123")
-//!     .body("name=test")
-//!     .send()
-//!     .await?;
 //! ```
 
 use std::collections::HashMap;
@@ -269,11 +250,8 @@ impl<'a> RequestBuilder<'a> {
     /// # Arguments
     /// * `body` - The data to be serialized and sent as the request body
     ///
-    /// # Examples
-    /// ```
-    /// let request = client.request()
-    ///     .method(Method::POST)
-    ///     .body(json!({ "key": "value" }));
+    /// # Returns
+    /// A Result containing the updated RequestBuilder or an error if serialization fails
     /// ```
     pub fn body<T: Serialize>(mut self, body: T) -> std::result::Result<Self, serde_json::Error> {
         self.body = Some(serde_json::to_string(&body)?);
@@ -292,13 +270,30 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Adds a file part to the multipart form.
-    pub fn form_file(mut self, key: &str, file_path: &Path, file_name: &str) -> io::Result<Self> {
+    pub fn form_file(
+        mut self,
+        key: &str,
+        file_path: &Path,
+        file_name: &str,
+        mime_type: Option<&str>,
+    ) -> io::Result<Self> {
         let file_bytes = std::fs::read(file_path)?;
         let file_name = file_name.to_string();
-        // TODO: Ideally the file type should be determined automatically
-        let part = Part::bytes(file_bytes)
-            .file_name(file_name)
-            .mime_str("application/zip")
+        Ok(self.form_file_bytes(key, file_bytes, &file_name, mime_type)?)
+    }
+
+    /// Adds a file part to the multipart form from bytes.
+    pub fn form_file_bytes(
+        mut self,
+        key: &str,
+        bytes: Vec<u8>,
+        file_name: &str,
+        mime_type: Option<&str>,
+    ) -> io::Result<Self> {
+        let mime_type = mime_type.unwrap_or("application/octet-stream");
+        let part = Part::bytes(bytes)
+            .file_name(file_name.to_string())
+            .mime_str(mime_type)
             .map_err(|e| io::Error::new(io::ErrorKind::InvalidInput, e))?;
 
         let form = match self.form.take() {
@@ -307,21 +302,6 @@ impl<'a> RequestBuilder<'a> {
         };
         self.form = Some(form);
         Ok(self)
-    }
-
-    /// Adds a file part to the multipart form from bytes.
-    pub fn form_file_bytes(mut self, key: &str, bytes: Vec<u8>, file_name: &str) -> Self {
-        let part = Part::bytes(bytes)
-            .file_name(file_name.to_string())
-            .mime_str("application/json")
-            .expect("Failed to set mime type");
-
-        let form = match self.form.take() {
-            Some(existing_form) => existing_form.part(key.to_string(), part),
-            None => Form::new().part(key.to_string(), part),
-        };
-        self.form = Some(form);
-        self
     }
 
     /// Sends the request with all configured parameters.
@@ -545,7 +525,7 @@ mod http_client_tests {
         assert!(request.form.is_none());
 
         let request =
-            client.request().form_file("file", &file_path, "fibonacci.zip").expect("Failed to add file to form");
+            client.request().form_file("file", &file_path, "fibonacci.zip", None).expect("Failed to add file to form");
 
         assert!(request.form.is_some());
     }

@@ -47,6 +47,7 @@ pub trait DatabaseClient: Send + Sync {
         job_type: JobType,
         job_status: JobStatus,
     ) -> Result<Option<JobItem>, DatabaseError>;
+
     /// get_jobs_after_internal_id_by_job_type - Get jobs after a specific internal id by job type
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
@@ -54,12 +55,14 @@ pub trait DatabaseClient: Send + Sync {
         job_status: JobStatus,
         internal_id: String,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+
     /// get_jobs_by_statuses - Get jobs by their statuses
     async fn get_jobs_by_statuses(
         &self,
         status: Vec<JobStatus>,
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
     /// update_batch - Update the bath

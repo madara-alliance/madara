@@ -82,17 +82,16 @@ impl AtlanticClient {
 
         let api = self.proving_layer.customize_request(
             self.client
-                    .request()
-                    .method(Method::POST)
-                    .path("atlantic-query")
-                    .query_param("apiKey", atlantic_api_key.as_ref())
-                    .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
-                    .form_text("layout", proof_layout)
-                    .form_text("result", "PROOF_GENERATION")
-                    // .form_text("network", atlantic_network.as_ref())
-                    .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-                    .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
-                    .form_file("pieFile", pie_file, "pie.zip")?,
+                .request()
+                .method(Method::POST)
+                .path("atlantic-query")
+                .query_param("apiKey", atlantic_api_key.as_ref())
+                .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+                .form_text("layout", proof_layout)
+                .form_text("result", "PROOF_GENERATION")
+                .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+                .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
+                .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))?,
         );
         tracing::debug!("Request: {:?}", api);
         let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
@@ -160,8 +159,8 @@ impl AtlanticClient {
                     .method(Method::POST)
                     .path("atlantic-query")
                     .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
-                    .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json")
-                    .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json")
+                    .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
+                    .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json", Some("application/json"))?
                     .form_text("layout", proof_layout)
                     .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                     .form_text("network", atlantic_network.as_ref())

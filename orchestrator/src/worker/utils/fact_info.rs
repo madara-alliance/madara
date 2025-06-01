@@ -5,6 +5,7 @@
 use super::fact_node::generate_merkle_root;
 use super::fact_topology::{get_fact_topology, FactTopology};
 use crate::error::job::fact::FactError;
+use crate::types::constant::BOOT_LOADER_PROGRAM_CONTRACT;
 use alloy::primitives::{keccak256, B256};
 use cairo_vm::program_hash::compute_program_hash_chain;
 use cairo_vm::types::builtin_name::BuiltinName;
@@ -86,10 +87,7 @@ pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_ey
             .to_vec();
     let boot_loader_output_hash = boot_loader_output_hash_vec.as_slice();
 
-    // Bootloader Program Hash : 0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07
-    // taken from the code sent by integrity team.
-    let boot_loader_program_hash_bytes =
-        Felt::from_str("0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07")?.to_bytes_be();
+    let boot_loader_program_hash_bytes = Felt::from_str(BOOT_LOADER_PROGRAM_CONTRACT)?.to_bytes_be();
     let boot_loader_program_hash = boot_loader_program_hash_bytes.as_slice();
 
     let fact_hash = poseidon_hash_many_bytes(vec![boot_loader_program_hash, boot_loader_output_hash].as_slice())?;

@@ -88,7 +88,17 @@ impl Config {
         settlement_client: Box<dyn SettlementClient>,
     ) -> Self {
         Self {
-            layer, params, madara_client, database, storage, alerts, queue, prover_client, da_client, settlement_client }
+            layer,
+            params,
+            madara_client,
+            database,
+            storage,
+            alerts,
+            queue,
+            prover_client,
+            da_client,
+            settlement_client,
+        }
     }
 
     /// new - create config from the run command

@@ -10,6 +10,7 @@ use appchain_core_contract_client::interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
+use crypto_bigint::Encoding;
 use lazy_static::lazy_static;
 use mockall::automock;
 use mockall::predicate::*;
@@ -75,30 +76,6 @@ impl StarknetSettlementClient {
         let account = Arc::new(account);
 
         let starknet_core_contract_client = StarknetCoreContractClient::new(core_contract_address, account.clone());
-
-        // let public_key = settlement_cfg.starknet_account_address.clone().to_string();
-        // let signer_address = Felt::from_hex(&public_key).expect("invalid signer address");
-        //
-        // // TODO: Very insecure way of building the signer. Needs to be adjusted.
-        // let private_key = settlement_cfg.starknet_private_key.clone();
-        // let signer = Felt::from_hex(&private_key).expect("Invalid private key");
-        // let signer = LocalWallet::from(SigningKey::from_secret_scalar(signer));
-        //
-        // let core_contract_address = Felt::from_hex(&settlement_cfg.starknet_cairo_core_contract_address.to_string())
-        //     .expect("Invalid core contract address");
-        //
-        // let mut account = SingleOwnerAccount::new(
-        //     provider.clone(),
-        //     signer.clone(),
-        //     signer_address,
-        //     provider.chain_id().await.expect("Failed to get chain id"),
-        //     ExecutionEncoding::New,
-        // );
-        // account.set_block_id(BlockId::Tag(BlockTag::Pending));
-        // let account: Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>> = Arc::new(account);
-        //
-        // let starknet_core_contract_client: StarknetCoreContractClient =
-        //     StarknetCoreContractClient::new(core_contract_address, account.clone());
 
         StarknetSettlementClient {
             account,
@@ -282,15 +259,19 @@ impl SettlementClient for StarknetSettlementClient {
             return Err(eyre!("Could not fetch last block number from core contract."));
         }
 
-        let special_number =
-            Felt::from_hex("0x800000000000011000000000000000000000000000000000000000000000000").unwrap();
+        let last_block_number: Felt = block_number[1];
 
-        let last_block_number = block_number[1];
-        if last_block_number == special_number {
+        // Why Felt::MAX ?
+        // https://github.com/starkware-libs/cairo-lang/blob/a86e92bfde9c171c0856d7b46580c66e004922f3/src/starkware/starknet/solidity/StarknetState.sol#L19-L39
+        // https://docs.rs/starknet-types-core/latest/starknet_types_core/felt/struct.Felt.html
+        // When last_block_number is 0, then we return None, stating that no state update has happened yet.
+        if last_block_number == Felt::MAX {
             return Ok(None);
         }
 
-        Ok(Some(u64_from_felt(block_number[1]).expect("Failed to convert to u64")))
+        let converted_value = u64_from_felt(block_number[1]).wrap_err("Failed to convert to u64")?;
+
+        Ok(Some(converted_value))
     }
 
     /// Returns the nonce for the wallet in use.

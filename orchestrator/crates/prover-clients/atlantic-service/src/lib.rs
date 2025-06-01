@@ -149,10 +149,6 @@ impl ProverClient for AtlanticProverService {
 
         // Verify if it's a valid proof format
         let _: StarkProof = parse(proof.clone()).map_err(|e| ProverClientError::InvalidProofFormat(e.to_string()))?;
-
-        // save the proof to a file
-        let mut file = File::create("proof1.json").unwrap();
-        file.write_all(proof.as_bytes()).unwrap();
         Ok(proof)
     }
 

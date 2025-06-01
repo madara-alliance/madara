@@ -62,7 +62,6 @@ pub mod factory {
             JobType::ProofRegistration => Box::new(RegisterProofJobHandler),
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
-            // _ => unimplemented!("Job type not implemented yet."),
         };
 
         Arc::new(job)

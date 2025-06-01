@@ -318,10 +318,3 @@ starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "m
 ] }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
-  "cairo-1-hints",
-  "extensive_hints",
-  "mod_builtin",
-] }
-starknet-os = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
-prove_block = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }

@@ -8,6 +8,4 @@ pub const MAX_BATCH_SIZE: u64 = 50;
 pub const ON_CHAIN_DATA_FILE_NAME: &str = "onchain_data.json";
 pub const PROOF_FILE_NAME: &str = "proof.json";
 pub const PROOF_PART2_FILE_NAME: &str = "proof_part2.json";
-
-pub const JOB_METADATA_PROCESSING_STARTED_AT: &str = "processing_started_at";
-pub const JOB_METADATA_PROCESSING_FINISHED_AT: &str = "processing_finished_at";
+pub const BOOT_LOADER_PROGRAM_CONTRACT: &str = "0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07";

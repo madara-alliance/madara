@@ -26,7 +26,7 @@ impl JobHandlerTrait for ProvingJobHandler {
         Ok(job_item)
     }
 
-    #[tracing::instrument(fields(q = ?job.status, id = ?job.id, block_no = ?job.internal_id), skip(self, config, job), ret, err)]
+    #[tracing::instrument(fields(category = "proving"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         tracing::info!("Proving job processing started");
 
@@ -35,7 +35,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             tracing::error!(job_id = %job.internal_id, error = %e, "Failed to convert metadata to ProvingMetadata");
         })?;
 
-        // Get input path from metadata
+        // Get an input path from metadata
         let input_path = match proving_metadata.input_path {
             Some(ProvingInputType::CairoPie(path)) => path,
             Some(ProvingInputType::Proof(_)) => {

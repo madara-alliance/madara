@@ -384,14 +384,16 @@ impl SettlementClient for EthereumSettlementClient {
     /// Get the last block settled through the core contract
     async fn get_last_settled_block(&self) -> Result<Option<u64>> {
         let block_number = self.core_contract_client.state_block_number().await?;
-        // THIS IS INCORRECT! PLEASE DO NOT USE THIS
-        // WE NEED TO handle SPECIAL ADDRESS HERE
-        // Convert to u64 if the value exists and is > 0
-        // Return None for block number 0 (genesis/initial state)
-        match block_number.try_into()? {
-            0 => Ok(None),
-            n => Ok(Some(n)),
+        let minus_one = alloy_primitives::I256::from_str("-1")?;
+        // Check if block_number is -1
+        // Meaning that no state update has happened yet.
+        if block_number == minus_one {
+            return Ok(None);
         }
+
+        // Convert to u64 and wrap in Some
+        let value: u64 = block_number.try_into()?;
+        Ok(Some(value))
     }
 
     async fn get_nonce(&self) -> Result<u64> {

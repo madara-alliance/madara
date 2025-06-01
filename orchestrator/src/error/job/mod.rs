@@ -105,4 +105,8 @@ pub enum JobError {
     /// Indicates an error occurred while submitting a task to the prover client
     #[error("Error submitting task to prover client: {0}")]
     ProverClientError(#[from] ProverClientError),
+
+    /// Indicates an error occurred while downcasting from an object
+    #[error("Orchestrator Error: {0}")]
+    AnyHowError(#[from] anyhow::Error),
 }
