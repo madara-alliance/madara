@@ -270,16 +270,10 @@ impl<'a> RequestBuilder<'a> {
     }
 
     /// Adds a file part to the multipart form.
-    pub fn form_file(
-        mut self,
-        key: &str,
-        file_path: &Path,
-        file_name: &str,
-        mime_type: Option<&str>,
-    ) -> io::Result<Self> {
+    pub fn form_file(self, key: &str, file_path: &Path, file_name: &str, mime_type: Option<&str>) -> io::Result<Self> {
         let file_bytes = std::fs::read(file_path)?;
         let file_name = file_name.to_string();
-        Ok(self.form_file_bytes(key, file_bytes, &file_name, mime_type)?)
+        self.form_file_bytes(key, file_bytes, &file_name, mime_type)
     }
 
     /// Adds a file part to the multipart form from bytes.
