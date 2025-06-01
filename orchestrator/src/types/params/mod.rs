@@ -53,19 +53,16 @@ impl ARN {
 
         // Note: region and account_id can be empty for some AWS services (like S3)
         if parts[2] != "s3" {
-            if parts[3].is_empty() {
+            // region can also be empty for iam.
+            if parts[2] != "iam" && parts[3].is_empty() {
                 return Err("Region cannot be empty");
             }
 
-            if parts[4].is_empty() {
+            if parts[2] != "iam" && parts[4].is_empty() {
                 return Err("Account ID cannot be empty");
             }
         }
 
-        // accountID can be empty for iam
-        if parts[2] != "iam" && parts[3].is_empty() {
-            return Err("Region cannot be empty");
-        }
 
         Ok(ARN {
             partition: parts[1].to_string(),
