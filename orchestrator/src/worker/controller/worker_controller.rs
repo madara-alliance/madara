@@ -43,7 +43,7 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
-        Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())))
+        Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())?))
     }
 
     /// get_l2_queues - Get the list of queues for L2 network
