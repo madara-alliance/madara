@@ -27,7 +27,13 @@ pub async fn spin_up_madara() -> MadaraCmd {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
     tracing::debug!("Spinning up Madara");
     let mut node = MadaraCmdBuilder::new()
-        .args(["--devnet", "--no-l1-sync", "--chain-config-path=./src/tests/devnet.yaml", "--rpc-cors", "all"])
+        .args([
+            "--devnet",
+            "--no-l1-sync",
+            "--chain-config-path=/Users/mohit/Desktop/karnot/madara/configs/presets/devnet.yaml",
+            "--rpc-cors",
+            "all",
+        ])
         .run();
     node.wait_for_ready().await;
     node
@@ -166,7 +172,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     let mut program_output = Vec::with_capacity(32);
     program_output.fill(onchain_data_hash);
     let update_state_tx_hash = settlement_client
-        .update_state_calldata(program_output, onchain_data_hash, [1; 32])
+        .update_state_calldata(program_output.clone(), program_output, onchain_data_hash, [1; 32])
         .await
         .expect("Sending Update state");
 
