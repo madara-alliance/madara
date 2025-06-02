@@ -184,7 +184,7 @@ impl SettlementClient for EthereumSettlementClient {
     /// Should be used to update state on core contract when DA is done in calldata
     async fn update_state_calldata(
         &self,
-        snos_output: Vec<[u8; 32]>,
+        _snos_output: Vec<[u8; 32]>,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
