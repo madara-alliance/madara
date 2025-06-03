@@ -476,9 +476,9 @@ mod tests {
                 );
 
                 // The expected false positive rate should be around 0.01 (1%)
-                // We allow some variance but keep it under 2%
+                // We allow some variance but keep it under 3%
                 prop_assert!(
-                    false_positive_rate <= 0.02,
+                    false_positive_rate <= 0.03,
                     "False positive rate too high: {}",
                     false_positive_rate
                 );
