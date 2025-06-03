@@ -639,7 +639,7 @@ impl DatabaseClient for MongoDbClient {
         };
         let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
 
-        let mut updates = batch.to_document()?;
+        let updates = batch.to_document()?;
 
         // remove null values from the updates
         let mut non_null_updates = Document::new();

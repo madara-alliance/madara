@@ -87,9 +87,6 @@ pub async fn squash_state_updates(
         }
     }
 
-    // Convert maps back to the required StateDiff format
-    let mut no_of_contracts = 0;
-
     let results: Vec<_> = stream::iter(storage_diffs_map)
         .map(|(contract_addr, storage_map)| async move {
             process_single_contract(contract_addr, storage_map, provider, pre_range_block).await
@@ -106,7 +103,6 @@ pub async fn squash_state_updates(
             Ok(None) => {} // No storage entries for this contract
             Err(e) => return Err(e),
         }
-        no_of_contracts += 1;
     }
 
     // Deployed contracts

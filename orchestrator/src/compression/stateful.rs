@@ -5,7 +5,7 @@ use starknet::core::types::{
 };
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError};
-use starknet_core::types::{BlockId, DeclaredClassItem, StarknetError};
+use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
