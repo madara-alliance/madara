@@ -10,7 +10,7 @@ members = [
 default-members = [
   # "madara",
   "orchestrator",
-  "bootstrapper"
+  "bootstrapper",
 ]
 resolver = "2"
 
