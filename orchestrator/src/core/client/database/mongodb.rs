@@ -1,6 +1,6 @@
 use super::error::DatabaseError;
 use crate::core::client::database::DatabaseClient;
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -705,6 +705,14 @@ impl DatabaseClient for MongoDbClient {
                 )))
             }
         }
+    }
+
+    async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError> {
+        todo!()
+    }
+
+    async fn get_all_batches_by_status(&self, status: BatchStatus) -> Result<Vec<Batch>, DatabaseError> {
+        todo!()
     }
 }
 

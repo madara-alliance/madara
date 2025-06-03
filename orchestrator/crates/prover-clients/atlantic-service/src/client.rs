@@ -62,6 +62,8 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
+    /// Submits request to the prover client
+    /// bucket_id and bucket_job_id are None for L3
     pub async fn add_job(
         &self,
         pie_file: &Path,
@@ -69,30 +71,38 @@ impl AtlanticClient {
         atlantic_api_key: impl AsRef<str>,
         n_steps: Option<usize>,
         atlantic_network: impl AsRef<str>,
+        bucket_id: Option<String>,
+        bucket_job_id: Option<u64>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         let proof_layout = match proof_layout {
             LayoutName::dynamic => "dynamic",
             _ => proof_layout.to_str(),
         };
 
-        let response = self
-            .proving_layer
-            .customize_request(
-                self.client
-                    .request()
-                    .method(Method::POST)
-                    .path("atlantic-query")
-                    .query_param("apiKey", atlantic_api_key.as_ref())
-                    .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
-                    .form_text("layout", proof_layout)
-                    .form_text("network", atlantic_network.as_ref())
-                    .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-                    .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
-                    .form_file("pieFile", pie_file, "pie.zip")?,
-            )
-            .send()
-            .await
-            .map_err(AtlanticError::AddJobFailure)?;
+        let mut request = self.proving_layer.customize_request(
+            self.client
+                .request()
+                .method(Method::POST)
+                .path("atlantic-query")
+                .query_param("apiKey", atlantic_api_key.as_ref())
+                .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+                .form_text("layout", proof_layout)
+                .form_text("network", atlantic_network.as_ref())
+                .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+                .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
+                .form_file("pieFile", pie_file, "pie.zip")?,
+        );
+
+        // TODO: check if we can add this in customize_request
+        // current problem is that we need to pass the bucket_id and bucket_job_id as arguments
+        // think of a function signature that can be used for both ethereum and starknet
+        if let Some(bucket_id) = bucket_id {
+            request = request.form_text("bucketId", &bucket_id);
+        }
+        if let Some(bucket_job_id) = bucket_job_id {
+            request = request.form_text("bucketJobId", &bucket_job_id.to_string());
+        }
+        let response = request.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),

@@ -63,6 +63,17 @@ pub enum ProvingInputType {
     CairoPie(String),
 }
 
+
+/// Metadata specific to aggregator job
+///
+/// # Field Management
+/// TODO: update this
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct AggregatorMetadata {
+    pub batch_num: u64,
+    pub bucket_id: String,
+}
+
 /// Metadata specific to proving jobs.
 ///
 /// # Field Management
@@ -81,6 +92,12 @@ pub struct ProvingMetadata {
     /// in the provided storage.
     pub download_proof: Option<String>,
     pub n_steps: Option<usize>,
+    /// Bucket ID received from the prover client.
+    /// If None, it's assumed that the bucket ID is not needed (i.e., not using Applicative Recursion)
+    pub bucked_id: Option<String>,
+    /// Index of the block within the bucket.
+    /// If None, it's assumed that we are not using Applicative Recursion
+    pub bucket_job_index: Option<u64>,
 }
 
 /// Metadata specific to SNOS (Starknet OS) jobs.
@@ -148,6 +165,8 @@ pub enum JobSpecificMetadata {
     Proving(ProvingMetadata),
     /// Data availability job metadata
     Da(DaMetadata),
+    /// Aggregator job metadata
+    Aggregator(AggregatorMetadata),
 }
 
 /// Macro to implement TryInto for JobSpecificMetadata variants

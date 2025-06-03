@@ -6,6 +6,32 @@ use serde::{Deserialize, Serialize, Serializer};
 use std::collections::HashSet;
 use uuid::Uuid;
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, strum_macros::Display, Eq, Default)]
+pub enum BatchStatus {
+    /// Batch is open and new blocks can be added to it
+    #[default]
+    Open,
+    /// Batch is closed and no new blocks can be added to it
+    Closed,
+    /// Batch is being processed by the aggregator job
+    /// This means that all the child jobs completed by the prover client, and we can close the bucket
+    RunningAggregator,
+    /// Batch is closed, and we are waiting for SUCCESS from the prover client for the bucket ID
+    PendingVerification,
+    /// Bucket is verified and is ready for state update
+    ReadyForStateUpdate,
+    /// Batch processing is complete and state update is done
+    Completed,
+    /// Batch creation failed
+    BatchCreationFailed,
+    /// Aggregator job failed
+    AggregationFailed,
+    /// Verification job failed
+    VerificationFailed,
+    /// State update failed
+    StateUpdateFailed,
+}
+
 #[derive(Serialize, Debug, Clone)]
 pub struct BatchUpdates {
     pub end_block: u64,
@@ -38,6 +64,10 @@ pub struct Batch {
     /// timestamp when the batch was last updated
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
+    /// Bucket ID for the batch, received from the prover client
+    pub bucket_id: Option<String>,
+    /// Status of the batch
+    pub status: BatchStatus,
 }
 
 impl Batch {
@@ -53,6 +83,7 @@ impl Batch {
             blob_path,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
+            ..Self::default()
         }
     }
 }

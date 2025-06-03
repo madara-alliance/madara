@@ -38,7 +38,13 @@ pub struct AtlanticProverService {
 #[async_trait]
 impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self, task))]
-    async fn submit_task(&self, task: Task, n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_task(
+        &self,
+        task: Task,
+        n_steps: Option<usize>,
+        bucket_id: Option<String>,
+        bucket_job_index: Option<u64>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -64,6 +70,8 @@ impl ProverClient for AtlanticProverService {
                         self.atlantic_api_key.clone(),
                         n_steps,
                         self.atlantic_network.clone(),
+                        bucket_id,
+                        bucket_job_index,
                     )
                     .await?;
                 // sleep for 10 seconds to make sure the job is submitted
