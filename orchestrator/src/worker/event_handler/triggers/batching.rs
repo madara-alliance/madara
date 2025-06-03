@@ -103,15 +103,7 @@ impl BatchingTrigger {
         }
 
         if let Some(state_update) = state_update {
-            self.close_batch(
-                &batch,
-                &state_update,
-                false,
-                &config,
-                end_block_number,
-                config.madara_client(),
-            )
-            .await?;
+            self.close_batch(&batch, &state_update, false, &config, end_block_number, config.madara_client()).await?;
         }
 
         Ok(())

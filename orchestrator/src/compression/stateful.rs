@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 const SPECIAL_ADDRESS: &str = "0x2";
-const MAPPING_START: &str = "0x80";  // 128
+const MAPPING_START: &str = "0x80"; // 128
 
 /// Represents a mapping from one value to another
 #[derive(Debug)]
