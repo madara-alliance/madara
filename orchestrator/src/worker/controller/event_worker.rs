@@ -14,6 +14,8 @@ use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tracing::{debug, error, info, info_span};
+use tokio::sync::Notify;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub enum MessageType {
     Message(Delivery),
@@ -25,6 +27,8 @@ pub struct EventWorker {
     config: Arc<Config>,
     queue_type: QueueType,
     queue_control: QueueControlConfig,
+    shutdown_notify: Arc<Notify>,
+    is_shutdown: Arc<AtomicBool>,
 }
 
 impl EventWorker {
@@ -36,10 +40,23 @@ impl EventWorker {
     /// # Returns
     /// * `EventSystemResult<EventWorker>` - A Result indicating whether the operation was successful or not
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> EventSystemResult<Self> {
-        info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
+        info!("Kicking in the Worker to Queue {:?}", queue_type);
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
         let queue_control = queue_config.queue_control.clone().unwrap_or_default();
-        Ok(Self { queue_type, config, queue_control })
+        Ok(Self {
+            queue_type,
+            config,
+            queue_control,
+            shutdown_notify: Arc::new(Notify::new()),
+            is_shutdown: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    /// Triggers a graceful shutdown
+    pub async fn shutdown(&self) -> EventSystemResult<()> {
+        self.is_shutdown.store(true, Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
+        Ok(())
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -282,30 +299,54 @@ impl EventWorker {
         info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
 
         loop {
+            // Check for shutdown signal
+            if self.is_shutdown.load(Ordering::SeqCst) {
+                info!("Shutdown signal received. Waiting for tasks to finish...");
+                while let Some(res) = tasks.join_next().await {
+                    if let Err(e) = res {
+                        error!("Task failed: {:?}", e);
+                    }
+                }
+                info!("All tasks finished. Exiting run loop.");
+                break;
+            }
+
             while tasks.len() >= max_concurrent_tasks {
                 if let Some(Err(e)) = tasks.join_next().await {
                     error!("Task failed: {:?}", e);
                 }
             }
 
-            match self.get_message().await {
-                Ok(Some(message)) => match self.parse_message(&message) {
-                    Ok(parsed_message) => {
-                        let worker = self.clone();
-                        tasks.spawn(async move { worker.process_message(message, parsed_message).await });
-                    }
-                    Err(e) => {
-                        error!("Failed to parse message: {:?}", e);
-                    }
-                },
-                Ok(None) => {
-                    sleep(Duration::from_secs(1)).await;
+            tokio::select! {
+                // The biased keyword makes tokio::select! check branches in order,
+                // prioritizing the shutdown signal check before message processing
+                biased;
+                _ = self.shutdown_notify.notified() => {
+                    info!("Shutdown notify received. Exiting run loop soon.");
+                    continue;
                 }
-                Err(e) => {
-                    error!("Error receiving message: {:?}", e);
-                    sleep(Duration::from_secs(5)).await;
+                result = self.get_message() => {
+                    match result {
+                        Ok(Some(message)) => match self.parse_message(&message) {
+                            Ok(parsed_message) => {
+                                let worker = self.clone();
+                                tasks.spawn(async move { worker.process_message(message, parsed_message).await });
+                            }
+                            Err(e) => {
+                                error!("Failed to parse message: {:?}", e);
+                            }
+                        },
+                        Ok(None) => {
+                            sleep(Duration::from_secs(1)).await;
+                        }
+                        Err(e) => {
+                            error!("Error receiving message: {:?}", e);
+                            sleep(Duration::from_secs(5)).await;
+                        }
+                    }
                 }
             }
         }
+        Ok(())
     }
 }
