@@ -90,10 +90,9 @@ impl WorkerController {
         // info_span!("worker", q = ?q);
         // let _guard = span_clone.enter();
         info!("Starting worker for queue type {:?}", q);
-
         match self.create_event_handler(q).await {
             Ok(handler) => match handler.run().await {
-                Ok(_) => info!("Worker for queue type {:?} started successfully", q),
+                Ok(_) => info!("Worker for queue type {:?} is completed", q),
                 Err(e) => {
                     let _ = eyre!("🚨Failed to start worker: {:?}", e);
                     tracing::error!("🚨Failed to start worker: {:?}", e)
