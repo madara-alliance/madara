@@ -9,13 +9,13 @@ use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tracing::{debug, error, info, info_span};
-use tokio::sync::Notify;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 pub enum MessageType {
     Message(Delivery),

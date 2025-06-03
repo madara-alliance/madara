@@ -5,10 +5,10 @@ use crate::types::queue::QueueType;
 use crate::worker::controller::event_worker::EventWorker;
 use color_eyre::eyre::eyre;
 use futures::future::try_join_all;
-use tracing::info_span;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tracing::info;
+use tracing::info_span;
 
 #[derive(Clone)]
 pub struct WorkerController {
@@ -96,8 +96,8 @@ impl WorkerController {
         }
         Ok(())
     }
-    
-    async fn create_span(&self, q: &QueueType) -> EventSystemResult<()>  {
+
+    async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
         let span_clone = info_span!("worker", q = ?q);
         let _guard = span_clone.enter();
         info!("Starting worker for queue type {:?}", q);
@@ -112,7 +112,7 @@ impl WorkerController {
             Err(e) => {
                 tracing::error!("🚨Failed to create handler: {:?}", e);
                 return Err(e);
-            },
+            }
         }
         Ok(())
     }
