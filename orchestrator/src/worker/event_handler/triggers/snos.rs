@@ -12,185 +12,465 @@ use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
 
+/// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
+///
+/// This component is responsible for:
+/// - Determining which blocks need SNOS processing
+/// - Managing job creation within concurrency limits
+/// - Ensuring proper ordering and dependencies between jobs
 pub struct SnosJobTrigger;
+
+/// Represents the boundaries for block processing.
+///
+/// These bounds define the range of blocks that can be processed:
+/// - `lower_limit`: The minimum block number to consider (based on state updates)
+/// - `middle_limit`: The highest block number that has completed SNOS processing (if any)
+/// - `upper_limit`: The maximum block number to process (from sequencer or config limit)
+#[derive(Debug)]
+struct ProcessingBounds {
+    /// Minimum block number to process, derived from completed state updates
+    lower_limit: u64,
+    /// Latest block number that has completed SNOS processing (None if no jobs completed)
+    middle_limit: Option<u64>,
+    /// Maximum block number to process, limited by sequencer or configuration
+    upper_limit: u64,
+}
+
+/// Context for scheduling SNOS jobs, containing processing state and constraints.
+///
+/// This structure encapsulates:
+/// - Processing boundaries
+/// - Available concurrency slots
+/// - Blocks selected for processing
+#[derive(Debug)]
+struct JobSchedulingContext {
+    /// The calculated processing boundaries
+    bounds: ProcessingBounds,
+    /// Number of job slots available for new job creation
+    available_slots: u64,
+    /// Collection of block numbers selected for job creation
+    blocks_to_process: Vec<u64>,
+}
 
 #[async_trait]
 impl JobTrigger for SnosJobTrigger {
+    /// Main entry point for SNOS job creation workflow.
+    ///
+    /// This method orchestrates the entire job scheduling process:
+    /// 1. Calculates processing boundaries based on sequencer state and completed jobs
+    /// 2. Determines available concurrency slots
+    /// 3. Schedules blocks for processing within slot constraints
+    /// 4. Creates the actual jobs in the database
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database, client, and service settings
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error from the job creation process
+    ///
+    /// # Behavior
+    /// - Returns early if no slots are available for new jobs
+    /// - Respects concurrency limits defined in service configuration
+    /// - Processes blocks in order while filling available slots efficiently
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
-        // // // Part 1: Defining Variables // // //
+        let bounds = self.calculate_processing_bounds(&config).await?;
+        let mut context = self.initialize_scheduling_context(&config, bounds).await?;
 
-        // Get provider and fetch latest block number from sequencer
-        let provider = config.madara_client();
-        // Possible Values : 0..u64::MAX or Failed (network error or no block in Madara)
-        let latest_created_block_from_sequencer =
-            provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")?;
-
-        // Get processing boundaries from config
-        let service_config = config.service_config();
-        // Will always be in range 0..u64::MAX or None.
-        let max_block_to_process_bound = service_config.max_block_to_process;
-        // Will always be in range 0..u64::MAX
-        let min_block_to_process_bound = service_config.min_block_to_process;
-
-        // Get all jobs with relevant statuses
-        let db = config.database();
-
-        let latest_snos_completed_block_number =
-            match db.get_latest_job_by_type_and_status(JobType::SnosRun, JobStatus::Completed).await? {
-                None => None,
-                Some(job_item) => match job_item.metadata.specific {
-                    JobSpecificMetadata::Snos(metadata) => Some(metadata.block_number),
-                    _ => {
-                        panic! {"This case should never have happened!"}
-                    }
-                },
-            };
-
-        let latest_su_completed_block_number =
-            match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
-                None => None,
-                Some(job_item) => match job_item.metadata.specific {
-                    JobSpecificMetadata::StateUpdate(metadata) => metadata.blocks_to_settle.iter().max().copied(),
-                    _ => {
-                        panic! {"This case should never have happened!"}
-                    }
-                },
-            };
-
-        let lower_limit = match latest_su_completed_block_number {
-            None => min_block_to_process_bound,
-            Some(value) => max(value, min_block_to_process_bound),
-        };
-
-        let middle_limit = latest_snos_completed_block_number;
-
-        let upper_limit = match max_block_to_process_bound {
-            Some(bound) => min(latest_created_block_from_sequencer, bound),
-            // No limit, use sequencer value
-            None => latest_created_block_from_sequencer,
-        };
-
-        let mut block_numbers_to_pocesss: Vec<u64> = Vec::new();
-
-        // // // Part 2: Calculating Available Slots // // //
-
-        let mut available_slots = service_config.max_concurrent_created_snos_jobs;
-
-        // Decrease slots by number of already existing PendingRetry & Created jobs
-        let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
-
-        // Get pending/created jobs
-        let pending_jobs_length = db
-            .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], pending_statuses, None)
-            .await
-            .wrap_err("Failed to fetch pending SNOS jobs")?
-            .len();
-
-        available_slots = available_slots.saturating_sub(pending_jobs_length as u64);
-
-        if available_slots == 0 {
+        if context.available_slots == 0 {
             tracing::warn!("All slots occupied by pre-existing jobs, skipping SNOS job creation!");
             return Ok(());
         }
 
-        // // // Part 3: Calculating jobs to process // // //
+        self.schedule_jobs_for_processing(&config, &mut context).await?;
+        self.create_scheduled_jobs(&config, context.blocks_to_process).await?;
 
-        // NOTE:
-        // The only variables we are to be concerned with from now are
-        // lower_limit, middle_limit, upper_limit and available_slots
-
-        // Case: middle_limit is NONE, i.e no snos job has completed till now.
-        // lower limit can be [0...u64::MAX]
-        if middle_limit.is_none() {
-            // create jobs for all blocks in range [lower_limit, upper_limit] - blocks already having a Snos Job
-            let candidate_blocks = db
-                .get_missing_block_numbers_by_type_and_caps(
-                    JobType::SnosRun,
-                    lower_limit,
-                    upper_limit,
-                    Some(i64::try_from(available_slots)?),
-                )
-                .await?;
-
-            assert!(candidate_blocks.len() <= available_slots as usize);
-
-            // create_jobs_snos
-            tracing::info!(
-                "Creating SNOS jobs for {:?} blocks, with {} left slots",
-                &candidate_blocks,
-                available_slots
-            );
-            create_jobs_snos(config, candidate_blocks).await?;
-            return Ok(());
-        }
-
-        let middle_limit = middle_limit.expect("middle_limit should not be None at this point");
-
-        // // // Part 4a: Calculating jobs withing first half // // //
-
-        // Case 1: lower_limit > middle_limit : Skip, do nothing
-        // Case 2: lower_limit == middle_limit == 0 : Skip, already processed
-        // Case 3: lower_limit <= middle_limit && (middle_limit != 0) : Check missing_blocks
-
-        if lower_limit <= middle_limit && (middle_limit != 0) {
-            // Get the missing blocks list and consume available_slots many to create jobs for.
-            let missing_block_numbers_list = db
-                .get_missing_block_numbers_by_type_and_caps(
-                    JobType::SnosRun,
-                    lower_limit,
-                    middle_limit,
-                    Some(i64::try_from(available_slots)?),
-                )
-                .await?;
-
-            assert!(missing_block_numbers_list.len() <= available_slots as usize);
-
-            available_slots = available_slots.saturating_sub(missing_block_numbers_list.len() as u64);
-            block_numbers_to_pocesss.extend(missing_block_numbers_list);
-        };
-
-        if available_slots == 0 {
-            // Create the jobs here directly and return!
-            tracing::info!(
-                "All available slots are now full, creating jobs for blocks {:?}",
-                &block_numbers_to_pocesss,
-            );
-            create_jobs_snos(config, block_numbers_to_pocesss).await?;
-            return Ok(());
-        }
-
-        // // // Part 4b: Calculating jobs withing second half // // //
-
-        // Case 1: middle_limit > upper_limit : Skip, do nothing
-        // Case 2: middle_limit = upper_limit : Skip, nothing to do
-        // Case 3: middle_limit < upper_limit : Check for candidate_blocks
-
-        if middle_limit < upper_limit {
-            // Get the candidate blocks list and consume available_slots many to create jobs for.
-            let candidate_blocks = db
-                .get_missing_block_numbers_by_type_and_caps(
-                    JobType::SnosRun,
-                    middle_limit,
-                    upper_limit,
-                    Some(i64::try_from(available_slots)?),
-                )
-                .await?;
-
-            assert!(candidate_blocks.len() <= available_slots as usize);
-
-            available_slots = available_slots.saturating_sub(candidate_blocks.len() as u64);
-            block_numbers_to_pocesss.extend(candidate_blocks);
-        };
-
-        // // // Part 5: Creating the jobs // // //
-
-        tracing::info!(
-            "Creating SNOS jobs for {:?} blocks, with {} left slots",
-            &block_numbers_to_pocesss,
-            available_slots
-        );
-        create_jobs_snos(config, block_numbers_to_pocesss).await?;
         Ok(())
+    }
+}
+
+impl SnosJobTrigger {
+    /// Calculates the processing boundaries based on sequencer state and completed jobs.
+    ///
+    /// This method determines the valid range of blocks that can be processed by analyzing:
+    /// - Latest block from the sequencer (upper bound)
+    /// - Configuration limits (min/max block constraints)
+    /// - Latest completed SNOS job (progress tracking)
+    /// - Latest completed state update job (dependency requirement)
+    ///
+    /// # Processing Logic
+    /// - `lower_limit`: Max of (latest state update block, configured minimum)
+    ///   - State updates must complete before SNOS processing
+    ///   - Respects configured minimum processing boundary
+    /// - `middle_limit`: Latest completed SNOS block (for gap filling)
+    /// - `upper_limit`: Min of (sequencer latest, configured maximum)
+    ///   - Cannot process blocks that don't exist yet
+    ///   - Respects configured maximum processing boundary
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database and client access
+    ///
+    /// # Returns
+    /// * `Result<ProcessingBounds>` - Calculated boundaries or error
+    async fn calculate_processing_bounds(&self, config: &Arc<Config>) -> Result<ProcessingBounds> {
+        let latest_sequencer_block = self.fetch_latest_sequencer_block(config).await?;
+        let service_config = config.service_config();
+
+        let latest_snos_completed = self.get_latest_completed_snos_block(config).await?;
+        let latest_su_completed = self.get_latest_completed_state_update_block(config).await?;
+
+        let lower_limit = latest_su_completed
+            .map(|block| max(block, service_config.min_block_to_process))
+            .unwrap_or(service_config.min_block_to_process);
+
+        let upper_limit = service_config
+            .max_block_to_process
+            .map(|bound| min(latest_sequencer_block, bound))
+            .unwrap_or(latest_sequencer_block);
+
+        Ok(ProcessingBounds { lower_limit, middle_limit: latest_snos_completed, upper_limit })
+    }
+
+    /// Initializes the job scheduling context with available concurrency slots.
+    ///
+    /// This method sets up the scheduling context by:
+    /// - Calculating available slots based on configuration and existing jobs
+    /// - Counting pending/created jobs that consume slots
+    /// - Preparing the context for job scheduling decisions
+    ///
+    /// # Slot Calculation
+    /// Available slots = Max concurrent jobs - (Pending jobs + Created jobs)
+    /// - Pending jobs: Jobs waiting to be processed or retried
+    /// - Created jobs: Jobs created but not yet started
+    /// - Uses saturating subtraction to prevent underflow
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration
+    /// * `bounds` - Previously calculated processing boundaries
+    ///
+    /// # Returns
+    /// * `Result<JobSchedulingContext>` - Initialized context or error
+    async fn initialize_scheduling_context(
+        &self,
+        config: &Arc<Config>,
+        bounds: ProcessingBounds,
+    ) -> Result<JobSchedulingContext> {
+        let service_config = config.service_config();
+
+        let max_slots = service_config.max_concurrent_created_snos_jobs;
+        let pending_jobs_count = self.count_pending_snos_jobs(config).await?;
+        let available_slots = max_slots.saturating_sub(pending_jobs_count);
+
+        Ok(JobSchedulingContext { bounds, available_slots, blocks_to_process: Vec::new() })
+    }
+
+    /// Schedules jobs for processing based on the current context and processing strategy.
+    ///
+    /// This method implements a two-phase scheduling strategy:
+    ///
+    /// # Phase 1: Initial Jobs (when middle_limit is None)
+    /// If no SNOS jobs have completed yet:
+    /// - Process all missing blocks in range [lower_limit, upper_limit]
+    /// - This handles the bootstrap case for new deployments
+    ///
+    /// # Phase 2: Gap Filling and Forward Progress
+    /// When SNOS jobs have completed previously:
+    /// - **First Half**: Fill gaps in [lower_limit, middle_limit]
+    ///   - Handles cases where previous jobs failed or were skipped
+    ///   - Ensures continuity in processed blocks
+    /// - **Second Half**: Process new blocks in [middle_limit, upper_limit]
+    ///   - Advances processing frontier forward
+    ///   - Handles newly available blocks from sequencer
+    ///
+    /// # Slot Management
+    /// - Respects available slot limits throughout scheduling
+    /// - Stops scheduling when slots are exhausted
+    /// - Prioritizes gap filling over forward progress
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration
+    /// * `context` - Mutable scheduling context (slots and blocks updated)
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or scheduling error
+    async fn schedule_jobs_for_processing(
+        &self,
+        config: &Arc<Config>,
+        context: &mut JobSchedulingContext,
+    ) -> Result<()> {
+        // Handle case where no SNOS jobs have completed yet
+        if context.bounds.middle_limit.is_none() {
+            return self.schedule_initial_jobs(config, context).await;
+        }
+
+        let middle_limit = context.bounds.middle_limit.unwrap();
+
+        // Schedule jobs for the first half (lower_limit to middle_limit)
+        self.schedule_jobs_for_range(config, context, context.bounds.lower_limit, middle_limit, "first half").await?;
+
+        if context.available_slots == 0 {
+            return Ok(());
+        }
+
+        // Schedule jobs for the second half (middle_limit to upper_limit)
+        self.schedule_jobs_for_range(config, context, middle_limit, context.bounds.upper_limit, "second half").await?;
+
+        Ok(())
+    }
+
+    /// Schedules initial jobs when no SNOS jobs have completed yet.
+    ///
+    /// This handles the bootstrap scenario where:
+    /// - No SNOS jobs have completed successfully (middle_limit is None)
+    /// - All blocks in the valid range need to be considered for processing
+    /// - Missing blocks are identified and scheduled within slot limits
+    ///
+    /// # Use Cases
+    /// - Fresh deployment with no processing history
+    /// - Recovery from complete job failure scenarios
+    /// - Initial processing of historical blocks
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration
+    /// * `context` - Mutable scheduling context to update with selected blocks
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error from block selection
+    async fn schedule_initial_jobs(&self, config: &Arc<Config>, context: &mut JobSchedulingContext) -> Result<()> {
+        let candidate_blocks = self
+            .get_missing_blocks_in_range(
+                config,
+                context.bounds.lower_limit,
+                context.bounds.upper_limit,
+                context.available_slots,
+            )
+            .await?;
+
+        context.blocks_to_process.extend(candidate_blocks);
+        Ok(())
+    }
+
+    /// Schedules jobs for a specific block range if processing conditions are met.
+    ///
+    /// This method handles range-specific job scheduling with several safety checks:
+    ///
+    /// # Range Validation Cases
+    /// - **Invalid Range** (start > end): Skip processing, log debug message
+    /// - **Empty Range** (start == end == 0): Skip processing (nothing to do)
+    /// - **Valid Range**: Proceed with job scheduling
+    ///
+    /// # Processing Logic
+    /// 1. Validate range boundaries and skip if invalid
+    /// 2. Query database for missing blocks in the range
+    /// 3. Respect slot limits when selecting blocks
+    /// 4. Update context with selected blocks and remaining slots
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration
+    /// * `context` - Mutable scheduling context (updated with blocks and slots)
+    /// * `start` - Starting block number (inclusive)
+    /// * `end` - Ending block number (inclusive)
+    /// * `range_name` - Human-readable name for logging ("first half", "second half")
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error from block selection
+    async fn schedule_jobs_for_range(
+        &self,
+        config: &Arc<Config>,
+        context: &mut JobSchedulingContext,
+        start: u64,
+        end: u64,
+        range_name: &str,
+    ) -> Result<()> {
+        // Skip if range is invalid or empty
+        if start > end || (start == end && end == 0) {
+            tracing::debug!("Skipping {} range: start={}, end={}", range_name, start, end);
+            return Ok(());
+        }
+
+        let missing_blocks = self.get_missing_blocks_in_range(config, start, end, context.available_slots).await?;
+
+        context.available_slots = context.available_slots.saturating_sub(missing_blocks.len() as u64);
+        context.blocks_to_process.extend(missing_blocks);
+
+        Ok(())
+    }
+
+    /// Creates the scheduled SNOS jobs in the database.
+    ///
+    /// This method finalizes the job creation process by:
+    /// - Validating that blocks were selected for processing
+    /// - Logging job creation details for observability
+    /// - Delegating to the job creation implementation
+    ///
+    /// # Behavior
+    /// - Returns early if no blocks are selected (avoids unnecessary database calls)
+    /// - Logs the number and list of blocks being processed
+    /// - Calls the external `create_jobs_snos` function to perform actual creation
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration (passed to job creation function)
+    /// * `blocks` - Vector of block numbers to create jobs for
+    ///
+    /// # Returns
+    /// * `Result<()>` - Success or error from job creation process
+    async fn create_scheduled_jobs(&self, config: &Arc<Config>, blocks: Vec<u64>) -> Result<()> {
+        if blocks.is_empty() {
+            tracing::info!("No blocks to process, skipping job creation");
+            return Ok(());
+        }
+
+        tracing::info!("Creating SNOS jobs for {} blocks: {:?}", blocks.len(), blocks);
+        create_jobs_snos(config.clone(), blocks).await
+    }
+
+    // Helper methods for fetching data
+
+    /// Fetches the latest block number from the sequencer.
+    ///
+    /// This method queries the Madara client to get the most recent block number
+    /// that has been created by the sequencer. This represents the upper bound
+    /// of blocks that could potentially be processed.
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing the Madara client
+    ///
+    /// # Returns
+    /// * `Result<u64>` - Latest block number or network/client error
+    ///
+    /// # Errors
+    /// - Network connectivity issues with the sequencer
+    /// - Client configuration problems
+    /// - Sequencer unavailability
+    async fn fetch_latest_sequencer_block(&self, config: &Arc<Config>) -> Result<u64> {
+        let provider = config.madara_client();
+        provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")
+    }
+
+    /// Retrieves the latest block number that has completed SNOS processing.
+    ///
+    /// This method queries the database for the most recent successfully completed
+    /// SNOS job to determine processing progress. The result is used as the
+    /// `middle_limit` for gap detection and scheduling decisions.
+    ///
+    /// # Return Cases
+    /// - `None`: No SNOS jobs have completed successfully yet
+    /// - `Some(block_number)`: The highest block number with completed SNOS processing
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database access
+    ///
+    /// # Returns
+    /// * `Result<Option<u64>>` - Latest completed block number or database error
+    ///
+    /// # Panics
+    /// - If database returns SNOS job with non-SNOS metadata (data integrity issue)
+    async fn get_latest_completed_snos_block(&self, config: &Arc<Config>) -> Result<Option<u64>> {
+        let db = config.database();
+        match db.get_latest_job_by_type_and_status(JobType::SnosRun, JobStatus::Completed).await? {
+            None => Ok(None),
+            Some(job_item) => match job_item.metadata.specific {
+                JobSpecificMetadata::Snos(metadata) => Ok(Some(metadata.block_number)),
+                _ => panic!("Unexpected metadata type for SNOS job"),
+            },
+        }
+    }
+
+    /// Retrieves the latest block number from completed state update jobs.
+    ///
+    /// State update jobs must complete before SNOS processing can begin for those blocks.
+    /// This method finds the highest block number that has completed state updates,
+    /// which determines the minimum processing boundary for SNOS jobs.
+    ///
+    /// # Processing Logic
+    /// - Queries for the latest completed StateTransition job
+    /// - Extracts the maximum block number from `blocks_to_settle`
+    /// - State updates can process multiple blocks in a single job
+    ///
+    /// # Return Cases
+    /// - `None`: No state update jobs have completed yet
+    /// - `Some(block_number)`: Highest block number with completed state updates
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database access
+    ///
+    /// # Returns
+    /// * `Result<Option<u64>>` - Latest state update block or database error
+    ///
+    /// # Panics
+    /// - If database returns StateTransition job with non-StateUpdate metadata
+    async fn get_latest_completed_state_update_block(&self, config: &Arc<Config>) -> Result<Option<u64>> {
+        let db = config.database();
+        match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
+            None => Ok(None),
+            Some(job_item) => match job_item.metadata.specific {
+                JobSpecificMetadata::StateUpdate(metadata) => Ok(metadata.blocks_to_settle.iter().max().copied()),
+                _ => panic!("Unexpected metadata type for StateUpdate job"),
+            },
+        }
+    }
+
+    /// Counts the number of pending SNOS jobs that consume concurrency slots.
+    ///
+    /// This method counts jobs in states that occupy concurrency slots:
+    /// - **PendingRetry**: Jobs that failed and are waiting to be retried
+    /// - **Created**: Jobs that have been created but not yet started processing
+    ///
+    /// These jobs reduce the available slots for new job creation since they
+    /// will eventually consume processing resources.
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database access
+    ///
+    /// # Returns
+    /// * `Result<u64>` - Count of pending jobs or database error
+    async fn count_pending_snos_jobs(&self, config: &Arc<Config>) -> Result<u64> {
+        let db = config.database();
+        let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
+
+        let pending_jobs = db
+            .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], pending_statuses, None)
+            .await
+            .wrap_err("Failed to fetch pending SNOS jobs")?;
+
+        Ok(pending_jobs.len() as u64)
+    }
+
+    /// Retrieves missing block numbers within a specified range, respecting slot limits.
+    ///
+    /// This method queries the database to find blocks that need SNOS processing
+    /// within the given range. It respects the slot limit to prevent over-scheduling.
+    ///
+    /// # Processing Logic
+    /// - Queries database for blocks without SNOS jobs in the range
+    /// - Limits results to available slot count
+    /// - Returns blocks in database-determined order (typically ascending)
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database access
+    /// * `start` - Starting block number (inclusive)
+    /// * `end` - Ending block number (inclusive)
+    /// * `limit` - Maximum number of blocks to return (respects available slots)
+    ///
+    /// # Returns
+    /// * `Result<Vec<u64>>` - List of missing block numbers or database error
+    ///
+    /// # Guarantees
+    /// - Result length ≤ limit
+    /// - All returned blocks are in range [start, end]
+    /// - Blocks have no existing SNOS jobs in any state
+    async fn get_missing_blocks_in_range(
+        &self,
+        config: &Arc<Config>,
+        start: u64,
+        end: u64,
+        limit: u64,
+    ) -> Result<Vec<u64>> {
+        let db = config.database();
+        let blocks = db
+            .get_missing_block_numbers_by_type_and_caps(JobType::SnosRun, start, end, Some(i64::try_from(limit)?))
+            .await?;
+
+        Ok(blocks)
     }
 }
 
