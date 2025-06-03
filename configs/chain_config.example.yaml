@@ -13,13 +13,6 @@ native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201
 # For starknet, this is the ETH ERC-20 contract on starknet.
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
 
-# Paths to JSON files containing blockifier's constants for different versions
-versioned_constants_path:
-  "0.13.0": "crates/primitives/chain_config/resources/versioned_constants_13_0.json"
-  "0.13.1": "crates/primitives/chain_config/resources/versioned_constants_13_1.json"
-  "0.13.1.1": "crates/primitives/chain_config/resources/versioned_constants_13_1_1.json"
-  "0.13.2": "crates/primitives/chain_config/resources/versioned_constants_13_2.json"
-
 # The Starknet core contract address for the L1 watcher.
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
 
@@ -53,7 +46,7 @@ bouncer_config:
     # Maximum size of state differences per block
     state_diff_size: 131072
     # Maximum L1 gas
-    l1_gas: 5000000
+    l1_gas: 18446744073709551615
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).

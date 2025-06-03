@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "node",
   "crates/client/db",
   "crates/client/exec",
   "crates/client/sync",
@@ -191,6 +192,7 @@ futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
 
 # Serialization
+derive_more = "2.0.1"
 serde = { version = "1.0", default-features = false, features = ["std"] }
 serde_with = { version = "3.11", default-features = false, features = [
   "alloc",
