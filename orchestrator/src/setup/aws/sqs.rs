@@ -56,8 +56,8 @@ impl Resource for SQS {
             attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
             if let Some(dlq_config) = &queue.dlq_config {
-                let dql_queue_name = queue_fn(&dlq_config.dlq_name);
-                let dlq_url = self.get_queue_url_from_client(&dql_queue_name).await?;
+                let dlq_queue_name = queue_fn(&dlq_config.dlq_name);
+                let dlq_url = self.get_queue_url_from_client(&dlq_queue_name).await?;
                 let dlq_arn = self.get_queue_arn(&dlq_url).await?;
                 let policy = format!(
                     r#"{{"deadLetterTargetArn":"{}","maxReceiveCount":"{}"}}"#,
