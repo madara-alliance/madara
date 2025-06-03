@@ -641,7 +641,7 @@ impl DatabaseClient for MongoDbClient {
             tracing::error!(error = %e, category = "db_call", "Deserialization error");
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
-        let upper_limit = u32::try_from(upper_cap).map_err(|e| {
+        let upper_limit = u32::try_from(upper_cap.saturating_add(1)).map_err(|e| {
             tracing::error!(error = %e, category = "db_call", "Deserialization error");
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
@@ -656,7 +656,7 @@ impl DatabaseClient for MongoDbClient {
                                 "job_type": job_type_bson,
                                 "metadata.specific.block_number": {
                                     "$gte": lower_limit,
-                                    "$lte": upper_limit
+                                    "$lt": upper_limit
                                 }
                             }
                         },

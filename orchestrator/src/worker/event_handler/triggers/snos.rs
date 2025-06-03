@@ -62,13 +62,15 @@ impl JobTrigger for SnosJobTrigger {
             Some(value) => max(value, min_block_to_process_bound),
         };
 
-        let middle_limit_optn = latest_snos_completed_block_number;
+        let middle_limit = latest_snos_completed_block_number;
 
         let upper_limit = match max_block_to_process_bound {
             Some(bound) => min(latest_created_block_from_sequencer, bound),
             // No limit, use sequencer value
             None => latest_created_block_from_sequencer,
         };
+
+        let mut block_numbers_to_pocesss: Vec<u64> = Vec::new();
 
         // // // Part 2: Calculating Available Slots // // //
 
@@ -95,11 +97,11 @@ impl JobTrigger for SnosJobTrigger {
 
         // NOTE:
         // The only variables we are to be concerned with from now are
-        // lower_limit, middle_limit_optn, upper_limit and available_slots
+        // lower_limit, middle_limit, upper_limit and available_slots
 
-        // Case: middle_limit_optn is NONE, i.e no snos job has completed till now.
+        // Case: middle_limit is NONE, i.e no snos job has completed till now.
         // lower limit can be [0...u64::MAX]
-        if middle_limit_optn.is_none() {
+        if middle_limit.is_none() {
             // create jobs for all blocks in range [lower_limit, upper_limit] - blocks already having a Snos Job
             let candidate_blocks = db
                 .get_missing_block_numbers_by_type_and_caps(
@@ -122,23 +124,21 @@ impl JobTrigger for SnosJobTrigger {
             return Ok(());
         }
 
-        let last_completed_snos_block_no =
-            middle_limit_optn.expect("middle_limit_optn should not be None at this point");
-        let mut block_numbers_to_pocesss: Vec<u64> = Vec::new();
+        let middle_limit = middle_limit.expect("middle_limit should not be None at this point");
 
         // // // Part 4a: Calculating jobs withing first half // // //
 
-        // Case 1: lower_limit > last_completed_snos_block_no : Skip, do nothing
-        // Case 2: lower_limit == last_completed_snos_block_no == 0 : Skip, already processed
-        // Case 3: lower_limit <= last_completed_snos_block_no && (last_completed_snos_block_no != 0) : Check missing_blocks
+        // Case 1: lower_limit > middle_limit : Skip, do nothing
+        // Case 2: lower_limit == middle_limit == 0 : Skip, already processed
+        // Case 3: lower_limit <= middle_limit && (middle_limit != 0) : Check missing_blocks
 
-        if lower_limit <= last_completed_snos_block_no && (last_completed_snos_block_no != 0) {
+        if lower_limit <= middle_limit && (middle_limit != 0) {
             // Get the missing blocks list and consume available_slots many to create jobs for.
             let missing_block_numbers_list = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
                     lower_limit,
-                    last_completed_snos_block_no,
+                    middle_limit,
                     Some(i64::try_from(available_slots)?),
                 )
                 .await?;
@@ -161,16 +161,16 @@ impl JobTrigger for SnosJobTrigger {
 
         // // // Part 4b: Calculating jobs withing second half // // //
 
-        // Case 1: last_completed_snos_block_no > upper_limit : Skip, do nothing
-        // Case 2: last_completed_snos_block_no = upper_limit : Skip, nothing to do
-        // Case 3: last_completed_snos_block_no < upper_limit : Check for candidate_blocks
+        // Case 1: middle_limit > upper_limit : Skip, do nothing
+        // Case 2: middle_limit = upper_limit : Skip, nothing to do
+        // Case 3: middle_limit < upper_limit : Check for candidate_blocks
 
-        if last_completed_snos_block_no < upper_limit {
+        if middle_limit < upper_limit {
             // Get the candidate blocks list and consume available_slots many to create jobs for.
             let candidate_blocks = db
                 .get_missing_block_numbers_by_type_and_caps(
                     JobType::SnosRun,
-                    last_completed_snos_block_no,
+                    middle_limit,
                     upper_limit,
                     Some(i64::try_from(available_slots)?),
                 )
