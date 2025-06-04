@@ -196,7 +196,6 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        todo!()
-        // config.processing_locks().snos_job_processing_lock.clone()
+        None
     }
 }
