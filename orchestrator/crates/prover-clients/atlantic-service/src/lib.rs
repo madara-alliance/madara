@@ -8,11 +8,12 @@ use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus};
 use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
+use crate::types::AtlanticBucketStatus;
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -80,60 +81,88 @@ impl ProverClient for AtlanticProverService {
                 // The temporary file will be automatically deleted when `temp_file` goes out of scope
                 Ok(atlantic_job_response.atlantic_query_id)
             }
+            Task::CreateBucket => {
+                let response = self.atlantic_client.create_bucket().await?;
+                // sleep for 10 seconds to make sure the bucket is created
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
+                Ok(response.atlantic_bucket.id)
+            }
+            Task::CloseBucket(bucket_id) => {
+                let response = self.atlantic_client.close_bucket(&bucket_id).await?;
+                // sleep for 10 seconds to make sure that the bucket is closed
+                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                tracing::debug!(bucker_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
+                Ok(response.atlantic_bucket.id)
+            }
         }
     }
 
     #[tracing::instrument(skip(self))]
     async fn get_task_status(
         &self,
+        task: AtlanticStatusType,
         job_key: &str,
         fact: Option<String>,
         cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
-        let res = self.atlantic_client.get_job_status(job_key).await?;
-
-        match res.atlantic_query.status {
-            AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
-            AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
-
-            AtlanticQueryStatus::Done => {
-                if !cross_verify {
-                    tracing::debug!("Skipping cross-verification as it's disabled");
-                    return Ok(TaskStatus::Succeeded);
-                }
-                match &self.fact_checker {
-                    None => {
-                        tracing::debug!("There is no Fact check registered");
-                        Ok(TaskStatus::Succeeded)
-                    }
-                    Some(fact_checker) => {
-                        tracing::debug!("Fact check registered");
-                        // Cross-verification is enabled
-                        let fact_str = match fact {
-                            Some(f) => f,
-                            None => {
-                                return Ok(TaskStatus::Failed(
-                                    "Cross verification enabled but no fact provided".to_string(),
-                                ));
-                            }
-                        };
-
-                        let fact = B256::from_str(&fact_str)
-                            .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-
-                        tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
-
-                        if fact_checker.is_valid(&fact).await? {
-                            Ok(TaskStatus::Succeeded)
-                        } else {
-                            Ok(TaskStatus::Failed(format!("Fact {} is not valid or not registered", hex::encode(fact))))
-                        }
+        match task {
+            AtlanticStatusType::Job => {
+                match self.atlantic_client.get_job_status(job_key).await?.atlantic_query.status {
+                    AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
+                    AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
+                    AtlanticQueryStatus::Done => Ok(TaskStatus::Succeeded),
+                    AtlanticQueryStatus::Failed => {
+                        Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
                     }
                 }
             }
+            AtlanticStatusType::Bucket => {
+                match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
+                    AtlanticBucketStatus::Open => Ok(TaskStatus::Processing),
+                    AtlanticBucketStatus::InProgress => Ok(TaskStatus::Processing),
+                    AtlanticBucketStatus::Done => {
+                        if !cross_verify {
+                            tracing::debug!("Skipping cross-verification as it's disabled");
+                            return Ok(TaskStatus::Succeeded);
+                        }
+                        match &self.fact_checker {
+                            None => {
+                                tracing::debug!("There is no Fact check registered");
+                                Ok(TaskStatus::Succeeded)
+                            }
+                            Some(fact_checker) => {
+                                tracing::debug!("Fact check registered");
+                                // Cross-verification is enabled
+                                let fact_str = match fact {
+                                    Some(f) => f,
+                                    None => {
+                                        return Ok(TaskStatus::Failed(
+                                            "Cross verification enabled but no fact provided".to_string(),
+                                        ));
+                                    }
+                                };
 
-            AtlanticQueryStatus::Failed => {
-                Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
+                                let fact = B256::from_str(&fact_str)
+                                    .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+
+                                tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
+
+                                if fact_checker.is_valid(&fact).await? {
+                                    Ok(TaskStatus::Succeeded)
+                                } else {
+                                    Ok(TaskStatus::Failed(format!(
+                                        "Fact {} is not valid or not registered",
+                                        hex::encode(fact)
+                                    )))
+                                }
+                            }
+                        }
+                    }
+                    AtlanticBucketStatus::Failed => {
+                        Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
+                    }
+                }
             }
         }
     }

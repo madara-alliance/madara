@@ -42,6 +42,15 @@ pub enum AtlanticError {
 
     #[error("Other error: {0}")]
     Other(#[from] color_eyre::eyre::Error),
+
+    #[error("Failed to get status of an Atlantic bucket: {0}")]
+    GetBucketStatusFailure(#[source] reqwest::Error),
+
+    #[error("Failed to create a new Atlantic bucket: {0}")]
+    CreateBucketFailure(#[source] reqwest::Error),
+
+    #[error("Failed to close Atlantic bucket: {0}")]
+    CloseBucketFailure(#[source] reqwest::Error),
 }
 
 impl From<AtlanticError> for ProverClientError {

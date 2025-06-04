@@ -23,6 +23,7 @@ pub trait ProverClient: Send + Sync {
     ) -> Result<String, ProverClientError>;
     async fn get_task_status(
         &self,
+        task: AtlanticStatusType,
         task_id: &str,
         fact: Option<String>,
         cross_verify: bool,
@@ -30,7 +31,9 @@ pub trait ProverClient: Send + Sync {
 }
 
 pub enum Task {
-    CairoPie(Box<CairoPie>),
+    CairoPie(Box<CairoPie>), // TODO: Check if we can add bucket_id, bucket_job_index and other things needed for proving job task in CairoPie
+    CreateBucket,
+    CloseBucket(String),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -38,6 +41,13 @@ pub enum TaskStatus {
     Processing,
     Succeeded,
     Failed(String),
+}
+
+// TODO: give this a better name
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AtlanticStatusType {
+    Job,
+    Bucket,
 }
 
 #[derive(Debug, thiserror::Error)]
