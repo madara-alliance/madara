@@ -21,7 +21,7 @@ impl JobTrigger for AggregatorJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::info!(log_type = "starting", category = "AggregatorWorker", "AggregatorWorker started.");
 
-        let closed_batches = config.database().get_all_batches_by_status(BatchStatus::Closed).await?;
+        let closed_batches = config.database().get_batches_by_status(BatchStatus::Closed, Some(10)).await?;
 
         tracing::debug!("Found {} closed batches", closed_batches.len());
 

@@ -68,6 +68,7 @@ pub trait DatabaseClient: Send + Sync {
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
     /// get_batch_for_block - Returns the batch for a given block
     async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError>;
-    /// get_all_batches_by_status - Get all the batches by that matches the given status
-    async fn get_all_batches_by_status(&self, status: BatchStatus) -> Result<Vec<Batch>, DatabaseError>;
+    /// get_batches_by_status - Get all the batches by that matches the given status
+    async fn get_batches_by_status(&self, status: BatchStatus, limit: Option<i64>)
+        -> Result<Vec<Batch>, DatabaseError>;
 }
