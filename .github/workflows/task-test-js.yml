@@ -1,3 +1,5 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Test JavaScript
 
 # This workflow runs JavaScript compatibility tests for Starknet.js
@@ -7,7 +9,7 @@ on:
   workflow_call:
     inputs:
       madara-binary-hash:
-        description: "Hash used to retrieve the madara binary artifact"
+        description: "Hash used to retrieve the madara binary"
         required: true
         type: string
       cairo-artifacts-hash:
@@ -19,10 +21,8 @@ jobs:
   test-js:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      # Setup the environment with all necessary dependencies
-      - uses: ./.github/actions/load-env
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
@@ -30,14 +30,14 @@ jobs:
           name: madara-binary-${{ inputs.madara-binary-hash }}
           path: target/release/
 
-      - name: Download Cairo artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: cairo-artifacts-${{ inputs.cairo-artifacts-hash }}
-          path: cairo/target/
-
       - name: Make Madara binary executable
         run: chmod +x target/release/madara
+
+      - name: Download Cairo artiracts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
+          path: build-artifacts/
 
       - name: Install dependencies
         run: |
@@ -50,9 +50,24 @@ jobs:
 
       - name: Setup dev chain and run tests
         run: |
-          ./target/release/madara --name madara --base-path ../madara_db --rpc-port 9944 --rpc-cors "*" --rpc-external --devnet --preset devnet --gas-price 0 --blob-gas-price 0 --strk-gas-price 0 --strk-blob-gas-price 0 --no-l1-sync &
+          ./target/release/madara \
+            --name madara \
+            --base-path ../madara_db \
+            --rpc-port 9944 \
+            --rpc-cors "*" \
+            --rpc-external \
+            --devnet \
+            --preset devnet \
+            --gas-price 0 \
+            --blob-gas-price 0 \
+            --strk-gas-price 0 \
+            --strk-blob-gas-price 0 \
+            --no-l1-sync &
+
           MADARA_PID=$!
+
           while ! echo exit | nc localhost 9944; do sleep 1; done
           cd tests/js_tests
           npm test
+
           kill $MADARA_PID
