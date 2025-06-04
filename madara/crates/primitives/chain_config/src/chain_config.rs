@@ -98,6 +98,9 @@ fn default_pending_block_update_time() -> Option<Duration> {
 fn default_block_time() -> Duration {
     Duration::from_secs(30)
 }
+fn default_l1_messages_replay_max_duration() -> Duration {
+    Duration::from_secs(3 * 24 * 60 * 60)
+}
 
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
@@ -182,6 +185,10 @@ pub struct ChainConfig {
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
     pub block_production_concurrency: BlockProductionConfig,
+
+    /// Configuration for l1 messages max replay duration.
+    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    pub l1_messages_replay_max_duration: Duration,
 }
 
 impl ChainConfig {
@@ -295,6 +302,8 @@ impl ChainConfig {
             mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
 
             block_production_concurrency: BlockProductionConfig::default(),
+
+            l1_messages_replay_max_duration: default_l1_messages_replay_max_duration(),
         }
     }
 

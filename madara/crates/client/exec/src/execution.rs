@@ -115,13 +115,14 @@ pub trait TxInfo {
     fn contract_address(&self) -> ContractAddress;
     fn clone_blockifier_transaction(&self) -> Self;
     fn tx_hash(&self) -> TransactionHash;
-    fn nonce(&self) -> Nonce;
+    fn nonce(&self) -> Option<Nonce>;
     fn tx_type(&self) -> TransactionType;
     fn fee_type(&self) -> FeeType;
     fn is_only_query(&self) -> bool;
     fn deployed_contract_address(&self) -> Option<ContractAddress>;
     fn declared_class_hash(&self) -> Option<ClassHash>;
     fn declared_contract_class(&self) -> Option<(ClassHash, ContractClass)>;
+    fn l1_handler_tx_nonce(&self) -> Option<Nonce>;
 }
 
 impl TxInfo for Transaction {
@@ -136,15 +137,14 @@ impl TxInfo for Transaction {
         }
     }
 
-    // FIXME: fix this, this is wrong for L1HandlerTxs.
-    fn nonce(&self) -> Nonce {
+    fn nonce(&self) -> Option<Nonce> {
         match self {
             Transaction::AccountTransaction(tx) => match tx {
-                AccountTransaction::Declare(tx) => tx.tx.nonce(),
-                AccountTransaction::DeployAccount(tx) => tx.tx.nonce(),
-                AccountTransaction::Invoke(tx) => tx.tx.nonce(),
+                AccountTransaction::Declare(tx) => Some(tx.tx.nonce()),
+                AccountTransaction::DeployAccount(tx) => Some(tx.tx.nonce()),
+                AccountTransaction::Invoke(tx) => Some(tx.tx.nonce()),
             },
-            Transaction::L1HandlerTransaction(tx) => tx.tx.nonce,
+            Transaction::L1HandlerTransaction(_) => None,
         }
     }
 
@@ -231,6 +231,13 @@ impl TxInfo for Transaction {
                 tx_hash: tx.tx_hash,
                 paid_fee_on_l1: tx.paid_fee_on_l1,
             }),
+        }
+    }
+
+    fn l1_handler_tx_nonce(&self) -> Option<Nonce> {
+        match self {
+            Transaction::L1HandlerTransaction(tx) => Some(tx.tx.nonce),
+            _ => None,
         }
     }
 }

@@ -27,6 +27,7 @@ use std::time::Instant;
 use tokio::sync::{mpsc, oneshot};
 use util::{state_map_to_state_diff, AdditionalTxInfo, BatchToExecute, BlockExecutionContext, ExecutionStats};
 
+mod batcher;
 mod executor;
 pub mod metrics;
 mod util;
@@ -538,7 +539,7 @@ pub(crate) mod tests {
         ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
         StorageEntry,
     };
-    use mp_transactions::{BroadcastedTransactionExt, Transaction};
+    use mp_transactions::{IntoBlockifierExt, Transaction};
     use mp_utils::service::ServiceContext;
     use mp_utils::AbortOnDrop;
     use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
@@ -727,12 +728,11 @@ pub(crate) mod tests {
         })
     }
 
-    pub(crate) async fn sign_and_add_declare_tx(
+    pub(crate) fn make_declare_tx(
         contract: &DevnetPredeployedContract,
         backend: &Arc<MadaraBackend>,
-        validator: &Arc<TransactionValidator>,
         nonce: Felt,
-    ) {
+    ) -> BroadcastedDeclareTxn {
         let sierra_class: starknet_core::types::contract::SierraClass =
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
@@ -771,34 +771,30 @@ pub(crate) mod tests {
             _ => unreachable!("the declare tx is not query only"),
         };
         *tx_signature = vec![signature.r, signature.s];
-
-        validator.submit_declare_transaction(declare_txn).await.expect("Should accept the transaction");
+        declare_txn
     }
 
-    pub(crate) async fn sign_and_add_invoke_tx(
-        contract_sender: &DevnetPredeployedContract,
-        contract_receiver: &DevnetPredeployedContract,
+    pub(crate) async fn sign_and_add_declare_tx(
+        contract: &DevnetPredeployedContract,
         backend: &Arc<MadaraBackend>,
         validator: &Arc<TransactionValidator>,
         nonce: Felt,
     ) {
-        let erc20_contract_address =
-            Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+        validator
+            .submit_declare_transaction(make_declare_tx(contract, backend, nonce))
+            .await
+            .expect("Should accept the transaction");
+    }
 
+    pub(crate) fn make_invoke_tx(
+        contract_sender: &DevnetPredeployedContract,
+        multicall: Multicall,
+        backend: &Arc<MadaraBackend>,
+        nonce: Felt,
+    ) -> BroadcastedInvokeTxn {
         let mut invoke_txn: BroadcastedInvokeTxn = BroadcastedInvokeTxn::V3(InvokeTxnV3 {
             sender_address: contract_sender.address,
-            calldata: Multicall::default()
-                .with(Call {
-                    to: erc20_contract_address,
-                    selector: Selector::from("transfer"),
-                    calldata: vec![
-                        contract_receiver.address,
-                        (9_999u128 * 1_000_000_000_000_000_000).into(),
-                        Felt::ZERO,
-                    ],
-                })
-                .flatten()
-                .collect(),
+            calldata: multicall.flatten().collect(),
             // this field will be filled below
             signature: vec![],
             nonce,
@@ -826,7 +822,31 @@ pub(crate) mod tests {
         };
         *tx_signature = vec![signature.r, signature.s];
 
-        validator.submit_invoke_transaction(invoke_txn).await.expect("Should accept the transaction");
+        invoke_txn
+    }
+
+    pub(crate) async fn sign_and_add_invoke_tx(
+        contract_sender: &DevnetPredeployedContract,
+        contract_receiver: &DevnetPredeployedContract,
+        backend: &Arc<MadaraBackend>,
+        validator: &Arc<TransactionValidator>,
+        nonce: Felt,
+    ) {
+        let erc20_contract_address =
+            Felt::from_hex_unchecked("0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d");
+
+        let tx = make_invoke_tx(
+            contract_sender,
+            Multicall::default().with(Call {
+                to: erc20_contract_address,
+                selector: Selector::from("transfer"),
+                calldata: vec![contract_receiver.address, (9_999u128 * 1_000_000_000_000_000_000).into(), Felt::ZERO],
+            }),
+            backend,
+            nonce,
+        );
+
+        validator.submit_invoke_transaction(tx).await.expect("Should accept the transaction");
     }
 
     #[rstest::rstest]

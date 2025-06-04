@@ -7,3 +7,4 @@ pub mod starknet;
 pub mod state_update;
 pub mod sync;
 pub mod utils;
+pub mod messages_to_l2_consumer;

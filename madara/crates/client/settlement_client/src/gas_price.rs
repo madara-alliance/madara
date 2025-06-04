@@ -1,18 +1,15 @@
 use crate::client::SettlementClientTrait;
-use bigdecimal::BigDecimal;
-use mc_mempool::{GasPriceProvider, L1DataProvider};
-use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
-
 use crate::error::SettlementClientError;
-use crate::messaging::L1toL2MessagingEventData;
-use futures::Stream;
+use bigdecimal::BigDecimal;
 use mc_analytics::register_gauge_metric_instrument;
+use mc_mempool::{GasPriceProvider, L1DataProvider};
 use mp_utils::service::ServiceContext;
 use opentelemetry::global::Error as OtelError;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
+use std::sync::Arc;
 use std::time::SystemTime;
+use std::time::{Duration, UNIX_EPOCH};
 
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
@@ -58,16 +55,13 @@ impl L1BlockMetrics {
     }
 }
 
-pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
+pub async fn gas_price_worker(
+    settlement_client: Arc<dyn SettlementClientTrait>,
     l1_gas_provider: GasPriceProvider,
     gas_price_poll_ms: Duration,
     mut ctx: ServiceContext,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
+) -> Result<(), SettlementClientError> {
     l1_gas_provider.update_last_update_timestamp();
     let mut interval = tokio::time::interval(gas_price_poll_ms);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
@@ -89,15 +83,12 @@ where
     Ok(())
 }
 
-pub async fn gas_price_worker_once<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
+pub async fn gas_price_worker_once(
+    settlement_client: Arc<dyn SettlementClientTrait>,
     l1_gas_provider: &GasPriceProvider,
     gas_price_poll_ms: Duration,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
+) -> Result<(), SettlementClientError> {
     match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
         Ok(_) => tracing::trace!("Updated gas prices"),
         Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
@@ -126,14 +117,11 @@ where
     Ok(())
 }
 
-pub async fn update_gas_price<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
+pub async fn update_gas_price(
+    settlement_client: Arc<dyn SettlementClientTrait>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
+) -> Result<(), SettlementClientError> {
     let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await.map_err(|e| {
         SettlementClientError::GasPrice(format!("Failed to get gas prices from settlement client: {}", e))
     })?;
@@ -205,8 +193,6 @@ async fn update_l1_block_metrics(
 mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::eth::eth_client_getter_test::{create_ethereum_client, get_anvil_url};
-    use crate::eth::event::EthereumEventStream;
-    use crate::eth::EthereumClientConfig;
     use httpmock::{MockServer, Regex};
     use mc_mempool::GasPriceProvider;
     use std::time::SystemTime;
@@ -225,7 +211,7 @@ mod eth_client_gas_price_worker_test {
             let eth_client = eth_client.clone();
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
-                gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
+                gas_price_worker(
                     Arc::new(eth_client),
                     l1_gas_provider,
                     Duration::from_millis(200),
@@ -266,7 +252,7 @@ mod eth_client_gas_price_worker_test {
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
+        let worker_handle = gas_price_worker_once(
             Arc::new(eth_client),
             &l1_gas_provider,
             Duration::from_millis(200),
@@ -292,7 +278,7 @@ mod eth_client_gas_price_worker_test {
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
+        let worker_handle = gas_price_worker_once(
             Arc::new(eth_client),
             &l1_gas_provider,
             Duration::from_millis(200),
@@ -318,7 +304,7 @@ mod eth_client_gas_price_worker_test {
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
+        let worker_handle = gas_price_worker_once(
             Arc::new(eth_client),
             &l1_gas_provider,
             Duration::from_millis(200),
@@ -373,7 +359,7 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
+            gas_price_worker(
                 Arc::new(eth_client),
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
@@ -410,13 +396,9 @@ mod eth_client_gas_price_worker_test {
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
 
         // Update gas prices
-        update_gas_price::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Arc::new(l1_block_metrics),
-        )
-        .await
-        .expect("Failed to update gas prices");
+        update_gas_price(Arc::new(eth_client), &l1_gas_provider, Arc::new(l1_block_metrics))
+            .await
+            .expect("Failed to update gas prices");
 
         // Access the updated gas prices
         let updated_prices = l1_gas_provider.get_gas_prices();
