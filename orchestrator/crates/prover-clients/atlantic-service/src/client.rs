@@ -6,9 +6,7 @@ use reqwest::Method;
 use url::Url;
 
 use crate::error::AtlanticError;
-use crate::types::{
-    AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStep,
-};
+use crate::types::{AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticBucketType, AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse, AtlanticGetStatusResponse, AtlanticQueryStep};
 use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
@@ -62,8 +60,65 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
+    pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::GET)
+            .path("buckets")
+            .path(bucket_id)
+            .send()
+            .await
+            .map_err(AtlanticError::GetBucketStatusFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(AtlanticError::GetJobStatusFailure),
+            false => Err(AtlanticError::SharpService(response.status())),
+        }
+    }
+
+    pub async fn create_bucket(&self) -> Result<AtlanticBucketResponse, AtlanticError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::POST)
+            .path("buckets")
+            .body(AtlanticCreateBucketRequest {
+                external_id: None,
+                node_width: None,
+                bucket_type: AtlanticBucketType::Snos,
+            })
+            .map_err(AtlanticError::CreateBucketFailure)?
+            .send()
+            .await
+            .map_err(AtlanticError::AddJobFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            false => Err(AtlanticError::SharpService(response.status())),
+        }
+    }
+
+    pub async fn close_bucket(&self, bucket_id: &str) -> Result<AtlanticBucketResponse, AtlanticError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::POST)
+            .path("buckets")
+            .path("close")
+            .query_param("bucketId", bucket_id)
+            .send()
+            .await
+            .map_err(AtlanticError::AddJobFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            false => Err(AtlanticError::SharpService(response.status())),
+        }
+    }
+
     /// Submits request to the prover client
-    /// bucket_id and bucket_job_id are None for L3
+    /// `bucket_id` and `bucket_job_id` are `None` for L3 (or L2 when AR is not needed)
     pub async fn add_job(
         &self,
         pie_file: &Path,
