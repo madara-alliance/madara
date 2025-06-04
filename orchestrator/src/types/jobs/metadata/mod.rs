@@ -63,15 +63,23 @@ pub enum ProvingInputType {
     CairoPie(String),
 }
 
-
 /// Metadata specific to aggregator job
 ///
 /// # Field Management
 /// TODO: update this
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorMetadata {
+    /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
+    /// Bucker ID received from the prover client
     pub bucket_id: String,
+    /// SNOS fact to check for on-chain registration. If `None`, no on-chain check is performed. If
+    /// `Some(value)`, it checks for `value` on the chain.
+    pub ensure_on_chain_registration: Option<String>,
+    /// Path where the generated proof should be downloaded. If `None`, the proof will not be
+    /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
+    /// in the provided storage.
+    pub download_proof: Option<String>,
 }
 
 /// Metadata specific to proving jobs.
@@ -193,6 +201,7 @@ impl_try_into_metadata!(Snos, SnosMetadata);
 impl_try_into_metadata!(Proving, ProvingMetadata);
 impl_try_into_metadata!(Da, DaMetadata);
 impl_try_into_metadata!(StateUpdate, StateUpdateMetadata);
+impl_try_into_metadata!(Aggregator, AggregatorMetadata);
 
 /// Complete job metadata containing both common and job-specific fields.
 ///

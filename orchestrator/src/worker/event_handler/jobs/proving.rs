@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::{eyre, WrapErr};
-use orchestrator_prover_client_interface::{Task, TaskStatus};
+use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus};
 use uuid::Uuid;
 
 use crate::core::config::Config;
@@ -137,7 +137,7 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         let task_status = config
             .prover_client()
-            .get_task_status(&task_id, fact, cross_verify)
+            .get_task_status(AtlanticStatusType::Job, &task_id, fact, cross_verify)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
