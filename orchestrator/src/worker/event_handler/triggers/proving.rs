@@ -1,8 +1,3 @@
-use std::sync::Arc;
-use alloy::consensus::EnvKzgSettings::Default;
-use async_trait::async_trait;
-use opentelemetry::KeyValue;
-use starknet_os::hints::block_context::block_number;
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
@@ -11,6 +6,11 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
+use alloy::consensus::EnvKzgSettings::Default;
+use async_trait::async_trait;
+use opentelemetry::KeyValue;
+use starknet_os::hints::block_context::block_number;
+use std::sync::Arc;
 
 pub struct ProvingJobTrigger;
 
@@ -70,9 +70,11 @@ impl JobTrigger for ProvingJobTrigger {
                         proving_metadata,
                         config.clone(),
                     )
-                        .await
+                    .await
                     {
-                        Ok(_) => tracing::info!(block_id = %snos_job.internal_id, "Successfully created new proving job"),
+                        Ok(_) => {
+                            tracing::info!(block_id = %snos_job.internal_id, "Successfully created new proving job")
+                        }
                         Err(e) => {
                             tracing::warn!(job_id = %snos_job.internal_id, error = %e, "Failed to create new proving job");
                             let attributes = [
@@ -82,7 +84,7 @@ impl JobTrigger for ProvingJobTrigger {
                             ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
                         }
                     }
-                },
+                }
                 None => {
                     tracing::warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
                     continue;

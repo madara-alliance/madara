@@ -1,8 +1,8 @@
+pub mod aggregator;
 pub mod da;
 pub mod proving;
 pub mod snos;
 pub mod state_update;
-pub mod aggregator;
 
 use crate::core::config::Config;
 use crate::error::job::JobError;

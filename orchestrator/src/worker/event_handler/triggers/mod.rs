@@ -1,10 +1,10 @@
+pub(crate) mod aggregator;
 pub(crate) mod batching;
 pub(crate) mod data_submission_worker;
 pub(crate) mod proof_registration;
 pub(crate) mod proving;
 pub(crate) mod snos;
 pub(crate) mod update_state;
-mod aggregator;
 
 use crate::core::config::Config;
 use crate::types::jobs::types::JobStatus;
