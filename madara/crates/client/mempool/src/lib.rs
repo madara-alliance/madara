@@ -86,6 +86,7 @@ pub struct Mempool {
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
     config: MempoolConfig,
+    tx_sender: tokio::sync::broadcast::Sender<Felt>,
 }
 
 impl From<MempoolError> for SubmitTransactionError {
@@ -119,7 +120,18 @@ impl From<MempoolError> for SubmitTransactionError {
 #[async_trait]
 impl SubmitValidatedTransaction for Mempool {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
-        Ok(self.accept_tx(tx).await?)
+        let tx_hash = tx.tx_hash;
+        self.accept_tx(tx).await?;
+        let _ = self.tx_sender.send(tx_hash);
+        Ok(())
+    }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        Some(self.inner.read().await.has_transaction(&starknet_api::transaction::TransactionHash(hash)))
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        Some(self.tx_sender.subscribe())
     }
 }
 
@@ -151,6 +163,7 @@ impl Mempool {
             backend,
             inner: MempoolInnerWithNotify::new(config.limits.clone()),
             metrics: MempoolMetrics::register(),
+            tx_sender: tokio::sync::broadcast::channel(100).0,
             config,
         }
     }
