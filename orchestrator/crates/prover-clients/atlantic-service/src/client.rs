@@ -6,7 +6,10 @@ use reqwest::Method;
 use url::Url;
 
 use crate::error::AtlanticError;
-use crate::types::{AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticBucketType, AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse, AtlanticGetStatusResponse, AtlanticQueryStep};
+use crate::types::{
+    AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticBucketType, AtlanticCairoVersion, AtlanticCairoVm,
+    AtlanticCreateBucketRequest, AtlanticGetBucketResponse, AtlanticGetStatusResponse, AtlanticQueryStep,
+};
 use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
