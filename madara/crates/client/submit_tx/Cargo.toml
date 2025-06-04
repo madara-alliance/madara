@@ -19,6 +19,7 @@ anyhow.workspace = true
 async-trait.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+futures.workspace = true
 
 blockifier.workspace = true
 starknet_api.workspace = true
@@ -29,3 +30,5 @@ mp-class.workspace = true
 mp-convert.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
+
+tokio.workspace = true

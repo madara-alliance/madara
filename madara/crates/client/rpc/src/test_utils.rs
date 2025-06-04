@@ -55,6 +55,12 @@ impl SubmitTransaction for TestTransactionProvider {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         unimplemented!()
     }
+    async fn received_transaction(&self, _hash: mp_convert::Felt) -> Option<bool> {
+        unimplemented!()
+    }
+    async fn subscribe_new_transactions(&self) -> tokio::sync::broadcast::Receiver<Option<mp_convert::Felt>> {
+        unimplemented!()
+    }
 }
 
 #[fixture]

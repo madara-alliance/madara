@@ -119,6 +119,16 @@ impl SubmitTransaction for GatewayProvider {
             .map_err(map_gateway_error)
             .map(|res| AddInvokeTransactionResult { transaction_hash: res.transaction_hash })
     }
+
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        None
+    }
+
+    async fn subscribe_new_transactions(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        None
+    }
 }
 
 #[async_trait]
@@ -128,5 +138,15 @@ impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
         tx: mp_transactions::validated::ValidatedMempoolTx,
     ) -> Result<(), SubmitTransactionError> {
         self.add_validated_transaction(tx).await.map_err(map_gateway_error)
+    }
+
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        None
+    }
+
+    async fn subscribe_new_transactions(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        None
     }
 }
