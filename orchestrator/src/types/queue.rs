@@ -30,6 +30,10 @@ pub enum QueueType {
     UpdateStateJobProcessing,
     #[strum(serialize = "update_state_job_verification")]
     UpdateStateJobVerification,
+    #[strum(serialize = "aggregator_job_processing")]
+    AggregatorJobProcessing,
+    #[strum(serialize = "aggregator_job_verification")]
+    AggregatorJobVerification,
     #[strum(serialize = "job_handle_failure")]
     JobHandleFailure,
     #[strum(serialize = "worker_trigger")]
@@ -50,6 +54,8 @@ impl TryFrom<QueueType> for JobState {
             QueueType::DataSubmissionJobVerification => JobState::Verification,
             QueueType::UpdateStateJobProcessing => JobState::Processing,
             QueueType::UpdateStateJobVerification => JobState::Verification,
+            QueueType::AggregatorJobProcessing => JobState::Processing,
+            QueueType::AggregatorJobVerification => JobState::Verification,
             QueueType::JobHandleFailure => Err(Self::Error::InvalidJobType(QueueType::JobHandleFailure.to_string()))?,
             QueueType::WorkerTrigger => Err(Self::Error::InvalidJobType(QueueType::WorkerTrigger.to_string()))?,
         };
@@ -70,6 +76,7 @@ impl QueueNameForJobType for JobType {
             JobType::ProofRegistration => QueueType::ProofRegistrationJobProcessing,
             JobType::DataSubmission => QueueType::DataSubmissionJobProcessing,
             JobType::StateTransition => QueueType::UpdateStateJobProcessing,
+            JobType::Aggregator => QueueType::AggregatorJobProcessing,
         }
     }
     fn verify_queue_name(&self) -> QueueType {
@@ -79,6 +86,7 @@ impl QueueNameForJobType for JobType {
             JobType::ProofRegistration => QueueType::ProofRegistrationJobVerification,
             JobType::DataSubmission => QueueType::DataSubmissionJobVerification,
             JobType::StateTransition => QueueType::UpdateStateJobVerification,
+            JobType::Aggregator => QueueType::AggregatorJobVerification,
         }
     }
 }

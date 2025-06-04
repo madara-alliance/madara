@@ -1,7 +1,7 @@
 pub mod error;
 pub mod mongodb;
 
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -18,7 +18,7 @@ pub trait DatabaseClient: Send + Sync {
     /// disconnect - Disconnect from the database
     async fn disconnect(&self) -> Result<(), DatabaseError>;
 
-    /// ENHANCEMENT: following method are supposed to be generic, but we need to figure out how to serialize them
+    /// ENHANCEMENT: the following method is supposed to be generic, but we need to figure out how to serialize them
     /// create_job - Create a new job in the database
     async fn create_job(&self, job: JobItem) -> Result<JobItem, DatabaseError>;
     /// get_job_by_id - Get a job by its ID
@@ -66,4 +66,15 @@ pub trait DatabaseClient: Send + Sync {
     async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError>;
     /// create_batch - Create a new batch
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
+    /// get_batch_for_block - Returns the batch for a given block
+    async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError>;
+    /// get_batches_by_status - Get all the batches by that matches the given status
+    async fn get_batches_by_status(&self, status: BatchStatus, limit: Option<i64>)
+        -> Result<Vec<Batch>, DatabaseError>;
+    async fn get_jobs_between_internal_ids(
+        &self,
+        job_type: JobType,
+        gte: u64,
+        lte: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
 }
