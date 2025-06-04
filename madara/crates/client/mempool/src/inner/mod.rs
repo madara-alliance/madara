@@ -10,8 +10,9 @@ use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mc_exec::execution::TxInfo;
 use mp_convert::ToFelt;
 use starknet_api::core::{ContractAddress, Nonce};
+use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
-use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap};
+use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
 
 mod deployed_contracts;
 mod intent;
@@ -27,9 +28,6 @@ pub use tx::*;
 
 #[cfg(any(test, feature = "testing"))]
 use crate::CheckInvariants;
-
-#[cfg(any(test, feature = "testing"))]
-use starknet_api::transaction::TransactionHash;
 
 /// A struct responsible for the rapid ordering and disposal of transactions by
 /// their [readiness] and time of arrival.
@@ -147,7 +145,7 @@ use starknet_api::transaction::TransactionHash;
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub struct MempoolInner {
-    /// We have one [Nonce] to  [MempoolTransaction] mapping per contract
+    /// We have one [Nonce] to [MempoolTransaction] mapping per contract
     /// address.
     ///
     /// [Nonce]: starknet_api::core::Nonce
@@ -179,6 +177,9 @@ pub struct MempoolInner {
     ///
     /// [Mempool]: super::Mempool
     limiter: MempoolLimiter,
+
+    /// Keeps track of transaction which are currently in the inner mempool by their hash
+    tx_received: HashSet<TransactionHash>,
 
     /// This is just a helper field to use during tests to get the current nonce
     /// of a contract as known by the [MempoolInner].
@@ -320,6 +321,7 @@ impl MempoolInner {
             tx_intent_queue_pending_by_timestamp: Default::default(),
             deployed_contracts: Default::default(),
             limiter: MempoolLimiter::new(limits_config),
+            tx_received: Default::default(),
             #[cfg(any(test, feature = "testing"))]
             nonce_cache_inner: Default::default(),
         }
@@ -328,6 +330,10 @@ impl MempoolInner {
     /// Returns true if at least one transaction can be consumed from the mempool.
     pub fn has_ready_transactions(&self) -> bool {
         !self.tx_intent_queue_ready.is_empty()
+    }
+
+    pub fn has_transaction(&self, tx_hash: &TransactionHash) -> bool {
+        self.tx_received.contains(tx_hash)
     }
 
     pub fn n_total(&self) -> usize {
@@ -355,6 +361,7 @@ impl MempoolInner {
 
         let contract_address = mempool_tx.contract_address().to_felt();
         let arrived_at = mempool_tx.arrived_at;
+        let tx_hash = mempool_tx.tx_hash();
         let deployed_contract_address =
             if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
                 Some(tx.contract_address)
@@ -541,6 +548,7 @@ impl MempoolInner {
             self.limiter.update_tx_limits(&limits_for_tx);
         }
 
+        self.tx_received.insert(tx_hash);
         Ok(())
     }
 
@@ -568,6 +576,10 @@ impl MempoolInner {
             let limits = TransactionCheckedLimits::limits_for(nonce_mapping_entry.get());
             if self.limiter.tx_age_exceeded(&limits) {
                 let mempool_tx = nonce_mapping_entry.remove();
+                assert!(
+                    self.tx_received.remove(&mempool_tx.tx_hash()),
+                    "Tried to remove a ready transaction which had not already been marked as received"
+                );
 
                 // We must remember to update the deploy contract count on
                 // removal!
@@ -625,6 +637,11 @@ impl MempoolInner {
                 // tx_intent_queue_pending_by_timestamp
 
                 let mempool_tx = nonce_mapping_entry.remove(); // *- snip -*
+                assert!(
+                    self.tx_received.remove(&mempool_tx.tx_hash()),
+                    "Tried to remove a pending transaction which had not already been marked as received"
+                );
+
                 if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
                     // Remember to update the deployed contract count along the
                     // way!
@@ -725,8 +742,12 @@ impl MempoolInner {
 
         #[cfg(any(test, feature = "testing"))]
         self.nonce_cache_inner.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
-
         self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx_mempool));
+        assert!(
+            self.tx_received.remove(&tx_mempool.tx_hash()),
+            "Tried to remove a ready transaction which had not already been marked as received"
+        );
+
         Some(tx_mempool)
     }
 
