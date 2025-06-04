@@ -6,7 +6,7 @@ use crate::Starknet;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
 use mp_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
-use mp_transactions::BroadcastedTransactionExt;
+use mp_transactions::IntoBlockifierExt;
 use std::sync::Arc;
 
 /// Estimate the fee associated with transaction

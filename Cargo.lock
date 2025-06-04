@@ -9223,6 +9223,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
+ "async-trait",
  "bitvec",
  "blockifier",
  "futures",
@@ -9233,6 +9234,7 @@ dependencies = [
  "mc-devnet",
  "mc-exec",
  "mc-mempool",
+ "mc-settlement-client",
  "mc-submit-tx",
  "mockall",
  "mp-block",

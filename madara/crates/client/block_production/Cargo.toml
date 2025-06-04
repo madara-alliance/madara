@@ -45,6 +45,7 @@ mc-analytics.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mc-mempool.workspace = true
+mc-settlement-client.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -62,6 +63,7 @@ starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 futures = { workspace = true }
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true

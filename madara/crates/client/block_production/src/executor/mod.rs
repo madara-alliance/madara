@@ -11,6 +11,7 @@ use tokio::sync::{
 };
 
 mod thread;
+mod tests;
 pub use thread::TransactionExecutionOutput;
 
 /// Handle to used to talk with the executor thread.

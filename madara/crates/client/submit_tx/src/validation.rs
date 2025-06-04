@@ -22,7 +22,7 @@ use mp_rpc::{
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
-    BroadcastedTransactionExt, ToBlockifierError,
+    IntoBlockifierExt, ToBlockifierError,
 };
 use std::{borrow::Cow, sync::Arc};
 
@@ -197,11 +197,20 @@ impl TransactionValidator {
             .into());
         }
 
+        let Some(nonce) = tx.nonce() else {
+            // L1HandlerTransactions don't have nonces.
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::ValidateFailure,
+                "Cannot submit l1 handler transactions",
+            )
+            .into());
+        };
+
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
         let deploy_account_skip_validation =
             matches!(tx, BTransaction::AccountTransaction(AccountTransaction::Invoke(_)))
-                && tx.nonce().to_felt() == Felt::ONE;
+                && nonce.to_felt() == Felt::ONE;
 
         let tx_hash = tx.tx_hash().to_felt();
 

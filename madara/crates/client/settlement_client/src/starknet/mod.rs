@@ -1,6 +1,6 @@
 use crate::client::{ClientType, SettlementClientTrait};
 use crate::error::SettlementClientError;
-use crate::messaging::L1toL2MessagingEventData;
+use crate::messaging::L1ToL2MessagingEventData;
 use crate::starknet::error::StarknetClientError;
 use crate::starknet::event::StarknetEventStream;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
@@ -8,7 +8,7 @@ use async_trait::async_trait;
 use bigdecimal::ToPrimitive;
 use mc_db::l1_db::LastSyncedEventBlock;
 use mp_utils::service::ServiceContext;
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall};
+use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePendingBlockWithTxHashes};
 use starknet_core::utils::get_selector_from_name;
 use starknet_crypto::poseidon_hash_many;
 use starknet_providers::jsonrpc::HttpTransport;
@@ -228,11 +228,11 @@ impl SettlementClientTrait for StarknetClient {
         Ok((0, 0))
     }
 
-    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
+    fn get_messaging_hash(&self, event: &L1ToL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
         Ok(poseidon_hash_many(&self.event_to_felt_array(event)).to_bytes_be().to_vec())
     }
 
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
+    async fn get_l1_to_l2_message_cancellation(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
         // function name taken from: https://github.com/keep-starknet-strange/piltover/blob/main/src/messaging/interface.cairo#L56
         let call_res = self
             .provider
@@ -333,12 +333,25 @@ impl SettlementClientTrait for StarknetClient {
         Ok(result)
     }
 
+    async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
+        let block = self.provider.get_block_with_tx_hashes(BlockId::Number(l1_block_n)).await.map_err(
+            |e| -> SettlementClientError {
+                StarknetClientError::Provider(format!("Could not get block timestamp: {}", e)).into()
+            },
+        )?;
+
+        match block {
+            MaybePendingBlockWithTxHashes::Block(b) => Ok(b.timestamp),
+            MaybePendingBlockWithTxHashes::PendingBlock(b) => Ok(b.timestamp),
+        }
+    }
+
     async fn get_messaging_stream(
         &self,
-        last_synced_event_block: LastSyncedEventBlock,
+        from_l1_block_n: u64,
     ) -> Result<Self::StreamType, SettlementClientError> {
         let filter = EventFilter {
-            from_block: Some(BlockId::Number(last_synced_event_block.block_number)),
+            from_block: Some(BlockId::Number(from_l1_block_n)),
             to_block: Some(BlockId::Number(self.get_latest_block_number().await?)),
             address: Some(self.l2_core_contract),
             keys: Some(vec![vec![get_selector_from_name("MessageSent").map_err(|e| -> SettlementClientError {
@@ -391,7 +404,7 @@ impl StarknetClient {
         Ok(event_vec)
     }
 
-    fn event_to_felt_array(&self, event: &L1toL2MessagingEventData) -> Vec<Felt> {
+    fn event_to_felt_array(&self, event: &L1ToL2MessagingEventData) -> Vec<Felt> {
         std::iter::once(event.from)
             .chain(std::iter::once(event.to))
             .chain(std::iter::once(event.nonce))
@@ -525,7 +538,7 @@ pub mod starknet_client_tests {
         #[future] test_fixture: anyhow::Result<StarknetClientTextFixture<'a>>,
     ) -> anyhow::Result<()> {
         let fixture = test_fixture.await?;
-        let event = L1toL2MessagingEventData {
+        let event = L1ToL2MessagingEventData {
             from: Felt::from_hex("0x422dd5fe05931e677c0dcbb74ea057874ba4035c5d5784ea626200b7cfc702")
                 .expect("Failed to parse from_address"),
             to: Felt::from_hex("0x8ff0d8c01af0b9e5ab904f0299e6ae3a94b28c680b821ab02b978447d2da67")
@@ -554,7 +567,7 @@ pub mod starknet_client_tests {
                 Felt::from_hex("0x600b974add9d5406d3d5602b6b2f8beae3b3708a69968f37fa7739524253d8c")
                     .expect("Failed to parse message hash"),
             ), // temp data because it's not required for the hashing
-            transaction_hash: Felt::from_hex("0x600b974add9d5406d3d5602b6b2f8beae3b3708a69968f37fa7739524253d8c")
+            l1_transaction_hash: Felt::from_hex("0x600b974add9d5406d3d5602b6b2f8beae3b3708a69968f37fa7739524253d8c")
                 .expect("Failed to parse transaction hash"), // temp data because it's not required for the hashing
         };
 
@@ -770,19 +783,20 @@ mod starknet_client_messaging_test {
         // expecting the same in logs
         assert!(logs_contain("event hash: \"0x4131512d24390745d7fddd6e7230f6a5e4a386238af62655c0d625a60b2943c\""));
 
-        // Assert that the event is well stored in db
-        let last_block = fixture
-            .db_service
-            .backend()
-            .messaging_last_synced_l1_block_with_event()
-            .expect("Should successfully retrieve the last synced L1 block with messaging event")
-            .unwrap();
-        assert_eq!(last_block.block_number, fire_event_block_number);
-        let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
-        assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce)?);
+        todo!();
+        // // Assert that the event is well stored in db
+        // let last_block = fixture
+        //     .db_service
+        //     .backend()
+        //     .messaging_last_synced_l1_block_with_event()
+        //     .expect("Should successfully retrieve the last synced L1 block with messaging event")
+        //     .unwrap();
+        // assert_eq!(last_block.block_number, fire_event_block_number);
+        // let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
+        // assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce)?);
 
-        // Cancelling worker
-        worker_handle.abort();
+        // // Cancelling worker
+        // worker_handle.abort();
 
         Ok(())
     }
@@ -807,32 +821,33 @@ mod starknet_client_messaging_test {
                     .await
             })
         };
+        todo!();
 
-        let last_block_pre_cancellation = fixture
-            .db_service
-            .backend()
-            .messaging_last_synced_l1_block_with_event()
-            .expect("Should successfully retrieve last synced block before cancellation")
-            .unwrap();
+        // let last_block_pre_cancellation = fixture
+        //     .db_service
+        //     .backend()
+        //     .messaging_last_synced_l1_block_with_event()
+        //     .expect("Should successfully retrieve last synced block before cancellation")
+        //     .unwrap();
 
-        cancel_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
-        // Firing cancelled event
-        fire_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
-        tokio::time::sleep(Duration::from_secs(15)).await;
+        // cancel_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
+        // // Firing cancelled event
+        // fire_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
+        // tokio::time::sleep(Duration::from_secs(15)).await;
 
-        let last_block_post_cancellation = fixture
-            .db_service
-            .backend()
-            .messaging_last_synced_l1_block_with_event()
-            .expect("Should successfully retrieve last synced block after cancellation")
-            .unwrap();
-        assert_eq!(last_block_post_cancellation.block_number, last_block_pre_cancellation.block_number);
-        let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
-        // cancelled message nonce should be inserted to avoid reprocessing
-        assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce).unwrap());
+        // let last_block_post_cancellation = fixture
+        //     .db_service
+        //     .backend()
+        //     .messaging_last_synced_l1_block_with_event()
+        //     .expect("Should successfully retrieve last synced block after cancellation")
+        //     .unwrap();
+        // assert_eq!(last_block_post_cancellation.block_number, last_block_pre_cancellation.block_number);
+        // let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
+        // // cancelled message nonce should be inserted to avoid reprocessing
+        // assert!(fixture.db_service.backend().has_l1_messaging_nonce(nonce).unwrap());
 
-        // Cancelling worker
-        worker_handle.abort();
+        // // Cancelling worker
+        // worker_handle.abort();
 
         Ok(())
     }

@@ -17,7 +17,11 @@ use mc_exec::{execution::TxInfo, LayeredStateAdaptor, MadaraBackendExecutionExt}
 use mc_mempool::L1DataProvider;
 use mp_convert::{Felt, ToFelt};
 use starknet_api::core::ClassHash;
-use std::{collections::HashMap, mem, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    mem,
+    sync::Arc,
+};
 use tokio::{
     sync::{broadcast, mpsc},
     time::Instant,
@@ -69,11 +73,13 @@ struct ExecutorStateExecuting {
     /// we can be sure the state of the last block is always visible to the new one.
     executor: TransactionExecutor<LayeredStateAdaptor>,
     declared_classes: HashMap<ClassHash, ContractClass>,
+    consumed_l1_to_l2_nonces: HashSet<u64>,
 }
 
 struct ExecutorStateNewBlock {
     /// Keep the cached adaptor around to keep the cache around.
     state_adaptor: LayeredStateAdaptor,
+    consumed_l1_to_l2_nonces: HashSet<u64>,
 }
 
 /// Note: The reason this exists is because we want to create the new block execution context (meaning, the block header) as late as possible, as to have
@@ -89,6 +95,23 @@ enum ExecutorThreadState {
     Executing(ExecutorStateExecuting),
     /// Intermediate state, we do not have initialized the execution yet.
     NewBlock(ExecutorStateNewBlock),
+}
+
+impl ExecutorThreadState {
+    fn consumed_l1_to_l2_nonces(&mut self) -> &mut HashSet<u64> {
+        match self {
+            ExecutorThreadState::Executing(s) => &mut s.consumed_l1_to_l2_nonces,
+            ExecutorThreadState::NewBlock(s) => &mut s.consumed_l1_to_l2_nonces,
+        }
+    }
+    fn layered_state_adaptor(&mut self) -> &mut LayeredStateAdaptor {
+        match self {
+            ExecutorThreadState::Executing(s) => {
+                &mut s.executor.block_state.as_mut().expect("State already taken").state
+            }
+            ExecutorThreadState::NewBlock(s) => &mut s.state_adaptor,
+        }
+    }
 }
 
 /// Executor runs on a separate thread, as to avoid having tx popping, block closing etc. take precious time away that could
@@ -224,9 +247,16 @@ impl ExecutorThread {
 
         let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?;
         let mut cached_adaptor = cached_state.state;
-        cached_adaptor.finish_block(state_diff, mem::take(&mut state.declared_classes))?;
+        cached_adaptor.finish_block(
+            state_diff,
+            mem::take(&mut state.declared_classes),
+            mem::take(&mut state.consumed_l1_to_l2_nonces),
+        )?;
 
-        Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock { state_adaptor: cached_adaptor }))
+        Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
+            state_adaptor: cached_adaptor,
+            consumed_l1_to_l2_nonces: HashSet::new(),
+        }))
     }
 
     /// Returns the initial state diff storage too. It is used to create the StartNewBlock message and transition to ExecutorState::Executing.
@@ -260,12 +290,21 @@ impl ExecutorThread {
                 key.to_felt()
             );
         }
-        Ok((ExecutorStateExecuting { exec_ctx, executor, declared_classes: HashMap::new() }, state_maps_storages))
+        Ok((
+            ExecutorStateExecuting {
+                exec_ctx,
+                executor,
+                consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
+                declared_classes: HashMap::new(),
+            },
+            state_maps_storages,
+        ))
     }
 
     fn initial_state(&self) -> anyhow::Result<ExecutorThreadState> {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
             state_adaptor: LayeredStateAdaptor::new(Arc::clone(&self.backend))?,
+            consumed_l1_to_l2_nonces: HashSet::new(),
         }))
     }
 
@@ -311,7 +350,24 @@ impl ExecutorThread {
                     WaitTxBatchOutcome::Exit => return Ok(()),
                 };
 
-                to_exec.extend(taken);
+                for (tx, additional_info) in taken {
+                    // Remove duplicate l1handlertxs. We want to be absolutely sure we're not duplicating them.
+                    if let Some(nonce) = tx.l1_handler_tx_nonce() {
+                        let nonce: u64 = nonce.to_felt().try_into().context("Converting nonce from felt to u64")?;
+
+                        if state
+                            .layered_state_adaptor()
+                            .is_l1_to_l2_message_nonce_consumed(nonce)
+                            .context("Checking is l1 to l2 message nonce is already consumed")?
+                            || state.consumed_l1_to_l2_nonces().insert(nonce)
+                        // insert: Returns true if it was already consumed in the current state.
+                        {
+                            tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
+                            continue;
+                        }
+                    }
+                    to_exec.push(tx, additional_info)
+                }
             }
 
             // Create a new execution state (new block) if it does not already exist.

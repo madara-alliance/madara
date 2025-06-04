@@ -1,6 +1,6 @@
 use crate::{
-    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError, L1HandlerTransaction, Transaction,
-    TransactionWithHash,
+    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError,
+    L1HandlerTransactionWithFee, Transaction, TransactionWithHash,
 };
 use blockifier::{
     execution::{contract_class::ClassInfo as BClassInfo, errors::ContractClassError},
@@ -64,7 +64,7 @@ impl TransactionWithHash {
     }
 }
 
-pub trait BroadcastedTransactionExt {
+pub trait IntoBlockifierExt {
     fn into_blockifier(
         self,
         chain_id: Felt,
@@ -72,7 +72,7 @@ pub trait BroadcastedTransactionExt {
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
 }
 
-impl BroadcastedTransactionExt for BroadcastedTxn {
+impl IntoBlockifierExt for BroadcastedTxn {
     fn into_blockifier(
         self,
         chain_id: Felt,
@@ -116,26 +116,26 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
     }
 }
 
-impl L1HandlerTransaction {
-    pub fn into_blockifier(
+impl IntoBlockifierExt for L1HandlerTransactionWithFee {
+    fn into_blockifier(
         self,
         chain_id: Felt,
         _starknet_version: StarknetVersion,
-        paid_fees_on_l1: u128,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
-        let transaction = Transaction::L1Handler(self.clone());
+        let paid_fee_on_l1 = self.paid_fee_on_l1;
         // TODO: check self.version
-        let hash = self.compute_hash(chain_id, false, false);
+        let hash = self.tx.compute_hash(chain_id, false, false);
+        let transaction = Transaction::L1Handler(self.tx);
         let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
         Ok((
-            BTransaction::from_api(transaction, TransactionHash(hash), None, Some(Fee(paid_fees_on_l1)), None, false)?,
+            BTransaction::from_api(transaction, TransactionHash(hash), None, Some(Fee(paid_fee_on_l1)), None, false)?,
             None,
         ))
     }
 }
 
-impl BroadcastedTransactionExt for BroadcastedDeclareTxnV0 {
+impl IntoBlockifierExt for BroadcastedDeclareTxnV0 {
     fn into_blockifier(
         self,
         chain_id: Felt,
