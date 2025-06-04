@@ -711,8 +711,8 @@ impl DatabaseClient for MongoDbClient {
     async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
-            "start_block": { "$lte": block_number },
-            "end_block": { "$gte": block_number }
+            "start_block": { "$lte": block_number as i64 },
+            "end_block": { "$gte": block_number as i64 }
         };
 
         let batch = self.get_batch_collection().find_one(filter, None).await?;
@@ -746,6 +746,43 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(batches)
+    }
+
+    async fn get_jobs_between_internal_ids(
+        &self,
+        job_type: JobType,
+        gte: u64,
+        lte: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "$expr": {
+                "$and": [
+                    { "$gte": [{ "$toInt": "$internal_id" }, gte as i64 ] },
+                    { "$lte": [{ "$toInt": "$internal_id" }, lte as i64 ] }
+                ]
+            }
+        };
+
+        let find_options = FindOptions::builder().sort(doc! { "internal_id": 1 }).build();
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            gte = gte,
+            lte = lte,
+            job_count = jobs.len(),
+            category = "db_call",
+            "Fetched jobs between internal IDs"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_between_internal_ids")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
     }
 }
 
