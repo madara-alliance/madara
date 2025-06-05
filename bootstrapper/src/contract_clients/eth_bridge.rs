@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use ethers::addressbook::Address;
 use ethers::providers::Middleware;
@@ -14,6 +12,9 @@ use starknet_eth_bridge_client::{
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 use starknet_proxy_client::interfaces::proxy::ProxySupport3_0_2Trait;
+use std::sync::Arc;
+use std::time::Duration;
+use tokio::time::sleep;
 use zaun_utils::{LocalWalletSignerMiddleware, StarknetContractClient};
 
 use crate::contract_clients::utils::{field_element_to_u256, RpcAccount};
@@ -204,12 +205,16 @@ impl StarknetLegacyEthBridge {
         is_dev: bool,
     ) {
         self.eth_bridge.set_max_total_balance(U256::from_dec_str(max_total_balance).unwrap()).await.unwrap();
+        sleep(Duration::from_secs(20)).await;
         self.eth_bridge.set_max_deposit(U256::from_dec_str(max_deposit).unwrap()).await.unwrap();
+        sleep(Duration::from_secs(20)).await;
         self.eth_bridge.set_l2_token_bridge(field_element_to_u256(l2_bridge)).await.unwrap();
+        sleep(Duration::from_secs(20)).await;
 
         if !is_dev {
             // Nominating a new governor as l1 multi sig address
             self.eth_bridge.proxy_nominate_new_governor(l1_multisig_address).await.unwrap();
+            sleep(Duration::from_secs(20)).await;
         }
     }
 

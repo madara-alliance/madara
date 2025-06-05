@@ -25,7 +25,7 @@ pub trait CoreContract {
     #[allow(clippy::too_many_arguments)]
     async fn add_implementation_core_contract(
         &self,
-        block_number: Felt,
+        block_number: I256,
         state_root: Felt,
         block_hash: Felt,
         program_hash: Felt,
@@ -38,7 +38,7 @@ pub trait CoreContract {
     #[allow(clippy::too_many_arguments)]
     async fn upgrade_to_core_contract(
         &self,
-        block_number: Felt,
+        block_number: I256,
         state_root: Felt,
         block_hash: Felt,
         program_hash: Felt,
@@ -58,7 +58,7 @@ pub trait CoreContract {
 
     async fn initialize_core_contract(
         &self,
-        block_number: Felt,
+        block_number: I256,
         state_root: Felt,
         block_hash: Felt,
         program_hash: Felt,
@@ -72,7 +72,7 @@ pub trait CoreContractDeploy<T> {
 }
 
 pub fn get_init_data_core_contract(
-    block_number: Felt,
+    block_number: I256,
     state_root: Felt,
     block_hash: Felt,
     program_hash: Felt,
@@ -85,7 +85,7 @@ pub fn get_init_data_core_contract(
         verifier_address,
         config_hash: convert_felt_to_u256(config_hash),
         initial_state: CoreContractState {
-            block_number: I256::from_raw(convert_felt_to_u256(block_number)),
+            block_number,
             state_root: convert_felt_to_u256(state_root),
             block_hash: convert_felt_to_u256(block_hash),
         },

@@ -1,6 +1,4 @@
 {
-  "eth_rpc": "http://127.0.0.1:8545",
-  "eth_priv_key": "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80",
   "rollup_seq_url": "http://127.0.0.1:9944",
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
