@@ -38,8 +38,8 @@
 //! **Arguments:**
 //! - `name`: rpc method name, must not be a duplicate in the current namespace.
 //! - `and_versions`: implementations of this method will also work for the
-//!     supplied versions. Note that these versions must not already contain
-//!     a method with the same name.
+//!   supplied versions. Note that these versions must not already contain
+//!   a method with the same name.
 //!
 //! # Example:
 //!

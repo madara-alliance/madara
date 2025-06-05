@@ -38,7 +38,16 @@ pub async fn estimate_fee(
 
     let transactions = request
         .into_iter()
-        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version, validate, false).map(|(tx, _)| tx))
+        .map(|tx| {
+            tx.into_blockifier(
+                starknet.chain_id(),
+                starknet_version,
+                validate,
+                /* charge_fee */ false,
+                /* strict_none_check */ true,
+            )
+            .map(|(tx, _)| tx)
+        })
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 

@@ -307,8 +307,10 @@ impl ExecutorThread {
 
             let exec_start_time = Instant::now();
 
+            // TODO: we should use the execution deadline option
             // Execute the transactions.
-            let blockifier_results = execution_state.executor.execute_txs(&to_exec.txs);
+            let blockifier_results =
+                execution_state.executor.execute_txs(&to_exec.txs, /* execution_deadline */ None);
 
             let exec_duration = exec_start_time.elapsed();
 
@@ -355,7 +357,10 @@ impl ExecutorThread {
 
             tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);
-            tracing::debug!("Weights: {:?}", execution_state.executor.bouncer.get_accumulated_weights());
+            tracing::debug!(
+                "Weights: {:?}",
+                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_accumulated_weights()
+            );
             tracing::debug!("Block now full: {:?}", block_full);
 
             let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };

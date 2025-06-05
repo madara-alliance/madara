@@ -357,7 +357,7 @@ async fn normal_transfer(#[case] setup: TestSetup) {
 #[case::single_node(SequencerOnly)]
 /// Test more transfers, with some concurrency, across some block boundaries
 async fn more_transfers(#[case] setup: TestSetup) {
-    let setup = SetupBuilder::new(setup).with_block_time("2s").run().await;
+    let setup = SetupBuilder::new(setup).with_block_time("4s").run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(
         setup: &RunningTestSetup,

@@ -7,9 +7,9 @@
 use crate::{L1DataAvailabilityMode, StarknetVersion};
 use anyhow::{bail, Context, Result};
 use blockifier::blockifier::config::ConcurrencyConfig;
-use blockifier::bouncer::BouncerWeights;
+use blockifier::blockifier_versioned_constants::{RawVersionedConstants, VersionedConstants};
+use blockifier::bouncer::{BouncerConfig, BouncerWeights};
 use blockifier::context::{ChainInfo, FeeTokenAddresses};
-use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
 use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
@@ -249,6 +249,7 @@ impl ChainConfig {
                     n_events: usize::MAX,
                     state_diff_size: 131072,
                     sierra_gas: GasAmount(10_000_000_000),
+                    n_txs: usize::MAX,
                 },
             },
             // We are not producing blocks for these chains.
@@ -374,8 +375,8 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
                 M: MapAccess<'de>,
             {
                 let mut map = BTreeMap::new();
-                while let Some((key, value)) = access.next_entry::<String, VersionedConstants>()? {
-                    map.insert(key.parse().map_err(serde::de::Error::custom)?, value);
+                while let Some((key, value)) = access.next_entry::<String, RawVersionedConstants>()? {
+                    map.insert(key.parse().map_err(serde::de::Error::custom)?, value.into());
                 }
                 Ok(ChainVersionedConstants(map))
             }
@@ -393,7 +394,7 @@ impl<const N: usize> From<[(StarknetVersion, VersionedConstants); N]> for ChainV
 
 impl Default for ChainVersionedConstants {
     fn default() -> Self {
-        use blockifier::versioned_constants::*;
+        use blockifier::blockifier_versioned_constants::*;
         [
             (StarknetVersion::V0_13_0, VERSIONED_CONSTANTS_V0_13_0.deref().clone()),
             (StarknetVersion::V0_13_1, VERSIONED_CONSTANTS_V0_13_1.deref().clone()),
@@ -402,6 +403,8 @@ impl Default for ChainVersionedConstants {
             (StarknetVersion::V0_13_2_1, VERSIONED_CONSTANTS_V0_13_2_1.deref().clone()),
             (StarknetVersion::V0_13_3, VERSIONED_CONSTANTS_V0_13_3.deref().clone()),
             (StarknetVersion::V0_13_4, VERSIONED_CONSTANTS_V0_13_4.deref().clone()),
+            (StarknetVersion::V0_13_5, VERSIONED_CONSTANTS_V0_13_5.deref().clone()),
+            (StarknetVersion::V0_14_0, VERSIONED_CONSTANTS_V0_14_0.deref().clone()),
         ]
         .into()
     }
@@ -426,13 +429,13 @@ impl ChainVersionedConstants {
             let mut contents = String::new();
             file.read_to_string(&mut contents).with_context(|| format!("Failed to read contents of file: {}", path))?;
 
-            let constants: VersionedConstants =
+            let constants: RawVersionedConstants =
                 serde_json::from_str(&contents).with_context(|| format!("Failed to parse JSON in file: {}", path))?;
 
             let parsed_version =
                 version.parse().with_context(|| format!("Failed to parse version string: {}", version))?;
 
-            result.insert(parsed_version, constants);
+            result.insert(parsed_version, constants.into());
         }
 
         Ok(ChainVersionedConstants(result))
@@ -458,7 +461,7 @@ where
 mod tests {
     use super::*;
 
-    use blockifier::versioned_constants::ResourceCost;
+    use blockifier::blockifier_versioned_constants::ResourceCost;
     use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;

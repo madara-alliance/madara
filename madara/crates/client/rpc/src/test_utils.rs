@@ -101,40 +101,40 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
                     max_fee: Felt::from_hex_unchecked("0x12"),
-                    signature: vec![],
+                    signature: vec![].into(),
                     contract_address: Felt::from_hex_unchecked("0x4343"),
                     entry_point_selector: Felt::from_hex_unchecked("0x1212"),
-                    calldata: vec![Felt::from_hex_unchecked("0x2828")],
+                    calldata: vec![Felt::from_hex_unchecked("0x2828")].into(),
                 })),
                 transaction_hash: tx_hashes[0],
             },
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
                     max_fee: Felt::from_hex_unchecked("0xb12"),
-                    signature: vec![],
+                    signature: vec![].into(),
                     contract_address: Felt::from_hex_unchecked("0x434b3"),
                     entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                    calldata: vec![Felt::from_hex_unchecked("0x2828b")],
+                    calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
                 })),
                 transaction_hash: tx_hashes[1],
             },
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
                     max_fee: Felt::from_hex_unchecked("0xb12"),
-                    signature: vec![],
+                    signature: vec![].into(),
                     contract_address: Felt::from_hex_unchecked("0x434b3"),
                     entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
-                    calldata: vec![Felt::from_hex_unchecked("0x2828eeb")],
+                    calldata: vec![Felt::from_hex_unchecked("0x2828eeb")].into(),
                 })),
                 transaction_hash: tx_hashes[2],
             },
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
                     max_fee: Felt::from_hex_unchecked("0xb12"),
-                    signature: vec![],
+                    signature: vec![].into(),
                     contract_address: Felt::from_hex_unchecked("0x434b3"),
                     entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                    calldata: vec![Felt::from_hex_unchecked("0x2828b")],
+                    calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
                 })),
                 transaction_hash: tx_hashes[3],
             },
@@ -224,10 +224,10 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     inner: MadaraBlockInner {
                         transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0x12"),
-                            signature: vec![],
+                            signature: vec![].into(),
                             contract_address: Felt::from_hex_unchecked("0x4343"),
                             entry_point_selector: Felt::from_hex_unchecked("0x1212"),
-                            calldata: vec![Felt::from_hex_unchecked("0x2828")],
+                            calldata: vec![Felt::from_hex_unchecked("0x2828")].into(),
                         }))],
                         receipts: vec![TransactionReceipt::Invoke(InvokeTransactionReceipt {
                             transaction_hash: Felt::from_hex_unchecked("0x8888888"),
@@ -290,17 +290,17 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                         transactions: vec![
                             Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                                 max_fee: Felt::from_hex_unchecked("0xb12"),
-                                signature: vec![],
+                                signature: vec![].into(),
                                 contract_address: Felt::from_hex_unchecked("0x434b3"),
                                 entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                                calldata: vec![Felt::from_hex_unchecked("0x2828b")],
+                                calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
                             })),
                             Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                                 max_fee: Felt::from_hex_unchecked("0xb12"),
-                                signature: vec![],
+                                signature: vec![].into(),
                                 contract_address: Felt::from_hex_unchecked("0x434b3"),
                                 entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
-                                calldata: vec![Felt::from_hex_unchecked("0x2828eeb")],
+                                calldata: vec![Felt::from_hex_unchecked("0x2828eeb")].into(),
                             })),
                         ],
                         receipts: vec![
@@ -350,10 +350,10 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     inner: MadaraBlockInner {
                         transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0xb12"),
-                            signature: vec![],
+                            signature: vec![].into(),
                             contract_address: Felt::from_hex_unchecked("0x434b3"),
                             entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                            calldata: vec![Felt::from_hex_unchecked("0x2828b")],
+                            calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
                         }))],
                         receipts: vec![TransactionReceipt::Invoke(InvokeTransactionReceipt {
                             transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),

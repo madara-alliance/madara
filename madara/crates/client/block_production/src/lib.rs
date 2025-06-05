@@ -745,7 +745,7 @@ pub(crate) mod tests {
             sender_address: contract.address,
             compiled_class_hash: compiled_contract_class_hash,
             // this field will be filled below
-            signature: vec![],
+            signature: vec![].into(),
             nonce,
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
@@ -765,6 +765,7 @@ pub(crate) mod tests {
                 backend.chain_config().latest_protocol_version,
                 true,
                 true,
+                true,
             )
             .unwrap();
         let signature = contract.secret.sign(&blockifier_tx.tx_hash().0).unwrap();
@@ -775,7 +776,7 @@ pub(crate) mod tests {
             BroadcastedDeclareTxn::V3(tx) => &mut tx.signature,
             _ => unreachable!("the declare tx is not query only"),
         };
-        *tx_signature = vec![signature.r, signature.s];
+        *tx_signature = vec![signature.r, signature.s].into();
 
         validator.submit_declare_transaction(declare_txn).await.expect("Should accept the transaction");
     }
@@ -803,9 +804,10 @@ pub(crate) mod tests {
                     ],
                 })
                 .flatten()
-                .collect(),
+                .collect::<Vec<Felt>>()
+                .into(),
             // this field will be filled below
-            signature: vec![],
+            signature: vec![].into(),
             nonce,
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
@@ -824,6 +826,7 @@ pub(crate) mod tests {
                 backend.chain_config().latest_protocol_version,
                 true,
                 true,
+                true,
             )
             .unwrap();
         let signature = contract_sender.secret.sign(&blockifier_tx.tx_hash()).unwrap();
@@ -834,7 +837,7 @@ pub(crate) mod tests {
             BroadcastedInvokeTxn::V3(tx) => &mut tx.signature,
             _ => unreachable!("the invoke tx is not query only"),
         };
-        *tx_signature = vec![signature.r, signature.s];
+        *tx_signature = vec![signature.r, signature.s].into();
 
         validator.submit_invoke_transaction(invoke_txn).await.expect("Should accept the transaction");
     }

@@ -29,7 +29,7 @@ impl Resource for SNS {
 
         // Extract topic name from ARN or use the full string if it's just a name
         let alert_topic_name = if alert_topic_arn.starts_with("arn:aws:sns:") {
-            alert_topic_arn.split(':').last().ok_or_else(|| anyhow!("Invalid ARN format"))?.to_string()
+            alert_topic_arn.split(':').next_back().ok_or_else(|| anyhow!("Invalid ARN format"))?.to_string()
         } else {
             alert_topic_arn.clone()
         };

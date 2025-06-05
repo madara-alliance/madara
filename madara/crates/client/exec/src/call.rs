@@ -46,7 +46,7 @@ impl ExecutionContext {
 
         let mut entry_point_execution_context = EntryPointExecutionContext::new_invoke(
             Arc::new(TransactionContext {
-                block_context: self.block_context.clone(),
+                block_context: Arc::clone(&self.block_context),
                 tx_info: TransactionInfo::Deprecated(DeprecatedTransactionInfo::default()),
             }),
             false,

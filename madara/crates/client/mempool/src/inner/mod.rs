@@ -3,12 +3,14 @@
 //! Insertion and popping should be O(log n).
 //! We also really don't want to poison the lock by panicking.
 
-use blockifier::transaction::transaction_types::TransactionType;
 use deployed_contracts::DeployedContracts;
 use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mc_exec::execution::TxInfo;
 use mp_convert::ToFelt;
-use starknet_api::core::{ContractAddress, Nonce};
+use starknet_api::{
+    core::{ContractAddress, Nonce},
+    executable_transaction::TransactionType,
+};
 use starknet_types_core::felt::Felt;
 use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap};
 
