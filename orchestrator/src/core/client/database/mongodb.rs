@@ -530,26 +530,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    // #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
-    // async fn get_latest_job_by_type_and_status(
-    //     &self,
-    //     job_type: JobType,
-    //     job_status: JobStatus,
-    // ) -> Result<Option<JobItem>, DatabaseError> {
-    //     let start = Instant::now();
-    //     let filter = doc! {
-    //         "job_type": bson::to_bson(&job_type)?,
-    //         "status": bson::to_bson(&job_status)?
-    //     };
-    //     let find_options = FindOneOptions::builder().sort(doc! { "internal_id": -1 }).build();
-
-    //     tracing::debug!(job_type = ?job_type, job_status = ?job_status, category = "db_call", "Fetched latest job by type and status");
-    //     let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
-    //     let duration = start.elapsed();
-    //     ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-    //     Ok(self.get_job_collection().find_one(filter, find_options).await?)
-    // }
-
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
