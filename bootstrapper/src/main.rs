@@ -71,15 +71,13 @@ pub enum CoreContractMode {
     Dev,
 }
 
-// TODO :                 There is a lot of optional stuff in the config which is needed if we run
-// TODO : (continued.)    individual commands. We need to think of a better design.
 #[derive(Serialize, Deserialize, Clone)]
-pub struct IntermediateConfigFile {
+pub struct ConfigBuilder {
     pub eth_rpc: Option<String>,
     pub eth_priv_key: Option<String>,
+    pub rollup_priv_key: Option<String>,
     pub rollup_seq_url: String,
     pub rollup_declare_v0_seq_url: String,
-    pub rollup_priv_key: Option<String>,
     pub eth_chain_id: u64,
     pub l1_deployer_address: String,
     pub l1_wait_time: String,
@@ -102,6 +100,98 @@ pub struct IntermediateConfigFile {
     pub l1_eth_bridge_address: Option<String>,
     pub l2_eth_token_proxy_address: Option<String>,
     pub l2_eth_bridge_proxy_address: Option<String>,
+}
+
+impl Default for ConfigBuilder {
+    fn default() -> Self {
+        Self {
+            eth_rpc: Some("http://127.0.0.1:8545".to_string()),
+            eth_priv_key: Some("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()),
+            rollup_priv_key: Some("0xabcd".to_string()),
+            rollup_seq_url: "http://127.0.0.1:19944".to_string(),
+            rollup_declare_v0_seq_url: "http://127.0.0.1:19943".to_string(),
+            eth_chain_id: 31337,
+            l1_deployer_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
+            l1_wait_time: "15".to_string(),
+            sn_os_program_hash: "0x1e324682835e60c4779a683b32713504aed894fd73842f7d05b18e7bd29cd70".to_string(),
+            config_hash_version: "StarknetOsConfig2".to_string(),
+            app_chain_id: "MADARA_DEVNET".to_string(),
+            fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
+            native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d".to_string(),
+            cross_chain_wait_time: 20,
+            l1_multisig_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8".to_string(),
+            l2_multisig_address: "0x556455b8ac8bc00e0ad061d7df5458fa3c372304877663fa21d492a8d5e9435".to_string(),
+            verifier_address: "0x000000000000000000000000000000000000abcd".to_string(),
+            operator_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
+            dev: false,
+            core_contract_mode: CoreContractMode::Dev,
+            l2_deployer_address: None,
+            core_contract_address: Some("0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string()),
+            core_contract_implementation_address: Some("0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string()),
+            udc_address: None,
+            l1_eth_bridge_address: None,
+            l2_eth_token_proxy_address: None,
+            l2_eth_bridge_proxy_address: None,
+        }
+    }
+}
+
+impl ConfigBuilder {
+    pub fn from_file(path: PathBuf) -> color_eyre::Result<Self> {
+        let file = File::open(path)?;
+        Ok(serde_json::from_reader(file)?)
+    }
+
+    pub fn merge_with_env(mut self) -> Self {
+        if let Ok(eth_rpc) = std::env::var("ETH_RPC") {
+            self.eth_rpc = Some(eth_rpc);
+        }
+        if let Ok(eth_priv_key) = std::env::var("ETH_PRIVATE_KEY") {
+            self.eth_priv_key = Some(eth_priv_key);
+        }
+        if let Ok(rollup_priv_key) = std::env::var("ROLLUP_PRIVATE_KEY") {
+            self.rollup_priv_key = Some(rollup_priv_key);
+        }
+        self
+    }
+
+    pub fn build(self) -> color_eyre::Result<ConfigFile> {
+        Ok(ConfigFile {
+            eth_rpc: self
+                .eth_rpc
+                .ok_or_else(|| color_eyre::eyre::eyre!("ETH_RPC must be provided in config file or environment"))?,
+            eth_priv_key: self.eth_priv_key.ok_or_else(|| {
+                color_eyre::eyre::eyre!("ETH_PRIVATE_KEY must be provided in config file or environment")
+            })?,
+            rollup_priv_key: self.rollup_priv_key.ok_or_else(|| {
+                color_eyre::eyre::eyre!("ROLLUP_PRIVATE_KEY must be provided in config file or environment")
+            })?,
+            rollup_seq_url: self.rollup_seq_url,
+            rollup_declare_v0_seq_url: self.rollup_declare_v0_seq_url,
+            eth_chain_id: self.eth_chain_id,
+            l1_deployer_address: self.l1_deployer_address,
+            l1_wait_time: self.l1_wait_time,
+            sn_os_program_hash: self.sn_os_program_hash,
+            config_hash_version: self.config_hash_version,
+            app_chain_id: self.app_chain_id,
+            fee_token_address: self.fee_token_address,
+            native_fee_token_address: self.native_fee_token_address,
+            cross_chain_wait_time: self.cross_chain_wait_time,
+            l1_multisig_address: self.l1_multisig_address,
+            l2_multisig_address: self.l2_multisig_address,
+            verifier_address: self.verifier_address,
+            operator_address: self.operator_address,
+            dev: self.dev,
+            core_contract_mode: self.core_contract_mode,
+            l2_deployer_address: self.l2_deployer_address,
+            core_contract_address: self.core_contract_address,
+            core_contract_implementation_address: self.core_contract_implementation_address,
+            udc_address: self.udc_address,
+            l1_eth_bridge_address: self.l1_eth_bridge_address,
+            l2_eth_token_proxy_address: self.l2_eth_token_proxy_address,
+            l2_eth_bridge_proxy_address: self.l2_eth_bridge_proxy_address,
+        })
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone)]
@@ -135,133 +225,19 @@ pub struct ConfigFile {
     pub l2_eth_bridge_proxy_address: Option<String>,
 }
 
-impl Default for IntermediateConfigFile {
-    fn default() -> Self {
-        Self {
-            eth_rpc: Some("http://127.0.0.1:8545".to_string()),
-            eth_priv_key: Some("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()),
-            rollup_seq_url: "http://127.0.0.1:19944".to_string(),
-            rollup_declare_v0_seq_url: "http://127.0.0.1:19943".to_string(),
-            rollup_priv_key: Some("0xabcd".to_string()),
-            eth_chain_id: 31337,
-            l1_deployer_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
-            l1_wait_time: "15".to_string(),
-            sn_os_program_hash: "0x1e324682835e60c4779a683b32713504aed894fd73842f7d05b18e7bd29cd70".to_string(),
-            config_hash_version: "StarknetOsConfig2".to_string(),
-            app_chain_id: "MADARA_DEVNET".to_string(),
-            fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
-            native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d".to_string(),
-            cross_chain_wait_time: 20,
-            l1_multisig_address: "0x70997970C51812dc3A010C7d01b50e0d17dc79C8".to_string(),
-            l2_multisig_address: "0x556455b8ac8bc00e0ad061d7df5458fa3c372304877663fa21d492a8d5e9435".to_string(),
-            verifier_address: "0x000000000000000000000000000000000000abcd".to_string(),
-            operator_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
-            dev: false,
-            core_contract_mode: CoreContractMode::Dev,
-            core_contract_address: Some("0xe7f1725e7734ce288f8367e1bb143e90bb3f0512".to_string()),
-            core_contract_implementation_address: Some("0x5fbdb2315678afecb367f032d93f642f64180aa3".to_string()),
-            l2_deployer_address: None,
-            udc_address: None,
-            l1_eth_bridge_address: None,
-            l2_eth_token_proxy_address: None,
-            l2_eth_bridge_proxy_address: None,
-        }
-    }
-}
-
-impl TryFrom<IntermediateConfigFile> for ConfigFile {
-    type Error = color_eyre::Report;
-
-    fn try_from(intermediate: IntermediateConfigFile) -> Result<Self, Self::Error> {
-        Ok(Self {
-            eth_rpc: intermediate
-                .eth_rpc
-                .ok_or_else(|| color_eyre::eyre::eyre!("ETH_RPC must be provided in config file or environment"))?,
-            eth_priv_key: intermediate.eth_priv_key.ok_or_else(|| {
-                color_eyre::eyre::eyre!("ETH_PRIVATE_KEY must be provided in config file or environment")
-            })?,
-            rollup_priv_key: intermediate.rollup_priv_key.ok_or_else(|| {
-                color_eyre::eyre::eyre!("ROLLUP_PRIVATE_KEY must be provided in config file or environment")
-            })?,
-            // Copy over all the non-optional fields directly
-            rollup_seq_url: intermediate.rollup_seq_url,
-            rollup_declare_v0_seq_url: intermediate.rollup_declare_v0_seq_url,
-            eth_chain_id: intermediate.eth_chain_id,
-            l1_deployer_address: intermediate.l1_deployer_address,
-            l1_wait_time: intermediate.l1_wait_time,
-            sn_os_program_hash: intermediate.sn_os_program_hash,
-            config_hash_version: intermediate.config_hash_version,
-            app_chain_id: intermediate.app_chain_id,
-            fee_token_address: intermediate.fee_token_address,
-            native_fee_token_address: intermediate.native_fee_token_address,
-            cross_chain_wait_time: intermediate.cross_chain_wait_time,
-            l1_multisig_address: intermediate.l1_multisig_address,
-            l2_multisig_address: intermediate.l2_multisig_address,
-            verifier_address: intermediate.verifier_address,
-            operator_address: intermediate.operator_address,
-            dev: intermediate.dev,
-            core_contract_mode: intermediate.core_contract_mode,
-            // Copy over all the optional fields directly
-            l2_deployer_address: intermediate.l2_deployer_address,
-            core_contract_address: intermediate.core_contract_address,
-            core_contract_implementation_address: intermediate.core_contract_implementation_address,
-            udc_address: intermediate.udc_address,
-            l1_eth_bridge_address: intermediate.l1_eth_bridge_address,
-            l2_eth_token_proxy_address: intermediate.l2_eth_token_proxy_address,
-            l2_eth_bridge_proxy_address: intermediate.l2_eth_bridge_proxy_address,
-        })
-    }
-}
-
-#[derive(Clone)]
-pub struct EnvConfig {
-    pub eth_rpc: Option<String>,
-    pub eth_priv_key: Option<String>,
-    pub rollup_priv_key: Option<String>,
-}
-
-impl EnvConfig {
-    pub fn from_env() -> Self {
-        Self {
-            eth_rpc: std::env::var("ETH_RPC").ok(),
-            eth_priv_key: std::env::var("ETH_PRIVATE_KEY").ok(),
-            rollup_priv_key: std::env::var("ROLLUP_PRIVATE_KEY").ok(),
-        }
-    }
-}
-
 #[tokio::main]
 pub async fn main() -> color_eyre::Result<()> {
     env_logger::init();
     dotenv().ok();
 
     let args = CliArgs::parse();
-    let env_config = EnvConfig::from_env();
 
     println!("{color_red}{}{color_reset}", BANNER);
 
-    // Load config from file or use defaults
-    let mut intermediate_config = match args.config {
-        Some(path) => {
-            let file = File::open(path).expect("Failed to open config file");
-            serde_json::from_reader(file).expect("Failed to parse config file")
-        }
-        None => IntermediateConfigFile::default(),
+    let mut config_file = match args.config {
+        Some(path) => ConfigBuilder::from_file(path)?.merge_with_env().build()?,
+        None => ConfigBuilder::default().merge_with_env().build()?,
     };
-
-    // Override config values with environment values if they exist
-    if let Some(eth_rpc) = env_config.eth_rpc {
-        intermediate_config.eth_rpc = Some(eth_rpc);
-    }
-    if let Some(eth_priv_key) = env_config.eth_priv_key {
-        intermediate_config.eth_priv_key = Some(eth_priv_key);
-    }
-    if let Some(rollup_priv_key) = env_config.rollup_priv_key {
-        intermediate_config.rollup_priv_key = Some(rollup_priv_key);
-    }
-
-    // Convert to final config, which will validate required fields
-    let mut config_file = ConfigFile::try_from(intermediate_config)?;
 
     let clients = Clients::init_from_config(&config_file).await;
 
