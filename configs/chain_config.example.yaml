@@ -47,6 +47,8 @@ bouncer_config:
     state_diff_size: 131072
     # Maximum L1 gas
     l1_gas: 18446744073709551615
+    # Maximum number of transactions per block
+    n_txs: 18446744073709551615
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).

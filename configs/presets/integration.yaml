@@ -15,6 +15,7 @@ bouncer_config:
     n_events: 18446744073709551615
     state_diff_size: 131072
     l1_gas: 5000000
+    n_txs: 18446744073709551615
 sequencer_address: "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"
 eth_core_contract_address: "0x4737c0c1B4D5b1A687B42610DdabEE781152359c"
 eth_gps_statement_verifier: "0x2046B966994Adcb88D83f467a41b75d64C2a619F"
