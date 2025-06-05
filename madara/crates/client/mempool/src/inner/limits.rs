@@ -1,8 +1,8 @@
 use crate::MempoolTransaction;
-use blockifier::transaction::transaction_types::TransactionType;
 use mc_exec::execution::TxInfo;
 use mp_chain_config::ChainConfig;
 use mp_transactions::validated::TxTimestamp;
+use starknet_api::executable_transaction::TransactionType;
 use std::time::Duration;
 
 #[derive(Debug, Clone)]

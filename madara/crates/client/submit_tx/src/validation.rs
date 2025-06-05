@@ -9,13 +9,12 @@ use blockifier::{
     transaction::{
         errors::{TransactionExecutionError, TransactionPreValidationError},
         transaction_execution::Transaction as BTransaction,
-        transaction_types::TransactionType,
     },
 };
 use mc_db::MadaraBackend;
 use mc_exec::{execution::TxInfo, MadaraBackendExecutionExt};
 use mp_class::ConvertedClass;
-use mp_convert::{Felt, ToFelt};
+use mp_convert::ToFelt;
 use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
@@ -201,11 +200,6 @@ impl TransactionValidator {
             .into());
         }
 
-        // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
-        // the account is not deployed yet but the tx should be accepted.
-        let deploy_account_skip_validation =
-            tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE;
-
         let tx_hash = tx.tx_hash().to_felt();
 
         if !self.config.disable_validation {
@@ -214,7 +208,7 @@ impl TransactionValidator {
             // Perform validations
             if let BTransaction::Account(account_tx) = tx.clone() {
                 let mut validator = self.backend.new_transaction_validator()?;
-                validator.perform_validations(account_tx, deploy_account_skip_validation)?
+                validator.perform_validations(account_tx)?
             }
         }
 
@@ -236,8 +230,9 @@ impl SubmitTransaction for TransactionValidator {
         let (btx, class) = tx.into_blockifier(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
-            true,
-            true, // TODO: did we want disabled charge fee for declare v0?
+            /* validate */ true,
+            /* charge_fee */ true, // TODO: did we want disabled charge fee for declare v0?
+            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
         let res = ClassAndTxnHash {
@@ -259,7 +254,8 @@ impl SubmitTransaction for TransactionValidator {
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
             validate,
-            true,
+            /* charge_fee */ true,
+            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
         let res = ClassAndTxnHash {
@@ -281,7 +277,8 @@ impl SubmitTransaction for TransactionValidator {
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
             validate,
-            true,
+            /* charge_fee */ true,
+            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
         let res = ContractAndTxnHash {
@@ -306,7 +303,8 @@ impl SubmitTransaction for TransactionValidator {
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
             validate,
-            true,
+            /* charge_fee */ true,
+            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
         let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().to_felt() };

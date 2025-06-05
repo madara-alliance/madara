@@ -180,7 +180,7 @@ impl EventBloomSearcher {
     ///
     /// * `from_address` - Optional Felt value to match against event from_address
     /// * `keys` - Optional array of key arrays. Each inner array represents a set of alternatives
-    ///           (OR semantics), while the outer array elements are combined with AND semantics.
+    ///   (OR semantics), while the outer array elements are combined with AND semantics.
     ///
     /// # Returns
     ///

@@ -78,7 +78,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
 // TODO: deprecate this struct (only used for reexecution, which IMO should also go into MadaraBackendExecutionExt)
 pub struct ExecutionContext {
     pub(crate) backend: Arc<MadaraBackend>,
-    pub(crate) block_context: BlockContext,
+    pub(crate) block_context: Arc<BlockContext>,
     /// None means we are executing the genesis block. (no latest block)
     pub(crate) latest_visible_block: Option<DbBlockId>,
 }
@@ -87,13 +87,13 @@ impl ExecutionContext {
     pub fn executor_for_block_production(&self) -> TransactionExecutor<BlockifierStateAdapter> {
         TransactionExecutor::new(
             self.init_cached_state(),
-            self.block_context.clone(),
+            self.block_context.as_ref().clone(),
             TransactionExecutorConfig { concurrency_config: Default::default(), stack_size: DEFAULT_STACK_SIZE },
         )
     }
 
     pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
-        StatefulValidator::create(self.init_cached_state(), self.block_context.clone())
+        StatefulValidator::create(self.init_cached_state(), self.block_context.as_ref().clone())
     }
 
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
@@ -201,7 +201,8 @@ impl ExecutionContext {
                 chain_info,
                 versioned_constants,
                 backend.chain_config().bouncer_config.clone(),
-            ),
+            )
+            .into(),
             latest_visible_block,
             backend,
         })

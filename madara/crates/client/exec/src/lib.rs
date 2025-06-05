@@ -2,14 +2,12 @@ use core::fmt;
 
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
-    transaction::{
-        errors::TransactionExecutionError, objects::TransactionExecutionInfo, transaction_types::TransactionType,
-    },
+    transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
 use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
-use starknet_api::block::FeeType;
 use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
+use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_types_core::felt::Felt;
 
 mod block_context;

@@ -73,6 +73,7 @@ pub trait BroadcastedTransactionExt {
         starknet_version: StarknetVersion,
         validate: bool,
         charge_fee: bool,
+        strict_nonce_check: bool,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
 }
 
@@ -83,6 +84,7 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
         starknet_version: StarknetVersion,
         validate: bool,
         charge_fee: bool,
+        strict_nonce_check: bool,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) = match &self {
             BroadcastedTxn::Declare(tx) => match tx {
@@ -115,7 +117,7 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
                 class_info,
                 None,
                 deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
-                ExecutionFlags { only_query, charge_fee, validate },
+                ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check },
             )?,
             converted_class,
         ))
@@ -155,6 +157,7 @@ impl BroadcastedTransactionExt for BroadcastedDeclareTxnV0 {
         starknet_version: StarknetVersion,
         validate: bool,
         charge_fee: bool,
+        strict_nonce_check: bool,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) =
             handle_class_legacy(Arc::new((self.contract_class).clone().try_into()?))?;
@@ -174,7 +177,7 @@ impl BroadcastedTransactionExt for BroadcastedDeclareTxnV0 {
                 class_info,
                 None,
                 None,
-                ExecutionFlags { only_query: is_query, charge_fee, validate },
+                ExecutionFlags { only_query: is_query, charge_fee, validate, strict_nonce_check },
             )?,
             converted_class,
         ))

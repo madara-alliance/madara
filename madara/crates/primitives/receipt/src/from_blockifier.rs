@@ -235,12 +235,7 @@ mod events_logic_tests {
     }
 
     fn create_call_info(event_number: u32, inner_calls: Vec<CallInfo>) -> CallInfo {
-        CallInfo {
-            execution: execution(vec![ordered_event(event_number as usize)]),
-            inner_calls,
-            storage_read_values: vec![],
-            ..Default::default()
-        }
+        CallInfo { execution: execution(vec![ordered_event(event_number as usize)]), inner_calls, ..Default::default() }
     }
 
     fn execution(events: Vec<OrderedEvent>) -> CallExecution {

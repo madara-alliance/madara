@@ -6,14 +6,13 @@ use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{HasRelatedFeeType, TransactionExecutionInfo};
 use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::transaction_types::TransactionType;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mp_convert::ToFelt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce};
-use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
-use starknet_api::transaction::fields::GasVectorComputationMode;
+use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType};
+use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
 use starknet_api::transaction::TransactionHash;
 
 impl ExecutionContext {
@@ -47,6 +46,10 @@ impl ExecutionContext {
                 tracing::debug!("executing {:#x} (trace)", hash.to_felt());
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
+                let tip = match &tx {
+                    Transaction::Account(tx) => tx.tip(),
+                    Transaction::L1Handler(_) => Tip::ZERO,
+                };
 
                 // We need to estimate gas too.
                 let minimal_gas = match &tx {
@@ -75,8 +78,9 @@ impl ExecutionContext {
                                 self.block_context.block_info().use_kzg_da,
                                 &GasVectorComputationMode::NoL2Gas,
                             );
+                            // TODO
                             let real_fees =
-                                get_fee_by_gas_vector(self.block_context.block_info(), gas_vector, &fee_type);
+                                get_fee_by_gas_vector(self.block_context.block_info(), gas_vector, &fee_type, tip);
 
                             tx_info.receipt.fee = real_fees;
                         }

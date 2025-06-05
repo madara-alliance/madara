@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use mp_convert::hex_serde::{U128AsHex, U64AsHex};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -15,6 +17,9 @@ pub mod compute_hash;
 pub mod validated;
 
 pub use to_blockifier::*;
+
+type Signature = Arc<Vec<Felt>>;
+type Calldata = Arc<Vec<Felt>>;
 
 const SIMULATE_TX_VERSION_OFFSET: Felt = Felt::from_hex_unchecked("0x100000000000000000000000000000000");
 
@@ -323,10 +328,10 @@ impl InvokeTransaction {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV0 {
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub contract_address: Felt,
     pub entry_point_selector: Felt,
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
 }
 
 impl InvokeTransactionV0 {
@@ -338,9 +343,9 @@ impl InvokeTransactionV0 {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
 }
 
@@ -353,8 +358,8 @@ impl InvokeTransactionV1 {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV3 {
     pub sender_address: Felt,
-    pub calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub calldata: Calldata,
+    pub signature: Signature,
     pub nonce: Felt,
     pub resource_bounds: ResourceBoundsMapping,
     pub tip: u64,
@@ -376,7 +381,7 @@ pub struct L1HandlerTransaction {
     pub nonce: u64,
     pub contract_address: Felt,
     pub entry_point_selector: Felt,
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
 }
 
 impl L1HandlerTransaction {
@@ -393,7 +398,10 @@ impl From<mp_rpc::MsgFromL1> for L1HandlerTransaction {
             contract_address: msg.to_address,
             entry_point_selector: msg.entry_point_selector,
             // TODO: fix type from_address on mp_rpc::MsgFromL1
-            calldata: std::iter::once(Felt::from_hex(&msg.from_address).unwrap()).chain(msg.payload).collect(),
+            calldata: std::iter::once(Felt::from_hex(&msg.from_address).unwrap())
+                .chain(msg.payload)
+                .collect::<Vec<_>>()
+                .into(),
         }
     }
 }
@@ -486,7 +494,7 @@ impl DeclareTransaction {
 pub struct DeclareTransactionV0 {
     pub sender_address: Felt,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub class_hash: Felt,
 }
 
@@ -500,7 +508,7 @@ impl DeclareTransactionV0 {
 pub struct DeclareTransactionV1 {
     pub sender_address: Felt,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub class_hash: Felt,
 }
@@ -516,7 +524,7 @@ pub struct DeclareTransactionV2 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub class_hash: Felt,
 }
@@ -531,7 +539,7 @@ impl DeclareTransactionV2 {
 pub struct DeclareTransactionV3 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub class_hash: Felt,
     pub resource_bounds: ResourceBoundsMapping,
@@ -626,7 +634,7 @@ impl DeployAccountTransaction {
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV1 {
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
@@ -641,7 +649,7 @@ impl DeployAccountTransactionV1 {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV3 {
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
@@ -991,7 +999,7 @@ mod tests {
             nonce: 0,
             contract_address: Felt::from(2),
             entry_point_selector: Felt::from(3),
-            calldata: vec![Felt::from(1), Felt::from(4), Felt::from(5)],
+            calldata: vec![Felt::from(1), Felt::from(4), Felt::from(5)].into(),
         };
 
         assert_eq!(L1HandlerTransaction::from(msg), l1_handler_expected);
@@ -1022,19 +1030,19 @@ mod tests {
     pub(crate) fn dummy_tx_invoke_v0() -> InvokeTransactionV0 {
         InvokeTransactionV0 {
             max_fee: Felt::from(1),
-            signature: vec![Felt::from(2), Felt::from(3)],
+            signature: vec![Felt::from(2), Felt::from(3)].into(),
             contract_address: Felt::from(4),
             entry_point_selector: Felt::from(5),
-            calldata: vec![Felt::from(6), Felt::from(7)],
+            calldata: vec![Felt::from(6), Felt::from(7)].into(),
         }
     }
 
     pub(crate) fn dummy_tx_invoke_v1() -> InvokeTransactionV1 {
         InvokeTransactionV1 {
             sender_address: Felt::from(1),
-            calldata: vec![Felt::from(2), Felt::from(3)],
+            calldata: vec![Felt::from(2), Felt::from(3)].into(),
             max_fee: Felt::from(4),
-            signature: vec![Felt::from(5), Felt::from(6)],
+            signature: vec![Felt::from(5), Felt::from(6)].into(),
             nonce: Felt::from(7),
         }
     }
@@ -1042,8 +1050,8 @@ mod tests {
     pub(crate) fn dummy_tx_invoke_v3() -> InvokeTransactionV3 {
         InvokeTransactionV3 {
             sender_address: Felt::from(1),
-            calldata: vec![Felt::from(2), Felt::from(3)],
-            signature: vec![Felt::from(4), Felt::from(5)],
+            calldata: vec![Felt::from(2), Felt::from(3)].into(),
+            signature: vec![Felt::from(4), Felt::from(5)].into(),
             nonce: Felt::from(6),
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
@@ -1063,7 +1071,7 @@ mod tests {
             nonce: 2,
             contract_address: Felt::from(3),
             entry_point_selector: Felt::from(4),
-            calldata: vec![Felt::from(5), Felt::from(6)],
+            calldata: vec![Felt::from(5), Felt::from(6)].into(),
         }
     }
 
@@ -1071,7 +1079,7 @@ mod tests {
         DeclareTransactionV0 {
             sender_address: Felt::from(1),
             max_fee: Felt::from(2),
-            signature: vec![Felt::from(3), Felt::from(4)],
+            signature: vec![Felt::from(3), Felt::from(4)].into(),
             class_hash: Felt::from(5),
         }
     }
@@ -1080,7 +1088,7 @@ mod tests {
         DeclareTransactionV1 {
             sender_address: Felt::from(1),
             max_fee: Felt::from(2),
-            signature: vec![Felt::from(3), Felt::from(4)],
+            signature: vec![Felt::from(3), Felt::from(4)].into(),
             nonce: Felt::from(5),
             class_hash: Felt::from(6),
         }
@@ -1091,7 +1099,7 @@ mod tests {
             sender_address: Felt::from(1),
             compiled_class_hash: Felt::from(2),
             max_fee: Felt::from(3),
-            signature: vec![Felt::from(4), Felt::from(5)],
+            signature: vec![Felt::from(4), Felt::from(5)].into(),
             nonce: Felt::from(6),
             class_hash: Felt::from(7),
         }
@@ -1101,7 +1109,7 @@ mod tests {
         DeclareTransactionV3 {
             sender_address: Felt::from(1),
             compiled_class_hash: Felt::from(2),
-            signature: vec![Felt::from(3), Felt::from(4)],
+            signature: vec![Felt::from(3), Felt::from(4)].into(),
             nonce: Felt::from(5),
             class_hash: Felt::from(6),
             resource_bounds: ResourceBoundsMapping {
@@ -1128,7 +1136,7 @@ mod tests {
     pub(crate) fn dummy_tx_deploy_account_v1() -> DeployAccountTransactionV1 {
         DeployAccountTransactionV1 {
             max_fee: Felt::from(1),
-            signature: vec![Felt::from(2), Felt::from(3)],
+            signature: vec![Felt::from(2), Felt::from(3)].into(),
             nonce: Felt::from(4),
             contract_address_salt: Felt::from(5),
             constructor_calldata: vec![Felt::from(6), Felt::from(7)],
@@ -1138,7 +1146,7 @@ mod tests {
 
     pub(crate) fn dummy_tx_deploy_account_v3() -> DeployAccountTransactionV3 {
         DeployAccountTransactionV3 {
-            signature: vec![Felt::from(1), Felt::from(2)],
+            signature: vec![Felt::from(1), Felt::from(2)].into(),
             nonce: Felt::from(3),
             contract_address_salt: Felt::from(4),
             constructor_calldata: vec![Felt::from(5), Felt::from(6)],

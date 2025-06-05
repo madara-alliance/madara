@@ -27,7 +27,16 @@ pub async fn simulate_transactions(
 
     let user_transactions = transactions
         .into_iter()
-        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version, validate, charge_fee).map(|(tx, _)| tx))
+        .map(|tx| {
+            tx.into_blockifier(
+                starknet.chain_id(),
+                starknet_version,
+                validate,
+                charge_fee,
+                /* strict_none_check */ true,
+            )
+            .map(|(tx, _)| tx)
+        })
         .collect::<Result<Vec<_>, _>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 

@@ -27,14 +27,14 @@ mp-rpc = { workspace = true }
 blockifier = { workspace = true }
 cairo-native = { workspace = true, optional = true }
 cairo-vm = { workspace = true }
-casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "=2.10.0" }
+casm-classes-v2 = { package = "cairo-lang-starknet-classes", version = "2.12.0-dev.1" }
 casm-compiler-v1_0_0-alpha6 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
 casm-compiler-v1_0_0-rc0 = { package = "cairo-lang-starknet", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
 casm-compiler-v1_1_1 = { package = "cairo-lang-starknet", version = "=1.1.1" }
 casm-utils-v1_0_0-alpha6 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-alpha.6" }
 casm-utils-v1_0_0-rc0 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
 casm-utils-v1_1_1 = { package = "cairo-lang-utils", version = "=1.1.1" }
-casm-utils-v2 = { package = "cairo-lang-utils", version = "=2.10.0" }
+casm-utils-v2 = { package = "cairo-lang-utils", version = "2.12.0-dev.1" }
 starknet-core = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }

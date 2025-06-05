@@ -335,7 +335,7 @@ impl From<starknet_api::transaction::InvokeTransactionV0> for InvokeTransactionV
             signature: value.signature.0,
             contract_address: **value.contract_address,
             entry_point_selector: value.entry_point_selector.0,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
         }
     }
 }
@@ -349,7 +349,7 @@ impl TryFrom<InvokeTransactionV0> for starknet_api::transaction::InvokeTransacti
             signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             contract_address: contract_address(&tx.contract_address)?,
             entry_point_selector: starknet_api::core::EntryPointSelector(tx.entry_point_selector),
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
         })
     }
 }
@@ -358,7 +358,7 @@ impl From<starknet_api::transaction::InvokeTransactionV1> for InvokeTransactionV
     fn from(value: starknet_api::transaction::InvokeTransactionV1) -> Self {
         Self {
             sender_address: **value.sender_address,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
             max_fee: value.max_fee.into(),
             signature: value.signature.0,
             nonce: *value.nonce,
@@ -375,7 +375,7 @@ impl TryFrom<InvokeTransactionV1> for starknet_api::transaction::InvokeTransacti
             signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             sender_address: contract_address(&tx.sender_address)?,
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
         })
     }
 }
@@ -384,7 +384,7 @@ impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV
     fn from(value: starknet_api::transaction::InvokeTransactionV3) -> Self {
         Self {
             sender_address: **value.sender_address,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
             signature: value.signature.0,
             nonce: *value.nonce,
             resource_bounds: value.resource_bounds.into(),
@@ -407,7 +407,7 @@ impl TryFrom<InvokeTransactionV3> for starknet_api::transaction::InvokeTransacti
             signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             sender_address: contract_address(&tx.sender_address)?,
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
             paymaster_data: starknet_api::transaction::fields::PaymasterData(tx.paymaster_data),
@@ -425,7 +425,7 @@ impl From<starknet_api::transaction::L1HandlerTransaction> for L1HandlerTransact
             nonce: value.nonce.0.try_into().unwrap_or_default(),
             contract_address: **value.contract_address,
             entry_point_selector: value.entry_point_selector.0,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
         }
     }
 }
@@ -439,7 +439,7 @@ impl TryFrom<L1HandlerTransaction> for starknet_api::transaction::L1HandlerTrans
             nonce: starknet_api::core::Nonce(tx.nonce.into()),
             contract_address: contract_address(&tx.contract_address)?,
             entry_point_selector: starknet_api::core::EntryPointSelector(tx.entry_point_selector),
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
         })
     }
 }
