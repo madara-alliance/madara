@@ -145,7 +145,7 @@ impl CurrentPendingState {
                 }
 
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
-                let converted_tx = TransactionWithHash::from(blockifier_tx.clone_blockifier_transaction());
+                let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
                 self.block.events.extend(
                     receipt
@@ -561,7 +561,7 @@ pub(crate) mod tests {
         // that when loaded, the block will close after one transaction
         // is added to it, to test the pending tick closing the block
         BouncerWeights {
-            gas: 1000000,
+            l1_gas: 1000000,
             message_segment_length: 10000,
             n_events: 10000,
             state_diff_size: 10000,
@@ -745,7 +745,7 @@ pub(crate) mod tests {
             sender_address: contract.address,
             compiled_class_hash: compiled_contract_class_hash,
             // this field will be filled below
-            signature: vec![],
+            signature: vec![].into(),
             nonce,
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
@@ -760,7 +760,13 @@ pub(crate) mod tests {
         });
 
         let (blockifier_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+            .into_blockifier(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                true,
+                true,
+                true,
+            )
             .unwrap();
         let signature = contract.secret.sign(&blockifier_tx.tx_hash().0).unwrap();
 
@@ -770,7 +776,7 @@ pub(crate) mod tests {
             BroadcastedDeclareTxn::V3(tx) => &mut tx.signature,
             _ => unreachable!("the declare tx is not query only"),
         };
-        *tx_signature = vec![signature.r, signature.s];
+        *tx_signature = vec![signature.r, signature.s].into();
 
         validator.submit_declare_transaction(declare_txn).await.expect("Should accept the transaction");
     }
@@ -798,9 +804,10 @@ pub(crate) mod tests {
                     ],
                 })
                 .flatten()
-                .collect(),
+                .collect::<Vec<Felt>>()
+                .into(),
             // this field will be filled below
-            signature: vec![],
+            signature: vec![].into(),
             nonce,
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
@@ -814,7 +821,13 @@ pub(crate) mod tests {
         });
 
         let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+            .into_blockifier(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+                true,
+                true,
+                true,
+            )
             .unwrap();
         let signature = contract_sender.secret.sign(&blockifier_tx.tx_hash()).unwrap();
 
@@ -824,7 +837,7 @@ pub(crate) mod tests {
             BroadcastedInvokeTxn::V3(tx) => &mut tx.signature,
             _ => unreachable!("the invoke tx is not query only"),
         };
-        *tx_signature = vec![signature.r, signature.s];
+        *tx_signature = vec![signature.r, signature.s].into();
 
         validator.submit_invoke_transaction(invoke_txn).await.expect("Should accept the transaction");
     }

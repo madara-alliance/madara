@@ -9,7 +9,7 @@ export ETH_FORK_URL=https://eth.merkle.io
 rm -f target/madara-* lcov.info
 
 # Build the binary with coverage instrumentation
-cargo build --bin madara --profile dev
+CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin madara --profile dev
 export COVERAGE_BIN=$(realpath target/debug/madara)
 
 # Run tests with coverage collection and generate reports in one command
