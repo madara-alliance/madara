@@ -16,6 +16,7 @@ bouncer_config:
     n_events: ""
     state_diff_size: ""
     l1_gas: ""
+    n_txs: ""
 sequencer_address: ""
 eth_core_contract_address: ""
 eth_gps_statement_verifier: ""

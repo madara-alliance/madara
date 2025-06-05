@@ -13,6 +13,7 @@ bouncer_config:
     n_events: 18446744073709551615
     state_diff_size: 131072
     l1_gas: 18446744073709551615
+    n_txs: 18446744073709551615
 sequencer_address: "0x123"
 max_nonce_for_validation_skip: 2
 eth_core_contract_address: "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057"
