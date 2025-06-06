@@ -97,7 +97,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                 }
             }
             None => {
-                let min_block_to_process = config.service_config().min_block_to_process.unwrap_or(0);
+                let min_block_to_process = config.service_config().min_block_to_process;
                 if blocks_to_process[0] != min_block_to_process {
                     tracing::warn!("DA job for the first block is not yet completed. Returning safely...");
                     return Ok(());
