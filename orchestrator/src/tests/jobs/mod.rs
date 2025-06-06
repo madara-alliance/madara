@@ -192,7 +192,6 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    job_handler.expect_job_processing_lock().return_const(None);
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
@@ -248,7 +247,6 @@ async fn process_job_handles_panic() {
         .expect_process_job()
         .times(1)
         .returning(|_, _| -> Result<String, JobError> { panic!("Simulated panic in process_job") });
-    job_handler.expect_job_processing_lock().return_const(None);
 
     // Mocking the `get_job_handler` call in process_job function
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
@@ -342,7 +340,6 @@ async fn process_job_two_workers_process_same_job_works() {
     // Expecting process job function in job processor to return the external ID.
     job_handler.expect_process_job().times(1).returning(move |_, _| Ok("0xbeef".to_string()));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    job_handler.expect_job_processing_lock().return_const(None);
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
@@ -398,7 +395,6 @@ async fn process_job_job_handler_returns_error_works() {
         .times(1)
         .returning(move |_, _| Err(JobError::Other(failure_reason.to_string().into())));
     job_handler.expect_verification_polling_delay_seconds().return_const(1u64);
-    job_handler.expect_job_processing_lock().return_const(None);
 
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
