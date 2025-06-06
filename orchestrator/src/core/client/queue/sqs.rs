@@ -105,7 +105,7 @@ impl InnerSQS {
 
 #[derive(Clone, Debug)]
 pub struct SQS {
-    inner: InnerSQS,
+    pub inner: InnerSQS,
     queue_template_identifier: AWSResourceIdentifier,
 }
 
