@@ -10,6 +10,7 @@ pub struct AWSSNSCliArgs {
 
     /// The ARN / Name of the SNS topic.
     /// ARN: arn:aws:sns:region:accountID:name
+    /// Name: name
     #[arg(env = "MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER", long, default_value = Some("alerts"))]
     pub topic_identifier: Option<String>,
 }
