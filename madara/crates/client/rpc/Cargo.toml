@@ -20,7 +20,6 @@ rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
-assert_matches = { workspace = true }
 
 [dependencies]
 
