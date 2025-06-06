@@ -136,7 +136,7 @@ async fn test_snos_worker(
         "jsonrpc": "2.0",
         "result": latest_sequencer_block
     });
-    let _rpc_mock = server.mock(|when, then| {
+    server.mock(|when, then| {
         when.path("/").body_includes("starknet_blockNumber");
         then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
     });
