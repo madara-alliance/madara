@@ -14,8 +14,6 @@ use crate::types::queue::QueueType;
 use crate::OrchestratorError;
 pub use otel::OTELConfig;
 
-pub type ResourceName = String;
-
 #[derive(Debug, Clone)]
 pub struct ARN {
     pub partition: String,  // Usually "aws" (e.g., "aws-us-gov", "aws-cn")

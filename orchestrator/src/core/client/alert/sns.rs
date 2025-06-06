@@ -42,7 +42,7 @@ impl InnerAWSSNS {
                     let arn_string = arn.to_string();
                     let arn = ARN::parse(&arn_string).map_err(|_| {
                         tracing::debug!("ARN not parsable");
-                        AlertError::TopicARNInvalid
+                        AlertError::TopicARNInvalid(arn_string)
                     })?;
                     return Ok(arn);
                 }
