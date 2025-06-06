@@ -10,7 +10,7 @@ use std::sync::Arc;
 
 /// AWSS3 is a struct that represents an AWS S3 client.
 #[derive(Clone, Debug)]
-pub(crate) struct InnerAWSS3(pub(crate) Arc<Client>);
+pub(crate) struct InnerAWSS3(Arc<Client>);
 
 impl InnerAWSS3 {
     /// Creates a new instance of InnerAWSS3 with the provided AWS configuration.
@@ -33,7 +33,7 @@ impl InnerAWSS3 {
 
 #[derive(Clone, Debug)]
 pub struct AWSS3 {
-    pub(crate) inner: InnerAWSS3,
+    inner: InnerAWSS3,
     bucket_identifier: AWSResourceIdentifier,
 }
 

@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
-pub struct InnerSQS(pub Arc<Client>);
+pub(crate) struct InnerSQS(Arc<Client>);
 
 impl InnerSQS {
     /// Creates a new instance of InnerSQS with the provided AWS configuration.
@@ -105,7 +105,7 @@ impl InnerSQS {
 
 #[derive(Clone, Debug)]
 pub struct SQS {
-    pub inner: InnerSQS,
+    inner: InnerSQS,
     queue_template_identifier: AWSResourceIdentifier,
 }
 

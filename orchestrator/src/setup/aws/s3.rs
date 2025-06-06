@@ -51,11 +51,11 @@ impl Resource for InnerAWSS3 {
                 Ok(())
             }
             AWSResourceIdentifier::Name(bucket_name) => {
-                let region = self.0.config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
+                let region = self.client().config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
 
                 info!("Creating New Bucket: {}", bucket_name);
 
-                let mut bucket_builder = self.0.create_bucket().bucket(bucket_name);
+                let mut bucket_builder = self.client().create_bucket().bucket(bucket_name);
 
                 if region != "us-east-1" {
                     let constraint = aws_sdk_s3::types::BucketLocationConstraint::from(region.as_str());

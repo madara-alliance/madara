@@ -59,7 +59,6 @@ impl Resource for InnerSQS {
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, &queue.name);
 
-                    println!("printing queue that will be created: {} ", queue_name);
                     // Create the queue
                     let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
                         OrchestratorError::ResourceSetupError(format!(

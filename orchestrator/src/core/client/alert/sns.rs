@@ -11,7 +11,7 @@ use std::sync::{Arc, OnceLock};
 
 /// AWSS3 is a struct that represents an AWS S3 client.
 #[derive(Clone, Debug)]
-pub(crate) struct InnerAWSSNS(pub(crate) Arc<Client>);
+pub(crate) struct InnerAWSSNS(Arc<Client>);
 
 impl InnerAWSSNS {
     /// Creates a new instance of InnerAWSS3 with the provided AWS configuration.
