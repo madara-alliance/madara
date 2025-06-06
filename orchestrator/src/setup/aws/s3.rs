@@ -51,7 +51,8 @@ impl Resource for InnerAWSS3 {
                 Ok(())
             }
             AWSResourceIdentifier::Name(bucket_name) => {
-                let region = self.client().config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
+                let region =
+                    self.client().config().region().map(|r| r.to_string()).unwrap_or_else(|| "us-east-1".to_string());
 
                 info!("Creating New Bucket: {}", bucket_name);
 
