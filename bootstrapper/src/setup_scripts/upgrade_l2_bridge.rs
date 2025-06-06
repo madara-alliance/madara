@@ -2,6 +2,8 @@ use starknet::accounts::{Account, ConnectedAccount};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 use starknet_types_core::felt::Felt;
+use std::time::Duration;
+use tokio::time::sleep;
 
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
 use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
@@ -60,6 +62,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
         .await
         .expect("Error deploying the contract : eth_eic_deploy_tx");
     wait_for_transaction(rpc_provider_l2, bridge_eic_deploy_tx.transaction_hash, " : deploy").await.unwrap();
+    sleep(Duration::from_secs(11)).await;
     let eth_bridge_eic_contract_address =
         get_contract_address_from_deploy_tx(account.provider(), &bridge_eic_deploy_tx).await.unwrap();
     log::debug!("✅ eth bridge eic contract address : {:?}", eth_bridge_eic_contract_address);
@@ -75,6 +78,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
         .await
         .expect("Error deploying the contract : new_token_eth_deploy_tx");
     wait_for_transaction(rpc_provider_l2, new_bridge_eth_deploy_tx.transaction_hash, " : deploy").await.unwrap();
+    sleep(Duration::from_secs(11)).await;
     let new_eth_bridge_contract_address =
         get_contract_address_from_deploy_tx(account.provider(), &new_bridge_eth_deploy_tx).await.unwrap();
     log::debug!("✅ new eth bridge contract address : {:?}", new_eth_bridge_contract_address);
@@ -99,6 +103,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_add_implementation_txn.transaction_hash, "Interact ETH bridge")
         .await
         .unwrap();
+    sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : add_implementation : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_add_implementation_txn.transaction_hash
@@ -124,6 +129,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_upgrade_to_txn.transaction_hash, "Interact ETH bridge")
         .await
         .unwrap();
+    sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : upgrade_to : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_upgrade_to_txn.transaction_hash
@@ -141,6 +147,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     )
     .await
     .unwrap();
+    sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : register_governance_admin : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_register_governance_admin_txn.transaction_hash
@@ -158,6 +165,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     )
     .await
     .unwrap();
+    sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : register_upgrade_governor : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_register_upgrade_governor_txn.transaction_hash
@@ -176,6 +184,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_add_new_implementation_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+    sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : add_new_implementation : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_add_new_implementation_txn.transaction_hash
@@ -194,6 +203,7 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_replace_to_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+    sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : replace_to : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_replace_to_txn.transaction_hash

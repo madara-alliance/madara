@@ -64,11 +64,12 @@ impl StarknetLegacyEthBridge {
         legacy_eth_bridge_proxy_address: Felt,
         account: &RpcAccount<'_>,
     ) -> Felt {
+        let legacy_eth_bridge_class_hash_correct = Felt::from_hex("0x78389bb177405c8f4f45e7397e15f2a86f94a1fe911a5efff9d481de596b364").unwrap();
         let deploy_tx = account
             .invoke_contract(
                 account.address(),
                 "deploy_contract",
-                vec![legacy_eth_bridge_class_hash, Felt::ZERO, Felt::ZERO, Felt::ZERO],
+                vec![legacy_eth_bridge_class_hash_correct, Felt::ZERO, Felt::ZERO, Felt::ZERO],
                 None,
             )
             .send()
