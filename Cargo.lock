@@ -10671,6 +10671,7 @@ dependencies = [
  "orchestrator-starknet-settlement-client",
  "orchestrator-utils",
  "prove_block",
+ "rand",
  "rstest 0.18.2",
  "serde",
  "serde_json",
