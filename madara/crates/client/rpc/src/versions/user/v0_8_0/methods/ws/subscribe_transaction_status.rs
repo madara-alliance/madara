@@ -1,6 +1,11 @@
 use crate::errors::ErrorExtWs;
 use futures::StreamExt;
 
+#[cfg(test)]
+const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+#[cfg(not(test))]
+const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5min
+
 /// Notifies the subscriber of updates to a transaction's status. ([specs])
 ///
 /// Supported statuses are:
@@ -29,9 +34,10 @@ pub async fn subscribe_transaction_status(
 ) -> Result<(), crate::errors::StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
     let mut state = SubscriptionState::new(starknet, &sink, transaction_hash).await?;
-    let timeout = tokio::time::timeout(std::time::Duration::from_secs(300 /* 5min */), state.drive());
+    let timeout = tokio::time::timeout(TIMEOUT, state.drive());
 
     tokio::select! {
+        // We need to return an error here or jsonrpsee will not terminate the connection for us.
         res = timeout => res.or_else_internal_server_error(|| {
             format!("SubscribeTransactionStatus timed out on {transaction_hash:#x}")
         })?,
@@ -53,11 +59,23 @@ enum SubscriptionState<'a> {
     WaitAcceptedOnL1(StateTransitionAcceptedOnL1<'a>),
 }
 
+impl std::fmt::Debug for SubscriptionState<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::None => write!(f, "None"),
+            Self::WaitReceived(..) => write!(f, "WaitReceived"),
+            Self::WaitAcceptedOnL2(..) => write!(f, "WaitAcceptedOnL2"),
+            Self::WaitAcceptedOnL1(..) => write!(f, "WaitAcceptedOnL1"),
+        }
+    }
+}
+
 impl<'a> SubscriptionState<'a> {
     /// This function is responsible for initializing the state machine.
     ///
     /// It does so by determining the initial state of the transaction, which in turn determines in
     /// which state the state machine starts.
+    #[cfg_attr(test, tracing::instrument(skip_all))]
     async fn new(
         starknet: &'a crate::Starknet,
         subscription_sink: &'a jsonrpsee::core::server::SubscriptionSink,
@@ -129,19 +147,20 @@ impl<'a> SubscriptionState<'a> {
     /// ```text
     ///
     ///             ┌────┐
-    ///          ┌─►│None├─────────────────────►──────────────────────────────────┐
-    ///          │  └────┘                                                        │
-    ///          │                                                                │
-    ///          │             ┌──┐                                          ┌──┐ │
-    /// ┌─────┐  │  ┌──────────▼─┐│                           ┌──────────────▼─┐│ └─►┌───┐
-    /// │START├──┼─►│WaitReceived├┼───────────────────────┬──►│WaitAcceptedOnL1├┴───►│END│
-    /// └─────┘  │  └────────────┘│                       │   └────────────────┘     └───┘
-    ///          │                │                       ▲
-    ///          │                └───►┌────────────────┐ │
-    ///          └────────────────────►│WaitAcceptedOnL2├─┘
+    ///          ┌─►│None├─────────────────────►───────────────────────────────────┐
+    ///          │  └────┘                                                         │
+    ///          │                                                                 │
+    ///          │             ┌──┐                                           ┌──┐ │
+    /// ┌─────┐  │  ┌──────────▼─┐│                            ┌──────────────▼─┐│ └─►┌───┐
+    /// │START├──┼─►│WaitReceived├┼────────────────────────┬──►│WaitAcceptedOnL1├┴───►│END│
+    /// └─────┘  │  └────────────┘│                        │   └────────────────┘     └───┘
+    ///          │                │                   ┌──┐ ▲
+    ///          │                └───►┌──────────────▼─┐│ │
+    ///          └────────────────────►│WaitAcceptedOnL2├┴─┘
     ///                                └────────────────┘
     ///
     /// ```
+    #[cfg_attr(test, tracing::instrument())]
     async fn drive(&mut self) -> Result<(), crate::errors::StarknetWsApiError> {
         loop {
             match std::mem::take(self) {
@@ -362,4 +381,61 @@ fn block_number_from_pending<'a, 'b>(
         .or_internal_server_error("Failed to get parent block number")?
         .unwrap_or_default()
         .saturating_add(1))
+}
+
+#[cfg(test)]
+mod test {
+    use crate::{
+        versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
+        Starknet,
+    };
+
+    const SERVER_ADDR: &str = "127.0.0.1:0";
+
+    #[rstest::fixture]
+    fn logs() {
+        let debug = tracing_subscriber::filter::LevelFilter::DEBUG;
+        let env = tracing_subscriber::EnvFilter::builder().with_default_directive(debug.into()).from_env_lossy();
+        let _ = tracing_subscriber::fmt().with_test_writer().with_env_filter(env).with_line_number(true).try_init();
+    }
+
+    #[rstest::fixture]
+    fn starknet() -> Starknet {
+        let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
+        let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
+        let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
+            std::sync::Arc::clone(&backend),
+            mc_mempool::MempoolConfig::for_testing(),
+        ));
+        let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
+            mempool,
+            std::sync::Arc::clone(&backend),
+            mc_submit_tx::TransactionValidatorConfig::default(),
+        ));
+        let context = mp_utils::service::ServiceContext::new_for_testing();
+
+        Starknet::new(backend, mempool_validator, Default::default(), context)
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 10)]
+    async fn subscribe_transaction_timeout(_logs: (), starknet: Starknet) {
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let transaction_hash = starknet_types_core::felt::Felt::ZERO;
+        let mut sub = client.subscribe_transaction_status(transaction_hash).await.expect("Failed subscription");
+
+        assert!(sub.next().await.is_none());
+    }
 }
