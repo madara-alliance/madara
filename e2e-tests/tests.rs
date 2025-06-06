@@ -139,14 +139,13 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     // E2E tests assume that we are not passing ARNS
     let aws_prefix = get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
-    let aws_identifier =  get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER");
+    let aws_identifier = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER");
 
     let queue_params = match aws_prefix {
         Some(prefix) => QueueArgs {
             queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(format!(
                 "{}_{}",
-                prefix,
-                aws_identifier,
+                prefix, aws_identifier,
             )),
         },
         None => QueueArgs {

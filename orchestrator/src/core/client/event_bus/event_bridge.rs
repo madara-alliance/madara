@@ -28,6 +28,6 @@ impl InnerAWSEventBridge {
     }
 
     pub fn get_trigger_name_from_trigger_type(trigger_rule_name: &str, trigger_type: &WorkerTriggerType) -> String {
-        format!("{}-{}", trigger_rule_name, trigger_type.to_lowercase())
+        format!("{}-{}", trigger_rule_name, trigger_type.to_string().to_lowercase())
     }
 }
