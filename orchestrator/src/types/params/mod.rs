@@ -16,11 +16,16 @@ pub use otel::OTELConfig;
 
 #[derive(Debug, Clone)]
 pub struct ARN {
-    pub partition: String,  // Usually "aws" (e.g., "aws-us-gov", "aws-cn")
-    pub service: String,    // AWS service (e.g., "s3", "sns", "sqs")
-    pub region: String,     // AWS region (e.g., "us-east-1", can be empty for global services)
-    pub account_id: String, // AWS account ID (12-digit number, can be empty for some resources)
-    pub resource: String,   // Resource identifier (e.g., "topic-name", "bucket-name", "queue-name")
+    /// AWS partition, usually "aws" (e.g., "aws-us-gov", "aws-cn")
+    pub partition: String,
+    /// AWS service (e.g., "s3", "sns", "sqs")
+    pub service: String,
+    /// AWS region (e.g., "us-east-1", can be empty for global services)
+    pub region: String,
+    /// AWS account ID (12-digit number, can be empty for some resources)
+    pub account_id: String,
+    /// Resource identifier (e.g., "topic-name", "bucket-name", "queue-name")
+    pub resource: String,
 }
 impl ARN {
     /// Parse an ARN string into its components
@@ -357,5 +362,90 @@ impl TryFrom<SetupCmd> for CronArgs {
                 .interval_seconds
                 .ok_or(OrchestratorError::SetupCommandError("Cron time is required".to_string()))?,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use rstest::rstest;
+
+    #[rstest]
+    #[case("arn:aws:sqs:us-east-1:000000000000:my-queue", "aws", "sqs", "us-east-1", "000000000000", "my-queue")]
+    #[case(
+        "arn:aws:sqs:us-west-2:000000000000:my-fifo-queue.fifo",
+        "aws",
+        "sqs",
+        "us-west-2",
+        "000000000000",
+        "my-fifo-queue.fifo"
+    )]
+    #[case("arn:aws:sns:us-east-1:000000000000:my-topic", "aws", "sns", "us-east-1", "000000000000", "my-topic")]
+    #[case(
+        "arn:aws:sns:eu-west-1:111122223333:notification-topic-2024",
+        "aws",
+        "sns",
+        "eu-west-1",
+        "111122223333",
+        "notification-topic-2024"
+    )]
+    #[case("arn:aws:iam::000000000000:user/john-doe", "aws", "iam", "", "000000000000", "user/john-doe")]
+    #[case("arn:aws:iam::000000000000:role/MyRole", "aws", "iam", "", "000000000000", "role/MyRole")]
+    #[case("arn:aws:iam::000000000000:policy/MyPolicy", "aws", "iam", "", "000000000000", "policy/MyPolicy")]
+    #[case("arn:aws:iam::aws:policy/PowerUserAccess", "aws", "iam", "", "aws", "policy/PowerUserAccess")]
+    #[case("arn:aws:s3:::my-bucket", "aws", "s3", "", "", "my-bucket")]
+    #[case("arn:aws:s3:::my-bucket/path/to/object.txt", "aws", "s3", "", "", "my-bucket/path/to/object.txt")]
+    fn test_arn_valid_works(
+        #[case] arn_str: &str,
+        #[case] expected_partition: &str,
+        #[case] expected_service: &str,
+        #[case] expected_region: &str,
+        #[case] expected_account: &str,
+        #[case] expected_resource: &str,
+    ) {
+        let arn = ARN::parse(arn_str).unwrap();
+        assert_eq!(arn.partition, expected_partition);
+        assert_eq!(arn.service, expected_service);
+        assert_eq!(arn.region, expected_region);
+        assert_eq!(arn.account_id, expected_account);
+        assert_eq!(arn.resource, expected_resource);
+    }
+
+    #[rstest]
+    #[case("")]
+    #[case("   ")]
+    #[case("arn2:aws:s3:::my-bucket")]
+    #[case("arn:aws:s3")]
+    #[case("arn:aws:s3:::my-bucket:extra:part")]
+    #[case("arn::s3:::my-bucket")]
+    #[case("arn:aws::::my-bucket")]
+    #[case("arn:aws:sqs::000000000000:my-queue")] // SQS missing region
+    #[case("arn:aws:sqs:us-east-1::my-queue")] // SQS missing account
+    #[case("arn:aws:sqs:us-east-1:000000000000:")] // SQS missing resource
+    #[case("arn:aws:sns::000000000000:my-topic")] // SNS missing region
+    #[case("arn:aws:sns:us-east-1::my-topic")] // SNS missing account
+    #[case("arn:aws:sns:us-east-1:000000000000:")] // SNS missing resource
+    #[case("arn:aws:iam::000000000000:")] // IAM missing resource
+    #[case("arn:aws:s3:::")] // S3 missing resource
+    fn test_arn_invalid_fails(#[case] arn_str: &str) {
+        assert!(ARN::parse(arn_str).is_err());
+    }
+
+    #[rstest]
+    #[case("arn:aws:sqs:us-east-1:000000000000:my-queue")]
+    #[case("arn:aws:s3:::my-bucket")]
+    #[case("arn:aws:iam::000000000000:user/john-doe")]
+    #[case("arn:aws:sns:us-east-1:000000000000:my-topic")]
+    fn test_arn_display_roundtrip(#[case] arn_str: &str) {
+        let arn = ARN::parse(arn_str).unwrap();
+        assert_eq!(arn.to_string(), arn_str);
+    }
+
+    #[rstest]
+    #[case("arn:aws:sqs:us-east-1:000000000000:a", "a")] // Minimum resource
+    #[case("arn:aws:s3:::my-bucket/folder/file-name_with.dots", "my-bucket/folder/file-name_with.dots")] // Special chars
+    fn test_arn_edge_cases(#[case] arn_str: &str, #[case] expected_resource: &str) {
+        let arn = ARN::parse(arn_str).unwrap();
+        assert_eq!(arn.resource, expected_resource);
     }
 }
