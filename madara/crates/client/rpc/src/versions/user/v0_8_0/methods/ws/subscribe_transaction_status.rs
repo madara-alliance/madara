@@ -261,6 +261,12 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
         // make sure we have not missed the transaction.
         let received = {
             let stream = futures::stream::unfold(&mut channel, |channel| async move {
+                // We end the stream in the case of an empty channel so it does not block the other
+                // checks
+                if channel.is_empty() {
+                    return None;
+                }
+
                 match channel.recv().await {
                     Ok(felt) => Some((felt, channel)),
                     Err(_error) => None, // The stream will end if the channel lags or is closed.
@@ -414,6 +420,22 @@ mod test {
     }
 
     #[rstest::fixture]
+    fn pending(tx: mp_rpc::BroadcastedInvokeTxn) -> mp_block::PendingFullBlock {
+        mp_block::PendingFullBlock {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![mp_block::TransactionWithReceipt {
+                transaction: mp_transactions::Transaction::Invoke(tx.into()),
+                receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                    transaction_hash: starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH),
+                    ..Default::default()
+                }),
+            }],
+            events: Default::default(),
+        }
+    }
+
+    #[rstest::fixture]
     fn starknet() -> Starknet {
         let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
@@ -497,6 +519,76 @@ mod test {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: tx_hash,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_transaction_status_accepted_on_l2_before(
+        _logs: (),
+        starknet: Starknet,
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH);
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+        let mut sub = client.subscribe_transaction_status(tx_hash).await.expect("Failed subscription");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_transaction_status_accepted_on_l2_after(
+        _logs: (),
+        starknet: Starknet,
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH);
+        let mut sub = client.subscribe_transaction_status(tx_hash).await.expect("Failed subscription");
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
                 });
             }
         );
