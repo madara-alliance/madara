@@ -125,7 +125,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     };
 
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
-    let contract_path = project_root.join("../build-artifacts/orchestrator_tests");
+    let contract_path = project_root.join("crates/settlement-clients/starknet/src/tests/mock_contracts/target/dev");
     let sierra_class: SierraClass = serde_json::from_reader(
         std::fs::File::open(contract_path.join("mock_contracts_Piltover.contract_class.json"))
             .expect("Could not open sierra class file"),
