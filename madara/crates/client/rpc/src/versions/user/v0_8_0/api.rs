@@ -67,7 +67,12 @@ pub trait StarknetWsRpcApi {
         block: Option<BlockId>,
     ) -> jsonrpsee::core::SubscriptionResult;
 
-    #[subscription(name = "subscribeTransactionStatus", unsubscribe = "unsubscribeTransactionStatus", item = mp_rpc::TxnStatus, param_kind = map)]
+    #[subscription(
+        name = "subscribeTransactionStatus",
+        unsubscribe = "unsubscribeTransactionStatus",
+        item = mp_rpc::v0_8_1::TxnStatus,
+        param_kind = map
+    )]
     async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;
 }
 
