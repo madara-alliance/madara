@@ -31,7 +31,6 @@ use crate::{
     types::params::settlement::SettlementConfig,
     types::params::snos::SNOSParams,
     types::params::{AlertArgs, QueueArgs, StorageArgs},
-    utils::helpers::{JobProcessingState, ProcessingLocks},
     OrchestratorError, OrchestratorResult,
 };
 
@@ -68,8 +67,6 @@ pub struct Config {
     storage: Box<dyn StorageClient>,
     /// Alerts client
     alerts: Box<dyn AlertClient>,
-    /// Locks
-    processing_locks: ProcessingLocks,
 }
 
 impl Config {
@@ -84,21 +81,9 @@ impl Config {
         queue: Box<dyn QueueClient>,
         prover_client: Box<dyn ProverClient>,
         da_client: Box<dyn DaClient>,
-        processing_locks: ProcessingLocks,
         settlement_client: Box<dyn SettlementClient>,
     ) -> Self {
-        Self {
-            params,
-            madara_client,
-            database,
-            storage,
-            alerts,
-            queue,
-            prover_client,
-            da_client,
-            processing_locks,
-            settlement_client,
-        }
+        Self { params, madara_client, database, storage, alerts, queue, prover_client, da_client, settlement_client }
     }
 
     /// new - create config from the run command
@@ -125,18 +110,6 @@ impl Config {
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
-        let mut processing_locks = ProcessingLocks::default();
-
-        if let Some(max_concurrent_snos_jobs) = params.service_config.max_concurrent_snos_jobs {
-            processing_locks.snos_job_processing_lock =
-                Some(Arc::new(JobProcessingState::new(max_concurrent_snos_jobs)));
-        }
-
-        if let Some(max_concurrent_proving_jobs) = params.service_config.max_concurrent_proving_jobs {
-            processing_locks.proving_job_processing_lock =
-                Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
-        }
-
         let database = Self::build_database_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
@@ -156,7 +129,6 @@ impl Config {
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         })
     }
@@ -326,10 +298,5 @@ impl Config {
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
         &self.params.prover_layout_name
-    }
-
-    /// Returns the processing locks
-    pub fn processing_locks(&self) -> &ProcessingLocks {
-        &self.processing_locks
     }
 }
