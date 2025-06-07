@@ -2,7 +2,7 @@ use crate::errors::ErrorExtWs;
 use futures::StreamExt;
 
 #[cfg(test)]
-const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 #[cfg(not(test))]
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5min
 
@@ -436,6 +436,17 @@ mod test {
     }
 
     #[rstest::fixture]
+    fn block() -> mp_block::MadaraMaybePendingBlock {
+        mp_block::MadaraMaybePendingBlock {
+            info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
+                tx_hashes: vec![starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH)],
+                ..Default::default()
+            }),
+            inner: mp_block::MadaraBlockInner::default(),
+        }
+    }
+
+    #[rstest::fixture]
     fn starknet() -> Starknet {
         let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
@@ -589,6 +600,95 @@ mod test {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: tx_hash,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_transaction_status_accepted_on_l1_before(
+        _logs: (),
+        starknet: Starknet,
+        block: mp_block::MadaraMaybePendingBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH);
+        let state_diff = Default::default();
+        let converted_classes = Default::default();
+        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
+        backend.write_last_confirmed_block(0).expect("Failed to update last confirmed block");
+        let mut sub = client.subscribe_transaction_status(tx_hash).await.expect("Failed subscription");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_transaction_status_accepted_on_l1_after(
+        _logs: (),
+        starknet: Starknet,
+        block: mp_block::MadaraMaybePendingBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH);
+        let state_diff = Default::default();
+        let converted_classes = Default::default();
+        let mut sub = client.subscribe_transaction_status(tx_hash).await.expect("Failed subscription");
+        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                });
+            }
+        );
+
+        // We assume on our state machine that it is not possible to go from Received directly to
+        // AcceptedOnL1. This introduces an extra intermediate state to the status check where we
+        // wait for AcceptedOnL2, which is why this test takes place in two phases.
+        backend.write_last_confirmed_block(0).expect("Failed to update last confirmed block");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
                 });
             }
         );
