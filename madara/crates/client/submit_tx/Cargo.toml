@@ -17,6 +17,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 [dependencies]
 anyhow.workspace = true
 async-trait.workspace = true
+futures.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 
@@ -29,3 +30,5 @@ mp-class.workspace = true
 mp-convert.workspace = true
 mp-rpc.workspace = true
 mp-transactions.workspace = true
+
+tokio.workspace = true
