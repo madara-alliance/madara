@@ -498,6 +498,8 @@ mod test {
                 });
             }
         );
+
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -533,6 +535,8 @@ mod test {
                 });
             }
         );
+
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -568,6 +572,8 @@ mod test {
                 });
             }
         );
+
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -603,6 +609,8 @@ mod test {
                 });
             }
         );
+
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -696,7 +704,7 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
-    #[timeout(super::TIMEOUT * 10)]
+    #[timeout(super::TIMEOUT * 2)]
     async fn subscribe_transaction_status_timeout(_logs: (), starknet: Starknet) {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
