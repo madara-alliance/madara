@@ -256,23 +256,25 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
     ) -> Result<StateTransitionResult<Self, Self::TransitionTo>, crate::errors::StarknetWsApiError> {
         let Self { common, mut channel } = self;
 
-        let stream = futures::stream::unfold(&mut channel, |channel| async move {
-            match channel.recv().await {
-                Ok(felt) => Some((felt, channel)),
-                Err(_error) => None, // The stream will end if the channel lags or is closed.
-            }
-        });
+        // We start by checking if the transaction provider has received the transaction and if that
+        // fails we check the next 100 transactions and if that fails we check against the db to
+        // make sure we have not missed the transaction.
+        let received = {
+            let stream = futures::stream::unfold(&mut channel, |channel| async move {
+                match channel.recv().await {
+                    Ok(felt) => Some((felt, channel)),
+                    Err(_error) => None, // The stream will end if the channel lags or is closed.
+                }
+            });
 
-        // We only check 100 transactions at a time and if that fails we check against the
-        // transaction provider directly and if that fails we check against the db to make sure we
-        // have not missed the transaction.
-        let received = stream.take(100).any(|hash| async move { hash == common.transaction_hash }).await
-            || common
+            common
                 .starknet
                 .add_transaction_provider
                 .received_transaction(common.transaction_hash)
                 .await
-                .unwrap_or(false);
+                .unwrap_or(false)
+                || stream.take(100).any(|hash| async move { hash == common.transaction_hash }).await
+        };
 
         if received {
             let channel = common.starknet.backend.subscribe_pending_block();
@@ -391,6 +393,7 @@ mod test {
     };
 
     const SERVER_ADDR: &str = "127.0.0.1:0";
+    const TX_HASH: &str = "0x3ccaabf599097d1965e1ef8317b830e76eb681016722c9364ed6e59f3252908";
 
     #[rstest::fixture]
     fn logs() {
@@ -400,9 +403,21 @@ mod test {
     }
 
     #[rstest::fixture]
+    fn tx() -> mp_rpc::BroadcastedInvokeTxn {
+        mp_rpc::BroadcastedInvokeTxn::V0(mp_rpc::InvokeTxnV0 {
+            calldata: Default::default(),
+            contract_address: Default::default(),
+            entry_point_selector: Default::default(),
+            max_fee: Default::default(),
+            signature: Default::default(),
+        })
+    }
+
+    #[rstest::fixture]
     fn starknet() -> Starknet {
         let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
+        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
             mc_mempool::MempoolConfig::for_testing(),
@@ -410,7 +425,7 @@ mod test {
         let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
             mempool,
             std::sync::Arc::clone(&backend),
-            mc_submit_tx::TransactionValidatorConfig::default(),
+            validation,
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
@@ -419,8 +434,78 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
+    async fn subscribe_transaction_status_received_before(
+        _logs: (),
+        starknet: Starknet,
+        tx: mp_rpc::BroadcastedInvokeTxn,
+    ) {
+        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        let tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH);
+        let mut sub = client.subscribe_transaction_status(tx_hash).await.expect("Failed subscription");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::Received
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_transaction_status_received_after(
+        _logs: (),
+        starknet: Starknet,
+        tx: mp_rpc::BroadcastedInvokeTxn,
+    ) {
+        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let tx_hash = starknet_types_core::felt::Felt::from_hex_unchecked(TX_HASH);
+        let mut sub = client.subscribe_transaction_status(tx_hash).await.expect("Failed subscription");
+        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(status)) => {
+                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                    transaction_hash: tx_hash,
+                    status: mp_rpc::v0_7_1::TxnStatus::Received
+                });
+            }
+        );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
     #[timeout(super::TIMEOUT * 10)]
-    async fn subscribe_transaction_timeout(_logs: (), starknet: Starknet) {
+    async fn subscribe_transaction_status_timeout(_logs: (), starknet: Starknet) {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
