@@ -51,6 +51,7 @@ starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
 bitvec = { workspace = true }
+futures = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
@@ -59,6 +60,5 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-futures = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
