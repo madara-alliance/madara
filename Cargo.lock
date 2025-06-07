@@ -9513,6 +9513,7 @@ dependencies = [
  "assert_matches",
  "bitvec",
  "blockifier",
+ "futures",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
@@ -9605,6 +9606,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "blockifier",
+ "futures",
  "mc-db",
  "mc-exec",
  "mp-class",
@@ -9613,6 +9615,7 @@ dependencies = [
  "mp-transactions",
  "starknet_api 0.13.0-rc.1",
  "thiserror 2.0.3",
+ "tokio",
  "tracing",
 ]
 
