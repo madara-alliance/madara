@@ -223,7 +223,7 @@ enum TransitionMatrixReceived<'a> {
     WaitAcceptedOnL1(StateTransitionAcceptedOnL1<'a>),
 }
 
-impl<'a> StateTransitionCommon<'a> {
+impl StateTransitionCommon<'_> {
     async fn send_txn_status(
         &self,
         status: mp_rpc::v0_7_1::TxnStatus,
@@ -328,7 +328,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
         channel.changed().await.or_internal_server_error("Error waiting for watch channel update")?;
 
         let block_info = std::sync::Arc::clone(&channel.borrow_and_update());
-        if block_info.tx_hashes.iter().find(|hash| *hash == &common.transaction_hash).is_some() {
+        if block_info.tx_hashes.iter().any(|hash| *hash == common.transaction_hash) {
             let channel = common.starknet.backend.subscribe_last_confirmed_block();
             let block_number = block_number_from_pending(common.starknet, block_info.as_ref())?;
             let transition = Self::TransitionTo { common, block_number, channel };
@@ -379,9 +379,9 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
     }
 }
 
-fn block_number_from_pending<'a, 'b>(
-    starknet: &'a crate::Starknet,
-    block_info: &'b mp_block::MadaraPendingBlockInfo,
+fn block_number_from_pending(
+    starknet: &crate::Starknet,
+    block_info: &mp_block::MadaraPendingBlockInfo,
 ) -> Result<u64, crate::errors::StarknetWsApiError> {
     Ok(starknet
         .backend
