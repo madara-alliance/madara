@@ -180,7 +180,6 @@ impl InnerAWSEventBridge {
             }]
         }"#;
 
-        tracing::info!("Creating #1 Event Bridge role : {}", role_name);
         let create_role_resp = self
             .iam_client
             .create_role()
@@ -316,7 +315,6 @@ impl InnerAWSEventBridge {
                 let flexible_time_window = FlexibleTimeWindow::builder().mode(FlexibleTimeWindowMode::Off).build()?;
 
                 let message = trigger_type.clone().to_string();
-                tracing::info!("Creating Event Bridge Schedule trigger: {} ", trigger_name);
 
                 // Create target for SQS queue
                 let target = Target::builder()
