@@ -82,6 +82,7 @@ impl<'a> SubscriptionState<'a> {
         transaction_hash: mp_convert::Felt,
     ) -> Result<Self, crate::errors::StarknetWsApiError> {
         let common = StateTransitionCommon { starknet, subscription_sink, transaction_hash };
+        let received = common.starknet.add_transaction_provider.subscribe_new_transactions().await;
         let block_info =
             starknet.backend.find_tx_hash_block_info(&transaction_hash).or_else_internal_server_error(|| {
                 format!("Error looking for block info associated to tx {transaction_hash:#x}")
@@ -125,7 +126,7 @@ impl<'a> SubscriptionState<'a> {
             // of received transactions. For other providers (such as when forwarding to a remote
             // gateway), we default to assuming that the transaction has been received and wait for
             // it to be accepted on L2.
-            match common.starknet.add_transaction_provider.subscribe_new_transactions().await {
+            match received {
                 // We wait for the tx to be received
                 Some(channel) => Ok(Self::WaitReceived(StateTransitionReceived { common, channel })),
                 // We assume the tx has been received and wait for the tx to be accepted on L2
@@ -257,8 +258,8 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
         let Self { common, mut channel } = self;
 
         // We start by checking if the transaction provider has received the transaction and if that
-        // fails we check the next 100 transactions and if that fails we check against the db to
-        // make sure we have not missed the transaction.
+        // fails we check the next transactions and if that fails we check against the db to make
+        // sure we have not missed the transaction (this can happen in case the channel lags).
         let received = {
             let stream = futures::stream::unfold(&mut channel, |channel| async move {
                 // We end the stream in the case of an empty channel so it does not block the other
@@ -279,7 +280,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
                 .received_transaction(common.transaction_hash)
                 .await
                 .unwrap_or(false)
-                || stream.take(100).any(|hash| async move { hash == common.transaction_hash }).await
+                || stream.any(|hash| async move { hash == common.transaction_hash }).await
         };
 
         if received {
