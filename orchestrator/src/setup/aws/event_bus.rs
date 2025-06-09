@@ -283,12 +283,12 @@ impl InnerAWSEventBridge {
     ) -> color_eyre::Result<()> {
         let message = trigger_type.clone().to_string();
         let trigger_name = Self::get_trigger_name_from_trigger_type(&trigger_rule_template_name, trigger_type);
-        tracing::info!("Creating Event Bridge Rule trigger: {} ", trigger_name);
 
         match event_bridge_type.clone() {
             EventBridgeType::Rule => {
                 let input_transformer =
                     InputTransformer::builder().input_paths_map("time", "$.time").input_template(message).build()?;
+                tracing::info!("Creating Event Bridge Rule trigger: {} ", trigger_name);
 
                 self.eb_client
                     .put_rule()
@@ -316,6 +316,7 @@ impl InnerAWSEventBridge {
                 let flexible_time_window = FlexibleTimeWindow::builder().mode(FlexibleTimeWindowMode::Off).build()?;
 
                 let message = trigger_type.clone().to_string();
+                tracing::info!("Creating Event Bridge Schedule trigger: {} ", trigger_name);
 
                 // Create target for SQS queue
                 let target = Target::builder()

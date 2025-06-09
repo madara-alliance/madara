@@ -76,5 +76,3 @@ impl Resource for InnerAWSSNS {
         Ok(self.check_if_exists(&args.alert_identifier).await?)
     }
 }
-
-impl InnerAWSSNS {}

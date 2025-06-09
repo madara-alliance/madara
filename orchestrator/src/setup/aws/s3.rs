@@ -37,7 +37,7 @@ impl Resource for InnerAWSS3 {
         // Check if the bucket already exists
         // If it does, return the existing bucket name and location
         if self.check_if_exists(&args.bucket_identifier).await? {
-            warn!(" ⏭️  S3 bucket already exists, skipping creation");
+            warn!(" ⏭️  S3 bucket {} already exists , skipping creation", &args.bucket_identifier);
             return Ok(());
         }
 
@@ -46,7 +46,7 @@ impl Resource for InnerAWSS3 {
 
         match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => {
-                // If ARN is provided in setup, we only check if it exists
+                // If ARN is provided in setup, we have already checked if it exists 
                 tracing::info!("Bucket Arn provided, skipping setup for {}", &arn.resource);
                 Ok(())
             }
