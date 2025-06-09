@@ -23,17 +23,17 @@ pub struct SnosJobTrigger;
 /// Represents the boundaries for block processing.
 ///
 /// These bounds define the range of blocks that can be processed:
-/// - `lower_limit`: The minimum block number to consider (based on state updates)
-/// - `middle_limit`: The highest block number that has completed SNOS processing (if any)
-/// - `upper_limit`: The maximum block number to process (from sequencer or config limit)
+/// - `block_n_min`: The minimum block number to consider (based on state updates)
+/// - `block_n_completed`: The highest block number that has completed SNOS processing (if any)
+/// - `block_n_max`: The maximum block number to process (from sequencer or config limit)
 #[derive(Debug)]
 struct ProcessingBounds {
     /// Minimum block number to process, derived from completed state updates
-    lower_limit: u64,
+    block_n_min: u64,
     /// Latest block number that has completed SNOS processing (None if no jobs completed)
-    middle_limit: Option<u64>,
+    block_n_completed: Option<u64>,
     /// Maximum block number to process, limited by sequencer or configuration
-    upper_limit: u64,
+    block_n_max: u64,
 }
 
 /// Context for scheduling SNOS jobs, containing processing state and constraints.
@@ -98,11 +98,11 @@ impl SnosJobTrigger {
     /// - Latest completed state update job (dependency requirement)
     ///
     /// # Processing Logic
-    /// - `lower_limit`: Max of (latest state update block, configured minimum)
+    /// - `block_n_min`: Max of (latest state update block, configured minimum)
     ///   - State updates must complete before SNOS processing
     ///   - Respects configured minimum processing boundary
-    /// - `middle_limit`: Latest completed SNOS block (for gap filling)
-    /// - `upper_limit`: Min of (sequencer latest, configured maximum)
+    /// - `block_n_completed`: Latest completed SNOS block (for gap filling)
+    /// - `block_n_max`: Min of (sequencer latest, configured maximum)
     ///   - Cannot process blocks that don't exist yet
     ///   - Respects configured maximum processing boundary
     ///
@@ -118,16 +118,16 @@ impl SnosJobTrigger {
         let latest_snos_completed = self.get_latest_completed_snos_block(config).await?;
         let latest_su_completed = self.get_latest_completed_state_update_block(config).await?;
 
-        let lower_limit = latest_su_completed
+        let block_n_min = latest_su_completed
             .map(|block| max(block, service_config.min_block_to_process))
             .unwrap_or(service_config.min_block_to_process);
 
-        let upper_limit = service_config
+        let block_n_max = service_config
             .max_block_to_process
             .map(|bound| min(latest_sequencer_block, bound))
             .unwrap_or(latest_sequencer_block);
 
-        Ok(ProcessingBounds { lower_limit, middle_limit: latest_snos_completed, upper_limit })
+        Ok(ProcessingBounds { block_n_min, block_n_completed: latest_snos_completed, block_n_max })
     }
 
     /// Initializes the job scheduling context with available concurrency slots.
@@ -167,17 +167,17 @@ impl SnosJobTrigger {
     ///
     /// This method implements a two-phase scheduling strategy:
     ///
-    /// # Phase 1: Initial Jobs (when middle_limit is None)
+    /// # Phase 1: Initial Jobs (when block_n_completed is None)
     /// If no SNOS jobs have completed yet:
-    /// - Process all missing blocks in range [lower_limit, upper_limit]
+    /// - Process all missing blocks in range [block_n_min, block_n_max]
     /// - This handles the bootstrap case for new deployments
     ///
     /// # Phase 2: Gap Filling and Forward Progress
     /// When SNOS jobs have completed previously:
-    /// - **First Half**: Fill gaps in [lower_limit, middle_limit]
+    /// - **First Half**: Fill gaps in [block_n_min, block_n_completed]
     ///   - Handles cases where previous jobs failed or were skipped
     ///   - Ensures continuity in processed blocks
-    /// - **Second Half**: Process new blocks in [middle_limit, upper_limit]
+    /// - **Second Half**: Process new blocks in [block_n_completed, block_n_max]
     ///   - Advances processing frontier forward
     ///   - Handles newly available blocks from sequencer
     ///
@@ -198,21 +198,23 @@ impl SnosJobTrigger {
         context: &mut JobSchedulingContext,
     ) -> Result<()> {
         // Handle case where no SNOS jobs have completed yet
-        if context.bounds.middle_limit.is_none() {
+        if context.bounds.block_n_completed.is_none() {
             return self.schedule_initial_jobs(config, context).await;
         }
 
-        let middle_limit = context.bounds.middle_limit.unwrap();
+        let block_n_completed = context.bounds.block_n_completed.unwrap();
 
-        // Schedule jobs for the first half (lower_limit to middle_limit)
-        self.schedule_jobs_for_range(config, context, context.bounds.lower_limit, middle_limit, "first half").await?;
+        // Schedule jobs for the first half (block_n_min to block_n_completed)
+        self.schedule_jobs_for_range(config, context, context.bounds.block_n_min, block_n_completed, "first half")
+            .await?;
 
         if context.available_slots == 0 {
             return Ok(());
         }
 
-        // Schedule jobs for the second half (middle_limit to upper_limit)
-        self.schedule_jobs_for_range(config, context, middle_limit, context.bounds.upper_limit, "second half").await?;
+        // Schedule jobs for the second half (block_n_completed to block_n_max)
+        self.schedule_jobs_for_range(config, context, block_n_completed, context.bounds.block_n_max, "second half")
+            .await?;
 
         Ok(())
     }
@@ -220,7 +222,7 @@ impl SnosJobTrigger {
     /// Schedules initial jobs when no SNOS jobs have completed yet.
     ///
     /// This handles the bootstrap scenario where:
-    /// - No SNOS jobs have completed successfully (middle_limit is None)
+    /// - No SNOS jobs have completed successfully (block_n_completed is None)
     /// - All blocks in the valid range need to be considered for processing
     /// - Missing blocks are identified and scheduled within slot limits
     ///
@@ -239,8 +241,8 @@ impl SnosJobTrigger {
         let candidate_blocks = self
             .get_missing_blocks_in_range(
                 config,
-                context.bounds.lower_limit,
-                context.bounds.upper_limit,
+                context.bounds.block_n_min,
+                context.bounds.block_n_max,
                 context.available_slots,
             )
             .await?;
@@ -282,7 +284,7 @@ impl SnosJobTrigger {
         range_name: &str,
     ) -> Result<()> {
         // Skip if range is invalid or empty
-        if start > end || (start == end && end == 0) {
+        if start >= end || end == 0 {
             tracing::debug!("Skipping {} range: start={}, end={}", range_name, start, end);
             return Ok(());
         }
@@ -350,7 +352,7 @@ impl SnosJobTrigger {
     ///
     /// This method queries the database for the most recent successfully completed
     /// SNOS job to determine processing progress. The result is used as the
-    /// `middle_limit` for gap detection and scheduling decisions.
+    /// `block_n_completed` for gap detection and scheduling decisions.
     ///
     /// # Return Cases
     /// - `None`: No SNOS jobs have completed successfully yet
