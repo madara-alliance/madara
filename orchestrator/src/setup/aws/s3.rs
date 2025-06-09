@@ -46,7 +46,7 @@ impl Resource for InnerAWSS3 {
 
         match &args.bucket_identifier {
             AWSResourceIdentifier::ARN(arn) => {
-                // If ARN is provided in setup, we have already checked if it exists 
+                // If ARN is provided in setup, we have already checked if it exists
                 tracing::info!("Bucket Arn provided, skipping setup for {}", &arn.resource);
                 Ok(())
             }
