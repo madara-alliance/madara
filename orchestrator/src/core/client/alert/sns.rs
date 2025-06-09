@@ -9,22 +9,23 @@ use aws_config::SdkConfig;
 use aws_sdk_sns::Client;
 use std::sync::{Arc, OnceLock};
 
-/// AWSS3 is a struct that represents an AWS S3 client.
+/// InnerAWSSNS is a struct that represents an AWS SNS client.
 #[derive(Clone, Debug)]
-pub(crate) struct InnerAWSSNS(Arc<Client>);
+pub(crate) struct InnerAWSSNS(Client);
 
 impl InnerAWSSNS {
-    /// Creates a new instance of InnerAWSS3 with the provided AWS configuration.
+    /// Creates a new instance of InnerAWSSNS with the provided AWS configuration.
     /// # Arguments
     /// * `aws_config` - The AWS configuration.
     ///
     /// # Returns
-    /// * `Self` - The new instance of InnerAWSS3.
+    /// * `Self` - The new instance of InnerAWSSNS.
     pub fn new(aws_config: &SdkConfig) -> Self {
-        Self(Arc::new(Client::new(aws_config)))
+        Self(Client::new(aws_config))
     }
+
     pub fn client(&self) -> &Client {
-        self.0.as_ref()
+        &self.0
     }
 
     /// get_topic_arn_by_name return the topic arn, if empty it will return an error

@@ -6,11 +6,10 @@ use async_trait::async_trait;
 use aws_config::SdkConfig;
 use aws_sdk_s3::Client;
 use bytes::Bytes;
-use std::sync::Arc;
 
 /// AWSS3 is a struct that represents an AWS S3 client.
 #[derive(Clone, Debug)]
-pub(crate) struct InnerAWSS3(Arc<Client>);
+pub(crate) struct InnerAWSS3(Client);
 
 impl InnerAWSS3 {
     /// Creates a new instance of InnerAWSS3 with the provided AWS configuration.
@@ -23,11 +22,11 @@ impl InnerAWSS3 {
         let mut s3_config_builder = aws_sdk_s3::config::Builder::from(aws_config);
         s3_config_builder.set_force_path_style(Some(true));
         let client = Client::from_conf(s3_config_builder.build());
-        Self(Arc::new(client))
+        Self(client)
     }
 
-    pub fn client(&self) -> Arc<Client> {
-        self.0.clone()
+    pub fn client(&self) -> &Client {
+        &self.0
     }
 }
 
@@ -61,7 +60,7 @@ impl AWSS3 {
     }
 
     pub(crate) fn client(&self) -> &Client {
-        self.inner.0.as_ref()
+        self.inner.client()
     }
 }
 
@@ -102,7 +101,6 @@ impl StorageClient for AWSS3 {
     /// # Returns
     /// * `Result<(), StorageError>` - The result of the delete operation.
     async fn delete_data(&self, key: &str) -> Result<(), StorageError> {
-        // Note: unwrap is safe here because the bucket name is set in the constructor
         Ok(self.client().delete_object().bucket(self.bucket_name()?).key(key).send().await.map(|_| ())?)
     }
 }

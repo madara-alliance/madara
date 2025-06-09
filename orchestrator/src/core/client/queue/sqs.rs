@@ -12,11 +12,10 @@ use aws_sdk_sqs::types::QueueAttributeName;
 use aws_sdk_sqs::Client;
 use omniqueue::backends::{SqsBackend, SqsConfig, SqsConsumer, SqsProducer};
 use omniqueue::Delivery;
-use std::sync::Arc;
 use std::time::Duration;
 
 #[derive(Clone, Debug)]
-pub struct InnerSQS(Arc<Client>);
+pub struct InnerSQS(Client);
 
 impl InnerSQS {
     /// Creates a new instance of InnerSQS with the provided AWS configuration.
@@ -28,11 +27,11 @@ impl InnerSQS {
     pub fn new(aws_config: &SdkConfig) -> Self {
         let sqs_config_builder = aws_sdk_sqs::config::Builder::from(aws_config);
         let client = Client::from_conf(sqs_config_builder.build());
-        Self(Arc::new(client))
+        Self(client)
     }
 
-    pub fn client(&self) -> Arc<Client> {
-        self.0.clone()
+    pub fn client(&self) -> &Client {
+        &self.0
     }
 
     /// get_queue_url_from_client - Get the queue URL from the client
@@ -140,7 +139,7 @@ impl SQS {
         }
     }
 
-    pub fn client(&self) -> Arc<Client> {
+    pub fn client(&self) -> &Client {
         self.inner.client()
     }
 
