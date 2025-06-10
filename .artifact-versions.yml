@@ -1,4 +1,6 @@
-current_version: 0
+current_version: 1
 versions:
+  - version: 1
+    pr: 684
   - version: 0
     pr: 647
