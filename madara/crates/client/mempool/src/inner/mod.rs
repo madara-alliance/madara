@@ -576,7 +576,7 @@ impl MempoolInner {
             let limits = TransactionCheckedLimits::limits_for(nonce_mapping_entry.get());
             if self.limiter.tx_age_exceeded(&limits) {
                 let mempool_tx = nonce_mapping_entry.remove();
-                assert!(
+                debug_assert!(
                     self.tx_received.remove(&mempool_tx.tx_hash()),
                     "Tried to remove a ready transaction which had not already been marked as received"
                 );
@@ -637,7 +637,7 @@ impl MempoolInner {
                 // tx_intent_queue_pending_by_timestamp
 
                 let mempool_tx = nonce_mapping_entry.remove(); // *- snip -*
-                assert!(
+                debug_assert!(
                     self.tx_received.remove(&mempool_tx.tx_hash()),
                     "Tried to remove a pending transaction which had not already been marked as received"
                 );
@@ -743,7 +743,7 @@ impl MempoolInner {
         #[cfg(any(test, feature = "testing"))]
         self.nonce_cache_inner.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
         self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx_mempool));
-        assert!(
+        debug_assert!(
             self.tx_received.remove(&tx_mempool.tx_hash()),
             "Tried to remove a ready transaction which had not already been marked as received"
         );
