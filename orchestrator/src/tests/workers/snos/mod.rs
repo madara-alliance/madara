@@ -182,7 +182,7 @@ async fn test_snos_worker(
         .collect();
 
     db.expect_get_jobs_by_types_and_statuses()
-        .with(eq(vec![JobType::SnosRun]), eq(vec![JobStatus::PendingRetry, JobStatus::Created]), eq(None))
+        .with(eq(vec![JobType::SnosRun]), eq(vec![JobStatus::PendingRetry, JobStatus::Created]), eq(Some(3_i64)))
         .returning(move |_, _, _| Ok(pending_job_items.clone()));
 
     // Mock missing block number queries

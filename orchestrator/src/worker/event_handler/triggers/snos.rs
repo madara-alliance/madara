@@ -7,6 +7,7 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr};
+use num_traits::ToPrimitive;
 use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
@@ -157,7 +158,7 @@ impl SnosJobTrigger {
         let service_config = config.service_config();
 
         let max_slots = service_config.max_concurrent_created_snos_jobs;
-        let pending_jobs_count = self.count_pending_snos_jobs(config).await?;
+        let pending_jobs_count = self.count_pending_snos_jobs(config, max_slots.to_i64()).await?;
         let available_slots = max_slots.saturating_sub(pending_jobs_count);
 
         Ok(JobSchedulingContext { bounds, available_slots, blocks_to_process: Vec::new() })
@@ -425,12 +426,12 @@ impl SnosJobTrigger {
     ///
     /// # Returns
     /// * `Result<u64>` - Count of pending jobs or database error
-    async fn count_pending_snos_jobs(&self, config: &Arc<Config>) -> Result<u64> {
+    async fn count_pending_snos_jobs(&self, config: &Arc<Config>, max_slots: Option<i64>) -> Result<u64> {
         let db = config.database();
         let pending_statuses = vec![JobStatus::PendingRetry, JobStatus::Created];
 
         let pending_jobs = db
-            .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], pending_statuses, None)
+            .get_jobs_by_types_and_statuses(vec![JobType::SnosRun], pending_statuses, max_slots)
             .await
             .wrap_err("Failed to fetch pending SNOS jobs")?;
 
