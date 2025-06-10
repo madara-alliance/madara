@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use ethers::types::Address;
+use ethers::types::{Address, I256};
 use starknet::core::types::Felt;
 use starknet_core_contract_client::clients::StarknetDevCoreContractClient;
 use starknet_core_contract_client::interfaces::{OperatorTrait, StarknetGovernanceTrait};
@@ -78,7 +78,7 @@ impl CoreContract for StarknetDevCoreContract {
     #[allow(clippy::too_many_arguments)]
     async fn add_implementation_core_contract(
         &self,
-        block_number: Felt,
+        block_number: I256,
         state_root: Felt,
         block_hash: Felt,
         program_hash: Felt,
@@ -117,7 +117,7 @@ impl CoreContract for StarknetDevCoreContract {
     #[allow(clippy::too_many_arguments)]
     async fn upgrade_to_core_contract(
         &self,
-        block_number: Felt,
+        block_number: I256,
         state_root: Felt,
         block_hash: Felt,
         program_hash: Felt,
@@ -192,7 +192,7 @@ impl CoreContract for StarknetDevCoreContract {
     /// IMP : only need to be called when using unsafe proxy
     async fn initialize_core_contract(
         &self,
-        block_number: Felt,
+        block_number: I256,
         state_root: Felt,
         block_hash: Felt,
         program_hash: Felt,
