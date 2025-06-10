@@ -37,7 +37,8 @@ pub mod TestContract {
         #[flat]
         SRC5Event: SRC5Component::Event,
         #[flat]
-        UpgradeableEvent: UpgradeableComponent::Event
+        UpgradeableEvent: UpgradeableComponent::Event,
+        CalledFromL1: CalledFromL1,
     }
 
     #[constructor]
@@ -55,5 +56,23 @@ pub mod TestContract {
             self.account.assert_only_self();
             self.upgradeable.upgrade(new_class_hash);
         }
+    }
+
+    #[derive(Drop, starknet::Event)]
+    pub struct CalledFromL1 {
+        pub from_l1_address: felt252,
+        pub arg1: felt252,
+        pub arg2: felt252,
+    }
+
+    pub fn l1_handler_entrypoint(ref self: ContractState, from_l1_address: felt252, arg1: felt252, arg2: felt252) {
+        let sender = starknet::get_caller_address();
+        assert(sender.is_zero(), 'Must be called from L1 (get_caller_address = 0)');
+
+        self.emit(CalledFromL1 {
+            from_l1_address,
+            arg1,
+            arg2,
+        });
     }
 }

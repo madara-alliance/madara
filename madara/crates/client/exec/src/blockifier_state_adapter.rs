@@ -24,6 +24,25 @@ impl BlockifierStateAdapter {
     pub fn new(backend: Arc<MadaraBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
         Self { backend, on_top_of_block_id, block_number }
     }
+
+    pub fn is_l1_to_l2_message_nonce_consumed(&self, nonce: u64) -> StateResult<bool> {
+        let value = self
+            .backend
+            .get_l1_handler_txn_hash_by_core_contract_nonce(nonce)
+            .map_err(|err| {
+                StateError::StateReadError(format!(
+                    "Failed to l1 handler txn hash by core contract nonce: on={:?}, nonce={nonce}: {err:#}",
+                    self.on_top_of_block_id
+                ))
+            })?
+            .is_some();
+
+        tracing::debug!(
+            "get_l1_handler_txn_hash_by_core_contract_nonce: on={:?}, nonce={nonce} => {value}",
+            self.on_top_of_block_id,
+        );
+        Ok(value)
+    }
 }
 
 // TODO: mapping StateErrors InternalServerError in execution RPC endpoints is not properly handled.

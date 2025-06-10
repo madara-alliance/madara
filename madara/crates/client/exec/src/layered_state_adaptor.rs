@@ -13,7 +13,7 @@ use starknet_api::{
     state::StorageKey,
 };
 use std::{
-    collections::{HashMap, VecDeque},
+    collections::{HashMap, HashSet, VecDeque},
     sync::Arc,
 };
 
@@ -22,6 +22,7 @@ struct CacheByBlock {
     block_n: u64,
     state_diff: StateMaps,
     classes: HashMap<ClassHash, ContractClass>,
+    l1_to_l2_messages: HashSet<u64>,
 }
 
 /// Special cache that allows us to execute blocks past what the db currently has saved. Only used for
@@ -66,10 +67,13 @@ impl LayeredStateAdaptor {
     }
 
     /// This will set the current executing block_n to the next block_n.
+    /// l1_to_l2_messages: list of consumed core contract nonces. We need to keep track of those to be absolutely sure we
+    /// don't duplicate a transaction.
     pub fn finish_block(
         &mut self,
         state_diff: StateMaps,
         classes: HashMap<ClassHash, ContractClass>,
+        l1_to_l2_messages: HashSet<u64>,
     ) -> Result<(), crate::Error> {
         let latest_db_block = self.backend.get_latest_block_n()?;
         // Remove outdated cache entries
@@ -78,7 +82,7 @@ impl LayeredStateAdaptor {
         // Push the current state to cache
         let block_n = self.block_n();
         tracing::debug!("Push to cache {block_n}");
-        self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes });
+        self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes, l1_to_l2_messages });
 
         // Update the inner state adaptor to update its block_n to the next one.
         self.inner = BlockifierStateAdapter::new(
@@ -89,46 +93,50 @@ impl LayeredStateAdaptor {
 
         Ok(())
     }
+
+    pub fn is_l1_to_l2_message_nonce_consumed(&self, nonce: u64) -> StateResult<bool> {
+        if self.cached_states_by_block_n.iter().any(|s| s.l1_to_l2_messages.contains(&nonce)) {
+            return Ok(true);
+        }
+        self.inner.is_l1_to_l2_message_nonce_consumed(nonce)
+    }
 }
 
 impl StateReader for LayeredStateAdaptor {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.storage.get(&(contract_address, key)) {
-                return Ok(*el);
-            }
+        if let Some(el) =
+            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.storage.get(&(contract_address, key)))
+        {
+            return Ok(*el);
         }
         self.inner.get_storage_at(contract_address, key)
     }
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.nonces.get(&contract_address) {
-                return Ok(*el);
-            }
+        if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.nonces.get(&contract_address))
+        {
+            return Ok(*el);
         }
         self.inner.get_nonce_at(contract_address)
     }
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.class_hashes.get(&contract_address) {
-                return Ok(*el);
-            }
+        if let Some(el) =
+            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.class_hashes.get(&contract_address))
+        {
+            return Ok(*el);
         }
         self.inner.get_class_hash_at(contract_address)
     }
     fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.classes.get(&class_hash) {
-                return Ok(el.clone());
-            }
+        if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.classes.get(&class_hash)) {
+            return Ok(el.clone());
         }
         self.inner.get_compiled_contract_class(class_hash)
     }
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.compiled_class_hashes.get(&class_hash) {
-                return Ok(*el);
-            }
+        if let Some(el) =
+            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.compiled_class_hashes.get(&class_hash))
+        {
+            return Ok(*el);
         }
         self.inner.get_compiled_class_hash(class_hash)
     }
@@ -175,7 +183,7 @@ mod tests {
 
         let mut state_maps = StateMaps::default();
         state_maps.storage.insert((Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()), Felt::THREE);
-        adaptor.finish_block(state_maps, Default::default()).unwrap();
+        adaptor.finish_block(state_maps, Default::default(), Default::default()).unwrap();
 
         assert_eq!(adaptor.block_n(), 1);
         assert_eq!(adaptor.previous_block_n(), Some(0));
@@ -233,7 +241,7 @@ mod tests {
 
         let mut state_maps = StateMaps::default();
         state_maps.storage.insert((Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()), Felt::TWO);
-        adaptor.finish_block(state_maps, Default::default()).unwrap();
+        adaptor.finish_block(state_maps, Default::default(), Default::default()).unwrap();
 
         assert_eq!(adaptor.block_n(), 2);
         assert_eq!(adaptor.previous_block_n(), Some(1));

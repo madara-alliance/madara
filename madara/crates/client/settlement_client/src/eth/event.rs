@@ -1,47 +1,18 @@
 use crate::error::SettlementClientError;
 use crate::eth::error::EthereumClientError;
-use crate::eth::StarknetCoreContract::LogMessageToL2;
-use crate::messaging::L1toL2MessagingEventData;
+use crate::eth::StarknetCoreContract::{LogMessageToL2, MessageToL2CancellationStarted};
 use alloy::contract::EventPoller;
+use alloy::primitives::U256;
 use alloy::rpc::types::Log;
 use alloy::transports::http::{Client, Http};
 use futures::ready;
 use futures::Stream;
+use mp_convert::{Felt, ToFelt};
+use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFees};
 use std::pin::Pin;
 use std::task::{Context, Poll};
+use std::iter
 
-type EthereumStreamItem = Result<(LogMessageToL2, Log), alloy::sol_types::Error>;
-type EthereumStreamType = Pin<Box<dyn Stream<Item = EthereumStreamItem> + Send + 'static>>;
-
-pub struct EthereumEventStream {
-    pub stream: EthereumStreamType,
-}
-
-impl EthereumEventStream {
-    pub fn new(watcher: EventPoller<Http<Client>, LogMessageToL2>) -> Self {
-        let stream = watcher.into_stream();
-        Self { stream: Box::pin(stream) }
-    }
-}
-
-impl Stream for EthereumEventStream {
-    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        match ready!(self.stream.as_mut().poll_next(cx)) {
-            Some(result) => match result {
-                Ok((event, log)) => match L1toL2MessagingEventData::try_from((event, log)) {
-                    Ok(event_data) => Poll::Ready(Some(Ok(event_data))),
-                    Err(e) => Poll::Ready(Some(Err(e))),
-                },
-                Err(e) => Poll::Ready(Some(Err(SettlementClientError::Ethereum(EthereumClientError::EventStream {
-                    message: format!("Error processing Ethereum event stream: {}", e),
-                })))),
-            },
-            None => Poll::Ready(None),
-        }
-    }
-}
 
 #[cfg(test)]
 pub mod eth_event_stream_tests {
@@ -51,7 +22,6 @@ pub mod eth_event_stream_tests {
     use futures::stream::iter;
     use futures::StreamExt;
     use rstest::*;
-    use starknet_types_core::felt::Felt;
     use std::str::FromStr;
 
     #[fixture]
@@ -90,7 +60,7 @@ pub mod eth_event_stream_tests {
     // Helper function to process stream into a vector
     async fn collect_stream_events(
         stream: &mut EthereumEventStream,
-    ) -> Vec<Result<L1toL2MessagingEventData, SettlementClientError>> {
+    ) -> Vec<Result<L1ToL2MessagingEventData, SettlementClientError>> {
         stream
             .fold(Vec::new(), |mut acc, event| async move {
                 acc.push(event);
@@ -117,14 +87,14 @@ pub mod eth_event_stream_tests {
         assert_matches!(events[0].as_ref(), Ok(event_data) => {
             assert_eq!(event_data.block_number, 100 + first_index);
             assert_eq!(event_data.event_index, Some(first_index));
-            assert_eq!(event_data.nonce, Felt::from_bytes_be_slice(U256::from(first_index).to_be_bytes_vec().as_slice()));
+            assert_eq!(event_data.nonce, first_index);
         });
 
         // Test second event
         assert_matches!(events[1].as_ref(), Ok(event_data) => {
             assert_eq!(event_data.block_number, 100 + second_index);
             assert_eq!(event_data.event_index, Some(second_index));
-            assert_eq!(event_data.nonce, Felt::from_bytes_be_slice(U256::from(second_index).to_be_bytes_vec().as_slice()));
+            assert_eq!(event_data.nonce, second_index);
         });
     }
 

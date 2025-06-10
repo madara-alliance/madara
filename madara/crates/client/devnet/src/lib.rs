@@ -58,7 +58,7 @@ impl StorageDiffs {
 /// Universal Deployer Contract.
 const UDC_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../../build-artifacts/cairo_artifacts/madara_contracts_UDC.json");
-const UDC_CONTRACT_ADDRESS: Felt =
+pub const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
@@ -230,7 +230,7 @@ mod tests {
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
     use mp_transactions::compute_hash::calculate_contract_address;
-    use mp_transactions::BroadcastedTransactionExt;
+    use mp_transactions::IntoBlockifierExt;
     use mp_utils::service::ServiceContext;
     use mp_utils::AbortOnDrop;
     use rstest::rstest;

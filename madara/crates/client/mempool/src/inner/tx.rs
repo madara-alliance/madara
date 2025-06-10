@@ -65,7 +65,7 @@ impl MempoolTransaction {
         arrived_at: TxTimestamp,
         converted_class: Option<ConvertedClass>,
     ) -> Result<Self, StarknetApiError> {
-        let nonce = tx.nonce();
+        let nonce = tx.nonce().expect("Mempool transactions should all have nonces.");
         let nonce_next = nonce.try_increment()?;
 
         Ok(Self { tx, arrived_at, converted_class, nonce, nonce_next })
@@ -75,7 +75,7 @@ impl MempoolTransaction {
         self.tx.clone_blockifier_transaction()
     }
     pub fn nonce(&self) -> Nonce {
-        self.tx.nonce()
+        self.tx.nonce().expect("Mempool transactions should all have nonces.")
     }
     pub fn contract_address(&self) -> ContractAddress {
         self.tx.contract_address()
