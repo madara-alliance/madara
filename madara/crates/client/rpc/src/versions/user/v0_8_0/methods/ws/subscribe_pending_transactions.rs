@@ -11,7 +11,12 @@ pub async fn subscribe_pending_transactions(
     transaction_details: bool,
     sender_address: Vec<starknet_types_core::felt::Felt>,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let sink = if sender_address.len() as u64 <= super::ADDRESS_FILTER_LIMIT {
+        subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?
+    } else {
+        return Ok(subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await);
+    };
+
     let mut channel = starknet.backend.subscribe_pending_block();
     let sender_address = sender_address.into_iter().collect::<std::collections::HashSet<_>>();
 
@@ -29,7 +34,9 @@ pub async fn subscribe_pending_transactions(
                     .ok_or_else_internal_server_error(|| {
                         format!("SubscribePendingTransactions failed to retrieve block at tx {tx_hash:#x}")
                     })?,
-                None => return Ok(()),
+                None => {
+                    return channel.changed().await.or_internal_server_error("Error waiting for watch channel update")
+                }
             };
 
             for (tx, hash) in block.inner.transactions.into_iter().zip(pending_txs) {
@@ -177,8 +184,11 @@ mod test {
         tracing::debug!("Started jsonrpsee client");
 
         backend.store_pending_block(pending).expect("Failed to store pending block");
-        let mut sub =
-            client.subscribe_pending_transactions(false, vec![SENDER_ADDRESS]).await.expect("Failed subscription");
+        let transaction_details = false;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
+            .await
+            .expect("Failed subscription");
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(hash)) => {
@@ -205,5 +215,219 @@ mod test {
         tracing::debug!("Received {:#x}", tx_2.receipt.transaction_hash());
 
         assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 2)]
+    async fn subscribe_pending_transactions_ok_details(
+        _logs: (),
+        starknet: Starknet,
+        #[from(tx)]
+        #[with(SENDER_ADDRESS)]
+        tx_1: mp_block::TransactionWithReceipt,
+        #[from(tx)]
+        #[with(SENDER_ADDRESS)]
+        tx_2: mp_block::TransactionWithReceipt,
+        #[from(tx)]
+        #[with(starknet_types_core::felt::Felt::ONE)]
+        #[allow(unused)]
+        tx_3: mp_block::TransactionWithReceipt,
+        #[from(pending)]
+        #[with(vec![tx_1.clone(), tx_2.clone(), tx_3.clone()])]
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+        let transaction_details = true;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
+            .await
+            .expect("Failed subscription");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(tx)) => {
+                assert_matches::assert_matches!(
+                    tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
+                        assert_eq!(tx, tx_1.transaction.into());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", tx_1.receipt.transaction_hash());
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(tx)) => {
+                assert_matches::assert_matches!(
+                    tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
+                        assert_eq!(tx, tx_2.transaction.into());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", tx_2.receipt.transaction_hash());
+
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 2)]
+    async fn subscribe_pending_transactions_ok_after(
+        _logs: (),
+        starknet: Starknet,
+        #[from(tx)]
+        #[with(SENDER_ADDRESS)]
+        tx_1: mp_block::TransactionWithReceipt,
+        #[from(tx)]
+        #[with(SENDER_ADDRESS)]
+        tx_2: mp_block::TransactionWithReceipt,
+        #[from(tx)]
+        #[with(starknet_types_core::felt::Felt::ONE)]
+        #[allow(unused)]
+        tx_3: mp_block::TransactionWithReceipt,
+        #[from(pending)]
+        #[with(vec![tx_1.clone(), tx_2.clone(), tx_3.clone()])]
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let transaction_details = false;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
+            .await
+            .expect("Failed subscription");
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, tx_1.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", tx_1.receipt.transaction_hash());
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, tx_2.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", tx_2.receipt.transaction_hash());
+
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 2)]
+    async fn subscribe_pending_transactions_err_timeout(_logs: (), starknet: Starknet) {
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let transaction_details = false;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
+            .await
+            .expect("Failed subscription");
+
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 2)]
+    async fn subscribe_pending_transactions_err_too_many_sender_address(
+        _logs: (),
+        starknet: Starknet,
+        #[from(tx)]
+        #[with(SENDER_ADDRESS)]
+        #[allow(unused)]
+        tx_1: mp_block::TransactionWithReceipt,
+        #[from(tx)]
+        #[with(SENDER_ADDRESS)]
+        #[allow(unused)]
+        tx_2: mp_block::TransactionWithReceipt,
+        #[from(tx)]
+        #[with(starknet_types_core::felt::Felt::ONE)]
+        #[allow(unused)]
+        tx_3: mp_block::TransactionWithReceipt,
+        #[from(pending)]
+        #[with(vec![tx_1.clone(), tx_2.clone(), tx_3.clone()])]
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+
+        let transaction_details = false;
+        let size = super::super::ADDRESS_FILTER_LIMIT as usize + 1;
+        let err = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS; size])
+            .await
+            .expect_err("Subscription should fail");
+
+        assert_matches::assert_matches!(
+            err,
+            jsonrpsee::core::client::error::Error::Call(err) => {
+                assert_eq!(err, crate::errors::StarknetWsApiError::TooManyAddressesInFilter.into());
+            }
+        );
     }
 }
