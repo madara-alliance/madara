@@ -5,6 +5,41 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
 #[cfg(not(test))]
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5min
 
+/// Notifies the user of new transactions in the pending block which match one of several
+/// `sender_address`,
+///
+/// The meaning of `sender_address` depends on the transaction type:
+///
+/// - [`Invoke`]: **sender address**.
+/// - [`L1Handler`]: **L2 contract address**.
+/// - [`Declare`]: **sender address**.
+/// - [`Deploy`]: **deployed contract address**.
+/// - [`DeployAccount`]: **deployed contract address**.
+///
+/// Note that it is possible to call this method on a `sender_address` which has not yet been
+/// received by the node and this endpoint will send an update as soon as a tx matching that sender
+/// address is received.
+///
+/// ## Error handling
+///
+/// This subscription will issue a connection refusal with [`TooManyAddressesInFilter`] if more than
+/// [`ADDRESS_FILTER_LIMIT`] sender addresses are provided.
+///
+/// ## DOS mitigation
+///
+/// To avoid a malicious attacker keeping connections open indefinitely on a nonexistent sender
+/// address, this endpoint will terminate the connection after a global timeout period. This timeout
+/// is reset every time a pending block is encountered which contains at least one matching
+/// transaction. Essentially, this means that the connection will remain active for as long as a new
+/// pending block with matching transactions is found within [`TIMEOUT`] seconds.
+///
+/// [`Invoke`]: mp_transactions::Transaction::Invoke
+/// [`L1Handler`]: mp_transactions::Transaction::L1Handler
+/// [`Declare`]: mp_transactions::Transaction::Declare
+/// [`Deploy`]: mp_transactions::Transaction::Deploy
+/// [`DeployAccount`]: mp_transactions::Transaction::DeployAccount
+/// [`TooManyAddressesInFilter`]: crate::errors::StarknetWsApiError::TooManyAddressesInFilter
+/// [`ADDRESS_FILTER_LIMIT`]: super::ADDRESS_FILTER_LIMIT
 pub async fn subscribe_pending_transactions(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
