@@ -121,12 +121,17 @@ impl SubmitTransaction for GatewayProvider {
     }
 
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        // The gateway cannot inform us about the status of transactions it has received since this
+        // is forwarded to a remote node which does not expose any endpoint to query this state. By
+        // default, all transactions which pass through the gateway will be automatically considered
+        // as received.
         None
     }
 
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        // We cannot subscribe to new transactions from the gateway for the same reasons as above
         None
     }
 }
@@ -141,12 +146,17 @@ impl mc_submit_tx::SubmitValidatedTransaction for GatewayProvider {
     }
 
     async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        // The gateway cannot inform us about the status of transactions it has received since this
+        // is forwarded to a remote node which does not expose any endpoint to query this state. By
+        // default, all transactions which pass through the gateway will be automatically considered
+        // as received.
         None
     }
 
     async fn subscribe_new_transactions(
         &self,
     ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        // We cannot subscribe to new transactions from the gateway for the same reasons as above
         None
     }
 }
