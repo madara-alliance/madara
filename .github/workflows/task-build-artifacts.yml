@@ -66,6 +66,7 @@ jobs:
         run: |
           IMAGE="${{ inputs.registry }}/${{ github.repository_owner }}/artifacts"
           VERSION=$(yq -e ".current_version" .artifact-versions.yml)
+          VERSION=$(($VERSION+1))
           ARTIFACTS="$IMAGE"
           ARTIFACTS_PR="$IMAGE:$VERSION"
 
