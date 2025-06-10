@@ -46,13 +46,23 @@ pub async fn subscribe_pending_transactions(
                     {
                         tx
                     }
+                    mp_transactions::Transaction::L1Handler(ref inner)
+                        if sender_address.contains(&inner.contract_address) =>
+                    {
+                        tx
+                    }
                     mp_transactions::Transaction::Declare(ref inner)
                         if sender_address.contains(inner.sender_address()) =>
                     {
                         tx
                     }
+                    mp_transactions::Transaction::Deploy(ref inner)
+                        if sender_address.contains(&inner.calculate_contract_address()) =>
+                    {
+                        tx
+                    }
                     mp_transactions::Transaction::DeployAccount(ref inner)
-                        if sender_address.contains(inner.sender_address()) =>
+                        if sender_address.contains(&inner.calculate_contract_address()) =>
                     {
                         tx
                     }
@@ -90,6 +100,9 @@ mod test {
 
     const SERVER_ADDR: &str = "127.0.0.1:0";
     const SENDER_ADDRESS: starknet_types_core::felt::Felt = starknet_types_core::felt::Felt::from_hex_unchecked("feed");
+    const CONTRACT_ADDRESS: starknet_types_core::felt::Felt = starknet_types_core::felt::Felt::from_hex_unchecked(
+        "0x64820103001fcf57dc33ea01733a819529381f2df018c97621e4089f0f0d355",
+    );
 
     #[rstest::fixture]
     fn logs() {
@@ -118,22 +131,72 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx(
-        #[default(starknet_types_core::felt::Felt::ZERO)] sender_address: starknet_types_core::felt::Felt,
-    ) -> mp_block::TransactionWithReceipt {
-        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
+    fn receipt() -> mp_receipt::TransactionReceipt {
+        const HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let ordering = std::sync::atomic::Ordering::AcqRel;
         let transaction_hash = HASH.fetch_add(1, ordering).into();
 
+        mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+            transaction_hash,
+            ..Default::default()
+        })
+    }
+
+    #[rstest::fixture]
+    fn invoke(
+        #[default(Default::default())] sender_address: starknet_types_core::felt::Felt,
+        receipt: mp_receipt::TransactionReceipt,
+    ) -> mp_block::TransactionWithReceipt {
         mp_block::TransactionWithReceipt {
             transaction: mp_transactions::Transaction::Invoke(mp_transactions::InvokeTransaction::V0(
                 mp_transactions::InvokeTransactionV0 { contract_address: sender_address, ..Default::default() },
             )),
-            receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
-                transaction_hash,
+            receipt,
+        }
+    }
+
+    #[rstest::fixture]
+    fn l1_handler(
+        #[default(Default::default())] contract_address: starknet_types_core::felt::Felt,
+        receipt: mp_receipt::TransactionReceipt,
+    ) -> mp_block::TransactionWithReceipt {
+        mp_block::TransactionWithReceipt {
+            transaction: mp_transactions::Transaction::L1Handler(mp_transactions::L1HandlerTransaction {
+                contract_address,
                 ..Default::default()
             }),
+            receipt,
+        }
+    }
+
+    #[rstest::fixture]
+    fn declare(
+        #[default(Default::default())] sender_address: starknet_types_core::felt::Felt,
+        receipt: mp_receipt::TransactionReceipt,
+    ) -> mp_block::TransactionWithReceipt {
+        mp_block::TransactionWithReceipt {
+            transaction: mp_transactions::Transaction::Declare(mp_transactions::DeclareTransaction::V0(
+                mp_transactions::DeclareTransactionV0 { sender_address, ..Default::default() },
+            )),
+            receipt,
+        }
+    }
+
+    #[rstest::fixture]
+    fn deploy(receipt: mp_receipt::TransactionReceipt) -> mp_block::TransactionWithReceipt {
+        mp_block::TransactionWithReceipt {
+            transaction: mp_transactions::Transaction::Deploy(mp_transactions::DeployTransaction::default()),
+            receipt,
+        }
+    }
+
+    #[rstest::fixture]
+    fn deploy_account(receipt: mp_receipt::TransactionReceipt) -> mp_block::TransactionWithReceipt {
+        mp_block::TransactionWithReceipt {
+            transaction: mp_transactions::Transaction::DeployAccount(mp_transactions::DeployAccountTransaction::V1(
+                mp_transactions::DeployAccountTransactionV1::default(),
+            )),
+            receipt,
         }
     }
 
@@ -155,13 +218,13 @@ mod test {
     async fn subscribe_pending_transactions_ok_hash(
         _logs: (),
         starknet: Starknet,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         tx_1: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         tx_2: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(starknet_types_core::felt::Felt::ONE)]
         #[allow(unused)]
         tx_3: mp_block::TransactionWithReceipt,
@@ -223,13 +286,13 @@ mod test {
     async fn subscribe_pending_transactions_ok_details(
         _logs: (),
         starknet: Starknet,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         tx_1: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         tx_2: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(starknet_types_core::felt::Felt::ONE)]
         #[allow(unused)]
         tx_3: mp_block::TransactionWithReceipt,
@@ -291,13 +354,13 @@ mod test {
     async fn subscribe_pending_transactions_ok_after(
         _logs: (),
         starknet: Starknet,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         tx_1: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         tx_2: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(starknet_types_core::felt::Felt::ONE)]
         #[allow(unused)]
         tx_3: mp_block::TransactionWithReceipt,
@@ -356,6 +419,104 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(super::TIMEOUT * 2)]
+    async fn subscribe_pending_transaction_ok_all_types(
+        _logs: (),
+        starknet: Starknet,
+        deploy_account: mp_block::TransactionWithReceipt,
+        deploy: mp_block::TransactionWithReceipt,
+        #[with(CONTRACT_ADDRESS)] declare: mp_block::TransactionWithReceipt,
+        #[with(CONTRACT_ADDRESS)] l1_handler: mp_block::TransactionWithReceipt,
+        #[with(CONTRACT_ADDRESS)] invoke: mp_block::TransactionWithReceipt,
+        #[with(vec![deploy_account.clone(), deploy.clone(), declare.clone(), l1_handler.clone(), invoke.clone()])]
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+        let transaction_details = false;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![CONTRACT_ADDRESS])
+            .await
+            .expect("Failed subscription");
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, deploy_account.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", deploy_account.receipt.transaction_hash());
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, deploy.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", deploy.receipt.transaction_hash());
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, declare.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", declare.receipt.transaction_hash());
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, l1_handler.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", l1_handler.receipt.transaction_hash());
+
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, invoke.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", invoke.receipt.transaction_hash());
+
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 2)]
     async fn subscribe_pending_transactions_err_timeout(_logs: (), starknet: Starknet) {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
@@ -384,15 +545,15 @@ mod test {
     async fn subscribe_pending_transactions_err_too_many_sender_address(
         _logs: (),
         starknet: Starknet,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         #[allow(unused)]
         tx_1: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(SENDER_ADDRESS)]
         #[allow(unused)]
         tx_2: mp_block::TransactionWithReceipt,
-        #[from(tx)]
+        #[from(invoke)]
         #[with(starknet_types_core::felt::Felt::ONE)]
         #[allow(unused)]
         tx_3: mp_block::TransactionWithReceipt,
