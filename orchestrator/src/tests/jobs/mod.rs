@@ -112,7 +112,10 @@ async fn create_job_job_exists_in_db_works() {
         .is_ok());
 
     // There should be only 1 job in the db
-    let jobs_in_db = database_client.get_jobs_by_statuses(vec![JobStatus::Created], None).await.unwrap();
+    let jobs_in_db = database_client
+        .get_jobs_by_types_and_statuses(vec![JobType::ProofCreation], vec![JobStatus::Created], None)
+        .await
+        .unwrap();
     assert_eq!(jobs_in_db.len(), 1);
 
     // Waiting for 5 secs for message to be passed into the queue
