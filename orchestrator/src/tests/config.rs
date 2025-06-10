@@ -30,7 +30,9 @@ use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
-use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_default, get_env_var_or_panic};
+use orchestrator_utils::env_utils::{
+    get_env_var_optional, get_env_var_optional_or_panic, get_env_var_or_default, get_env_var_or_panic,
+};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
