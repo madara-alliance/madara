@@ -42,7 +42,11 @@ pub async fn subscribe_transaction_status(
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
     transaction_hash: mp_convert::Felt,
 ) -> Result<(), crate::errors::StarknetWsApiError> {
-    let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let sink = subscription_sink
+        .accept()
+        .await
+        .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
+
     let mut state = SubscriptionState::new(starknet, &sink, transaction_hash).await?;
     let timeout = tokio::time::timeout(TIMEOUT, state.drive());
 
@@ -99,7 +103,7 @@ impl<'a> SubscriptionState<'a> {
 
         let block_info =
             starknet.backend.find_tx_hash_block_info(&transaction_hash).or_else_internal_server_error(|| {
-                format!("Error looking for block info associated to tx {transaction_hash:#x}")
+                format!("SubscribeTransactionStatus failed to retrieve block info for tx {transaction_hash:#x}")
             })?;
 
         if let Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) = block_info {
@@ -108,7 +112,7 @@ impl<'a> SubscriptionState<'a> {
                 .starknet
                 .backend
                 .get_l1_last_confirmed_block()
-                .or_internal_server_error("Error retrieving last confirmed block")?;
+                .or_internal_server_error("SubscribeTransactionStatus failed to retrieving last confirmed block")?;
 
             // Tx has been accepted on L1, hence it is marked as such. This is the final
             // stage of the transaction so the state machine is put in its end state.
@@ -237,10 +241,13 @@ impl StateTransitionCommon<'_> {
     ) -> Result<(), crate::errors::StarknetWsApiError> {
         let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.transaction_hash, status };
         let msg = jsonrpsee::SubscriptionMessage::from_json(&txn_status).or_else_internal_server_error(|| {
-            format!("Failed to create response message for status update at tx hash {:#x}", self.transaction_hash)
+            format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.transaction_hash)
         })?;
 
-        self.subscription_sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
+        self.subscription_sink
+            .send(msg)
+            .await
+            .or_internal_server_error("SubscribeTransactionStatus failed to respond to websocket request")
     }
 }
 
@@ -256,11 +263,13 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
         let Self { common, mut channel_mempool, .. } = self;
 
         let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
+        let tx_hash = &common.transaction_hash;
+
         loop {
             let channel_closed = common.starknet.backend.subscribe_closed_blocks();
             match channel_mempool.recv().await {
                 Ok(hash) => {
-                    if hash == common.transaction_hash {
+                    if &hash == tx_hash {
                         let transition = StateTransitionAcceptedOnL2 { common, channel_closed };
                         let transition = Self::TransitionTo::WaitAcceptedOnL2(transition);
                         break Ok(transition);
@@ -272,7 +281,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
                         .backend
                         .find_tx_hash_block_info(&common.transaction_hash)
                         .or_else_internal_server_error(|| {
-                            format!("Error looking for block info associated to tx {:#x}", common.transaction_hash)
+                            format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
                         })?;
 
                     let Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) = block_info else {
@@ -295,10 +304,12 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
         let Self { common, mut channel_closed } = self;
 
         let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
+        let tx_hash = &common.transaction_hash;
+
         let block_number = loop {
             match channel_closed.recv().await {
                 Ok(block_info) => {
-                    if block_info.tx_hashes.iter().any(|hash| hash == &common.transaction_hash) {
+                    if block_info.tx_hashes.iter().any(|hash| hash == tx_hash) {
                         break block_info.header.block_number;
                     }
                 }
@@ -308,7 +319,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                         .backend
                         .find_tx_hash_block_info(&common.transaction_hash)
                         .or_else_internal_server_error(|| {
-                            format!("Error looking for block info associated to tx {:#x}", common.transaction_hash)
+                            format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
                         })?;
 
                     if let Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) = block_info {
@@ -328,7 +339,10 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
         let Self { common, block_number, mut channel_confirmed } = self;
 
         loop {
-            channel_confirmed.changed().await.or_internal_server_error("Error waiting for watch channel update")?;
+            channel_confirmed
+                .changed()
+                .await
+                .or_internal_server_error("SubscribeTransactionStatus failed to wait for watch channel update")?;
 
             let confirmed = channel_confirmed.borrow_and_update().to_owned();
             if confirmed.is_some_and(|n| block_number <= n) {
