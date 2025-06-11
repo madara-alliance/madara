@@ -813,18 +813,23 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "_id": batch.id,
         };
-        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
 
-        let updates = update.to_document()?;
+        let updates = batch.to_document()?;
 
         // remove null values from the updates
         let mut non_null_updates = Document::new();
         updates.iter().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+        update.to_document()?.iter_mut().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
             }
@@ -836,7 +841,7 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Add additional fields that are always updated
-        non_null_updates.insert("size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
+        non_null_updates.insert("num_blocks", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
