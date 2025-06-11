@@ -1,11 +1,11 @@
 use crate::{MadaraBackend, MadaraStorageError};
 use mp_block::{header::PendingHeader, MadaraBlockInfo, MadaraPendingBlockInfo};
 use std::sync::Arc;
-use tokio::sync::{broadcast, watch};
 
-pub type ClosedBlocksReceiver = broadcast::Receiver<Arc<MadaraBlockInfo>>;
-pub type PendingBlockReceiver = watch::Receiver<Arc<MadaraPendingBlockInfo>>;
-pub type LastConfirmedBlockReceived = watch::Receiver<Option<u64>>;
+pub type ClosedBlocksReceiver = tokio::sync::broadcast::Receiver<Arc<MadaraBlockInfo>>;
+pub type PendingBlockReceiver = tokio::sync::watch::Receiver<Arc<MadaraPendingBlockInfo>>;
+pub type PendingTxsReceiver = tokio::sync::broadcast::Receiver<mp_block::TransactionWithReceipt>;
+pub type LastConfirmedBlockReceived = tokio::sync::watch::Receiver<Option<u64>>;
 
 fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<MadaraPendingBlockInfo> {
     let Some(parent_block) = parent_block else {
@@ -26,17 +26,19 @@ fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<Madara
 }
 
 pub(crate) struct BlockWatch {
-    closed_blocks: broadcast::Sender<Arc<MadaraBlockInfo>>,
-    pending_block: watch::Sender<Arc<MadaraPendingBlockInfo>>,
-    last_confirmed_block: watch::Sender<Option<u64>>,
+    closed_blocks: tokio::sync::broadcast::Sender<Arc<MadaraBlockInfo>>,
+    pending_block: tokio::sync::watch::Sender<Arc<MadaraPendingBlockInfo>>,
+    pending_txs: tokio::sync::broadcast::Sender<mp_block::TransactionWithReceipt>,
+    last_confirmed_block: tokio::sync::watch::Sender<Option<u64>>,
 }
 
 impl BlockWatch {
     pub fn new() -> Self {
         Self {
-            closed_blocks: broadcast::channel(100).0,
-            pending_block: watch::channel(make_fake_pending_block(None)).0,
-            last_confirmed_block: watch::channel(None).0,
+            closed_blocks: tokio::sync::broadcast::channel(100).0,
+            pending_block: tokio::sync::watch::channel(make_fake_pending_block(None)).0,
+            pending_txs: tokio::sync::broadcast::channel(100).0,
+            last_confirmed_block: tokio::sync::watch::channel(None).0,
         }
     }
 
@@ -60,6 +62,10 @@ impl BlockWatch {
         self.update_pending(make_fake_pending_block(parent_block));
     }
 
+    pub fn on_new_pending_tx(&self, tx: mp_block::TransactionWithReceipt) {
+        let _no_listener_error = self.pending_txs.send(tx);
+    }
+
     pub fn on_new_block(&self, block: Arc<MadaraBlockInfo>) {
         let _no_listener_error = self.closed_blocks.send(Arc::clone(&block));
         self.update_pending(make_fake_pending_block(Some(&block)));
@@ -67,6 +73,9 @@ impl BlockWatch {
 
     pub fn subscribe_closed_blocks(&self) -> ClosedBlocksReceiver {
         self.closed_blocks.subscribe()
+    }
+    pub fn subscribe_pending_txs(&self) -> PendingTxsReceiver {
+        self.pending_txs.subscribe()
     }
     pub fn subscribe_pending_block(&self) -> PendingBlockReceiver {
         self.pending_block.subscribe()
@@ -80,19 +89,27 @@ impl BlockWatch {
 }
 
 impl MadaraBackend {
-    #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
+    #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
     pub fn subscribe_closed_blocks(&self) -> ClosedBlocksReceiver {
         self.watch_blocks.subscribe_closed_blocks()
     }
-    #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
+    #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
+    pub fn on_new_pending_tx(&self, tx: mp_block::TransactionWithReceipt) {
+        self.watch_blocks.on_new_pending_tx(tx);
+    }
+    #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
+    pub fn subscribe_pending_txs(&self) -> PendingTxsReceiver {
+        self.watch_blocks.subscribe_pending_txs()
+    }
+    #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
     pub fn subscribe_pending_block(&self) -> PendingBlockReceiver {
         self.watch_blocks.subscribe_pending_block()
     }
-    #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
+    #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
     pub fn subscribe_last_confirmed_block(&self) -> LastConfirmedBlockReceived {
         self.watch_blocks.subscribe_last_confirmed_block()
     }
-    #[tracing::instrument(skip(self), fields(module = "MadaraBackendWatch"))]
+    #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
     pub fn latest_pending_block(&self) -> Arc<MadaraPendingBlockInfo> {
         self.watch_blocks.latest_pending_block()
     }
