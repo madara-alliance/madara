@@ -2,6 +2,8 @@ use crate::core::config::Config;
 use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::types::queue::QueueType;
+use crate::types::queue_control::QUEUES;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -12,8 +14,6 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use crate::types::queue::QueueType;
-use crate::types::queue_control::QUEUES;
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
