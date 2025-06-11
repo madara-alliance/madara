@@ -283,8 +283,7 @@ mod tests {
 
     /// Converts a crate-relative path to an absolute system path.
     ///
-    /// * `path`: path to the local file, relative to the current crate
-    ///     `Cargo.tom`
+    /// * `path`: path to the local file, relative to the current crate `Cargo.tom`
     fn to_absolute_path(path: &str) -> PathBuf {
         let mut path_abs = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         path_abs.push(path);

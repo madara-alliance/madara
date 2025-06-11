@@ -96,6 +96,7 @@ jobs:
 
           # run tests for madara client / primitive crates
           cargo llvm-cov nextest \
+              --manifest-path madara/Cargo.toml \
               --release \
               --features testing \
               --lcov \

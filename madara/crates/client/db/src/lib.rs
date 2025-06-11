@@ -81,6 +81,7 @@ pub mod l1_db;
 pub mod mempool_db;
 pub mod storage_updates;
 pub mod stream;
+#[cfg(any(test, feature = "testing"))]
 pub mod tests;
 mod update_global_trie;
 

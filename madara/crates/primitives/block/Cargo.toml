@@ -20,7 +20,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 bitvec = { workspace = true }
 bonsai-trie = { workspace = true }
 mp-chain-config = { workspace = true }
-mp-class = { workspace = true }
 mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
 mp-rpc = { workspace = true }

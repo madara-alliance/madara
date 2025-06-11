@@ -4,7 +4,7 @@ use mc_exec::ExecutionContext;
 use mp_block::BlockId;
 use mp_rpc::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
-use starknet_api::transaction::{Fee, TransactionHash};
+use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcApiError;
@@ -44,7 +44,7 @@ pub async fn estimate_message_fee(
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
     let execution_result = exec_context
-        .re_execute_transactions([], [transaction], false, true)?
+        .re_execute_transactions([], [transaction])?
         .pop()
         .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
@@ -59,12 +59,14 @@ pub fn convert_message_into_transaction(
 ) -> blockifier::transaction::transaction_execution::Transaction {
     let l1_handler: L1HandlerTransaction = message.into();
     let tx_hash = l1_handler.compute_hash(chain_id, false, false);
+    // TODO: remove this unwrap
     let tx: starknet_api::transaction::L1HandlerTransaction = l1_handler.try_into().unwrap();
 
-    let tx = blockifier::transaction::transactions::L1HandlerTransaction {
-        tx,
-        tx_hash: TransactionHash(tx_hash),
-        paid_fee_on_l1: Fee(1),
-    };
-    blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(tx)
+    blockifier::transaction::transaction_execution::Transaction::L1Handler(
+        starknet_api::executable_transaction::L1HandlerTransaction {
+            tx,
+            tx_hash: TransactionHash(tx_hash),
+            paid_fee_on_l1: Fee::default(),
+        },
+    )
 }
