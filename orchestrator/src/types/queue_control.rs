@@ -38,7 +38,7 @@ impl Default for QueueControlConfig {
 #[derive(Clone)]
 pub struct QueueConfig {
     pub visibility_timeout: u32,
-    pub queue_control: Option<QueueControlConfig>,
+    pub queue_control: QueueControlConfig,
     pub dlq_config: Option<DlqConfig>,
     pub supported_layers: Vec<Layer>,
 }
@@ -51,7 +51,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: None,
-                queue_control: None,
+                queue_control: QueueControlConfig::default(),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -60,7 +60,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: None,
-                queue_control: Some(QueueControlConfig::default_with_message_count(50)),
+                queue_control: QueueControlConfig::default_with_message_count(50),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -69,7 +69,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::default_with_message_count(5)),
+                queue_control: QueueControlConfig::default_with_message_count(200),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -78,7 +78,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::default_with_message_count(5)),
+                queue_control: QueueControlConfig::default_with_message_count(5),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -87,7 +87,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 3, 30)),
+                queue_control: QueueControlConfig::new(10, 3, 30),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -96,7 +96,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 300, 30)),
+                queue_control: QueueControlConfig::new(10, 300, 30),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -105,7 +105,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 3, 30)),
+                queue_control: QueueControlConfig::new(10, 3, 30),
                 supported_layers: vec![Layer::L3],
             },
         );
@@ -114,7 +114,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 300, 30)),
+                queue_control: QueueControlConfig::new(10, 300, 30),
                 supported_layers: vec![Layer::L3],
             },
         );
@@ -123,7 +123,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 3, 60)),
+                queue_control: QueueControlConfig::new(10, 3, 60),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -132,7 +132,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 3, 60)),
+                queue_control: QueueControlConfig::new(10, 3, 60),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -141,7 +141,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 900,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 3, 60)),
+                queue_control: QueueControlConfig::new(10, 3, 60),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );
@@ -150,7 +150,7 @@ lazy_static! {
             QueueConfig {
                 visibility_timeout: 300,
                 dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-                queue_control: Some(QueueControlConfig::new(10, 10, 60)),
+                queue_control: QueueControlConfig::new(10, 10, 60),
                 supported_layers: vec![Layer::L2, Layer::L3],
             },
         );

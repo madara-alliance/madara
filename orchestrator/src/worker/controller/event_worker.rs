@@ -38,7 +38,7 @@ impl EventWorker {
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> EventSystemResult<Self> {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
-        let queue_control = queue_config.queue_control.clone().unwrap_or_default();
+        let queue_control = queue_config.queue_control.clone();
         Ok(Self { queue_type, config, queue_control })
     }
 
