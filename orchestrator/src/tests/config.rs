@@ -19,7 +19,6 @@ use crate::types::params::service::{ServerParams, ServiceParams};
 use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
-use crate::utils::helpers::ProcessingLocks;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;

@@ -2,7 +2,7 @@ use clap::Args;
 
 /// Parameters used to config AWS SQS.
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["sqs_prefix", "sqs_suffix"])]
+#[group(requires_all = ["queue_identifier"])]
 pub struct AWSSQSCliArgs {
     /// Use the AWS sqs client
     #[arg(long)]
