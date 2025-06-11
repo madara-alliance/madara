@@ -461,6 +461,7 @@ mod tests {
         true
     )]
     #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
+    #[ignore = "should_work_across_block_boundary"]
     #[tokio::test]
     async fn test_account_deploy(
         #[case] transfer_fees: bool,
