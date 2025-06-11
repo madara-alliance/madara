@@ -97,6 +97,10 @@ impl<'a> SubscriptionState<'a> {
     ) -> Result<Self, crate::errors::StarknetWsApiError> {
         let common = StateTransitionCommon { starknet, subscription_sink, transaction_hash };
 
+        // **FOOTGUN!** 💥
+        //
+        // We subscribe to each channel before running status checks against the transaction to
+        // avoid missing any updates.
         let channel_mempool = common.starknet.add_transaction_provider.subscribe_new_transactions().await;
         let channel_closed = common.starknet.backend.subscribe_closed_blocks();
         let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
@@ -266,6 +270,13 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
         let tx_hash = &common.transaction_hash;
 
         loop {
+            // **FOOTGUN!** 💥
+            //
+            // We delay the closed block subscription as much as possible so that `WaitAcceptedOnL2`
+            // will only have to check at most the latest few blocks before the transactions was
+            // received. If we subscribed to this channel at the start of the function, it would be
+            // receiving ALL blocks from then until the transaction was received and
+            // `WaitAcceptedOnL2` would have to check them all!
             let channel_closed = common.starknet.backend.subscribe_closed_blocks();
             match channel_mempool.recv().await {
                 Ok(hash) => {
@@ -275,6 +286,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
                         break Ok(transition);
                     }
                 }
+                // This happens if the channel lags behind the mempool
                 Err(_) => {
                     let block_info = common
                         .starknet
@@ -309,10 +321,17 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
         let block_number = loop {
             match channel_closed.recv().await {
                 Ok(block_info) => {
+                    // There is no point in moving this to its own dedicated channel just to send
+                    // confirmed transactions since we are never updating blocks after they have
+                    // been confirmed. The same cannot be said about pending transactions, since we
+                    // will update the pending block multiple times during block prod, and so
+                    // iterating over all transactions on a pending block update leads to a lot of
+                    // duplicate comparisons.
                     if block_info.tx_hashes.iter().any(|hash| hash == tx_hash) {
                         break block_info.header.block_number;
                     }
                 }
+                // This happens if the channel lags behind block prod
                 Err(_) => {
                     let block_info = common
                         .starknet
@@ -339,15 +358,22 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
         let Self { common, block_number, mut channel_confirmed } = self;
 
         loop {
-            channel_confirmed
-                .changed()
-                .await
-                .or_internal_server_error("SubscribeTransactionStatus failed to wait for watch channel update")?;
-
             let confirmed = channel_confirmed.borrow_and_update().to_owned();
             if confirmed.is_some_and(|n| block_number <= n) {
                 break Ok(Self::TransitionTo { common });
             }
+
+            // **FOOTGUN!** 💥
+            //
+            // We only wait for L1 confirmed updates AFTER an initial check. This is because all
+            // previously sent values in a `tokio::sync::watch` channel are marked as seen when we
+            // first subscribe. If the subscription happens right after an L1 state update, that
+            // means we would have to wait yet another update before we could read its state, and
+            // since those are quite infrequent, that can be a lot of time!
+            channel_confirmed
+                .changed()
+                .await
+                .or_internal_server_error("SubscribeTransactionStatus failed to wait for watch channel update")?;
         }
     }
 }
