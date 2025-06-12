@@ -43,6 +43,7 @@
             yq
             scarb
             gnumake
+            mold
             wget
             git
           ];
@@ -58,6 +59,10 @@
             ];
 
           shellHook = ''
+          # Increase the limit of open file descriptors
+          echo "[INFO] Increasing open file descriptor limit to 65535 (ulimit -n)"
+          ulimit -n 65535 || echo "[WARN] Failed to set ulimit -n to 65535"
+
             # --- NPM Global Installation Workaround for Nix Shell ---
             # The starkgate-contracts setup script tries to install npm packages globally.
             # In a Nix environment, global installs to /nix/store fail due to its read-only nature.
@@ -86,9 +91,16 @@
             fi
           '';
 
-          LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
-          PROTOC = "${pkgs.protobuf}/bin/protoc";
-          ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
+          env = {
+            LIBCLANG_PATH = "${pkgs.llvmPackages.libclang.lib}/lib";
+            ROCKSDB_LIB_DIR = "${pkgs.rocksdb}/lib";
+            PROTOC = "${pkgs.protobuf}/bin/protoc";
+            LD_LIBRARY_PATH = pkgs.lib.makeLibraryPath [
+              pkgs.gcc.cc.lib
+              pkgs.openssl
+              pkgs.rocksdb
+            ];
+          };
         };
       }
     );
