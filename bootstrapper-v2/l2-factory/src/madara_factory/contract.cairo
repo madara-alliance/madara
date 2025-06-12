@@ -5,6 +5,7 @@ mod MadaraFactory {
     use starknet::storage::{StoragePointerReadAccess, StoragePointerWriteAccess};
     use starknet::syscalls::deploy_syscall;
     use starknet::{ClassHash, ContractAddress, EthAddress, SyscallResultTrait};
+    use crate::interfaces::bridge::{ITokenBridgeAdminDispatcher, ITokenBridgeAdminDispatcherTrait};
     use crate::interfaces::replaceable::{
         EICData, IReplaceableDispatcher, IReplaceableDispatcherTrait, ImplementationData,
     };
@@ -59,6 +60,8 @@ mod MadaraFactory {
             )
                 .unwrap_syscall();
 
+            self.configure_bridge(l2_eth_bridge, self.l1_eth_bridge_address.read(), false);
+
             // Deploy Eth
             let mut calldata = ArrayTrait::new();
             'Ether'.serialize(ref calldata);
@@ -111,8 +114,33 @@ mod MadaraFactory {
                 false,
             )
                 .unwrap_syscall();
+            self.configure_bridge(l2_token_bridge, self.l1_erc20_bridge_address.read(), true);
 
             (l2_eth_token, l2_eth_bridge, l2_token_bridge)
+        }
+    }
+
+    #[generate_trait]
+    impl InternalImpl of InternalTrait {
+        fn configure_bridge(
+            ref self: ContractState,
+            bridge_address: ContractAddress,
+            l1_bridge: EthAddress,
+            is_erc20: bool,
+        ) {
+            let contract = starknet::get_contract_address();
+            let bridgeRole = IRolesDispatcher { contract_address: bridge_address };
+            bridgeRole.register_app_role_admin(contract);
+            bridgeRole.register_app_governor(contract);
+            let bridgeAdmmin = ITokenBridgeAdminDispatcher { contract_address: bridge_address };
+            bridgeAdmmin.set_l2_token_governance(self.owner.read());
+            bridgeAdmmin.set_l1_bridge(l1_bridge);
+            if is_erc20 {
+                bridgeAdmmin.set_erc20_class_hash(self.erc20_class_hash.read());
+            }
+            bridgeRole.remove_app_governor(contract);
+            bridgeRole.remove_app_role_admin(contract);
+            bridgeRole.register_governance_admin(self.owner.read());
         }
     }
 }

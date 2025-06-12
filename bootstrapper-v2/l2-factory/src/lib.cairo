@@ -9,6 +9,7 @@ mod EthBridgeEIC {
 }
 
 mod interfaces {
+    pub mod bridge;
     pub mod replaceable;
     pub mod roles;
 }
