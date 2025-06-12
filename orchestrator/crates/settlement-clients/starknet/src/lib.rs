@@ -116,7 +116,7 @@ impl SettlementClient for StarknetSettlementClient {
     /// Should be used to update state on core contract when DA is done in calldata
     async fn update_state_calldata(
         &self,
-        snos_output: Vec<[u8; 32]>,
+        _snos_output: Vec<[u8; 32]>,
         program_output: Vec<[u8; 32]>,
         onchain_data_hash: [u8; 32],
         onchain_data_size: [u8; 32],
@@ -131,6 +131,7 @@ impl SettlementClient for StarknetSettlementClient {
         let program_output = slice_slice_u8_to_vec_field(program_output.as_slice());
         let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
+        let onchain_data_size = crypto_bigint::U256::from_be_bytes(onchain_data_size).into();
 
         let low = u128::from_be_bytes(onchain_data_size[16..32].try_into()?);
         let high = u128::from_be_bytes(onchain_data_size[0..16].try_into()?);

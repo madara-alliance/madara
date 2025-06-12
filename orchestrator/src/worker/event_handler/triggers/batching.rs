@@ -43,10 +43,7 @@ impl JobTrigger for BatchingTrigger {
         let latest_block_in_db = latest_batch.map_or(0, |batch| batch.end_block);
 
         // Calculating the first block number to for which a batch needs to be assigned
-        let first_block_to_assign_batch = config
-            .service_config()
-            .min_block_to_process
-            .map_or(latest_block_in_db, |min_block| max(min_block, latest_block_in_db));
+        let first_block_to_assign_batch = max(latest_block_in_db, config.service_config().min_block_to_process);
 
         for block_num in first_block_to_assign_batch..=last_block_to_assign_batch {
             self.assign_batch_to_block(block_num, config.clone()).await?;

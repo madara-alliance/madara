@@ -22,6 +22,6 @@ pub fn get_env_var_optional(key: &str) -> Result<Option<String>, VarError> {
     }
 }
 
-pub fn get_env_car_optional_or_panic(key: &str) -> Option<String> {
+pub fn get_env_var_optional_or_panic(key: &str) -> Option<String> {
     get_env_var_optional(key).unwrap_or_else(|e| panic!("Failed to get env var {}: {}", key, e))
 }

@@ -9,6 +9,9 @@ pub enum QueueError {
     #[error("Missing parameter: {0}")]
     MissingRootParameter(String),
 
+    #[error("Invalid ARN: {0}")]
+    InvalidArn(String),
+
     #[error("Failed to get queue url: {0}")]
     GetQueueUrlError(#[from] SdkError<GetQueueUrlError>),
 

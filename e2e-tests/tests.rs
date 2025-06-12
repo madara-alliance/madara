@@ -12,6 +12,7 @@ use e2e_tests::starknet_client::StarknetClient;
 use e2e_tests::utils::{get_mongo_db_client, read_state_update_from_file, vec_u8_to_hex_string};
 use e2e_tests::{MongoDbServer, Orchestrator};
 use mongodb::bson::doc;
+use orchestrator::core::client::queue::sqs::InnerSQS;
 use orchestrator::core::client::SQS;
 use orchestrator::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
@@ -26,7 +27,7 @@ use orchestrator::types::params::database::DatabaseArgs;
 use orchestrator::types::params::QueueArgs;
 use orchestrator::types::queue::QueueType;
 use orchestrator::worker::parser::job_queue_message::JobQueueMessage;
-use orchestrator_utils::env_utils::get_env_var_or_panic;
+use orchestrator_utils::env_utils::{get_env_var_optional_or_panic, get_env_var_or_panic};
 use rstest::rstest;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -136,9 +137,20 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     println!("Loading .env file");
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
-    let queue_params = QueueArgs {
-        prefix: get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-        suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX"),
+    // E2E tests assume that we are not passing ARNS
+    let aws_prefix = get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
+    let aws_identifier = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER");
+
+    let queue_params = match aws_prefix {
+        Some(prefix) => QueueArgs {
+            queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(format!(
+                "{}_{}",
+                prefix, aws_identifier,
+            )),
+        },
+        None => QueueArgs {
+            queue_template_identifier: orchestrator::types::params::AWSResourceIdentifier::Name(aws_identifier),
+        },
     };
 
     let mut setup_config = Setup::new(l2_block_number.clone()).await;
@@ -318,9 +330,12 @@ pub async fn put_snos_job_in_processing_queue(id: Uuid, queue_params: QueueArgs)
     let message = JobQueueMessage { id };
 
     let config = aws_config::from_env().load().await;
-    let queue = SQS::new(&config, Some(&queue_params));
-    let queue_name = format!("{}_{}_{}", queue_params.prefix, QueueType::SnosJobProcessing, queue_params.suffix);
-    let queue_url = queue.get_queue_url_from_client(queue_name.as_str()).await?;
+    let queue = SQS::new(&config, &queue_params);
+    let queue_name = InnerSQS::get_queue_name_from_type(
+        &queue_params.queue_template_identifier.to_string(),
+        &QueueType::SnosJobProcessing,
+    );
+    let queue_url = queue.inner.get_queue_url_from_client(queue_name.as_str()).await?;
     put_message_in_queue(message, queue_url).await?;
     Ok(())
 }
