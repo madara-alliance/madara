@@ -372,11 +372,6 @@ impl DatabaseClient for MongoDbClient {
             }
         });
 
-        // throw an error if there's no field to be updated
-        if non_null_updates.is_empty() {
-            return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
-        }
-
         // Add additional fields that are always updated
         non_null_updates.insert("version", Bson::Int32(current_job.version + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
@@ -829,11 +824,6 @@ impl DatabaseClient for MongoDbClient {
                 non_null_updates.insert(k, v);
             }
         });
-
-        // throw an error if there's no field to be updated
-        if non_null_updates.is_empty() {
-            return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
-        }
 
         // Add additional fields that are always updated
         non_null_updates.insert("size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
