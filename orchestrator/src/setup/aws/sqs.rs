@@ -51,13 +51,13 @@ impl Resource for InnerSQS {
             match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
                     // If ARN is provided, we just check if it exists
-                    let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, &queue_type);
+                    let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, queue_type);
                     tracing::info!("Queue Arn provided, skipping setup for {}", &queue_name);
                     continue;
                 }
 
                 AWSResourceIdentifier::Name(name) => {
-                    let queue_name = InnerSQS::get_queue_name_from_type(name, &queue_type);
+                    let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
                     // Create the queue
                     let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
@@ -157,7 +157,7 @@ impl Resource for InnerSQS {
             }
             let queue_exists = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
-                    let queue_url = self.get_queue_url_from_arn(arn, &queue_type)?;
+                    let queue_url = self.get_queue_url_from_arn(arn, queue_type)?;
                     self.client()
                         .get_queue_attributes()
                         .queue_url(queue_url)
@@ -167,7 +167,7 @@ impl Resource for InnerSQS {
                         .is_ok()
                 }
                 AWSResourceIdentifier::Name(name) => {
-                    let queue_name = InnerSQS::get_queue_name_from_type(name, &queue_type);
+                    let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
                     match self.get_queue_url_from_client(queue_name.as_str()).await {
                         Ok(queue_url) => self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok(),
                         Err(_) => false,
