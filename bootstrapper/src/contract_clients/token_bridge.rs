@@ -55,6 +55,7 @@ impl BridgeDeployable for StarknetTokenBridge {
                 .await
                 .expect("Failed to deploy starkgate manager contract"),
         };
+        sleep(Duration::from_secs(20)).await;
         let registry = match is_dev {
             false => deploy_starkgate_registry_behind_safe_proxy(client.clone())
                 .await
@@ -63,6 +64,7 @@ impl BridgeDeployable for StarknetTokenBridge {
                 .await
                 .expect("Failed to deploy starkgate registry"),
         };
+        sleep(Duration::from_secs(20)).await;
         let token_bridge = match is_dev {
             false => deploy_starknet_token_bridge_behind_safe_proxy(client.clone())
                 .await
@@ -71,10 +73,12 @@ impl BridgeDeployable for StarknetTokenBridge {
                 .await
                 .expect("Failed to deploy starknet contract"),
         };
+        sleep(Duration::from_secs(20)).await;
 
         let erc20 = deploy_dai_test_erc20_behind_unsafe_proxy(client.clone())
             .await
             .expect("Failed to deploy dai erc20 contract");
+        sleep(Duration::from_secs(20)).await;
 
         Self { manager, registry, token_bridge, erc20 }
     }
@@ -207,16 +211,19 @@ impl StarknetTokenBridge {
             .add_implementation(Bytes::from(manager_calldata.clone()), self.manager.implementation_address(), false)
             .await
             .expect("Failed to initialize starkgate manager");
+        sleep(Duration::from_secs(20)).await;
         log::info!("🎡 add_implementation_token_bridge : manager bytes : {:?}", Bytes::from(manager_calldata));
         self.registry
             .add_implementation(Bytes::from(registry_calldata.clone()), self.registry.implementation_address(), false)
             .await
             .expect("Failed to initialize starkgate registry");
+        sleep(Duration::from_secs(20)).await;
         log::info!("🎡 add_implementation_token_bridge : registry bytes : {:?}", Bytes::from(registry_calldata));
         self.token_bridge
             .add_implementation(Bytes::from(bridge_calldata.clone()), self.token_bridge.implementation_address(), false)
             .await
             .expect("Failed to initialize eth bridge");
+        sleep(Duration::from_secs(20)).await;
         log::info!("🎡 add_implementation_token_bridge : token_bridge bytes : {:?}", Bytes::from(bridge_calldata));
     }
 
@@ -242,70 +249,92 @@ impl StarknetTokenBridge {
             .upgrade_to(Bytes::from(manager_calldata.clone()), self.manager.implementation_address(), false)
             .await
             .expect("Failed to initialize starkgate manager");
+        sleep(Duration::from_secs(20)).await;
         log::info!("🎡 upgrade_to_token_bridge : manager bytes : {:?}", Bytes::from(manager_calldata));
         self.registry
             .upgrade_to(Bytes::from(registry_calldata.clone()), self.registry.implementation_address(), false)
             .await
             .expect("Failed to initialize starkgate registry");
+        sleep(Duration::from_secs(20)).await;
         log::info!("🎡 upgrade_to_token_bridge : registry bytes : {:?}", Bytes::from(registry_calldata));
         self.token_bridge
             .upgrade_to(Bytes::from(bridge_calldata.clone()), self.token_bridge.implementation_address(), false)
             .await
             .expect("Failed to initialize eth bridge");
+        sleep(Duration::from_secs(20)).await;
         log::info!("🎡 upgrade_to_token_bridge : token_bridge bytes : {:?}", Bytes::from(bridge_calldata));
     }
 
     /// Sets up the Token bridge with the specified data
     pub async fn setup_permissions_with_bridge_l1(&self, governor: Address, l1_multisig_address: Address) {
         self.token_bridge.register_upgrade_governor(governor).await.unwrap();
+        sleep(Duration::from_secs(20)).await;
         log::debug!("token_bridge : register_upgrade_governor ✅");
         self.manager.register_upgrade_governor(governor).await.unwrap();
         log::debug!("manager : register_upgrade_governor ✅");
+        sleep(Duration::from_secs(20)).await;
         self.registry.register_upgrade_governor(governor).await.unwrap();
         log::debug!("registry : register_upgrade_governor ✅");
+        sleep(Duration::from_secs(20)).await;
 
         // Register roles
         self.token_bridge.register_app_role_admin(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : token_bridge : register_app_role_admin ✅");
+        sleep(Duration::from_secs(20)).await;
         self.token_bridge.register_app_governor(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : token_bridge : register_app_governor ✅");
+        sleep(Duration::from_secs(20)).await;
         self.token_bridge.register_security_admin(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : token_bridge : register_security_admin ✅");
+        sleep(Duration::from_secs(20)).await;
         self.token_bridge.register_security_agent(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : token_bridge : register_security_agent ✅");
+        sleep(Duration::from_secs(20)).await;
 
         self.manager.register_app_role_admin(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : manager : register_app_role_admin ✅");
+        sleep(Duration::from_secs(20)).await;
         self.manager.register_app_governor(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : manager : register_app_governor ✅");
+        sleep(Duration::from_secs(20)).await;
 
         self.registry.register_app_role_admin(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : registry : register_app_role_admin ✅");
+        sleep(Duration::from_secs(20)).await;
         self.registry.register_app_governor(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : registry : register_app_governor ✅");
+        sleep(Duration::from_secs(20)).await;
 
         // Nominating a new governor with l1_multisig_address
         self.token_bridge.register_app_governor(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : token_bridge : register_app_governor : l1_multisig_address ✅");
+        sleep(Duration::from_secs(20)).await;
         self.manager.register_app_governor(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : manager : register_app_governor : l1_multisig_address ✅");
+        sleep(Duration::from_secs(20)).await;
         self.registry.register_app_governor(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : registry : register_app_governor : l1_multisig_address ✅");
+        sleep(Duration::from_secs(20)).await;
 
         self.token_bridge.register_app_role_admin(l1_multisig_address).await.unwrap();
         log::debug!(
             "setup_permissions_with_bridge_l1 : token_bridge : register_app_role_admin : l1_multisig_address ✅"
         );
+        sleep(Duration::from_secs(20)).await;
         self.manager.register_app_role_admin(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : manager : register_app_role_admin : l1_multisig_address ✅");
+        sleep(Duration::from_secs(20)).await;
         self.registry.register_app_role_admin(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : registry : register_app_role_admin : l1_multisig_address ✅");
+        sleep(Duration::from_secs(20)).await;
     }
 
     /// Deploys a test ERC20 token from L1 to L2
     pub async fn setup_l1_bridge(&self, fee: U256, l2_bridge: Felt) {
         self.token_bridge.set_l2_token_bridge(field_element_to_u256(l2_bridge)).await.unwrap();
+        sleep(Duration::from_secs(20)).await;
         self.manager.enroll_token_bridge(self.address(), fee).await.unwrap();
+        sleep(Duration::from_secs(20)).await;
     }
 
     pub async fn setup_l2_bridge(

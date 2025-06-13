@@ -79,5 +79,4 @@ test-artifacts/madara
 # Bootstrapper
 venv
 artifacts
-!build-artifacts
 *.log

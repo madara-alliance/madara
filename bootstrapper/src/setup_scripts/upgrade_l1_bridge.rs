@@ -69,6 +69,7 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
 
     eth_bridge_proxy_client
         .add_implementation(new_eth_bridge_client.address(), call_data.clone(), false)
+        .confirmations(2)
         .send()
         .await?;
     log::debug!("New ETH bridge add_implementation ✅");

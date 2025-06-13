@@ -122,12 +122,6 @@ pub fn get_or_compile_artifacts(parent_levels: usize) -> Result<(), BuildError> 
     }
 
     let (root, version_file_artifacts) = get_paths_artifact(parent_levels)?;
-
-    let archive = root.0.join("artifacts.tar.gz");
-    if let Ok(true) = std::fs::exists(archive) {
-        return Ok(());
-    }
-
     get_artifacts(&root, &version_file_artifacts).or_else(|err| build_artifacts(&root).map_err(|_| err))
 }
 

@@ -14,7 +14,7 @@ use url::Url;
 use crate::contract_clients::config::Clients;
 use crate::tests::erc20_bridge::erc20_bridge_test_helper;
 use crate::tests::eth_bridge::eth_bridge_test_helper;
-use crate::{bootstrap, setup_core_contract, setup_l2, BootstrapperOutput, ConfigFile, IntermediateConfigFile};
+use crate::{bootstrap, setup_core_contract, setup_l2, BootstrapperOutput, ConfigBuilder, ConfigFile};
 
 async fn test_setup(args: &ConfigFile, clients: &Clients) -> BootstrapperOutput {
     // Setup L1 (core contract)
@@ -150,8 +150,7 @@ fn kill_process_on_port(port: u16) {
 }
 
 fn get_test_config_file() -> ConfigFile {
-    let intermediate_config = IntermediateConfigFile::default();
-    ConfigFile::try_from(intermediate_config).expect("Failed to convert intermediate config to final config")
+    ConfigBuilder::default().build().expect("Failed to convert config builder to final config")
 }
 
 async fn wait_for_madara() -> color_eyre::Result<()> {

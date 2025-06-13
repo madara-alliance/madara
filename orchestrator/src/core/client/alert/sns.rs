@@ -1,15 +1,74 @@
+use super::AlertError;
+use crate::{
+    core::client::alert::AlertClient,
+    types::params::{AWSResourceIdentifier, AlertArgs, ARN},
+};
 use async_trait::async_trait;
+use aws_config::Region;
 use aws_config::SdkConfig;
 use aws_sdk_sns::Client;
-
-use super::AlertError;
-use crate::{core::client::alert::AlertClient, types::params::AlertArgs};
 use std::sync::{Arc, OnceLock};
 
+/// InnerAWSSNS is a struct that represents an AWS SNS client.
+#[derive(Clone, Debug)]
+pub(crate) struct InnerAWSSNS(Client);
+
+impl InnerAWSSNS {
+    /// Creates a new instance of InnerAWSSNS with the provided AWS configuration.
+    /// # Arguments
+    /// * `aws_config` - The AWS configuration.
+    ///
+    /// # Returns
+    /// * `Self` - The new instance of InnerAWSSNS.
+    pub fn new(aws_config: &SdkConfig) -> Self {
+        Self(Client::new(aws_config))
+    }
+
+    pub fn client(&self) -> &Client {
+        &self.0
+    }
+
+    /// get_topic_arn_by_name return the topic arn, if empty it will return an error
+    ///
+    /// # Returns
+    ///
+    /// * `Result<ARN, AlertError>` - The topic arn.
+    pub async fn fetch_topic_arn_by_name_via_client(&self, topic_name: &String) -> Result<ARN, AlertError> {
+        let resp = self.client().list_topics().send().await.map_err(AlertError::ListTopicsError)?;
+
+        for topic in resp.topics() {
+            if let Some(arn) = topic.topic_arn() {
+                let parts: Vec<&str> = arn.split(':').collect();
+                if parts.len() == 6 && parts[5] == topic_name {
+                    let arn_string = arn.to_string();
+                    let arn = ARN::parse(&arn_string).map_err(|_| {
+                        tracing::debug!("ARN not parsable");
+                        AlertError::TopicARNInvalid(arn_string)
+                    })?;
+                    return Ok(arn);
+                }
+            }
+        }
+
+        Err(AlertError::TopicNotFound(topic_name.to_string()))
+    }
+
+    pub fn is_valid_topic_name(&self, name: &str) -> bool {
+        // AWS SNS topic name requirements:
+        // - Can include numbers, letters, hyphens, and underscores
+        // - Length between 1 and 256
+        if name.is_empty() || name.len() > 256 {
+            return false;
+        }
+
+        name.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_')
+    }
+}
+
 pub struct SNS {
-    pub client: Arc<Client>,
-    pub alert_topic_name: Option<String>,
-    pub alert_topic_arn: Arc<OnceLock<String>>,
+    inner: InnerAWSSNS,
+    pub alert_identifier: AWSResourceIdentifier,
+    cached_alert_arn: Arc<OnceLock<ARN>>,
 }
 
 impl SNS {
@@ -22,11 +81,27 @@ impl SNS {
     ///
     /// # Returns
     /// * `Self` - The SNS client.
-    pub(crate) fn new(aws_config: &SdkConfig, args: Option<&AlertArgs>) -> Self {
+    pub(crate) fn new(aws_config: &SdkConfig, args: &AlertArgs) -> Self {
+        let latest_aws_config = match &args.alert_identifier {
+            AWSResourceIdentifier::ARN(arn) => {
+                // Extract region from ARN and create new config with that region
+                if !arn.region.is_empty() {
+                    aws_config.clone().into_builder().region(Region::new(arn.region.clone())).build()
+                } else {
+                    // If ARN has empty region, use provided config
+                    aws_config.clone()
+                }
+            }
+            AWSResourceIdentifier::Name(_) => {
+                // Use provided config for name-based identifier
+                aws_config.clone()
+            }
+        };
+
         Self {
-            client: Arc::new(Client::new(aws_config)),
-            alert_topic_name: args.map(|a| a.alert_topic_name.clone()),
-            alert_topic_arn: Arc::new(OnceLock::new()),
+            inner: InnerAWSSNS::new(&latest_aws_config),
+            alert_identifier: args.alert_identifier.clone(),
+            cached_alert_arn: Arc::new(OnceLock::new()),
         }
     }
 
@@ -36,37 +111,24 @@ impl SNS {
     ///
     /// * `Result<String, AlertError>` - The topic arn.
     pub async fn get_topic_arn(&self) -> Result<String, AlertError> {
-        // First, try to get the cached value
-        if let Some(arn) = self.alert_topic_arn.get() {
-            return Ok(arn.clone());
+        // Return cached value if available
+        if let Some(arn) = self.cached_alert_arn.get() {
+            return Ok(arn.to_string());
         }
 
-        // Otherwise, resolve the ARN
-        let alert_topic_name = self.alert_topic_name.clone().ok_or(AlertError::TopicARNEmpty)?;
+        // Get ARN based on identifier type
+        let arn = match &self.alert_identifier {
+            AWSResourceIdentifier::ARN(arn) => arn.clone(),
+            AWSResourceIdentifier::Name(name) => self.inner.fetch_topic_arn_by_name_via_client(name).await?,
+        };
 
-        // If already an ARN, return it and cache it
-        if alert_topic_name.starts_with("arn:") {
-            let arn = alert_topic_name.clone();
-            // This will only set if it hasn't been set before
-            let _ = self.alert_topic_arn.set(arn.clone());
-            return Ok(arn);
-        }
+        // Cache and return
+        let _ = self.cached_alert_arn.set(arn.clone());
+        Ok(arn.to_string())
+    }
 
-        // Lookup ARN from AWS...
-        let resp = self.client.list_topics().send().await.map_err(AlertError::ListTopicsError)?;
-
-        for topic in resp.topics() {
-            if let Some(arn) = topic.topic_arn() {
-                let parts: Vec<&str> = arn.split(':').collect();
-                if parts.len() == 6 && parts[5] == alert_topic_name {
-                    let arn_string = arn.to_string();
-                    let _ = self.alert_topic_arn.set(arn_string.clone());
-                    return Ok(arn_string);
-                }
-            }
-        }
-
-        Err(AlertError::TopicNotFound(alert_topic_name.to_string()))
+    pub fn client(&self) -> &Client {
+        self.inner.client()
     }
 }
 
@@ -82,22 +144,7 @@ impl AlertClient for SNS {
     ///
     /// * `Result<(), AlertError>` - The result of the send operation.
     async fn send_message(&self, message_body: String) -> Result<(), AlertError> {
-        self.client.publish().topic_arn(self.get_topic_arn().await?).message(message_body).send().await?;
+        self.client().publish().topic_arn(self.get_topic_arn().await?).message(message_body).send().await?;
         Ok(())
-    }
-
-    /// get_topic_name gets the topic name from the SNS topic ARN.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<String, AlertError>` - The topic name.
-    async fn get_topic_name(&self) -> Result<String, AlertError> {
-        Ok(self
-            .get_topic_arn()
-            .await?
-            .split(":")
-            .last()
-            .ok_or(AlertError::UnableToExtractTopicName(self.get_topic_arn().await?))?
-            .to_string())
     }
 }
