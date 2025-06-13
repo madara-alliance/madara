@@ -10,7 +10,6 @@ use tracing::info;
 pub(crate) mod aws;
 mod creator;
 pub(crate) mod factory;
-pub(crate) mod queue;
 mod wrapper;
 
 /// Setup function that initializes all necessary resources
