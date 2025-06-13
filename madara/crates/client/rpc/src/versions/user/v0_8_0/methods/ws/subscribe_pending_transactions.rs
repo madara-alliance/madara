@@ -49,7 +49,8 @@ pub async fn subscribe_pending_transactions(
     let sink = if sender_address.len() as u64 <= super::ADDRESS_FILTER_LIMIT {
         subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?
     } else {
-        return Ok(subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await);
+        subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await;
+        return Ok(());
     };
 
     let pending_info = std::sync::Arc::clone(&starknet.backend.latest_pending_block());
@@ -59,7 +60,7 @@ pub async fn subscribe_pending_transactions(
     if let Some(tx_hash) = pending_info.tx_hashes.iter().peekable().peek() {
         let pending = starknet
             .backend
-            .find_tx_hash_block(&tx_hash)
+            .find_tx_hash_block(tx_hash)
             .or_else_internal_server_error(|| {
                 format!("SubscribePendingTransactions failed to retrieve pending block from db for tx {tx_hash:#x}")
             })?

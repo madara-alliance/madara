@@ -416,9 +416,9 @@ impl StarknetWsApiError {
     }
 }
 
-impl Into<jsonrpsee::types::ErrorObjectOwned> for StarknetWsApiError {
-    fn into(self) -> jsonrpsee::types::ErrorObjectOwned {
-        jsonrpsee::types::ErrorObject::owned(self.code(), self.message(), None::<()>)
+impl From<StarknetWsApiError> for jsonrpsee::types::ErrorObjectOwned {
+    fn from(err: StarknetWsApiError) -> Self {
+        Self::owned(err.code(), err.message(), None::<()>)
     }
 }
 
