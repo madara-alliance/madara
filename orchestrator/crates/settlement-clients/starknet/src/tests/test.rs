@@ -125,7 +125,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     };
 
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
-    let contract_path = project_root.join("../build-artifacts/orchestrator_tests");
+    let contract_path = project_root.join("crates/settlement-clients/starknet/src/tests/mock_contracts/target/dev");
     let sierra_class: SierraClass = serde_json::from_reader(
         std::fs::File::open(contract_path.join("mock_contracts_Piltover.contract_class.json"))
             .expect("Could not open sierra class file"),
@@ -166,7 +166,7 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     let mut program_output = Vec::with_capacity(32);
     program_output.fill(onchain_data_hash);
     let update_state_tx_hash = settlement_client
-        .update_state_calldata(program_output.clone(), program_output, onchain_data_hash, [1; 32])
+        .update_state_calldata(program_output.clone(), program_output, onchain_data_hash, onchain_data_hash)
         .await
         .expect("Sending Update state");
 

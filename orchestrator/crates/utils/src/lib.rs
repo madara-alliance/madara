@@ -1,6 +1,7 @@
 pub mod collections;
 pub mod env_utils;
 pub mod http_client;
+pub mod layer;
 pub mod metrics;
 
 use alloy_primitives::Address;

@@ -19,7 +19,7 @@ use crate::types::params::service::{ServerParams, ServiceParams};
 use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
-use crate::utils::helpers::ProcessingLocks;
+use crate::types::Layer;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -242,9 +242,8 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let processing_locks = ProcessingLocks::default();
-
         let config = Arc::new(Config::new(
+            Layer::L2,
             params.orchestrator_params,
             starknet_client,
             database,
@@ -253,7 +252,6 @@ impl TestConfigBuilder {
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         ));
 
@@ -300,7 +298,6 @@ pub mod implement_client {
     use starknet::providers::{JsonRpcClient, Url};
 
     use super::{ConfigType, EnvParams, MockType};
-    use crate::cli::Layer;
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
     use crate::core::client::queue::MockQueueClient;
@@ -315,6 +312,7 @@ pub mod implement_client {
     use crate::types::params::database::DatabaseArgs;
     use crate::types::params::settlement::SettlementConfig;
     use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
+    use crate::types::Layer;
 
     macro_rules! implement_mock_client_conversion {
         ($client_type:ident, $mock_variant:ident) => {
@@ -362,7 +360,7 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params, &params.orchestrator_params),
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -531,34 +529,23 @@ pub(crate) fn get_env_params() -> EnvParams {
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
+        snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
     };
 
-    let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
-    let max_block: Option<u64> = Some(env.parse::<u64>().unwrap());
-
-    let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS");
-    let min_block: u64 = env.parse::<u64>().unwrap();
-
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS")
-        .expect("Couldn't get max concurrent snos jobs");
-    let max_concurrent_snos_jobs: Option<usize> =
-        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
-
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS")
-        .expect("Couldn't get max concurrent proving jobs");
-    let max_concurrent_proving_jobs: Option<usize> =
-        env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
+    let parse_number = |var: &str| -> Option<u64> {
+        get_env_var_optional(var).unwrap_or_else(|_| panic!("Couldn't get {}", var)).and_then(|s| s.parse().ok())
+    };
 
     let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
     let max_concurrent_created_snos_jobs: u64 =
         env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
 
     let service_config = ServiceParams {
-        max_block_to_process: max_block,
-        min_block_to_process: min_block,
+        max_block_to_process: parse_number("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS"),
+        min_block_to_process: parse_number("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").expect("REASON"),
         max_concurrent_created_snos_jobs,
-        max_concurrent_snos_jobs,
-        max_concurrent_proving_jobs,
+        max_concurrent_snos_jobs: None,
+        max_concurrent_proving_jobs: None,
     };
 
     let server_config = ServerParams {
@@ -596,6 +583,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_PROOF_SETTLEMENT_LAYER"),
     });
 
     EnvParams {

@@ -16,6 +16,7 @@ Targets:
 
   - setup-l2           Setup orchestrator with L2 layer (default)
   - setup-l3           Setup orchestrator with L3 layer
+  - run-orchestrator   Run the orchestrator with AWS services and Ethereum settlement
 
   [ RUNNING MADARA ]
 
@@ -24,6 +25,7 @@ Targets:
   secrets to `./secrets/`, or the nodes will fail to start.
 
   - start             Starts the Madara node
+  - watch-orchestrator Run orchestrator with auto-restart on code changes
 
   [ STOPPING MADARA ]
 
@@ -274,9 +276,19 @@ git-hook:
 .PHONY: setup-l2
 setup-l2:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator-core -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@cargo run --package orchestrator-core -- setup  --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+
+.PHONY: run-orchestrator
+run-orchestrator:
+	@echo -e "$(DIM)Running orchestrator...$(RESET)"
+	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-ethereum 2>&1
+
+.PHONY: watch-orchestrator
+watch-orchestrator:
+	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-ethereum' 2>&1

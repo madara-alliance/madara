@@ -1,13 +1,14 @@
-use crate::cli::Layer;
+use anyhow::Context;
+use async_trait::async_trait;
+use std::sync::Arc;
+
 use crate::core::client::alert::sns::InnerAWSSNS;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::AlertArgs;
+use crate::types::Layer;
 use crate::{OrchestratorError, OrchestratorResult};
-use anyhow::Context;
-use async_trait::async_trait;
-use std::sync::Arc;
 
 #[async_trait]
 impl Resource for InnerAWSSNS {

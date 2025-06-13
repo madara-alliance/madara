@@ -1,9 +1,9 @@
-use crate::cli::Layer;
 use crate::core::client::storage::s3::InnerAWSS3;
 use crate::core::cloud::CloudProvider;
 use crate::core::traits::resource::Resource;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::StorageArgs;
+use crate::types::Layer;
 use crate::{OrchestratorError, OrchestratorResult};
 use async_trait::async_trait;
 use aws_sdk_s3::Error as S3Error;
