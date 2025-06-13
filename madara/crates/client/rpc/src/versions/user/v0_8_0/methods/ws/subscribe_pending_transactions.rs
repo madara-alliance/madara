@@ -1,7 +1,7 @@
 use crate::errors::{ErrorExtWs, OptionExtWs};
 
 #[cfg(test)]
-const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
 #[cfg(not(test))]
 const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5min
 
@@ -52,78 +52,88 @@ pub async fn subscribe_pending_transactions(
         return Ok(subscription_sink.reject(crate::errors::StarknetWsApiError::TooManyAddressesInFilter).await);
     };
 
-    let mut channel = starknet.backend.subscribe_pending_block();
+    let pending_info = std::sync::Arc::clone(&starknet.backend.latest_pending_block());
+    let mut channel = starknet.backend.subscribe_pending_txs();
     let sender_address = sender_address.into_iter().collect::<std::collections::HashSet<_>>();
+
+    if let Some(tx_hash) = pending_info.tx_hashes.iter().peekable().peek() {
+        let pending = starknet
+            .backend
+            .find_tx_hash_block(&tx_hash)
+            .or_else_internal_server_error(|| {
+                format!("SubscribePendingTransactions failed to retrieve pending block from db for tx {tx_hash:#x}")
+            })?
+            .ok_or_else_internal_server_error(|| {
+                format!("SubscribePendingTransactions failed to retrieve pending block from db for tx {tx_hash:#x}")
+            })?
+            .0
+            .into_pending()
+            .ok_or_else_internal_server_error(|| {
+                format!("SubscribePendingTransactions failed to retrieve pending block from db for tx {tx_hash:#x}")
+            })?;
+
+        for (tx, tx_hash) in pending.inner.transactions.iter().zip(pending_info.tx_hashes.iter()) {
+            send_tx_if_matching(tx.clone(), *tx_hash, &sender_address, transaction_details, &sink).await?;
+        }
+    }
 
     loop {
         tokio::time::timeout(TIMEOUT, async {
-            let pending_info = std::sync::Arc::clone(&channel.borrow_and_update());
-            let mut pending_txs = pending_info.tx_hashes.iter().peekable();
-            let (block, _) = match pending_txs.peek() {
-                Some(tx_hash) => starknet
-                    .backend
-                    .find_tx_hash_block(tx_hash)
-                    .or_else_internal_server_error(|| {
-                        format!("SubscribePendingTransactions failed to retrieve block at tx {tx_hash:#x}")
-                    })?
-                    .ok_or_else_internal_server_error(|| {
-                        format!("SubscribePendingTransactions failed to retrieve block at tx {tx_hash:#x}")
-                    })?,
-                None => {
-                    return channel.changed().await.or_internal_server_error("Error waiting for watch channel update")
-                }
-            };
+            let tx_receipt = channel
+                .recv()
+                .await
+                .or_internal_server_error("SubscribePendingTransactions failed to wait on pending transactions")?;
 
-            for (tx, hash) in block.inner.transactions.into_iter().zip(pending_txs) {
-                let tx = match tx {
-                    mp_transactions::Transaction::Invoke(ref inner)
-                        if sender_address.contains(inner.sender_address()) =>
-                    {
-                        tx
-                    }
-                    mp_transactions::Transaction::L1Handler(ref inner)
-                        if sender_address.contains(&inner.contract_address) =>
-                    {
-                        tx
-                    }
-                    mp_transactions::Transaction::Declare(ref inner)
-                        if sender_address.contains(inner.sender_address()) =>
-                    {
-                        tx
-                    }
-                    mp_transactions::Transaction::Deploy(ref inner)
-                        if sender_address.contains(&inner.calculate_contract_address()) =>
-                    {
-                        tx
-                    }
-                    mp_transactions::Transaction::DeployAccount(ref inner)
-                        if sender_address.contains(&inner.calculate_contract_address()) =>
-                    {
-                        tx
-                    }
-                    _ => continue,
-                };
+            let tx_hash = tx_receipt.receipt.transaction_hash();
+            let tx = tx_receipt.transaction;
+            send_tx_if_matching(tx, tx_hash, &sender_address, transaction_details, &sink).await?;
 
-                let tx_info = if transaction_details {
-                    mp_rpc::v0_8_1::PendingTxnInfo::Full(tx.into())
-                } else {
-                    mp_rpc::v0_8_1::PendingTxnInfo::Hash(*hash)
-                };
-
-                let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_info).or_else_internal_server_error(|| {
-                    format!("SubscribePendingTransactions failed to create response message at tx {hash:#x}")
-                })?;
-
-                sink.send(msg).await.or_else_internal_server_error(|| {
-                    format!("SubscribePendingTransactions failed to respond to websocket request at tx {hash:#x}")
-                })?;
-            }
-
-            channel.changed().await.or_internal_server_error("Error waiting for watch channel update")
+            Ok(())
         })
         .await
         .or_internal_server_error("SubscribePendingTransactions timed out")??;
     }
+}
+
+async fn send_tx_if_matching(
+    tx: mp_transactions::Transaction,
+    tx_hash: starknet_types_core::felt::Felt,
+    sender_address: &std::collections::HashSet<starknet_types_core::felt::Felt>,
+    transaction_details: bool,
+    sink: &jsonrpsee::server::SubscriptionSink,
+) -> Result<(), crate::errors::StarknetWsApiError> {
+    let tx = match tx {
+        mp_transactions::Transaction::Invoke(ref inner) if sender_address.contains(inner.sender_address()) => tx,
+        mp_transactions::Transaction::L1Handler(ref inner) if sender_address.contains(&inner.contract_address) => tx,
+        mp_transactions::Transaction::Declare(ref inner) if sender_address.contains(inner.sender_address()) => tx,
+        mp_transactions::Transaction::Deploy(ref inner)
+            if sender_address.contains(&inner.calculate_contract_address()) =>
+        {
+            tx
+        }
+        mp_transactions::Transaction::DeployAccount(ref inner)
+            if sender_address.contains(&inner.calculate_contract_address()) =>
+        {
+            tx
+        }
+        _ => return Ok(()),
+    };
+
+    let tx_info = if transaction_details {
+        mp_rpc::v0_8_1::PendingTxnInfo::Full(tx.into())
+    } else {
+        mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_hash)
+    };
+
+    let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_info).or_else_internal_server_error(|| {
+        format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
+    })?;
+
+    sink.send(msg).await.or_else_internal_server_error(|| {
+        format!("SubscribePendingTransactions failed to respond to websocket request at tx {tx_hash:#x}")
+    })?;
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -250,7 +260,7 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(super::TIMEOUT * 2)]
-    async fn subscribe_pending_transactions_ok_hash(
+    async fn subscribe_pending_transactions_ok_hash_before(
         _logs: (),
         starknet: Starknet,
         #[from(invoke)]
@@ -318,7 +328,74 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(super::TIMEOUT * 2)]
-    async fn subscribe_pending_transactions_ok_details(
+    async fn subscribe_pending_transactions_ok_hash_after(
+        _logs: (),
+        starknet: Starknet,
+        #[from(invoke)]
+        #[with(SENDER_ADDRESS)]
+        tx_1: mp_block::TransactionWithReceipt,
+        #[from(invoke)]
+        #[with(SENDER_ADDRESS)]
+        tx_2: mp_block::TransactionWithReceipt,
+        #[from(invoke)]
+        #[with(starknet_types_core::felt::Felt::ONE)]
+        #[allow(unused)]
+        tx_3: mp_block::TransactionWithReceipt,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        let transaction_details = false;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
+            .await
+            .expect("Failed subscription");
+
+        backend.on_new_pending_tx(tx_1.clone());
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, tx_1.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", tx_1.receipt.transaction_hash());
+
+        backend.on_new_pending_tx(tx_2.clone());
+        assert_matches::assert_matches!(
+            sub.next().await, Some(Ok(hash)) => {
+                assert_matches::assert_matches!(
+                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
+                        assert_eq!(hash, tx_2.receipt.transaction_hash());
+                    }
+                )
+            }
+        );
+
+        tracing::debug!("Received {:#x}", tx_2.receipt.transaction_hash());
+
+        backend.on_new_pending_tx(tx_3);
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    #[timeout(super::TIMEOUT * 2)]
+    async fn subscribe_pending_transactions_ok_details_before(
         _logs: (),
         starknet: Starknet,
         #[from(invoke)]
@@ -386,7 +463,7 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(super::TIMEOUT * 2)]
-    async fn subscribe_pending_transactions_ok_after(
+    async fn subscribe_pending_transactions_ok_details_after(
         _logs: (),
         starknet: Starknet,
         #[from(invoke)]
@@ -399,9 +476,6 @@ mod test {
         #[with(starknet_types_core::felt::Felt::ONE)]
         #[allow(unused)]
         tx_3: mp_block::TransactionWithReceipt,
-        #[from(pending)]
-        #[with(vec![tx_1.clone(), tx_2.clone(), tx_3.clone()])]
-        pending: mp_block::PendingFullBlock,
     ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
 
@@ -417,18 +491,18 @@ mod test {
 
         tracing::debug!("Started jsonrpsee client");
 
-        let transaction_details = false;
+        let transaction_details = true;
         let mut sub = client
             .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
             .await
             .expect("Failed subscription");
-        backend.store_pending_block(pending).expect("Failed to store pending block");
 
+        backend.on_new_pending_tx(tx_1.clone());
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(tx)) => {
                 assert_matches::assert_matches!(
-                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
-                        assert_eq!(hash, tx_1.receipt.transaction_hash());
+                    tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
+                        assert_eq!(tx, tx_1.transaction.into());
                     }
                 )
             }
@@ -436,11 +510,12 @@ mod test {
 
         tracing::debug!("Received {:#x}", tx_1.receipt.transaction_hash());
 
+        backend.on_new_pending_tx(tx_2.clone());
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(tx)) => {
                 assert_matches::assert_matches!(
-                    hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
-                        assert_eq!(hash, tx_2.receipt.transaction_hash());
+                    tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
+                        assert_eq!(tx, tx_2.transaction.into());
                     }
                 )
             }
@@ -448,6 +523,7 @@ mod test {
 
         tracing::debug!("Received {:#x}", tx_2.receipt.transaction_hash());
 
+        backend.on_new_pending_tx(tx_3);
         assert!(sub.next().await.is_none());
     }
 
