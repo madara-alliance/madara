@@ -6,7 +6,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use color_eyre::Result;
-use mockall::automock;
 use mockall::predicate::*;
 use orchestrator_da_client_interface::{DaClient, DaVerificationStatus};
 use serde::{Deserialize, Serialize};
@@ -37,7 +36,7 @@ impl StarknetDaClient {
     }
 }
 
-#[automock]
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
 impl DaClient for StarknetDaClient {
     async fn publish_state_diff(&self, _state_diff: Vec<Vec<u8>>, _to: &[u8; 32]) -> Result<String> {

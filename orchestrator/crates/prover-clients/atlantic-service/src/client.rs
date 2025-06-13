@@ -1,14 +1,14 @@
-use std::path::Path;
-
+use crate::error::AtlanticError;
+use crate::types::{
+    AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStep,
+};
+use crate::AtlanticValidatedArgs;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::Method;
+use std::path::Path;
 use tracing::debug;
 use url::Url;
-
-use crate::error::AtlanticError;
-use crate::types::{AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse};
-use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {
@@ -25,14 +25,14 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request
+        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL1.to_string())
     }
 }
 
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request
+        request.form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
     }
 }
 
@@ -89,12 +89,11 @@ impl AtlanticClient {
                 .query_param("apiKey", atlantic_api_key.as_ref())
                 .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                 .form_text("layout", proof_layout)
-                .form_text("result", "PROOF_GENERATION")
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
                 .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))?,
         );
-        tracing::debug!("Request: {:?}", api);
+        debug!("Triggering the debug Request for: {:?}", api);
         let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
@@ -152,23 +151,19 @@ impl AtlanticClient {
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         let proof_layout = LayoutName::recursive_with_poseidon.to_str();
 
-        let response = self
-            .proving_layer
-            .customize_request(
-                self.client
-                    .request()
-                    .method(Method::POST)
-                    .path("atlantic-query")
-                    .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
-                    .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
-                    .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json", Some("application/json"))?
-                    .form_text("layout", proof_layout)
-                    .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
-                    .form_text("network", atlantic_network.as_ref())
-                    .form_text("result", "PROOF_VERIFICATION_ON_L2")
-                    .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
-                    .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str()),
-            )
+        let response = self.client
+            .request()
+            .method(Method::POST)
+            .path("atlantic-query")
+            .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
+            .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
+            .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json", Some("application/json"))?
+            .form_text("layout", proof_layout)
+            .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+            .form_text("network", atlantic_network.as_ref())
+            .form_text("result", "PROOF_VERIFICATION_ON_L2")
+            .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
+            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
             .send()
             .await
             .map_err(AtlanticError::AddJobFailure)?;

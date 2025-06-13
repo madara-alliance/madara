@@ -7,8 +7,4 @@ pub mod queue;
 pub mod queue_control;
 pub mod worker;
 
-#[derive(Debug, Clone, clap::ValueEnum, PartialEq)]
-pub enum Layer {
-    L2,
-    L3,
-}
+pub use orchestrator_utils::layer::Layer;

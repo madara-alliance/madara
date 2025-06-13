@@ -50,12 +50,6 @@ pub enum Commands {
             .multiple(false)
     ),
     group(
-        ArgGroup::new("settlement_layer")
-            .args(&["settle_on_ethereum", "settle_on_starknet"])
-            .required(true)
-            .multiple(false)
-    ),
-    group(
         ArgGroup::new("storage")
             .args(&["aws_s3"])
             .required(true)
@@ -79,6 +73,12 @@ pub enum Commands {
     group(
         ArgGroup::new("prover")
             .args(&["sharp", "atlantic"])
+            .required(true)
+            .multiple(false)
+    ),
+    group(
+        ArgGroup::new("settlement_layer")
+            .args(&["settle_on_ethereum", "settle_on_starknet"])
             .required(true)
             .multiple(false)
     ),
@@ -145,7 +145,7 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "L2", value_enum)]
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 
     // Service
@@ -194,7 +194,7 @@ pub struct RunCmd {
     ),
 )]
 pub struct SetupCmd {
-    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "L2", value_enum)]
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 
     // AWS Config

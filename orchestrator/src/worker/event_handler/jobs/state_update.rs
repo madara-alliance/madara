@@ -19,7 +19,6 @@ use starknet_core::types::Felt;
 use starknet_os::io::output::StarknetOsOutput;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
-use tracing::debug;
 
 pub struct StateUpdateJobHandler;
 #[async_trait]
@@ -75,7 +74,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         self.validate_block_numbers(config.clone(), &state_metadata.blocks_to_settle).await?;
 
-        debug!(job_id = %job.internal_id, blocks = ?state_metadata.blocks_to_settle, "Validated block numbers");
+        tracing::debug!(job_id = %job.internal_id, blocks = ?state_metadata.blocks_to_settle, "Validated block numbers");
 
         // Filter block numbers if there was a previous failure
         let last_failed_block = state_metadata.last_failed_block_no.unwrap_or(0);

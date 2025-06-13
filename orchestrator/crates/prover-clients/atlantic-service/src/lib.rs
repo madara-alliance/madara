@@ -14,7 +14,6 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
-use crate::error::AtlanticError;
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -161,6 +160,7 @@ impl ProverClient for AtlanticProverService {
         _task_id: &str,
         proof: &str,
         n_steps: Option<usize>,
+        cairo_verifier: &str,
     ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
@@ -168,20 +168,20 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
-        let current_dir = std::env::current_dir().map_err(|e| ProverClientError::Internal(Box::new(e)))?;
-        tracing::debug!("Current directory: {}", current_dir.display());
+        // let current_dir = std::env::current_dir().map_err(|e| ProverClientError::Internal(Box::new(e)))?;
+        // tracing::debug!("Current directory: {}", current_dir.display());
 
-        let verifier_path = current_dir.join("./orchestrator/build/os_latest.json");
-        tracing::debug!("Looking for verifier at: {}", verifier_path.display());
+        // let verifier_path = current_dir.join("./orchestrator/build/os_latest.json");
+        // tracing::debug!("Looking for verifier at: {}", verifier_path.display());
 
-        let cairo_verifier = match tokio::fs::read_to_string(&verifier_path).await {
-            Ok(content) => content,
-            Err(e) => return Err(ProverClientError::from(AtlanticError::FileReadError(e))),
-        };
+        // let cairo_verifier = match tokio::fs::read_to_string(&verifier_path).await {
+        //     Ok(content) => content,
+        //     Err(e) => return Err(ProverClientError::from(AtlanticError::FileReadError(e))),
+        // };
 
         let atlantic_job_response = self
             .atlantic_client
-            .submit_l2_query(proof, cairo_verifier.as_str(), n_steps, &self.atlantic_network, &self.atlantic_api_key)
+            .submit_l2_query(proof, cairo_verifier, n_steps, &self.atlantic_network, &self.atlantic_api_key)
             .await?;
 
         tracing::info!(

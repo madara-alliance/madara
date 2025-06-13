@@ -77,10 +77,12 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!(job_id = %job.internal_id, "Calling prove_block function");
 
         let (cairo_pie, snos_output) =
-            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, true).await.map_err(|e| {
-                error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
-                SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
-            })?;
+            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, snos_metadata.full_output)
+                .await
+                .map_err(|e| {
+                    error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
+                    SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
+                })?;
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
 
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
