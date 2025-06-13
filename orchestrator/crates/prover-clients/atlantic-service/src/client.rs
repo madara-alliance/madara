@@ -1,13 +1,14 @@
 use std::path::Path;
 
-use crate::error::AtlanticError;
-use crate::types::{AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse};
-use crate::AtlanticValidatedArgs;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::Method;
 use tracing::debug;
 use url::Url;
+
+use crate::error::AtlanticError;
+use crate::types::{AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse};
+use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {

@@ -1,17 +1,14 @@
+use anyhow::Context;
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::error::other::OtherError;
 use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use anyhow::Context;
 use async_trait::async_trait;
 use orchestrator_prover_client_interface::TaskStatus;
-use std::fs::File;
-use std::io::Write;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 
@@ -51,13 +48,12 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         ))?;
 
         let _: StarkProof = parse(proof.clone())
-            .context(format!("Failed to parse proof file as UTF-8", job_id = %job.internal_id, error = %e))?;
+            .context(format!("Failed to parse proof file as UTF-8, internal-id: {}", job.internal_id))?;
 
         // Format proof for submission
         let formatted_proof = format!("{{\n\t\"proof\": {}\n}}", proof);
 
         let task_id = job.internal_id.clone();
-
         // Submit proof for L2 verification
         let external_id = config.prover_client().submit_l2_query(&task_id, &formatted_proof, None).await.context(
             format!("Failed to submit proof for L2 verification for job_id: {}, task_id: {}", job.internal_id, task_id),
@@ -90,7 +86,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         let task_id: String = job
             .external_id
             .unwrap_string()
-            .context(format!("Failed to unwrap external_id for job_id: {}, internal_id: {}", job.id, internal_id))?
+            .map_err(|e| anyhow::anyhow!("Failed to unwrap external_id for job_id: {}, internal_id: {}: {}", job.id, internal_id, e))?
             .into();
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
         // Determine if we need on-chain verification

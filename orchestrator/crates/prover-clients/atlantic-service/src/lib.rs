@@ -2,16 +2,13 @@ pub mod client;
 pub mod error;
 pub mod types;
 
-use std::fs::File;
-use std::io::Write;
-use std::str::FromStr;
-
 pub use crate::types::AtlanticQueryStatus;
 use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use std::str::FromStr;
 use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;

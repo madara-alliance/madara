@@ -1,8 +1,8 @@
+use lazy_static::lazy_static;
 use std::collections::HashMap;
 
-use crate::cli::Layer;
 use crate::types::queue::QueueType;
-use lazy_static::lazy_static;
+use crate::types::Layer;
 
 #[derive(Clone)]
 pub struct DlqConfig {

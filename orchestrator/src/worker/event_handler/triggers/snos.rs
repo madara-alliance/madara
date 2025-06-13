@@ -1,15 +1,3 @@
-use crate::core::config::Config;
-use std::cmp::{max, min};
-use std::sync::Arc;
-
-use crate::types::constant::{
-    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
-};
-use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
-use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::metrics::ORCHESTRATOR_METRICS;
-use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr};
 use num_traits::ToPrimitive;
@@ -17,6 +5,15 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
+use tracing::debug;
+
+use crate::core::config::Config;
+use crate::types::constant::{CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::worker::event_handler::service::JobHandlerService;
+use crate::worker::event_handler::triggers::JobTrigger;
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -87,96 +84,12 @@ impl JobTrigger for SnosJobTrigger {
             return Ok(());
         }
 
-        // Fetch the latest block number from the Starknet chain
-        let provider = config.madara_client();
-        let block_number = provider.block_number().await?;
-        debug!("Latest block number from Starknet: {}", block_number);
+        self.schedule_jobs_for_processing(&config, &mut context).await?;
+        self.create_scheduled_jobs(&config, context.blocks_to_process).await?;
 
-        let latest_block_number =
-            config.service_config().max_block_to_process.map_or(block_number, |max_block| min(max_block, block_number));
-
-        tracing::debug!(latest_block_number = %latest_block_number, "Fetched latest block number from starknet");
-
-        context.blocks_to_process.extend(candidate_blocks);
-        Ok(())
-    }
-
-    /// Schedules jobs for a specific block range if processing conditions are met.
-    ///
-    /// This method handles range-specific job scheduling with several safety checks:
-    ///
-    /// # Range Validation Cases
-    /// - **Invalid Range** (start > end): Skip processing, log debug message
-    /// - **Empty Range** (start == end == 0): Skip processing (nothing to do)
-    /// - **Valid Range**: Proceed with job scheduling
-    ///
-    /// # Processing Logic
-    /// 1. Validate range boundaries and skip if invalid
-    /// 2. Query database for missing blocks in the range
-    /// 3. Respect slot limits when selecting blocks
-    /// 4. Update context with selected blocks and remaining slots
-    ///
-    /// # Arguments
-    /// * `config` - Application configuration
-    /// * `context` - Mutable scheduling context (updated with blocks and slots)
-    /// * `start` - Starting block number (inclusive)
-    /// * `end` - Ending block number (inclusive)
-    /// * `range_name` - Human-readable name for logging ("first half", "second half")
-    ///
-    /// # Returns
-    /// * `Result<()>` - Success or error from block selection
-    async fn schedule_jobs_for_range(
-        &self,
-        config: &Arc<Config>,
-        context: &mut JobSchedulingContext,
-        start: u64,
-        end: u64,
-        range_name: &str,
-    ) -> Result<()> {
-        // Skip if range is invalid or empty
-        if start >= end || end == 0 {
-            tracing::debug!("Skipping {} range: start={}, end={}", range_name, start, end);
-            return Ok(());
-        }
-
-        let missing_blocks = self.get_missing_blocks_in_range(config, start, end, context.available_slots).await?;
-
-        debug!(start_block_number = %block_start, end_block_number = %latest_block_number, "Creating SNOS jobs for blocks in range");
-
-        for block_num in block_start..latest_block_number + 1 {
-            // Create typed metadata structure with predefined paths
-            let metadata = JobMetadata {
-                common: CommonMetadata::default(),
-                specific: JobSpecificMetadata::Snos(SnosMetadata {
-                    block_number: block_num,
-                    full_output: false,
-                    // Set the storage paths using block number
-                    cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
-                    on_chain_data_path: Some(format!("{}/{}", block_num, ON_CHAIN_DATA_FILE_NAME)),
-                    snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
-                    program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
-                    ..Default::default() // Ensure all other fields are set to default
-                }),
-            };
-
-            match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await
-            {
-                Ok(_) => info!(block_id = %block_num, "Snos Worker Trigger Completed"),
-                Err(e) => {
-                    warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
-                    let attributes = [
-                        KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
-                        KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                    ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
-                }
-            }
-        }
-        tracing::trace!(log_type = "completed", category = "SnosWorker", "SnosWorker completed.");
         Ok(())
     }
 }
-
 
 impl SnosJobTrigger {
     /// Calculates the processing boundaries based on sequencer state and completed jobs.
@@ -435,6 +348,7 @@ impl SnosJobTrigger {
     /// - Sequencer unavailability
     async fn fetch_latest_sequencer_block(&self, config: &Arc<Config>) -> Result<u64> {
         let provider = config.madara_client();
+        debug!("Fetching latest sequencer block");
         provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")
     }
 
@@ -594,6 +508,7 @@ fn create_job_metadata(block_num: u64) -> JobMetadata {
             block_number: block_num,
             full_output: false,
             cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
+            on_chain_data_path: Some(format!("{}/{}", block_num, ON_CHAIN_DATA_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()

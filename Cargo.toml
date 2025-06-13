@@ -282,7 +282,7 @@ swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.4" }
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.2" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
@@ -313,8 +313,9 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
   "testing",
 ] }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex" }

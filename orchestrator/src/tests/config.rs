@@ -542,7 +542,10 @@ pub(crate) fn get_env_params() -> EnvParams {
 
     let service_config = ServiceParams {
         max_block_to_process: parse_number("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS"),
-        min_block_to_process: parse_number("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS"),
+        min_block_to_process: parse_number("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").expect("REASON"),
+        max_concurrent_created_snos_jobs,
+        max_concurrent_snos_jobs: None,
+        max_concurrent_proving_jobs: None,
     };
 
     let server_config = ServerParams {

@@ -62,12 +62,6 @@ impl TryFrom<RunCmd> for CloudProvider {
         if cmd.aws_config_args.aws {
             debug!("Initializing AWS configuration from run command");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
-
-            // Validate AWS credentials before creating config
-            if aws_cred.region.is_empty() {
-                return Err(OrchestratorCoreError::InvalidProvider("AWS region cannot be empty".to_string()));
-            }
-
             let config = block_on(aws_cred.get_aws_config());
             info!("Successfully created AWS configuration");
             Ok(CloudProvider::AWS(Box::new(config)))
@@ -96,12 +90,6 @@ impl TryFrom<SetupCmd> for CloudProvider {
         if cmd.aws_config_args.aws {
             debug!("Initializing AWS configuration from setup command");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
-
-            // Validate AWS credentials before creating config
-            if aws_cred.region.is_empty() {
-                return Err(OrchestratorCoreError::InvalidProvider("AWS region cannot be empty".to_string()));
-            }
-
             let config = block_on(aws_cred.get_aws_config());
             info!("Successfully created AWS configuration");
             Ok(CloudProvider::AWS(Box::new(config)))
@@ -117,12 +105,6 @@ impl TryFrom<AWSCredentials> for CloudProvider {
 
     fn try_from(aws_cred: AWSCredentials) -> Result<Self, Self::Error> {
         debug!("Initializing AWS configuration from credentials");
-
-        // Validate AWS credentials before creating config
-        if aws_cred.region.is_empty() {
-            return Err(OrchestratorCoreError::InvalidProvider("AWS region cannot be empty".to_string()));
-        }
-
         let config = block_on(aws_cred.get_aws_config());
         info!("Successfully created AWS configuration");
         Ok(CloudProvider::AWS(Box::new(config)))
