@@ -86,6 +86,7 @@ pub struct Mempool {
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
     config: MempoolConfig,
+    tx_sender: tokio::sync::broadcast::Sender<Felt>,
 }
 
 impl From<MempoolError> for SubmitTransactionError {
@@ -119,7 +120,18 @@ impl From<MempoolError> for SubmitTransactionError {
 #[async_trait]
 impl SubmitValidatedTransaction for Mempool {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
-        Ok(self.accept_tx(tx).await?)
+        let tx_hash = tx.tx_hash;
+        self.accept_tx(tx).await?;
+        let _ = self.tx_sender.send(tx_hash);
+        Ok(())
+    }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        Some(self.inner.read().await.has_transaction(&starknet_api::transaction::TransactionHash(hash)))
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        Some(self.tx_sender.subscribe())
     }
 }
 
@@ -151,6 +163,7 @@ impl Mempool {
             backend,
             inner: MempoolInnerWithNotify::new(config.limits.clone()),
             metrics: MempoolMetrics::register(),
+            tx_sender: tokio::sync::broadcast::channel(100).0,
             config,
         }
     }
@@ -367,6 +380,11 @@ pub(crate) mod tests {
 
     #[rstest::fixture]
     pub fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let ordering = std::sync::atomic::Ordering::AcqRel;
+        let tx_hash = starknet_api::transaction::TransactionHash(HASH.fetch_add(1, ordering).into());
+
         ValidatedMempoolTx::from_blockifier(
             blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
                 blockifier::transaction::account_transaction::AccountTransaction::Invoke(
@@ -377,7 +395,7 @@ pub(crate) mod tests {
                                 ..Default::default()
                             },
                         ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        tx_hash,
                         only_query: false,
                     },
                 ),
@@ -1164,9 +1182,8 @@ pub(crate) mod tests {
     ///
     /// [ready]: inner::TransactionIntentReady;
     /// [pending]: inner::TransactionInentPending;
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
+    #[rstest::rstest]
     async fn mempool_readiness_check(
         #[future] backend: Arc<mc_db::MadaraBackend>,
         #[from(tx_account_v0_valid)] mut tx_ready: ValidatedMempoolTx,

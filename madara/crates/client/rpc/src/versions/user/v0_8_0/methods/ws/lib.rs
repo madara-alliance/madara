@@ -5,6 +5,8 @@ use crate::versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server;
 
 use super::subscribe_events::*;
 use super::subscribe_new_heads::*;
+use super::subscribe_pending_transactions::*;
+use super::subscribe_transaction_status::*;
 
 #[jsonrpsee::core::async_trait]
 impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
@@ -24,5 +26,22 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
         block: Option<BlockId>,
     ) -> jsonrpsee::core::SubscriptionResult {
         Ok(subscribe_events(self, subscription_sink, from_address, keys, block).await?)
+    }
+
+    async fn subscribe_transaction_status(
+        &self,
+        subscription_sink: jsonrpsee::PendingSubscriptionSink,
+        transaction_hash: Felt,
+    ) -> jsonrpsee::core::SubscriptionResult {
+        Ok(subscribe_transaction_status(self, subscription_sink, transaction_hash).await?)
+    }
+
+    async fn subscribe_pending_transactions(
+        &self,
+        subscription_sink: jsonrpsee::PendingSubscriptionSink,
+        transaction_details: bool,
+        sender_address: Vec<starknet_types_core::felt::Felt>,
+    ) -> jsonrpsee::core::SubscriptionResult {
+        Ok(subscribe_pending_transactions(self, subscription_sink, transaction_details, sender_address).await?)
     }
 }
