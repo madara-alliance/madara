@@ -122,7 +122,7 @@ where
 {
     let block_number = provider_l1.get_block_number().await?;
 
-    for _ in 0..10 {
+    for _ in 0..50 {
         let new_block_number = provider_l1.get_block_number().await?;
         let confirmations = new_block_number - block_number;
         if confirmations >= required_confirmations.into() {
