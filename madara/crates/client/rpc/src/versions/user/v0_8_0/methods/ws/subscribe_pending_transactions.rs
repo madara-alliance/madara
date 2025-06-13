@@ -178,7 +178,7 @@ mod test {
 
     #[rstest::fixture]
     fn receipt() -> mp_receipt::TransactionReceipt {
-        const HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
         let ordering = std::sync::atomic::Ordering::AcqRel;
         let transaction_hash = HASH.fetch_add(1, ordering).into();
 
@@ -531,6 +531,7 @@ mod test {
     #[tokio::test]
     #[rstest::rstest]
     #[timeout(super::TIMEOUT * 2)]
+    #[allow(clippy::too_many_arguments)]
     async fn subscribe_pending_transaction_ok_all_types(
         _logs: (),
         starknet: Starknet,
