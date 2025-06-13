@@ -1,14 +1,16 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
-use ethereum_instance::Error;
-use ethers::prelude::{abigen, Bytes, SignerMiddleware};
-use ethers::providers::{Http, Provider};
-use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{Address, U256};
-
 use crate::utils::hexstring_to_address;
 use crate::ConfigFile;
+use ethereum_instance::Error;
+use ethers::prelude::{abigen, Bytes, SignerMiddleware};
+use ethers::providers::Middleware;
+use ethers::providers::{Http, Provider};
+use ethers::signers::{LocalWallet, Signer};
+use ethers::types::{Address, U256, U64};
+use std::time::Duration;
+use tokio::time::sleep;
 
 abigen!(
     EthereumL1BridgeProxy,
@@ -72,18 +74,33 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
         .confirmations(2)
         .send()
         .await?;
+
+    let success = wait_for_confirmations(provider.clone(), 2).await?;
+    assert!(success, "Error completing confirmations");
     log::debug!("New ETH bridge add_implementation ✅");
     eth_bridge_proxy_client.upgrade_to(new_eth_bridge_client.address(), call_data, false).send().await?;
+
+    let success = wait_for_confirmations(provider.clone(), 2).await?;
+    assert!(success, "Error completing confirmations");
     log::debug!("New ETH bridge upgrade_to ✅");
     new_eth_bridge_client
         .register_app_role_admin(hexstring_to_address(&config_file.l1_deployer_address))
         .send()
         .await?;
+
+    let success = wait_for_confirmations(provider.clone(), 2).await?;
+    assert!(success, "Error completing confirmations");
     new_eth_bridge_client
         .register_governance_admin(hexstring_to_address(&config_file.l1_deployer_address))
         .send()
         .await?;
+
+    let success = wait_for_confirmations(provider.clone(), 2).await?;
+    assert!(success, "Error completing confirmations");
     new_eth_bridge_client.register_app_governor(hexstring_to_address(&config_file.l1_deployer_address)).send().await?;
+
+    let success = wait_for_confirmations(provider.clone(), 2).await?;
+    assert!(success, "Error completing confirmations");
     new_eth_bridge_client
         .set_max_total_balance(
             hexstring_to_address("0x0000000000000000000000000000000000455448"),
@@ -95,4 +112,24 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
 
     log::info!("Eth bridge L1 upgraded successfully ✅");
     Ok(())
+}
+
+pub async fn wait_for_confirmations<P>(
+    provider_l1: Provider<P>,
+    required_confirmations: u64,
+) -> color_eyre::Result<bool>
+where
+    P: ethers::providers::JsonRpcClient,
+{
+    let block_number = provider_l1.get_block_number().await?;
+
+    for _ in 0..50 {
+        let new_block_number = provider_l1.get_block_number().await?;
+        let confirmations = new_block_number - block_number;
+        if confirmations >= required_confirmations.into() {
+            return Ok(true);
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
+    Ok(false)
 }
