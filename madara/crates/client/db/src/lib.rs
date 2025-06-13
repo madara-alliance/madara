@@ -444,6 +444,7 @@ impl Drop for MadaraBackend {
     fn drop(&mut self) {
         tracing::info!("⏳ Gracefully closing the database...");
         self.flush().expect("Error when flushing the database"); // flush :)
+        self.db.cancel_all_background_work(true);
     }
 }
 

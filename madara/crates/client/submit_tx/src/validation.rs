@@ -7,6 +7,7 @@ use blockifier::{
     blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
     state::errors::StateError,
     transaction::{
+        account_transaction::{AccountTransaction, ExecutionFlags},
         errors::{TransactionExecutionError, TransactionPreValidationError},
         transaction_execution::Transaction as BTransaction,
     },
@@ -23,6 +24,8 @@ use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
     BroadcastedTransactionExt, ToBlockifierError,
 };
+use starknet_api::executable_transaction::TransactionType;
+use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
@@ -204,9 +207,21 @@ impl TransactionValidator {
 
         if !self.config.disable_validation {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
-
             // Perform validations
             if let BTransaction::Account(account_tx) = tx.clone() {
+                // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
+                // the account is not deployed yet but the tx should be accepted.
+                // TODO: do we really want to continue to support this behaviour
+                let account_tx = if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE
+                {
+                    AccountTransaction {
+                        tx: account_tx.tx,
+                        execution_flags: ExecutionFlags { validate: false, ..account_tx.execution_flags },
+                    }
+                } else {
+                    account_tx
+                };
+                
                 let mut validator = self.backend.new_transaction_validator()?;
                 validator.perform_validations(account_tx)?
             }
