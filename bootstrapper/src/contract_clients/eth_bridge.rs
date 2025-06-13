@@ -217,7 +217,7 @@ impl StarknetLegacyEthBridge {
         rpc_provider: &JsonRpcClient<HttpTransport>,
         l2_bridge_address: Felt,
         erc20_address: Felt,
-        l2_deployer_address: &str,
+        _l2_deployer_address: &str,
         account: &RpcAccount<'_>,
     ) {
         let tx = invoke_contract(l2_bridge_address, "set_l2_token", vec![erc20_address], account).await;

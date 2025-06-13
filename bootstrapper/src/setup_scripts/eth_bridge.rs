@@ -174,9 +174,8 @@ impl<'a> EthBridge<'a> {
             eth_bridge.initialize(self.core_contract.address()).await;
         } else {
             eth_bridge.add_implementation_eth_bridge(self.core_contract.address()).await;
-            sleep(Duration::from_secs(20)).await;
+
             eth_bridge.upgrade_to_eth_bridge(self.core_contract.address()).await;
-            sleep(Duration::from_secs(20)).await;
         }
         log::info!("✴️ ETH Bridge initialization on L1 completed");
 

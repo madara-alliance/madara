@@ -8,7 +8,7 @@ use ethers::prelude::{abigen, Bytes, SignerMiddleware};
 use ethers::providers::Middleware;
 use ethers::providers::{Http, Provider};
 use ethers::signers::{LocalWallet, Signer};
-use ethers::types::{Address, U256, U64};
+use ethers::types::{Address, U256};
 use std::time::Duration;
 use tokio::time::sleep;
 
@@ -71,7 +71,6 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
 
     eth_bridge_proxy_client
         .add_implementation(new_eth_bridge_client.address(), call_data.clone(), false)
-        .confirmations(2)
         .send()
         .await?;
 
