@@ -10,7 +10,7 @@ const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5mi
 /// Supported statuses are:
 ///
 /// - [`Received`]: tx has been inserted into the mempool.
-/// - [`AcceptedOnL2`]: tx has been inserted into a closed block.
+/// - [`AcceptedOnL2`]: tx has been saved to a closed block.
 /// - [`AcceptedOnL1`]: tx has been finalized on L1.
 ///
 /// We do not count a transaction as being accepted on L2 if it is included in the pending block.
