@@ -23,6 +23,8 @@ use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
     BroadcastedTransactionExt, ToBlockifierError,
 };
+use starknet_api::executable_transaction::TransactionType;
+use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
@@ -200,15 +202,25 @@ impl TransactionValidator {
             .into());
         }
 
+        // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
+        // the account is not deployed yet but the tx should be accepted.
+        if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE {}
+
         let tx_hash = tx.tx_hash().to_felt();
 
         if !self.config.disable_validation {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
-
             // Perform validations
             if let BTransaction::Account(account_tx) = tx.clone() {
-                let mut validator = self.backend.new_transaction_validator()?;
-                validator.perform_validations(account_tx)?
+                // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
+                // the account is not deployed yet but the tx should be accepted.
+                if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE {
+                    // TODO: do we really want to continue to support this behaviour
+                    // account_tx.perform_pre_validation_stage(...)?
+                } else {
+                    let mut validator = self.backend.new_transaction_validator()?;
+                    validator.perform_validations(account_tx)?
+                }
             }
         }
 

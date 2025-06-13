@@ -83,4 +83,4 @@ rand = { workspace = true }
 
 [features]
 default = []
-testing = ["tempfile"]
+testing = ["tempfile", "starknet_api/testing"]
