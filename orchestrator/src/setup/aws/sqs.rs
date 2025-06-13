@@ -4,7 +4,7 @@ use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, types::params::QueueArgs,
-    types::queue_control::QUEUES, OrchestratorError, OrchestratorResult
+    types::queue_control::QUEUES, OrchestratorError, OrchestratorResult,
 };
 use async_trait::async_trait;
 use aws_sdk_sqs::types::QueueAttributeName;

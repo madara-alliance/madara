@@ -4,8 +4,8 @@ use crate::error::{
     event::{EventSystemError, EventSystemResult},
     ConsumptionError,
 };
-use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::types::queue::{JobState, QueueType};
+use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};

@@ -8,7 +8,9 @@ use std::sync::Arc;
 use tracing::debug;
 
 use crate::core::config::Config;
-use crate::types::constant::{CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::constant::{
+    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+};
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;

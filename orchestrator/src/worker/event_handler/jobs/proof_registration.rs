@@ -1,4 +1,3 @@
-use anyhow::Context;
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::types::constant::PROOF_FILE_NAME;
@@ -7,6 +6,7 @@ use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
+use anyhow::Context;
 use async_trait::async_trait;
 use orchestrator_prover_client_interface::TaskStatus;
 use std::sync::Arc;
@@ -86,7 +86,14 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         let task_id: String = job
             .external_id
             .unwrap_string()
-            .map_err(|e| anyhow::anyhow!("Failed to unwrap external_id for job_id: {}, internal_id: {}: {}", job.id, internal_id, e))?
+            .map_err(|e| {
+                anyhow::anyhow!(
+                    "Failed to unwrap external_id for job_id: {}, internal_id: {}: {}",
+                    job.id,
+                    internal_id,
+                    e
+                )
+            })?
             .into();
         let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
         // Determine if we need on-chain verification
