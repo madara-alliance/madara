@@ -128,7 +128,7 @@ pub trait StarknetReadRpcApi {
 
     /// Gets the Transaction Status, Including Mempool Status and Execution Details
     #[method(name = "getTransactionStatus", and_versions = ["V0_8_0"])]
-    fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus>;
+    async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus>;
 
     /// Get an object about the sync status, or false if the node is not syncing
     #[method(name = "syncing", and_versions = ["V0_8_0"])]

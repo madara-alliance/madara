@@ -7,7 +7,7 @@ use mp_block::{
     Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlockInfo,
 };
-use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
+use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
@@ -20,7 +20,6 @@ use mp_state_update::{
     StorageEntry,
 };
 use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
-use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -55,18 +54,31 @@ impl SubmitTransaction for TestTransactionProvider {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         unimplemented!()
     }
+    async fn received_transaction(&self, _hash: mp_convert::Felt) -> Option<bool> {
+        unimplemented!()
+    }
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        unimplemented!()
+    }
 }
 
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
-    let chain_config = Arc::new(ChainConfig::madara_test());
-    let backend = MadaraBackend::open_for_testing(chain_config.clone());
-    let rpc = Starknet::new(
-        backend.clone(),
-        Arc::new(TestTransactionProvider),
-        Default::default(),
-        ServiceContext::new_for_testing(),
-    );
+    let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
+    let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
+    let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true };
+    let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
+        std::sync::Arc::clone(&backend),
+        mc_mempool::MempoolConfig::for_testing(),
+    ));
+    let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
+        mempool,
+        std::sync::Arc::clone(&backend),
+        validation,
+    ));
+    let context = mp_utils::service::ServiceContext::new_for_testing();
+    let rpc = Starknet::new(Arc::clone(&backend), mempool_validator, Default::default(), context);
+
     (backend, rpc)
 }
 
