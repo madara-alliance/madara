@@ -53,6 +53,19 @@ pub async fn subscribe_pending_transactions(
         return Ok(());
     };
 
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+
+    ctx.run_until_cancelled(subscribe_pending_transactions_impl(starknet, sink, transaction_details, sender_address))
+        .await
+        .unwrap_or(Err(crate::errors::StarknetWsApiError::Internal))
+}
+
+async fn subscribe_pending_transactions_impl(
+    starknet: &crate::Starknet,
+    sink: jsonrpsee::server::SubscriptionSink,
+    transaction_details: bool,
+    sender_address: Vec<starknet_types_core::felt::Felt>,
+) -> Result<(), crate::errors::StarknetWsApiError> {
     let pending_info = std::sync::Arc::clone(&starknet.backend.latest_pending_block());
     let mut channel = starknet.backend.subscribe_pending_txs();
     let sender_address = sender_address.into_iter().collect::<std::collections::HashSet<_>>();
@@ -126,7 +139,8 @@ async fn send_tx_if_matching(
         mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_hash)
     };
 
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_info).or_else_internal_server_error(|| {
+    let subscription_item = super::SubscriptionItem::new(sink.subscription_id(), tx_info);
+    let msg = jsonrpsee::SubscriptionMessage::from_json(&subscription_item).or_else_internal_server_error(|| {
         format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
     })?;
 
@@ -140,7 +154,9 @@ async fn send_tx_if_matching(
 #[cfg(test)]
 mod test {
     use crate::{
-        versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
+        versions::user::v0_8_0::{
+            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server,
+        },
         Starknet,
     };
 
@@ -300,7 +316,7 @@ mod test {
             .expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, tx_1.receipt.transaction_hash());
@@ -312,7 +328,7 @@ mod test {
         tracing::debug!("Received {:#x}", tx_1.receipt.transaction_hash());
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, tx_2.receipt.transaction_hash());
@@ -365,7 +381,7 @@ mod test {
 
         backend.on_new_pending_tx(tx_1.clone());
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, tx_1.receipt.transaction_hash());
@@ -378,7 +394,7 @@ mod test {
 
         backend.on_new_pending_tx(tx_2.clone());
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, tx_2.receipt.transaction_hash());
@@ -435,7 +451,7 @@ mod test {
             .expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(tx)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: tx, .. })) => {
                 assert_matches::assert_matches!(
                     tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
                         assert_eq!(tx, tx_1.transaction.into());
@@ -447,7 +463,7 @@ mod test {
         tracing::debug!("Received {:#x}", tx_1.receipt.transaction_hash());
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(tx)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: tx, .. })) => {
                 assert_matches::assert_matches!(
                     tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
                         assert_eq!(tx, tx_2.transaction.into());
@@ -500,7 +516,7 @@ mod test {
 
         backend.on_new_pending_tx(tx_1.clone());
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(tx)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: tx, .. })) => {
                 assert_matches::assert_matches!(
                     tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
                         assert_eq!(tx, tx_1.transaction.into());
@@ -513,7 +529,7 @@ mod test {
 
         backend.on_new_pending_tx(tx_2.clone());
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(tx)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: tx, .. })) => {
                 assert_matches::assert_matches!(
                     tx, mp_rpc::v0_8_1::PendingTxnInfo::Full(tx) => {
                         assert_eq!(tx, tx_2.transaction.into());
@@ -564,7 +580,7 @@ mod test {
             .expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, deploy_account.receipt.transaction_hash());
@@ -576,7 +592,7 @@ mod test {
         tracing::debug!("Received {:#x}", deploy_account.receipt.transaction_hash());
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, deploy.receipt.transaction_hash());
@@ -588,7 +604,7 @@ mod test {
         tracing::debug!("Received {:#x}", deploy.receipt.transaction_hash());
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, declare.receipt.transaction_hash());
@@ -600,7 +616,7 @@ mod test {
         tracing::debug!("Received {:#x}", declare.receipt.transaction_hash());
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, l1_handler.receipt.transaction_hash());
@@ -612,7 +628,7 @@ mod test {
         tracing::debug!("Received {:#x}", l1_handler.receipt.transaction_hash());
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(hash)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: hash, .. })) => {
                 assert_matches::assert_matches!(
                     hash, mp_rpc::v0_8_1::PendingTxnInfo::Hash(hash) => {
                         assert_eq!(hash, invoke.receipt.transaction_hash());
@@ -622,6 +638,46 @@ mod test {
         );
 
         tracing::debug!("Received {:#x}", invoke.receipt.transaction_hash());
+
+        assert!(sub.next().await.is_none());
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_pending_transactions_ok_unsubscribe(
+        _logs: (),
+        starknet: Starknet,
+        #[allow(unused)]
+        #[from(invoke)]
+        #[with(SENDER_ADDRESS)]
+        tx_1: mp_block::TransactionWithReceipt,
+        #[from(pending)]
+        #[with(vec![tx_1.clone()])]
+        pending: mp_block::PendingFullBlock,
+    ) {
+        let backend = std::sync::Arc::clone(&starknet.backend);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        backend.store_pending_block(pending).expect("Failed to store pending block");
+        let transaction_details = false;
+        let mut sub = client
+            .subscribe_pending_transactions(transaction_details, vec![SENDER_ADDRESS])
+            .await
+            .expect("Failed subscription");
+
+        let subscription_id = sub.next().await.unwrap().unwrap().subscription_id;
+        client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
 
         assert!(sub.next().await.is_none());
     }
