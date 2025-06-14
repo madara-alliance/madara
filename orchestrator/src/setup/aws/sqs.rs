@@ -35,7 +35,6 @@ impl Resource for InnerSQS {
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        // let queue_fn = |q_type| format!("{}_{}_{}", args.prefix, q_type, args.suffix);
         for (queue_type, queue) in QUEUES.iter() {
             if !queue.supported_layers.contains(layer) {
                 continue;
