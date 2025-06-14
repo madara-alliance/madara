@@ -45,6 +45,7 @@ impl Default for StorageProofConfig {
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
+    ws_handles: Arc<WsSubscribeHandles>,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
@@ -59,7 +60,8 @@ impl Starknet {
         block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
         ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
+        let ws_handles = Arc::new(WsSubscribeHandles::new());
+        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -132,4 +134,72 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
+}
+
+pub(crate) struct WsSubscribeHandles {
+    /// Keeps track of all ws connection handles.
+    ///
+    /// This can be used to request the closure of a ws connection.
+    ///
+    /// ## Preventing Leaks
+    ///
+    /// Since connections can be ended abruptly and the jsonrpsee api does not allow use to retrieve
+    /// the subscription id in those cases, we periodically remove any dangling handles. This is
+    /// done upon call to [`subscription_register`].
+    ///
+    /// ## Thread Safety
+    ///
+    /// We do not use a DashMap here as its `iter` method "May deadlock if called when holding a
+    /// mutable reference into the map."
+    ///
+    /// [`subscription_register`]: Self::add_new_handle
+    handles: tokio::sync::RwLock<std::collections::HashMap<u64, WsSubscribeContext>>,
+}
+
+impl WsSubscribeHandles {
+    pub fn new() -> Self {
+        Self { handles: tokio::sync::RwLock::new(std::collections::HashMap::new()) }
+    }
+
+    pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscribeContext {
+        let handle = WsSubscribeContext(std::sync::Arc::new(tokio::sync::Notify::new()));
+
+        let id = match id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id,
+            jsonrpsee::types::SubscriptionId::Str(_) => {
+                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
+            }
+        };
+
+        let mut lock = self.handles.write().await;
+        lock.retain(|_, handle| std::sync::Arc::strong_count(&handle.0) != 1);
+        lock.insert(id, handle.clone());
+
+        handle
+    }
+
+    pub async fn subscription_close(&self, id: u64) -> bool {
+        if let Some(handle) = self.handles.write().await.remove(&id) {
+            handle.0.notify_one();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) struct WsSubscribeContext(std::sync::Arc<tokio::sync::Notify>);
+
+impl WsSubscribeContext {
+    pub async fn run_until_cancelled<T, F>(&self, f: F) -> Option<T>
+    where
+        T: Sized,
+        F: std::future::Future<Output = T>,
+    {
+        tokio::select! {
+            res = f => Some(res),
+            _ = self.0.notified() => None
+        }
+    }
 }
