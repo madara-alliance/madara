@@ -21,7 +21,7 @@ RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && m
 RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 
 RUN apt-get -y update && \
-    apt-get install -y clang
+    apt-get install -y clang mold
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
@@ -39,10 +39,11 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     cargo chef cook -p madara --release --recipe-path recipe.json
 
-COPY Cargo.toml Cargo.lock .
-COPY madara madara
-COPY cairo-artifacts cairo-artifacts
-COPY .db-versions.yml .db-versions.yml
+# Setting it to avoid building artifacts again inside docker
+ENV RUST_BUILD_DOCKER=true
+
+COPY . .
+
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     cargo build -p madara --release

@@ -1,10 +1,10 @@
-FROM python:3.9-bullseye AS builder
+FROM python:3.9-bookworm AS builder
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
     git libgmp3-dev wget bash curl \
     build-essential \
-    nodejs npm \
+    nodejs npm clang mold \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -29,6 +29,9 @@ RUN pip install cairo-lang==0.13.2 "sympy<1.13.0"
 # Continue with the build
 RUN mkdir -p orchestrator/build
 RUN cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src
+
+# Setting it to avoid building artifacts again inside docker
+ENV RUST_BUILD_DOCKER=true
 
 # Build the project
 RUN cargo fetch
