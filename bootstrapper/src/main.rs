@@ -226,9 +226,13 @@ pub struct ConfigFile {
 
 #[tokio::main]
 pub async fn main() -> color_eyre::Result<()> {
+    // a logger that can be configured by env
     env_logger::init();
+
+    // parsing env
     dotenv().ok();
 
+    // clap to make cli applications
     let args = CliArgs::parse();
 
     println!("{color_red}{}{color_reset}", BANNER);
