@@ -54,6 +54,8 @@ pub struct GetStorageProofResult {
     pub global_roots: GlobalRoots,
 }
 
+type SubscriptionItemPendingTxs = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
+
 #[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWsRpcApi {
     #[subscription(name = "subscribeNewHeads", unsubscribe = "unsubscribeNewHeads", item = NewHead, param_kind = map)]
@@ -66,6 +68,28 @@ pub trait StarknetWsRpcApi {
         keys: Option<Vec<Vec<Felt>>>,
         block: Option<BlockId>,
     ) -> jsonrpsee::core::SubscriptionResult;
+
+    #[subscription(
+        name = "subscribeTransactionStatus",
+        unsubscribe = "unsubscribeTransactionStatus",
+        item = mp_rpc::v0_8_1::TxnStatus,
+        param_kind = map
+    )]
+    async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;
+
+    #[subscription(
+        name = "subscribePendingTransactions",
+        unsubscribe = "unsubscribePendingTransactions",
+        item = SubscriptionItemPendingTxs,
+        param_kind = map
+    )]
+    async fn subscribe_pending_transactions(
+        &self,
+        transaction_details: bool,
+        sender_address: Vec<starknet_types_core::felt::Felt>,
+    ) -> jsonrpsee::core::SubscriptionResult;
+    #[method(name = "unsubscribe")]
+    async fn starknet_unsubscribe(&self, subscription_id: u64) -> RpcResult<bool>;
 }
 
 #[versioned_rpc("V0_8_0", "starknet")]
