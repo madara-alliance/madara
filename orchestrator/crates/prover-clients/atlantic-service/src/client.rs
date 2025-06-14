@@ -40,6 +40,7 @@ impl ProvingLayer for StarknetLayer {
 pub struct AtlanticClient {
     client: HttpClient,
     proving_layer: Box<dyn ProvingLayer>,
+    is_mock: bool,
 }
 
 impl AtlanticClient {
@@ -58,7 +59,7 @@ impl AtlanticClient {
             _ => panic!("Invalid settlement layer: {}", atlantic_params.atlantic_settlement_layer),
         };
 
-        Self { client, proving_layer }
+        Self { client, proving_layer, is_mock: atlantic_params.atlantic_mock_fact_hash.eq("true") }
     }
 
     pub async fn add_job(
@@ -94,6 +95,9 @@ impl AtlanticClient {
                 .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))?,
         );
         debug!("Triggering the debug Request for: {:?}", api);
+        if self.is_mock {
+            return Ok(AtlanticAddJobResponse { atlantic_query_id: "01JXMTC7TZMSNDTJ88212KTH7W".to_string() });
+        }
         let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
@@ -151,7 +155,7 @@ impl AtlanticClient {
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         let proof_layout = LayoutName::recursive_with_poseidon.to_str();
 
-        let response = self.client
+        let api = self.client
             .request()
             .method(Method::POST)
             .path("atlantic-query")
@@ -163,10 +167,13 @@ impl AtlanticClient {
             .form_text("network", atlantic_network.as_ref())
             .form_text("result", "PROOF_VERIFICATION_ON_L2")
             .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
-            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-            .send()
-            .await
-            .map_err(AtlanticError::AddJobFailure)?;
+            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str());
+        debug!("Triggering the debug Request for: {:?}", api);
+        if self.is_mock {
+            return Ok(AtlanticAddJobResponse { atlantic_query_id: "01JXMXQAX4KNNSQDKDZTSHG8FC".to_string() });
+        }
+
+        let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
