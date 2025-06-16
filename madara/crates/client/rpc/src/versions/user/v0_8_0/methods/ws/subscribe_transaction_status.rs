@@ -232,7 +232,7 @@ struct StateTransitionAcceptedOnL2<'a> {
 struct StateTransitionAcceptedOnL1<'a> {
     common: StateTransitionCommon<'a>,
     block_number: u64,
-    channel_confirmed: mc_db::LastConfirmedBlockReceived,
+    channel_confirmed: mc_db::LastBlockOnL1Receiver,
 }
 struct StateTransitionEnd<'a> {
     common: StateTransitionCommon<'a>,

@@ -96,6 +96,7 @@ pub async fn subscribe_pending_transactions(
     }
 }
 
+// TODO: improve tx filtering here à la subscribeEvents
 async fn send_tx_if_matching(
     tx: mp_transactions::Transaction,
     tx_hash: starknet_types_core::felt::Felt,
