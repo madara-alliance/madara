@@ -7,8 +7,7 @@ use ethers::types::U256;
 use num_bigint::BigUint;
 use serde_json::{Map, Value};
 use starknet::accounts::ConnectedAccount;
-use starknet::core::types::{Felt, InvokeTransactionResult, TransactionReceipt};
-use starknet_core::types::TransactionReceiptWithBlockInfo;
+use starknet::core::types::{ExecutionResult, Felt, InvokeTransactionResult, TransactionReceipt};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 
@@ -27,7 +26,13 @@ pub async fn invoke_contract(
     let txn_res =
         account.invoke_contract(contract, method, calldata, None).send().await.expect("Error in invoking the contract");
 
-    wait_for_transaction(account.provider(), txn_res.transaction_hash, "invoking_contract").await.unwrap();
+    wait_for_transaction(
+        account.provider(),
+        txn_res.transaction_hash,
+        &format!("invoking_contract with method {:?}", method),
+    )
+    .await
+    .unwrap();
 
     txn_res
 }
@@ -54,19 +59,28 @@ pub async fn wait_for_transaction(
 
     let transaction_status = transaction_receipt.ok().unwrap();
 
-    match transaction_status {
-        TransactionReceiptWithBlockInfo { receipt: TransactionReceipt::Invoke(receipt), .. } => {
-            log::trace!("txn : {:?} : {:?}", tag, receipt);
-        }
-        TransactionReceiptWithBlockInfo { receipt: TransactionReceipt::DeployAccount(receipt), .. } => {
+    log::trace!("txn : {:?} : {:?}", tag, transaction_status);
+    let exec_result: ExecutionResult = match transaction_status.receipt {
+        TransactionReceipt::Invoke(receipt) => receipt.execution_result,
+        TransactionReceipt::DeployAccount(receipt) => {
             let contract_address = receipt.contract_address;
-            log::trace!("txn : {:?} : {:?}", tag, contract_address);
+            log::info!("Account deployed at {:?}", contract_address);
+            receipt.execution_result
         }
-        _ => {
-            log::error!("Transaction status: {:?}", transaction_status);
-            panic!("Transaction failed");
+        TransactionReceipt::Declare(receipt) => receipt.execution_result,
+        TransactionReceipt::Deploy(receipt) => {
+            log::info!("Tag: {:?}, Contract deployed at address {:?}", tag, receipt.contract_address);
+            receipt.execution_result
         }
+        TransactionReceipt::L1Handler(receipt) => receipt.execution_result,
     };
+
+    match exec_result {
+        ExecutionResult::Succeeded => {}
+        ExecutionResult::Reverted { reason } => {
+            panic!("Transaction failed with {:?}", reason);
+        }
+    }
 
     Ok(())
 }

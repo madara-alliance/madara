@@ -33,33 +33,33 @@ FROM base-rust AS planner
 
 COPY . .
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
+  --mount=type=cache,target=/usr/local/cargo/registry \
+  RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
 # Step 2: Build crate
 FROM base-rust AS builder-rust
 
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    RUST_BUILD_DOCKER=1 cargo chef cook -p madara --release --recipe-path recipe.json
+  --mount=type=cache,target=/usr/local/cargo/registry \
+  RUST_BUILD_DOCKER=1 cargo chef cook -p madara --release --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock .
 COPY madara madara
 COPY build-artifacts build-artifacts
 COPY .db-versions.yml .db-versions.yml
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
-    --mount=type=cache,target=/usr/local/cargo/registry \
-    RUST_BUILD_DOCKER=1 cargo build -p madara --release
+  --mount=type=cache,target=/usr/local/cargo/registry \
+  RUST_BUILD_DOCKER=1 cargo build -p madara --release
 
 # Step 5: runner
 FROM debian:bookworm-slim
 
 RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates tini curl &&\
-    apt-get autoremove -y; \
-    apt-get clean; \
-    rm -rf /var/lib/apt/lists/*
+  apt-get install -y openssl ca-certificates tini curl &&\
+  apt-get autoremove -y; \
+  apt-get clean; \
+  rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
