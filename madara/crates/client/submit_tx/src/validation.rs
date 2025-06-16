@@ -105,7 +105,7 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::TransactionFeeError(_)
             | E::TransactionPreValidationError(_)
             | E::TryFromIntError(_)
-            | E::TransactionTooLarge) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
             err @ (E::InvalidSegmentStructure(_, _) | E::ProgramError { .. }) => {
                 rejected(InvalidProgram, format!("{err:#}"))
@@ -205,23 +205,28 @@ impl TransactionValidator {
 
         let tx_hash = tx.tx_hash().to_felt();
 
+        let tx = match tx {
+            BTransaction::Account(AccountTransaction { tx, execution_flags }) => {
+                let execution_flags = ExecutionFlags {
+                    // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
+                    // the account is not deployed yet but the tx should be accepted.
+                    // TODO: do we really want to continue to support this behaviour
+                    validate: if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE {
+                        false
+                    } else {
+                        execution_flags.validate
+                    },
+                    ..execution_flags
+                };
+                BTransaction::Account(AccountTransaction { tx, execution_flags })
+            }
+            BTransaction::L1Handler(_) => tx,
+        };
+
         if !self.config.disable_validation {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
             if let BTransaction::Account(account_tx) = tx.clone() {
-                // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
-                // the account is not deployed yet but the tx should be accepted.
-                // TODO: do we really want to continue to support this behaviour
-                let account_tx = if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE
-                {
-                    AccountTransaction {
-                        tx: account_tx.tx,
-                        execution_flags: ExecutionFlags { validate: false, ..account_tx.execution_flags },
-                    }
-                } else {
-                    account_tx
-                };
-
                 let mut validator = self.backend.new_transaction_validator()?;
                 validator.perform_validations(account_tx)?
             }

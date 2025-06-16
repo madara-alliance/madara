@@ -13,7 +13,7 @@ use starknet_api::contract_class::ContractClass;
 use starknet_api::core::{ClassHash, ContractAddress, Nonce};
 use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType};
 use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
-use starknet_api::transaction::TransactionHash;
+use starknet_api::transaction::{TransactionHash, TransactionVersion};
 
 impl ExecutionContext {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
@@ -47,8 +47,9 @@ impl ExecutionContext {
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
                 let tip = match &tx {
-                    Transaction::Account(tx) => tx.tip(),
-                    Transaction::L1Handler(_) => Tip::ZERO,
+                    // Accessing tip may panic if the transaction is not version 3, so we check the version explicitly.
+                    Transaction::Account(tx) if tx.version() == TransactionVersion::THREE => tx.tip(),
+                    _ => Tip::ZERO,
                 };
 
                 // We need to estimate gas too.
