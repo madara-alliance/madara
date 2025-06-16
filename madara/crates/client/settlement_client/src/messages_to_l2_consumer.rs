@@ -66,7 +66,10 @@ impl MessagesToL2Consumer {
 
 #[cfg(test)]
 mod tests {
-    use crate::{client::{ClientType, MockSettlementLayerProvider}, messages_to_l2_consumer::MessagesToL2Consumer};
+    use crate::{
+        client::{ClientType, MockSettlementLayerProvider},
+        messages_to_l2_consumer::MessagesToL2Consumer,
+    };
     use futures::FutureExt;
     use mc_db::MadaraBackend;
     use mockall::predicate;

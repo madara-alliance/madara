@@ -346,18 +346,16 @@ impl SettlementLayerProvider for EthereumClient {
         from_l1_block_n: u64,
     ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
         let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
-        let event_stream = filter
-            .from_block(from_l1_block_n)
-            .to_block(BlockNumberOrTag::Finalized)
-            .watch()
-            .await
-            .map_err(|e| -> SettlementClientError {
-                EthereumClientError::ArchiveRequired(format!(
-                    "Could not fetch events, archive node may be required: {}",
-                    e
-                ))
-                .into()
-            })?;
+        let event_stream =
+            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
+                |e| -> SettlementClientError {
+                    EthereumClientError::ArchiveRequired(format!(
+                        "Could not fetch events, archive node may be required: {}",
+                        e
+                    ))
+                    .into()
+                },
+            )?;
 
         Ok(EthereumEventStream::new(event_stream).boxed())
     }

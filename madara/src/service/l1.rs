@@ -5,7 +5,7 @@ use mc_mempool::GasPriceProvider;
 use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
 use mc_settlement_client::{gas_price::L1BlockMetrics, SettlementClient};
-use mc_settlement_client::{L1SyncDisabledClient, L1ClientImpl};
+use mc_settlement_client::{L1ClientImpl, L1SyncDisabledClient};
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
 

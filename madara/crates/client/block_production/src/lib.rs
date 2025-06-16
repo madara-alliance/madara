@@ -847,7 +847,7 @@ pub(crate) mod tests {
         (
             contract_address,
             make_invoke_tx(
-                &contract_sender,
+                contract_sender,
                 Multicall::default().with(Call {
                     to: UDC_CONTRACT_ADDRESS,
                     selector: Selector::from("deployContract"),
@@ -861,7 +861,7 @@ pub(crate) mod tests {
                     .chain(constructor_calldata.iter().copied())
                     .collect(),
                 }),
-                &backend,
+                backend,
                 nonce,
             ),
         )

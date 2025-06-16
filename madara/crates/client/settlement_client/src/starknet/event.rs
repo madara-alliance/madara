@@ -85,7 +85,11 @@ pub struct WatchBlockNEvent {
 }
 
 /// Watch the latest block_n. Everytime a change is detected, a `WatchBlockNEvent` is emitted with the previous and new block_n value.
-pub fn watch_latest_block_n(provider: Arc<impl Provider + 'static>, from_block_n: Option<u64>, polling_interval: Duration) -> impl Stream<Item=Result<WatchBlockNEvent, ProviderError>> {
+pub fn watch_latest_block_n(
+    provider: Arc<impl Provider + 'static>,
+    from_block_n: Option<u64>,
+    polling_interval: Duration,
+) -> impl Stream<Item = Result<WatchBlockNEvent, ProviderError>> {
     let mut interval = tokio::time::interval(polling_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
     stream::try_unfold((provider, interval, from_block_n), |(provider, mut interval, previous)| async move {
@@ -104,13 +108,17 @@ pub fn watch_latest_block_n(provider: Arc<impl Provider + 'static>, from_block_n
 }
 
 /// Get all of the events matching a given filter.
-pub fn get_events(provider: Arc<impl Provider + 'static>, filter: EventFilter, chunk_size: u64) -> impl Stream<Item=Result<EmittedEvent, ProviderError>> {
+pub fn get_events(
+    provider: Arc<impl Provider + 'static>,
+    filter: EventFilter,
+    chunk_size: u64,
+) -> impl Stream<Item = Result<EmittedEvent, ProviderError>> {
     stream::try_unfold((provider, filter, chunk_size,  None, false), |(provider, filter, chunk_size, continuation_token, stop)| async move {
         if stop {
             return Ok(None);
         }
         let res = provider.get_events(filter.clone(), continuation_token, chunk_size).await?;
-        
+
         let stop = res.continuation_token.is_none(); // stop just after this chunk when no continuation token.
         Ok::<_, ProviderError>(Some((stream::iter(res.events).map(Ok), (provider, filter, chunk_size, res.continuation_token, stop))))
     })
@@ -122,16 +130,28 @@ pub struct WatchEventFilter {
     pub address: Option<Felt>,
     pub keys: Option<Vec<Vec<Felt>>>,
 }
-pub fn watch_events(provider: Arc<impl Provider + 'static>, from_block_n: Option<u64>, filter: WatchEventFilter, polling_interval: Duration, chunk_size: u64) -> impl Stream<Item=Result<EmittedEvent, ProviderError>> {
+pub fn watch_events(
+    provider: Arc<impl Provider + 'static>,
+    from_block_n: Option<u64>,
+    filter: WatchEventFilter,
+    polling_interval: Duration,
+    chunk_size: u64,
+) -> impl Stream<Item = Result<EmittedEvent, ProviderError>> {
     // Watch the latest block_n, and everytime it changes, get all the events in the change range.
     watch_latest_block_n(provider.clone(), from_block_n, polling_interval)
-        .map_ok(move |ev| get_events(provider.clone(), EventFilter {
-            // add 1 to the previous block_n to start returning events from the block we don't know about. (EventFilter range is inclusive)
-            from_block: Some(BlockId::Number(ev.previous.map(|n| n.saturating_add(1)).unwrap_or(0))),
-            to_block: Some(BlockId::Number(ev.new)),
-            address: filter.address,
-            keys: filter.keys.clone(),
-        }, chunk_size))
+        .map_ok(move |ev| {
+            get_events(
+                provider.clone(),
+                EventFilter {
+                    // add 1 to the previous block_n to start returning events from the block we don't know about. (EventFilter range is inclusive)
+                    from_block: Some(BlockId::Number(ev.previous.map(|n| n.saturating_add(1)).unwrap_or(0))),
+                    to_block: Some(BlockId::Number(ev.new)),
+                    address: filter.address,
+                    keys: filter.keys.clone(),
+                },
+                chunk_size,
+            )
+        })
         .try_flatten()
 }
 
@@ -147,8 +167,8 @@ mod starknet_event_stream_tests {
     use starknet_providers::jsonrpc::HttpTransport;
     use starknet_providers::JsonRpcClient;
     use std::str::FromStr;
-    use url::Url;
     use tokio_util::time::FutureExt as _;
+    use url::Url;
 
     struct MockStarknetServer {
         server: MockServer,
@@ -243,14 +263,19 @@ mod starknet_event_stream_tests {
         }
     }
 
-    fn create_stream(mock_server: &MockStarknetServer) -> impl Stream<Item=Result<MessageToL2WithMetadata, SettlementClientError>> + 'static {
+    fn create_stream(
+        mock_server: &MockStarknetServer,
+    ) -> impl Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + 'static {
         let provider =
             JsonRpcClient::new(HttpTransport::new(Url::from_str(&mock_server.url()).expect("Failed to parse URL")));
 
-        watch_events(Arc::new(provider), Some(0), WatchEventFilter {
-            address: Some(Felt::from_hex("0x1").unwrap()),
-            keys: Some(vec![]),
-        }, Duration::from_millis(100), /* chunk size */ 5)
+        watch_events(
+            Arc::new(provider),
+            Some(0),
+            WatchEventFilter { address: Some(Felt::from_hex("0x1").unwrap()), keys: Some(vec![]) },
+            Duration::from_millis(100),
+            /* chunk size */ 5,
+        )
         .map_err(|e| SettlementClientError::from(StarknetClientError::Provider(format!("Provider error: {e:#}"))))
         .map(|r| r.and_then(MessageToL2WithMetadata::try_from))
         .boxed()
@@ -271,7 +296,11 @@ mod starknet_event_stream_tests {
             panic!("Expected successful event");
         }
         // should not find any more events
-        assert_matches!(stream.next().timeout(Duration::from_secs(3)).await, Err(_), "Expected waiting after processing all events");
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
 
         events_mock.assert_hits(1);
     }
@@ -284,7 +313,6 @@ mod starknet_event_stream_tests {
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
-
         for _ in 0..100 {
             assert_matches!(stream.next().await, Some(Ok(event_data)) => {
                 assert_eq!(event_data.l1_block_number, 100);
@@ -292,7 +320,11 @@ mod starknet_event_stream_tests {
             })
         }
         // should not find any more events
-        assert_matches!(stream.next().timeout(Duration::from_secs(3)).await, Err(_), "Expected waiting after processing all events");
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
 
         events_mock.assert_hits(25); // 100/5 events per page is 25 calls.
     }
@@ -327,7 +359,11 @@ mod starknet_event_stream_tests {
         }
 
         // should not find any more events
-        assert_matches!(stream.next().timeout(Duration::from_secs(3)).await, Err(_), "Expected waiting after processing all events");
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
     }
 
     #[tokio::test]
@@ -351,7 +387,11 @@ mod starknet_event_stream_tests {
         let mut stream = Box::pin(create_stream(&mock_server));
 
         // should not find any more events
-        assert_matches!(stream.next().timeout(Duration::from_secs(3)).await, Err(_), "Expected waiting after processing all events");
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
 
         events_mock.assert();
         block_mock.assert();
@@ -371,7 +411,11 @@ mod starknet_event_stream_tests {
             })
         }
         // should not find any more events
-        assert_matches!(stream.next().timeout(Duration::from_secs(3)).await, Err(_), "Expected waiting after processing all events");
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
 
         block_n_mock.delete();
         events_mock.delete();

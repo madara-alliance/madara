@@ -8,6 +8,7 @@ pub mod TestContract {
     use openzeppelin_upgrades::UpgradeableComponent;
     use openzeppelin_upgrades::interface::IUpgradeable;
     use starknet::ClassHash;
+    use core::num::traits::Zero;
 
     component!(path: AccountComponent, storage: account, event: AccountEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);
@@ -60,17 +61,18 @@ pub mod TestContract {
 
     #[derive(Drop, starknet::Event)]
     pub struct CalledFromL1 {
-        pub from_l1_address: felt252,
+        pub from_address: felt252,
         pub arg1: felt252,
         pub arg2: felt252,
     }
 
-    pub fn l1_handler_entrypoint(ref self: ContractState, from_l1_address: felt252, arg1: felt252, arg2: felt252) {
+    #[l1_handler]
+    pub fn l1_handler_entrypoint(ref self: ContractState, from_address: felt252, arg1: felt252, arg2: felt252) {
         let sender = starknet::get_caller_address();
-        assert(sender.is_zero(), 'Must be called from L1 (get_caller_address = 0)');
+        assert(sender.is_zero(), 'Must be called from L1');
 
         self.emit(CalledFromL1 {
-            from_l1_address,
+            from_address,
             arg1,
             arg2,
         });

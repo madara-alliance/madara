@@ -172,6 +172,7 @@ impl SetupBuilder {
 
 use TestSetup::*;
 
+#[allow(clippy::large_enum_variant)]
 enum RunningTestSetup {
     SingleNode(MadaraCmd),
     TwoNodes { _sequencer: MadaraCmd, user_facing: MadaraCmd },

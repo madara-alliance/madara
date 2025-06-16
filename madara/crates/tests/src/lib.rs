@@ -1,4 +1,5 @@
 //! End to end tests for madara.
+#![allow(clippy::print_stdout)]
 
 #[cfg(test)]
 mod devnet;
