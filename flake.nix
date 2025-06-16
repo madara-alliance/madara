@@ -17,6 +17,7 @@
           (import rust-overlay)
           (final: prev: {
             scarb = final.callPackage (./. + "/tools/scarb.nix") {};
+            foundry = final.callPackage (./. + "/tools/foundry.nix") {};
           })
         ];
 
@@ -26,9 +27,13 @@
 
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
       in {
-        # Export the scarb package
+        # Export the scarb and foundry package
         packages.scarb = pkgs.scarb;
-        packages.default = pkgs.scarb;
+        packages.foundry = pkgs.foundry;
+        packages.default = with pkgs; [
+          scarb
+          foundry
+        ];
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
@@ -42,10 +47,12 @@
             alejandra
             yq
             scarb
+            foundry
             gnumake
             mold
             wget
             git
+            cargo-nextest
           ];
 
           buildInputs = with pkgs;

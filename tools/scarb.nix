@@ -18,8 +18,17 @@
   systemMap = {
     "aarch64-darwin" = "aarch64-apple-darwin";
     "x86_64-darwin" = "x86_64-apple-darwin";
-    "aarch64-linux" = "aarch64-unknown-linux-gnu";
-    "x86_64-linux" = "x86_64-unknown-linux-gnu";
+
+    # NOTE:
+    # On NixOS, using the generic glibc-based binaries (e.g. linux_amd64) will fail at runtime
+    # due to missing dynamic linker and runtime libraries not available in the Nix sandbox.
+    # To avoid patchelf or wrapping with custom FHS environments, we use musl-based
+    # statically-linked binaries instead, which work out-of-the-box in Nix environments.
+    
+    # "aarch64-linux" = "aarch64-unknown-linux-gnu";
+    # "x86_64-linux" = "x86_64-unknown-linux-gnu";
+    "aarch64-linux" = "aarch64-unknown-linux-musl";
+    "x86_64-linux" = "x86_64-unknown-linux-musl";
     "aarch64-linux-musl" = "aarch64-unknown-linux-musl";
     "x86_64-linux-musl" = "x86_64-unknown-linux-musl";
     "x86_64-windows" = "x86_64-pc-windows-msvc";
