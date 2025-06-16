@@ -21,7 +21,7 @@ use std::path::Path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::multipart::{Form, Part};
 use reqwest::{Certificate, Client, ClientBuilder, Identity, Method, Response, Result};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use url::{ParseError, Url};
 
 /// Main HTTP client with default configurations.
@@ -54,6 +54,16 @@ pub struct HttpClientBuilder {
     default_query_params: HashMap<String, String>,
     default_form_data: HashMap<String, String>,
     default_body_params: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum MineType {
+    #[serde(rename = "application/octet-stream")]
+    OctetStream,
+    #[serde(rename = "application/zip")]
+    Zip,
+    #[serde(rename = "application/json")]
+    Json,
 }
 
 impl HttpClient {
@@ -284,7 +294,7 @@ impl<'a> RequestBuilder<'a> {
         file_name: &str,
         mime_type: Option<&str>,
     ) -> io::Result<Self> {
-        let mime_type = mime_type.unwrap_or("application/octet-stream");
+        let mime_type = mime_type.unwrap_or(&MineType::OctetStream.to_string());
         let part = Part::bytes(bytes)
             .file_name(file_name.to_string())
             .mime_str(mime_type)
@@ -634,7 +644,7 @@ mod http_client_tests {
                 .header("Authorization", "Bearer token")
                 .body(r#"{"name":"test"}"#);
 
-            then.status(200).header("content-type", "application/json").body(r#"{"status": "ok"}"#);
+            then.status(200).header("content-type", MineType::Json.to_string()).body(r#"{"status": "ok"}"#);
         });
 
         let client = HttpClient::builder(&mock_server.base_url())

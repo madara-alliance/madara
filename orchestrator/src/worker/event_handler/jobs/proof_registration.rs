@@ -1,6 +1,6 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::types::constant::PROOF_FILE_NAME;
+use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -135,7 +135,7 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                         job.internal_id, task_id
                     ))?;
 
-                let proof_key = format!("{internal_id}/{PROOF_FILE_NAME}");
+                let proof_key = format!("{internal_id}/{PROOF_PART2_FILE_NAME}");
                 config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &proof_key).await?;
                 tracing::info!(
                     log_type = "completed",

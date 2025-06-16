@@ -304,14 +304,4 @@ impl SnosJobHandler {
 
         Ok(Bytes::from(buffer))
     }
-
-    /// Converts a [NamedTempFile] to [Bytes].
-    /// This function reads the file in chunks and appends them to the buffer.
-    /// This is useful when the file is too large to be read in one go.
-    #[allow(dead_code)]
-    fn tempfile_to_bytes(&self, tmp_file: &mut NamedTempFile) -> Result<Bytes> {
-        let mut buffer = Vec::new();
-        tmp_file.as_file_mut().read_to_end(&mut buffer)?;
-        Ok(Bytes::from(buffer))
-    }
 }

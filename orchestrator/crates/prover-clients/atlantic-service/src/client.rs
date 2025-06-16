@@ -10,6 +10,8 @@ use std::path::Path;
 use tracing::debug;
 use url::Url;
 
+const PROOF_QUERY_PATH: &str = "https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json";
+
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {
     #[strum(serialize = "starkware")]
@@ -128,8 +130,7 @@ impl AtlanticClient {
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // Note: It seems this code will be replaced by the proper API once it is available
         debug!("Getting proof for task_id: {}", task_id);
-        let proof_path =
-            format!("https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json", task_id);
+        let proof_path = format!(PROOF_QUERY_PATH, task_id);
         let client = reqwest::Client::new();
         let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
 
@@ -161,7 +162,7 @@ impl AtlanticClient {
             .form_text("layout", proof_layout)
             .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
             .form_text("network", atlantic_network.as_ref())
-            .form_text("result", "PROOF_VERIFICATION_ON_L2")
+            .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
             .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
             .send()

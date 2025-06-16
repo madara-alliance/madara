@@ -50,10 +50,8 @@ impl ProverClient for AtlanticProverService {
             function_type = "cairo_pie",
             "Submitting Cairo PIE task."
         );
-        println!("task: {:?}", n_steps);
         match task {
             Task::CairoPie(cairo_pie) => {
-                println!("unwrap the cairo pie");
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();
@@ -61,10 +59,6 @@ impl ProverClient for AtlanticProverService {
                     .write_zip_file(pie_file_path, true)
                     .map_err(|e| ProverClientError::FailedToWriteFile(e.to_string()))?;
 
-                println!("pie_file_path: {:?}", pie_file_path);
-
-                // sleep for 2 seconds to make sure the job is submitted
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 let atlantic_job_response = self
                     .atlantic_client
                     .add_job(
@@ -75,10 +69,7 @@ impl ProverClient for AtlanticProverService {
                         self.atlantic_network.clone(),
                     )
                     .await?;
-                println!("atlantic_job_response: {:?}", atlantic_job_response);
 
-                // sleep for 10 seconds to make sure the job is submitted
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
                 // The temporary file will be automatically deleted when `temp_file` goes out of scope
                 Ok(atlantic_job_response.atlantic_query_id)
@@ -168,17 +159,6 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
-        // let current_dir = std::env::current_dir().map_err(|e| ProverClientError::Internal(Box::new(e)))?;
-        // tracing::debug!("Current directory: {}", current_dir.display());
-
-        // let verifier_path = current_dir.join("./orchestrator/build/os_latest.json");
-        // tracing::debug!("Looking for verifier at: {}", verifier_path.display());
-
-        // let cairo_verifier = match tokio::fs::read_to_string(&verifier_path).await {
-        //     Ok(content) => content,
-        //     Err(e) => return Err(ProverClientError::from(AtlanticError::FileReadError(e))),
-        // };
-
         let atlantic_job_response = self
             .atlantic_client
             .submit_l2_query(proof, cairo_verifier, n_steps, &self.atlantic_network, &self.atlantic_api_key)
