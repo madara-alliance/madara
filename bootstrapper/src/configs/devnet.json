@@ -2,8 +2,8 @@
   "rollup_seq_url": "http://127.0.0.1:9944",
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
-  "eth_chain_id": 31337,
-  "l1_deployer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
+  "eth_chain_id": 11155111,
+  "l1_deployer_address": "0x84B83d45bdA5504a8c6B10C4BCFff749FCC520c4",
   "l1_wait_time": "15",
   "sn_os_program_hash": "0x41fc2a467ef8649580631912517edcab7674173f1dbfa2e9b64fbcd82bc4d79",
   "config_hash_version": "StarknetOsConfig2",
@@ -16,7 +16,7 @@
   "verifier_address": "0x000000000000000000000000000000000000abcd",
   "operator_address": "0x000000000000000000000000000000000000abcd",
   "dev": false,
-  "core_contract_address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
-  "core_contract_implementation_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
+  "core_contract_address": "0xa258947f8a08556650037a31421ea326a435afc1",
+  "core_contract_implementation_address": "0x21257155d40b830e884c3b3b11372853529fb344",
   "core_contract_mode": "Dev"
 }
