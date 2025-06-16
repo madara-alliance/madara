@@ -4,8 +4,6 @@ use mp_block::BlockId;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
-pub(crate) type NewHead = mp_rpc::BlockHeader;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractStorageKeysItem {
     pub contract_address: Felt,
@@ -55,10 +53,16 @@ pub struct GetStorageProofResult {
 
 type SubscriptionItemPendingTxs = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
 type SubscriptionItemEvents = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::EmittedEvent>;
+type SubscriptionItemNewHeads = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::BlockHeader>;
 
 #[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWsRpcApi {
-    #[subscription(name = "subscribeNewHeads", unsubscribe = "unsubscribeNewHeads", item = NewHead, param_kind = map)]
+    #[subscription(
+        name = "subscribeNewHeads",
+        unsubscribe = "unsubscribeNewHeads",
+        item = SubscriptionItemNewHeads,
+        param_kind = map
+    )]
     async fn subscribe_new_heads(&self, block: BlockId) -> jsonrpsee::core::SubscriptionResult;
 
     #[subscription(
