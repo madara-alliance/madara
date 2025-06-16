@@ -24,7 +24,7 @@
     # due to missing dynamic linker and runtime libraries not available in the Nix sandbox.
     # To avoid patchelf or wrapping with custom FHS environments, we use musl-based
     # statically-linked binaries instead, which work out-of-the-box in Nix environments.
-    
+
     # "aarch64-linux" = "linux_arm64";
     # "x86_64-linux" = "linux_amd64";
     "aarch64-linux" = "alpine_arm64";
@@ -71,9 +71,9 @@ in
 
     # Installation phase
     installPhase = ''
-            mkdir -p $out/bin
+      mkdir -p $out/bin
 
-            ${
+      ${
         if extension == "zip"
         then ''
           unzip $src
@@ -86,25 +86,25 @@ in
       echo "[DEBUG] Extracted files:"
       ls -lh
 
-            # Verify installation of all required binaries
-            required_bins=(
-              anvil
-              cast
-              chisel
-              forge
-            )
+      # Verify installation of all required binaries
+      required_bins=(
+        anvil
+        cast
+        chisel
+        forge
+      )
 
-            for bin in "''${required_bins[@]}"; do
-              if [ -f "$bin" ]; then
-              # Make binarie executable
-              chmod +x "$bin"
-              # Install binarie
-              mv "$bin" $out/bin/
-            else
-              echo "Error: $bin not found in archive"
-              exit 1
-            fi
-            done
+      for bin in "''${required_bins[@]}"; do
+        if [ -f "$bin" ]; then
+          # Make binary executable
+          chmod +x "$bin"
+          # Install binarie
+          mv "$bin" $out/bin/
+        else
+          echo "Error: $bin not found in archive"
+          exit 1
+        fi
+      done
     '';
 
     # Add required build inputs

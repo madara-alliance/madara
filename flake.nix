@@ -66,9 +66,9 @@
             ];
 
           shellHook = ''
-          # Increase the limit of open file descriptors
-          echo "[INFO] Increasing open file descriptor limit to 65535 (ulimit -n)"
-          ulimit -n 65535 || echo "[WARN] Failed to set ulimit -n to 65535"
+            # Increase the limit of open file descriptors
+            echo "[INFO] Increasing open file descriptor limit to 65535 (ulimit -n)"
+            ulimit -n 65535 || echo "[WARN] Failed to set ulimit -n to 65535"
 
             # --- NPM Global Installation Workaround for Nix Shell ---
             # The starkgate-contracts setup script tries to install npm packages globally.
