@@ -1,7 +1,6 @@
-use crate::client::SettlementClientTrait;
+use crate::client::SettlementLayerProvider;
 use crate::error::SettlementClientError;
 use crate::gas_price::L1BlockMetrics;
-use futures::Stream;
 use mc_db::MadaraBackend;
 use mp_utils::service::ServiceContext;
 use mp_utils::trim_hash;
@@ -57,7 +56,7 @@ impl StateUpdateWorker {
 
 pub async fn state_update_worker(
     backend: Arc<MadaraBackend>,
-    settlement_client: Arc<dyn SettlementClientTrait>,
+    settlement_client: Arc<dyn SettlementLayerProvider>,
     mut ctx: ServiceContext,
     l1_head_sender: L1HeadSender,
     block_metrics: Arc<L1BlockMetrics>,

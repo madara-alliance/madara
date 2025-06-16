@@ -1,5 +1,6 @@
-use crate::client::SettlementClientTrait;
+use crate::client::SettlementLayerProvider;
 use crate::error::SettlementClientError;
+use crate::L1ClientImpl;
 use bigdecimal::BigDecimal;
 use mc_analytics::register_gauge_metric_instrument;
 use mc_mempool::{GasPriceProvider, L1DataProvider};
@@ -55,70 +56,64 @@ impl L1BlockMetrics {
     }
 }
 
-pub async fn gas_price_worker(
-    settlement_client: Arc<dyn SettlementClientTrait>,
-    l1_gas_provider: GasPriceProvider,
-    gas_price_poll_ms: Duration,
-    mut ctx: ServiceContext,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError> {
-    l1_gas_provider.update_last_update_timestamp();
-    let mut interval = tokio::time::interval(gas_price_poll_ms);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+impl L1ClientImpl {
+    pub(crate) async fn gas_price_worker(
+        self: Arc<Self>,
+        l1_gas_provider: GasPriceProvider,
+        gas_price_poll_ms: Duration,
+        mut ctx: ServiceContext,
+        l1_block_metrics: Arc<L1BlockMetrics>,
+    ) -> Result<(), SettlementClientError> {
+        l1_gas_provider.update_last_update_timestamp();
+        let mut interval = tokio::time::interval(gas_price_poll_ms);
+        interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    while ctx.run_until_cancelled(interval.tick()).await.is_some() {
-        match gas_price_worker_once(
-            Arc::clone(&settlement_client),
-            &l1_gas_provider,
-            gas_price_poll_ms,
-            l1_block_metrics.clone(),
-        )
-        .await
-        {
-            Ok(_) => {}
-            Err(e) => return Err(SettlementClientError::GasPrice(format!("Failed to update gas prices: {}", e))),
+        while ctx.run_until_cancelled(interval.tick()).await.is_some() {
+            match self.gas_price_worker_once(&l1_gas_provider, gas_price_poll_ms, l1_block_metrics.clone()).await {
+                Ok(_) => {}
+                Err(e) => return Err(SettlementClientError::GasPrice(format!("Failed to update gas prices: {}", e))),
+            }
         }
+
+        Ok(())
     }
+    pub async fn gas_price_worker_once(
+        &self,
+        l1_gas_provider: &GasPriceProvider,
+        gas_price_poll_ms: Duration,
+        l1_block_metrics: Arc<L1BlockMetrics>,
+    ) -> Result<(), SettlementClientError> {
+        match update_gas_price(self.provider.clone(), l1_gas_provider, l1_block_metrics).await {
+            Ok(_) => tracing::trace!("Updated gas prices"),
+            Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
+        }
 
-    Ok(())
-}
+        let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
+        let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp).map_err(|e| {
+            SettlementClientError::TimeCalculation(format!("Failed to calculate time since last update: {}", e))
+        })?;
 
-pub async fn gas_price_worker_once(
-    settlement_client: Arc<dyn SettlementClientTrait>,
-    l1_gas_provider: &GasPriceProvider,
-    gas_price_poll_ms: Duration,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError> {
-    match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
-        Ok(_) => tracing::trace!("Updated gas prices"),
-        Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
+        let last_update_timestamp = last_update_timestamp
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| {
+                SettlementClientError::TimeCalculation(format!("Failed to calculate timestamp since epoch: {}", e))
+            })?
+            .as_micros();
+
+        if duration_since_last_update > 10 * gas_price_poll_ms {
+            return Err(SettlementClientError::GasPrice(format!(
+                "Gas prices have not been updated for {} ms. Last update was at {}",
+                duration_since_last_update.as_micros(),
+                last_update_timestamp
+            )));
+        }
+
+        Ok(())
     }
-
-    let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
-    let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp).map_err(|e| {
-        SettlementClientError::TimeCalculation(format!("Failed to calculate time since last update: {}", e))
-    })?;
-
-    let last_update_timestamp = last_update_timestamp
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| {
-            SettlementClientError::TimeCalculation(format!("Failed to calculate timestamp since epoch: {}", e))
-        })?
-        .as_micros();
-
-    if duration_since_last_update > 10 * gas_price_poll_ms {
-        return Err(SettlementClientError::GasPrice(format!(
-            "Gas prices have not been updated for {} ms. Last update was at {}",
-            duration_since_last_update.as_micros(),
-            last_update_timestamp
-        )));
-    }
-
-    Ok(())
 }
 
 pub async fn update_gas_price(
-    settlement_client: Arc<dyn SettlementClientTrait>,
+    settlement_client: Arc<dyn SettlementLayerProvider>,
     l1_gas_provider: &GasPriceProvider,
     l1_block_metrics: Arc<L1BlockMetrics>,
 ) -> Result<(), SettlementClientError> {
@@ -194,7 +189,9 @@ mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::eth::eth_client_getter_test::{create_ethereum_client, get_anvil_url};
     use httpmock::{MockServer, Regex};
+    use mc_db::MadaraBackend;
     use mc_mempool::GasPriceProvider;
+    use mp_chain_config::ChainConfig;
     use std::time::SystemTime;
     use tokio::task::JoinHandle;
     use tokio::time::{timeout, Duration};
@@ -208,17 +205,20 @@ mod eth_client_gas_price_worker_test {
 
         // Spawn the gas_price_worker in a separate task
         let worker_handle: JoinHandle<Result<(), SettlementClientError>> = tokio::spawn({
-            let eth_client = eth_client.clone();
+            let l1_client = Arc::new(L1ClientImpl::new(
+                MadaraBackend::open_for_testing(ChainConfig::madara_test().into()),
+                Arc::new(eth_client),
+            ));
             let l1_gas_provider = l1_gas_provider.clone();
             async move {
-                gas_price_worker(
-                    Arc::new(eth_client),
-                    l1_gas_provider,
-                    Duration::from_millis(200),
-                    ServiceContext::new_for_testing(),
-                    Arc::new(l1_block_metrics),
-                )
-                .await
+                l1_client
+                    .gas_price_worker(
+                        l1_gas_provider,
+                        Duration::from_millis(200),
+                        ServiceContext::new_for_testing(),
+                        Arc::new(l1_block_metrics),
+                    )
+                    .await
             }
         });
 
@@ -250,14 +250,14 @@ mod eth_client_gas_price_worker_test {
         let l1_gas_provider = GasPriceProvider::new();
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_client = Arc::new(L1ClientImpl::new(
+            MadaraBackend::open_for_testing(ChainConfig::madara_test().into()),
+            Arc::new(eth_client),
+        ));
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Duration::from_millis(200),
-            Arc::new(l1_block_metrics),
-        );
+        let worker_handle =
+            l1_client.gas_price_worker_once(&l1_gas_provider, Duration::from_millis(200), Arc::new(l1_block_metrics));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -276,14 +276,14 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_gas_price_sync_enabled(false);
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_client = Arc::new(L1ClientImpl::new(
+            MadaraBackend::open_for_testing(ChainConfig::madara_test().into()),
+            Arc::new(eth_client),
+        ));
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Duration::from_millis(200),
-            Arc::new(l1_block_metrics),
-        );
+        let worker_handle =
+            l1_client.gas_price_worker_once(&l1_gas_provider, Duration::from_millis(200), Arc::new(l1_block_metrics));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -302,14 +302,14 @@ mod eth_client_gas_price_worker_test {
         l1_gas_provider.set_data_gas_price_sync_enabled(false);
 
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_client = Arc::new(L1ClientImpl::new(
+            MadaraBackend::open_for_testing(ChainConfig::madara_test().into()),
+            Arc::new(eth_client),
+        ));
 
         // Run the worker for a short time
-        let worker_handle = gas_price_worker_once(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Duration::from_millis(200),
-            Arc::new(l1_block_metrics),
-        );
+        let worker_handle =
+            l1_client.gas_price_worker_once(&l1_gas_provider, Duration::from_millis(200), Arc::new(l1_block_metrics));
 
         // Wait for the worker to complete
         worker_handle.await.expect("issue with the gas worker");
@@ -326,6 +326,10 @@ mod eth_client_gas_price_worker_test {
         let addr = format!("http://{}", mock_server.address());
         let eth_client = create_ethereum_client(addr);
         let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_client = Arc::new(L1ClientImpl::new(
+            MadaraBackend::open_for_testing(ChainConfig::madara_test().into()),
+            Arc::new(eth_client),
+        ));
 
         let mock = mock_server.mock(|when, then| {
             when.method("POST").path("/").json_body_obj(&serde_json::json!({
@@ -359,8 +363,7 @@ mod eth_client_gas_price_worker_test {
 
         let result = timeout(
             timeout_duration,
-            gas_price_worker(
-                Arc::new(eth_client),
+            l1_client.gas_price_worker(
                 l1_gas_provider.clone(),
                 Duration::from_millis(200),
                 ServiceContext::new_for_testing(),

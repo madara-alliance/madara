@@ -373,7 +373,6 @@ impl InvokeTransactionV3 {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransactionWithFee {
-    #[serde(flatten)]
     pub tx: L1HandlerTransaction,
     pub paid_fee_on_l1: u128,
 }
@@ -390,7 +389,7 @@ pub struct L1HandlerTransaction {
     pub nonce: u64,
     pub contract_address: Felt,
     pub entry_point_selector: Felt,
-    pub calldata: Vec<Felt>,    
+    pub calldata: Vec<Felt>,
 }
 
 impl L1HandlerTransaction {

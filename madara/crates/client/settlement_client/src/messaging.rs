@@ -1,4 +1,4 @@
-use crate::client::{ClientType, SettlementClientTrait};
+use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
 use alloy::primitives::{B256, U256};
 use futures::{StreamExt, TryStreamExt};
@@ -6,11 +6,12 @@ use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use starknet_types_core::felt::Felt;
-use tokio::sync::Notify;
 use std::sync::Arc;
+use tokio::sync::Notify;
 
 mod find_start_block;
 
+#[derive(Clone, Debug)]
 pub struct MessageToL2WithMetadata {
     pub l1_block_number: u64,
     pub l1_transaction_hash: U256,
@@ -19,13 +20,13 @@ pub struct MessageToL2WithMetadata {
 
 /// Returns true if the message is valid, can be consumed.
 pub async fn check_message_to_l2_validity(
-    settlement_client: &Arc<dyn SettlementClientTrait>,
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
     backend: &MadaraBackend,
     tx: &L1HandlerTransactionWithFee,
 ) -> Result<bool, SettlementClientError> {
     // Skip if already processed.
     if backend
-        .get_l1_handler_txn_hash_by_core_contract_nonce(tx.tx.nonce)
+        .get_l1_handler_txn_hash_by_nonce(tx.tx.nonce)
         .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to check nonce: {}", e)))?
         .is_some()
     {
@@ -38,7 +39,7 @@ pub async fn check_message_to_l2_validity(
     // * it is currently being cancelled => we can find this out by checking pending cancellations.
 
     // Check message hash and cancellation
-    let event_hash = settlement_client.get_messaging_hash(&tx)?;
+    let event_hash = settlement_client.get_messaging_hash(tx)?;
     let converted_event_hash = match settlement_client.get_client_type() {
         ClientType::Eth => B256::from_slice(event_hash.as_slice()).to_string(),
         ClientType::Starknet => Felt::from_bytes_be_slice(event_hash.as_slice()).to_hex_string(),
@@ -46,7 +47,7 @@ pub async fn check_message_to_l2_validity(
     tracing::debug!("Checking for cancellation, event hash: {:?}", converted_event_hash);
 
     if !settlement_client
-        .check_l1_to_l2_message_exists(&event_hash)
+        .message_to_l2_is_pending(&event_hash)
         .await
         .map_err(|e| SettlementClientError::InvalidResponse(format!("Failed to check message still exists: {}", e)))?
     {
@@ -55,11 +56,11 @@ pub async fn check_message_to_l2_validity(
     }
 
     let cancellation_timestamp = settlement_client
-        .get_l1_to_l2_message_cancellation(&event_hash)
+        .message_to_l2_has_cancel_request(&event_hash)
         .await
         .map_err(|e| SettlementClientError::InvalidResponse(format!("Failed to check cancellation: {}", e)))?;
-    if cancellation_timestamp != Felt::ZERO {
-        tracing::debug!("Message was cancelled in block at timestamp: {:?}", cancellation_timestamp);
+    if cancellation_timestamp {
+        tracing::debug!("Message is being cancelled");
         return Ok(false);
     }
 
@@ -67,7 +68,7 @@ pub async fn check_message_to_l2_validity(
 }
 
 pub async fn sync(
-    settlement_client: Arc<dyn SettlementClientTrait>,
+    settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
     mut ctx: ServiceContext,
@@ -78,7 +79,7 @@ pub async fn sync(
 }
 
 async fn sync_inner(
-    settlement_client: Arc<dyn SettlementClientTrait>,
+    settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     notify_consumer: Arc<Notify>,
 ) -> Result<(), SettlementClientError> {
@@ -107,7 +108,7 @@ async fn sync_inner(
     tracing::info!("⟠  Starting L1 Messages Syncing from block #{from_l1_block_n}...");
 
     settlement_client
-        .l1_to_l2_messages_stream(from_l1_block_n, None)
+        .messages_to_l2_stream(from_l1_block_n)
         .await
         .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?
         .map(|message| {
@@ -126,7 +127,7 @@ async fn sync_inner(
                     message.l1_transaction_hash,
                     message.message.tx.calldata[0],
                 );
-            
+
                 if check_message_to_l2_validity(&settlement_client, &backend, &message.message).await? {
                     // Add the pending message to db.
                     backend
@@ -146,247 +147,164 @@ async fn sync_inner(
                 backend.set_l1_messaging_sync_tip(block_n).map_err(|e| {
                     SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e))
                 })?;
-                notify_consumer.notify_one();
+                notify_consumer.notify_waiters(); // notify
                 Ok(())
             }
         })
         .await
 }
 
-// #[cfg(test)]
-// mod messaging_module_tests {
-//     use super::*;
-//     use crate::client::{
-//         test_types::{DummyConfig, DummyStream},
-//         MockSettlementClientTrait,
-//     };
-//     use futures::stream;
-//     use mc_db::DatabaseService;
-//     use mc_mempool::{Mempool, MempoolConfig};
-//     use mp_chain_config::ChainConfig;
-//     use rstest::{fixture, rstest};
-//     use starknet_types_core::felt::Felt;
-//     use std::time::Duration;
+#[cfg(test)]
+mod messaging_module_tests {
+    use super::*;
+    use crate::client::MockSettlementLayerProvider;
+    use futures::stream;
+    use mc_db::DatabaseService;
+    use mockall::predicate;
+    use mp_chain_config::ChainConfig;
+    use mp_transactions::L1HandlerTransaction;
+    use rstest::{fixture, rstest};
+    use starknet_types_core::felt::Felt;
+    use std::time::Duration;
 
-//     // Helper function to create a mock event
-//     fn create_mock_event(block_number: u64, nonce: u64) -> L1toL2MessagingEventData {
-//         L1toL2MessagingEventData {
-//             block_number,
-//             transaction_hash: Felt::from(1),
-//             event_index: Some(0),
-//             from: Felt::from(123),
-//             to: Felt::from(456),
-//             selector: Felt::from(789),
-//             payload: vec![Felt::from(1), Felt::from(2)],
-//             nonce: Felt::from(nonce),
-//             fee: Some(1000),
-//             message_hash: None,
-//         }
-//     }
+    // Helper function to create a mock event
+    fn create_mock_event(l1_block_number: u64, nonce: u64) -> MessageToL2WithMetadata {
+        MessageToL2WithMetadata {
+            l1_block_number,
+            l1_transaction_hash: U256::from(1),
+            message: L1HandlerTransactionWithFee::new(
+                L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce,
+                    contract_address: Felt::from(456),
+                    entry_point_selector: Felt::from(789),
+                    calldata: vec![Felt::from(123), Felt::from(1), Felt::from(2)],
+                },
+                1000,
+            ),
+        }
+    }
 
-//     struct MessagingTestRunner {
-//         client: MockSettlementClientTrait,
-//         db: Arc<DatabaseService>,
-//         mempool: Arc<Mempool>,
-//         ctx: ServiceContext,
-//     }
+    struct MessagingTestRunner {
+        client: MockSettlementLayerProvider,
+        db: Arc<DatabaseService>,
+        ctx: ServiceContext,
+    }
 
-//     #[fixture]
-//     async fn setup_messaging_tests() -> MessagingTestRunner {
-//         // Set up chain info
-//         let chain_config = Arc::new(ChainConfig::madara_test());
+    #[fixture]
+    async fn setup_messaging_tests() -> MessagingTestRunner {
+        // Set up chain info
+        let chain_config = Arc::new(ChainConfig::madara_test());
 
-//         // Initialize database service
-//         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
+        // Initialize database service
+        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
-//         let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
+        // Create a mock client directly
+        let mut mock_client = MockSettlementLayerProvider::new();
 
-//         // Create a mock client directly
-//         let mut mock_client = MockSettlementClientTrait::default();
+        // Configure basic mock expectations that all tests will need
+        mock_client.expect_get_client_type().returning(|| ClientType::Eth);
 
-//         // Configure basic mock expectations that all tests will need
-//         mock_client.expect_get_client_type().returning(|| ClientType::Eth);
+        // Create a new service context for testing
+        let ctx = ServiceContext::new_for_testing();
 
-//         // Create a new service context for testing
-//         let ctx = ServiceContext::new_for_testing();
+        MessagingTestRunner { client: mock_client, db, ctx }
+    }
 
-//         MessagingTestRunner { client: mock_client, db, mempool, ctx }
-//     }
+    fn mock_l1_handler_tx(mock: &mut MockSettlementLayerProvider, nonce: u64, is_pending: bool, has_cancel_req: bool) {
+        mock.expect_get_messaging_hash()
+            .with(predicate::eq(create_mock_event(0, nonce).message))
+            .returning(move |_| Ok(vec![nonce as u8; 32]));
+        mock.expect_message_to_l2_has_cancel_request()
+            .with(predicate::eq(vec![nonce as u8; 32]))
+            .returning(move |_| Ok(has_cancel_req));
+        mock.expect_message_to_l2_is_pending()
+            .with(predicate::eq(vec![nonce as u8; 32]))
+            .returning(move |_| Ok(is_pending));
+    }
 
-//     #[rstest]
-//     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-//     async fn test_sync_processes_new_message(
-//         #[future] setup_messaging_tests: MessagingTestRunner,
-//     ) -> anyhow::Result<()> {
-//         let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_sync_processes_new_messages(
+        #[future] setup_messaging_tests: MessagingTestRunner,
+    ) -> anyhow::Result<()> {
+        let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
 
-//         // Setup mock event and configure backend
-//         let mock_event = create_mock_event(100, 1);
-//         let event_clone = mock_event.clone();
-//         let backend = db.backend();
+        // Setup mock event and configure backend
+        let mock_event1 = create_mock_event(100, 1);
+        let mock_event2 = create_mock_event(100, 2);
+        let mock_event3 = create_mock_event(100, 5);
+        let mock_event4 = create_mock_event(103, 10);
+        let mock_event5 = create_mock_event(103, 18);
+        let backend = db.backend();
+        let notify = Arc::new(Notify::new());
 
-//         // Setup mock for last synced block
-//         backend.messaging_update_last_synced_l1_block_with_event(LastSyncedEventBlock::new(99, 0))?;
+        // Setup mock for last synced block
+        backend.set_l1_messaging_sync_tip(99)?;
 
-//         // Mock get_messaging_stream
-//         client
-//             .expect_get_messaging_stream()
-//             .times(1)
-//             .returning(move |_| Ok(Box::pin(stream::iter(vec![Ok(mock_event.clone())]))));
+        // Mock get_messaging_stream
+        let events = vec![
+            mock_event1.clone(),
+            mock_event2.clone(),
+            mock_event3.clone(),
+            mock_event4.clone(),
+            mock_event5.clone(),
+        ];
+        client
+            .expect_messages_to_l2_stream()
+            .times(1)
+            .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
 
-//         // Mock get_messaging_hash
-//         client.expect_get_messaging_hash().times(1).returning(|_| Ok(vec![0u8; 32]));
+        // nonce 1, is pending, not being cancelled, not consumed in db. => OK
+        mock_l1_handler_tx(&mut client, 1, true, false);
+        // nonce 2, is pending, not being cancelled, not consumed in db. => OK
+        mock_l1_handler_tx(&mut client, 2, true, false);
+        // nonce 5, is not pending, not being cancelled, not consumed in db. => NOT OK
+        mock_l1_handler_tx(&mut client, 5, false, false);
+        // nonce 10, is pending, being cancelled, not consumed in db. => NOT OK
+        mock_l1_handler_tx(&mut client, 10, true, false);
+        // nonce 18, is pending, not being cancelled, consumed in db. => NOT OK
+        mock_l1_handler_tx(&mut client, 18, true, false);
 
-//         // Mock get_l1_to_l2_message_cancellations
-//         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::ZERO));
+        // Mock get_client_type
+        client.expect_get_client_type().returning(|| ClientType::Eth);
 
-//         // Mock get_client_type
-//         client.expect_get_client_type().returning(|| ClientType::Eth);
+        // Wrap the client in Arc
+        let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
 
-//         // Wrap the client in Arc
-//         let client = Arc::new(client) as Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>;
+        // Keep a reference to context for cancellation
+        let ctx_clone = ctx.clone();
+        let db_backend_clone = backend.clone();
 
-//         // Keep a reference to context for cancellation
-//         let ctx_clone = ctx.clone();
-//         let db_backend_clone = backend.clone();
+        // Spawn the sync task in a separate thread
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
 
-//         // Spawn the sync task in a separate thread
-//         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, mempool.clone(), ctx).await });
+        // Wait sufficient time for event to be processed
+        tokio::time::sleep(Duration::from_secs(5)).await;
 
-//         // Wait sufficient time for event to be processed
-//         tokio::time::sleep(Duration::from_secs(5)).await;
+        // Verify the message was processed
 
-//         // Verify the message was processed
-//         assert!(backend.has_l1_messaging_nonce(Nonce(event_clone.nonce))?);
+        // nonce 1, is pending, not being cancelled, not consumed in db. => OK
+        assert_eq!(
+            backend.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(),
+            mock_event1.message
+        );
+        // nonce 2, is pending, not being cancelled, not consumed in db. => OK
+        assert_eq!(
+            backend.get_pending_message_to_l2(mock_event2.message.tx.nonce).unwrap().unwrap(),
+            mock_event2.message
+        );
+        // nonce 5, is not pending, not being cancelled, not consumed in db. => NOT OK
+        assert!(backend.get_pending_message_to_l2(mock_event3.message.tx.nonce).unwrap().is_none());
+        // nonce 10, is pending, being cancelled, not consumed in db. => NOT OK
+        assert!(backend.get_pending_message_to_l2(mock_event4.message.tx.nonce).unwrap().is_none());
+        // nonce 18, is pending, not being cancelled, consumed in db. => NOT OK
+        assert!(backend.get_pending_message_to_l2(mock_event5.message.tx.nonce).unwrap().is_none());
 
-//         // Clean up: cancel context and abort task
-//         ctx_clone.cancel_global();
-//         sync_handle.abort();
+        // Clean up: cancel context and abort task
+        ctx_clone.cancel_global();
+        sync_handle.abort();
 
-//         Ok(())
-//     }
-
-//     #[rstest]
-//     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-//     async fn test_sync_handles_cancelled_message(
-//         #[future] setup_messaging_tests: MessagingTestRunner,
-//     ) -> anyhow::Result<()> {
-//         let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
-
-//         let backend = db.backend();
-
-//         // Setup mock event
-//         let mock_event = create_mock_event(100, 1);
-//         let event_clone = mock_event.clone();
-
-//         // Setup mock for last synced block
-//         backend.messaging_update_last_synced_l1_block_with_event(LastSyncedEventBlock::new(99, 0))?;
-
-//         // Mock get_messaging_stream
-//         client
-//             .expect_get_messaging_stream()
-//             .times(1)
-//             .returning(move |_| Ok(Box::pin(stream::iter(vec![Ok(mock_event.clone())]))));
-
-//         // Mock get_messaging_hash
-//         client.expect_get_messaging_hash().times(1).returning(|_| Ok(vec![0u8; 32]));
-
-//         // Mock get_l1_to_l2_message_cancellations - return non-zero to indicate cancellation
-//         client.expect_get_l1_to_l2_message_cancellations().times(1).returning(|_| Ok(Felt::from(12345)));
-
-//         // Wrap the client in Arc
-//         let client = Arc::new(client) as Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>;
-
-//         // Keep a reference to context for cancellation
-//         let ctx_clone = ctx.clone();
-//         let db_backend_clone = backend.clone();
-
-//         // Spawn the sync task in a separate thread
-//         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, mempool.clone(), ctx).await });
-
-//         // Wait sufficient time for event to be processed
-//         tokio::time::sleep(Duration::from_secs(5)).await;
-
-//         // Verify the cancelled message was handled correctly
-//         assert!(backend.has_l1_messaging_nonce(Nonce(event_clone.nonce))?);
-
-//         // Clean up: cancel context and abort task
-//         ctx_clone.cancel_global();
-//         sync_handle.abort();
-
-//         Ok(())
-//     }
-
-//     #[rstest]
-//     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-//     async fn test_sync_skips_already_processed_message(
-//         #[future] setup_messaging_tests: MessagingTestRunner,
-//     ) -> anyhow::Result<()> {
-//         let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
-
-//         let backend = db.backend();
-
-//         // Setup mock event
-//         let mock_event = create_mock_event(100, 1);
-
-//         // Pre-set the nonce as processed
-//         backend.set_l1_messaging_nonce(Nonce(mock_event.nonce))?;
-
-//         // Setup mock for last synced block
-//         backend.messaging_update_last_synced_l1_block_with_event(LastSyncedEventBlock::new(99, 0))?;
-
-//         // Mock get_messaging_stream
-//         client
-//             .expect_get_messaging_stream()
-//             .times(1)
-//             .returning(move |_| Ok(Box::pin(stream::iter(vec![Ok(mock_event.clone())]))));
-
-//         // Mock get_messaging_hash - should not be called
-//         client.expect_get_messaging_hash().times(0);
-
-//         // Wrap the client in Arc
-//         let client = Arc::new(client) as Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>>;
-
-//         // Keep a reference to context for cancellation
-//         let ctx_clone = ctx.clone();
-//         let db_backend_clone = backend.clone();
-
-//         // Spawn the sync task in a separate thread
-//         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, mempool.clone(), ctx).await });
-
-//         // Wait sufficient time for event to be processed
-//         tokio::time::sleep(Duration::from_secs(5)).await;
-
-//         // Clean up: cancel context and abort task
-//         ctx_clone.cancel_global();
-//         sync_handle.abort();
-
-//         Ok(())
-//     }
-
-//     #[rstest]
-//     #[tokio::test]
-//     async fn test_sync_handles_stream_errors(
-//         #[future] setup_messaging_tests: MessagingTestRunner,
-//     ) -> anyhow::Result<()> {
-//         let MessagingTestRunner { mut client, db, mempool, ctx } = setup_messaging_tests.await;
-
-//         let backend = db.backend();
-
-//         // Setup mock for last synced block
-//         backend.messaging_update_last_synced_l1_block_with_event(LastSyncedEventBlock::new(99, 0))?;
-
-//         // Mock get_messaging_stream to return error
-//         client.expect_get_messaging_stream().times(1).returning(move |_| {
-//             Ok(Box::pin(stream::iter(vec![Err(SettlementClientError::Other("Stream error".to_string()))])))
-//         });
-
-//         let client: Arc<dyn SettlementClientTrait<Config = DummyConfig, StreamType = DummyStream>> = Arc::new(client);
-
-//         let result = sync(client, backend.clone(), mempool.clone(), ctx).await;
-//         assert!(result.is_err());
-//         assert!(result.unwrap_err().to_string().contains("Stream error"));
-
-//         Ok(())
-//     }
-// }
+        Ok(())
+    }
+}

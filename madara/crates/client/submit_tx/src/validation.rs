@@ -24,7 +24,7 @@ use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
     IntoBlockifierExt, ToBlockifierError,
 };
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
@@ -171,6 +171,12 @@ pub struct TransactionValidator {
     inner: Arc<dyn SubmitValidatedTransaction>,
     backend: Arc<MadaraBackend>,
     config: TransactionValidatorConfig,
+}
+
+impl fmt::Debug for TransactionValidator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TransactionValidator {{ config: {:?} }}", self.config)
+    }
 }
 
 impl TransactionValidator {

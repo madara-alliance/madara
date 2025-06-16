@@ -1,4 +1,4 @@
-use crate::{client::SettlementClientTrait, error::SettlementClientError};
+use crate::{client::SettlementLayerProvider, error::SettlementClientError};
 use std::{
     future::Future,
     sync::Arc,
@@ -9,7 +9,7 @@ use std::{
 /// To do that, we have to find the first block_n which has a timestamp greater than `now - replay_max_duration`.
 /// This function returns that block_n. This block_n will then be used as the first block from which messages are replayed.
 pub async fn find_replay_block_n_start(
-    settlement_client: &Arc<dyn SettlementClientTrait>,
+    settlement_client: &Arc<dyn SettlementLayerProvider>,
     replay_max_duration: Duration,
     latest_block_n: u64,
 ) -> Result<u64, SettlementClientError> {

@@ -88,9 +88,9 @@ impl FeltExt for Felt {
 }
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
-pub struct L1TxnAddress(pub [u8; 32]);
+pub struct L1TransactionHash(pub [u8; 32]);
 
-impl L1TxnAddress {
+impl L1TransactionHash {
     pub fn from_starknet(value: Felt) -> Self {
         Self(value.to_bytes_be())
     }

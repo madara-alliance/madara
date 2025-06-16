@@ -10,8 +10,8 @@ use tokio::sync::{
     oneshot,
 };
 
-mod thread;
 mod tests;
+mod thread;
 pub use thread::TransactionExecutionOutput;
 
 /// Handle to used to talk with the executor thread.

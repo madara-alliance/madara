@@ -24,6 +24,7 @@ mp-utils = { workspace = true, features = ["testing"] }
 
 # Madara
 m-proc-macros = { workspace = true }
+mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
 mc-gateway-client = { workspace = true }

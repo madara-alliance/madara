@@ -281,13 +281,13 @@ impl Mempool {
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
-    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView {
         self.inner.get_consumer_wait_for_ready_tx().await
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
-    pub async fn get_consumer(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_consumer(&self) -> MempoolConsumerView {
         self.inner.get_consumer().await
     }
 }

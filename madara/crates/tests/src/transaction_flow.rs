@@ -26,7 +26,6 @@ use starknet_core::{
 };
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, SequencerGatewayProvider};
 use std::time::Duration;
-use std::{ops::Deref, sync::Arc};
 
 enum TestSetup {
     /// Sequencer only, offering a jsonrpc and gateway interface. Transactions are validated and executed on the same node.
@@ -190,7 +189,7 @@ impl RunningTestSetup {
         self.json_rpc().chain_id().await.unwrap()
     }
 
-    pub fn json_rpc(&self) -> &JsonRpcClient<HttpTransport> {
+    pub fn json_rpc(&self) -> JsonRpcClient<HttpTransport> {
         self.user_facing_node().json_rpc()
     }
 
@@ -226,7 +225,7 @@ impl RunningTestSetup {
     pub async fn get_tx_position(&self, tx_hash: Felt) -> (u64, u64) {
         let receipt = self.expect_tx_receipt(tx_hash).await;
         if receipt.block.is_pending() {
-            wait_for_next_block(self.json_rpc()).await;
+            wait_for_next_block(&self.json_rpc()).await;
         }
         let block_n = self.expect_tx_receipt(tx_hash).await.block.block_number().unwrap();
         let position = self
@@ -347,7 +346,7 @@ async fn normal_transfer(#[case] setup: TestSetup) {
     perform_test(&setup, &setup.gateway_client().await).await;
 
     // via rpc
-    perform_test(&setup, setup.json_rpc()).await;
+    perform_test(&setup, &setup.json_rpc()).await;
 }
 
 #[tokio::test]
@@ -435,7 +434,7 @@ async fn more_transfers(#[case] setup: TestSetup) {
     perform_test(&setup, &setup.gateway_client().await, &mut balances, &mut nonces).await;
 
     // via rpc
-    perform_test(&setup, setup.json_rpc(), &mut balances, &mut nonces).await;
+    perform_test(&setup, &setup.json_rpc(), &mut balances, &mut nonces).await;
 }
 
 #[tokio::test]
@@ -488,7 +487,7 @@ async fn invalid_nonce(#[case] setup: TestSetup, #[case] wait_for_initial_transf
     perform_test(&setup, &setup.gateway_client().await, init_nonce).await;
 
     // via rpc
-    perform_test(&setup, setup.json_rpc(), init_nonce).await;
+    perform_test(&setup, &setup.json_rpc(), init_nonce).await;
 }
 
 #[tokio::test]
@@ -532,7 +531,7 @@ async fn duplicate_txn(#[case] setup: TestSetup) {
     perform_test(&setup, &setup.gateway_client().await, nonce, call.clone()).await;
 
     // via rpc
-    perform_test(&setup, setup.json_rpc(), nonce, call.clone()).await;
+    perform_test(&setup, &setup.json_rpc(), nonce, call.clone()).await;
 }
 
 #[tokio::test]
@@ -641,7 +640,7 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
     perform_test(&setup, &setup.gateway_client().await, Felt::THREE).await;
 
     // via rpc
-    perform_test(&setup, setup.json_rpc(), Felt::TWO).await;
+    perform_test(&setup, &setup.json_rpc(), Felt::TWO).await;
 }
 
 #[tokio::test]
@@ -670,16 +669,15 @@ async fn declare_sierra_then_deploy(
 
         let sierra_class: starknet_core::types::contract::SierraClass =
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
-        let flattened_class = Arc::new(sierra_class.clone().flatten().unwrap());
-        // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json
-        let compiled_contract_class_hash =
-            Felt::from_hex_unchecked("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27");
+        let flattened_class = sierra_class.clone().flatten().unwrap();
+        let (compiled_class_hash, _compiled_class) =
+            mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm().unwrap();
 
         // 0. Declare a class.
 
         let account = setup.account(provider).await;
         let res = account
-            .declare_v3(flattened_class.clone(), compiled_contract_class_hash)
+            .declare_v3(flattened_class.clone().into(), compiled_class_hash)
             .nonce(nonce)
             .gas_price(0x5000)
             .gas(0x10000000000)
@@ -694,7 +692,7 @@ async fn declare_sierra_then_deploy(
         let ContractClass::Sierra(class) = res else {
             unreachable!("class {class_hash:#x} expected to be sierra class")
         };
-        assert_eq!(&class, flattened_class.deref());
+        assert_eq!(class, flattened_class);
 
         // 1. Deploy an account using the UDC.
 
@@ -834,6 +832,6 @@ async fn declare_sierra_then_deploy(
     }
     // via rpc
     else {
-        perform_test(&setup, setup.json_rpc()).await;
+        perform_test(&setup, &setup.json_rpc()).await;
     }
 }

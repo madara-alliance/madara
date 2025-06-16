@@ -174,7 +174,7 @@ impl ExecutorThread {
             return WaitTxBatchOutcome::Batch(Default::default());
         }
 
-        tracing::debug!("Waiting for batch. block_time_deadline={}", deadline.is_some());
+        tracing::debug!("Waiting for batch. until_block_time_deadline={}", deadline.is_some());
 
         // nb: tokio has blocking_recv, but no blocking_recv_timeout? this kinda sucks :(
         // especially because they do have it implemented in send_timeout and internally, they just have not exposed the
@@ -359,7 +359,7 @@ impl ExecutorThread {
                             .layered_state_adaptor()
                             .is_l1_to_l2_message_nonce_consumed(nonce)
                             .context("Checking is l1 to l2 message nonce is already consumed")?
-                            || state.consumed_l1_to_l2_nonces().insert(nonce)
+                            || !state.consumed_l1_to_l2_nonces().insert(nonce)
                         // insert: Returns true if it was already consumed in the current state.
                         {
                             tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");

@@ -1,11 +1,12 @@
 use crate::util::{AdditionalTxInfo, BatchToExecute};
+use anyhow::Context;
 use futures::{
-    stream::{self, PollNext},
-    StreamExt,
+    stream::{self, BoxStream, PollNext},
+    StreamExt, TryStreamExt,
 };
+use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
-use mc_settlement_client::messages_to_l2_consumer::MessagesToL2Consumer;
-use mp_chain_config::ChainConfig;
+use mc_settlement_client::SettlementClient;
 use mp_convert::ToFelt;
 use mp_transactions::{validated::ValidatedMempoolTx, IntoBlockifierExt, L1HandlerTransactionWithFee};
 use mp_utils::service::ServiceContext;
@@ -13,9 +14,9 @@ use std::sync::Arc;
 use tokio::sync::mpsc;
 
 pub struct Batcher {
-    chain_config: Arc<ChainConfig>,
+    backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
-    message_from_l1_consumer: MessagesToL2Consumer,
+    l1_message_stream: BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>,
     ctx: ServiceContext,
     out: mpsc::Sender<BatchToExecute>,
     bypass_in: mpsc::Receiver<ValidatedMempoolTx>,
@@ -23,6 +24,25 @@ pub struct Batcher {
 }
 
 impl Batcher {
+    pub fn new(
+        backend: Arc<MadaraBackend>,
+        mempool: Arc<Mempool>,
+        l1_client: Arc<dyn SettlementClient>,
+        ctx: ServiceContext,
+        out: mpsc::Sender<BatchToExecute>,
+        bypass_in: mpsc::Receiver<ValidatedMempoolTx>,
+    ) -> Self {
+        Self {
+            mempool,
+            l1_message_stream: l1_client.create_message_to_l2_consumer(),
+            ctx,
+            out,
+            bypass_in,
+            batch_size: backend.chain_config().block_production_concurrency.batch_size,
+            backend,
+        }
+    }
+
     pub async fn run(mut self) -> anyhow::Result<()> {
         loop {
             // We use the permit API so that we don't have to remove transactions from the mempool until the last moment.
@@ -52,33 +72,40 @@ impl Batcher {
             });
 
             let (chain_id, sn_version) =
-                (self.chain_config.chain_id.to_felt(), self.chain_config.latest_protocol_version);
-            let l1_txs_stream = stream::unfold(&mut self.message_from_l1_consumer, |consumer| async move {
-                consumer.consume_next_or_wait().await.map(|tx| {
-                    (
-                        tx.into_blockifier(chain_id, sn_version)
-                            .map(|(btx, _class)| (btx, AdditionalTxInfo { declared_class }))
-                            .map_err(anyhow::Error::from),
-                        consumer,
-                    )
-                })
+                (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
+            let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
+                Ok(res?
+                    .into_blockifier(chain_id, sn_version)
+                    .map(|(btx, declared_class)| (btx, AdditionalTxInfo { declared_class }))?)
             });
 
-            let mempool_txs_stream = stream::unfold(&self.mempool, |mempool| async move {
-                let consumer = mempool.get_consumer_wait_for_ready_tx().await;
-                Some((stream::iter(consumer.map(anyhow::Ok)), mempool))
+            // Note: this is not hoisted out of the loop, because we don't want to keep the lock around when waiting on the output channel reserve().
+            let mempool_txs_stream = stream::unfold(self.mempool.clone(), |mempool| async move {
+                let consumer = mempool.clone().get_consumer_wait_for_ready_tx().await;
+                Some((consumer, mempool))
+            })
+            .map(|c| {
+                stream::iter(c.map(|tx| anyhow::Ok((tx.tx, AdditionalTxInfo { declared_class: tx.converted_class }))))
             })
             .flatten();
 
             // merge all three streams :)
+            // * all three streams are merged into one stream, allowing us to poll them all at once.
+            // * this will always prioritise bypass_txs, then try and keep the balance betweeen l1_txs and mempool txs.
 
-            // always prioritise bypass_txs, then try and keep the balance betweeen l1_txs and mempool txs.
-            // try_ready_chunks will make sure if no item is in any of those streams, we wait, but
-            // it will try to fill the batch to the maximum if there are ready items without waiting.
+            // We then consume the merged stream using `try_ready_chunks`.
+            // * `try_ready_chunks` is perfect here since:
+            //   * if there is at least one ready item in the stream, it will return with a batch of all of these ready items, up
+            //     to `batch_size`. This returns immediately and never waits.
+            //   * if there are no ready items in the stream, it will wait until there is at least one.
+            // This allows us to batch when possible, but never wait when we don't have to.
+            // This means that when the congestion is very low (mempool empty & no pending l1 msg), when a
+            // transaction arrives we can instantly pick it up and send it for execution, ensuring the lowest latency possible.
+
             let tx_stream = stream::select_with_strategy(
                 bypass_txs_stream,
                 stream::select(l1_txs_stream, mempool_txs_stream), // round-bobbin strategy
-                |()| PollNext::Left,                               // always prioritise bypass_txs when possible.
+                |()| PollNext::Left, // always prioritise bypass_txs when there are ready items in multiple streams
             )
             .try_ready_chunks(self.batch_size);
 
@@ -90,8 +117,10 @@ impl Batcher {
                     return anyhow::Ok(());
                 }
                 Some(got) = tx_stream.next() => {
-                    let got = got?;
-                    got.into_iter().collect()
+                    // got a batch :)
+                    let got = got.context("Creating batch for block building")?;
+                    tracing::debug!("Batcher got a batch of {}.", got.len());
+                    got.into_iter().collect::<BatchToExecute>()
                 }
                 // Stop condition: tx_stream is empty.
                 else => return anyhow::Ok(())

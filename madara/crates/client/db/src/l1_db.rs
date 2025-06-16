@@ -45,6 +45,16 @@ impl MadaraBackend {
         Ok(())
     }
 
+    pub fn get_pending_message_to_l2(
+        &self,
+        core_contract_nonce: u64,
+    ) -> Result<Option<L1HandlerTransactionWithFee>, MadaraStorageError> {
+        let pending_cf = self.db.get_column(Column::CoreContractNonceToPendingMsg);
+        self.db.get_cf(&pending_cf, core_contract_nonce.to_be_bytes())?;
+        let Some(res) = self.db.get_pinned_cf(&pending_cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
+        Ok(Some(bincode::deserialize(&res)?))
+    }
+
     pub fn get_next_pending_message_to_l2(
         &self,
         start_nonce: u64,
@@ -60,14 +70,31 @@ impl MadaraBackend {
         }
     }
 
-    pub fn get_l1_handler_txn_hash_by_core_contract_nonce(
+    pub fn get_l1_handler_txn_hash_by_nonce(
         &self,
         core_contract_nonce: u64,
     ) -> Result<Option<Felt>, MadaraStorageError> {
         let on_l2_cf = self.db.get_column(Column::CoreContractNonceToTxnHash);
         let Some(res) = self.db.get_pinned_cf(&on_l2_cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
-        let txn_hash = bincode::deserialize(&res)?;
-        Ok(Some(txn_hash))
+        Ok(Some(Felt::from_bytes_be(
+            res[..].try_into().map_err(|_| MadaraStorageError::InconsistentStorage("Malformated felt".into()))?,
+        )))
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn set_l1_handler_txn_hash_by_nonce(
+        &self,
+        core_contract_nonce: u64,
+        txn_hash: Felt,
+    ) -> Result<(), MadaraStorageError> {
+        let on_l2_cf = self.db.get_column(Column::CoreContractNonceToTxnHash);
+        self.db.put_cf_opt(
+            &on_l2_cf,
+            core_contract_nonce.to_be_bytes(),
+            txn_hash.to_bytes_be(),
+            &self.writeopts_no_wal,
+        )?;
+        Ok(())
     }
 
     /// Set the latest l1_block synced for the messaging worker.

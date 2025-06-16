@@ -1,5 +1,7 @@
 use crate::{
-    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError,
+    from_broadcasted_transaction::is_query,
+    into_starknet_api::TransactionApiError,
+    validated::{TxTimestamp, ValidatedMempoolTx},
     L1HandlerTransactionWithFee, Transaction, TransactionWithHash,
 };
 use blockifier::{
@@ -64,12 +66,22 @@ impl TransactionWithHash {
     }
 }
 
-pub trait IntoBlockifierExt {
+pub trait IntoBlockifierExt: Sized {
     fn into_blockifier(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
+
+    fn into_validated_tx(
+        self,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+        arrived_at: TxTimestamp,
+    ) -> Result<ValidatedMempoolTx, ToBlockifierError> {
+        let (btx, class) = self.into_blockifier(chain_id, starknet_version)?;
+        Ok(ValidatedMempoolTx::from_blockifier(btx, arrived_at, class))
+    }
 }
 
 impl IntoBlockifierExt for BroadcastedTxn {
@@ -123,7 +135,6 @@ impl IntoBlockifierExt for L1HandlerTransactionWithFee {
         _starknet_version: StarknetVersion,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let paid_fee_on_l1 = self.paid_fee_on_l1;
-        // TODO: check self.version
         let hash = self.tx.compute_hash(chain_id, false, false);
         let transaction = Transaction::L1Handler(self.tx);
         let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;

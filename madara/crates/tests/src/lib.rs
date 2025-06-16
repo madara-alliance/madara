@@ -1,9 +1,12 @@
 //! End to end tests for madara.
-#![cfg(test)]
 
+#[cfg(test)]
 mod devnet;
+#[cfg(test)]
 mod rpc;
+#[cfg(test)]
 mod storage_proof;
+#[cfg(test)]
 mod transaction_flow;
 
 use anyhow::bail;
@@ -52,7 +55,6 @@ async fn wait_for_cond<F: Future<Output = Result<R, anyhow::Error>>, R>(
 pub struct MadaraCmd {
     process: Option<Child>,
     ready: bool,
-    json_rpc: Option<JsonRpcClient<HttpTransport>>,
     rpc_url: Option<Url>,
     gateway_root_url: Option<Url>,
     tempdir: Arc<TempDir>,
@@ -64,8 +66,8 @@ impl MadaraCmd {
         self.process.take().unwrap().wait_with_output().unwrap()
     }
 
-    pub fn json_rpc(&self) -> &JsonRpcClient<HttpTransport> {
-        self.json_rpc.as_ref().unwrap()
+    pub fn json_rpc(&self) -> JsonRpcClient<HttpTransport> {
+        JsonRpcClient::new(HttpTransport::new(self.rpc_url.clone().unwrap()))
     }
 
     pub fn gateway_client(&self, chain_id: Felt) -> SequencerGatewayProvider {
@@ -83,6 +85,9 @@ impl MadaraCmd {
         reqwest::Client::new().post(format!("{}{endpoint}", self.gateway_root_url.as_ref().unwrap()))
     }
 
+    pub fn rpc_url(&self) -> String {
+        format!("{}", self.rpc_url.as_ref().unwrap())
+    }
     pub fn gateway_url(&self) -> String {
         format!("{}/gateway", self.gateway_root_url.as_ref().unwrap())
     }
@@ -221,10 +226,7 @@ impl MadaraCmd {
                     let gateway_root_url =
                         gateway_port.map(|port| Url::parse(&format!("http://127.0.0.1:{port}/")).unwrap());
 
-                    let json_rpc = rpc_url.as_ref().map(|url| JsonRpcClient::new(HttpTransport::new(url.clone())));
-
                     self.rpc_url = rpc_url;
-                    self.json_rpc = json_rpc;
                     self.gateway_root_url = gateway_root_url;
                     return;
                 }
@@ -310,7 +312,10 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run_no_wait(self) -> MadaraCmd {
-        let _ = tracing_subscriber::fmt().with_test_writer().try_init();
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
         let target_bin = PathBuf::from(env::var("COVERAGE_BIN").expect("env COVERAGE_BIN to be set by script"));
 
         assert!(target_bin.exists(), "No binary to run: {:?}", target_bin);
@@ -351,7 +356,6 @@ impl MadaraCmdBuilder {
         MadaraCmd {
             process: Some(process),
             ready: false,
-            json_rpc: None,
             rpc_url: None,
             gateway_root_url: None,
             label: self.label,
