@@ -2,7 +2,7 @@ pub async fn starknet_unsubscribe(starknet: &crate::Starknet, subscription_id: u
     if starknet.ws_handles.subscription_close(subscription_id).await {
         Ok(true)
     } else {
-        Err(crate::StarknetRpcApiError::InvalidSubscriptionId.into())
+        Err(crate::StarknetRpcApiError::InvalidSubscriptionId)
     }
 }
 
