@@ -248,8 +248,9 @@ impl StateTransitionCommon<'_> {
         status: mp_rpc::v0_7_1::TxnStatus,
     ) -> Result<(), crate::errors::StarknetWsApiError> {
         let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.tx_hash, status };
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&txn_status).or_else_internal_server_error(|| {
-            format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
+        let item = super::SubscriptionItem::new(self.subscription_sink.subscription_id(), txn_status);
+        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
+            format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.transaction_hash)
         })?;
 
         self.sink
@@ -396,7 +397,9 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
+        versions::user::v0_8_0::{
+            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server,
+        },
         Starknet,
     };
 
@@ -510,7 +513,7 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
@@ -544,7 +547,7 @@ mod test {
         provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
@@ -578,7 +581,7 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
@@ -615,7 +618,7 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
@@ -627,7 +630,7 @@ mod test {
         backend.store_pending_block(pending).expect("Failed to store pending block");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
@@ -664,7 +667,7 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
@@ -700,7 +703,7 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
@@ -714,7 +717,7 @@ mod test {
         backend.write_last_confirmed_block(0).expect("Failed to update last confirmed block");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
@@ -752,7 +755,7 @@ mod test {
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
@@ -766,7 +769,7 @@ mod test {
         backend.store_pending_block(pending).expect("Failed to store pending block");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
@@ -782,7 +785,7 @@ mod test {
         backend.write_last_confirmed_block(0).expect("Failed to update last confirmed block");
 
         assert_matches::assert_matches!(
-            sub.next().await, Some(Ok(status)) => {
+            sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
                 assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
@@ -791,5 +794,30 @@ mod test {
         );
 
         tracing::debug!("AcceptedOnL1");
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_transaction_status_unsubscribe(_logs: (), starknet: Starknet, tx: mp_rpc::BroadcastedInvokeTxn) {
+        let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
+
+        let builder = jsonrpsee::server::Server::builder();
+        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+
+        tracing::debug!(server_url, "Started jsonrpsee server");
+
+        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
+        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
+
+        tracing::debug!("Started jsonrpsee client");
+
+        provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
+        let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
+        let subscription_id = sub.next().await.unwrap().unwrap().subscription_id;
+
+        client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
+        assert!(sub.next().await.is_none());
     }
 }

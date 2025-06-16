@@ -54,6 +54,7 @@ pub struct GetStorageProofResult {
 type SubscriptionItemPendingTxs = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
 type SubscriptionItemEvents = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::EmittedEvent>;
 type SubscriptionItemNewHeads = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::BlockHeader>;
+type SubscriptionItemTransactionStatus = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::TxnStatus>;
 
 #[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWsRpcApi {
@@ -81,7 +82,7 @@ pub trait StarknetWsRpcApi {
     #[subscription(
         name = "subscribeTransactionStatus",
         unsubscribe = "unsubscribeTransactionStatus",
-        item = mp_rpc::v0_8_1::TxnStatus,
+        item = SubscriptionItemTransactionStatus,
         param_kind = map
     )]
     async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;

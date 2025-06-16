@@ -202,4 +202,8 @@ impl WsSubscribeContext {
             _ = self.0.notified() => None
         }
     }
+
+    pub async fn cancelled(&self) {
+        self.0.notified().await
+    }
 }
