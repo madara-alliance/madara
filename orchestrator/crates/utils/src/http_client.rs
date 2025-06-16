@@ -21,7 +21,7 @@ use std::path::Path;
 use reqwest::header::{HeaderMap, HeaderName, HeaderValue};
 use reqwest::multipart::{Form, Part};
 use reqwest::{Certificate, Client, ClientBuilder, Identity, Method, Response, Result};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use url::{ParseError, Url};
 
 /// Main HTTP client with default configurations.
@@ -56,14 +56,22 @@ pub struct HttpClientBuilder {
     default_body_params: String,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum MineType {
-    #[serde(rename = "application/octet-stream")]
     OctetStream,
-    #[serde(rename = "application/zip")]
     Zip,
-    #[serde(rename = "application/json")]
     Json,
+}
+
+impl std::fmt::Display for MineType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mime_str = match self {
+            MineType::OctetStream => "application/octet-stream",
+            MineType::Zip => "application/zip",
+            MineType::Json => "application/json",
+        };
+        write!(f, "{}", mime_str)
+    }
 }
 
 impl HttpClient {
@@ -294,7 +302,8 @@ impl<'a> RequestBuilder<'a> {
         file_name: &str,
         mime_type: Option<&str>,
     ) -> io::Result<Self> {
-        let mime_type = mime_type.unwrap_or(&MineType::OctetStream.to_string());
+        let default_mime = MineType::OctetStream.to_string();
+        let mime_type = mime_type.unwrap_or(&default_mime);
         let part = Part::bytes(bytes)
             .file_name(file_name.to_string())
             .mime_str(mime_type)

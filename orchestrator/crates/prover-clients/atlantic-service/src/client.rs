@@ -10,7 +10,7 @@ use std::path::Path;
 use tracing::debug;
 use url::Url;
 
-const PROOF_QUERY_PATH: &str = "https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json";
+const ATLANTIC_PROOF_URL: &str = "https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json";
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {
@@ -130,7 +130,7 @@ impl AtlanticClient {
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // Note: It seems this code will be replaced by the proper API once it is available
         debug!("Getting proof for task_id: {}", task_id);
-        let proof_path = format!(PROOF_QUERY_PATH, task_id);
+        let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
         let client = reqwest::Client::new();
         let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
 

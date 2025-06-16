@@ -20,7 +20,6 @@ use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use prove_block::prove_block;
 use starknet_os::io::output::StarknetOsOutput;
-use std::io::Read;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
