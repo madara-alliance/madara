@@ -221,11 +221,12 @@ pub async fn deploy_eth_token_on_l2(
     account: &RpcAccount<'_>,
     eth_legacy_bridge_address: Felt,
 ) -> Felt {
+    let eth_erc20_class_hash_correct = Felt::from_hex("0x2760f25d5a4fb2bdde5f561fd0b44a3dee78c28903577d37d669939d97036a0").unwrap();
     let deploy_tx = account
         .invoke_contract(
             account.address(),
             "deploy_contract",
-            vec![eth_erc20_class_hash, Felt::ZERO, Felt::ZERO, Felt::ZERO],
+            vec![eth_erc20_class_hash_correct, Felt::ZERO, Felt::ZERO, Felt::ZERO],
             None,
         )
         .send()

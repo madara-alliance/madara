@@ -83,6 +83,25 @@ pub fn get_real_class_hash(block_n: u64, computed: Felt) -> Felt {
     computed
 }
 
+pub fn get_real_class_hash_2(computed: Felt) -> Felt {
+    println!("Y00, inside  get_real_class_hash #1");
+    // Search through all entries to find matching computed hash
+    for (_entry_block_n, entry_real_hash, entry_computed) in &CLASS_HASHES {
+        if entry_computed == &computed {
+            println!(
+                "Y00, inside  get_real_class_hash #1 we matched computed {}, returning {}",
+                entry_computed, *entry_real_hash
+            );
+            // Found matching computed hash, return the real hash
+            return *entry_real_hash;
+        }
+    }
+
+    println!("Y00, inside dind't match");
+    // Not found, return the original computed value
+    computed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
