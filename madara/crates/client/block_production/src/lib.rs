@@ -763,9 +763,9 @@ pub(crate) mod tests {
             .into_blockifier(
                 backend.chain_config().chain_id.to_felt(),
                 backend.chain_config().latest_protocol_version,
-                true,
-                true,
-                true,
+                /* validate */ true,
+                /* charge_fee*/ true,
+                /* strict_nonce_check */ true,
             )
             .unwrap();
         let signature = contract.secret.sign(&blockifier_tx.tx_hash().0).unwrap();
@@ -824,9 +824,9 @@ pub(crate) mod tests {
             .into_blockifier(
                 backend.chain_config().chain_id.to_felt(),
                 backend.chain_config().latest_protocol_version,
-                true,
-                true,
-                true,
+                /* validate */ true,
+                /* charge_fee*/ true,
+                /* strict_nonce_check */ true,
             )
             .unwrap();
         let signature = contract_sender.secret.sign(&blockifier_tx.tx_hash()).unwrap();

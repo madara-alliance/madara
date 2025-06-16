@@ -133,7 +133,7 @@ impl L1HandlerTransaction {
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let transaction = Transaction::L1Handler(self.clone());
         // TODO: check self.version
-        let hash = self.compute_hash(chain_id, false, false);
+        let hash = self.compute_hash(chain_id, /* offset_version */ false, /* legacy */ false);
         let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
         Ok((

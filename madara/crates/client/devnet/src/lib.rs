@@ -258,9 +258,9 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
-                    true,
-                    true,
-                    true,
+                    /* validate */ true,
+                    /* charge_fee*/ true,
+                    /* strict_nonce_check */ true,
                 )
                 .unwrap();
             let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
@@ -287,9 +287,9 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
-                    true,
-                    true,
-                    true,
+                    /* validate */ true,
+                    /* charge_fee*/ true,
+                    /* strict_nonce_check */ true,
                 )
                 .unwrap();
             let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
@@ -314,9 +314,9 @@ mod tests {
                 .into_blockifier(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
-                    true,
-                    true,
-                    true,
+                    /* validate */ true,
+                    /* charge_fee*/ true,
+                    /* strict_nonce_check */ true,
                 )
                 .unwrap();
             let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();

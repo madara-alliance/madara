@@ -40,11 +40,11 @@ bouncer_config:
     # Maximum gas limit per block
     sierra_gas: 500000000
     # Maximum length of message segments
-    message_segment_length: 18446744073709551615
+    message_segment_length: 3700
     # Maximum number of events per block
-    n_events: 18446744073709551615
+    n_events: 5000
     # Maximum size of state differences per block
-    state_diff_size: 131072
+    state_diff_size: 4000
     # Maximum L1 gas
     l1_gas: 18446744073709551615
     # Maximum number of transactions per block

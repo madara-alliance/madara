@@ -49,7 +49,7 @@ impl ExecutionContext {
                 block_context: Arc::clone(&self.block_context),
                 tx_info: TransactionInfo::Deprecated(DeprecatedTransactionInfo::default()),
             }),
-            false,
+            /* limit_steps_by_ressources */ false,
             SierraGasRevertTracker::new(entrypoint.initial_gas.into()),
         );
 

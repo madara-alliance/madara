@@ -21,8 +21,8 @@ thiserror.workspace = true
 tracing.workspace = true
 
 blockifier.workspace = true
-starknet_api.workspace = true
 starknet-types-core.workspace = true
+starknet_api.workspace = true
 
 mc-db.workspace = true
 mc-exec.workspace = true

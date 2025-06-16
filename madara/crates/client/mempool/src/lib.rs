@@ -797,7 +797,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_new_1_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)))
+            .insert_tx(
+                tx_new_1_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -823,7 +828,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_new_2_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)))
+            .insert_tx(
+                tx_new_2_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -849,7 +859,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_new_3_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_new_3_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -882,7 +897,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_1_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_old_1_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -908,7 +928,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_2_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_old_2_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -934,7 +959,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_3_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)))
+            .insert_tx(
+                tx_old_3_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -967,7 +997,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_4_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_old_4_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(

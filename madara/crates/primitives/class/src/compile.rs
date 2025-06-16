@@ -387,8 +387,12 @@ mod v2 {
     pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<(Felt, CasmContractClass), ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
 
-        let casm_class = CasmContractClass::from_contract_class(sierra_class, true, usize::MAX)
-            .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
+        let casm_class = CasmContractClass::from_contract_class(
+            sierra_class,
+            /* add_pythonic_hints */ true,
+            /* max_bytecode_size */ usize::MAX,
+        )
+        .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
         let compiled_class_hash = casm_class.compiled_class_hash();
 
         Ok((compiled_class_hash, casm_class))

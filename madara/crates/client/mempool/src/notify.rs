@@ -166,7 +166,7 @@ mod tests {
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        mempool.insert_tx(mempool_tx.clone(), false, true, nonce_info).await.unwrap();
+        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
 
         // poll once
         let mut consumer = fut.as_mut().now_or_never().unwrap();
@@ -194,7 +194,7 @@ mod tests {
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        mempool.insert_tx(mempool_tx.clone(), false, true, nonce_info).await.unwrap();
+        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
 
         let first_consumer = mempool.get_consumer_wait_for_ready_tx().await;
         // don't consume txs from first consumer
@@ -237,7 +237,7 @@ mod tests {
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        mempool.insert_tx(mempool_tx.clone(), false, true, nonce_info).await.unwrap();
+        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
 
         let mut first_consumer = mempool.get_consumer_wait_for_ready_tx().await;
         // consume!

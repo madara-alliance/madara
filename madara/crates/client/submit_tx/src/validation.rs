@@ -221,7 +221,7 @@ impl TransactionValidator {
                 } else {
                     account_tx
                 };
-                
+
                 let mut validator = self.backend.new_transaction_validator()?;
                 validator.perform_validations(account_tx)?
             }
