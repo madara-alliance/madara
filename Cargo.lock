@@ -9364,8 +9364,10 @@ dependencies = [
 name = "mc-exec"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "cairo-vm",
+ "itertools 0.13.0",
  "mc-db",
  "mp-block",
  "mp-chain-config",
@@ -9382,6 +9384,7 @@ dependencies = [
  "opentelemetry-stdout",
  "opentelemetry_sdk",
  "rstest 0.18.2",
+ "serde_json",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
  "thiserror 2.0.3",

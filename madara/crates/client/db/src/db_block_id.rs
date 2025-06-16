@@ -62,6 +62,14 @@ pub trait DbBlockIdResolvable {
     fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<RawDbBlockId>, MadaraStorageError>;
 }
 
+/// The None block ID will make every query return Not Found. This corresponds to an empty chain state, before the genesis block.
+impl<T: DbBlockIdResolvable> DbBlockIdResolvable for Option<T> {
+    fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<RawDbBlockId>, MadaraStorageError> {
+        let Some(block_id) = self else { return Ok(None) };
+        block_id.resolve_db_block_id(backend)
+    }
+}
+
 impl DbBlockIdResolvable for BlockId {
     fn resolve_db_block_id(&self, backend: &MadaraBackend) -> Result<Option<RawDbBlockId>, MadaraStorageError> {
         let block_id = match self {

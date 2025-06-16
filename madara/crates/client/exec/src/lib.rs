@@ -18,6 +18,7 @@ mod call;
 pub mod execution;
 mod fee;
 mod layered_state_adaptor;
+pub mod state_diff;
 mod trace;
 pub mod transaction;
 
