@@ -80,6 +80,8 @@ pub struct ProvingMetadata {
     /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
     /// in the provided storage.
     pub download_proof: Option<String>,
+    pub download_proof_part2: Option<String>,
+    /// Number of steps taken by SNOS to generate the proof
     pub n_steps: Option<usize>,
 }
 

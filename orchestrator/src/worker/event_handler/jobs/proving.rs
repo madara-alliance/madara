@@ -2,7 +2,6 @@ use crate::core::config::Config;
 use crate::error::job::proving::ProvingError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -139,23 +138,20 @@ impl JobHandlerTrait for ProvingJobHandler {
                     return Err(JobError::Other(OtherError(eyre!("Fact is None, cannot fetch proof without a fact"))));
                 }
                 // If proof download path is specified, store the proof
-                let fetched_proof =
-                    config.prover_client().get_proof(&task_id, &fact.unwrap()).await.inspect_err(|e| {
+                if let Some(download_path) = proving_metadata.download_proof {
+                    let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
                         tracing::error!(
                             job_id = %job.internal_id,
                             error = %e,
                             "Failed to get task status from prover client"
                         );
                     })?;
-                let proof_key = format!("{internal_id}/{PROOF_FILE_NAME}");
-                config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &proof_key).await?;
-
-                if let Some(download_path) = proving_metadata.download_proof {
                     tracing::debug!(
                         job_id = %job.internal_id,
                         "Downloading and storing proof to path: {}",
                         download_path
                     );
+                    config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &download_path).await?;
                 }
 
                 tracing::info!(

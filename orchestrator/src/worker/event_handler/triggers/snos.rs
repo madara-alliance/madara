@@ -11,7 +11,6 @@ use async_trait::async_trait;
 use color_eyre::eyre::{Result, WrapErr};
 use num_traits::ToPrimitive;
 use opentelemetry::KeyValue;
-use orchestrator_utils::layer::Layer;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
@@ -485,7 +484,7 @@ impl SnosJobTrigger {
 async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64>) -> Result<()> {
     // Create jobs for all identified blocks
     for block_num in block_numbers_to_pocesss {
-        let metadata = create_job_metadata(block_num, config.layer());
+        let metadata = create_job_metadata(block_num, config.snos_config().snos_full_output);
 
         match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
             Ok(_) => tracing::info!("Successfully created new Snos job: {}", block_num),
@@ -504,16 +503,16 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
 
 // create_job_metadata is a helper function to create job metadata for a given block number and layer
 // set full_output to true if layer is L3, false otherwise
-fn create_job_metadata(block_num: u64, layer: &Layer) -> JobMetadata {
+fn create_job_metadata(block_number: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number: block_num,
-            full_output: (layer.clone() == Layer::L3),
-            cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
-            on_chain_data_path: Some(format!("{}/{}", block_num, ON_CHAIN_DATA_FILE_NAME)),
-            snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
-            program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
+            block_number,
+            full_output,
+            cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
+            on_chain_data_path: Some(format!("{}/{}", block_number, ON_CHAIN_DATA_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()
         }),
     }

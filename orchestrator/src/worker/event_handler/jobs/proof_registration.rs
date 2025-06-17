@@ -1,6 +1,6 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
+use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -28,6 +28,11 @@ impl JobHandlerTrait for RegisterProofJobHandler {
     #[tracing::instrument(fields(category = "proof_registry"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
+
+        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
+            tracing::error!(job_id = %job.internal_id, error = %e, "Failed to convert metadata to ProvingMetadata");
+        })?;
+
         tracing::info!(
             log_type = "starting",
             category = "proof_registry",
@@ -37,8 +42,8 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             "Proof registration job processing started."
         );
 
-        // Get proof from storage
-        let proof_key = format!("{internal_id}/{PROOF_FILE_NAME}");
+        let proof_key =
+            proving_metadata.download_proof.unwrap_or_else(|| format!("{}/{}", job.internal_id, PROOF_FILE_NAME));
         tracing::debug!(job_id = %job.internal_id, %proof_key, "Fetching proof file");
 
         let proof_file = config.storage().get_data(&proof_key).await?;
@@ -58,13 +63,14 @@ impl JobHandlerTrait for RegisterProofJobHandler {
 
         let proof_verifier = String::from_utf8_lossy(COMPILED_VERIFIER).to_string();
         // Submit proof for L2 verification
-        let external_id =
-            config.prover_client().submit_l2_query(&task_id, &formatted_proof, None, &proof_verifier).await.context(
-                format!(
-                    "Failed to submit proof for L2 verification for job_id: {}, task_id: {}",
-                    job.internal_id, task_id
-                ),
-            )?;
+        let external_id = config
+            .prover_client()
+            .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps, &proof_verifier)
+            .await
+            .context(format!(
+                "Failed to submit proof for L2 verification for job_id: {}, task_id: {}",
+                job.internal_id, task_id
+            ))?;
 
         tracing::info!(
             log_type = "completed",
@@ -129,14 +135,18 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                let fetched_proof =
-                    config.prover_client().get_proof(&task_id, fact.unwrap().as_str()).await.context(format!(
+                if let Some(download_path) = proving_metadata.download_proof_part2 {
+                    let fetched_proof = config.prover_client().get_proof(&task_id).await.context(format!(
                         "Failed to fetch proof from prover client for job_id: {}, task_id: {}",
                         job.internal_id, task_id
                     ))?;
-
-                let proof_key = format!("{internal_id}/{PROOF_PART2_FILE_NAME}");
-                config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &proof_key).await?;
+                    tracing::debug!(
+                        job_id = %job.internal_id,
+                        "Downloading and storing proof to path: {}",
+                        download_path
+                    );
+                    config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &download_path).await?;
+                }
                 tracing::info!(
                     log_type = "completed",
                     category = "proof_registry",

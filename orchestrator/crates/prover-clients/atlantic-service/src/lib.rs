@@ -131,7 +131,7 @@ impl ProverClient for AtlanticProverService {
             }
         }
     }
-    async fn get_proof(&self, task_id: &str, _fact: &str) -> Result<String, ProverClientError> {
+    async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError> {
         let proof = self.atlantic_client.get_proof_by_task_id(task_id).await?;
 
         // Verify if it's a valid proof format
@@ -148,12 +148,13 @@ impl ProverClient for AtlanticProverService {
     ///
     async fn submit_l2_query(
         &self,
-        _task_id: &str,
+        task_id: &str,
         proof: &str,
         n_steps: Option<usize>,
         cairo_verifier: &str,
     ) -> Result<String, ProverClientError> {
         tracing::info!(
+            task_id = %task_id,
             log_type = "starting",
             category = "submit_l2_query",
             function_type = "proof",
