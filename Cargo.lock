@@ -2818,7 +2818,48 @@ dependencies = [
  "sha2 0.10.8",
  "sha3",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
+ "strum 0.25.0",
+ "strum_macros 0.25.3",
+ "thiserror 1.0.65",
+]
+
+[[package]]
+name = "blockifier"
+version = "0.8.0-rc.3"
+source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+dependencies = [
+ "anyhow",
+ "ark-ec",
+ "ark-ff 0.4.2",
+ "ark-secp256k1",
+ "ark-secp256r1",
+ "cached",
+ "cairo-lang-casm 2.8.4",
+ "cairo-lang-runner",
+ "cairo-lang-starknet-classes 2.8.4",
+ "cairo-lang-utils 2.8.4",
+ "cairo-vm",
+ "derive_more 0.99.18",
+ "indexmap 2.6.0",
+ "itertools 0.10.5",
+ "keccak",
+ "log",
+ "num-bigint",
+ "num-integer",
+ "num-rational",
+ "num-traits 0.2.19",
+ "once_cell",
+ "paste",
+ "phf",
+ "rand",
+ "rstest 0.17.0",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "sha3",
+ "starknet-types-core",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "strum 0.25.0",
  "strum_macros 0.25.3",
  "thiserror 1.0.65",
@@ -4959,7 +5000,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9015,7 +9056,7 @@ dependencies = [
  "bigdecimal 0.4.5",
  "bincode 1.3.3",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "bonsai-trie",
  "bytes",
  "cairo-lang-starknet-classes 2.8.4",
@@ -9103,7 +9144,7 @@ dependencies = [
  "starknet-providers 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "syn 2.0.89",
  "tempfile",
  "thiserror 2.0.3",
@@ -9224,7 +9265,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "futures",
  "lazy_static",
  "m-cairo-test-contracts",
@@ -9257,7 +9298,7 @@ dependencies = [
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9274,7 +9315,7 @@ dependencies = [
  "anyhow",
  "bincode 1.3.3",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "bonsai-trie",
  "futures",
  "lazy_static",
@@ -9304,7 +9345,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9320,7 +9361,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "build-version",
  "futures",
  "m-cairo-test-contracts",
@@ -9352,7 +9393,7 @@ dependencies = [
  "starknet-core 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "tokio",
  "tracing",
  "tracing-core",
@@ -9364,7 +9405,7 @@ dependencies = [
 name = "mc-exec"
 version = "0.8.0"
 dependencies = [
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "cairo-vm",
  "mc-db",
  "mp-block",
@@ -9383,7 +9424,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rstest 0.18.2",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9462,7 +9503,7 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "futures",
  "lazy_static",
  "mc-analytics",
@@ -9495,7 +9536,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tokio-util",
@@ -9511,7 +9552,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
@@ -9534,7 +9575,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9550,7 +9591,7 @@ dependencies = [
  "async-trait",
  "bigdecimal 0.4.5",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "dotenv",
  "futures",
  "httpmock 0.7.0",
@@ -9584,7 +9625,7 @@ dependencies = [
  "starknet-providers 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9602,14 +9643,14 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "mc-db",
  "mc-exec",
  "mp-class",
  "mp-convert",
  "mp-rpc",
  "mp-transactions",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -9656,7 +9697,7 @@ dependencies = [
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9885,7 +9926,7 @@ name = "mp-block"
 version = "0.8.0"
 dependencies = [
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "bonsai-trie",
  "mp-chain-config",
  "mp-class",
@@ -9905,7 +9946,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
  "tracing-core",
@@ -9937,7 +9978,7 @@ name = "mp-chain-config"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "lazy_static",
  "mp-rpc",
  "mp-utils",
@@ -9947,7 +9988,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
  "url",
@@ -9958,7 +9999,7 @@ name = "mp-class"
 version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "cairo-lang-starknet 1.0.0-alpha.6",
  "cairo-lang-starknet 1.0.0-rc0",
  "cairo-lang-starknet 1.1.1",
@@ -9995,7 +10036,7 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
 ]
 
@@ -10043,7 +10084,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "cairo-vm",
  "mp-chain-config",
  "mp-convert",
@@ -10056,7 +10097,7 @@ dependencies = [
  "sha3",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -10089,7 +10130,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "base64 0.22.1",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-lang-utils 2.8.4",
  "cairo-vm",
@@ -10103,7 +10144,7 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -11820,10 +11861,10 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
 dependencies = [
  "anyhow",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-lang-utils 2.8.4",
  "cairo-vm",
@@ -11841,11 +11882,11 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 3.11.0",
- "starknet 0.12.0",
+ "starknet 0.11.0",
  "starknet-os",
  "starknet-os-types",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "thiserror 1.0.65",
  "tokio",
 ]
@@ -12376,13 +12417,13 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
 dependencies = [
  "log",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
- "starknet 0.12.0",
+ "starknet 0.11.0",
  "starknet-os",
  "starknet-types-core",
  "thiserror 1.0.65",
@@ -12391,16 +12432,16 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
 dependencies = [
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "cairo-lang-starknet-classes 2.8.4",
  "rpc-client",
  "serde",
  "serde_json",
- "starknet 0.12.0",
+ "starknet 0.11.0",
  "starknet-os-types",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "thiserror 1.0.65",
  "tokio",
 ]
@@ -14116,7 +14157,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -14125,7 +14166,7 @@ dependencies = [
  "ark-secp256r1",
  "base64 0.21.7",
  "bitvec",
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "c-kzg",
  "cairo-lang-casm 2.8.4",
  "cairo-lang-starknet 2.8.4",
@@ -14155,7 +14196,7 @@ dependencies = [
  "starknet-crypto 0.6.2",
  "starknet-gateway-types",
  "starknet-os-types",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "thiserror 1.0.65",
  "tokio",
  "uuid 1.12.0",
@@ -14165,9 +14206,9 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
 dependencies = [
- "blockifier",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "cairo-lang-starknet-classes 2.8.4",
  "cairo-vm",
  "flate2",
@@ -14176,11 +14217,11 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 3.11.0",
- "starknet-core 0.12.0",
+ "starknet-core 0.11.1",
  "starknet-crypto 0.6.2",
  "starknet-gateway-types",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "thiserror 1.0.65",
  "tokio",
 ]
@@ -14329,6 +14370,29 @@ dependencies = [
 name = "starknet_api"
 version = "0.13.0-rc.1"
 source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+dependencies = [
+ "bitvec",
+ "cairo-lang-starknet-classes 2.8.4",
+ "derive_more 0.99.18",
+ "hex",
+ "indexmap 2.6.0",
+ "itertools 0.12.1",
+ "once_cell",
+ "primitive-types",
+ "serde",
+ "serde_json",
+ "sha3",
+ "starknet-crypto 0.5.2",
+ "starknet-types-core",
+ "strum 0.24.1",
+ "strum_macros 0.24.3",
+ "thiserror 1.0.65",
+]
+
+[[package]]
+name = "starknet_api"
+version = "0.13.0-rc.1"
+source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes 2.8.4",
