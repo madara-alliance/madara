@@ -69,17 +69,30 @@ pub enum ProvingInputType {
 /// TODO: update this
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorMetadata {
+    // Worker populated field
     /// Batch number corresponding to the Aggregator job
     pub batch_num: u64,
     /// Bucker ID received from the prover client
     pub bucket_id: String,
-    /// SNOS fact to check for on-chain registration. If `None`, no on-chain check is performed. If
-    /// `Some(value)`, it checks for `value` on the chain.
+    /// SNOS fact to check for on-chain registration during verification.
+    /// If `None`, no on-chain check is performed.
+    /// If `Some(value)`, it checks for `value` on the chain.
     pub ensure_on_chain_registration: Option<String>,
     /// Path where the generated proof should be downloaded. If `None`, the proof will not be
     /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
     /// in the provided storage.
     pub download_proof: Option<String>,
+    /// Path of blob data
+    pub blob_data_path: Option<String>,
+
+    // Job populated field
+    // We'll get these from the Prover client after the aggregator job is completed
+    /// Path to the Cairo PIE file
+    pub cairo_pie_path: Option<String>,
+    /// Path to the SNOS output file
+    pub snos_output_path: Option<String>,
+    /// Path to the program output file
+    pub program_output_path: Option<String>,
 }
 
 /// Metadata specific to proving jobs.
@@ -143,18 +156,22 @@ pub struct SnosMetadata {
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
     /// Block numbers that need to be settled
-    pub blocks_to_settle: Vec<u64>,
-    /// Paths to SNOS output files for each block
+    // pub blocks_to_settle: Vec<u64>,
+    /// Batch numbers that need to be settled
+    pub batches_to_settle: Vec<u64>,
+    /// Paths to SNOS output files for each block/batch
     pub snos_output_paths: Vec<String>,
-    /// Paths to program output files for each block
+    /// Paths to program output files for each block/batch
     pub program_output_paths: Vec<String>,
-    /// Paths to blob data files for each block
+    /// Paths to blob data files for each block/batch
     pub blob_data_paths: Vec<String>,
 
     // Job-populated fields
     /// Last block number that failed processing
-    pub last_failed_block_no: Option<u64>,
-    /// Transaction hashes for processed blocks
+    // pub last_failed_block_no: Option<u64>,
+    /// Last batch number that failed processing
+    pub last_failed_batch_no: Option<u64>,
+    /// Transaction hashes for processed blocks/batches
     pub tx_hashes: Vec<String>,
 }
 
