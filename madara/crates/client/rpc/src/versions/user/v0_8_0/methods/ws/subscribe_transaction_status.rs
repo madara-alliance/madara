@@ -1,33 +1,17 @@
 use crate::errors::ErrorExtWs;
 
-#[cfg(test)]
-const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
-#[cfg(not(test))]
-const TIMEOUT: std::time::Duration = std::time::Duration::from_secs(300); // 5min
-
 /// Notifies the subscriber of updates to a transaction's status. ([specs])
 ///
 /// Supported statuses are:
 ///
 /// - [`Received`]: tx has been inserted into the mempool.
-/// - [`AcceptedOnL2`]: tx has been saved to a closed block.
+/// - [`AcceptedOnL2`]: tx has been saved to the pending block.
 /// - [`AcceptedOnL1`]: tx has been finalized on L1.
-///
-/// We do not count a transaction as being accepted on L2 if it is included in the pending block.
-/// This is because the pending block is not a reliable storage of information: it is not persisted
-/// between restarts and as such can be lost in case of a node shutdown, and in the future it could
-/// be dropped in case of consensus disagreements. A transaction being included in the pending block
-/// therefore is _not_ a guarantee that it will necessarily be accepted on L1.
 ///
 /// We do not currently support the **Rejected** transaction status.
 ///
 /// Note that it is possible to call this method on a transaction which has not yet been received by
 /// the node and this endpoint will send an update as soon as the tx is received.
-///
-/// ## DOS mitigation
-///
-/// To avoid a malicious attacker keeping connections open indefinitely on an nonexistent
-/// transaction hash, this endpoint will terminate the connection after a global timeout period.
 ///
 /// ## Returns
 ///
@@ -48,13 +32,9 @@ pub async fn subscribe_transaction_status(
         .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
 
     let mut state = SubscriptionState::new(starknet, &sink, transaction_hash).await?;
-    let timeout = tokio::time::timeout(TIMEOUT, state.drive());
 
     tokio::select! {
-        // We need to return an error here or jsonrpsee will not terminate the connection for us.
-        res = timeout => res.or_else_internal_server_error(|| {
-            format!("SubscribeTransactionStatus timed out on {transaction_hash:#x}")
-        })?,
+        res = state.drive() => res,
         _ = sink.closed() => Ok(())
     }
 }
@@ -533,8 +513,6 @@ mod test {
                 });
             }
         );
-
-        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -569,8 +547,6 @@ mod test {
                 });
             }
         );
-
-        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -605,8 +581,6 @@ mod test {
                 });
             }
         );
-
-        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -656,8 +630,6 @@ mod test {
                 });
             }
         );
-
-        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]
@@ -815,27 +787,5 @@ mod test {
         );
 
         tracing::debug!("AcceptedOnL1");
-    }
-
-    #[tokio::test]
-    #[rstest::rstest]
-    #[timeout(super::TIMEOUT * 2)]
-    async fn subscribe_transaction_status_timeout(_logs: (), starknet: Starknet) {
-        let builder = jsonrpsee::server::Server::builder();
-        let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
-        let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
-
-        tracing::debug!(server_url, "Started jsonrpsee server");
-
-        let builder = jsonrpsee::ws_client::WsClientBuilder::default();
-        let client = builder.build(&server_url).await.expect("Failed to start jsonrpsee ws client");
-
-        tracing::debug!("Started jsonrpsee client");
-
-        let transaction_hash = starknet_types_core::felt::Felt::ZERO;
-        let mut sub = client.subscribe_transaction_status(transaction_hash).await.expect("Failed subscription");
-
-        assert!(sub.next().await.is_none());
     }
 }
