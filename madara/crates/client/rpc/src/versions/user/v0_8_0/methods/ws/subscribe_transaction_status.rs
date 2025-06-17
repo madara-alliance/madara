@@ -452,13 +452,16 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn block() -> mp_block::MadaraMaybePendingBlock {
+    fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::MadaraMaybePendingBlock {
         mp_block::MadaraMaybePendingBlock {
             info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
                 tx_hashes: vec![TX_HASH],
                 ..Default::default()
             }),
-            inner: mp_block::MadaraBlockInner::default(),
+            inner: mp_block::MadaraBlockInner {
+                transactions: vec![tx_with_receipt.transaction],
+                receipts: vec![tx_with_receipt.receipt],
+            },
         }
     }
 
