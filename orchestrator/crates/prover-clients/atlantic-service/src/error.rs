@@ -47,7 +47,7 @@ pub enum AtlanticError {
     GetBucketStatusFailure(#[source] reqwest::Error),
 
     #[error("Failed to create a new Atlantic bucket: {0}")]
-    CreateBucketFailure(#[source] reqwest::Error),
+    CreateBucketFailure(#[source] serde_json::Error),
 
     #[error("Failed to close Atlantic bucket: {0}")]
     CloseBucketFailure(#[source] reqwest::Error),
