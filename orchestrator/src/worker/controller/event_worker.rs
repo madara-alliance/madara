@@ -93,7 +93,7 @@ impl EventWorker {
                     let worker_handler =
                         JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_mes.worker.clone());
                     worker_handler
-                        .run_worker_if_enabled(self.config.clone())
+                        .run_worker(self.config.clone())
                         .await
                         .map_err(|e| ConsumptionError::Other(OtherError::from(e.to_string())))?;
                     Ok(())

@@ -21,6 +21,8 @@ impl JobTrigger for ProvingJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::info!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
 
+        let earliest_failed_block = config.database().get_earliest_failed_block_number().await?;
+
         let successful_snos_jobs = config
             .database()
             .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
@@ -34,6 +36,19 @@ impl JobTrigger for ProvingJobTrigger {
                 tracing::error!(job_id = %snos_job.internal_id, error = %e, "Invalid metadata type for SNOS job");
                 e
             })?;
+
+            // Skip jobs with block numbers >= earliest failed block
+            if let Some(earliest_failed_block_number) = earliest_failed_block {
+                if snos_metadata.block_number >= earliest_failed_block_number {
+                    tracing::debug!(
+                        job_id = %snos_job.internal_id,
+                        block_number = snos_metadata.block_number,
+                        earliest_failed_block = earliest_failed_block_number,
+                        "Skipping Proving job due to failed block constraint"
+                    );
+                    continue;
+                }
+            }
 
             // Get SNOS fact early to handle the error case
             let snos_fact = match &snos_metadata.snos_fact {

@@ -19,6 +19,8 @@ impl JobTrigger for DataSubmissionJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "DataSubmissionWorker", "DataSubmissionWorker started.");
 
+        let earliest_failed_block = config.database().get_earliest_failed_block_number().await?;
+
         let successful_proving_jobs = config
             .database()
             .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::DataSubmission)
@@ -34,6 +36,19 @@ impl JobTrigger for DataSubmissionJobTrigger {
                 );
                 e
             })?;
+
+            // Skip jobs with block numbers >= earliest failed block
+            if let Some(earliest_failed_block_number) = earliest_failed_block {
+                if proving_metadata.block_number >= earliest_failed_block_number {
+                    tracing::debug!(
+                        job_id = %proving_job.internal_id,
+                        block_number = proving_metadata.block_number,
+                        earliest_failed_block = earliest_failed_block_number,
+                        "Skipping Data Submission job due to failed block constraint"
+                    );
+                    continue;
+                }
+            }
 
             // Create DA metadata
             let da_metadata = JobMetadata {

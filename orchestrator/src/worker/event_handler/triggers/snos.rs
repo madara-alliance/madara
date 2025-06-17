@@ -113,6 +113,7 @@ impl SnosJobTrigger {
     /// # Returns
     /// * `Result<ProcessingBounds>` - Calculated boundaries or error
     async fn calculate_processing_bounds(&self, config: &Arc<Config>) -> Result<ProcessingBounds> {
+        let earliest_failed_block = config.database().get_earliest_failed_block_number().await?;
         let latest_sequencer_block = self.fetch_latest_sequencer_block(config).await?;
         let service_config = config.service_config();
 
@@ -123,14 +124,17 @@ impl SnosJobTrigger {
             .map(|block| max(block, service_config.min_block_to_process))
             .unwrap_or(service_config.min_block_to_process);
 
-        let block_n_max = service_config
-            .max_block_to_process
-            .map(|bound| min(latest_sequencer_block, bound))
-            .unwrap_or(latest_sequencer_block);
+        let block_n_max = match (service_config.max_block_to_process, earliest_failed_block) {
+            (Some(config_max), Some(failed_block)) => {
+                min(min(latest_sequencer_block, config_max), failed_block.saturating_sub(1))
+            }
+            (Some(config_max), None) => min(latest_sequencer_block, config_max),
+            (None, Some(failed_block)) => min(latest_sequencer_block, failed_block.saturating_sub(1)),
+            (None, None) => latest_sequencer_block,
+        };
 
         Ok(ProcessingBounds { block_n_min, block_n_completed: latest_snos_completed, block_n_max })
     }
-
     /// Initializes the job scheduling context with available concurrency slots.
     ///
     /// This method sets up the scheduling context by:
