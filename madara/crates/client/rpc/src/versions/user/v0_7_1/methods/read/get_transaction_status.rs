@@ -25,17 +25,11 @@ pub async fn get_transaction_status(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnFinalityAndExecutionStatus> {
-    if starknet.add_transaction_provider.received_transaction(transaction_hash).await.is_some_and(|b| b) {
-        Ok(TxnFinalityAndExecutionStatus { finality_status: TxnStatus::Received, execution_status: None })
-    } else {
-        let (block, tx_index) = starknet
-            .backend
-            .find_tx_hash_block(&transaction_hash)
-            .or_else_internal_server_error(|| {
-                format!("GetTransactionStatus failed to retrieve block for tx {transaction_hash:#x}")
-            })?
-            .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-
+    if let Some((block, tx_index)) =
+        starknet.backend.find_tx_hash_block(&transaction_hash).or_else_internal_server_error(|| {
+            format!("GetTransactionStatus failed to retrieve block for tx {transaction_hash:#x}")
+        })?
+    {
         let tx_receipt = block.inner.receipts.get(tx_index.0 as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
         let execution_status = match tx_receipt.execution_result() {
@@ -55,6 +49,10 @@ pub async fn get_transaction_status(
         };
 
         Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status })
+    } else if starknet.add_transaction_provider.received_transaction(transaction_hash).await.is_some_and(|b| b) {
+        Ok(TxnFinalityAndExecutionStatus { finality_status: TxnStatus::Received, execution_status: None })
+    } else {
+        Err(StarknetRpcApiError::TxnHashNotFound)
     }
 }
 

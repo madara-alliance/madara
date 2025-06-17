@@ -316,15 +316,9 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
         let tx_hash = &common.tx_hash;
 
         // Step 1: we wait for the tx to be ACCEPTED in the pending block
-        loop {
-            match channel_pending_tx.recv().await {
-                Ok(tx) => {
-                    if tx.receipt.transaction_hash() == common.tx_hash {
-                        break;
-                    }
-                }
-                // This happens if the channel lags behind block prod
-                Err(_) => break,
+        while let Ok(tx) = channel_pending_tx.recv().await {
+            if tx.receipt.transaction_hash() == common.tx_hash {
+                break;
             }
         }
 
