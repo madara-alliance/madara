@@ -59,9 +59,9 @@ impl JobHandlerTrait for AggregatorJobHandler {
         ///
         /// So all the Aggregator jobs have the above conditions satisfied.
         /// Now, we follow the following logic:
-        /// 1. Calculate fact for batch
+        /// 1. Calculate the fact for the batch and save it in job metadata
         /// 2. Call close batch for the bucket
-        // TODO: add logic to calculate fact for the batch and add it in aggregator metadata
+        // TODO: add logic to calculate fact for the batch and add it in aggregator metadata (i think we'll need to do it in verification step)
         let internal_id = job.internal_id.clone();
         tracing::info!(
             log_type = "starting",
@@ -91,7 +91,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
         Ok(external_id)
     }
 
-    #[tracing::instrument(fields(category = "aggregator"), skip(self, _config), ret, err)]
+    #[tracing::instrument(fields(category = "aggregator"), skip(self, config), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id.clone();
         tracing::info!(
@@ -153,7 +153,9 @@ impl JobHandlerTrait for AggregatorJobHandler {
                         "Downloading and storing proof to path: {}",
                         download_path
                     );
+                    // TODO: Implement snos output and cairo pie download and storage -> calculate fact and program output using cairo pie
                     // TODO: Implement proof download and storage
+                    // TODO: Add the path of all these in
                 }
 
                 tracing::info!(
