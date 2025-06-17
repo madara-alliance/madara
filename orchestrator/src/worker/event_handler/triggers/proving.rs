@@ -1,7 +1,6 @@
 use std::sync::Arc;
 
 use crate::core::config::Config;
-use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
@@ -45,12 +44,9 @@ impl JobTrigger for ProvingJobTrigger {
                 }
             };
 
-            let (download_proof, download_proof_part2) = match config.layer() {
-                Layer::L2 => (None, None),
-                Layer::L3 => (
-                    Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME)),
-                    Some(format!("{}/{}", snos_job.internal_id, PROOF_PART2_FILE_NAME)),
-                ),
+            let download_proof = match config.layer() {
+                Layer::L2 => false,
+                Layer::L3 => true,
             };
 
             // Create proving job metadata
@@ -62,7 +58,6 @@ impl JobTrigger for ProvingJobTrigger {
                     input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
                     // Set a download path if needed
                     download_proof,
-                    download_proof_part2,
                     // Set SNOS fact for on-chain verification
                     ensure_on_chain_registration: Some(snos_fact),
                     n_steps: snos_metadata.snos_n_steps,

@@ -137,8 +137,9 @@ impl JobHandlerTrait for ProvingJobHandler {
                     );
                     return Err(JobError::Other(OtherError(eyre!("Fact is None, cannot fetch proof without a fact"))));
                 }
-                // If proof download path is specified, store the proof
-                if let Some(download_path) = proving_metadata.download_proof {
+                // If proof download is enabled, store the proof
+                if proving_metadata.download_proof {
+                    let download_path = format!("{}/{}", job.internal_id, crate::types::constant::PROOF_FILE_NAME);
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
                         tracing::error!(
                             job_id = %job.internal_id,
@@ -153,7 +154,6 @@ impl JobHandlerTrait for ProvingJobHandler {
                     );
                     config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &download_path).await?;
                 }
-
                 tracing::info!(
                     log_type = "completed",
                     category = "proving",

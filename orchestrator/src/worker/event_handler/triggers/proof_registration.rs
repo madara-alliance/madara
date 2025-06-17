@@ -1,4 +1,6 @@
 use crate::core::config::Config;
+use crate::types::constant::PROOF_FILE_NAME;
+use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -29,11 +31,23 @@ impl JobTrigger for ProofRegistrationJobTrigger {
         );
 
         for job in successful_proving_jobs {
+            // Extract proving metadata to get relevant information
+            let mut metadata = job.metadata.clone();
+            let mut proving_metadata: ProvingMetadata = metadata.specific.clone().try_into().map_err(|e| {
+                tracing::error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for proving job");
+                e
+            })?;
+
+            // Update input path to use proof from ProofCreation
+            let proof_path = format!("{}/{}", job.internal_id, PROOF_FILE_NAME);
+            proving_metadata.input_path = Some(ProvingInputType::Proof(proof_path));
+            metadata.specific = JobSpecificMetadata::Proving(proving_metadata);
+
             tracing::debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");
             match JobHandlerService::create_job(
                 JobType::ProofRegistration,
                 job.internal_id.to_string(),
-                job.metadata,
+                metadata,
                 config.clone(),
             )
             .await

@@ -1,14 +1,16 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
-use crate::types::constant::PROOF_FILE_NAME;
+use crate::error::other::OtherError;
+use crate::types::constant::PROOF_PART2_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{JobMetadata, ProvingMetadata};
+use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::COMPILED_VERIFIER;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use anyhow::Context;
 use async_trait::async_trait;
+use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::TaskStatus;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
@@ -42,8 +44,14 @@ impl JobHandlerTrait for RegisterProofJobHandler {
             "Proof registration job processing started."
         );
 
-        let proof_key =
-            proving_metadata.download_proof.unwrap_or_else(|| format!("{}/{}", job.internal_id, PROOF_FILE_NAME));
+        // Get proof path from input_path
+        let proof_key = match proving_metadata.input_path {
+            Some(ProvingInputType::Proof(path)) => path,
+            Some(ProvingInputType::CairoPie(_)) => {
+                return Err(JobError::Other(OtherError(eyre!("Expected Proof input, got CairoPie"))));
+            }
+            None => return Err(JobError::Other(OtherError(eyre!("Input path not found in job metadata")))),
+        };
         tracing::debug!(job_id = %job.internal_id, %proof_key, "Fetching proof file");
 
         let proof_file = config.storage().get_data(&proof_key).await?;
@@ -135,7 +143,8 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                if let Some(download_path) = proving_metadata.download_proof_part2 {
+                if proving_metadata.download_proof {
+                    let download_path = format!("{}/{}", job.internal_id, PROOF_PART2_FILE_NAME);
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.context(format!(
                         "Failed to fetch proof from prover client for job_id: {}, task_id: {}",
                         job.internal_id, task_id
