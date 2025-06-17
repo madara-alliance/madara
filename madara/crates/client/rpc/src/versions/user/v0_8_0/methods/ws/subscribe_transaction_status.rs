@@ -93,68 +93,85 @@ impl<'a> SubscriptionState<'a> {
     async fn new(
         starknet: &'a crate::Starknet,
         subscription_sink: &'a jsonrpsee::core::server::SubscriptionSink,
-        transaction_hash: mp_convert::Felt,
+        tx_hash: mp_convert::Felt,
     ) -> Result<Self, crate::errors::StarknetWsApiError> {
-        let common = StateTransitionCommon { starknet, subscription_sink, transaction_hash };
+        let common = StateTransitionCommon { starknet, subscription_sink, tx_hash };
 
         // **FOOTGUN!** 💥
         //
         // We subscribe to each channel before running status checks against the transaction to
         // avoid missing any updates.
         let channel_mempool = common.starknet.add_transaction_provider.subscribe_new_transactions().await;
-        let channel_closed = common.starknet.backend.subscribe_closed_blocks();
+        let channel_pending_tx = common.starknet.backend.subscribe_pending_txs();
         let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
 
-        let block_info =
-            starknet.backend.find_tx_hash_block_info(&transaction_hash).or_else_internal_server_error(|| {
-                format!("SubscribeTransactionStatus failed to retrieve block info for tx {transaction_hash:#x}")
-            })?;
+        let block_info = starknet.backend.find_tx_hash_block_info(&tx_hash).or_else_internal_server_error(|| {
+            format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
+        })?;
 
-        if let Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) = block_info {
-            let block_number = block_info.header.block_number;
-            let confirmed = common
-                .starknet
-                .backend
-                .get_l1_last_confirmed_block()
-                .or_internal_server_error("SubscribeTransactionStatus failed to retrieving last confirmed block")?;
-
-            // Tx has been accepted on L1, hence it is marked as such. This is the final
-            // stage of the transaction so the state machine is put in its end state.
-            if confirmed.is_some_and(|n| block_number <= n) {
-                tracing::debug!("WaitNone");
-                common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
-                Ok(Self::None)
-            }
-            // Tx has not yet been accepted on L1 but is included on L2, hence it is marked
-            // as accepted on L2. We wait for it to be accepted on L1
-            else {
+        match block_info {
+            Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
+                // Tx has not yet been accepted on L1 but is included on L2, hence it is marked
+                // as accepted on L2. We wait for it to be accepted on L1
+                let block_number = common
+                    .starknet
+                    .backend
+                    .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                    .or_else_internal_server_error(|| {
+                        format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
+                    })?
+                    .map(|n| n + 1)
+                    .unwrap_or(0);
                 tracing::debug!("WaitAcceptedOnL1");
                 common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
                 Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel_confirmed }))
             }
-        } else {
-            // Local mempool is the only AddTransactionProvider which allows us to inspect the state
-            // of received transactions. For other providers (such as when forwarding to a remote
-            // gateway), we default to assuming that the transaction has been received and wait for
-            // it to be accepted on L2.
-            let received = common
-                .starknet
-                .add_transaction_provider
-                .received_transaction(common.transaction_hash)
-                .await
-                .unwrap_or_default();
-            match channel_mempool {
-                // Tx has not been received yet, we wait for it to be received in the mempool
-                Some(channel_mempool) if !received => {
-                    tracing::debug!("WaitReceived");
-                    Ok(Self::WaitReceived(StateTransitionReceived { common, channel_mempool }))
+            Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
+                let block_number = block_info.header.block_number;
+                let confirmed =
+                    common.starknet.backend.get_l1_last_confirmed_block().or_internal_server_error(
+                        "SubscribeTransactionStatus failed to retrieving last confirmed block",
+                    )?;
+
+                // Tx has been accepted on L1, hence it is marked as such. This is the final
+                // stage of the transaction so the state machine is put in its end state.
+                if confirmed.is_some_and(|n| block_number <= n) {
+                    tracing::debug!("WaitNone");
+                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
+                    Ok(Self::None)
                 }
-                // Tx has been received or we are forwarding to a remote gateway (in which case we
-                // assume the transaction has been received). We wait for it to be accepted on L2.
-                _ => {
-                    tracing::debug!("WaitAcceptedOnL2");
-                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
-                    Ok(Self::WaitAcceptedOnL2(StateTransitionAcceptedOnL2 { common, channel_closed }))
+                // Tx has not yet been accepted on L1 but is included on L2, hence it is marked
+                // as accepted on L2. We wait for it to be accepted on L1
+                else {
+                    tracing::debug!("WaitAcceptedOnL1");
+                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                    Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel_confirmed }))
+                }
+            }
+            None => {
+                // Local mempool is the only AddTransactionProvider which allows us to inspect the state
+                // of received transactions. For other providers (such as when forwarding to a remote
+                // gateway), we default to assuming that the transaction has been received and wait for
+                // it to be accepted on L2.
+                let received = common
+                    .starknet
+                    .add_transaction_provider
+                    .received_transaction(common.tx_hash)
+                    .await
+                    .unwrap_or_default();
+                match channel_mempool {
+                    // Tx has not been received yet, we wait for it to be received in the mempool
+                    Some(channel_mempool) if !received => {
+                        tracing::debug!("WaitReceived");
+                        Ok(Self::WaitReceived(StateTransitionReceived { common, channel_mempool }))
+                    }
+                    // Tx has been received or we are forwarding to a remote gateway (in which case we
+                    // assume the transaction has been received). We wait for it to be accepted on L2.
+                    _ => {
+                        tracing::debug!("WaitAcceptedOnL2");
+                        common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
+                        Ok(Self::WaitAcceptedOnL2(StateTransitionAcceptedOnL2 { common, channel_pending_tx }))
+                    }
                 }
             }
         }
@@ -215,7 +232,7 @@ impl<'a> SubscriptionState<'a> {
 struct StateTransitionCommon<'a> {
     starknet: &'a crate::Starknet,
     subscription_sink: &'a jsonrpsee::core::server::SubscriptionSink,
-    transaction_hash: mp_convert::Felt,
+    tx_hash: mp_convert::Felt,
 }
 struct StateTransitionReceived<'a> {
     common: StateTransitionCommon<'a>,
@@ -223,7 +240,7 @@ struct StateTransitionReceived<'a> {
 }
 struct StateTransitionAcceptedOnL2<'a> {
     common: StateTransitionCommon<'a>,
-    channel_closed: mc_db::ClosedBlocksReceiver,
+    channel_pending_tx: mc_db::PendingTxsReceiver,
 }
 struct StateTransitionAcceptedOnL1<'a> {
     common: StateTransitionCommon<'a>,
@@ -243,9 +260,9 @@ impl StateTransitionCommon<'_> {
         &self,
         status: mp_rpc::v0_7_1::TxnStatus,
     ) -> Result<(), crate::errors::StarknetWsApiError> {
-        let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.transaction_hash, status };
+        let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.tx_hash, status };
         let msg = jsonrpsee::SubscriptionMessage::from_json(&txn_status).or_else_internal_server_error(|| {
-            format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.transaction_hash)
+            format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
         })?;
 
         self.subscription_sink
@@ -267,21 +284,21 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
         let Self { common, mut channel_mempool, .. } = self;
 
         let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
-        let tx_hash = &common.transaction_hash;
+        let tx_hash = &common.tx_hash;
 
         loop {
             // **FOOTGUN!** 💥
             //
-            // We delay the closed block subscription as much as possible so that `WaitAcceptedOnL2`
-            // will only have to check at most the latest few blocks before the transactions was
-            // received. If we subscribed to this channel at the start of the function, it would be
-            // receiving ALL blocks from then until the transaction was received and
-            // `WaitAcceptedOnL2` would have to check them all!
-            let channel_closed = common.starknet.backend.subscribe_closed_blocks();
+            // We delay the pending tx subscription as much as possible so that `WaitAcceptedOnL2`
+            // will only have to check at most the latest few transactions. If we subscribed to this
+            // channel at the start of the function, it would be receiving ALL txs from then
+            // until the transaction was included into the pending block and `WaitAcceptedOnL2`
+            // would have to check them all!
+            let channel_pending_tx = common.starknet.backend.subscribe_pending_txs();
             match channel_mempool.recv().await {
                 Ok(hash) => {
                     if &hash == tx_hash {
-                        let transition = StateTransitionAcceptedOnL2 { common, channel_closed };
+                        let transition = StateTransitionAcceptedOnL2 { common, channel_pending_tx };
                         let transition = Self::TransitionTo::WaitAcceptedOnL2(transition);
                         break Ok(transition);
                     }
@@ -291,7 +308,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
                     let block_info = common
                         .starknet
                         .backend
-                        .find_tx_hash_block_info(&common.transaction_hash)
+                        .find_tx_hash_block_info(&common.tx_hash)
                         .or_else_internal_server_error(|| {
                             format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
                         })?;
@@ -313,38 +330,55 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
     type TransitionTo = StateTransitionAcceptedOnL1<'a>;
 
     async fn transition(self) -> Result<Self::TransitionTo, crate::errors::StarknetWsApiError> {
-        let Self { common, mut channel_closed } = self;
+        let Self { common, mut channel_pending_tx } = self;
 
         let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
-        let tx_hash = &common.transaction_hash;
+        let tx_hash = &common.tx_hash;
 
-        let block_number = loop {
-            match channel_closed.recv().await {
-                Ok(block_info) => {
-                    // There is no point in moving this to its own dedicated channel just to send
-                    // confirmed transactions since we are never updating blocks after they have
-                    // been confirmed. The same cannot be said about pending transactions, since we
-                    // will update the pending block multiple times during block prod, and so
-                    // iterating over all transactions on a pending block update leads to a lot of
-                    // duplicate comparisons.
-                    if block_info.tx_hashes.iter().any(|hash| hash == tx_hash) {
-                        break block_info.header.block_number;
+        // Step 1: we wait for the tx to be ACCEPTED in the pending block
+        loop {
+            match channel_pending_tx.recv().await {
+                Ok(tx) => {
+                    if tx.receipt.transaction_hash() == common.tx_hash {
+                        break;
                     }
                 }
                 // This happens if the channel lags behind block prod
-                Err(_) => {
-                    let block_info = common
+                Err(_) => break,
+            }
+        }
+
+        // We don't care if this skips an update, we only use this to check against the db on every
+        // pending block tick
+        let mut channel_pending_block = common.starknet.backend.subscribe_pending_block();
+
+        // Step 2: we wait for the tx to be INCLUDED into the pending block. This is necessary since
+        // the pending tx channel is actually a bit in advance compared to block production and will
+        // broadcast txs in their batch phase before they are included in the pending block.
+        let block_number = loop {
+            let block_info =
+                common.starknet.backend.find_tx_hash_block_info(&common.tx_hash).or_else_internal_server_error(
+                    || format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}"),
+                )?;
+            match block_info {
+                Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
+                    break common
                         .starknet
                         .backend
-                        .find_tx_hash_block_info(&common.transaction_hash)
+                        .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
                         .or_else_internal_server_error(|| {
-                            format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
-                        })?;
-
-                    if let Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) = block_info {
-                        break block_info.header.block_number;
-                    }
+                            format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
+                        })?
+                        .map(|n| n + 1)
+                        .unwrap_or(0);
                 }
+                Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
+                    break block_info.header.block_number;
+                }
+                None => channel_pending_block
+                    .changed()
+                    .await
+                    .or_internal_server_error("SubscribeTransactionStatus failed to wait for watch channel update")?,
             }
         };
 
@@ -414,6 +448,27 @@ mod test {
             max_fee: Default::default(),
             signature: Default::default(),
         })
+    }
+
+    #[rstest::fixture]
+    fn tx_with_receipt(tx: mp_rpc::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
+        mp_block::TransactionWithReceipt {
+            transaction: mp_transactions::Transaction::Invoke(tx.into()),
+            receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
+                transaction_hash: TX_HASH,
+                ..Default::default()
+            }),
+        }
+    }
+
+    #[rstest::fixture]
+    fn pending(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PendingFullBlock {
+        mp_block::PendingFullBlock {
+            header: Default::default(),
+            state_diff: Default::default(),
+            transactions: vec![tx_with_receipt],
+            events: Default::default(),
+        }
     }
 
     #[rstest::fixture]
@@ -523,7 +578,7 @@ mod test {
     async fn subscribe_transaction_status_accepted_on_l2_before(
         _logs: (),
         starknet: Starknet,
-        block: mp_block::MadaraMaybePendingBlock,
+        pending: mp_block::PendingFullBlock,
     ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
 
@@ -539,9 +594,7 @@ mod test {
 
         tracing::debug!("Started jsonrpsee client");
 
-        let state_diff = Default::default();
-        let converted_classes = Default::default();
-        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
+        backend.store_pending_block(pending).expect("Failed to store pending block");
         let mut sub = client.subscribe_transaction_status(TX_HASH).await.expect("Failed subscription");
 
         assert_matches::assert_matches!(
@@ -562,7 +615,8 @@ mod test {
         _logs: (),
         starknet: Starknet,
         tx: mp_rpc::BroadcastedInvokeTxn,
-        block: mp_block::MadaraMaybePendingBlock,
+        tx_with_receipt: mp_block::TransactionWithReceipt,
+        pending: mp_block::PendingFullBlock,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
         let backend = std::sync::Arc::clone(&starknet.backend);
@@ -591,9 +645,8 @@ mod test {
             }
         );
 
-        let state_diff = Default::default();
-        let converted_classes = Default::default();
-        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
+        backend.on_new_pending_tx(tx_with_receipt);
+        backend.store_pending_block(pending).expect("Failed to store pending block");
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(status)) => {
@@ -700,6 +753,8 @@ mod test {
         _logs: (),
         starknet: Starknet,
         tx: mp_rpc::BroadcastedInvokeTxn,
+        tx_with_receipt: mp_block::TransactionWithReceipt,
+        pending: mp_block::PendingFullBlock,
         block: mp_block::MadaraMaybePendingBlock,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
@@ -731,9 +786,8 @@ mod test {
 
         tracing::debug!("Received");
 
-        let state_diff = Default::default();
-        let converted_classes = Default::default();
-        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
+        backend.on_new_pending_tx(tx_with_receipt);
+        backend.store_pending_block(pending).expect("Failed to store pending block");
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(status)) => {
@@ -746,6 +800,9 @@ mod test {
 
         tracing::debug!("AcceptedOnL2");
 
+        let state_diff = Default::default();
+        let converted_classes = Default::default();
+        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
         backend.write_last_confirmed_block(0).expect("Failed to update last confirmed block");
 
         assert_matches::assert_matches!(
