@@ -1,6 +1,4 @@
 use crate::core::config::Config;
-use crate::types::constant::PROOF_PART2_FILE_NAME;
-use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -31,15 +29,11 @@ impl JobTrigger for ProofRegistrationJobTrigger {
         );
 
         for job in successful_proving_jobs {
-            let mut metadata = job.metadata;
-            let mut metadata_specific: ProvingMetadata = metadata.specific.try_into()?;
-            metadata_specific.download_proof_part2 = Some(format!("{}/{}", job.internal_id, PROOF_PART2_FILE_NAME));
-            metadata.specific = JobSpecificMetadata::Proving(metadata_specific);
             tracing::debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");
             match JobHandlerService::create_job(
                 JobType::ProofRegistration,
                 job.internal_id.to_string(),
-                metadata,
+                job.metadata,
                 config.clone(),
             )
             .await
