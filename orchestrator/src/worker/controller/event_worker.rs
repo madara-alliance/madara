@@ -49,16 +49,24 @@ impl EventWorker {
         Ok(self.config.clone().queue().get_consumer(self.queue_type.clone()).await.expect("error"))
     }
 
-    /// get_message - Get the next message from the queue
-    /// This function returns the next message from the queue
-    /// It returns a Result<Option<Delivery>, EventSystemError> indicating whether the operation was successful or not
-    pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
+    /// get_message - Get the next message from the queue with proper async waiting
+    /// This function blocks until a message is available or an error occurs
+    /// It returns a Result<Delivery, EventSystemError> - never returns None
+    pub async fn get_message(&self) -> EventSystemResult<Delivery> {
         let mut consumer = self.consumer().await?;
-        debug!("Waiting for message from queue {:?}", self.queue_type);
-        match consumer.receive().await {
-            Ok(delivery) => Ok(Some(delivery)),
-            Err(QueueError::NoData) => Ok(None),
-            Err(e) => Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?,
+        loop {
+            debug!("Long polling for message from queue {:?}", self.queue_type);
+
+            match consumer.receive().await {
+                Ok(delivery) => return Ok(delivery),
+                Err(QueueError::NoData) => {
+                    // For truly async behavior, we should use tokio::time::sleep with a small delay
+                    // This gives other tasks a chance to run while we wait for messages
+                    tokio::time::sleep(Duration::from_millis(100)).await;
+                    continue;
+                }
+                Err(e) => return Err(ConsumptionError::FailedToConsumeFromQueue { error_msg: e.to_string() })?,
+            }
         }
     }
 
@@ -308,31 +316,27 @@ impl EventWorker {
                 }
             };
 
+            // Get message - this now blocks until a message is available
             match self.get_message().await {
-                Ok(Some(message)) => match self.parse_message(&message) {
-                    Ok(parsed_message) => {
-                        let worker = self.clone();
-                        tasks.spawn(async move {
-                            let _permit = permit; // Permit held until task completes
-                            worker.process_message(message, parsed_message).await
-                        });
+                Ok(message) => {
+                    match self.parse_message(&message) {
+                        Ok(parsed_message) => {
+                            let worker = self.clone();
+                            tasks.spawn(async move {
+                                let _permit = permit; // Permit held until task completes
+                                worker.process_message(message, parsed_message).await
+                            });
+                        }
+                        Err(e) => {
+                            error!("Failed to parse message: {:?}", e);
+                            // Permit will be automatically dropped, releasing capacity
+                        }
                     }
-                    Err(e) => {
-                        error!("Failed to parse message: {:?}", e);
-                        // Release permit since we're not using it
-                        drop(permit);
-                    }
-                },
-                Ok(None) => {
-                    // No messages available, release permit and wait
-                    drop(permit);
-                    sleep(Duration::from_secs(1)).await;
                 }
                 Err(e) => {
                     error!("Error receiving message: {:?}", e);
-                    // Release permit since we're not using it
-                    drop(permit);
-                    sleep(Duration::from_secs(5)).await;
+                    // Brief delay on errors to prevent tight error loops
+                    sleep(Duration::from_secs(1)).await;
                 }
             }
         }
