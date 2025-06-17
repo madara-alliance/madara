@@ -56,12 +56,9 @@ impl EventWorker {
         let mut consumer = self.consumer().await?;
         loop {
             debug!("Long polling for message from queue {:?}", self.queue_type);
-
             match consumer.receive().await {
                 Ok(delivery) => return Ok(delivery),
                 Err(QueueError::NoData) => {
-                    // For truly async behavior, we should use tokio::time::sleep with a small delay
-                    // This gives other tasks a chance to run while we wait for messages
                     tokio::time::sleep(Duration::from_millis(100)).await;
                     continue;
                 }
