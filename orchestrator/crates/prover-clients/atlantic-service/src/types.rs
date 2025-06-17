@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticBucket {
     pub id: String,
@@ -16,13 +16,13 @@ pub struct AtlanticBucket {
 }
 
 /// This is the response struct for `create` and `close` bucket requests
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticBucketResponse {
     pub atlantic_bucket: AtlanticBucket,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AtlanticQueryBucket {
     pub id: String,
@@ -53,7 +53,7 @@ struct AtlanticQueryBucket {
     pub bucket_job_index: i64,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticGetBucketResponse {
     pub bucket: AtlanticBucket,
@@ -125,7 +125,7 @@ pub struct AtlanticClient {
     pub image: Option<String>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticBucketStatus {
     Open,
@@ -134,7 +134,7 @@ pub enum AtlanticBucketStatus {
     Failed,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticBucketType {
     Snos,
