@@ -20,6 +20,7 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use orchestrator_utils::layer::Layer;
 use prove_block::prove_block;
 use starknet_os::io::output::StarknetOsOutput;
 use std::sync::Arc;
@@ -94,7 +95,7 @@ impl JobHandlerTrait for SnosJobHandler {
         // And in case of KZG flag == 1 :
         //      we calculate the fact info
         let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
-            debug!(job_id = %job.internal_id, "Using L2 as settlement layer");
+            debug!(job_id = %job.internal_id, "Using calldata for settlement layer");
             // Get the program output from CairoPie
             let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
                 error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
@@ -106,7 +107,7 @@ impl JobHandlerTrait for SnosJobHandler {
             })?;
             (fact_hash, program_output)
         } else if snos_output.use_kzg_da == Felt252::ONE {
-            debug!(job_id = %job.internal_id, "Using L1 as settlement layer");
+            debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
             // Get the program output from CairoPie
             let fact_info = get_fact_info(&cairo_pie, None)?;
             (fact_info.fact, fact_info.program_output)
@@ -124,7 +125,7 @@ impl JobHandlerTrait for SnosJobHandler {
         }
 
         debug!(job_id = %job.internal_id, "Storing SNOS outputs");
-        if snos_output.use_kzg_da == Felt252::ZERO {
+        if config.layer() == &Layer::L3 {
             // Store the on-chain data path
             self.store_l2(
                 internal_id.clone(),
@@ -135,7 +136,7 @@ impl JobHandlerTrait for SnosJobHandler {
                 program_output,
             )
             .await?;
-        } else if snos_output.use_kzg_da == Felt252::ONE {
+        } else if config.layer() == &Layer::L2 {
             // Store the Cairo Pie path
             self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
                 .await?;
