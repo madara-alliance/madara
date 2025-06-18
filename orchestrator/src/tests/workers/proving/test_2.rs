@@ -2,7 +2,7 @@ use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
-use crate::types::jobs::metadata::{JobSpecificMetadata, SnosMetadata, ProvingMetadata, ProvingInputType};
+use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
@@ -175,16 +175,14 @@ async fn test_proving_worker(
     for &block_num in &expected_proving_jobs {
         let uuid = Uuid::new_v4();
         let block_num_str = block_num.to_string();
-        
+
         // Find the corresponding SNOS job to get its metadata
         let snos_job = completed_snos_jobs.iter().find(|(b, _, _, _)| *b == block_num).unwrap();
         let (_, snos_fact, cairo_pie_path, n_steps) = snos_job;
-        
+
         // Only expect job creation for jobs that should actually be created
         // (i.e., have snos_fact and are not beyond failed block)
-        if snos_fact.is_some() && 
-           (earliest_failed_block.is_none() || block_num < earliest_failed_block.unwrap()) {
-            
+        if snos_fact.is_some() && (earliest_failed_block.is_none() || block_num < earliest_failed_block.unwrap()) {
             let mut proving_job_item = get_job_item_mock_by_id(block_num_str.clone(), uuid);
             proving_job_item.metadata.specific = JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: block_num,
@@ -194,7 +192,7 @@ async fn test_proving_worker(
                 n_steps: *n_steps,
             });
             proving_job_item.status = JobStatus::Created;
-            
+
             let job_item_clone = proving_job_item.clone();
 
             job_handler
@@ -205,8 +203,8 @@ async fn test_proving_worker(
             let block_num_str_for_db = block_num_str.clone();
             db.expect_create_job()
                 .withf(move |item| {
-                    item.internal_id == block_num_str_for_db &&
-                    matches!(item.metadata.specific, JobSpecificMetadata::Proving(_))
+                    item.internal_id == block_num_str_for_db
+                        && matches!(item.metadata.specific, JobSpecificMetadata::Proving(_))
                 })
                 .returning(move |_| Ok(proving_job_item.clone()));
         }
@@ -285,7 +283,7 @@ async fn test_proving_worker_error_cases(
         .enumerate()
         .map(|(idx, (block_num, snos_fact, cairo_pie_path, n_steps))| {
             let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
-            
+
             if corrupt_metadata && idx == 0 {
                 // Corrupt the first job's metadata for testing error handling
                 job_item.metadata.specific = JobSpecificMetadata::StateUpdate(Default::default());
@@ -312,7 +310,7 @@ async fn test_proving_worker_error_cases(
     match scenario_name {
         "invalid_metadata" => {
             // No job creation should be attempted due to metadata corruption
-        },
+        }
         "database_error_resilience" => {
             // First job succeeds, second job fails during creation
             let first_job = &completed_snos_jobs[0];
@@ -325,26 +323,26 @@ async fn test_proving_worker_error_cases(
                 ensure_on_chain_registration: first_job.1.clone(),
                 n_steps: first_job.3,
             });
-            
+
             let job_item_clone = proving_job_item.clone();
-            
+
             // First job creation succeeds
             job_handler
                 .expect_create_job()
                 .with(eq(first_job.0.to_string()), mockall::predicate::always())
                 .returning(move |_, _| Ok(job_item_clone.clone()));
-                
+
             db.expect_create_job()
                 .withf(move |item| item.internal_id == first_job.0.to_string())
                 .returning(move |_| Ok(proving_job_item.clone()));
-            
+
             // Second job creation fails
             let second_job = &completed_snos_jobs[1];
             job_handler
                 .expect_create_job()
                 .with(eq(second_job.0.to_string()), mockall::predicate::always())
                 .returning(|_, _| Err(color_eyre::eyre::eyre!("Simulated database error")));
-        },
+        }
         _ => unreachable!("Unknown scenario"),
     }
 
@@ -370,7 +368,7 @@ async fn test_proving_worker_error_cases(
 
     // Run the worker - should handle errors gracefully
     let result = crate::worker::event_handler::triggers::proving::ProvingJobTrigger.run_worker(services.config).await;
-    
+
     // Worker should complete successfully even when individual jobs fail
     assert!(result.is_ok(), "Worker should handle errors gracefully");
 
