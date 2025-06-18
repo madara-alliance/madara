@@ -107,7 +107,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_token_add_implementation_new_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+
     sleep(Duration::from_secs(11)).await;
+
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : add implementation : eth proxy ✅, Txn hash : {:?}",
         eth_token_add_implementation_new_txn.transaction_hash
@@ -126,7 +128,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_token_upgrade_to_new_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+
     sleep(Duration::from_secs(11)).await;
+
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : upgrade to : eth proxy ✅, Txn hash : {:?}",
         eth_token_upgrade_to_new_txn.transaction_hash
@@ -179,7 +183,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, new_eth_token_add_implementation_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+
     sleep(Duration::from_secs(11)).await;
+
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : add_new_implementation : eth proxy ✅, Txn hash : {:?}",
         new_eth_token_add_implementation_txn.transaction_hash
@@ -198,7 +204,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, new_eth_token_replace_to_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+
     sleep(Duration::from_secs(11)).await;
+
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : replace_to : eth proxy ✅, Txn hash : {:?}",
         new_eth_token_replace_to_txn.transaction_hash

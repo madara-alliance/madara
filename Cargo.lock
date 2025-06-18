@@ -6379,7 +6379,7 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "dirs",
  "ethers",
@@ -13747,7 +13747,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13761,7 +13761,7 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13902,7 +13902,7 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethers",
@@ -14039,7 +14039,7 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -14054,7 +14054,7 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethers",
@@ -14228,7 +14228,7 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -14277,7 +14277,7 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethers",
@@ -15743,7 +15743,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.6#db713eb19775498ceac64270a8814ca708c3b0d7"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "ethers",
