@@ -5000,7 +5000,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
+source = "git+https://github.com/karnotxyz/snos?branch=fix%2Fcairovm-version#f52b938b11ae5d8895b42bfaae3f0d660b24ecfb"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5010,7 +5010,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "git+https://github.com/Moonsong-Labs/cairo-vm?branch=madara-monorepo#1fa902bafae507424b5ea83a625830ffe6b0eca5"
+source = "git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -11861,7 +11861,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
+source = "git+https://github.com/karnotxyz/snos?branch=fix%2Fcairovm-version#f52b938b11ae5d8895b42bfaae3f0d660b24ecfb"
 dependencies = [
  "anyhow",
  "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
@@ -12417,7 +12417,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
+source = "git+https://github.com/karnotxyz/snos?branch=fix%2Fcairovm-version#f52b938b11ae5d8895b42bfaae3f0d660b24ecfb"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -12432,7 +12432,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
+source = "git+https://github.com/karnotxyz/snos?branch=fix%2Fcairovm-version#f52b938b11ae5d8895b42bfaae3f0d660b24ecfb"
 dependencies = [
  "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "cairo-lang-starknet-classes 2.8.4",
@@ -14157,7 +14157,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
+source = "git+https://github.com/karnotxyz/snos?branch=fix%2Fcairovm-version#f52b938b11ae5d8895b42bfaae3f0d660b24ecfb"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -14206,7 +14206,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=main#2dc07a4298e2954c774f4d419a8f9db007da494c"
+source = "git+https://github.com/karnotxyz/snos?branch=fix%2Fcairovm-version#f52b938b11ae5d8895b42bfaae3f0d660b24ecfb"
 dependencies = [
  "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
  "cairo-lang-starknet-classes 2.8.4",
