@@ -11,6 +11,8 @@ use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDA
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
+use color_eyre::eyre::{eyre, Context};
+use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
@@ -18,9 +20,7 @@ use starknet_core::types::Felt;
 use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
-use color_eyre::eyre::Context;
 use tokio::try_join;
-use orchestrator_prover_client_interface::Task;
 
 pub struct BatchingTrigger;
 
@@ -80,10 +80,7 @@ impl BatchingTrigger {
             Some(batch) => {
                 // The latest batch is full. Start a new batch
                 if batch.is_batch_ready {
-                    (
-                        self.start_batch(&config, batch.index + 1, batch.end_block + 1).await?,
-                        None,
-                    )
+                    (self.start_batch(&config, batch.index + 1, batch.end_block + 1).await?, None)
                 } else {
                     let state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                     let state_update: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
@@ -193,17 +190,17 @@ impl BatchingTrigger {
             .prover_client()
             .submit_task(Task::CreateBucket, None, None, None)
             .await
-            .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
-                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client");
-                JobError::Other(OtherError(e)) // TODO: Add a new error type to be used for prover client error
+                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
             })?;
+        tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
         Ok(Batch::create(
             index,
             start_block,
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
-            Some(bucket_id)
+            Some(bucket_id),
         ))
     }
 
@@ -268,11 +265,8 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        let compressed_vec_felts = if madara_version >= StarknetVersion::V0_13_3 {
-            stateless_compress(&vec_felts)
-        } else {
-            vec_felts
-        };
+        let compressed_vec_felts =
+            if madara_version >= StarknetVersion::V0_13_3 { stateless_compress(&vec_felts) } else { vec_felts };
         Ok(compressed_vec_felts)
     }
 

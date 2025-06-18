@@ -2,6 +2,7 @@ use std::path::Path;
 
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
+use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
 use url::Url;
 
@@ -80,12 +81,18 @@ impl AtlanticClient {
         }
     }
 
-    pub async fn create_bucket(&self) -> Result<AtlanticBucketResponse, AtlanticError> {
+    pub async fn create_bucket(
+        &self,
+        atlantic_api_key: impl AsRef<str>,
+    ) -> Result<AtlanticBucketResponse, AtlanticError> {
         let response = self
             .client
             .request()
             .method(Method::POST)
+            .header(ACCEPT, HeaderValue::from_static("application/json"))
+            .header(CONTENT_TYPE, HeaderValue::from_static("application/json"))
             .path("buckets")
+            .query_param("apiKey", atlantic_api_key.as_ref())
             .body(AtlanticCreateBucketRequest {
                 external_id: None,
                 node_width: None,
@@ -102,14 +109,20 @@ impl AtlanticClient {
         }
     }
 
-    pub async fn close_bucket(&self, bucket_id: &str) -> Result<AtlanticBucketResponse, AtlanticError> {
+    pub async fn close_bucket(
+        &self,
+        bucket_id: &str,
+        atlantic_api_key: impl AsRef<str>,
+    ) -> Result<AtlanticBucketResponse, AtlanticError> {
         let response = self
             .client
             .request()
             .method(Method::POST)
+            .header(ACCEPT, HeaderValue::from_static("application/json"))
             .path("buckets")
             .path("close")
             .query_param("bucketId", bucket_id)
+            .query_param("apiKey", atlantic_api_key.as_ref())
             .send()
             .await
             .map_err(AtlanticError::AddJobFailure)?;

@@ -4,11 +4,11 @@ use serde::{Deserialize, Serialize};
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticBucket {
     pub id: String,
-    pub external_id: String,
+    pub external_id: Option<String>,
     pub status: AtlanticBucketStatus,
     pub bucket_type: AtlanticBucketType,
-    pub node_width: i64,
-    pub leaves: i64,
+    pub node_width: Option<i64>,
+    pub leaves: Option<i64>,
     pub chain: AtlanticChain,
     pub project_id: String,
     pub created_by_client: String,

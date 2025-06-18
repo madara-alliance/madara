@@ -82,14 +82,14 @@ impl ProverClient for AtlanticProverService {
                 Ok(atlantic_job_response.atlantic_query_id)
             }
             Task::CreateBucket => {
-                let response = self.atlantic_client.create_bucket().await?;
+                let response = self.atlantic_client.create_bucket(self.atlantic_api_key.clone()).await?;
                 // sleep for 10 seconds to make sure the bucket is created
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
             Task::CloseBucket(bucket_id) => {
-                let response = self.atlantic_client.close_bucket(&bucket_id).await?;
+                let response = self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
                 // sleep for 10 seconds to make sure that the bucket is closed
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!(bucker_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
