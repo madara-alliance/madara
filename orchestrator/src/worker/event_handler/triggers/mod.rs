@@ -6,7 +6,6 @@ pub(crate) mod snos;
 pub(crate) mod update_state;
 
 use crate::core::config::Config;
-use crate::types::jobs::types::JobStatus;
 use async_trait::async_trait;
 use std::sync::Arc;
 

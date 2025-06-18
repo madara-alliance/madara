@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Context};
 use opentelemetry::KeyValue;
 
 use crate::core::config::Config;
@@ -106,27 +106,39 @@ impl UpdateStateJobTrigger {
     }
 
     /// Extracts SNOS metadata from a job with error handling
-    fn extract_snos_metadata(&self, snos_job: &crate::types::jobs::Job) -> color_eyre::Result<SnosMetadata> {
-        snos_job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(
-                job_id = %snos_job.internal_id,
-                error = %e,
-                "Invalid metadata type for SNOS job"
-            );
-            e
-        })
+    fn extract_snos_metadata(&self, snos_job: &JobItem) -> color_eyre::Result<SnosMetadata> {
+        snos_job
+            .metadata
+            .specific
+            .clone()
+            .try_into()
+            .map_err(|e| {
+                tracing::error!(
+                    job_id = %snos_job.internal_id,
+                    error = %e,
+                    "Invalid metadata type for SNOS job"
+                );
+                e
+            })
+            .context("Unable to extract SNOS metadata")
     }
 
     /// Extracts DA metadata from a job with error handling
-    fn extract_da_metadata(&self, da_job: &crate::types::jobs::Job) -> color_eyre::Result<DaMetadata> {
-        da_job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(
-                job_id = %da_job.internal_id,
-                error = %e,
-                "Invalid metadata type for DA job"
-            );
-            e
-        })
+    fn extract_da_metadata(&self, da_job: &JobItem) -> color_eyre::Result<DaMetadata> {
+        da_job
+            .metadata
+            .specific
+            .clone()
+            .try_into()
+            .map_err(|e| {
+                tracing::error!(
+                    job_id = %da_job.internal_id,
+                    error = %e,
+                    "Invalid metadata type for DA job"
+                );
+                e
+            })
+            .context("Unable to extract SNOS metadata")
     }
 
     /// Creates the actual state transition job
@@ -263,18 +275,20 @@ impl ProcessingContext {
                 last_block.to_string(),
             )
             .await
+            .context("Unable to get DA jobs after specified block")
     }
 
     /// Gets all DA jobs that don't have state transition successors
-    async fn get_all_unprocessed_da_jobs(&self) -> color_eyre::Result<Vec<crate::types::jobs::Job>> {
+    async fn get_all_unprocessed_da_jobs(&self) -> color_eyre::Result<Vec<JobItem>> {
         self.config
             .database()
             .get_jobs_without_successor(JobType::DataSubmission, JobStatus::Completed, JobType::StateTransition)
             .await
+            .context("Unable to get all Unprocessed DA jobs")
     }
 
     /// Extracts block numbers from DA jobs
-    fn extract_block_numbers(&self, da_jobs: &[crate::types::jobs::Job]) -> color_eyre::Result<Vec<u64>> {
+    fn extract_block_numbers(&self, da_jobs: &[JobItem]) -> color_eyre::Result<Vec<u64>> {
         da_jobs
             .iter()
             .map(|job| {
@@ -328,7 +342,7 @@ impl ProcessingContext {
     }
 
     /// Gets a SNOS job for a specific block number
-    async fn get_snos_job(&self, block_number: u64) -> color_eyre::Result<crate::types::jobs::Job> {
+    async fn get_snos_job(&self, block_number: u64) -> color_eyre::Result<JobItem> {
         self.config
             .database()
             .get_job_by_internal_id_and_type(&block_number.to_string(), &JobType::SnosRun)
@@ -337,7 +351,7 @@ impl ProcessingContext {
     }
 
     /// Gets a DA job for a specific block number
-    async fn get_da_job(&self, block_number: u64) -> color_eyre::Result<crate::types::jobs::Job> {
+    async fn get_da_job(&self, block_number: u64) -> color_eyre::Result<JobItem> {
         self.config
             .database()
             .get_job_by_internal_id_and_type(&block_number.to_string(), &JobType::DataSubmission)

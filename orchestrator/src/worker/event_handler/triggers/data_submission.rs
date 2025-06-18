@@ -1,11 +1,15 @@
+use crate::core::client::database::DatabaseError;
 use crate::core::config::Config;
+use crate::error::job::JobError;
 use crate::types::constant::BLOB_DATA_FILE_NAME;
+use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::{JobTrigger, ProcessingResult};
 use async_trait::async_trait;
+use color_eyre::eyre::Context;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
 
@@ -52,11 +56,7 @@ impl JobTrigger for DataSubmissionJobTrigger {
 
 impl DataSubmissionJobTrigger {
     /// Processes a single proving job to create its corresponding data submission job
-    async fn process_proving_job(
-        &self,
-        proving_job: &crate::types::jobs::Job,
-        context: &ProcessingContext,
-    ) -> ProcessingResult {
+    async fn process_proving_job(&self, proving_job: &JobItem, context: &ProcessingContext) -> ProcessingResult {
         // Extract and validate proving metadata
         let proving_metadata = match self.extract_proving_metadata(proving_job) {
             Ok(metadata) => metadata,
@@ -89,24 +89,30 @@ impl DataSubmissionJobTrigger {
     }
 
     /// Extracts and validates proving metadata from the job
-    fn extract_proving_metadata(&self, proving_job: &crate::types::jobs::Job) -> color_eyre::Result<ProvingMetadata> {
-        proving_job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(
-                job_id = %proving_job.internal_id,
-                error = %e,
-                "Invalid metadata type for proving job"
-            );
-            e
-        })
+    fn extract_proving_metadata(&self, proving_job: &JobItem) -> color_eyre::Result<ProvingMetadata> {
+        proving_job
+            .metadata
+            .specific
+            .clone()
+            .try_into()
+            .map_err(|e| {
+                tracing::error!(
+                    job_id = %proving_job.internal_id,
+                    error = %e,
+                    "Invalid metadata type for proving job"
+                );
+                e
+            })
+            .context("Unalbe to Extract Proving Metadata")
     }
 
     /// Creates a data submission job with the appropriate metadata
     async fn create_data_submission_job(
         &self,
-        proving_job: &crate::types::jobs::Job,
+        proving_job: &JobItem,
         proving_metadata: &ProvingMetadata,
         config: Arc<Config>,
-    ) -> color_eyre::Result<()> {
+    ) -> Result<(), JobError> {
         let da_metadata = self.build_da_metadata(proving_metadata);
 
         tracing::debug!(
@@ -167,7 +173,7 @@ impl ProcessingContext {
     }
 
     /// Fetches all proving jobs eligible for data submission job creation
-    async fn get_eligible_proving_jobs(&self) -> color_eyre::Result<Vec<crate::types::jobs::Job>> {
+    async fn get_eligible_proving_jobs(&self) -> Result<Vec<JobItem>, DatabaseError> {
         self.config
             .database()
             .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::DataSubmission)

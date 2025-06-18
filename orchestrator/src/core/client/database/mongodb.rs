@@ -834,10 +834,7 @@ impl DatabaseClient for MongoDbClient {
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
-        match result {
-            Some(block_result) => Ok(Some(block_result.block_number)),
-            None => Err(DatabaseError::Custom("No failed jobs found".to_string())),
-        }
+        Ok(result.map(|block_result| block_result.block_number))
     }
 
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {

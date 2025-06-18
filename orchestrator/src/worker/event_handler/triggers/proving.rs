@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use color_eyre::eyre::Context;
 use opentelemetry::KeyValue;
 
 use crate::core::config::Config;
@@ -53,11 +54,7 @@ impl JobTrigger for ProvingJobTrigger {
 
 impl ProvingJobTrigger {
     /// Processes a single SNOS job to create its corresponding proving job
-    async fn process_snos_job(
-        &self,
-        snos_job: &crate::types::jobs::Job,
-        context: &ProcessingContext,
-    ) -> ProcessingResult {
+    async fn process_snos_job(&self, snos_job: &JobItem, context: &ProcessingContext) -> ProcessingResult {
         // Extract and validate SNOS metadata
         let snos_metadata = match self.extract_snos_metadata(snos_job) {
             Ok(metadata) => metadata,
@@ -96,15 +93,21 @@ impl ProvingJobTrigger {
     }
 
     /// Extracts and validates SNOS metadata from the job
-    fn extract_snos_metadata(&self, snos_job: &crate::types::jobs::Job) -> color_eyre::Result<SnosMetadata> {
-        snos_job.metadata.specific.clone().try_into().map_err(|e| {
-            tracing::error!(
-                job_id = %snos_job.internal_id,
-                error = %e,
-                "Invalid metadata type for SNOS job"
-            );
-            e
-        })
+    fn extract_snos_metadata(&self, snos_job: &JobItem) -> color_eyre::Result<SnosMetadata> {
+        snos_job
+            .metadata
+            .specific
+            .clone()
+            .try_into()
+            .map_err(|e| {
+                tracing::error!(
+                    job_id = %snos_job.internal_id,
+                    error = %e,
+                    "Invalid metadata type for SNOS job"
+                );
+                e
+            })
+            .context("Extracting Snos Metadata Failed")
     }
 
     /// Extracts SNOS fact from metadata with proper error handling
@@ -118,7 +121,7 @@ impl ProvingJobTrigger {
     /// Creates a proving job with the appropriate metadata
     async fn create_proving_job(
         &self,
-        snos_job: &crate::types::jobs::Job,
+        snos_job: &JobItem,
         snos_metadata: &SnosMetadata,
         snos_fact: String,
         config: Arc<Config>,
@@ -148,6 +151,7 @@ impl ProvingJobTrigger {
 
                 e
             })
+            .context("Create Proving Job Failed.")
     }
 
     /// Builds proving job metadata from SNOS metadata
@@ -185,6 +189,7 @@ impl ProcessingContext {
             .database()
             .get_jobs_without_successor(JobType::SnosRun, JobStatus::Completed, JobType::ProofCreation)
             .await
+            .context("Failed to get Eligible SNOS Jobs")
     }
 
     /// Determines if a block number should be skipped due to failed block constraints
