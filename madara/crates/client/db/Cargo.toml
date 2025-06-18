@@ -76,7 +76,6 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
-starknet_api = { workspace = true, features = ["testing"]}
 tempfile = "3.10"
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
