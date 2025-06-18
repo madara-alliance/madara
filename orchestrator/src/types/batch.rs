@@ -71,7 +71,13 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn create(index: u64, start_block: u64, squashed_state_updates_path: String, blob_path: String) -> Self {
+    pub fn create(
+        index: u64,
+        start_block: u64,
+        squashed_state_updates_path: String,
+        blob_path: String,
+        bucket_id: Option<String>,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             index,
@@ -83,6 +89,7 @@ impl Batch {
             blob_path,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
+            bucket_id,
             ..Self::default()
         }
     }
