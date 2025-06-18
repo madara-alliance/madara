@@ -214,8 +214,11 @@ impl ProcessingContext {
     }
 
     /// Determines which blocks should be processed based on completed DA jobs and previous state transitions
+    /// Determines which blocks should be processed based on completed DA jobs and previous state transitions
     async fn determine_blocks_to_process(&self) -> color_eyre::Result<Option<Vec<u64>>> {
         let latest_job = self.config.database().get_latest_job_by_type(JobType::StateTransition).await?;
+
+        let earliest_failed_block = self.config.database().get_earliest_failed_block_number().await?;
 
         let (completed_da_jobs, last_block_processed) = match latest_job {
             Some(job) => {
@@ -235,6 +238,19 @@ impl ProcessingContext {
         if blocks_to_process.is_empty() {
             tracing::warn!("No DA jobs completed after the last settled block. Returning safely...");
             return Ok(None);
+        }
+
+        // Filter out blocks that are at or after the earliest failed block (if it exists)
+        if let Some(failed_block) = earliest_failed_block {
+            blocks_to_process.retain(|&block| block < failed_block);
+
+            if blocks_to_process.is_empty() {
+                tracing::warn!(
+                    "All blocks to process are at or after earliest failed block {}. Returning safely...",
+                    failed_block
+                );
+                return Ok(None);
+            }
         }
 
         blocks_to_process.sort();

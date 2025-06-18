@@ -25,6 +25,7 @@ use uuid::Uuid;
 // Scenario 1: Block 0 is Completed | Block 1 is PendingRetry | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 2,3 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     Some(0), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -36,6 +37,7 @@ use uuid::Uuid;
 // Scenario 2: Block 0 is Completed | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 1,2,3 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     Some(0), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -47,6 +49,7 @@ use uuid::Uuid;
 // Scenario 3: No SNOS job for any block exists | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 0,1,2 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     None,   // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -58,6 +61,7 @@ use uuid::Uuid;
 // Scenario 4: Block 0,2 is Completed | Block 1 is Missed | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 1,3,4 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -69,6 +73,7 @@ use uuid::Uuid;
 // Scenario 5: Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Missed | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 1,3 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -80,6 +85,7 @@ use uuid::Uuid;
 // Scenario 6: Block 2 is Completed | Block 0 is PendingRetry | Block 1 is Created | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 3 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
@@ -91,6 +97,7 @@ use uuid::Uuid;
 // Scenario 7: Block 4 is Created | latest_snos_completed & latest_state_transition_completed is 3  | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 3 only
 #[case(
+    None,
     100,    // latest_sequencer_block
     Some(3), // latest_snos_completed
     Some(3),   // latest_state_transition_completed
@@ -102,7 +109,20 @@ use uuid::Uuid;
 // Scenario 8: Block 1 is Created | latest_snos_completed is 2 & latest_state_transition_completed is None | Max_concurrent_create_snos is 3
 // Expected result: create jobs for block 3 only
 #[case(
+    None,
     3,      // latest_sequencer_block
+    Some(2), // latest_snos_completed
+    None,   // latest_state_transition_completed
+    vec![0], // missing_blocks_first_half (no missing blocks to create)
+    vec![3], // missing_blocks_second_half
+    vec![1], // pending_blocks (block 1 Created, consumes 1 slot)
+    vec![0,3] // expected_jobs (only 2 slot left for new block)
+)]
+// Scenario 9: Block 1 is Created | earliest_failed_block is 4 | latest_snos_completed is 2 & latest_state_transition_completed is None | Max_concurrent_create_snos is 3
+// Expected result: create jobs for block 3 only
+#[case(
+    Some(4), // earliest_failed_block
+    5,      // latest_sequencer_block
     Some(2), // latest_snos_completed
     None,   // latest_state_transition_completed
     vec![0], // missing_blocks_first_half (no missing blocks to create)
@@ -112,6 +132,7 @@ use uuid::Uuid;
 )]
 #[tokio::test]
 async fn test_snos_worker(
+    #[case] earliest_failed_block: Option<u64>,
     #[case] latest_sequencer_block: u64,
     #[case] latest_snos_completed: Option<u64>,
     #[case] latest_state_transition_completed: Option<u64>,
@@ -153,6 +174,8 @@ async fn test_snos_worker(
     db.expect_get_latest_job_by_type_and_status()
         .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
         .returning(move |_, _| Ok(latest_snos_job.clone()));
+
+    db.expect_get_earliest_failed_block_number().with().returning(move || Ok(earliest_failed_block.clone()));
 
     // Mock get_job_by_internal_id_and_type to always return None
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
