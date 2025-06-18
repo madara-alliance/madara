@@ -97,15 +97,17 @@ impl SnosJobTrigger {
     /// - Configuration limits (min/max block constraints)
     /// - Latest completed SNOS job (progress tracking)
     /// - Latest completed state update job (dependency requirement)
+    /// - Earliest failed block (processing safety boundary)
     ///
     /// # Processing Logic
     /// - `block_n_min`: Max of (latest state update block, configured minimum)
     ///   - State updates must complete before SNOS processing
     ///   - Respects configured minimum processing boundary
     /// - `block_n_completed`: Latest completed SNOS block (for gap filling)
-    /// - `block_n_max`: Min of (sequencer latest, configured maximum)
+    /// - `block_n_max`: Min of (sequencer latest, configured maximum, failed block - 1)
     ///   - Cannot process blocks that don't exist yet
     ///   - Respects configured maximum processing boundary
+    ///   - Stops before any failed blocks to prevent processing beyond failure points
     ///
     /// # Arguments
     /// * `config` - Application configuration containing database and client access

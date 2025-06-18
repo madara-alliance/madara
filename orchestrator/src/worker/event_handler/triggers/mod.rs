@@ -1,5 +1,5 @@
 pub(crate) mod batching;
-pub(crate) mod data_submission_worker;
+pub(crate) mod data_submission;
 pub(crate) mod proof_registration;
 pub(crate) mod proving;
 pub(crate) mod snos;
@@ -9,6 +9,13 @@ use crate::core::config::Config;
 use crate::types::jobs::types::JobStatus;
 use async_trait::async_trait;
 use std::sync::Arc;
+
+/// Result of processing a single proving job
+enum ProcessingResult {
+    Created,
+    Skipped,
+    Failed,
+}
 
 #[async_trait]
 pub trait JobTrigger: Send + Sync {

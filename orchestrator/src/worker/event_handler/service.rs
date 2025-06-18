@@ -20,7 +20,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
-use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
+use crate::worker::event_handler::triggers::data_submission::DataSubmissionJobTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
 use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
 use crate::worker::event_handler::triggers::snos::SnosJobTrigger;
