@@ -31,7 +31,7 @@ fn test_false_positive_rate() {
 
     // Add elements
     for i in 0..NB_ELEM {
-        filter.add(&i);
+        filter.add(&i.to_be_bytes());
     }
 
     let read_only_filter = filter.finalize();
@@ -55,13 +55,13 @@ fn test_parallel() {
 
     // Test parallel insertion
     elements.par_iter().for_each(|item| {
-        filter.add(item);
+        filter.add(&item.to_be_bytes());
     });
 
     let ro_filter = filter.finalize();
 
     // Test parallel lookup for false negatives
-    let false_negatives: Vec<_> = elements.par_iter().filter(|&&item| !ro_filter.might_contain(&item)).collect();
+    let false_negatives: Vec<_> = elements.par_iter().filter(|&&item| !ro_filter.might_contain(&item.to_be_bytes())).collect();
 
     assert!(false_negatives.is_empty(), "Found {} false negatives which should be impossible", false_negatives.len());
 }
@@ -99,7 +99,7 @@ fn test_actual_false_positive_rate() {
     for _ in 0..NB_ELEM {
         let value: u64 = rng.gen();
         known_elements.insert(value);
-        filter.add(&value);
+        filter.add(&value.to_be_bytes());
     }
 
     let ro_filter = filter.finalize();
@@ -108,7 +108,7 @@ fn test_actual_false_positive_rate() {
     let mut false_positives = 0;
     for _ in 0..TEST_SAMPLES {
         let test_value: u64 = rng.gen();
-        if !known_elements.contains(&test_value) && ro_filter.might_contain(&test_value) {
+        if !known_elements.contains(&test_value) && ro_filter.might_contain(&test_value.to_be_bytes()) {
             false_positives += 1;
         }
     }
@@ -136,10 +136,9 @@ fn test_empty_filter() {
     let ro_filter = filter.finalize();
 
     // Test various types with empty filter
-    assert!(!ro_filter.might_contain(&42u64));
+    assert!(!ro_filter.might_contain(&42u64.to_be_bytes()));
     assert!(!ro_filter.might_contain(&"test"));
     assert!(!ro_filter.might_contain(&vec![1, 2, 3]));
-    assert!(!ro_filter.might_contain(&(21, "tuple")));
 }
 
 #[test]
@@ -147,17 +146,15 @@ fn test_different_types() {
     let filter = create_filter::<DefaultHasher>(10);
 
     // Test adding different types
-    filter.add(&42u64);
+    filter.add(&42u64.to_be_bytes());
     filter.add(&"string");
     filter.add(&vec![1, 2, 3]);
-    filter.add(&(21, "tuple"));
 
     let ro_filter = filter.finalize();
 
-    assert!(ro_filter.might_contain(&42u64));
+    assert!(ro_filter.might_contain(&42u64.to_be_bytes()));
     assert!(ro_filter.might_contain(&"string"));
     assert!(ro_filter.might_contain(&vec![1, 2, 3]));
-    assert!(ro_filter.might_contain(&(21, "tuple")));
 }
 
 #[test]

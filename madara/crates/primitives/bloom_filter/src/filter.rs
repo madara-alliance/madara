@@ -13,7 +13,7 @@
 
 use crate::storage::{AtomicBitStore, BitStore};
 use serde::{Deserialize, Serialize};
-use std::hash::{Hash, Hasher};
+use std::hash::Hasher;
 use std::marker::PhantomData;
 /// A cache of computed hash positions that can be reused across different filter sizes.
 ///
@@ -42,7 +42,7 @@ impl PreCalculatedHashes {
     /// # Type Parameters
     ///
     /// * `H`: The hasher implementation to use (must implement `Hasher + Default`)
-    /// * `T`: The type of item being hashed (must implement `Hash`)
+    /// * `T`: The type of item being hashed (must implement `AsRef<[u8]>`)
     ///
     /// # Parameters
     ///
@@ -52,7 +52,7 @@ impl PreCalculatedHashes {
     /// # Returns
     ///
     /// A new `PreCalculatedHashes` instance containing the computed hash values
-    pub fn new<H: Hasher + Default, T: Hash>(hash_count: u8, item: &T) -> Self {
+    pub fn new<H: Hasher + Default, T: AsRef<[u8]>>(hash_count: u8, item: &T) -> Self {
         Self { raw_hashes: calculate_hashes::<H, T>(hash_count, item).collect(), hash_count }
     }
 
@@ -160,7 +160,7 @@ impl<H: Hasher + Default> BloomFilter<H, AtomicBitStore> {
     /// # Arguments
     ///
     /// * `item`: The item to add, which must implement the Hash trait
-    pub fn add<T: Hash>(&self, item: &T) {
+    pub fn add<T: AsRef<[u8]>>(&self, item: &T) {
         calculate_hashes::<H, T>(self.hash_count, item)
             .for_each(|hash| self.storage.set_bit((hash % self.bit_size) as usize));
     }
@@ -190,7 +190,7 @@ impl<H: Hasher + Default> BloomFilter<H, BitStore> {
     }
 
     /// Tests whether an item might be in the set (immutable version).
-    pub fn might_contain<T: Hash>(&self, item: &T) -> bool {
+    pub fn might_contain<T: AsRef<[u8]>>(&self, item: &T) -> bool {
         calculate_hashes::<H, T>(self.hash_count, item)
             .all(|hash| self.storage.test_bit((hash % self.bit_size) as usize))
     }
@@ -257,7 +257,7 @@ impl<H: Hasher + Default> BloomFilter<H, BitStore> {
 /// # Type Parameters
 ///
 /// * `H`: A hasher type that implements `Hasher` + `Default`
-/// * `T`: The type of item being hashed, must implement `Hash`
+/// * `T`: The type of item being hashed, must implement `AsRef<[u8]>`
 ///
 /// # Returns
 ///
@@ -268,9 +268,9 @@ impl<H: Hasher + Default> BloomFilter<H, BitStore> {
 /// Note: The actual bit positions should be computed by the caller by applying
 /// modulo with the bit array size to the returned hash values.
 #[inline]
-fn calculate_hashes<H: Hasher + Default, T: Hash>(hash_count: u8, item: &T) -> impl Iterator<Item = u64> + '_ {
+fn calculate_hashes<H: Hasher + Default, T: AsRef<[u8]>>(hash_count: u8, item: &T) -> impl Iterator<Item = u64> + '_ {
     let mut hasher1 = H::default();
-    item.hash(&mut hasher1);
+    hasher1.write(item.as_ref());
     let h1 = hasher1.finish();
 
     const PHI: u64 = 0x9e37_79b9_7f4a_7c15; // 2^64/φ

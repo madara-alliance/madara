@@ -6,9 +6,13 @@ use rayon::prelude::*;
 use mp_bloom_filter::{AtomicBitStore, BitStore, BloomFilter};
 
 use ahash::AHasher;
+use siphasher::sip::SipHasher;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use twox_hash::XxHash64;
+use rustc_hash::FxHasher;
+use highway::HighwayHasher;
+
 
 /// Configuration constants for benchmarks
 const KEY_SIZE: usize = 32;
@@ -160,6 +164,9 @@ fn bench_bloom_filters(c: &mut Criterion) {
         get_hasher_benchmarks::<DefaultHasher>("DefaultHasher"),
         get_hasher_benchmarks::<AHasher>("AHasher"),
         get_hasher_benchmarks::<XxHash64>("XxHash64"),
+        get_hasher_benchmarks::<FxHasher>("FxHasher"),
+        get_hasher_benchmarks::<HighwayHasher>("HighwayHasher"),
+        get_hasher_benchmarks::<SipHasher>("SipHasher"),
     ];
 
     for hasher in &hashers {

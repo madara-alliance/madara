@@ -38,7 +38,6 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-ahash.workspace = true
 anyhow.workspace = true
 bincode = { workspace = true }
 bitvec = { workspace = true }
@@ -47,6 +46,7 @@ librocksdb-sys = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
+siphasher.workspace = true
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
