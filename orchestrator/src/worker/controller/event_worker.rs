@@ -11,9 +11,7 @@ use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Semaphore;
 use tokio::task::JoinSet;
-use tokio::time::sleep;
 use tracing::{debug, error, info, info_span};
 
 pub enum MessageType {
@@ -26,7 +24,6 @@ pub struct EventWorker {
     config: Arc<Config>,
     queue_type: QueueType,
     queue_control: QueueControlConfig,
-    semaphore: Arc<Semaphore>,
 }
 
 impl EventWorker {
@@ -41,8 +38,7 @@ impl EventWorker {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
         let queue_control = queue_config.queue_control.clone();
-        let semaphore = Arc::new(Semaphore::new(queue_control.max_message_count));
-        Ok(Self { queue_type, config, queue_control, semaphore })
+        Ok(Self { queue_type, config, queue_control })
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -294,46 +290,32 @@ impl EventWorker {
         info!("Starting worker with concurrency limit: {}", max_concurrent_tasks);
 
         loop {
-            // Clean up completed tasks
             while let Some(result) = tasks.try_join_next() {
                 if let Err(e) = result {
                     error!("Task failed: {:?}", e);
                 }
             }
-            let permit = match self.semaphore.clone().try_acquire_owned() {
-                Ok(permit) => permit,
-                Err(_) => {
-                    // No permits available, wait for a task to complete
-                    if let Some(result) = tasks.join_next().await {
-                        if let Err(e) = result {
-                            error!("Task failed: {:?}", e);
-                        }
-                    }
-                    continue;
-                }
-            };
-
-            // Get message - this now blocks until a message is available
-            match self.get_message().await {
-                Ok(message) => {
-                    match self.parse_message(&message) {
+            if tasks.len() < max_concurrent_tasks {
+                // Get message - this now blocks until a message is available
+                match self.get_message().await {
+                    Ok(message) => match self.parse_message(&message) {
                         Ok(parsed_message) => {
                             let worker = self.clone();
-                            tasks.spawn(async move {
-                                let _permit = permit; // Permit held until task completes
-                                worker.process_message(message, parsed_message).await
-                            });
+                            tasks.spawn(async move { worker.process_message(message, parsed_message).await });
                         }
                         Err(e) => {
                             error!("Failed to parse message: {:?}", e);
-                            // Permit will be automatically dropped, releasing capacity
                         }
+                    },
+                    Err(e) => {
+                        error!("Error receiving message: {:?}", e);
                     }
                 }
-                Err(e) => {
-                    error!("Error receiving message: {:?}", e);
-                    // Brief delay on errors to prevent tight error loops
-                    sleep(Duration::from_secs(1)).await;
+            } else {
+                if let Some(result) = tasks.join_next().await {
+                    if let Err(e) = result {
+                        error!("Task failed: {:?}", e);
+                    }
                 }
             }
         }
