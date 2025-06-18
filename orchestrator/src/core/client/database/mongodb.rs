@@ -792,20 +792,23 @@ impl DatabaseClient for MongoDbClient {
                     ]
                 }
             },
-            // TODO: Will not work for State update jobs!
-            // This is where the JobItem optimisation comes in!
-            // Stage 2: Sort by block_number ascending to get the earliest first
             doc! {
-                "$sort": {
-                    "metadata.specific.block_number": 1
+                "$addFields": {
+                    "numeric_internal_id": { "$toLong": "$internal_id" }
                 }
             },
-            // Stage 3: Take only the first document (earliest)
-            doc! { "$limit": 1 },
+            doc! {
+                "$sort": {
+                    "numeric_internal_id": -1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
             // Stage 4: Project only the block_number field for efficiency
             doc! {
                 "$project": {
-                    "block_number": "$metadata.specific.block_number"
+                    "block_number": "$numeric_internal_id"
                 }
             },
         ];
