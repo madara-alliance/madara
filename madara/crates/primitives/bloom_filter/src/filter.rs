@@ -13,8 +13,45 @@
 
 use crate::storage::{AtomicBitStore, BitStore};
 use serde::{Deserialize, Serialize};
-use std::hash::{Hash, Hasher};
+use std::hash::{BuildHasher, Hash, Hasher};
 use std::marker::PhantomData;
+
+/// A trait for constructing deterministic hashers suitable for reproducible Bloom filters.
+///
+/// # Overview
+///
+/// `DeterministicBuildHasher` defines a minimal interface for generating hashers that produce stable and reproducible hash values across program runs, platforms, and environments.
+pub trait DeterministicBuildHasher {
+    /// The hasher type to be constructed.
+    type H: Hasher;
+
+    /// Builds a new deterministic hasher instance.
+    ///
+    /// # Returns
+    /// A fresh `Hasher` instance whose behavior is fully deterministic.
+    ///
+    /// # Guarantees
+    /// The returned hasher must produce the same output for the same input, independent of execution environment or runtime state.
+    fn build_hasher() -> Self::H;
+}
+
+impl DeterministicBuildHasher for ahash::AHasher {
+    type H = ahash::AHasher;
+
+    fn build_hasher() -> Self::H {
+        ahash::RandomState::with_seeds(0x03d04773fad45387, 0x39d4e9b0f45e97cc, 0x63a175b11b94edaf, 0x075c02fb32039c72)
+            .build_hasher()
+    }
+}
+
+impl DeterministicBuildHasher for std::collections::hash_map::DefaultHasher {
+    type H = std::collections::hash_map::DefaultHasher;
+
+    fn build_hasher() -> Self::H {
+        std::collections::hash_map::DefaultHasher::new()
+    }
+}
+
 /// A cache of computed hash positions that can be reused across different filter sizes.
 ///
 /// This structure stores the raw hash values generated for an item, allowing them to be
@@ -52,7 +89,7 @@ impl PreCalculatedHashes {
     /// # Returns
     ///
     /// A new `PreCalculatedHashes` instance containing the computed hash values
-    pub fn new<H: Hasher + Default, T: Hash>(hash_count: u8, item: &T) -> Self {
+    pub fn new<H: Hasher + DeterministicBuildHasher, T: Hash>(hash_count: u8, item: &T) -> Self {
         Self { raw_hashes: calculate_hashes::<H, T>(hash_count, item).collect(), hash_count }
     }
 
@@ -114,7 +151,7 @@ impl PreCalculatedHashes {
 /// * `hash_count`: The number of hash functions used
 /// * `_hasher`: Phantom data for the hasher type
 #[derive(Serialize, Deserialize, Clone)]
-pub struct BloomFilter<H: Hasher + Default, B> {
+pub struct BloomFilter<H: Hasher + DeterministicBuildHasher, B> {
     storage: B,
     bit_size: u64,
     hash_count: u8,
@@ -122,7 +159,7 @@ pub struct BloomFilter<H: Hasher + Default, B> {
     _hasher: PhantomData<H>,
 }
 
-impl<H: Hasher + Default> BloomFilter<H, AtomicBitStore> {
+impl<H: Hasher + DeterministicBuildHasher> BloomFilter<H, AtomicBitStore> {
     /// Creates a new Bloom filter with the specified size and number of hash functions.
     ///
     /// The actual size will be aligned to the next multiple of 64 bits for efficient storage.
@@ -166,7 +203,7 @@ impl<H: Hasher + Default> BloomFilter<H, AtomicBitStore> {
     }
 }
 
-impl<H: Hasher + Default, B> BloomFilter<H, B> {
+impl<H: Hasher + DeterministicBuildHasher, B> BloomFilter<H, B> {
     /// Returns the size of the Bloom filter in bits.
     pub fn size(&self) -> u64 {
         self.bit_size
@@ -182,7 +219,7 @@ impl<H: Hasher + Default, B> BloomFilter<H, B> {
     }
 }
 
-impl<H: Hasher + Default> BloomFilter<H, BitStore> {
+impl<H: Hasher + DeterministicBuildHasher> BloomFilter<H, BitStore> {
     /// Creates a new immutable Bloom filter from a bit storage backend.
     pub fn from_storage(storage: BitStore, hash_count: u8) -> Self {
         let bit_size = storage.len() as _;
@@ -256,7 +293,7 @@ impl<H: Hasher + Default> BloomFilter<H, BitStore> {
 ///
 /// # Type Parameters
 ///
-/// * `H`: A hasher type that implements `Hasher` + `Default`
+/// * `H`: A hasher type that implements `Hasher` + `DeterministicBuildHasher`
 /// * `T`: The type of item being hashed, must implement `Hash`
 ///
 /// # Returns
@@ -268,8 +305,11 @@ impl<H: Hasher + Default> BloomFilter<H, BitStore> {
 /// Note: The actual bit positions should be computed by the caller by applying
 /// modulo with the bit array size to the returned hash values.
 #[inline]
-fn calculate_hashes<H: Hasher + Default, T: Hash>(hash_count: u8, item: &T) -> impl Iterator<Item = u64> + '_ {
-    let mut hasher1 = H::default();
+fn calculate_hashes<H: Hasher + DeterministicBuildHasher, T: Hash>(
+    hash_count: u8,
+    item: &T,
+) -> impl Iterator<Item = u64> + '_ {
+    let mut hasher1 = H::build_hasher();
     item.hash(&mut hasher1);
     let h1 = hasher1.finish();
 
