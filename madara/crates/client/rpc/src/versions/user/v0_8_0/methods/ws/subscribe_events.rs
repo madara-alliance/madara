@@ -16,20 +16,8 @@ pub async fn subscribe_events(
     block_id: Option<BlockId>,
 ) -> Result<(), StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
-    ctx.run_until_cancelled(subscribe_events_impl(starknet, sink, from_address, keys, block_id))
-        .await
-        .unwrap_or(Err(StarknetWsApiError::Internal))
-}
 
-async fn subscribe_events_impl(
-    starknet: &crate::Starknet,
-    sink: jsonrpsee::server::SubscriptionSink,
-    from_address: Option<Felt>,
-    keys: Option<Vec<Vec<Felt>>>,
-    block_id: Option<BlockId>,
-) -> Result<(), StarknetWsApiError> {
     let mut rx = starknet.backend.subscribe_events(from_address);
 
     if let Some(block_id) = block_id {
@@ -63,16 +51,14 @@ async fn subscribe_events_impl(
     }
 
     loop {
-        tokio::select! {
-            event = rx.recv() => {
-                let event = event.or_internal_server_error("Failed to retrieve event")?;
-                if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
-                    send_event(event, &sink).await?;
-                }
-            },
-            _ = sink.closed() => {
-                return Ok(())
-            }
+        let event = tokio::select! {
+            event = rx.recv() => event.or_internal_server_error("Failed to retrieve event")?,
+            _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal)
+        };
+
+        if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
+            send_event(event, &sink).await?;
         }
     }
 }

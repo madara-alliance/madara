@@ -30,8 +30,9 @@ pub async fn subscribe_transaction_status(
         .accept()
         .await
         .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
 
-    SubscriptionState::new(starknet, &sink, transaction_hash).await?.drive().await
+    SubscriptionState::new(starknet, &sink, &ctx, transaction_hash).await?.drive().await
 }
 
 /// State-machine-based transactions status discovery.
@@ -68,9 +69,10 @@ impl<'a> SubscriptionState<'a> {
     async fn new(
         starknet: &'a crate::Starknet,
         sink: &'a jsonrpsee::core::server::SubscriptionSink,
+        ctx: &'a crate::WsSubscribeContext,
         tx_hash: mp_convert::Felt,
     ) -> Result<Self, crate::errors::StarknetWsApiError> {
-        let common = StateTransitionCommon { starknet, sink, tx_hash };
+        let common = StateTransitionCommon { starknet, sink, ctx, tx_hash };
 
         // **FOOTGUN!** 💥
         //
@@ -182,6 +184,7 @@ impl<'a> SubscriptionState<'a> {
                 Self::WaitReceived(state) => {
                     let s = tokio::select! {
                         _ = state.common.sink.closed() => break Ok(()),
+                        _ = state.common.ctx.cancelled() => break Err(crate::errors::StarknetWsApiError::Internal),
                         s = state.transition() => s?,
                     };
                     match s {
@@ -198,6 +201,7 @@ impl<'a> SubscriptionState<'a> {
                 Self::WaitAcceptedOnL2(state) => {
                     let s = tokio::select! {
                         _ = state.common.sink.closed() => break Ok(()),
+                        _ = state.common.ctx.cancelled() => break Err(crate::errors::StarknetWsApiError::Internal),
                         s = state.transition() => s?,
                     };
                     s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
@@ -206,6 +210,7 @@ impl<'a> SubscriptionState<'a> {
                 Self::WaitAcceptedOnL1(state) => {
                     let s = tokio::select! {
                         _ = state.common.sink.closed() => break Ok(()),
+                        _ = state.common.ctx.cancelled() => break Err(crate::errors::StarknetWsApiError::Internal),
                         s = state.transition() => s?,
                     };
                     s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
@@ -219,6 +224,7 @@ impl<'a> SubscriptionState<'a> {
 struct StateTransitionCommon<'a> {
     starknet: &'a crate::Starknet,
     sink: &'a jsonrpsee::core::server::SubscriptionSink,
+    ctx: &'a crate::WsSubscribeContext,
     tx_hash: mp_convert::Felt,
 }
 struct StateTransitionReceived<'a> {
@@ -248,7 +254,7 @@ impl StateTransitionCommon<'_> {
         status: mp_rpc::v0_7_1::TxnStatus,
     ) -> Result<(), crate::errors::StarknetWsApiError> {
         let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.tx_hash, status };
-        let item = super::SubscriptionItem::new(self.subscription_sink.subscription_id(), txn_status);
+        let item = super::SubscriptionItem::new(self.sink.subscription_id(), txn_status);
         let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
             format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
         })?;
@@ -269,7 +275,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
     type TransitionTo = TransitionMatrixReceived<'a>;
 
     async fn transition(self) -> Result<Self::TransitionTo, crate::errors::StarknetWsApiError> {
-        let Self { common, mut channel_mempool, .. } = self;
+        let Self { common, mut channel_mempool } = self;
 
         let channel_confirmed = common.starknet.backend.subscribe_last_block_on_l1();
         let tx_hash = &common.tx_hash;

@@ -48,14 +48,18 @@ pub async fn subscribe_pending_transactions(
         return Ok(());
     };
 
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
+
     let mut channel = starknet.backend.subscribe_pending_txs();
     let sender_address = sender_address.into_iter().collect::<std::collections::HashSet<_>>();
     loop {
         let tx_receipt = tokio::select! {
-            res = channel.recv() => {
-                res.or_internal_server_error("SubscribePendingTransactions failed to wait on pending transactions")?
+            tx_receipt = channel.recv() => {
+                tx_receipt
+                    .or_internal_server_error("SubscribePendingTransactions failed to wait on pending transactions")?
             },
             _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
         };
 
         let tx_hash = tx_receipt.receipt.transaction_hash();

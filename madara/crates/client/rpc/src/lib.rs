@@ -192,17 +192,6 @@ impl WsSubscribeHandles {
 pub(crate) struct WsSubscribeContext(std::sync::Arc<tokio::sync::Notify>);
 
 impl WsSubscribeContext {
-    pub async fn run_until_cancelled<T, F>(&self, f: F) -> Option<T>
-    where
-        T: Sized,
-        F: std::future::Future<Output = T>,
-    {
-        tokio::select! {
-            res = f => Some(res),
-            _ = self.0.notified() => None
-        }
-    }
-
     pub async fn cancelled(&self) {
         self.0.notified().await
     }

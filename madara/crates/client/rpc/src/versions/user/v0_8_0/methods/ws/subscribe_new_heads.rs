@@ -12,18 +12,8 @@ pub async fn subscribe_new_heads(
     block_id: BlockId,
 ) -> Result<(), StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
-
     let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
-    ctx.run_until_cancelled(subscribe_new_heads_impl(starknet, sink, block_id))
-        .await
-        .unwrap_or(Err(StarknetWsApiError::Internal))
-}
 
-async fn subscribe_new_heads_impl(
-    starknet: &crate::Starknet,
-    sink: jsonrpsee::server::SubscriptionSink,
-    block_id: BlockId,
-) -> Result<(), StarknetWsApiError> {
     let mut block_n = match block_id {
         BlockId::Number(block_n) => {
             let err = || format!("Failed to retrieve block info for block {block_n}");
@@ -93,40 +83,33 @@ async fn subscribe_new_heads_impl(
 
     // Catching up with the backend
     loop {
-        tokio::select! {
-            block_info = rx.recv() => {
-                let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
-                if block_info.header.block_number == block_n {
-                    break send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
-                }
-            },
-            _ = sink.closed() => {
-                return Ok(())
-            }
+        let block_info = tokio::select! {
+            block_info = rx.recv() => block_info.or_internal_server_error("Failed to retrieve block info")?,
+            _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+        };
+
+        if block_info.header.block_number == block_n {
+            break send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
         }
     }
 
     // New block headers
     loop {
-        tokio::select! {
-            block_info = rx.recv() => {
-                let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
-                if block_info.header.block_number == block_n + 1 {
-                    send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
-                } else {
-                    let err = format!(
-                        "Received non-sequential block {}, expected {}",
-                        block_info.header.block_number,
-                        block_n + 1
-                    );
-                    return Err(StarknetWsApiError::internal_server_error(err));
-                }
-                block_n = block_n.saturating_add(1);
-            },
-            _ = sink.closed() => {
-                return Ok(())
-            }
+        let block_info = tokio::select! {
+            block_info = rx.recv() => block_info.or_internal_server_error("Failed to retrieve block info")?,
+            _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+        };
+
+        if block_info.header.block_number == block_n + 1 {
+            send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
+        } else {
+            let err =
+                format!("Received non-sequential block {}, expected {}", block_info.header.block_number, block_n + 1);
+            return Err(StarknetWsApiError::internal_server_error(err));
         }
+        block_n = block_n.saturating_add(1);
     }
 }
 
