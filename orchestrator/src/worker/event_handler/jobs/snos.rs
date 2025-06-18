@@ -4,6 +4,7 @@ use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::BYTE_CHUNK_SIZE;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -294,8 +295,7 @@ impl SnosJobHandler {
         let file_size = tmp_file.as_file().metadata()?.len() as usize;
         let mut buffer = Vec::with_capacity(file_size);
 
-        const CHUNK_SIZE: usize = 8192; // 8KB chunks
-        let mut chunk = vec![0; CHUNK_SIZE];
+        let mut chunk = vec![0; BYTE_CHUNK_SIZE];
 
         let mut file = tokio::fs::File::from_std(tmp_file.as_file().try_clone()?);
 

@@ -6,16 +6,15 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::helpers::JobProcessingState;
 use crate::utils::COMPILED_VERIFIER;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use anyhow::Context;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
-use crate::utils::helpers::JobProcessingState;
 use orchestrator_prover_client_interface::TaskStatus;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
-use crate::utils::helpers::JobProcessingState;
 
 pub struct RegisterProofJobHandler;
 

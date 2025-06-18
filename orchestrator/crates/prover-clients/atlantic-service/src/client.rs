@@ -3,14 +3,13 @@ use crate::types::{
     AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStep,
 };
 use crate::AtlanticValidatedArgs;
+use crate::constants::ATLANTIC_PROOF_URL;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::Method;
 use std::path::Path;
 use tracing::debug;
 use url::Url;
-
-const ATLANTIC_PROOF_URL: &str = "https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json";
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {
@@ -150,7 +149,6 @@ impl AtlanticClient {
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        let proof_layout = LayoutName::recursive_with_poseidon.to_str();
 
         let response = self.client
             .request()
@@ -159,7 +157,7 @@ impl AtlanticClient {
             .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
             .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
             .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json", Some("application/json"))?
-            .form_text("layout", proof_layout)
+            .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
             .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
             .form_text("network", atlantic_network.as_ref())
             .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
