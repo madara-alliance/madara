@@ -11,9 +11,11 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use anyhow::Context;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
+use crate::utils::helpers::JobProcessingState;
 use orchestrator_prover_client_interface::TaskStatus;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
+use crate::utils::helpers::JobProcessingState;
 
 pub struct RegisterProofJobHandler;
 
@@ -193,5 +195,8 @@ impl JobHandlerTrait for RegisterProofJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         300
+    }
+    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
+        None
     }
 }

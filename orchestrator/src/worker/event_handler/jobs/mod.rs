@@ -9,6 +9,7 @@ use crate::error::job::JobError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
+use crate::utils::helpers::JobProcessingState;
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -68,4 +69,5 @@ pub trait JobHandlerTrait: Send + Sync {
 
     /// Should return the number of seconds to wait before polling for verification
     fn verification_polling_delay_seconds(&self) -> u64;
+    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>>;
 }
