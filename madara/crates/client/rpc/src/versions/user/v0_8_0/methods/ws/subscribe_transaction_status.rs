@@ -31,12 +31,7 @@ pub async fn subscribe_transaction_status(
         .await
         .or_internal_server_error("SubscribeTransactionStatus failed to establish websocket connection")?;
 
-    let mut state = SubscriptionState::new(starknet, &sink, transaction_hash).await?;
-
-    tokio::select! {
-        res = state.drive() => res,
-        _ = sink.closed() => Ok(())
-    }
+    SubscriptionState::new(starknet, &sink, transaction_hash).await?.drive().await
 }
 
 /// State-machine-based transactions status discovery.
@@ -72,10 +67,10 @@ impl<'a> SubscriptionState<'a> {
     #[tracing::instrument(skip_all)]
     async fn new(
         starknet: &'a crate::Starknet,
-        subscription_sink: &'a jsonrpsee::core::server::SubscriptionSink,
+        sink: &'a jsonrpsee::core::server::SubscriptionSink,
         tx_hash: mp_convert::Felt,
     ) -> Result<Self, crate::errors::StarknetWsApiError> {
-        let common = StateTransitionCommon { starknet, subscription_sink, tx_hash };
+        let common = StateTransitionCommon { starknet, sink, tx_hash };
 
         // **FOOTGUN!** 💥
         //
@@ -184,25 +179,37 @@ impl<'a> SubscriptionState<'a> {
         loop {
             match std::mem::take(self) {
                 Self::None => return Ok(()),
-                Self::WaitReceived(state) => match state.transition().await? {
-                    TransitionMatrixReceived::WaitAcceptedOnL2(s) => {
-                        s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
-                        *self = Self::WaitAcceptedOnL2(s);
+                Self::WaitReceived(state) => {
+                    let s = tokio::select! {
+                        _ = state.common.sink.closed() => break Ok(()),
+                        s = state.transition() => s?,
+                    };
+                    match s {
+                        TransitionMatrixReceived::WaitAcceptedOnL2(s) => {
+                            s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
+                            *self = Self::WaitAcceptedOnL2(s);
+                        }
+                        TransitionMatrixReceived::WaitAcceptedOnL1(s) => {
+                            s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                            *self = Self::WaitAcceptedOnL1(s);
+                        }
                     }
-                    TransitionMatrixReceived::WaitAcceptedOnL1(s) => {
-                        s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
-                        *self = Self::WaitAcceptedOnL1(s);
-                    }
-                },
+                }
                 Self::WaitAcceptedOnL2(state) => {
-                    let s = state.transition().await?;
+                    let s = tokio::select! {
+                        _ = state.common.sink.closed() => break Ok(()),
+                        s = state.transition() => s?,
+                    };
                     s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
                     *self = Self::WaitAcceptedOnL1(s);
                 }
                 Self::WaitAcceptedOnL1(state) => {
-                    let s = state.transition().await?;
+                    let s = tokio::select! {
+                        _ = state.common.sink.closed() => break Ok(()),
+                        s = state.transition() => s?,
+                    };
                     s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
-                    return Ok(());
+                    break Ok(());
                 }
             }
         }
@@ -211,7 +218,7 @@ impl<'a> SubscriptionState<'a> {
 
 struct StateTransitionCommon<'a> {
     starknet: &'a crate::Starknet,
-    subscription_sink: &'a jsonrpsee::core::server::SubscriptionSink,
+    sink: &'a jsonrpsee::core::server::SubscriptionSink,
     tx_hash: mp_convert::Felt,
 }
 struct StateTransitionReceived<'a> {
@@ -245,7 +252,7 @@ impl StateTransitionCommon<'_> {
             format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
         })?;
 
-        self.subscription_sink
+        self.sink
             .send(msg)
             .await
             .or_internal_server_error("SubscribeTransactionStatus failed to respond to websocket request")
