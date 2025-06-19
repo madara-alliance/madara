@@ -61,7 +61,8 @@ fn test_parallel() {
     let ro_filter = filter.finalize();
 
     // Test parallel lookup for false negatives
-    let false_negatives: Vec<_> = elements.par_iter().filter(|&&item| !ro_filter.might_contain(&item.to_be_bytes())).collect();
+    let false_negatives: Vec<_> =
+        elements.par_iter().filter(|&&item| !ro_filter.might_contain(&item.to_be_bytes())).collect();
 
     assert!(false_negatives.is_empty(), "Found {} false negatives which should be impossible", false_negatives.len());
 }

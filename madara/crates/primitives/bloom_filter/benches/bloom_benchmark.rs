@@ -6,13 +6,12 @@ use rayon::prelude::*;
 use mp_bloom_filter::{AtomicBitStore, BitStore, BloomFilter};
 
 use ahash::AHasher;
+use highway::HighwayHasher;
+use rustc_hash::FxHasher;
 use siphasher::sip::SipHasher;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::Hasher;
 use twox_hash::XxHash64;
-use rustc_hash::FxHasher;
-use highway::HighwayHasher;
-
 
 /// Configuration constants for benchmarks
 const KEY_SIZE: usize = 32;
