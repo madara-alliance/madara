@@ -101,7 +101,7 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::TransactionFeeError(_)
             | E::TransactionPreValidationError(_)
             | E::TryFromIntError(_)
-            | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::TransactionTooLarge) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
             err @ E::InvalidSegmentStructure(_, _) => rejected(InvalidProgram, format!("{err:#}")),
             E::StateError(err) => err.into(),
