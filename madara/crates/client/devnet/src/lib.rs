@@ -254,16 +254,13 @@ mod tests {
             mut tx: BroadcastedInvokeTxn,
             contract: &DevnetPredeployedContract,
         ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-            let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
-                .into_blockifier(
+            let (api_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
+                .into_starknet_api(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
-                    /* validate */ true,
-                    /* charge_fee*/ true,
-                    /* strict_nonce_check */ true,
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
+            let signature = contract.secret.sign(&api_tx.tx_hash().to_felt()).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
@@ -283,16 +280,13 @@ mod tests {
             mut tx: BroadcastedDeclareTxn,
             contract: &DevnetPredeployedContract,
         ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
-            let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
-                .into_blockifier(
+            let (api_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
+                .into_starknet_api(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
-                    /* validate */ true,
-                    /* charge_fee*/ true,
-                    /* strict_nonce_check */ true,
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
+            let signature = contract.secret.sign(&api_tx.tx_hash().to_felt()).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -310,16 +304,13 @@ mod tests {
             mut tx: BroadcastedDeployAccountTxn,
             contract: &DevnetPredeployedContract,
         ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
-            let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
-                .into_blockifier(
+            let (api_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
+                .into_starknet_api(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
-                    /* validate */ true,
-                    /* charge_fee*/ true,
-                    /* strict_nonce_check */ true,
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
+            let signature = contract.secret.sign(&api_tx.tx_hash().to_felt()).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeployAccountTxn::V1(tx) => &mut tx.signature,

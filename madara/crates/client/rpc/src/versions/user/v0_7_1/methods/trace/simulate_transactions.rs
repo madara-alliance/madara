@@ -2,10 +2,14 @@ use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
+use blockifier::transaction::account_transaction::ExecutionFlags;
+use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
 use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
-use mp_transactions::BroadcastedTransactionExt;
+use mp_transactions::{BroadcastedTransactionExt, ToBlockifierError};
+use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
+use starknet_api::transaction::Transaction as ApiTransaction;
 use std::sync::Arc;
 
 pub async fn simulate_transactions(
@@ -28,16 +32,35 @@ pub async fn simulate_transactions(
     let user_transactions = transactions
         .into_iter()
         .map(|tx| {
-            tx.into_blockifier(
-                starknet.chain_id(),
-                starknet_version,
-                validate,
-                charge_fee,
-                /* strict_none_check */ true,
-            )
-            .map(|(tx, _)| tx)
+            let only_query = tx.is_query();
+            let (api_tx, _) = tx.into_starknet_api(starknet.chain_id(), starknet_version)?;
+            let tx_hash = api_tx.tx_hash();
+            let class_info = match &api_tx {
+                ApiAccountTransaction::Declare(declare_tx) => Some(declare_tx.class_info.to_owned()),
+                _ => None,
+            };
+            let deployed_contract_address = match &api_tx {
+                ApiAccountTransaction::DeployAccount(deploy_account_tx) => Some(deploy_account_tx.contract_address()),
+                _ => None,
+            };
+            let tx = match api_tx {
+                ApiAccountTransaction::Declare(declare_tx) => ApiTransaction::Declare(declare_tx.tx),
+                ApiAccountTransaction::DeployAccount(deploy_account_tx) => {
+                    ApiTransaction::DeployAccount(deploy_account_tx.tx)
+                }
+                ApiAccountTransaction::Invoke(invoke_tx) => ApiTransaction::Invoke(invoke_tx.tx),
+            };
+            let execution_flags = ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check: true };
+            Ok(BTransaction::from_api(
+                tx,
+                tx_hash,
+                class_info,
+                /* paid_fee_on_l1 */ None,
+                deployed_contract_address,
+                execution_flags,
+            )?)
         })
-        .collect::<Result<Vec<_>, _>>()
+        .collect::<Result<Vec<_>, ToBlockifierError>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 
     let execution_resuls = exec_context.re_execute_transactions([], user_transactions)?;

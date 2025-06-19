@@ -9,11 +9,10 @@ use blockifier::{
     transaction::{
         account_transaction::{AccountTransaction, ExecutionFlags},
         errors::{TransactionExecutionError, TransactionPreValidationError},
-        transaction_execution::Transaction as BTransaction,
     },
 };
 use mc_db::MadaraBackend;
-use mc_exec::{execution::TxInfo, MadaraBackendExecutionExt};
+use mc_exec::MadaraBackendExecutionExt;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_rpc::{
@@ -24,7 +23,10 @@ use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
     BroadcastedTransactionExt, ToBlockifierError,
 };
-use starknet_api::executable_transaction::TransactionType;
+use starknet_api::{
+    executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
+    transaction::TransactionVersion,
+};
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
@@ -191,49 +193,42 @@ impl TransactionValidator {
     #[tracing::instrument(skip(self, tx, converted_class), fields(module = "TxValidation"))]
     async fn accept_tx(
         &self,
-        tx: BTransaction,
+        tx: ApiAccountTransaction,
         converted_class: Option<ConvertedClass>,
         arrived_at: TxTimestamp,
     ) -> Result<(), SubmitTransactionError> {
-        if tx.is_only_query() {
-            return Err(RejectedTransactionError::new(
-                RejectedTransactionErrorKind::InvalidTransactionVersion,
-                "Cannot submit query-only transactions",
-            )
-            .into());
-        }
-
         let tx_hash = tx.tx_hash().to_felt();
 
-        let tx = match tx {
-            BTransaction::Account(AccountTransaction { tx, execution_flags }) => {
-                let execution_flags = ExecutionFlags {
-                    // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
-                    // the account is not deployed yet but the tx should be accepted.
-                    // TODO: do we really want to continue to support this behaviour
-                    validate: if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE {
-                        false
-                    } else {
-                        execution_flags.validate
-                    },
-                    ..execution_flags
-                };
-                BTransaction::Account(AccountTransaction { tx, execution_flags })
-            }
-            BTransaction::L1Handler(_) => tx,
+        // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
+        // the account is not deployed yet but the tx should be accepted.
+        // TODO: do we really want to continue to support this behaviour
+        let validate = if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE {
+            false
+        } else {
+            true
+        };
+
+        // No charge_fee for Admin DeclareV0
+        let charge_fee = if tx.tx_type() == TransactionType::Declare && tx.version() == TransactionVersion(Felt::ZERO) {
+            false
+        } else {
+            true
+        };
+
+        let account_tx = AccountTransaction {
+            tx,
+            execution_flags: ExecutionFlags { only_query: false, charge_fee, validate, strict_nonce_check: false },
         };
 
         if !self.config.disable_validation {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
-            if let BTransaction::Account(account_tx) = tx.clone() {
-                let mut validator = self.backend.new_transaction_validator()?;
-                validator.perform_validations(account_tx)?
-            }
+            let mut validator = self.backend.new_transaction_validator()?;
+            validator.perform_validations(account_tx.clone())?
         }
 
         // Forward the validated tx.
-        let tx = ValidatedMempoolTx::from_blockifier(tx, arrived_at, converted_class);
+        let tx = ValidatedMempoolTx::from_starknet_api(account_tx.tx, arrived_at, converted_class);
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())
@@ -246,20 +241,30 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeclareTxnV0,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        if tx.is_query() {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
-        let (btx, class) = tx.into_blockifier(
+
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
-            /* validate */ true,
-            /* charge_fee */ true, // TODO: did we want disabled charge fee for declare v0?
-            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
-        let res = ClassAndTxnHash {
-            transaction_hash: btx.tx_hash().to_felt(),
-            class_hash: btx.declared_class_hash().expect("Created transaction should be Declare").to_felt(),
+        // Destructure to get class hash only if it's a Declare tx
+        let class_hash = match &api_tx {
+            ApiAccountTransaction::Declare(declare_tx) => declare_tx.class_hash().to_felt(),
+            _ => unreachable!("Created transaction should be Declare"),
         };
-        self.accept_tx(btx, class, arrived_at).await?;
+
+        let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
+
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 
@@ -267,22 +272,30 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        if tx.is_query() == true {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
-        let tx = BroadcastedTxn::Declare(tx);
-        let validate = !tx.is_query(); // Did we want to accept query only transactions?
-        let (btx, class) = tx.into_blockifier(
+        let tx: BroadcastedTxn = BroadcastedTxn::Declare(tx);
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
-            validate,
-            /* charge_fee */ true,
-            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
-        let res = ClassAndTxnHash {
-            transaction_hash: btx.tx_hash().to_felt(),
-            class_hash: btx.declared_class_hash().expect("Created transaction should be Declare").to_felt(),
+        // Destructure to get class hash only if it's a Declare tx
+        let class_hash = match &api_tx {
+            ApiAccountTransaction::Declare(declare_tx) => declare_tx.class_hash().to_felt(),
+            _ => unreachable!("Created transaction should be Declare"),
         };
-        self.accept_tx(btx, class, arrived_at).await?;
+
+        let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
+
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 
@@ -290,25 +303,30 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeployAccountTxn,
     ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
+        if tx.is_query() == true {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::DeployAccount(tx);
-        let validate = !tx.is_query(); // Did we want to accept query only transactions?
-        let (btx, class) = tx.into_blockifier(
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
-            validate,
-            /* charge_fee */ true,
-            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
-        let res = ContractAndTxnHash {
-            transaction_hash: btx.tx_hash().to_felt(),
-            contract_address: btx
-                .deployed_contract_address()
-                .expect("Created transaction should be DeployAccount")
-                .to_felt(),
+        // Destructure to get class hash only if it's a Declare tx
+        let contract_address = match &api_tx {
+            ApiAccountTransaction::DeployAccount(deploy_account_tx) => deploy_account_tx.contract_address().to_felt(),
+            _ => unreachable!("Created transaction should be DeployAccount"),
         };
-        self.accept_tx(btx, class, arrived_at).await?;
+
+        let res = ContractAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), contract_address };
+
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 
@@ -316,19 +334,23 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        if tx.is_query() == true {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::Invoke(tx);
-        let validate = !tx.is_query(); // Did we want to accept query only transactions?
-        let (btx, class) = tx.into_blockifier(
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
-            validate,
-            /* charge_fee */ true,
-            /* strict_nonce_check */ false, // TODO: verify it
         )?;
 
-        let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().to_felt() };
-        self.accept_tx(btx, class, arrived_at).await?;
+        let res = AddInvokeTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 }

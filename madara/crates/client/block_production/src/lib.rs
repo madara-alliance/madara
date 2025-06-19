@@ -759,16 +759,13 @@ pub(crate) mod tests {
             fee_data_availability_mode: DaMode::L1,
         });
 
-        let (blockifier_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
-            .into_blockifier(
+        let (api_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
+            .into_starknet_api(
                 backend.chain_config().chain_id.to_felt(),
                 backend.chain_config().latest_protocol_version,
-                /* validate */ true,
-                /* charge_fee*/ true,
-                /* strict_nonce_check */ true,
             )
             .unwrap();
-        let signature = contract.secret.sign(&blockifier_tx.tx_hash().0).unwrap();
+        let signature = contract.secret.sign(&api_tx.tx_hash().0).unwrap();
 
         let tx_signature = match &mut declare_txn {
             BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -820,16 +817,13 @@ pub(crate) mod tests {
             fee_data_availability_mode: DaMode::L1,
         });
 
-        let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
-            .into_blockifier(
+        let (api_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
+            .into_starknet_api(
                 backend.chain_config().chain_id.to_felt(),
                 backend.chain_config().latest_protocol_version,
-                /* validate */ true,
-                /* charge_fee*/ true,
-                /* strict_nonce_check */ true,
             )
             .unwrap();
-        let signature = contract_sender.secret.sign(&blockifier_tx.tx_hash()).unwrap();
+        let signature = contract_sender.secret.sign(&api_tx.tx_hash()).unwrap();
 
         let tx_signature = match &mut invoke_txn {
             BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,

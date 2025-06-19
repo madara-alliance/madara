@@ -160,7 +160,7 @@ mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -188,7 +188,7 @@ mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -231,7 +231,7 @@ mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,

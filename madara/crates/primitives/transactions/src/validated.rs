@@ -1,8 +1,7 @@
 use crate::Transaction;
-use blockifier::transaction::account_transaction::ExecutionFlags;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::{
-    account_transaction::AccountTransaction, transaction_execution::Transaction as BTransaction,
+    transaction_execution::Transaction as BTransaction,
 };
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
@@ -11,7 +10,7 @@ use starknet_api::executable_transaction::{
     AccountTransaction as ApiAccountTransaction, DeclareTransaction, DeployAccountTransaction, InvokeTransaction,
     L1HandlerTransaction,
 };
-use starknet_api::transaction::{fields::Fee, Transaction as ApiTransaction, TransactionHash};
+use starknet_api::transaction::{fields::Fee, TransactionHash};
 use std::time::{Duration, SystemTime};
 
 /// Timestamp, in millis.
@@ -56,44 +55,22 @@ pub struct ValidatedMempoolTx {
 }
 
 impl ValidatedMempoolTx {
-    pub fn from_blockifier(tx: BTransaction, arrived_at: TxTimestamp, converted_class: Option<ConvertedClass>) -> Self {
-        match tx {
-            BTransaction::Account(AccountTransaction { tx: ApiAccountTransaction::Declare(tx), .. }) => Self {
-                contract_address: tx.tx.sender_address().to_felt(),
-                tx: ApiTransaction::Declare(tx.tx).into(),
-                paid_fee_on_l1: None,
-                arrived_at,
-                tx_hash: tx.tx_hash.to_felt(),
-                converted_class,
-            },
-            BTransaction::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) => Self {
-                contract_address: tx.contract_address.to_felt(),
-                tx: ApiTransaction::DeployAccount(tx.tx).into(),
-                paid_fee_on_l1: None,
-                arrived_at,
-                tx_hash: tx.tx_hash.to_felt(),
-                converted_class,
-            },
-            BTransaction::Account(AccountTransaction { tx: ApiAccountTransaction::Invoke(tx), .. }) => Self {
-                contract_address: tx.tx.sender_address().to_felt(),
-                tx: ApiTransaction::Invoke(tx.tx).into(),
-                paid_fee_on_l1: None,
-                arrived_at,
-                tx_hash: tx.tx_hash.to_felt(),
-                converted_class,
-            },
-            BTransaction::L1Handler(tx) => Self {
-                contract_address: tx.tx.contract_address.to_felt(),
-                tx: ApiTransaction::L1Handler(tx.tx).into(),
-                paid_fee_on_l1: Some(tx.paid_fee_on_l1.0),
-                arrived_at,
-                tx_hash: tx.tx_hash.to_felt(),
-                converted_class,
-            },
+    pub fn from_starknet_api(
+        tx: ApiAccountTransaction,
+        arrived_at: TxTimestamp,
+        converted_class: Option<ConvertedClass>,
+    ) -> Self {
+        Self {
+            contract_address: tx.contract_address().to_felt(),
+            tx_hash: tx.tx_hash().to_felt(),
+            tx: tx.into(),
+            paid_fee_on_l1: None,
+            arrived_at,
+            converted_class,
         }
     }
 
-    pub fn into_blockifier(
+    pub fn into_blockifier_for_sequencing(
         self,
     ) -> Result<(BTransaction, TxTimestamp, Option<ConvertedClass>), ValidatedToBlockifierTxError> {
         let tx_hash = TransactionHash(self.tx_hash);
@@ -103,7 +80,11 @@ impl ValidatedMempoolTx {
                 let paid_fee_on_l1 =
                     Fee(self.paid_fee_on_l1.ok_or(ValidatedToBlockifierTxError::MissingField("paid_fee_on_l1"))?);
 
-                BTransaction::L1Handler(L1HandlerTransaction { tx, tx_hash, paid_fee_on_l1 })
+                starknet_api::executable_transaction::Transaction::L1Handler(L1HandlerTransaction {
+                    tx,
+                    tx_hash,
+                    paid_fee_on_l1,
+                })
             }
             Transaction::Declare(tx) => {
                 let converted_class =
@@ -112,10 +93,9 @@ impl ValidatedMempoolTx {
                     converted_class.try_into().map_err(ValidatedToBlockifierTxError::ClassCompilationError)?;
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
 
-                BTransaction::Account(AccountTransaction {
-                    tx: ApiAccountTransaction::Declare(DeclareTransaction { tx, tx_hash, class_info }),
-                    execution_flags: ExecutionFlags::default(),
-                })
+                starknet_api::executable_transaction::Transaction::Account(ApiAccountTransaction::Declare(
+                    DeclareTransaction { tx, tx_hash, class_info },
+                ))
             }
             Transaction::DeployAccount(tx) => {
                 let contract_address = self
@@ -124,26 +104,21 @@ impl ValidatedMempoolTx {
                     .map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
 
-                BTransaction::Account(AccountTransaction {
-                    tx: ApiAccountTransaction::DeployAccount(DeployAccountTransaction {
-                        tx,
-                        tx_hash,
-                        contract_address,
-                    }),
-                    execution_flags: ExecutionFlags::default(),
-                })
+                starknet_api::executable_transaction::Transaction::Account(ApiAccountTransaction::DeployAccount(
+                    DeployAccountTransaction { tx, tx_hash, contract_address },
+                ))
             }
             Transaction::Invoke(tx) => {
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
 
-                BTransaction::Account(AccountTransaction {
-                    tx: ApiAccountTransaction::Invoke(InvokeTransaction { tx, tx_hash }),
-                    execution_flags: ExecutionFlags::default(),
-                })
+                starknet_api::executable_transaction::Transaction::Account(ApiAccountTransaction::Invoke(
+                    InvokeTransaction { tx, tx_hash },
+                ))
             }
             Transaction::Deploy(_) => return Err(ValidatedToBlockifierTxError::DeployNotSupported),
         };
 
+        let tx = BTransaction::new_for_sequencing(tx);
         Ok((tx, self.arrived_at, self.converted_class))
     }
 }

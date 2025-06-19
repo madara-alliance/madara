@@ -1,7 +1,4 @@
-use crate::{
-    from_broadcasted_transaction::is_query, into_starknet_api::TransactionApiError, L1HandlerTransaction, Transaction,
-    TransactionWithHash,
-};
+use crate::{into_starknet_api::TransactionApiError, L1HandlerTransaction, Transaction, TransactionWithHash};
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use blockifier::{
     transaction::errors::TransactionExecutionError, transaction::transaction_execution::Transaction as BTransaction,
@@ -14,6 +11,11 @@ use mp_class::{
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
 use starknet_api::contract_class::ClassInfo as ApiClassInfo;
+use starknet_api::core::ContractAddress;
+use starknet_api::executable_transaction::{
+    AccountTransaction as ApiAccountTransaction, DeclareTransaction as ApiDeclareTransaction,
+    DeployAccountTransaction as ApiDeployAccountTransaction, InvokeTransaction as ApiInvokeTransaction,
+};
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -67,25 +69,19 @@ impl TransactionWithHash {
 }
 
 pub trait BroadcastedTransactionExt {
-    fn into_blockifier(
+    fn into_starknet_api(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-        validate: bool,
-        charge_fee: bool,
-        strict_nonce_check: bool,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError>;
 }
 
 impl BroadcastedTransactionExt for BroadcastedTxn {
-    fn into_blockifier(
+    fn into_starknet_api(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-        validate: bool,
-        charge_fee: bool,
-        strict_nonce_check: bool,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) = match &self {
             BroadcastedTxn::Declare(tx) => match tx {
                 BroadcastedDeclareTxn::V1(tx) | BroadcastedDeclareTxn::QueryV1(tx) => {
@@ -101,26 +97,38 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
             _ => (None, None, None),
         };
 
-        let only_query = is_query(&self);
         let TransactionWithHash { transaction, hash } =
             TransactionWithHash::from_broadcasted(self, chain_id, starknet_version, class_hash);
         let deployed_address = match &transaction {
             Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
             _ => None,
         };
-        let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
+        let transaction = match transaction {
+            Transaction::Declare(tx) => ApiAccountTransaction::Declare(ApiDeclareTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                class_info: class_info.expect("BroadcastedDeclareTxn generate a ClassInfo"),
+            }),
+            Transaction::DeployAccount(tx) => ApiAccountTransaction::DeployAccount(ApiDeployAccountTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                contract_address: ContractAddress(
+                    deployed_address
+                        .expect("BroadcastedDeployAccount generate a DeployedAddress")
+                        .try_into()
+                        .expect("Calculated deployed_address is in bound"),
+                ),
+            }),
+            Transaction::Invoke(tx) => ApiAccountTransaction::Invoke(ApiInvokeTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+            }),
+            Transaction::L1Handler(_) | Transaction::Deploy(_) => {
+                unreachable!("BroadcastedTxn can't be L1Handler or Deploy")
+            }
+        };
 
-        Ok((
-            BTransaction::from_api(
-                transaction,
-                TransactionHash(hash),
-                class_info,
-                None,
-                deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
-                ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check },
-            )?,
-            converted_class,
-        ))
+        Ok((transaction, converted_class))
     }
 }
 
@@ -151,36 +159,28 @@ impl L1HandlerTransaction {
 }
 
 impl BroadcastedTransactionExt for BroadcastedDeclareTxnV0 {
-    fn into_blockifier(
+    fn into_starknet_api(
         self,
         chain_id: Felt,
-        starknet_version: StarknetVersion,
-        validate: bool,
-        charge_fee: bool,
-        strict_nonce_check: bool,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        _starknet_version: StarknetVersion,
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) =
             handle_class_legacy(Arc::new((self.contract_class).clone().try_into()?))?;
 
         let is_query = self.is_query;
-        let transaction = Transaction::Declare(crate::DeclareTransaction::from_broadcasted_declare_v0(
+        let transaction = crate::DeclareTransaction::from_broadcasted_declare_v0(
             self,
             class_hash.expect("Class hash must be provided for DeclareTransaction"),
-        ));
-        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
-        let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
+        );
+        let hash = transaction.compute_hash(chain_id, is_query);
+        // let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
+        let transaction = ApiAccountTransaction::Declare(ApiDeclareTransaction {
+            tx: transaction.try_into()?,
+            tx_hash: TransactionHash(hash),
+            class_info: class_info.expect("BroadcastedDeclareTxnV0 generate a ClassInfo"),
+        });
 
-        Ok((
-            BTransaction::from_api(
-                transaction,
-                TransactionHash(hash),
-                class_info,
-                None,
-                None,
-                ExecutionFlags { only_query: is_query, charge_fee, validate, strict_nonce_check },
-            )?,
-            converted_class,
-        ))
+        Ok((transaction, converted_class))
     }
 }
 
