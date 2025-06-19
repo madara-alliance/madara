@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use crate::core::config::Config;
+use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
@@ -45,8 +46,8 @@ impl JobTrigger for ProvingJobTrigger {
             };
 
             let download_proof = match config.layer() {
-                Layer::L2 => false,
-                Layer::L3 => true,
+                Layer::L2 => None,
+                Layer::L3 => Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME)),
             };
 
             // Create proving job metadata

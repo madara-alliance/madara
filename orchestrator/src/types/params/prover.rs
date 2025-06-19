@@ -31,9 +31,9 @@ impl TryFrom<RunCmd> for ProverConfig {
                     sharp_user_crt: sharp_args.sharp_user_crt.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp user certificate is required".to_string())
                     })?,
-                    sharp_user_key: sharp_args.sharp_user_key.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Sharp user key is required".to_string())
-                    })?,
+                    sharp_user_key: sharp_args
+                        .sharp_user_key
+                        .ok_or_else(|| OrchestratorError::RunCommandError("Sharp user key is required".to_string()))?,
                     sharp_rpc_node_url: sharp_args.sharp_rpc_node_url.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Sharp RPC node URL is required".to_string())
                     })?,

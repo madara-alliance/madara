@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::types::constant::PROOF_FILE_NAME;
+use crate::types::constant::{PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::metadata::{JobSpecificMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -7,6 +7,7 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
 
 pub struct ProofRegistrationJobTrigger;
@@ -41,6 +42,13 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             // Update input path to use proof from ProofCreation
             let proof_path = format!("{}/{}", job.internal_id, PROOF_FILE_NAME);
             proving_metadata.input_path = Some(ProvingInputType::Proof(proof_path));
+
+            // Set download path for bridge proof based on layer
+            proving_metadata.download_proof = match config.layer() {
+                Layer::L2 => None,
+                Layer::L3 => Some(format!("{}/{}", job.internal_id, PROOF_PART2_FILE_NAME)),
+            };
+
             metadata.specific = JobSpecificMetadata::Proving(proving_metadata);
 
             tracing::debug!(job_id = %job.internal_id, "Creating proof registration job for proving job");

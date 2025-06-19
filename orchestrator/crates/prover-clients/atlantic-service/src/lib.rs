@@ -1,7 +1,7 @@
 pub mod client;
+pub mod constants;
 pub mod error;
 pub mod types;
-pub mod constants;
 
 pub use crate::types::AtlanticQueryStatus;
 use alloy::primitives::B256;

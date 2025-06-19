@@ -76,12 +76,12 @@ pub struct ProvingMetadata {
     /// SNOS fact to check for on-chain registration. If `None`, no on-chain check is performed. If
     /// `Some(value)`, it checks for `value` on the chain.
     pub ensure_on_chain_registration: Option<String>,
-    /// Whether to download the proof after job completion. If `true`, the proof will be downloaded
-    /// and stored in the storage system. The actual proof type depends on the job:
+    /// Path where the generated proof should be downloaded. If `None`, the proof will not be
+    /// downloaded. If `Some(path)`, the proof will be downloaded and stored to the specified path
+    /// in the provided storage. The actual proof type depends on the job:
     /// - ProofCreation: Downloads the SNOS proof (proof.json)
     /// - ProofRegistration: Downloads the bridge proof (proof_part2.json)
-    #[serde(default)]
-    pub download_proof: bool,
+    pub download_proof: Option<String>,
     /// Number of steps taken by SNOS to generate the proof
     pub n_steps: Option<usize>,
 }

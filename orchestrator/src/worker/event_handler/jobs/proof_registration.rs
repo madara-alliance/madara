@@ -1,7 +1,6 @@
 use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::PROOF_PART2_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -144,18 +143,17 @@ impl JobHandlerTrait for RegisterProofJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                if proving_metadata.download_proof {
-                    let download_path = format!("{}/{}", job.internal_id, PROOF_PART2_FILE_NAME);
+                if let Some(download_path) = &proving_metadata.download_proof {
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.context(format!(
                         "Failed to fetch proof from prover client for job_id: {}, task_id: {}",
                         job.internal_id, task_id
                     ))?;
                     tracing::debug!(
                         job_id = %job.internal_id,
-                        "Downloading and storing proof to path: {}",
+                        "Downloading and storing bridge proof to path: {}",
                         download_path
                     );
-                    config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &download_path).await?;
+                    config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
                 tracing::info!(
                     log_type = "completed",
