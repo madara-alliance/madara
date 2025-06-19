@@ -1,4 +1,3 @@
-// orchestrator/src/cli/prover/atlantic.rs
 use clap::Args;
 use url::Url;
 
