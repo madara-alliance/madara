@@ -1,8 +1,6 @@
 use crate::Transaction;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::{
-    transaction_execution::Transaction as BTransaction,
-};
+use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use mp_class::ConvertedClass;
 use mp_convert::{Felt, ToFelt};
 use serde::{Deserialize, Serialize};

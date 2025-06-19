@@ -167,7 +167,9 @@ impl From<mc_exec::Error> for SubmitTransactionError {
 #[derive(Debug, Default)]
 pub struct TransactionValidatorConfig {
     pub disable_validation: bool,
+    pub disable_fee: bool,
 }
+
 impl TransactionValidatorConfig {
     pub fn with_disable_validation(mut self, disable_validation: bool) -> Self {
         self.disable_validation = disable_validation;
@@ -201,19 +203,12 @@ impl TransactionValidator {
 
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
-        // TODO: do we really want to continue to support this behaviour
-        let validate = if tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE {
-            false
-        } else {
-            true
-        };
+        let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);
 
         // No charge_fee for Admin DeclareV0
-        let charge_fee = if tx.tx_type() == TransactionType::Declare && tx.version() == TransactionVersion(Felt::ZERO) {
-            false
-        } else {
-            true
-        };
+        let charge_fee = !((tx.tx_type() == TransactionType::Declare
+            && tx.version() == TransactionVersion(Felt::ZERO))
+            || self.config.disable_fee);
 
         let account_tx = AccountTransaction {
             tx,
@@ -272,7 +267,7 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
-        if tx.is_query() == true {
+        if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
                 "Cannot submit query-only transactions",
@@ -303,7 +298,7 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeployAccountTxn,
     ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
-        if tx.is_query() == true {
+        if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
                 "Cannot submit query-only transactions",
@@ -334,7 +329,7 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-        if tx.is_query() == true {
+        if tx.is_query() {
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::InvalidTransactionVersion,
                 "Cannot submit query-only transactions",

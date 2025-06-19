@@ -221,7 +221,6 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
     use mc_db::MadaraBackend;
-    use mc_exec::execution::TxInfo;
     use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MempoolLimits, MockL1DataProvider};
     use mc_submit_tx::{
         RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,

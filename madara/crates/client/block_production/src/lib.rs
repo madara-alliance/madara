@@ -524,7 +524,6 @@ pub(crate) mod tests {
     };
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
-    use mc_exec::execution::TxInfo;
     use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
     use mp_block::header::GasPrices;

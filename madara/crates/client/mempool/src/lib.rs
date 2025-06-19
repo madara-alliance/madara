@@ -375,17 +375,17 @@ pub(crate) mod tests {
     #[rstest::fixture]
     pub fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_starknet_api(
-                    starknet_api::executable_transaction::AccountTransaction::Invoke(
-                        starknet_api::executable_transaction::InvokeTransaction {
-                            tx: starknet_api::transaction::InvokeTransaction::V0(
-                                starknet_api::transaction::InvokeTransactionV0 {
-                                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                                    ..Default::default()
-                                },
-                            ),
-                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+            starknet_api::executable_transaction::AccountTransaction::Invoke(
+                starknet_api::executable_transaction::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V0(
+                        starknet_api::transaction::InvokeTransactionV0 {
+                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                            ..Default::default()
                         },
                     ),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                },
+            ),
             TxTimestamp::now(),
             None,
         )
@@ -395,13 +395,13 @@ pub(crate) mod tests {
     pub fn tx_account_v1_invalid() -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_starknet_api(
             starknet_api::executable_transaction::AccountTransaction::Invoke(
-                        starknet_api::executable_transaction::InvokeTransaction {
-                            tx: starknet_api::transaction::InvokeTransaction::V1(
-                                starknet_api::transaction::InvokeTransactionV1::default(),
-                            ),
-                            tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        },
+                starknet_api::executable_transaction::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V1(
+                        starknet_api::transaction::InvokeTransactionV1::default(),
                     ),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                },
+            ),
             TxTimestamp::now(),
             None,
         )
@@ -410,15 +410,15 @@ pub(crate) mod tests {
     #[rstest::fixture]
     pub fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
         ValidatedMempoolTx::from_starknet_api(
-    starknet_api::executable_transaction::AccountTransaction::DeployAccount(
-                        starknet_api::executable_transaction::DeployAccountTransaction {
-                            tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                                starknet_api::transaction::DeployAccountTransactionV1::default(),
-                            ),
-                            tx_hash: starknet_api::transaction::TransactionHash::default(),
-                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                        },
+            starknet_api::executable_transaction::AccountTransaction::DeployAccount(
+                starknet_api::executable_transaction::DeployAccountTransaction {
+                    tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                        starknet_api::transaction::DeployAccountTransactionV1::default(),
                     ),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                },
+            ),
             TxTimestamp::now(),
             None,
         )
@@ -426,12 +426,9 @@ pub(crate) mod tests {
 
     #[rstest::fixture]
     fn tx_l1_handler_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        let tx = L1HandlerTransaction {
-                        contract_address: contract_address,
-                        ..Default::default()
-                    };
+        let tx = L1HandlerTransaction { contract_address, ..Default::default() };
 
-        ValidatedMempoolTx{
+        ValidatedMempoolTx {
             contract_address: tx.contract_address,
             tx: tx.into(),
             paid_fee_on_l1: Some(0),
