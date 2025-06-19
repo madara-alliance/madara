@@ -89,7 +89,8 @@ pub async fn subscribe_pending_transactions(
             mp_rpc::v0_8_1::PendingTxnInfo::Hash(tx_hash)
         };
 
-        let msg = jsonrpsee::SubscriptionMessage::from_json(&tx_info).or_else_internal_server_error(|| {
+        let item = super::SubscriptionItem::new(sink.subscription_id(), tx_info);
+        let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
             format!("SubscribePendingTransactions failed to create response message at tx {tx_hash:#x}")
         })?;
 
