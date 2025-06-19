@@ -4,7 +4,7 @@ use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
 use anyhow::anyhow;
-use futures::future::try_join_all;
+
 use std::sync::Arc;
 use tracing::{info, info_span};
 
@@ -37,15 +37,18 @@ impl WorkerController {
             Layer::L2 => Self::get_l2_queues(),
             Layer::L3 => Self::get_l3_queues(),
         };
-        let mut tokio_threads = vec![];
+        let mut worker_set = tokio::task::JoinSet::new();
         for queue_type in queues.into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();
-            tokio_threads.push(tokio::spawn(async move {
+            worker_set.spawn(async move {
                 self_clone.create_span(&queue_type).await;
-            }));
+            });
         }
-        try_join_all(tokio_threads).await?;
+        // since there is not support to join all in futures, we need to join each worker one by one
+        while let Some(result) = worker_set.join_next().await {
+            result?;
+        }
         Ok(())
     }
 

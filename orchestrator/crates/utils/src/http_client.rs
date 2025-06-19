@@ -57,18 +57,18 @@ pub struct HttpClientBuilder {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub enum MineType {
+pub enum MimeType {
     OctetStream,
     Zip,
     Json,
 }
 
-impl std::fmt::Display for MineType {
+impl std::fmt::Display for MimeType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mime_str = match self {
-            MineType::OctetStream => "application/octet-stream",
-            MineType::Zip => "application/zip",
-            MineType::Json => "application/json",
+            MimeType::OctetStream => "application/octet-stream",
+            MimeType::Zip => "application/zip",
+            MimeType::Json => "application/json",
         };
         write!(f, "{}", mime_str)
     }
@@ -302,7 +302,7 @@ impl<'a> RequestBuilder<'a> {
         file_name: &str,
         mime_type: Option<&str>,
     ) -> io::Result<Self> {
-        let default_mime = MineType::OctetStream.to_string();
+        let default_mime = MimeType::OctetStream.to_string();
         let mime_type = mime_type.unwrap_or(&default_mime);
         let part = Part::bytes(bytes)
             .file_name(file_name.to_string())
@@ -653,7 +653,7 @@ mod http_client_tests {
                 .header("Authorization", "Bearer token")
                 .body(r#"{"name":"test"}"#);
 
-            then.status(200).header("content-type", MineType::Json.to_string()).body(r#"{"status": "ok"}"#);
+            then.status(200).header("content-type", MimeType::Json.to_string()).body(r#"{"status": "ok"}"#);
         });
 
         let client = HttpClient::builder(&mock_server.base_url())

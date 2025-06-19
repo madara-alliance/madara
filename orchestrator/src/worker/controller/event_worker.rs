@@ -21,6 +21,7 @@ pub enum MessageType {
     NoMessage,
 }
 
+#[derive(Clone)]
 pub struct EventWorker {
     queue_type: QueueType,
     config: Arc<Config>,
@@ -286,7 +287,8 @@ impl EventWorker {
             match self.get_message().await {
                 Ok(Some(message)) => match self.parse_message(&message) {
                     Ok(parsed_message) => {
-                        self.process_message(message, parsed_message).await?;
+                        let worker = self.clone();
+                        tokio::spawn(async move { worker.process_message(message, parsed_message).await });
                     }
                     Err(e) => {
                         error!("Failed to parse message: {:?}", e);

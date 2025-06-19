@@ -263,7 +263,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Ok(block_status.into())
             }
             None => {
-                panic!("How do we still have special_address_ after settling")
+                panic!("Incorrect state after settling blocks")
             }
         }
     }
