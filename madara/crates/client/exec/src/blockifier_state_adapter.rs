@@ -132,7 +132,7 @@ impl StateReader for BlockifierStateAdapter {
         );
 
         (&converted_class).try_into().map_err(|err| {
-            tracing::warn!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
+            tracing::error!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
         })
     }

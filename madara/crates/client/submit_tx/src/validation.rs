@@ -313,7 +313,7 @@ impl SubmitTransaction for TransactionValidator {
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        // Destructure to get class hash only if it's a Declare tx
+        // Destructure to get class hash only if it's a DeployAccount tx
         let contract_address = match &api_tx {
             ApiAccountTransaction::DeployAccount(deploy_account_tx) => deploy_account_tx.contract_address().to_felt(),
             _ => unreachable!("Created transaction should be DeployAccount"),
