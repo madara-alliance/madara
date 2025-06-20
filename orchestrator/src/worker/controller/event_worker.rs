@@ -290,11 +290,6 @@ impl EventWorker {
         info!("Starting worker with concurrency limit: {}", max_concurrent_tasks);
 
         loop {
-            while let Some(result) = tasks.try_join_next() {
-                if let Err(e) = result {
-                    error!("Task failed: {:?}", e);
-                }
-            }
             if tasks.len() < max_concurrent_tasks {
                 // Get message - this now blocks until a message is available
                 match self.get_message().await {
