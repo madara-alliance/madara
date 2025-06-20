@@ -176,7 +176,7 @@ impl TryFrom<&CasmContractClass> for CompiledSierra {
     type Error = serde_json::Error;
 
     fn try_from(value: &CasmContractClass) -> Result<Self, Self::Error> {
-        Ok(CompiledSierra(serde_json::to_string::<CasmContractClass>(value)?))
+        serde_json::to_string::<CasmContractClass>(value).map(CompiledSierra)
     }
 }
 

@@ -131,12 +131,10 @@ impl StateReader for BlockifierStateAdapter {
             class_hash.to_felt()
         );
 
-        let res: Result<RunnableCompiledClass, StateError> = (&converted_class).try_into().map_err(|err| {
-            tracing::error!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
+        (&converted_class).try_into().map_err(|err| {
+            tracing::warn!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
             StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
-        });
-
-        res
+        })
     }
 
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
