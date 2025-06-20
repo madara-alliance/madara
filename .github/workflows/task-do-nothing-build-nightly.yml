@@ -1,57 +1,14 @@
 ---
-# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
-name: Task - Build And Publish Nightly Docker Image
-
-on:
-  workflow_call:
-
-jobs:
-  build-nightly-orchestrator:
-    uses: ./.github/workflows/task-build-nightly.yml
-    with:
-      image-name: orchestrator
-      image-file: ./orchestrator.dockerfile
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  build-nightly-bootstrapper:
-    uses: ./.github/workflows/task-build-nightly.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper.dockerfile
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-orchestrator:
-    needs: build-nightly-orchestrator
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: orchestrator
-      tag: ${{ needs.build-nightly-orchestrator.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-orchestrator.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-bootstrapper:
-    needs: build-nightly-bootstrapper
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: bootstrapper
-      tag: ${{ needs.build-nightly-bootstrapper.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-bootstrapper.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+  # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+  name: Task - Build And Publish Nightly Docker Image
+  
+  on:
+    workflow_call:
+  
+  jobs:
+    build-nightly:
+      runs-on: karnot-arc-runner-set
+  
+      steps:
+        - name: Stub
+          run: exit 0

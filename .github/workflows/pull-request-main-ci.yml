@@ -169,59 +169,11 @@ jobs:
   #                                MERGE QUEUE                                #
   # ========================================================================= #
 
-  build-nightly-orchestrator:
-    needs: [build-madara, check-orchestrator]
-    uses: ./.github/workflows/task-build-nightly.yml
-    with:
-      image-name: orchestrator
-      image-file: ./orchestrator.dockerfile
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  build-nightly-bootstrapper:
-    needs: [build-madara, check-bootstrapper]
-    uses: ./.github/workflows/task-build-nightly.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper.dockerfile
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
+  build-nightly:
+    uses: ./.github/workflows/task-do-nothing-build-nightly.yml
 
   # test-hive:
   #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
-  publish-nightly-orchestrator:
-    needs: build-nightly-orchestrator
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: orchestrator
-      tag: ${{ needs.build-nightly-orchestrator.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-orchestrator.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-bootstrapper:
-    needs: build-nightly-bootstrapper
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: bootstrapper
-      tag: ${{ needs.build-nightly-bootstrapper.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-bootstrapper.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
+  publish-nightly:
+    uses: ./.github/workflows/task-do-nothing-publish-image.yml
