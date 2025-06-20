@@ -348,4 +348,12 @@ impl SubmitTransaction for TransactionValidator {
         self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        self.inner.received_transaction(hash).await
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        self.inner.subscribe_new_transactions().await
+    }
 }

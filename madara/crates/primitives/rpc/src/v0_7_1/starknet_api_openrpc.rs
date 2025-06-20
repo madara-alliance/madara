@@ -670,7 +670,7 @@ pub struct InvokeTxnReceipt {
     pub common_receipt_properties: CommonReceiptProperties,
 }
 
-/// invokes a specific function in the desired contract (not necessarily an account)
+/// Invokes a specific function in the desired contract (not necessarily an account)
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct InvokeTxnV0 {
     /// The parameters passed to the function

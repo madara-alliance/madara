@@ -119,6 +119,7 @@ pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(Pen
 
 #[derive(Debug)]
 pub(crate) struct CurrentPendingState {
+    backend: Arc<MadaraBackend>,
     pub block: PendingBlockState,
     pub block_n: u64,
     // These are reset every pending tick.
@@ -127,8 +128,8 @@ pub(crate) struct CurrentPendingState {
 }
 
 impl CurrentPendingState {
-    pub fn new(block: PendingBlockState, block_n: u64) -> Self {
-        Self { block, block_n, tx_executed_for_tick: Default::default(), stats_for_tick: Default::default() }
+    pub fn new(backend: Arc<MadaraBackend>, block: PendingBlockState, block_n: u64) -> Self {
+        Self { backend, block, block_n, tx_executed_for_tick: Default::default(), stats_for_tick: Default::default() }
     }
     /// Process the execution result, merging it with the current pending state
     pub fn append_batch(&mut self, batch: BatchExecutionResult) {
@@ -155,7 +156,10 @@ impl CurrentPendingState {
                         .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
                 );
                 self.block.state_diff.extend(&state_diff);
-                self.block.transactions.push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
+
+                let tx = TransactionWithReceipt { transaction: converted_tx.transaction, receipt };
+                self.block.transactions.push(tx.clone());
+                self.backend.on_new_pending_tx(tx)
             }
         }
         self.stats_for_tick += batch.stats;
@@ -336,6 +340,7 @@ impl BlockProductionTask {
 
                 self.current_state = Some(TaskState::Executing(
                     CurrentPendingState::new(
+                        Arc::clone(&self.backend),
                         PendingBlockState::new_from_execution_context(
                             exec_ctx,
                             latest_block_hash,

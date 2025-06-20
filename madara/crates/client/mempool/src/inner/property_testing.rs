@@ -68,6 +68,11 @@ pub enum TxTy {
 
 impl TxTy {
     fn tx(self, contract_address: Felt) -> blockifier::transaction::transaction_execution::Transaction {
+        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let ordering = std::sync::atomic::Ordering::AcqRel;
+        let tx_hash = starknet_api::transaction::TransactionHash(HASH.fetch_add(1, ordering).into());
+
         match self {
             Self::Declare => blockifier::transaction::transaction_execution::Transaction::Account(
                 blockifier::transaction::account_transaction::AccountTransaction {
@@ -79,7 +84,7 @@ impl TxTy {
                                     ..Default::default()
                                 },
                             ),
-                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                            tx_hash,
                             class_info: starknet_api::contract_class::ClassInfo::new(
                                 &starknet_api::contract_class::ContractClass::V0(
                                     starknet_api::deprecated_contract_class::ContractClass::default(),
@@ -101,7 +106,7 @@ impl TxTy {
                             tx: starknet_api::transaction::DeployAccountTransaction::V1(
                                 starknet_api::transaction::DeployAccountTransactionV1::default(),
                             ),
-                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                            tx_hash,
                             contract_address: ContractAddress::try_from(contract_address).unwrap(),
                         },
                     ),
@@ -118,7 +123,7 @@ impl TxTy {
                                     ..Default::default()
                                 },
                             ),
-                            tx_hash: starknet_api::transaction::TransactionHash::default(),
+                            tx_hash,
                         },
                     ),
                     execution_flags: blockifier::transaction::account_transaction::ExecutionFlags::default(),
