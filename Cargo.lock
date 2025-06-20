@@ -7611,6 +7611,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "highway"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9040319a6910b901d5d49cbada4a99db52836a1b63228a05f7e2b7f8feef89b1"
+
+[[package]]
 name = "hmac"
 version = "0.8.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -9311,7 +9317,6 @@ dependencies = [
 name = "mc-db"
 version = "0.8.0"
 dependencies = [
- "ahash 0.8.11",
  "anyhow",
  "bincode 1.3.3",
  "bitvec",
@@ -9344,6 +9349,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "siphasher 1.0.1",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
@@ -9551,8 +9557,10 @@ name = "mc-rpc"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "bitvec",
  "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
+ "futures",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
@@ -9579,6 +9587,7 @@ dependencies = [
  "thiserror 2.0.3",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -9644,6 +9653,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
+ "futures",
  "mc-db",
  "mc-exec",
  "mp-class",
@@ -9652,6 +9662,7 @@ dependencies = [
  "mp-transactions",
  "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
+ "tokio",
  "tracing",
 ]
 
@@ -9961,13 +9972,16 @@ dependencies = [
  "ahash 0.8.11",
  "bincode 1.3.3",
  "criterion",
+ "highway",
  "mp-receipt",
  "proptest",
  "rand",
  "rayon",
  "rstest 0.18.2",
+ "rustc-hash 2.1.0",
  "serde",
  "serde_json",
+ "siphasher 1.0.1",
  "starknet-types-core",
  "thiserror 2.0.3",
  "twox-hash 2.1.0",

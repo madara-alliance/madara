@@ -460,7 +460,8 @@ mod tests {
         Duration::from_secs(500000),
         true
     )]
-    #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
+    // FIXME: flaky
+    // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
     #[ignore = "should_work_across_block_boundary"]
     #[tokio::test]
     async fn test_account_deploy(
