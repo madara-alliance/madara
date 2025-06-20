@@ -69,6 +69,20 @@ impl SubmitTransaction for SubmitTransactionSwitch {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         self.provider()?.submit_invoke_transaction(tx).await
     }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        match self.provider().ok() {
+            Some(provider) => provider.received_transaction(hash).await,
+            None => None,
+        }
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        match self.provider().ok() {
+            Some(provider) => provider.subscribe_new_transactions().await,
+            None => None,
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -94,6 +108,20 @@ impl SubmitValidatedTransactionSwitch {
 impl SubmitValidatedTransaction for SubmitValidatedTransactionSwitch {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
         self.validated_provider()?.submit_validated_transaction(tx).await
+    }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        match self.validated_provider().ok() {
+            Some(provider) => provider.received_transaction(hash).await,
+            None => None,
+        }
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        match self.validated_provider().ok() {
+            Some(provider) => provider.subscribe_new_transactions().await,
+            None => None,
+        }
     }
 }
 
