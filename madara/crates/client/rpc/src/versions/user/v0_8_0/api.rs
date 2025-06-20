@@ -74,6 +74,18 @@ pub trait StarknetWsRpcApi {
         param_kind = map
     )]
     async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;
+
+    #[subscription(
+        name = "subscribePendingTransactions",
+        unsubscribe = "unsubscribePendingTransactions",
+        item = mp_rpc::v0_8_1::PendingTxnInfo,
+        param_kind = map
+    )]
+    async fn subscribe_pending_transactions(
+        &self,
+        transaction_details: bool,
+        sender_address: Vec<starknet_types_core::felt::Felt>,
+    ) -> jsonrpsee::core::SubscriptionResult;
 }
 
 #[versioned_rpc("V0_8_0", "starknet")]
