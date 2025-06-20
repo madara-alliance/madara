@@ -170,6 +170,7 @@ jobs:
   # ========================================================================= #
 
   build-nightly-orchestrator:
+    needs: [build-madara, check-orchestrator]
     uses: ./.github/workflows/task-build-nightly.yml
     with:
       image-name: orchestrator
@@ -181,6 +182,7 @@ jobs:
     secrets: inherit
 
   build-nightly-bootstrapper:
+    needs: [build-madara, check-bootstrapper]
     uses: ./.github/workflows/task-build-nightly.yml
     with:
       image-name: bootstrapper
