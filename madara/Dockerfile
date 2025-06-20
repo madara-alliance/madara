@@ -42,7 +42,7 @@ FROM base-rust AS builder-rust
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    RUST_BUILD_DOCKER=1 cargo chef cook -p madara --release --recipe-path recipe.json
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --manifest-path madara/Cargo.toml --release --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock .
 COPY madara madara
@@ -50,7 +50,7 @@ COPY build-artifacts build-artifacts
 COPY .db-versions.yml .db-versions.yml
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    RUST_BUILD_DOCKER=1 cargo build -p madara --release
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path madara/Cargo.toml --release
 
 # Step 5: runner
 FROM debian:bookworm-slim
