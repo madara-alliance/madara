@@ -1,11 +1,10 @@
 use crate::core::config::Config;
 use crate::core::StorageClient;
-use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
-    AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata, SnosMetadata,
+    AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata,
 };
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -40,7 +39,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
             block_no = %internal_id,
             "Aggregator job creation started."
         );
-        let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
+        let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
         tracing::info!(
             log_type = "completed",
             category = "aggregator",
