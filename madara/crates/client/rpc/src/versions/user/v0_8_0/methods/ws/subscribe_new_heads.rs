@@ -12,6 +12,7 @@ pub async fn subscribe_new_heads(
     block_id: BlockId,
 ) -> Result<(), StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
 
     let mut block_n = match block_id {
         BlockId::Number(block_n) => {
@@ -82,40 +83,33 @@ pub async fn subscribe_new_heads(
 
     // Catching up with the backend
     loop {
-        tokio::select! {
-            block_info = rx.recv() => {
-                let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
-                if block_info.header.block_number == block_n {
-                    break send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
-                }
-            },
-            _ = sink.closed() => {
-                return Ok(())
-            }
+        let block_info = tokio::select! {
+            block_info = rx.recv() => block_info.or_internal_server_error("Failed to retrieve block info")?,
+            _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+        };
+
+        if block_info.header.block_number == block_n {
+            break send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
         }
     }
 
     // New block headers
     loop {
-        tokio::select! {
-            block_info = rx.recv() => {
-                let block_info = block_info.or_internal_server_error("Failed to retrieve block info")?;
-                if block_info.header.block_number == block_n + 1 {
-                    send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
-                } else {
-                    let err = format!(
-                        "Received non-sequential block {}, expected {}",
-                        block_info.header.block_number,
-                        block_n + 1
-                    );
-                    return Err(StarknetWsApiError::internal_server_error(err));
-                }
-                block_n = block_n.saturating_add(1);
-            },
-            _ = sink.closed() => {
-                return Ok(())
-            }
+        let block_info = tokio::select! {
+            block_info = rx.recv() => block_info.or_internal_server_error("Failed to retrieve block info")?,
+            _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal),
+        };
+
+        if block_info.header.block_number == block_n + 1 {
+            send_block_header(&sink, Arc::unwrap_or_clone(block_info), block_n).await?;
+        } else {
+            let err =
+                format!("Received non-sequential block {}, expected {}", block_info.header.block_number, block_n + 1);
+            return Err(StarknetWsApiError::internal_server_error(err));
         }
+        block_n = block_n.saturating_add(1);
     }
 }
 
@@ -125,7 +119,8 @@ async fn send_block_header(
     block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
     let header = mp_rpc::BlockHeader::from(block_info);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&header)
+    let item = super::SubscriptionItem::new(sink.subscription_id(), header);
+    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
         .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
 
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
@@ -142,11 +137,11 @@ mod test {
 
     use crate::{
         test_utils::rpc_test_setup,
-        versions::user::v0_8_0::{NewHead, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
+        versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
         Starknet,
     };
 
-    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = NewHead> + '_ {
+    fn block_generator(backend: &mc_db::MadaraBackend) -> impl Iterator<Item = mp_rpc::v0_7_1::BlockHeader> + '_ {
         (0..).map(|n| {
             backend
                 .store_block(
@@ -174,7 +169,7 @@ mod test {
                 .into_closed()
                 .expect("Retrieving block info");
 
-            NewHead::from(block_info)
+            mp_rpc::BlockHeader::from(block_info)
         })
     }
 
@@ -195,7 +190,7 @@ mod test {
             client.subscribe_new_heads(BlockId::Tag(BlockTag::Latest)).await.expect("starknet_subscribeNewHeads");
 
         let next = sub.next().await;
-        let header = next.expect("Waiting for block header").expect("Waiting for block header");
+        let header = next.expect("Waiting for block header").expect("Waiting for block header").result;
 
         assert_eq!(
             header,
@@ -223,7 +218,7 @@ mod test {
 
         for e in expected {
             let next = sub.next().await;
-            let header = next.expect("Waiting for block header").expect("Waiting for block header");
+            let header = next.expect("Waiting for block header").expect("Waiting for block header").result;
 
             assert_eq!(
                 header,
@@ -251,7 +246,7 @@ mod test {
         let mut sub = client.subscribe_new_heads(BlockId::Number(0)).await.expect("starknet_subscribeNewHeads");
 
         let next = sub.next().await;
-        let header = next.expect("Waiting for block header").expect("Waiting for block header");
+        let header = next.expect("Waiting for block header").expect("Waiting for block header").result;
 
         assert_eq!(
             header,
@@ -283,7 +278,7 @@ mod test {
         let block_1 = generator.next().expect("Retrieving block from backend");
 
         let next = sub.next().await;
-        let header = next.expect("Waiting for block header").expect("Waiting for block header");
+        let header = next.expect("Waiting for block header").expect("Waiting for block header").result;
 
         // Note that `sub` does not yield block 0. This is because it starts
         // from block 1, ignoring any block before. This can server to notify
@@ -295,6 +290,30 @@ mod test {
             serde_json::to_string_pretty(&header).unwrap_or_default(),
             serde_json::to_string_pretty(&block_1).unwrap_or_default()
         );
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_new_heads_unsubscribe(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        // Server will be stopped once this is dropped
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut generator = block_generator(&backend);
+        let _block_0 = generator.next().expect("Retrieving block from backend");
+
+        let mut sub = client.subscribe_new_heads(BlockId::Number(1)).await.expect("starknet_subscribeNewHeads");
+
+        let _block_1 = generator.next().expect("Retrieving block from backend");
+
+        let next = sub.next().await;
+        let subscription_id = next.unwrap().unwrap().subscription_id;
+        client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
+
+        assert!(sub.next().await.is_none());
     }
 
     #[tokio::test]

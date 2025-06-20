@@ -431,18 +431,22 @@ impl DeployAccountTransactionV3 {
 
 impl DeployTransaction {
     pub fn compute_hash(&self, chain_id: Felt, legacy: bool) -> Felt {
-        let contract_address = calculate_contract_address(
-            self.contract_address_salt,
-            self.class_hash,
-            &self.constructor_calldata,
-            Default::default(),
-        );
+        let contract_address = self.calculate_contract_address();
 
         if legacy {
             compute_hash_given_contract_address_legacy(chain_id, contract_address, &self.constructor_calldata)
         } else {
             compute_hash_given_contract_address(self.version, chain_id, contract_address, &self.constructor_calldata)
         }
+    }
+
+    pub fn calculate_contract_address(&self) -> Felt {
+        calculate_contract_address(
+            self.contract_address_salt,
+            self.class_hash,
+            &self.constructor_calldata,
+            Default::default(),
+        )
     }
 }
 

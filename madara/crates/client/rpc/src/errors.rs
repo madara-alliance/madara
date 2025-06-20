@@ -77,6 +77,8 @@ pub enum StarknetRpcApiError {
     ClassAlreadyDeclared { error: Cow<'static, str> },
     #[error("Invalid transaction nonce")]
     InvalidTxnNonce { error: Cow<'static, str> },
+    #[error("Invalid subscription id")]
+    InvalidSubscriptionId,
     #[error("Max fee is smaller than the minimal transaction cost (validation plus fee transfer)")]
     InsufficientMaxFee { error: Cow<'static, str> },
     #[error("Account balance is smaller than the transaction's max_fee")]
@@ -166,6 +168,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InvalidContractClass { .. } => 50,
             StarknetRpcApiError::ClassAlreadyDeclared { .. } => 51,
             StarknetRpcApiError::InvalidTxnNonce { .. } => 52,
+            StarknetRpcApiError::InvalidSubscriptionId => 66,
             StarknetRpcApiError::InsufficientMaxFee { .. } => 53,
             StarknetRpcApiError::InsufficientAccountBalance { .. } => 54,
             StarknetRpcApiError::ValidationFailure { .. } => 55,
@@ -222,6 +225,7 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::InvalidTxnHash
             | StarknetRpcApiError::InvalidBlockHash
             | StarknetRpcApiError::InvalidTxnIndex
+            | StarknetRpcApiError::InvalidSubscriptionId
             | StarknetRpcApiError::TxnHashNotFound
             | StarknetRpcApiError::PageSizeTooBig
             | StarknetRpcApiError::NoBlocks
@@ -377,6 +381,7 @@ impl From<SubmitTransactionError> for StarknetRpcApiError {
 #[derive(Debug)]
 pub enum StarknetWsApiError {
     TooManyBlocksBack,
+    TooManyAddressesInFilter,
     NoBlocks,
     BlockNotFound,
     Pending,
@@ -388,6 +393,7 @@ impl StarknetWsApiError {
     fn code(&self) -> i32 {
         match self {
             Self::TooManyBlocksBack => 68,
+            Self::TooManyAddressesInFilter => 67,
             Self::NoBlocks => 32,
             Self::BlockNotFound => 24,
             Self::Pending => 69,
@@ -398,6 +404,7 @@ impl StarknetWsApiError {
     fn message(&self) -> &str {
         match self {
             Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::TooManyAddressesInFilter => "Too many addresses in filter sender_address filter",
             Self::NoBlocks => "There are no blocks",
             Self::BlockNotFound => "Block not found",
             // See https://github.com/starkware-libs/starknet-specs/pull/237
@@ -410,6 +417,12 @@ impl StarknetWsApiError {
     pub fn internal_server_error<C: std::fmt::Display>(context: C) -> Self {
         display_internal_server_error(context);
         StarknetWsApiError::Internal
+    }
+}
+
+impl From<StarknetWsApiError> for jsonrpsee::types::ErrorObjectOwned {
+    fn from(err: StarknetWsApiError) -> Self {
+        Self::owned(err.code(), err.message(), None::<()>)
     }
 }
 
