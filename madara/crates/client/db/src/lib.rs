@@ -163,8 +163,6 @@ pub enum Column {
     /// Contract class hash to class data
     ClassInfo,
     ClassCompiled,
-    PendingClassInfo,
-    PendingClassCompiled,
 
     // History of contract class hashes
     // contract_address history block_number => class_hash
@@ -173,11 +171,6 @@ pub enum Column {
     // History of contract nonces
     // contract_address history block_number => nonce
     ContractToNonces,
-
-    // Pending columns for contract db
-    PendingContractToClassHashes,
-    PendingContractToNonces,
-    PendingContractStorage,
 
     // History of contract key => values
     // (contract_address, storage_key) history block_number => felt
@@ -230,8 +223,6 @@ impl Column {
             EventBloom,
             ClassInfo,
             ClassCompiled,
-            PendingClassInfo,
-            PendingClassCompiled,
             ContractToClassHashes,
             ContractToNonces,
             ContractStorage,
@@ -246,9 +237,6 @@ impl Column {
             BonsaiClassesLog,
             L1Messaging,
             L1MessagingNonce,
-            PendingContractToClassHashes,
-            PendingContractToNonces,
-            PendingContractStorage,
             Devnet,
             MempoolTransactions,
         ]
@@ -276,16 +264,11 @@ impl Column {
             BonsaiClassesLog => "bonsai_classes_log",
             ClassInfo => "class_info",
             ClassCompiled => "class_compiled",
-            PendingClassInfo => "pending_class_info",
-            PendingClassCompiled => "pending_class_compiled",
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractStorage => "contract_storage",
             L1Messaging => "l1_messaging",
             L1MessagingNonce => "l1_messaging_nonce",
-            PendingContractToClassHashes => "pending_contract_to_class_hashes",
-            PendingContractToNonces => "pending_contract_to_nonces",
-            PendingContractStorage => "pending_contract_storage",
             Devnet => "devnet",
             MempoolTransactions => "mempool_transactions",
         }
