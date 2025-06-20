@@ -18,23 +18,11 @@ WORKDIR /usr/src/madara/
 # Copy the local codebase
 COPY . .
 
-# Create and use a virtual environment
-RUN python -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
-
-# Install Python dependencies in the virtual environment
-RUN pip install --upgrade pip
-RUN pip install cairo-lang==0.13.2 "sympy<1.13.0"
-
-# Continue with the build
-RUN mkdir -p orchestrator/build
-RUN cairo-compile orchestrator/cairo-lang/src/starkware/starknet/core/os/os.cairo --output orchestrator/build/os_latest.json --cairo_path orchestrator/cairo-lang/src
-
 # Setting it to avoid building artifacts again inside docker
 ENV RUST_BUILD_DOCKER=true
 
-# Build the project
-RUN cargo fetch
+
+# Build only the orchestrator binary
 RUN cargo build --bin orchestrator --release
 
 # Install Node.js dependencies for migrations
