@@ -192,15 +192,15 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        1
+        2
     }
 
     fn max_verification_attempts(&self) -> u64 {
-        1
+        300
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {
-        1
+        30
     }
 
     fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
