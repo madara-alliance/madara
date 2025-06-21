@@ -35,7 +35,7 @@ rustc-ice-*.txt
 
 # Javascript dependencies
 **/node_modules/
-
+package-lock.json
 # Artillery reports
 benchmarking/reports/*.json
 

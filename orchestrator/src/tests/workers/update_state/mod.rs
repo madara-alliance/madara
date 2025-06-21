@@ -4,6 +4,8 @@ use mockall::predicate::eq;
 use rstest::*;
 use uuid::Uuid;
 
+pub mod test_2;
+
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::workers::utils::{create_and_store_prerequisite_jobs, get_job_item_mock_by_id};
 use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};

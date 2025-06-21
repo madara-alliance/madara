@@ -22,6 +22,8 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
 
+pub mod test_2;
+
 #[rstest]
 #[case(true)]
 #[case(false)]

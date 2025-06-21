@@ -215,7 +215,8 @@ async fn database_test_update_job() {
             JobItemUpdates::new()
                 .update_status(JobStatus::LockedForProcessing)
                 .update_metadata(updated_job_metadata)
-                .build(),
+                .build()
+                .unwrap(),
         )
         .await;
 
