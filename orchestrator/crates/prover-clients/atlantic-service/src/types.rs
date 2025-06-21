@@ -50,7 +50,7 @@ struct AtlanticQueryBucket {
     pub network: Option<String>,
     pub hints: Option<AtlanticHints>,
     pub bucket_id: String,
-    pub bucket_job_index: i64,
+    pub bucket_job_index: Option<i64>,
 }
 
 #[derive(Deserialize)]

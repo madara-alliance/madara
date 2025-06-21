@@ -11,7 +11,7 @@ use crate::types::{
     AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticBucketType, AtlanticCairoVersion, AtlanticCairoVm,
     AtlanticCreateBucketRequest, AtlanticGetBucketResponse, AtlanticGetStatusResponse, AtlanticQueryStep,
 };
-use crate::AtlanticValidatedArgs;
+use crate::{error, AtlanticValidatedArgs};
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {
@@ -65,18 +65,17 @@ impl AtlanticClient {
     }
 
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
-        let response = self
-            .client
-            .request()
-            .method(Method::GET)
-            .path("buckets")
-            .path(bucket_id)
-            .send()
-            .await
-            .map_err(AtlanticError::GetBucketStatusFailure)?;
+        let response =
+            self.client.request().method(Method::GET).path("buckets").path(bucket_id).send().await.map_err(|e| {
+                tracing::error!("Failed to get bucket status, {}", e);
+                AtlanticError::GetBucketStatusFailure(e)
+            })?;
 
         match response.status().is_success() {
-            true => response.json().await.map_err(AtlanticError::GetJobStatusFailure),
+            true => response.json().await.map_err(|e| {
+                tracing::error!("Failed to parse bucket status, {}", e);
+                AtlanticError::GetBucketStatusFailure(e)
+            }),
             false => Err(AtlanticError::SharpService(response.status())),
         }
     }
