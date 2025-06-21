@@ -53,7 +53,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 }
             };
 
-            let aggregator_metadata = JobMetadata {
+            let metadata = JobMetadata {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     bucket_id,
@@ -65,12 +65,13 @@ impl JobTrigger for AggregatorJobTrigger {
             match JobHandlerService::create_job(
                 JobType::Aggregator,
                 batch.index.to_string(),
-                aggregator_metadata,
+                metadata,
                 config.clone(),
             )
             .await
             {
                 Ok(_) => {
+                    config.database().update_batch_status_by_index(batch.index, BatchStatus::PendingAggregator).await?;
                     tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
                 Err(e) => {

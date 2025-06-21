@@ -1,3 +1,4 @@
+use std::fs::metadata;
 use crate::core::config::Config;
 use crate::core::StorageClient;
 use crate::error::job::JobError;
@@ -25,6 +26,7 @@ use starknet_os::io::output::StarknetOsOutput;
 use std::io::Read;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
+use crate::types::batch::BatchStatus;
 
 pub struct AggregatorJobHandler;
 
@@ -86,6 +88,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit close bucket task to prover client");
                 JobError::Other(OtherError(e)) // TODO: Add a new error type to be used for prover client error
             })?;
+
+        config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingVerification).await?;
 
         Ok(external_id)
     }
@@ -157,6 +161,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     // TODO: Add the path of all these in
                 }
 
+                config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::ReadyForStateUpdate).await?;
+
                 tracing::info!(
                     log_type = "completed",
                     category = "aggregator",
@@ -168,6 +174,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
+                config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::VerificationFailed).await?;
                 tracing::info!(
                     log_type = "failed",
                     category = "aggregator",

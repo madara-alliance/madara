@@ -19,6 +19,7 @@ use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use starknet_os::io::output::StarknetOsOutput;
 use uuid::Uuid;
+use crate::types::batch::BatchStatus;
 
 pub struct StateUpdateJobHandler;
 #[async_trait]
@@ -145,6 +146,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             state_metadata.tx_hashes = sent_tx_hashes.clone();
             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
             nonce += 1;
+            config.database().update_batch_status_by_index(batch_no, BatchStatus::Completed).await?;
         }
 
         let val = state_metadata.batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;

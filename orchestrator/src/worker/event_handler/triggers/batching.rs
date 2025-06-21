@@ -6,7 +6,7 @@ use crate::core::config::{Config, StarknetVersion};
 use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
@@ -52,7 +52,7 @@ impl JobTrigger for BatchingTrigger {
         let first_block_to_assign_batch = config
             .service_config()
             .min_block_to_process
-            .map_or(latest_block_in_db, |min_block| max(min_block, latest_block_in_db));
+            .map_or(latest_block_in_db + 1, |min_block| max(min_block, latest_block_in_db + 1));
 
         self.assign_batch_to_blocks(first_block_to_assign_batch, last_block_to_assign_batch, config.clone()).await?;
 
@@ -70,6 +70,13 @@ impl BatchingTrigger {
         end_block_number: u64,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
+        if end_block_number < start_block_number {
+            return Err(JobError::Other(OtherError(eyre!(
+                "end_block_number {} is smaller than start_block_number {}",
+                end_block_number,
+                start_block_number
+            ))));
+        }
         // Get the database
         let database = config.database();
 
