@@ -165,15 +165,13 @@ impl ProverClient for SharpProverService {
         todo!()
     }
 
-
     /// TODO: We need to implement this function for the prover client while adding the testcase
     /// or while using the sharp prover client.
     async fn submit_l2_query(
         &self,
         _task_id: &str,
         _fact: &str,
-        _n_steps: Option<usize>,
-        _cairo_verifier: &str,
+        _n_steps: Option<usize>
     ) -> Result<String, ProverClientError> {
         todo!()
     }

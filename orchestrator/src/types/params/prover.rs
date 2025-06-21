@@ -82,6 +82,7 @@ impl TryFrom<RunCmd> for ProverConfig {
                     atlantic_network: atlantic_args.atlantic_network.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Atlantic network is required".to_string())
                     })?,
+                    cairo_verifier_program_hash: atlantic_args.cairo_verifier_program_hash,
                 }))
             }
         }

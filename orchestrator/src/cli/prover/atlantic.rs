@@ -43,6 +43,10 @@ pub struct AtlanticCliArgs {
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_verifier_contract_address: Option<String>,
 
+    /// The verifier contract address for Atlantic.
+    #[arg(env = "MADARA_ORCHESTRATOR_CAIRO_V0_VERIFIER_PROGRAM_HASH", long)]
+    pub cairo_verifier_program_hash: Option<String>,
+
     /// Network being used for the prover.
     #[arg(
         env = "MADARA_ORCHESTRATOR_ATLANTIC_NETWORK", 

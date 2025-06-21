@@ -26,6 +26,7 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_mock_fact_hash: String,
     pub atlantic_prover_type: String,
     pub atlantic_network: String,
+    pub cairo_verifier_program_hash: Option<String>,
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -34,6 +35,7 @@ pub struct AtlanticProverService {
     pub fact_checker: Option<FactChecker>,
     pub atlantic_api_key: String,
     pub atlantic_network: String,
+    pub cairo_verifier_program_hash: Option<String>,
 }
 
 #[async_trait]
@@ -151,8 +153,7 @@ impl ProverClient for AtlanticProverService {
         &self,
         task_id: &str,
         proof: &str,
-        n_steps: Option<usize>,
-        cairo_verifier: &str,
+        n_steps: Option<usize>
     ) -> Result<String, ProverClientError> {
         tracing::info!(
             task_id = %task_id,
@@ -161,9 +162,13 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
+        let verifier_program_hash = self.cairo_verifier_program_hash.as_ref().ok_or_else(|| {
+            ProverClientError::MissingCairoVerifierProgramHash
+        })?;
+
         let atlantic_job_response = self
             .atlantic_client
-            .submit_l2_query(proof, cairo_verifier, n_steps, &self.atlantic_network, &self.atlantic_api_key)
+            .submit_l2_query(proof, verifier_program_hash, n_steps, &self.atlantic_network, &self.atlantic_api_key)
             .await?;
 
         tracing::info!(
@@ -183,8 +188,9 @@ impl AtlanticProverService {
         atlantic_api_key: String,
         atlantic_network: String,
         fact_checker: Option<FactChecker>,
+        cairo_verifier_program_hash: Option<String>,
     ) -> Self {
-        Self { atlantic_client, fact_checker, atlantic_api_key, atlantic_network }
+        Self { atlantic_client, fact_checker, atlantic_api_key, atlantic_network , cairo_verifier_program_hash }
     }
 
     /// Creates a new instance of `AtlanticProverService` with the given parameters.
@@ -215,6 +221,7 @@ impl AtlanticProverService {
             atlantic_params.atlantic_api_key.clone(),
             atlantic_params.atlantic_network.clone(),
             fact_checker,
+            atlantic_params.cairo_verifier_program_hash.clone(),
         )
     }
 
@@ -230,6 +237,6 @@ impl AtlanticProverService {
                 atlantic_params.atlantic_settlement_layer.clone(),
             ))
         };
-        Self::new(atlantic_client, "random_api_key".to_string(), "TESTNET".to_string(), fact_checker)
+        Self::new(atlantic_client, "random_api_key".to_string(), "TESTNET".to_string(), fact_checker, None)
     }
 }
