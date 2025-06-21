@@ -45,7 +45,7 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-location: llvm-cov-target/release
-          cache-key: madara-test
+          cache-key: madara-test-${{ runner.os }}-rust-1.86
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
