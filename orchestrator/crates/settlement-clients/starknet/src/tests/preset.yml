@@ -1,35 +1,19 @@
 chain_name: "Madara"
 chain_id: "MADARA_DEVNET"
-l1_da_mode: "Calldata"
 native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d"
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-versioned_constants:
-  "0.13.0": "./src/tests/resources/versioned_constants_13_0.json"
-  "0.13.1": "./src/tests/resources/versioned_constants_13_1.json"
-  "0.13.1.1": "./src/tests/resources/versioned_constants_13_1_1.json"
-  "0.13.2": "./src/tests/resources/versioned_constants_13_2.json"
 latest_protocol_version: "0.13.2"
 block_time: "100ms"
 pending_block_update_time: 200ms
 execution_batch_size: 16
 bouncer_config:
   block_max_capacity:
-    builtin_count:
-      add_mod: 18446744073709551615
-      bitwise: 18446744073709551615
-      ecdsa: 18446744073709551615
-      ec_op: 18446744073709551615
-      keccak: 18446744073709551615
-      mul_mod: 18446744073709551615
-      pedersen: 18446744073709551615
-      poseidon: 18446744073709551615
-      range_check: 18446744073709551615
-      range_check96: 18446744073709551615
-    gas: 5000000
+    sierra_gas: 500000000
     message_segment_length: 18446744073709551615
     n_events: 18446744073709551615
-    n_steps: 40000000
     state_diff_size: 131072
+    l1_gas: 18446744073709551615
+    n_txs: 18446744073709551615
 sequencer_address: "0x123"
 max_nonce_for_validation_skip: 2
 eth_core_contract_address: "0xE2Bb56ee936fd6433DC0F6e7e3b8365C906AA057"

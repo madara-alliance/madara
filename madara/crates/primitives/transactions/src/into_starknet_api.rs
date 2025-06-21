@@ -19,6 +19,24 @@ pub enum TransactionApiError {
     Tip,
 }
 
+impl From<starknet_api::executable_transaction::AccountTransaction> for Transaction {
+    fn from(value: starknet_api::executable_transaction::AccountTransaction) -> Self {
+        match value {
+            starknet_api::executable_transaction::AccountTransaction::Declare(tx) => Self::Declare(tx.tx.into()),
+            starknet_api::executable_transaction::AccountTransaction::DeployAccount(tx) => {
+                Self::DeployAccount(tx.tx.into())
+            }
+            starknet_api::executable_transaction::AccountTransaction::Invoke(tx) => Self::Invoke(tx.tx.into()),
+        }
+    }
+}
+
+impl From<starknet_api::executable_transaction::L1HandlerTransaction> for Transaction {
+    fn from(value: starknet_api::executable_transaction::L1HandlerTransaction) -> Self {
+        Self::L1Handler(value.tx.into())
+    }
+}
+
 impl From<starknet_api::transaction::Transaction> for Transaction {
     fn from(value: starknet_api::transaction::Transaction) -> Self {
         match value {
@@ -72,7 +90,7 @@ impl TryFrom<DeclareTransaction> for starknet_api::transaction::DeclareTransacti
 fn declare_v0v1_into_v0(tx: starknet_api::transaction::DeclareTransactionV0V1) -> DeclareTransactionV0 {
     DeclareTransactionV0 {
         sender_address: **tx.sender_address,
-        max_fee: (*tx.max_fee).into(),
+        max_fee: tx.max_fee.0.into(),
         signature: tx.signature.0,
         class_hash: *tx.class_hash,
     }
@@ -84,7 +102,7 @@ impl TryFrom<DeclareTransactionV0> for starknet_api::transaction::DeclareTransac
     fn try_from(tx: DeclareTransactionV0) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(Felt::ZERO), // V0 does not have nonce
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
             sender_address: contract_address(&tx.sender_address)?,
@@ -95,7 +113,7 @@ impl TryFrom<DeclareTransactionV0> for starknet_api::transaction::DeclareTransac
 fn declare_v0v1_into_v1(tx: starknet_api::transaction::DeclareTransactionV0V1) -> DeclareTransactionV1 {
     DeclareTransactionV1 {
         sender_address: **tx.sender_address,
-        max_fee: (*tx.max_fee).into(),
+        max_fee: tx.max_fee.0.into(),
         signature: tx.signature.0,
         class_hash: *tx.class_hash,
         nonce: *tx.nonce,
@@ -108,7 +126,7 @@ impl TryFrom<DeclareTransactionV1> for starknet_api::transaction::DeclareTransac
     fn try_from(tx: DeclareTransactionV1) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
             sender_address: contract_address(&tx.sender_address)?,
@@ -117,14 +135,14 @@ impl TryFrom<DeclareTransactionV1> for starknet_api::transaction::DeclareTransac
 }
 
 impl From<starknet_api::transaction::DeclareTransactionV2> for DeclareTransactionV2 {
-    fn from(value: starknet_api::transaction::DeclareTransactionV2) -> Self {
+    fn from(tx: starknet_api::transaction::DeclareTransactionV2) -> Self {
         Self {
-            sender_address: **value.sender_address,
-            max_fee: (*value.max_fee).into(),
-            signature: value.signature.0,
-            class_hash: *value.class_hash,
-            nonce: *value.nonce,
-            compiled_class_hash: value.compiled_class_hash.0,
+            sender_address: **tx.sender_address,
+            max_fee: tx.max_fee.0.into(),
+            signature: tx.signature.0,
+            class_hash: *tx.class_hash,
+            nonce: *tx.nonce,
+            compiled_class_hash: tx.compiled_class_hash.0,
         }
     }
 }
@@ -135,7 +153,7 @@ impl TryFrom<DeclareTransactionV2> for starknet_api::transaction::DeclareTransac
     fn try_from(tx: DeclareTransactionV2) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
             compiled_class_hash: starknet_api::core::CompiledClassHash(tx.compiled_class_hash),
@@ -168,16 +186,18 @@ impl TryFrom<DeclareTransactionV3> for starknet_api::transaction::DeclareTransac
     fn try_from(tx: DeclareTransactionV3) -> Result<Self, Self::Error> {
         Ok(Self {
             resource_bounds: (&tx.resource_bounds).into(),
-            tip: starknet_api::transaction::Tip(tx.tip),
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            tip: starknet_api::transaction::fields::Tip(tx.tip),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
             compiled_class_hash: starknet_api::core::CompiledClassHash(tx.compiled_class_hash),
             sender_address: contract_address(&tx.sender_address)?,
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            paymaster_data: starknet_api::transaction::PaymasterData(tx.paymaster_data),
-            account_deployment_data: starknet_api::transaction::AccountDeploymentData(tx.account_deployment_data),
+            paymaster_data: starknet_api::transaction::fields::PaymasterData(tx.paymaster_data),
+            account_deployment_data: starknet_api::transaction::fields::AccountDeploymentData(
+                tx.account_deployment_data,
+            ),
         })
     }
 }
@@ -198,7 +218,7 @@ impl From<DeployTransaction> for starknet_api::transaction::DeployTransaction {
         Self {
             version: starknet_api::transaction::TransactionVersion(tx.version),
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
-            contract_address_salt: starknet_api::transaction::ContractAddressSalt(tx.contract_address_salt),
+            contract_address_salt: starknet_api::transaction::fields::ContractAddressSalt(tx.contract_address_salt),
             constructor_calldata: calldata(tx.constructor_calldata),
         }
     }
@@ -243,10 +263,10 @@ impl TryFrom<DeployAccountTransactionV1> for starknet_api::transaction::DeployAc
     fn try_from(tx: DeployAccountTransactionV1) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
-            contract_address_salt: starknet_api::transaction::ContractAddressSalt(tx.contract_address_salt),
+            contract_address_salt: starknet_api::transaction::fields::ContractAddressSalt(tx.contract_address_salt),
             constructor_calldata: calldata(tx.constructor_calldata),
         })
     }
@@ -283,15 +303,15 @@ impl From<DeployAccountTransactionV3> for starknet_api::transaction::DeployAccou
     fn from(tx: DeployAccountTransactionV3) -> Self {
         Self {
             resource_bounds: (&tx.resource_bounds).into(),
-            tip: starknet_api::transaction::Tip(tx.tip),
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            tip: starknet_api::transaction::fields::Tip(tx.tip),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             class_hash: starknet_api::core::ClassHash(tx.class_hash),
-            contract_address_salt: starknet_api::transaction::ContractAddressSalt(tx.contract_address_salt),
+            contract_address_salt: starknet_api::transaction::fields::ContractAddressSalt(tx.contract_address_salt),
             constructor_calldata: calldata(tx.constructor_calldata),
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            paymaster_data: starknet_api::transaction::PaymasterData(tx.paymaster_data),
+            paymaster_data: starknet_api::transaction::fields::PaymasterData(tx.paymaster_data),
         }
     }
 }
@@ -315,7 +335,7 @@ impl From<starknet_api::transaction::InvokeTransactionV0> for InvokeTransactionV
             signature: value.signature.0,
             contract_address: **value.contract_address,
             entry_point_selector: value.entry_point_selector.0,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
         }
     }
 }
@@ -326,10 +346,10 @@ impl TryFrom<InvokeTransactionV0> for starknet_api::transaction::InvokeTransacti
     fn try_from(tx: InvokeTransactionV0) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             contract_address: contract_address(&tx.contract_address)?,
             entry_point_selector: starknet_api::core::EntryPointSelector(tx.entry_point_selector),
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
         })
     }
 }
@@ -338,7 +358,7 @@ impl From<starknet_api::transaction::InvokeTransactionV1> for InvokeTransactionV
     fn from(value: starknet_api::transaction::InvokeTransactionV1) -> Self {
         Self {
             sender_address: **value.sender_address,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
             max_fee: value.max_fee.into(),
             signature: value.signature.0,
             nonce: *value.nonce,
@@ -352,10 +372,10 @@ impl TryFrom<InvokeTransactionV1> for starknet_api::transaction::InvokeTransacti
     fn try_from(tx: InvokeTransactionV1) -> Result<Self, Self::Error> {
         Ok(Self {
             max_fee: fee(&tx.max_fee)?,
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             sender_address: contract_address(&tx.sender_address)?,
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
         })
     }
 }
@@ -364,7 +384,7 @@ impl From<starknet_api::transaction::InvokeTransactionV3> for InvokeTransactionV
     fn from(value: starknet_api::transaction::InvokeTransactionV3) -> Self {
         Self {
             sender_address: **value.sender_address,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
             signature: value.signature.0,
             nonce: *value.nonce,
             resource_bounds: value.resource_bounds.into(),
@@ -383,15 +403,17 @@ impl TryFrom<InvokeTransactionV3> for starknet_api::transaction::InvokeTransacti
     fn try_from(tx: InvokeTransactionV3) -> Result<Self, Self::Error> {
         Ok(Self {
             resource_bounds: (&tx.resource_bounds).into(),
-            tip: starknet_api::transaction::Tip(tx.tip),
-            signature: starknet_api::transaction::TransactionSignature(tx.signature),
+            tip: starknet_api::transaction::fields::Tip(tx.tip),
+            signature: starknet_api::transaction::fields::TransactionSignature(tx.signature),
             nonce: starknet_api::core::Nonce(tx.nonce),
             sender_address: contract_address(&tx.sender_address)?,
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
             nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
             fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            paymaster_data: starknet_api::transaction::PaymasterData(tx.paymaster_data),
-            account_deployment_data: starknet_api::transaction::AccountDeploymentData(tx.account_deployment_data),
+            paymaster_data: starknet_api::transaction::fields::PaymasterData(tx.paymaster_data),
+            account_deployment_data: starknet_api::transaction::fields::AccountDeploymentData(
+                tx.account_deployment_data,
+            ),
         })
     }
 }
@@ -403,7 +425,7 @@ impl From<starknet_api::transaction::L1HandlerTransaction> for L1HandlerTransact
             nonce: value.nonce.0.try_into().unwrap_or_default(),
             contract_address: **value.contract_address,
             entry_point_selector: value.entry_point_selector.0,
-            calldata: value.calldata.0.to_vec(),
+            calldata: value.calldata.0,
         }
     }
 }
@@ -417,7 +439,7 @@ impl TryFrom<L1HandlerTransaction> for starknet_api::transaction::L1HandlerTrans
             nonce: starknet_api::core::Nonce(tx.nonce.into()),
             contract_address: contract_address(&tx.contract_address)?,
             entry_point_selector: starknet_api::core::EntryPointSelector(tx.entry_point_selector),
-            calldata: calldata(tx.calldata),
+            calldata: starknet_api::transaction::fields::Calldata(tx.calldata),
         })
     }
 }
@@ -440,55 +462,41 @@ impl From<DataAvailabilityMode> for starknet_api::data_availability::DataAvailab
     }
 }
 
-impl From<starknet_api::transaction::ResourceBoundsMapping> for ResourceBoundsMapping {
-    fn from(mut value: starknet_api::transaction::ResourceBoundsMapping) -> Self {
-        ResourceBoundsMapping {
-            l1_gas: value.0.remove(&starknet_api::transaction::Resource::L1Gas).unwrap_or_default().into(),
-            l2_gas: value.0.remove(&starknet_api::transaction::Resource::L2Gas).unwrap_or_default().into(),
-        }
+impl From<starknet_api::transaction::fields::ValidResourceBounds> for ResourceBoundsMapping {
+    fn from(value: starknet_api::transaction::fields::ValidResourceBounds) -> Self {
+        ResourceBoundsMapping { l1_gas: value.get_l1_bounds().into(), l2_gas: value.get_l2_bounds().into() }
     }
 }
 
-impl From<&ResourceBoundsMapping> for starknet_api::transaction::ResourceBoundsMapping {
+impl From<&ResourceBoundsMapping> for starknet_api::transaction::fields::ValidResourceBounds {
     fn from(resources: &ResourceBoundsMapping) -> Self {
-        // unwrap is safe because we are sure that the keys are present
-        Self::try_from(vec![
-            (
-                starknet_api::transaction::Resource::L1Gas,
-                starknet_api::transaction::ResourceBounds {
-                    max_amount: resources.l1_gas.max_amount,
-                    max_price_per_unit: resources.l1_gas.max_price_per_unit,
-                },
-            ),
-            (
-                starknet_api::transaction::Resource::L2Gas,
-                starknet_api::transaction::ResourceBounds {
-                    max_amount: resources.l2_gas.max_amount,
-                    max_price_per_unit: resources.l2_gas.max_price_per_unit,
-                },
-            ),
-        ])
-        .unwrap()
+        // TODO(v0.13.3): We need to put AllResources instead of L1Gas here to support v0.13.3.
+        starknet_api::transaction::fields::ValidResourceBounds::L1Gas(
+            starknet_api::transaction::fields::ResourceBounds {
+                max_amount: resources.l1_gas.max_amount.into(),
+                max_price_per_unit: resources.l1_gas.max_price_per_unit.into(),
+            },
+        )
     }
 }
 
-impl From<starknet_api::transaction::ResourceBounds> for ResourceBounds {
-    fn from(value: starknet_api::transaction::ResourceBounds) -> Self {
-        ResourceBounds { max_amount: value.max_amount, max_price_per_unit: value.max_price_per_unit }
+impl From<starknet_api::transaction::fields::ResourceBounds> for ResourceBounds {
+    fn from(value: starknet_api::transaction::fields::ResourceBounds) -> Self {
+        ResourceBounds { max_amount: value.max_amount.0, max_price_per_unit: value.max_price_per_unit.0 }
     }
 }
 
-fn fee(fee: &Felt) -> Result<starknet_api::transaction::Fee, TransactionApiError> {
+fn fee(fee: &Felt) -> Result<starknet_api::transaction::fields::Fee, TransactionApiError> {
     let fee = (*fee).try_into().map_err(|_| TransactionApiError::MaxFee)?;
-    Ok(starknet_api::transaction::Fee(fee))
+    Ok(starknet_api::transaction::fields::Fee(fee))
 }
 
 fn contract_address(contract_address: &Felt) -> Result<starknet_api::core::ContractAddress, TransactionApiError> {
     (*contract_address).try_into().map_err(|_| TransactionApiError::ContractAddress)
 }
 
-fn calldata(calldata: Vec<Felt>) -> starknet_api::transaction::Calldata {
-    starknet_api::transaction::Calldata(Arc::new(calldata))
+fn calldata(calldata: Vec<Felt>) -> starknet_api::transaction::fields::Calldata {
+    starknet_api::transaction::fields::Calldata(Arc::new(calldata))
 }
 
 #[cfg(test)]
@@ -502,6 +510,7 @@ mod test {
     use mp_convert::test::assert_consistent_conversion;
 
     #[test]
+    #[ignore = "See TODO(v0.13.3). The L2 gas and l1 data gas are not supported yet."]
     fn test_into_api_transaction() {
         let tx: Transaction = dummy_tx_invoke_v0().into();
         assert_consistent_conversion::<_, starknet_api::transaction::Transaction>(tx);

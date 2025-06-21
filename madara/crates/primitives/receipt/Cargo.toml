@@ -30,7 +30,6 @@ starknet_api = { workspace = true }
 
 # Other
 anyhow.workspace = true
-primitive-types = { workspace = true }
 rstest.workspace = true
 serde = { workspace = true, features = ["derive"] }
 serde_with.workspace = true

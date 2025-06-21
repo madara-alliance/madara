@@ -32,7 +32,6 @@ mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true }
 bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }

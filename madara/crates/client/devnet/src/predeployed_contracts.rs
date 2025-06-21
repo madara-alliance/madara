@@ -1,8 +1,8 @@
 use anyhow::Context;
-use blockifier::abi::{abi_utils::get_fee_token_var_address, sierra_types::next_storage_key};
 use core::fmt;
 use mc_db::MadaraBackend;
 use mp_block::{BlockId, BlockTag};
+use starknet_api::abi::abi_utils::get_fee_token_var_address;
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
 
@@ -53,7 +53,7 @@ pub fn get_bal_contract(
             .try_into()
             .with_context(|| format!("Converting felt {:#x} to contract address", contract_address))?,
     );
-    let high_key = next_storage_key(&low_key).unwrap();
+    let high_key = low_key.next_storage_key().unwrap();
     let low = backend
         .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &low_key)
         .unwrap()

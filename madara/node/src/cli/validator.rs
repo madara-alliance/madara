@@ -16,6 +16,10 @@ pub struct ValidatorParams {
     #[arg(env = "MADARA_NO_TRANSACTION_VALIDATION", long)]
     pub no_transaction_validation: bool,
 
+    /// Disable charge fee for transaction validation
+    #[arg(env = "MADARA_NO_CHARGE_FEE", long)]
+    pub no_charge_fee: bool,
+
     // TODO: move this, idk where this arg would make sense.
     /// Disable mempool saving. Mempool transactions will not be saved. This can increase performance quite a lot.
     #[arg(env = "MADARA_NO_MEMPOOL_SAVING", long)]
@@ -24,6 +28,9 @@ pub struct ValidatorParams {
 
 impl ValidatorParams {
     pub fn as_validator_config(&self) -> TransactionValidatorConfig {
-        TransactionValidatorConfig { disable_validation: self.no_transaction_validation }
+        TransactionValidatorConfig {
+            disable_validation: self.no_transaction_validation,
+            disable_fee: self.no_charge_fee,
+        }
     }
 }

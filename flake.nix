@@ -49,7 +49,6 @@
             scarb
             foundry
             gnumake
-            mold
             wget
             git
             cargo-nextest

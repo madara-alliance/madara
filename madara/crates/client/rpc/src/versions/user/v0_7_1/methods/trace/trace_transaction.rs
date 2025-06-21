@@ -42,8 +42,7 @@ pub async fn trace_transaction(
     let transaction =
         block_txs.next().ok_or_internal_server_error("There should be at least one transaction in the block")??;
 
-    let mut executions_results =
-        exec_context.re_execute_transactions(transactions_before, [transaction], true, true)?;
+    let mut executions_results = exec_context.re_execute_transactions(transactions_before, [transaction])?;
 
     let execution_result =
         executions_results.pop().ok_or_internal_server_error("No execution info returned for the last transaction")?;

@@ -1,18 +1,13 @@
 use crate::{CompiledSierra, CompressedLegacyContractClass, FlattenedSierraClass, LegacyContractAbiEntry};
-use blockifier::execution::{
-    contract_class::{
-        ContractClass as BContractClass, ContractClassV0 as BContractClassV0, ContractClassV1 as BContractClassV1,
-    },
-    errors::ContractClassError as BContractClassError,
-};
+use casm_classes_v2::casm_contract_class::CasmContractClass;
 use num_bigint::{BigInt, BigUint, Sign};
 use starknet_types_core::felt::Felt;
-use std::borrow::Cow;
+
+#[cfg(feature = "cairo_native")]
+use cairo_native::executor::AotContractExecutor;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ClassCompilationError {
-    #[error("Error while converting class to blockifier format: {0}")]
-    ContractClassError(#[from] BContractClassError),
     #[error("Failed to decompress program: {0}")]
     DecompressionFailed(#[from] std::io::Error),
     #[error("Failed to parse program JSON: {0}")]
@@ -22,11 +17,17 @@ pub enum ClassCompilationError {
     #[error("Failed to compile siera class: {0}")]
     CompilationFailed(String), // use String due to different crates versions for compilation
     #[error("Failed to parse sierra version: {0}")]
-    ParsingSierraVersion(Cow<'static, str>),
+    ParsingSierraVersion(#[from] SierraVersionError),
     #[error("Failed to construct a blockifier class: {0}")]
     BlockifierClassConstructionFailed(#[from] cairo_vm::types::errors::program_errors::ProgramError),
     #[error("Compiled class hash mismatch, expected {expected:#x} got {got:#x}")]
     CompiledClassHashMismatch { expected: Felt, got: Felt },
+    #[cfg(feature = "cairo_native")]
+    #[error("Failed to compile sierra to cairo native: {0}")]
+    NativeCompilationFailed(cairo_native::error::Error),
+    #[cfg(feature = "cairo_native")]
+    #[error("Failed to extract sierra program")]
+    ExtractSierraProgramFailed(String), // use String due to original error type Felt252SerdeError not being available publicly
 }
 
 impl CompressedLegacyContractClass {
@@ -39,7 +40,7 @@ impl CompressedLegacyContractClass {
         // NOTE: that the `type` field is already present in each ABI entry
         // struct so we do not need to add it manually.
 
-        // TODO: we should actually change that, it would be cleaner to have a concrete type here.
+        // we should actually change that, it would be better to have a concrete type here.
 
         let abi = self
             .abi
@@ -83,72 +84,127 @@ impl CompressedLegacyContractClass {
         Ok(serde_json::to_string(&json)?)
     }
 
-    pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
-        let class_json = self.serialize_to_json()?;
-        match BContractClassV0::try_from_json_string(&class_json) {
-            Ok(class) => Ok(BContractClass::V0(class)),
-            Err(e) => Err(ClassCompilationError::BlockifierClassConstructionFailed(e)),
-        }
+    pub fn to_starknet_api_no_abi(
+        &self,
+    ) -> Result<starknet_api::deprecated_contract_class::ContractClass, serde_json::Error> {
+        let decoder = flate2::read::GzDecoder::new(std::io::Cursor::new(&self.program));
+        let program: starknet_api::deprecated_contract_class::Program = serde_json::from_reader(decoder)?;
+
+        Ok(starknet_api::deprecated_contract_class::ContractClass {
+            program,
+            entry_points_by_type: self.entry_points_by_type.clone().into(),
+            abi: None,
+        })
     }
 }
 
 impl FlattenedSierraClass {
-    /// compiles a [FlattenedSierraClass] to a CASM definition in JSON format
+    /// compiles a [FlattenedSierraClass] to a CASM contract Class
     ///
     /// # Returns
     ///
     /// A tuple containing the compiled class hash and the compiled class serialized to JSON
-    pub fn compile_to_casm(&self) -> Result<(Felt, CompiledSierra), ClassCompilationError> {
+    pub fn compile_to_casm(&self) -> Result<(Felt, CasmContractClass), ClassCompilationError> {
         let sierra_version = parse_sierra_version(&self.sierra_program)?;
 
         let (compiled_class_hash, compiled_class) = match sierra_version {
             SierraVersion(0, 1, 0) => {
                 let compiled_class = v1_0_0_alpha6::compile(self)?;
-                let compiled_class_hash = v2::compute_compiled_class_hash(&compiled_class)?;
+                let json = serde_json::to_string(&compiled_class)?;
+                let compiled_class: CasmContractClass = serde_json::from_str(&json)?;
+                let compiled_class_hash = compiled_class.compiled_class_hash();
                 (compiled_class_hash, compiled_class)
             }
             SierraVersion(1, 0, 0) => {
                 let compiled_class = v1_0_0_rc0::compile(self)?;
-                let compiled_class_hash = v2::compute_compiled_class_hash(&compiled_class)?;
+                let json = serde_json::to_string(&compiled_class)?;
+                let compiled_class: CasmContractClass = serde_json::from_str(&json)?;
+                let compiled_class_hash = compiled_class.compiled_class_hash();
                 (compiled_class_hash, compiled_class)
             }
             SierraVersion(1, 1, 0) => {
                 let compiled_class = v1_1_1::compile(self)?;
-                let compiled_class_hash = v2::compute_compiled_class_hash(&compiled_class)?;
+                let json = serde_json::to_string(&compiled_class)?;
+                let compiled_class: CasmContractClass = serde_json::from_str(&json)?;
+                let compiled_class_hash = compiled_class.compiled_class_hash();
                 (compiled_class_hash, compiled_class)
             }
             _ => v2::compile(self)?,
         };
-        Ok((compiled_class_hash, CompiledSierra(compiled_class)))
+        Ok((compiled_class_hash, compiled_class))
+    }
+
+    #[cfg(feature = "cairo_native")]
+    pub fn compile_to_native(&self) -> Result<AotContractExecutor, ClassCompilationError> {
+        let sierra_version = parse_sierra_version(&self.sierra_program)?;
+        let sierra_version = casm_classes_v2::compiler_version::VersionId {
+            major: sierra_version.0 as _,
+            minor: sierra_version.1 as _,
+            patch: sierra_version.2 as _,
+        };
+        let sierra = v2::to_cairo_lang(self);
+        let program = sierra
+            .extract_sierra_program()
+            .map_err(|e| ClassCompilationError::ExtractSierraProgramFailed(e.to_string()))?;
+
+        let executor = AotContractExecutor::new(
+            &program,
+            &sierra.entry_points_by_type,
+            sierra_version,
+            cairo_native::OptLevel::Default,
+        )
+        .map_err(ClassCompilationError::NativeCompilationFailed)?;
+
+        Ok(executor)
+    }
+
+    pub fn sierra_version(&self) -> Result<starknet_api::contract_class::SierraVersion, SierraVersionError> {
+        let version = parse_sierra_version(&self.sierra_program)?;
+        Ok(starknet_api::contract_class::SierraVersion::new(version.0, version.1, version.2))
     }
 }
 
-impl CompiledSierra {
-    pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
-        match BContractClassV1::try_from_json_string(&self.0) {
-            Ok(class) => Ok(BContractClass::V1(class)),
-            Err(e) => Err(ClassCompilationError::BlockifierClassConstructionFailed(e)),
-        }
+impl TryFrom<&CompiledSierra> for CasmContractClass {
+    type Error = serde_json::Error;
+
+    fn try_from(value: &CompiledSierra) -> Result<Self, Self::Error> {
+        serde_json::from_str(&value.0)
+    }
+}
+
+impl TryFrom<&CasmContractClass> for CompiledSierra {
+    type Error = serde_json::Error;
+
+    fn try_from(value: &CasmContractClass) -> Result<Self, Self::Error> {
+        serde_json::to_string::<CasmContractClass>(value).map(CompiledSierra)
     }
 }
 
 #[derive(Debug, PartialEq)]
 struct SierraVersion(u64, u64, u64);
 
-fn parse_sierra_version(program: &[Felt]) -> Result<SierraVersion, ClassCompilationError> {
-    const VERSION_0_1_0_AS_SHORTSTRING: Felt = Felt::from_hex_unchecked("0x302e312e30");
+#[derive(Debug, thiserror::Error)]
+pub enum SierraVersionError {
+    #[error("Malformed version")]
+    MalformedVersion,
+    #[error("Program is too short, expected at least 3 elements")]
+    TooShortProgram,
+}
+
+fn parse_sierra_version(program: &[Felt]) -> Result<SierraVersion, SierraVersionError> {
+    const VERSION_0_1_0_AS_SHORTSTRING: Felt = Felt::from_hex_unchecked("0x302e312e30"); // "0.1.0"
 
     match program {
         [first, ..] if first == &VERSION_0_1_0_AS_SHORTSTRING => Ok(SierraVersion(0, 1, 0)),
         [a, b, c, ..] => {
             let (a, b, c) = (
-                (*a).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
-                (*b).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
-                (*c).try_into().map_err(|_| ClassCompilationError::ParsingSierraVersion("malformed version".into()))?,
+                (*a).try_into().map_err(|_| SierraVersionError::MalformedVersion)?,
+                (*b).try_into().map_err(|_| SierraVersionError::MalformedVersion)?,
+                (*c).try_into().map_err(|_| SierraVersionError::MalformedVersion)?,
             );
             Ok(SierraVersion(a, b, c))
         }
-        _ => Err(ClassCompilationError::ParsingSierraVersion("Program is too short".into())),
+        _ => Err(SierraVersionError::TooShortProgram),
     }
 }
 
@@ -160,14 +216,13 @@ mod v1_0_0_alpha6 {
     use casm_compiler_v1_0_0_alpha6::contract_class::{ContractClass, ContractEntryPoint, ContractEntryPoints};
     use casm_utils_v1_0_0_alpha6::bigint::BigUintAsHex;
 
-    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<String, ClassCompilationError> {
+    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<CasmContractClass, ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
 
         let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
             .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
-        let casm_definition = serde_json::to_string(&casm_class)?;
 
-        Ok(casm_definition)
+        Ok(casm_class)
     }
 
     fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
@@ -217,14 +272,13 @@ mod v1_0_0_rc0 {
     use casm_compiler_v1_0_0_rc0::contract_class::{ContractClass, ContractEntryPoint, ContractEntryPoints};
     use casm_utils_v1_0_0_rc0::bigint::BigUintAsHex;
 
-    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<String, ClassCompilationError> {
+    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<CasmContractClass, ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
 
         let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
             .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
-        let casm_definition = serde_json::to_string(&casm_class)?;
 
-        Ok(casm_definition)
+        Ok(casm_class)
     }
 
     fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
@@ -274,14 +328,13 @@ mod v1_1_1 {
     use casm_compiler_v1_1_1::contract_class::{ContractClass, ContractEntryPoint, ContractEntryPoints};
     use casm_utils_v1_1_1::bigint::BigUintAsHex;
 
-    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<String, ClassCompilationError> {
+    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<CasmContractClass, ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
 
         let casm_class = CasmContractClass::from_contract_class(sierra_class, true)
             .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
-        let casm_definition = serde_json::to_string(&casm_class)?;
 
-        Ok(casm_definition)
+        Ok(casm_class)
     }
 
     fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
@@ -331,26 +384,23 @@ mod v2 {
     use casm_classes_v2::contract_class::{ContractClass, ContractEntryPoint, ContractEntryPoints};
     use casm_utils_v2::bigint::BigUintAsHex;
 
-    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<(Felt, String), ClassCompilationError> {
+    pub(super) fn compile(sierra: &FlattenedSierraClass) -> Result<(Felt, CasmContractClass), ClassCompilationError> {
         let sierra_class = to_cairo_lang(sierra);
 
-        let casm_class = CasmContractClass::from_contract_class(sierra_class, true, usize::MAX)
-            .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
+        let casm_class = CasmContractClass::from_contract_class(
+            sierra_class,
+            /* add_pythonic_hints */ true,
+            /* max_bytecode_size */ usize::MAX,
+        )
+        .map_err(|e| ClassCompilationError::CompilationFailed(e.to_string()))?;
         let compiled_class_hash = casm_class.compiled_class_hash();
-        let casm_definition = serde_json::to_string(&casm_class)?;
 
-        Ok((compiled_class_hash, casm_definition))
+        Ok((compiled_class_hash, casm_class))
     }
 
-    pub(super) fn compute_compiled_class_hash(casm_definition: &str) -> Result<Felt, ClassCompilationError> {
-        let casm_class: CasmContractClass = serde_json::from_str(casm_definition)?;
-        Ok(casm_class.compiled_class_hash())
-    }
-
-    fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
+    pub(super) fn to_cairo_lang(class: &FlattenedSierraClass) -> ContractClass {
         ContractClass {
             sierra_program: class.sierra_program.iter().map(felt_to_big_uint_as_hex).collect(),
-            //sierra_program: vec![],
             sierra_program_debug_info: None,
             contract_class_version: class.contract_class_version.clone(),
             entry_points_by_type: entry_points_by_type_to_contract_entry_points(&class.entry_points_by_type),
@@ -404,13 +454,8 @@ mod tests {
     async fn test_compressed_legacy_class_to_blockifier() {
         let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
         let class_hash = Felt::from_hex_unchecked("0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918");
-        let class: ContractClass = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap().into();
-
-        if let ContractClass::Legacy(legacy) = class {
-            legacy.to_blockifier_class().unwrap();
-        } else {
-            panic!("Not a Legacy contract");
-        }
+        let _class: ContractClass =
+            provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap().into();
     }
 
     #[tokio::test]
@@ -424,9 +469,8 @@ mod tests {
 
         if let ContractClass::Sierra(sierra) = class {
             let start = std::time::Instant::now();
-            let (compiled_class_hash, casm_definition) = sierra.compile_to_casm().unwrap();
+            let (compiled_class_hash, _casm_definition) = sierra.compile_to_casm().unwrap();
             println!("compile time: {:?}", start.elapsed());
-            casm_definition.to_blockifier_class().unwrap();
             assert_eq!(compiled_class_hash, expected_compiled_class_hash);
         } else {
             panic!("Not a Sierra contract");

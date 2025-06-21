@@ -14,3 +14,9 @@ pub struct BroadcastedDeclareTxnV0 {
     pub signature: Signature,
     pub is_query: bool,
 }
+
+impl BroadcastedDeclareTxnV0 {
+    pub fn is_query(&self) -> bool {
+        self.is_query
+    }
+}

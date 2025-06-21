@@ -3,14 +3,15 @@
 //! Insertion and popping should be O(log n).
 //! We also really don't want to poison the lock by panicking.
 
-use blockifier::transaction::transaction_execution::Transaction;
-use blockifier::transaction::{account_transaction::AccountTransaction, transaction_types::TransactionType};
 use deployed_contracts::DeployedContracts;
 use mc_db::mempool_db::{NonceInfo, NonceStatus};
 use mc_exec::execution::TxInfo;
 use mp_convert::ToFelt;
-use starknet_api::core::{ContractAddress, Nonce};
 use starknet_api::transaction::TransactionHash;
+use starknet_api::{
+    core::{ContractAddress, Nonce},
+    executable_transaction::TransactionType,
+};
 use starknet_types_core::felt::Felt;
 use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
 
@@ -218,10 +219,10 @@ impl CheckInvariants for MempoolInner {
             assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
             assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
-                let contract_address = tx.contract_address;
+            // DeployAccount
+            if let Some(contract_address) = &mempool_tx.tx.deployed_contract_address() {
                 assert!(
-                    self.has_deployed_contract(&contract_address),
+                    self.has_deployed_contract(contract_address),
                     "Ready deploy account tx from sender {contract_address:x?} is not part of deployed contacts"
                 );
                 deployed_count += 1;
@@ -263,10 +264,10 @@ impl CheckInvariants for MempoolInner {
                 assert_eq!(mempool_tx.nonce_next, intent.nonce_next);
                 assert_eq!(mempool_tx.arrived_at, intent.timestamp);
 
-                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
-                    let contract_address = tx.contract_address;
+                // DeployAccount
+                if let Some(contract_address) = &mempool_tx.tx.deployed_contract_address() {
                     assert!(
-                        self.has_deployed_contract(&contract_address),
+                        self.has_deployed_contract(contract_address),
                         "Pending deploy account tx from sender {contract_address:x?} is not part of deployed contacts",
                     );
                     deployed_count += 1;
@@ -361,13 +362,9 @@ impl MempoolInner {
 
         let contract_address = mempool_tx.contract_address().to_felt();
         let arrived_at = mempool_tx.arrived_at;
+        // DeployAccount
         let tx_hash = mempool_tx.tx_hash();
-        let deployed_contract_address =
-            if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
-                Some(tx.contract_address)
-            } else {
-                None
-            };
+        let deployed_contract_address = mempool_tx.tx.deployed_contract_address();
 
         // Inserts the transaction into the nonce tx mapping for the current
         // contract
@@ -581,10 +578,9 @@ impl MempoolInner {
                     "Tried to remove a ready transaction which had not already been marked as received"
                 );
 
-                // We must remember to update the deploy contract count on
-                // removal!
-                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
-                    self.deployed_contracts.decrement(tx.contract_address);
+                // We must remember to update the deploy contract count on removal!
+                if let Some(contract_address) = mempool_tx.tx.deployed_contract_address() {
+                    self.deployed_contracts.decrement(contract_address);
                 }
 
                 if nonce_mapping.transactions.is_empty() {
@@ -633,8 +629,7 @@ impl MempoolInner {
 
             let limits = TransactionCheckedLimits::limits_for(nonce_mapping_entry.get());
             if self.limiter.tx_age_exceeded(&limits) {
-                // Step 2: we found it! Now we remove the entry in
-                // tx_intent_queue_pending_by_timestamp
+                // Step 2: we found it! Now we remove the entry in tx_intent_queue_pending_by_timestamp
 
                 let mempool_tx = nonce_mapping_entry.remove(); // *- snip -*
                 debug_assert!(
@@ -642,10 +637,9 @@ impl MempoolInner {
                     "Tried to remove a pending transaction which had not already been marked as received"
                 );
 
-                if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = mempool_tx.tx {
-                    // Remember to update the deployed contract count along the
-                    // way!
-                    self.deployed_contracts.decrement(tx.contract_address);
+                if let Some(contract_address) = mempool_tx.tx.deployed_contract_address() {
+                    // Remember to update the deployed contract count along the way!
+                    self.deployed_contracts.decrement(contract_address);
                 }
 
                 if nonce_mapping.transactions.is_empty() {
@@ -765,8 +759,8 @@ impl MempoolInner {
         }
 
         // Update deployed contracts.
-        if let Transaction::AccountTransaction(AccountTransaction::DeployAccount(tx)) = &mempool_tx.tx {
-            self.deployed_contracts.decrement(tx.contract_address);
+        if let Some(contract_address) = mempool_tx.tx.deployed_contract_address() {
+            self.deployed_contracts.decrement(contract_address);
         }
 
         mempool_tx

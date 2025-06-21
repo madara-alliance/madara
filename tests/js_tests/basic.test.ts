@@ -1,5 +1,17 @@
-import { RpcProvider, Account, Contract, CallData, cairo } from "starknet";
-import { RPC_URL, SIGNER_PRIVATE, SIGNER_CONTRACT_ADDRESS } from "./constant";
+import {
+  RpcProvider,
+  Account,
+  Contract,
+  CallData,
+  cairo,
+  GetTransactionReceiptResponse,
+} from "starknet";
+import {
+  RPC_URL,
+  SIGNER_PRIVATE,
+  SIGNER_CONTRACT_ADDRESS,
+  ERC20_CONTRACT_ADDRESS,
+} from "./constant";
 import {
   readContractSierra,
   readContractCasm,
@@ -162,6 +174,19 @@ async function deployAccount({ provider, account }: TestContext) {
     0,
   );
 
+  // Transfert found to pay deployement fee
+  const transferResponse = await account.execute({
+    contractAddress: ERC20_CONTRACT_ADDRESS,
+    entrypoint: "transfer",
+    calldata: CallData.compile({
+      recipient: accountAddress,
+      amount: cairo.uint256(10000),
+    }),
+  });
+
+  // Wait for the transfer transaction to be confirmed
+  await provider.waitForTransaction(transferResponse.transaction_hash);
+
   // Create a new Account instance with the calculated address and private key
   const newAccount = new Account(provider, accountAddress, privateKey);
 
@@ -171,9 +196,6 @@ async function deployAccount({ provider, account }: TestContext) {
       classHash: classHash,
       constructorCalldata: calldata,
       addressSalt: publicKey,
-    },
-    {
-      maxFee: 0,
     },
   );
 
@@ -198,8 +220,6 @@ async function transferFunds({ provider, account }: TestContext) {
   const RECEIVER_ADDRESS =
     "0x5e9e93c6235f8ae6c2f4f0069bd30753ec21b26fbad80cfbf5da2c1bc573d69";
   const TRANSFER_AMOUNT = 100000000000n;
-  const ERC20_CONTRACT_ADDRESS =
-    "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7";
 
   // Read the ERC20 contract class
   const erc20ContractData = readContractSierraInArtifacts(
@@ -224,28 +244,30 @@ async function transferFunds({ provider, account }: TestContext) {
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
   // Execute the transfer
-  // Note: We are setting maxFee to zero here
-  const transferResponse = await account.execute(
-    {
-      contractAddress: ERC20_CONTRACT_ADDRESS,
-      entrypoint: "transfer",
-      calldata: CallData.compile({
-        recipient: RECEIVER_ADDRESS,
-        amount: cairo.uint256(TRANSFER_AMOUNT),
-      }),
-    },
-    {
-      maxFee: 0,
-    },
-  );
+  const transferResponse = await account.execute({
+    contractAddress: ERC20_CONTRACT_ADDRESS,
+    entrypoint: "transfer",
+    calldata: CallData.compile({
+      recipient: RECEIVER_ADDRESS,
+      amount: cairo.uint256(TRANSFER_AMOUNT),
+    }),
+  });
 
   // Wait for the transfer transaction to be confirmed
-  await provider.waitForTransaction(transferResponse.transaction_hash);
+  const receipt = (await provider.waitForTransaction(
+    transferResponse.transaction_hash,
+  )) as {
+    actual_fee: {
+      amount: string;
+      unit: string;
+    };
+  };
 
   // Get the final balances of sender and receiver
   const postTransactSenderBalance = await erc20Instance.balance_of(
     SIGNER_CONTRACT_ADDRESS,
   );
+  const paidFee = BigInt(receipt.actual_fee.amount);
   const postTransactReceiverBalance =
     await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
@@ -254,7 +276,7 @@ async function transferFunds({ provider, account }: TestContext) {
   // preTransactionSenderBalance - TRANSFER_AMOUNT - Fees
   // but we had fees set to zero while executing transaction
   expect(postTransactSenderBalance).toBe(
-    preTransactSenderBalance - TRANSFER_AMOUNT,
+    preTransactSenderBalance - TRANSFER_AMOUNT - paidFee,
   );
   expect(postTransactReceiverBalance).toBe(
     preTransactReceiverBalance + TRANSFER_AMOUNT,

@@ -1,6 +1,9 @@
-use super::common::*;
-use crate::{DatabaseService, MadaraBackendConfig};
-use mp_chain_config::ChainConfig;
+#[cfg(test)]
+use {
+    super::common::*,
+    crate::{DatabaseService, MadaraBackendConfig},
+    mp_chain_config::ChainConfig,
+};
 
 #[tokio::test]
 async fn test_open_db() {
