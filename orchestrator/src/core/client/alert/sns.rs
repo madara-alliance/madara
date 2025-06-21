@@ -53,7 +53,7 @@ impl InnerAWSSNS {
         Err(AlertError::TopicNotFound(topic_name.to_string()))
     }
 
-    pub fn is_valid_topic_name(&self, name: &str) -> bool {
+    pub fn is_valid_topic_name(name: &str) -> bool {
         // AWS SNS topic name requirements:
         // - Can include numbers, letters, hyphens, and underscores
         // - Length between 1 and 256

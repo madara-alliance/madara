@@ -19,27 +19,43 @@ static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 #[tokio::main]
 async fn main() {
     dotenv().ok();
-    init_logging("orchestrator");
+    init_logging();
     info!("Starting orchestrator");
     let cli = Cli::parse();
 
     match &cli.command {
-        Commands::Run { run_command } => match run_orchestrator(run_command).await {
-            Ok(_) => {
-                info!("Orchestrator service started successfully");
+        Commands::Run { run_command } => {
+            info!("Executing run command with args: {:?}", run_command);
+            match run_orchestrator(run_command).await {
+                Ok(_) => {
+                    info!("Orchestrator service started successfully");
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        error_chain = ?e,
+                        "Failed to start orchestrator service"
+                    );
+                    panic!("Failed to start orchestrator service: {}", e);
+                }
             }
-            Err(e) => {
-                error!("Failed to start orchestrator service: {}", e);
+        }
+        Commands::Setup { setup_command } => {
+            info!("Executing setup command with args: {:?}", setup_command);
+            match setup_orchestrator(setup_command).await {
+                Ok(_) => {
+                    info!("Orchestrator setup completed successfully");
+                }
+                Err(e) => {
+                    error!(
+                        error = %e,
+                        error_chain = ?e,
+                        "Failed to setup orchestrator"
+                    );
+                    panic!("Failed to setup orchestrator: {}", e);
+                }
             }
-        },
-        Commands::Setup { setup_command } => match setup_orchestrator(setup_command).await {
-            Ok(_) => {
-                info!("Orchestrator setup completed successfully");
-            }
-            Err(e) => {
-                error!("Failed to setup orchestrator: {}", e);
-            }
-        },
+        }
     }
 }
 

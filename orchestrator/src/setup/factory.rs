@@ -1,4 +1,8 @@
-use crate::cli::Layer;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::info;
+
 use crate::core::client::alert::sns::InnerAWSSNS;
 use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
 use crate::core::client::queue::sqs::InnerSQS;
@@ -9,15 +13,12 @@ use crate::setup::creator::{
     SQSResourceCreator,
 };
 use crate::types::params::MiscellaneousArgs;
+use crate::types::Layer;
 use crate::{
     core::cloud::CloudProvider,
     types::params::{AlertArgs, CronArgs, QueueArgs, StorageArgs},
     OrchestratorError, OrchestratorResult,
 };
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Arc;
-use std::time::Duration;
-use tracing::info;
 
 /// ResourceFactory is responsible for creating resources based on their type
 pub struct ResourceFactory {
