@@ -97,7 +97,7 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
   "cairo-1-hints",
   "extensive_hints",
   "mod_builtin",
@@ -114,11 +114,15 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
-  "testing",
-  "concurrency",
-] }
-starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo" }
+blockifier = { 
+	git = "https://github.com/karnotxyz/sequencer", 
+	branch = "release/0.13.2-appchain", 
+	features = [
+	  "testing",
+	  "concurrency",
+	] 
+}
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
 cairo-lang-starknet-classes = "=2.8.2"
 cairo-lang-utils = "=2.8.2"
 
@@ -292,8 +296,14 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
-prove_block = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
+starknet-os = {
+	git = "https://github.com/karnotxyz/snos",
+	branch = "karnot/release/0.13.2-corrected"
+}
+prove_block = {
+	git = "https://github.com/karnotxyz/snos",
+	branch = "karnot/release/0.13.2-corrected"
+}
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -310,15 +320,14 @@ orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
 
 [patch.crates-io]
-appchain-core-contract-client = { git = "https://github.com/Mohiiit/zaun", rev = "878cf6fac215c260858b070f72fb52a70bf5e460" }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain", features = [
   "testing",
 ] }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex" }
+cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2" }
