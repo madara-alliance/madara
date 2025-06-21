@@ -632,6 +632,21 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
+    /// Update a batch by its index
+    async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! { "index": index as i64 };
+
+        let mut updates_doc = Document::new();
+        updates_doc.insert("status", Bson::String(format!("{:?}", status)));
+        updates_doc.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
+
+        let update = doc! { "$set": updates_doc };
+
+        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        self.update_batch(filter, update, options, start, index).await
+    }
+
     async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
@@ -660,16 +675,26 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Add additional fields that are always updated
-        non_null_updates.insert("num_blocks", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
-        non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
-        if batch.is_batch_ready {
-            non_null_updates.insert("status", Bson::String(format!("{:?}", BatchStatus::Closed)));
+        if let Some(end_block) = update.end_block {
+            non_null_updates.insert("num_blocks", Bson::Int64(end_block as i64 - batch.start_block as i64 + 1));
         }
+        non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
             "$set": non_null_updates
         };
 
+        self.update_batch(filter, update, options, start, batch.index).await
+    }
+
+    async fn update_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<Batch, DatabaseError> {
         // Find a batch and update it
         let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
         match result {
@@ -682,8 +707,8 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 // Not found
-                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to update batch");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", batch.id)))
+                tracing::error!(index = %index, category = "db_call", "Failed to update batch");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
             }
         }
     }

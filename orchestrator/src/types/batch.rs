@@ -34,8 +34,9 @@ pub enum BatchStatus {
 
 #[derive(Serialize, Debug, Clone)]
 pub struct BatchUpdates {
-    pub end_block: u64,
-    pub is_batch_ready: bool,
+    pub end_block: Option<u64>,
+    pub is_batch_ready: Option<bool>,
+    pub status: Option<BatchStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]

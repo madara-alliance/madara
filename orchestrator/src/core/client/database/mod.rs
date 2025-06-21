@@ -5,8 +5,11 @@ use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
+use ::mongodb::bson::Document;
+use ::mongodb::options::FindOneAndUpdateOptions;
 use async_trait::async_trait;
 pub use error::DatabaseError;
+use std::time::Instant;
 
 /// Trait defining database operations
 #[cfg_attr(test, mockall::automock)]
@@ -62,6 +65,15 @@ pub trait DatabaseClient: Send + Sync {
     ) -> Result<Vec<JobItem>, DatabaseError>;
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
+    async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError>;
+    async fn update_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<Batch, DatabaseError>;
     /// update_batch - Update the bath
     async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError>;
     /// create_batch - Create a new batch
