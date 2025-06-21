@@ -19,6 +19,7 @@ use crate::types::jobs::WorkerTriggerType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
+use crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger;
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
@@ -648,6 +649,7 @@ impl JobHandlerService {
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::Batching => Box::new(BatchingTrigger),
+            WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger)
         }
     }
 }
