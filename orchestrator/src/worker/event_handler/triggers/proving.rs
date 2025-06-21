@@ -59,7 +59,7 @@ impl JobTrigger for ProvingJobTrigger {
                             ensure_on_chain_registration: Some(snos_fact),
                             n_steps: snos_metadata.snos_n_steps,
                             bucked_id: batch.bucket_id,
-                            bucket_job_index: Some(snos_metadata.block_number - batch.start_block),
+                            bucket_job_index: Some(snos_metadata.block_number - batch.start_block + 1),
                         }),
                     };
 

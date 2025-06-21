@@ -142,7 +142,7 @@ impl AtlanticClient {
         n_steps: Option<usize>,
         atlantic_network: impl AsRef<str>,
         bucket_id: Option<String>,
-        bucket_job_id: Option<u64>,
+        bucket_job_index: Option<u64>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         let proof_layout = match proof_layout {
             LayoutName::dynamic => "dynamic",
@@ -169,8 +169,8 @@ impl AtlanticClient {
         if let Some(bucket_id) = bucket_id {
             request = request.form_text("bucketId", &bucket_id);
         }
-        if let Some(bucket_job_id) = bucket_job_id {
-            request = request.form_text("bucketJobId", &bucket_job_id.to_string());
+        if let Some(bucket_job_index) = bucket_job_index {
+            request = request.form_text("bucketJobIndex", &bucket_job_index.to_string());
         }
         let response = request.send().await.map_err(AtlanticError::AddJobFailure)?;
 
