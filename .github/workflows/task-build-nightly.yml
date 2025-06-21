@@ -18,6 +18,10 @@ on:
         required: false
         default: ghcr.io
         type: string
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the cairo artifacts"
+        required: true
+        type: string
     outputs:
       nightly:
         description: Nightly image tag
@@ -41,6 +45,12 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: Download Cairo artiracts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
+          path: build-artifacts/
 
       - name: Tags
         id: tag
