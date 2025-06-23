@@ -153,7 +153,7 @@ impl ProverClient for AtlanticProverService {
         &self,
         task_id: &str,
         proof: &str,
-        n_steps: Option<usize>
+        n_steps: Option<usize>,
     ) -> Result<String, ProverClientError> {
         tracing::info!(
             task_id = %task_id,
@@ -162,9 +162,10 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
-        let verifier_program_hash = self.cairo_verifier_program_hash.as_ref().ok_or_else(|| {
-            ProverClientError::MissingCairoVerifierProgramHash
-        })?;
+        let verifier_program_hash = self
+            .cairo_verifier_program_hash
+            .as_ref()
+            .ok_or_else(|| ProverClientError::MissingCairoVerifierProgramHash)?;
 
         let atlantic_job_response = self
             .atlantic_client
@@ -190,7 +191,7 @@ impl AtlanticProverService {
         fact_checker: Option<FactChecker>,
         cairo_verifier_program_hash: Option<String>,
     ) -> Self {
-        Self { atlantic_client, fact_checker, atlantic_api_key, atlantic_network , cairo_verifier_program_hash }
+        Self { atlantic_client, fact_checker, atlantic_api_key, atlantic_network, cairo_verifier_program_hash }
     }
 
     /// Creates a new instance of `AtlanticProverService` with the given parameters.
