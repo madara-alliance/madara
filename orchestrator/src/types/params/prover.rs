@@ -82,6 +82,9 @@ impl TryFrom<RunCmd> for ProverConfig {
                     atlantic_cairo_vm: atlantic_args.atlantic_verifier_cairo_vm.ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Atlantic cairo vm is required".to_string())
                     })?,
+                    atlantic_result: atlantic_args.atlantic_verifier_result.ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Atlantic result is required".to_string())
+                    })?,
                 }))
             }
         }

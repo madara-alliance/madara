@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
-use crate::types::{AtlanticBucketStatus, AtlanticCairoVm};
+use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQueryStep};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -26,6 +26,7 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_prover_type: String,
     pub atlantic_network: String,
     pub atlantic_cairo_vm: AtlanticCairoVm,
+    pub atlantic_result: AtlanticQueryStep
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -36,6 +37,7 @@ pub struct AtlanticProverService {
     pub proof_layout: LayoutName,
     pub atlantic_network: String,
     pub cairo_vm: AtlanticCairoVm,
+    pub result: AtlanticQueryStep,
 }
 
 #[async_trait]
@@ -71,6 +73,7 @@ impl ProverClient for AtlanticProverService {
                         pie_file_path,
                         self.proof_layout,
                         self.cairo_vm.clone(),
+                        self.result.clone(),
                         self.atlantic_api_key.clone(),
                         n_steps,
                         self.atlantic_network.clone(),
@@ -177,6 +180,7 @@ impl AtlanticProverService {
         atlantic_api_key: String,
         proof_layout: &LayoutName,
         cairo_vm: AtlanticCairoVm,
+        result: AtlanticQueryStep,
         atlantic_network: String,
         fact_checker: Option<FactChecker>,
     ) -> Self {
@@ -187,6 +191,7 @@ impl AtlanticProverService {
             proof_layout: proof_layout.to_owned(),
             cairo_vm,
             atlantic_network,
+            result,
         }
     }
 
@@ -210,6 +215,7 @@ impl AtlanticProverService {
             atlantic_params.atlantic_api_key.clone(),
             proof_layout,
             atlantic_params.atlantic_cairo_vm.clone(),
+            atlantic_params.atlantic_result.clone(),
             atlantic_params.atlantic_network.clone(),
             fact_checker,
         )
@@ -226,6 +232,7 @@ impl AtlanticProverService {
             "random_api_key".to_string(),
             proof_layout,
             AtlanticCairoVm::Rust,
+            AtlanticQueryStep::ProofVerificationOnL1,
             "TESTNET".to_string(),
             fact_checker,
         )

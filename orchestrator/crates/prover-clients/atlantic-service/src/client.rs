@@ -28,7 +28,7 @@ trait ProvingLayer: Send + Sync {
 struct EthereumLayer;
 impl ProvingLayer for EthereumLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL1.to_string())
+        request
     }
 }
 
@@ -139,6 +139,7 @@ impl AtlanticClient {
         pie_file: &Path,
         proof_layout: LayoutName,
         cairo_vm: AtlanticCairoVm,
+        result: AtlanticQueryStep,
         atlantic_api_key: impl AsRef<str>,
         n_steps: Option<usize>,
         atlantic_network: impl AsRef<str>,
@@ -158,6 +159,7 @@ impl AtlanticClient {
                 .query_param("apiKey", atlantic_api_key.as_ref())
                 .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
                 .form_text("layout", proof_layout)
+                .form_text("result", &result.to_string())
                 .form_text("network", atlantic_network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &cairo_vm.as_str())
