@@ -200,7 +200,10 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        2
+        // we want this as 1 since we don't want to retry proof creation
+        // because once proof creation fails, the AR bucket will also fail
+        // hence, no point of retrying right now
+        1
     }
 
     fn max_verification_attempts(&self) -> u64 {
