@@ -15,9 +15,6 @@ ENV CHEF_VERSION=v0.1.71
 ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 
-ENV VERSION_MOLD="2.39.1"
-ENV MOLD_URL=https://github.com/rui314/mold/releases/download/v$VERSION_MOLD/mold-$VERSION_MOLD-x86_64-linux.tar.gz
-
 ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
@@ -26,7 +23,6 @@ RUN apt-get update -y && apt-get install -y wget clang
 
 RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
 RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
-RUN wget $WGET $MOLD_URL | tar -C /usr/local --strip-components=1 --no-overwrite-dir -xzvpf -
 
 # Step 1: Cache dependencies
 FROM base-rust AS planner
@@ -42,12 +38,13 @@ FROM base-rust AS builder-rust
 COPY --from=planner /app/recipe.json recipe.json
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --manifest-path madara/Cargo.toml --release --recipe-path recipe.json
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
 COPY Cargo.toml Cargo.lock .
 COPY madara madara
 COPY build-artifacts build-artifacts
 COPY .db-versions.yml .db-versions.yml
+
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path madara/Cargo.toml --release
