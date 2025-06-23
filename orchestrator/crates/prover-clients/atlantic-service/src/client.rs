@@ -138,6 +138,7 @@ impl AtlanticClient {
         &self,
         pie_file: &Path,
         proof_layout: LayoutName,
+        cairo_vm: AtlanticCairoVm,
         atlantic_api_key: impl AsRef<str>,
         n_steps: Option<usize>,
         atlantic_network: impl AsRef<str>,
@@ -159,7 +160,7 @@ impl AtlanticClient {
                 .form_text("layout", proof_layout)
                 .form_text("network", atlantic_network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-                .form_text("cairoVm", &AtlanticCairoVm::Rust.as_str())
+                .form_text("cairoVm", &cairo_vm.as_str())
                 .form_file("pieFile", pie_file, "pie.zip")?,
         );
 

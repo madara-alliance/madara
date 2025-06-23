@@ -172,7 +172,7 @@ pub enum AtlanticJobSize {
     L,
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, clap::ValueEnum, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum AtlanticCairoVm {
     Rust,

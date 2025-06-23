@@ -203,7 +203,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
         30
     }
 
-    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
+    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
         None
     }
 }

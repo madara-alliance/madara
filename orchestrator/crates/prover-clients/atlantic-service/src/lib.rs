@@ -13,7 +13,7 @@ use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
-use crate::types::AtlanticBucketStatus;
+use crate::types::{AtlanticBucketStatus, AtlanticCairoVm};
 
 #[derive(Debug, Clone)]
 pub struct AtlanticValidatedArgs {
@@ -25,6 +25,7 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_mock_fact_hash: String,
     pub atlantic_prover_type: String,
     pub atlantic_network: String,
+    pub atlantic_cairo_vm: AtlanticCairoVm,
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -34,6 +35,7 @@ pub struct AtlanticProverService {
     pub atlantic_api_key: String,
     pub proof_layout: LayoutName,
     pub atlantic_network: String,
+    pub cairo_vm: AtlanticCairoVm,
 }
 
 #[async_trait]
@@ -68,6 +70,7 @@ impl ProverClient for AtlanticProverService {
                     .add_job(
                         pie_file_path,
                         self.proof_layout,
+                        self.cairo_vm.clone(),
                         self.atlantic_api_key.clone(),
                         n_steps,
                         self.atlantic_network.clone(),
@@ -173,6 +176,7 @@ impl AtlanticProverService {
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,
         proof_layout: &LayoutName,
+        cairo_vm: AtlanticCairoVm,
         atlantic_network: String,
         fact_checker: Option<FactChecker>,
     ) -> Self {
@@ -181,12 +185,13 @@ impl AtlanticProverService {
             fact_checker,
             atlantic_api_key,
             proof_layout: proof_layout.to_owned(),
+            cairo_vm,
             atlantic_network,
         }
     }
 
     /// Creates a new instance of `AtlanticProverService` with the given parameters.
-    /// Note: If the mock fact hash is set to "true", the fact checker will be None.
+    /// Note: If the mock fact hash is set to "true", the fact-checker will be None.
     /// And the Fact check will not be performed.
     /// # Arguments
     /// * `atlantic_params` - The parameters for the Atlantic service.
@@ -198,19 +203,13 @@ impl AtlanticProverService {
         let atlantic_client =
             AtlanticClient::new_with_args(atlantic_params.atlantic_service_url.clone(), atlantic_params);
 
-        let fact_checker = if atlantic_params.atlantic_mock_fact_hash.eq("true") {
-            None
-        } else {
-            Some(FactChecker::new(
-                atlantic_params.atlantic_rpc_node_url.clone(),
-                atlantic_params.atlantic_verifier_contract_address.clone(),
-            ))
-        };
+        let fact_checker = Self::get_fact_checker(atlantic_params);
 
         Self::new(
             atlantic_client,
             atlantic_params.atlantic_api_key.clone(),
             proof_layout,
+            atlantic_params.atlantic_cairo_vm.clone(),
             atlantic_params.atlantic_network.clone(),
             fact_checker,
         )
@@ -219,14 +218,27 @@ impl AtlanticProverService {
     pub fn with_test_params(port: u16, atlantic_params: &AtlanticValidatedArgs, proof_layout: &LayoutName) -> Self {
         let atlantic_client =
             AtlanticClient::new_with_args(format!("http://127.0.0.1:{}", port).parse().unwrap(), atlantic_params);
-        let fact_checker = if atlantic_params.atlantic_mock_fact_hash.eq("true") {
+
+        let fact_checker = Self::get_fact_checker(atlantic_params);
+
+        Self::new(
+            atlantic_client,
+            "random_api_key".to_string(),
+            proof_layout,
+            AtlanticCairoVm::Rust,
+            "TESTNET".to_string(),
+            fact_checker,
+        )
+    }
+
+    fn get_fact_checker(atlantic_params: &AtlanticValidatedArgs) -> Option<FactChecker> {
+        if atlantic_params.atlantic_mock_fact_hash.eq("true") {
             None
         } else {
             Some(FactChecker::new(
                 atlantic_params.atlantic_rpc_node_url.clone(),
                 atlantic_params.atlantic_verifier_contract_address.clone(),
             ))
-        };
-        Self::new(atlantic_client, "random_api_key".to_string(), proof_layout, "TESTNET".to_string(), fact_checker)
+        }
     }
 }
