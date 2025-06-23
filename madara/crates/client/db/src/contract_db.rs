@@ -126,7 +126,7 @@ impl crate::MadaraBackend {
     ) -> Result<Option<starknet_types_core::felt::Felt>, crate::MadaraStorageError> {
         match id.resolve_db_block_id(self)? {
             Some(crate::db_block_id::RawDbBlockId::Pending) => {
-                Ok(self.latest_pending_block().updates.contract_address_to_class_hash.get(contract_address).cloned())
+                Ok(self.latest_pending_block().contracts.contract_address_to_class_hash.get(contract_address).cloned())
             }
             Some(crate::db_block_id::RawDbBlockId::Number(block_n)) => {
                 self.resolve_history_kv(block_n, crate::Column::ContractToClassHashes, contract_address, |k| {
@@ -145,7 +145,7 @@ impl crate::MadaraBackend {
     ) -> Result<Option<starknet_types_core::felt::Felt>, crate::MadaraStorageError> {
         match id.resolve_db_block_id(self)? {
             Some(crate::db_block_id::RawDbBlockId::Pending) => {
-                Ok(self.latest_pending_block().updates.contract_address_to_nonce.get(contract_address).cloned())
+                Ok(self.latest_pending_block().contracts.contract_address_to_nonce.get(contract_address).cloned())
             }
             Some(crate::db_block_id::RawDbBlockId::Number(block_n)) => {
                 self.resolve_history_kv(block_n, crate::Column::ContractToNonces, contract_address, |k| k.to_bytes_be())
@@ -164,7 +164,7 @@ impl crate::MadaraBackend {
         let storage_key = (*contract_address, *key);
         match id.resolve_db_block_id(self)? {
             Some(crate::db_block_id::RawDbBlockId::Pending) => {
-                Ok(self.latest_pending_block().updates.contract_address_to_storage.get(&storage_key).cloned())
+                Ok(self.latest_pending_block().contracts.contract_address_to_storage.get(&storage_key).cloned())
             }
             Some(crate::db_block_id::RawDbBlockId::Number(block_n)) => {
                 self.resolve_history_kv(block_n, crate::Column::ContractStorage, &storage_key, |(k1, k2)| {

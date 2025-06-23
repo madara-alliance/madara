@@ -1,4 +1,4 @@
-use crate::contract_db::ContractDbBlockUpdate;
+use crate::contract_db::ContractUpdates;
 use crate::db_block_id::DbBlockId;
 use crate::events_bloom_filter::EventBloomWriter;
 use crate::Column;
@@ -10,7 +10,6 @@ use mp_block::commitments::CommitmentComputationContext;
 use mp_block::FullBlock;
 use mp_block::MadaraBlockInfo;
 use mp_block::MadaraBlockInner;
-use mp_block::MadaraPendingBlockInfo;
 use mp_block::PendingFullBlock;
 use mp_block::TransactionWithReceipt;
 use mp_block::{BlockHeaderWithSignatures, MadaraPendingBlock};
@@ -127,18 +126,13 @@ impl MadaraBackend {
     }
 
     pub fn store_pending_block(&self, block: PendingFullBlock) -> Result<(), MadaraStorageError> {
-        let info = MadaraPendingBlockInfo {
-            header: block.header,
-            tx_hashes: block.transactions.iter().map(|tx| tx.receipt.transaction_hash()).collect(),
-        };
-        let (transactions, receipts) = block.transactions.into_iter().map(|tx| (tx.transaction, tx.receipt)).unzip();
-        let mut inner = MadaraBlockInner { transactions, receipts };
-        store_events_to_receipts(&mut inner.receipts, block.events)?;
+        // store_events_to_receipts(&mut inner.receipts, block.events.clone())?;
 
-        self.block_db_store_pending(&MadaraPendingBlock { info: info.clone(), inner }, &block.state_diff)?;
-        self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
-
-        self.watch_blocks.update_pending(info.into());
+        let transport = std::sync::Arc::new(crate::watch::PendingBlockTransport {
+            contracts: crate::contract_db::ContractUpdates::from_state_diff(block.state_diff.clone()),
+            block,
+        });
+        self.watch_blocks.update_pending(transport);
         Ok(())
     }
 
@@ -207,7 +201,7 @@ impl MadaraBackend {
         batch.put_cf(&block_n_to_state_diff, &block_n_encoded, &bincode::serialize(&value)?);
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
-        self.contract_db_store_block(block_n, ContractDbBlockUpdate::from_state_diff(value))?;
+        self.contract_db_store_block(block_n, ContractUpdates::from_state_diff(value))?;
 
         Ok(())
     }
@@ -284,7 +278,7 @@ impl MadaraBackend {
         };
 
         let task_contract_db = || {
-            let update = ContractDbBlockUpdate::from_state_diff(state_diff);
+            let update = ContractUpdates::from_state_diff(state_diff);
 
             match block_n {
                 None => self.contract_db_store_pending(update),

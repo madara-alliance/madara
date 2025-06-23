@@ -7,24 +7,28 @@ pub type PendingTxsReceiver = tokio::sync::broadcast::Receiver<mp_block::Transac
 pub type LastConfirmedBlockReceived = tokio::sync::watch::Receiver<Option<u64>>;
 
 fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> std::sync::Arc<PendingBlockTransport> {
-    let parent_block = parent_block.cloned().unwrap_or_default();
-    std::sync::Arc::new(PendingBlockTransport {
-        block: mp_block::PendingFullBlock {
-            header: PendingHeader {
-                parent_block_hash: parent_block.block_hash,
-                block_number: parent_block.header.block_number + 1,
-                sequencer_address: parent_block.header.sequencer_address,
-                block_timestamp: parent_block.header.block_timestamp, // Junk timestamp: unix epoch
-                protocol_version: parent_block.header.protocol_version,
-                l1_gas_price: parent_block.header.l1_gas_price,
-                l1_da_mode: parent_block.header.l1_da_mode,
-            },
-            state_diff: Default::default(),
-            transactions: Default::default(),
-            events: Default::default(),
-        },
-        updates: Default::default(),
-    })
+    parent_block
+        .cloned()
+        .map(|parent_block| {
+            std::sync::Arc::new(PendingBlockTransport {
+                block: mp_block::PendingFullBlock {
+                    header: PendingHeader {
+                        parent_block_hash: parent_block.block_hash,
+                        block_number: parent_block.header.block_number + 1,
+                        sequencer_address: parent_block.header.sequencer_address,
+                        block_timestamp: parent_block.header.block_timestamp, // Junk timestamp: unix epoch
+                        protocol_version: parent_block.header.protocol_version,
+                        l1_gas_price: parent_block.header.l1_gas_price,
+                        l1_da_mode: parent_block.header.l1_da_mode,
+                    },
+                    state_diff: Default::default(),
+                    transactions: Default::default(),
+                    events: Default::default(),
+                },
+                ..Default::default()
+            })
+        })
+        .unwrap_or_default()
 }
 
 pub(crate) struct BlockWatch {
@@ -34,9 +38,11 @@ pub(crate) struct BlockWatch {
     last_confirmed_block: tokio::sync::watch::Sender<Option<u64>>,
 }
 
+#[derive(Debug, Default)]
 pub struct PendingBlockTransport {
     pub block: mp_block::PendingFullBlock,
-    pub updates: crate::contract_db::ContractUpdates,
+    pub contracts: crate::contract_db::ContractUpdates,
+    pub classes: crate::class_db::ClassUpdates,
 }
 
 impl BlockWatch {

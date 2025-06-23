@@ -9,6 +9,46 @@ use std::sync::Arc;
 
 const LAST_KEY: &[u8] = &[0xFF; 64];
 
+type ClassHash = Felt;
+type ClassHashCompiled = Felt;
+
+#[derive(Debug, Default)]
+pub(crate) struct ClassUpdates {
+    class_info: std::collections::BTreeMap<ClassHash, ClassInfo>,
+    class_compiled: std::collections::BTreeMap<ClassHashCompiled, std::sync::Arc<CompiledSierra>>,
+}
+
+impl ClassUpdates {
+    pub fn from_converted_classes(
+        backend: &MadaraBackend,
+        converted_classes: &[ConvertedClass],
+    ) -> Result<Self, MadaraStorageError> {
+        let class_info = converted_classes.iter().try_fold(
+            std::collections::BTreeMap::new(),
+            |mut acc, converted_class| -> Result<_, MadaraStorageError> {
+                let class_hash = converted_class.class_hash();
+                if !backend.contains_class(&class_hash)? {
+                    acc.insert(class_hash, converted_class.info());
+                }
+                Ok(acc)
+            },
+        )?;
+
+        let class_compiled = converted_classes
+            .iter()
+            .filter_map(|converted_class| match converted_class {
+                ConvertedClass::Sierra(sierra) => Some((sierra.info.compiled_class_hash, sierra.compiled.clone())),
+                _ => None,
+            })
+            .fold(std::collections::BTreeMap::new(), |mut acc, (class_hash, compiled)| {
+                acc.insert(class_hash, compiled);
+                acc
+            });
+
+        Ok(Self { class_info, class_compiled })
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 struct ClassInfoWithBlockNumber {
     class_info: ClassInfo,
@@ -21,20 +61,12 @@ impl MadaraBackend {
         &self,
         is_pending: bool,
         key: &Felt,
-        pending_col: Column,
         nonpending_col: Column,
     ) -> Result<Option<V>, MadaraStorageError> {
         // todo: smallint here to avoid alloc
         tracing::trace!("class db get encoded kv, key={key:#x}");
         let key_encoded = bincode::serialize(key)?;
 
-        // Get from pending db, then normal db if not found.
-        if is_pending {
-            let col = self.db.get_column(pending_col);
-            if let Some(res) = self.db.get_pinned_cf(&col, &key_encoded)? {
-                return Ok(Some(bincode::deserialize(&res)?)); // found in pending
-            }
-        }
         tracing::trace!("class db get encoded kv, state is not pending");
 
         let col = self.db.get_column(nonpending_col);
@@ -54,12 +86,15 @@ impl MadaraBackend {
 
         tracing::debug!("get class info {requested_id:?} {class_hash:#x}");
 
-        let Some(info) = self.class_db_get_encoded_kv::<ClassInfoWithBlockNumber>(
-            requested_id.is_pending(),
-            class_hash,
-            Column::PendingClassInfo,
-            Column::ClassInfo,
-        )?
+        let is_pending = requested_id.is_pending();
+        if is_pending {
+            if let Some(class_info) = self.latest_pending_block().classes.class_info.get(class_hash) {
+                return Ok(Some(class_info.clone()));
+            }
+        }
+
+        let Some(info) =
+            self.class_db_get_encoded_kv::<ClassInfoWithBlockNumber>(is_pending, class_hash, Column::ClassInfo)?
         else {
             tracing::debug!("no class info");
             return Ok(None);
@@ -98,12 +133,15 @@ impl MadaraBackend {
 
         tracing::trace!("get sierra compiled {requested_id:?} {compiled_class_hash:#x}");
 
-        let Some(compiled) = self.class_db_get_encoded_kv::<CompiledSierra>(
-            requested_id.is_pending(),
-            compiled_class_hash,
-            Column::PendingClassCompiled,
-            Column::ClassCompiled,
-        )?
+        let is_pending = requested_id.is_pending();
+        if is_pending {
+            if let Some(compiled_class) = self.latest_pending_block().classes.class_compiled.get(compiled_class_hash) {
+                return Ok(Some(compiled_class.as_ref().clone()));
+            }
+        }
+
+        let Some(compiled) =
+            self.class_db_get_encoded_kv::<CompiledSierra>(is_pending, compiled_class_hash, Column::ClassCompiled)?
         else {
             return Ok(None);
         };
@@ -231,38 +269,5 @@ impl MadaraBackend {
             Column::ClassInfo,
             Column::ClassCompiled,
         )
-    }
-
-    /// NB: This functions needs to run on the rayon thread pool
-    #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
-    pub fn class_db_store_pending(&self, converted_classes: &[ConvertedClass]) -> Result<(), MadaraStorageError> {
-        tracing::debug!(
-            "Storing classes pending {:?}",
-            converted_classes.iter().map(|c| format!("{:#x}", c.class_hash())).collect::<Vec<_>>()
-        );
-        self.store_classes(
-            RawDbBlockId::Pending,
-            converted_classes,
-            Column::PendingClassInfo,
-            Column::PendingClassCompiled,
-        )
-    }
-
-    #[tracing::instrument(fields(module = "ClassDB"))]
-    pub(crate) fn class_db_clear_pending(&self) -> Result<(), MadaraStorageError> {
-        self.db.delete_range_cf_opt(
-            &self.db.get_column(Column::PendingClassInfo),
-            &[] as _,
-            LAST_KEY,
-            &self.writeopts_no_wal,
-        )?;
-        self.db.delete_range_cf_opt(
-            &self.db.get_column(Column::PendingClassCompiled),
-            &[] as _,
-            LAST_KEY,
-            &self.writeopts_no_wal,
-        )?;
-
-        Ok(())
     }
 }

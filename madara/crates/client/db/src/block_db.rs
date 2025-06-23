@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
 use crate::events_bloom_filter::{EventBloomReader, EventBloomSearcher};
 use crate::MadaraStorageError;
@@ -122,7 +120,10 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        Ok(self.head_status().latest_full_block_n())
+        match self.latest_pending_block().block.header.block_number {
+            0 => Ok(None),
+            n => Ok(Some(n - 1)),
+        }
     }
 
     // Pending block quirk: We should act as if there is always a pending block in db, to match
@@ -138,6 +139,7 @@ impl MadaraBackend {
                 return Ok(MadaraPendingBlockInfo {
                     header: PendingHeader {
                         parent_block_hash: Felt::ZERO,
+                        block_number: 0,
                         // Sequencer address is ZERO for chains where we don't produce blocks. This means that trying to simulate/trace a transaction on Pending when
                         // genesis has not been loaded yet will return an error. That probably fine because the ERC20 fee contracts are not even deployed yet - it
                         // will error somewhere else anyway.
@@ -162,6 +164,7 @@ impl MadaraBackend {
             return Ok(MadaraPendingBlockInfo {
                 header: PendingHeader {
                     parent_block_hash: latest_block_info.block_hash,
+                    block_number: latest_block_info.header.block_number + 1,
                     sequencer_address: latest_block_info.header.sequencer_address,
                     block_timestamp: latest_block_info.header.block_timestamp,
                     protocol_version: latest_block_info.header.protocol_version,
@@ -318,9 +321,7 @@ impl MadaraBackend {
 
     fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
-            RawDbBlockId::Pending => {
-                Ok(Some(MadaraMaybePendingBlockInfo::Pending(Arc::unwrap_or_clone(self.latest_pending_block()))))
-            }
+            RawDbBlockId::Pending => Ok(Some(self.latest_pending_block().block.info())),
             RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
@@ -403,9 +404,12 @@ impl MadaraBackend {
                 Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
             None => {
-                let info = Arc::unwrap_or_clone(self.latest_pending_block());
-                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
-                Ok(Some((info.into(), TxIndex(tx_index as _))))
+                let pending = &self.latest_pending_block().block;
+                let tx_index = pending.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash);
+                match tx_index {
+                    Some(tx_index) => Ok(Some((pending.info(), TxIndex(tx_index as _)))),
+                    None => Ok(None),
+                }
             }
         }
     }
@@ -421,10 +425,15 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
-                let info = Arc::unwrap_or_clone(self.latest_pending_block());
-                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
-                let inner = self.get_pending_block_inner()?;
-                Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
+                let pending = &self.latest_pending_block().block;
+                let tx_index = pending.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash);
+                match tx_index {
+                    Some(tx_index) => Ok(Some((
+                        MadaraMaybePendingBlock { info: pending.info(), inner: pending.inner() },
+                        TxIndex(tx_index as _),
+                    ))),
+                    None => Ok(None),
+                }
             }
         }
     }
