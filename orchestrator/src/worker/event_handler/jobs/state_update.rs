@@ -93,7 +93,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         // TODO: update this parameters being passed to this function to pass the blocks to settle by combining the blocks of all batches into a single vector
         // Validate if the batch numbers are correct
-        self.validate_block_numbers(config.clone(), &state_metadata.batches_to_settle).await?;
+        // self.validate_block_numbers(config.clone(), &state_metadata.batches_to_settle).await?;
 
         // Filter block numbers if there was a previous failure
         let last_failed_batch = state_metadata.last_failed_batch_no.unwrap_or(1);  // The lowest possible batch number is 1

@@ -6,7 +6,9 @@ use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
 
 use crate::core::config::Config;
-use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{
+    AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
@@ -67,16 +69,12 @@ impl JobTrigger for UpdateStateJobTrigger {
                 )
             }
             None => {
-                tracing::warn!("No previous state transition job found, fetching latest data submission job");
+                tracing::warn!("No previous state transition job found, fetching latest aggregator job");
                 // Get the latest Aggregator job in case no StateTransition job is present
                 (
                     config
                         .database()
-                        .get_jobs_without_successor(
-                            JobType::Aggregator,
-                            JobStatus::Completed,
-                            JobType::StateTransition,
-                        )
+                        .get_jobs_without_successor(JobType::Aggregator, JobStatus::Completed, JobType::StateTransition)
                         .await?,
                     None,
                 )
@@ -99,16 +97,21 @@ impl JobTrigger for UpdateStateJobTrigger {
                 // Checking if the batch to be processed is exactly one more than the last processed batch
                 if batches_to_process[0] != last_batch + 1 {
                     tracing::warn!(
-                        "Aggregator job for the block just after the last settled block is not yet completed. Returning safely..."
+                        "Aggregator job for the block just after the last settled block ({}) is not yet completed. Returning safely...", last_batch
                     );
                     return Ok(());
                 }
             }
             None => {
                 // If the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to min_block_to_process
-                let min_block_to_process = config.service_config().min_block_to_process.unwrap_or(0);
-                if batches_to_process[0] != min_block_to_process {
-                    tracing::warn!("Aggregator job for the first block is not yet completed. Returning safely...");
+                // let min_block_to_process = config.service_config().min_block_to_process.unwrap_or(0);
+                // if batches_to_process[0] != min_block_to_process {
+                //     tracing::warn!("Aggregator job for the first block is not yet completed. Returning safely...");
+                //     return Ok(());
+                // }
+                // if the last processed batch is not there, (i.e. this is the first StateTransition job), check if the batch being processed is equal to 1
+                if batches_to_process[0] != 1 {
+                    tracing::warn!("Aggregator job for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", batches_to_process[0]);
                     return Ok(());
                 }
             }
@@ -129,7 +132,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             ..Default::default()
         };
 
-        // Collect paths from SNOS and DA jobs
+        // Collect paths from the Aggregator job
         for batch_no in &batches_to_process {
             // Get the aggregator job metadata for the batch
             let aggregator_job = config
@@ -161,7 +164,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         };
 
         // Create the state transition job
-        let new_job_id = batches_to_process[0].to_string();  // internal_id for StateTransition is the first batch to be processed
+        let new_job_id = batches_to_process[0].to_string(); // internal_id for StateTransition is the first batch to be processed
         match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
             .await
         {
