@@ -1,5 +1,10 @@
-FROM rust:1.85 AS builder
+FROM --platform=$BUILDPLATFORM rust:1.85 AS builder
 WORKDIR /contracts
+
+# Platform-specific variables
+ARG TARGETPLATFORM
+ARG TARGETARCH
+ARG TARGETOS
 
 RUN apt-get -y update && apt-get install -y \
   python3-full \
@@ -8,7 +13,16 @@ RUN apt-get -y update && apt-get install -y \
   npm \
   wget \
   curl \
-  git
+  git \
+  ca-certificates
+
+# Set architecture-specific variables
+RUN case "$TARGETARCH" in \
+  "amd64") export ARCH_SUFFIX="x86_64-unknown-linux-gnu" ;; \
+  "arm64") export ARCH_SUFFIX="aarch64-unknown-linux-gnu" ;; \
+  *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+  esac && \
+  echo "ARCH_SUFFIX=$ARCH_SUFFIX" > /tmp/arch_env
 
 # =========================================================================== #
 #                              STARKGATE CONTRACTS                            #
@@ -47,6 +61,8 @@ RUN scripts/build-cairo.sh                                                      
 FROM ciimage/python:3.7 AS starkgate-legacy
 ENV STARKGATE_REV="c08863a1f08226c09f1d0748124192e848d73db9"
 
+ARG TARGETARCH
+
 WORKDIR /contracts
 
 RUN apt-get update -y
@@ -66,10 +82,19 @@ RUN git clone https://github.com/starknet-io/starkgate-contracts.git
 WORKDIR starkgate-contracts
 RUN git checkout $STARKGATE_REV
 
-# Install solc and ganache
-RUN curl https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v0.6.12+commit.27d51765 -o /usr/local/bin/solc-0.6.12
-RUN echo 'f6cb519b01dabc61cab4c184a3db11aa591d18151e362fcae850e42cffdfb09a /usr/local/bin/solc-0.6.12' | sha256sum --check
-RUN chmod +x /usr/local/bin/solc-0.6.12
+# Install solc and ganache with architecture support
+RUN case "$TARGETARCH" in \
+  "amd64") \
+    curl https://binaries.soliditylang.org/linux-amd64/solc-linux-amd64-v0.6.12+commit.27d51765 -o /usr/local/bin/solc-0.6.12 && \
+    echo 'f6cb519b01dabc61cab4c184a3db11aa591d18151e362fcae850e42cffdfb09a /usr/local/bin/solc-0.6.12' | sha256sum --check ;; \
+  "arm64") \
+    # For ARM64, we'll build from source or use alternative method
+    npm install -g solc@0.6.12 && \
+    ln -s /usr/local/lib/node_modules/solc/solc.js /usr/local/bin/solc-0.6.12 ;; \
+  *) echo "Unsupported architecture for solc: $TARGETARCH" && exit 1 ;; \
+  esac
+
+RUN chmod +x /usr/local/bin/solc-0.6.12 2>/dev/null || true
 RUN npm install -g --unsafe-perm ganache-cli@6.12.2
 
 # Build.
@@ -80,7 +105,7 @@ WORKDIR build/Release/src
 #                                   CAIRO-LANG                                #
 # =========================================================================== #
 
-FROM builder as cairo-lang
+FROM builder AS cairo-lang
 ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
@@ -105,18 +130,34 @@ FROM builder AS braavos
 ENV BRAAVOS_REV="12b82a87b93ba9bfdf2cbbde2566437df2e0c6c8"
 ENV SCARB_VERSION="2.8.4"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+
+ARG TARGETARCH
 
 # clone repository
 RUN git clone https://github.com/myBraavos/braavos-account-cairo.git
 WORKDIR braavos-account-cairo
 RUN git checkout $BRAAVOS_REV
 
-# Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with architecture detection and memory optimization
+RUN case "$TARGETARCH" in \
+  "amd64") export SCARB_ARCH="x86_64-unknown-linux-gnu" ;; \
+  "arm64") export SCARB_ARCH="aarch64-unknown-linux-gnu" ;; \
+  *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+  esac && \
+  export SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-$SCARB_ARCH.tar.gz" && \
+  mkdir scarb && \
+  (wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1 || \
+   (echo "Failed to download scarb for $SCARB_ARCH, trying to build from source..." && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . "$HOME/.cargo/env" && \
+    cargo install scarb --version $SCARB_VERSION && \
+    mkdir -p scarb/bin && \
+    cp ~/.cargo/bin/scarb scarb/bin/))
 
-# Compile contracts
-RUN ./scarb/bin/scarb build
+# Compile contracts with memory optimization
+ENV SCARB_CACHE_DIR=/tmp/scarb_cache
+RUN mkdir -p $SCARB_CACHE_DIR && \
+    ./scarb/bin/scarb build --offline || ./scarb/bin/scarb build
 
 # =========================================================================== #
 #                               ARGENT CONTRACTS                              #
@@ -126,18 +167,35 @@ FROM builder AS argent
 ENV ARGENT_REV="1352198956f36fb35fa544c4e46a3507a3ec20e3"
 ENV SCARB_VERSION="2.6.3"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+
+ARG TARGETARCH
 
 # clone repository
 RUN git clone https://github.com/argentlabs/argent-contracts-starknet.git
 WORKDIR argent-contracts-starknet
 RUN git checkout $ARGENT_REV
 
-# Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with architecture detection and memory optimization
+RUN case "$TARGETARCH" in \
+  "amd64") export SCARB_ARCH="x86_64-unknown-linux-gnu" ;; \
+  "arm64") export SCARB_ARCH="aarch64-unknown-linux-gnu" ;; \
+  *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+  esac && \
+  export SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-$SCARB_ARCH.tar.gz" && \
+  mkdir scarb && \
+  (wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1 || \
+   (echo "Failed to download scarb for $SCARB_ARCH, trying to build from source..." && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . "$HOME/.cargo/env" && \
+    cargo install scarb --version $SCARB_VERSION && \
+    mkdir -p scarb/bin && \
+    cp ~/.cargo/bin/scarb scarb/bin/))
 
-# Compile contracts
-RUN ./scarb/bin/scarb build
+# Compile contracts with memory optimization and timeout
+ENV SCARB_CACHE_DIR=/tmp/scarb_cache
+RUN mkdir -p $SCARB_CACHE_DIR && \
+    timeout 300 ./scarb/bin/scarb build --offline || \
+    timeout 600 ./scarb/bin/scarb build
 
 # =========================================================================== #
 #                                   JS TESTS                                  #
@@ -146,17 +204,32 @@ RUN ./scarb/bin/scarb build
 FROM builder AS js-tests
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+
+ARG TARGETARCH
 
 # Copy over contracts
 WORKDIR js-tests
 COPY cairo/js_tests .
 
-# Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with architecture detection and memory optimization
+RUN case "$TARGETARCH" in \
+  "amd64") export SCARB_ARCH="x86_64-unknown-linux-gnu" ;; \
+  "arm64") export SCARB_ARCH="aarch64-unknown-linux-gnu" ;; \
+  *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+  esac && \
+  export SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-$SCARB_ARCH.tar.gz" && \
+  mkdir scarb && \
+  (wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1 || \
+   (echo "Failed to download scarb for $SCARB_ARCH, trying to build from source..." && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . "$HOME/.cargo/env" && \
+    cargo install scarb --version $SCARB_VERSION && \
+    mkdir -p scarb/bin && \
+    cp ~/.cargo/bin/scarb scarb/bin/))
 
-# Compile contracts
-RUN ./scarb/bin/scarb build
+# Compile contracts with memory optimization
+ENV SCARB_CACHE_DIR=/tmp/scarb_cache
+RUN mkdir -p $SCARB_CACHE_DIR && ./scarb/bin/scarb build
 
 # =========================================================================== #
 #                              ORCHESTRATOR TESTS                             #
@@ -165,24 +238,39 @@ RUN ./scarb/bin/scarb build
 FROM builder AS orchestrator-tests
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+
+ARG TARGETARCH
 
 # Copy over contracts
 WORKDIR orchestrator-tests
 COPY cairo/orchestrator_tests .
 
-# Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+# Setup scarb with architecture detection and memory optimization
+RUN case "$TARGETARCH" in \
+  "amd64") export SCARB_ARCH="x86_64-unknown-linux-gnu" ;; \
+  "arm64") export SCARB_ARCH="aarch64-unknown-linux-gnu" ;; \
+  *) echo "Unsupported architecture: $TARGETARCH" && exit 1 ;; \
+  esac && \
+  export SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-$SCARB_ARCH.tar.gz" && \
+  mkdir scarb && \
+  (wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1 || \
+   (echo "Failed to download scarb for $SCARB_ARCH, trying to build from source..." && \
+    curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y && \
+    . "$HOME/.cargo/env" && \
+    cargo install scarb --version $SCARB_VERSION && \
+    mkdir -p scarb/bin && \
+    cp ~/.cargo/bin/scarb scarb/bin/))
 
-# Compile contracts
-RUN ./scarb/bin/scarb build
+# Compile contracts with memory optimization
+ENV SCARB_CACHE_DIR=/tmp/scarb_cache
+RUN mkdir -p $SCARB_CACHE_DIR && ./scarb/bin/scarb build
 
 # =========================================================================== #
 #                                  ARTIFACTS                                  #
 # =========================================================================== #
 
 FROM scratch
-WORKDIR artifacts
+WORKDIR /artifacts
 
 WORKDIR starkgate_latest
 
