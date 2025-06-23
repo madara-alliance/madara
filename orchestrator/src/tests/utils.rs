@@ -3,12 +3,6 @@ use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
 
-// use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-// use crate::jobs::metadata::{
-//     CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
-//     StateUpdateMetadata,
-// };
-// use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -25,6 +19,7 @@ use num_traits::Zero;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::Read;
+use tracing::error;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
     let metadata = match job_type {
@@ -122,7 +117,7 @@ pub fn parse_json_to_data_json(json_str: &str) -> Result<DataJson> {
     match result {
         Ok(data_json) => Ok(data_json),
         Err(e) => {
-            println!("Warning: Standard deserialization failed: {}", e);
+            error!("Warning: Standard deserialization failed: {}", e);
 
             // If direct deserialization fails, try parsing as a Value first
             let json_value: serde_json::Value = serde_json::from_str(json_str)?;

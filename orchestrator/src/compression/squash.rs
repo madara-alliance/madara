@@ -11,9 +11,11 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use tracing::log::error;
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
+const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 pub async fn squash_state_updates(
@@ -87,6 +89,8 @@ pub async fn squash_state_updates(
         }
     }
 
+    // Processing all contracts in parallel
+    // The result is the storage diff of all the contracts
     let results: Vec<_> = stream::iter(storage_diffs_map)
         .map(|(contract_addr, storage_map)| async move {
             process_single_contract(contract_addr, storage_map, provider, pre_range_block).await
@@ -136,6 +140,10 @@ pub async fn squash_state_updates(
     Ok(merged_update)
 }
 
+/// Processes the storage of a single contract to do the following
+/// 1. Check if the contract existed in the `pre_range_block`
+/// 2. If yes, check the value of all keys in the storage map of this contract in the `pre_range_block`
+/// 3. If no, filter the non-zero values in storage map
 async fn process_single_contract(
     contract_addr: Felt,
     storage_map: HashMap<Felt, Felt>,
@@ -204,14 +212,22 @@ pub async fn check_pre_range_storage_value(
     pre_range_block: u64,
 ) -> Result<Felt, JobError> {
     // Get storage value at the block before our range
-    match provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await {
-        Ok(value) => Ok(value),
-        Err(e) => {
-            println!(
-                "Warning: Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-                contract_address, key, pre_range_block, e
-            );
-            Ok(Felt::ZERO)
+    let mut attempts = 0;
+    let mut error;
+    while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
+        match provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await {
+            Ok(value) => return Ok(value),
+            Err(e) => {
+                error = e;
+                attempts += 1;
+                continue
+            }
         }
     }
+    let err_message = format!(
+        "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
+        contract_address, key, pre_range_block, error
+    );
+    error!("{}", &err_message);
+    Err(JobError::ProviderError(err_message))
 }

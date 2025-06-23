@@ -8,9 +8,12 @@ use starknet::providers::{JsonRpcClient, Provider, ProviderError};
 use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use tracing::log::error;
+use crate::error::job::JobError;
 
 const SPECIAL_ADDRESS: &str = "0x2";
 const MAPPING_START: &str = "0x80"; // 128
+const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 
 /// Represents a mapping from one value to another
 #[derive(Debug)]
@@ -49,9 +52,11 @@ impl ValueMapping {
             keys.insert(replaced_class.contract_address);
         });
 
-        // Fetch the values for the keys from the special address (0x2) or the provider
+        // Fetch the values for the keys from the special address (0x2)
         let special_address_mappings = ValueMapping::get_special_address_mappings(state_update)?;
 
+        // Fetch the value for the keys in special address either from the current mapping or from the provider
+        // Doing this in parallel
         let fetch_results: Vec<_> = stream::iter(keys)
             .map(|key| {
                 let special_address_mappings = special_address_mappings.clone();
@@ -113,16 +118,27 @@ impl ValueMapping {
         if ValueMapping::skip(*key) {
             return Ok(key.clone());
         }
-        match provider
-            .get_storage_at(Felt::from_hex(SPECIAL_ADDRESS).unwrap(), key, BlockId::Number(pre_range_block))
-            .await
-        {
-            Ok(value) => Ok(value),
-            Err(e) => Err(ProviderError::StarknetError(StarknetError::UnexpectedError(format!(
-                "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-                SPECIAL_ADDRESS, key, pre_range_block, e
-            )))),
+        let mut attempts = 0;
+        let mut error;
+        while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
+            match provider
+                .get_storage_at(Felt::from_hex(SPECIAL_ADDRESS).unwrap(), key, BlockId::Number(pre_range_block))
+                .await
+            {
+                Ok(value) => return Ok(value),
+                Err(e) => {
+                    error = e;
+                    attempts += 1;
+                    continue
+                },
+            }
         }
+        let err_message = format!(
+            "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
+            SPECIAL_ADDRESS, key, pre_range_block, error
+        ));
+        error!("{}", &err_message);
+        Err(ProviderError::StarknetError(StarknetError::UnexpectedError(err_message))
     }
 
     fn get_value(&self, value: &Felt) -> Result<Felt> {
