@@ -56,7 +56,7 @@ impl JobTrigger for SnosJobTrigger {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Snos(SnosMetadata {
                     block_number: block_num,
-                    full_output: true,
+                    full_output: config.snos_config().full_output,
                     // Set the storage paths using block number
                     cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
                     snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
