@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
-use async_trait::async_trait;
-use opentelemetry::KeyValue;
-
 use crate::core::config::Config;
+use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
@@ -11,6 +9,9 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
+use async_trait::async_trait;
+use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
 
 pub struct ProvingJobTrigger;
 
@@ -44,6 +45,11 @@ impl JobTrigger for ProvingJobTrigger {
                 }
             };
 
+            let download_proof = match config.layer() {
+                Layer::L2 => None,
+                Layer::L3 => Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME)),
+            };
+
             // Create proving job metadata
             let proving_metadata = JobMetadata {
                 common: CommonMetadata::default(),
@@ -52,7 +58,7 @@ impl JobTrigger for ProvingJobTrigger {
                     // Set input path as CairoPie type
                     input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
                     // Set a download path if needed
-                    download_proof: None,
+                    download_proof,
                     // Set SNOS fact for on-chain verification
                     ensure_on_chain_registration: Some(snos_fact),
                     n_steps: snos_metadata.snos_n_steps,
