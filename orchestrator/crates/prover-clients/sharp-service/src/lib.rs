@@ -8,7 +8,7 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 
@@ -40,7 +40,14 @@ pub struct SharpProverService {
 #[async_trait]
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
-    async fn submit_task(&self, task: Task, _n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    /// Not using two parameters as the sharp client is not being used
+    async fn submit_task(
+        &self,
+        task: Task,
+        _n_steps: Option<usize>,
+        _: Option<String>,
+        _: Option<u64>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -60,12 +67,15 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(job_key.to_string())
             }
+            Task::CreateBucket => {todo!()},
+            Task::CloseBucket(_) => {todo!()},
         }
     }
 
     #[tracing::instrument(skip(self), ret, err)]
     async fn get_task_status(
         &self,
+        _task: AtlanticStatusType,
         job_key: &str,
         fact: Option<String>,
         _cross_verify: bool,

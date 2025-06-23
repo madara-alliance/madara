@@ -20,6 +20,7 @@ lazy_static! {
         WorkerTriggerType::DataSubmission,
         WorkerTriggerType::UpdateState,
         WorkerTriggerType::Batching,
+        WorkerTriggerType::Aggregator,
     ];
 }
 

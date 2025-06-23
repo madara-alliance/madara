@@ -10,8 +10,8 @@ pub mod factory {
 
     use crate::types::jobs::types::JobType;
     use crate::worker::event_handler::jobs::{
-        da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler,
-        JobHandlerTrait,
+        aggregator::AggregatorJobHandler, da::DAJobHandler, proving::ProvingJobHandler, snos::SnosJobHandler,
+        state_update::StateUpdateJobHandler, JobHandlerTrait,
     };
 
     /// To get the job handler
@@ -61,6 +61,7 @@ pub mod factory {
             JobType::SnosRun => Box::new(SnosJobHandler),
             JobType::ProofCreation => Box::new(ProvingJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
+            JobType::Aggregator => Box::new(AggregatorJobHandler),
             _ => unimplemented!("Job type not implemented yet."),
         };
 

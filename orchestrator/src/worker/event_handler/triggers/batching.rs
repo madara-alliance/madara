@@ -6,11 +6,13 @@ use crate::core::config::{Config, StarknetVersion};
 use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
+use color_eyre::eyre::{eyre, Context};
+use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
@@ -50,7 +52,7 @@ impl JobTrigger for BatchingTrigger {
         let first_block_to_assign_batch = config
             .service_config()
             .min_block_to_process
-            .map_or(latest_block_in_db, |min_block| max(min_block, latest_block_in_db));
+            .map_or(latest_block_in_db + 1, |min_block| max(min_block, latest_block_in_db + 1));
 
         self.assign_batch_to_blocks(first_block_to_assign_batch, last_block_to_assign_batch, config.clone()).await?;
 
@@ -61,13 +63,20 @@ impl JobTrigger for BatchingTrigger {
 
 impl BatchingTrigger {
     /// assign_batch_to_blocks assigns a batch to all the blocks from `start_block_number` to
-    /// `end_block_number` and updates the state in DB and stores the output is storage
+    /// `end_block_number` and updates the state in DB and stores the output in storage
     async fn assign_batch_to_blocks(
         &self,
         start_block_number: u64,
         end_block_number: u64,
         config: Arc<Config>,
     ) -> Result<(), JobError> {
+        if end_block_number < start_block_number {
+            return Err(JobError::Other(OtherError(eyre!(
+                "end_block_number {} is smaller than start_block_number {}",
+                end_block_number,
+                start_block_number
+            ))));
+        }
         // Get the database
         let database = config.database();
 
@@ -76,16 +85,9 @@ impl BatchingTrigger {
 
         let (mut batch, mut state_update) = match database.get_latest_batch().await? {
             Some(batch) => {
+                // The latest batch is full. Start a new batch
                 if batch.is_batch_ready {
-                    (
-                        Batch::create(
-                            batch.index + 1,
-                            batch.end_block + 1,
-                            self.get_state_update_file_path(batch.index + 1),
-                            self.get_blob_dir_path(batch.index + 1),
-                        ),
-                        None,
-                    )
+                    (self.start_batch(&config, batch.index + 1, batch.end_block + 1).await?, None)
                 } else {
                     let state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                     let state_update: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
@@ -93,7 +95,8 @@ impl BatchingTrigger {
                 }
             }
             None => (
-                Batch::create(1, start_block_number, self.get_state_update_file_path(1), self.get_blob_dir_path(1)),
+                // No batch in DB. Start a new batch
+                self.start_batch(&config, 1, start_block_number).await?,
                 None,
             ),
         };
@@ -133,6 +136,7 @@ impl BatchingTrigger {
             Update(state_update) => {
                 match prev_state_update {
                     Some(prev_state_update) => {
+                        // Squash the state updates
                         let squashed_state_update = squash_state_updates(
                             vec![prev_state_update.clone(), state_update.clone()],
                             current_batch.start_block.saturating_sub(1),
@@ -140,6 +144,7 @@ impl BatchingTrigger {
                         )
                         .await?;
 
+                        // Compress the squashed state update based on the madara version
                         let compressed_state_update = self
                             .compress_state_update(
                                 &squashed_state_update,
@@ -164,12 +169,7 @@ impl BatchingTrigger {
                             .await?;
 
                             // Start a new batch
-                            let new_batch = Batch::create(
-                                current_batch.index + 1,
-                                block_number,
-                                self.get_state_update_file_path(current_batch.index + 1),
-                                self.get_blob_dir_path(current_batch.index + 1),
-                            );
+                            let new_batch = self.start_batch(config, current_batch.index + 1, block_number).await?;
 
                             Ok((Some(state_update), new_batch))
                         } else {
@@ -189,6 +189,26 @@ impl BatchingTrigger {
                 Ok((prev_state_update, current_batch))
             }
         }
+    }
+
+    async fn start_batch(&self, config: &Arc<Config>, index: u64, start_block: u64) -> Result<Batch, JobError> {
+        // Start a new bucket
+        let bucket_id = config
+            .prover_client()
+            .submit_task(Task::CreateBucket, None, None, None)
+            .await
+            .map_err(|e| {
+                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
+            })?;
+        tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
+        Ok(Batch::create(
+            index,
+            start_block,
+            self.get_state_update_file_path(index),
+            self.get_blob_dir_path(index),
+            Some(bucket_id),
+        ))
     }
 
     /// close_batch stores the state update, blob information in storage, and update DB
@@ -216,7 +236,16 @@ impl BatchingTrigger {
         )?;
 
         // Update batch status in the database
-        database.update_or_create_batch(&batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready }).await?;
+        database
+            .update_or_create_batch(
+                &batch,
+                &BatchUpdates {
+                    end_block: Some(batch.end_block),
+                    is_batch_ready: Some(is_batch_ready),
+                    status: if is_batch_ready { Some(BatchStatus::Closed) } else { None },
+                },
+            )
+            .await?;
 
         Ok(())
     }
@@ -252,7 +281,9 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        Ok(stateless_compress(&vec_felts))
+        let compressed_vec_felts =
+            if madara_version >= StarknetVersion::V0_13_3 { stateless_compress(&vec_felts) } else { vec_felts };
+        Ok(compressed_vec_felts)
     }
 
     /// get_state_update_file_name returns the file path for storing the state update in storage

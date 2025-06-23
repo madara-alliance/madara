@@ -79,6 +79,9 @@ impl TryFrom<RunCmd> for ProverConfig {
                     atlantic_network: atlantic_args.atlantic_network.ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Atlantic network is required".to_string())
                     })?,
+                    atlantic_cairo_vm: atlantic_args.atlantic_verifier_cairo_vm.ok_or_else(|| {
+                        OrchestratorError::SetupCommandError("Atlantic cairo vm is required".to_string())
+                    })?,
                 }))
             }
         }
