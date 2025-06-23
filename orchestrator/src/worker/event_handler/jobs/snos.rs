@@ -72,7 +72,7 @@ impl JobHandlerTrait for SnosJobHandler {
         tracing::debug!(job_id = %job.internal_id, "Calling prove_block function");
 
         let (cairo_pie, snos_output) =
-            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, snos_metadata.full_output)
+            prove_block(COMPILED_OS, block_number, snos_url, config.params.snos_layout_name, snos_metadata.full_output)
                 .await
                 .map_err(|e| {
                     tracing::error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
