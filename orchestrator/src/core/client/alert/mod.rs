@@ -17,11 +17,4 @@ pub trait AlertClient: Send + Sync {
     ///
     /// # Returns
     async fn send_message(&self, message_body: String) -> Result<(), AlertError>;
-
-    /// get_topic_name gets the topic name from the alert client.
-    ///
-    /// # Returns
-    ///
-    /// * `Result<String, AlertError>` - The topic name.
-    async fn get_topic_name(&self) -> Result<String, AlertError>;
 }

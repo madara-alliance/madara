@@ -226,7 +226,7 @@ impl Config {
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn StorageClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(AWSS3::new(aws_config, Some(storage_config))))
+        Ok(Box::new(AWSS3::new(aws_config, storage_config)))
     }
 
     pub(crate) async fn build_alert_client(
@@ -234,7 +234,7 @@ impl Config {
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn AlertClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SNS::new(aws_config, Some(alert_config))))
+        Ok(Box::new(SNS::new(aws_config, alert_config)))
     }
 
     pub(crate) async fn build_queue_client(
@@ -242,7 +242,7 @@ impl Config {
         provider_config: Arc<CloudProvider>,
     ) -> OrchestratorCoreResult<Box<dyn QueueClient + Send + Sync>> {
         let aws_config = provider_config.get_aws_client_or_panic();
-        Ok(Box::new(SQS::new(aws_config, Some(queue_config))))
+        Ok(Box::new(SQS::new(aws_config, queue_config)))
     }
 
     /// build_prover_service - Build the proving service based on the config

@@ -1219,7 +1219,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/notlesh/zaun?branch=madara-monorepo#537249e843997768cefddc022e275a98dadb7757"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1239,7 +1239,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/notlesh/zaun?branch=madara-monorepo#537249e843997768cefddc022e275a98dadb7757"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -6379,7 +6379,7 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "dirs",
  "ethers",
@@ -7568,6 +7568,12 @@ dependencies = [
  "tokio",
  "tracing",
 ]
+
+[[package]]
+name = "highway"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9040319a6910b901d5d49cbada4a99db52836a1b63228a05f7e2b7f8feef89b1"
 
 [[package]]
 name = "hmac"
@@ -9270,7 +9276,6 @@ dependencies = [
 name = "mc-db"
 version = "0.8.0"
 dependencies = [
- "ahash 0.8.11",
  "anyhow",
  "bincode 1.3.3",
  "bitvec",
@@ -9303,6 +9308,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "siphasher 1.0.1",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
  "tempfile",
@@ -9510,8 +9516,10 @@ name = "mc-rpc"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "assert_matches",
  "bitvec",
  "blockifier",
+ "futures",
  "jsonrpsee",
  "m-proc-macros",
  "mc-db",
@@ -9538,6 +9546,7 @@ dependencies = [
  "thiserror 2.0.3",
  "tokio",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -9603,6 +9612,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "blockifier",
+ "futures",
  "mc-db",
  "mc-exec",
  "mp-class",
@@ -9611,6 +9621,7 @@ dependencies = [
  "mp-transactions",
  "starknet_api 0.13.0-rc.1",
  "thiserror 2.0.3",
+ "tokio",
  "tracing",
 ]
 
@@ -9920,13 +9931,16 @@ dependencies = [
  "ahash 0.8.11",
  "bincode 1.3.3",
  "criterion",
+ "highway",
  "mp-receipt",
  "proptest",
  "rand",
  "rayon",
  "rstest 0.18.2",
+ "rustc-hash 2.1.0",
  "serde",
  "serde_json",
+ "siphasher 1.0.1",
  "starknet-types-core",
  "thiserror 2.0.3",
  "twox-hash 2.1.0",
@@ -10674,6 +10688,7 @@ dependencies = [
  "orchestrator-utils",
  "prove_block",
  "rayon",
+ "rand",
  "rstest 0.18.2",
  "serde",
  "serde_json",
@@ -13749,7 +13764,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13763,7 +13778,7 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13904,7 +13919,7 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethers",
@@ -14041,7 +14056,7 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -14056,7 +14071,7 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethers",
@@ -14230,7 +14245,7 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -14279,7 +14294,7 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethers",
@@ -15748,7 +15763,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?rev=403e0f79d1acee9b7812f5f1015cb4fb35f8ae04#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
 dependencies = [
  "async-trait",
  "ethers",
