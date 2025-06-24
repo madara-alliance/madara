@@ -42,15 +42,18 @@ managing their execution through a centralized queue system, allowing
 for multiple orchestrators to run together!
 
 1. **SNOS (Starknet OS) Job** 🔄
+
    - Identifies blocks that need processing.
    - Triggers SNOS run on identified blocks.
    - Tracks SNOS execution status and PIE (Program Independent Execution) generation
 
 2. **Proving Job** ✅
+
    - Coordinates proof generation by submitting PIE to proving services
    - Tracks proof generation progress and completion
 
 3. **Data Submission Job** 📤
+
    - Manages state update data preparation for availability layers
    - If needed, coordinates blob submission to data availability layers
    - Currently integrates with Ethereum (EIP-4844 blob transactions)
@@ -191,6 +194,7 @@ The system uses dedicated queues for managing different job phases:
 
 1. **Install Docker** (Cross-platform)
    Follow the official installation guides:
+
    - [Ubuntu Installation Guide](https://docs.docker.com/engine/install/ubuntu/#install-using-the-repository)
    - [macOS Installation Guide](https://docs.docker.com/desktop/install/mac-install/)
 
@@ -287,6 +291,7 @@ The system uses dedicated queues for managing different job phases:
    ```
 
    This script:
+
    - Takes the Madara endpoint and block number as parameters
    - Automatically deploys both the verifier contract and core contract
    - Sets up the necessary contract relationships
@@ -335,32 +340,41 @@ RUST_LOG=info cargo run --release --bin orchestrator run \
 ### Command Line Options
 
 1. **Prover Services** (choose one):
+
    - `--atlantic`: Use Atlantic prover
    - `--sharp`: Use SHARP prover
 
 2. **Settlement Layer** (choose one):
+
    - `--settle-on-ethereum`: Use Ethereum
    - `--settle-on-starknet`: Use Starknet
 
 3. **Data Availability**:
+
    - `--da-on-ethereum`: Use Ethereum
 
 4. **Infrastructure**:
+
    - `--aws`: Use AWS services (or Localstack)
 
 5. **Data Storage**:
+
    - `--aws-s3`: Store state updates and program outputs
 
 6. **Database**:
+
    - `--mongodb`: Store job information
 
 7. **Queue System**:
+
    - `--aws-sqs`: Message queue service
 
 8. **Alerting**:
+
    - `--aws-sns`: Notification service
 
 9. **Event Bridge Scheduling**:
+
    - `--aws-event-bridge`: Enable AWS Event Bridge
    - `--event-bridge-type`: Specify the type of Event Bridge (rule or schedule)
 
@@ -433,6 +447,7 @@ It requires a `Otel-collector` url to be able to send metrics/logs/traces.
 Before running tests, ensure you have:
 
 1. **Required Services Running**:
+
    - MongoDB on port 27017
    - Localstack on port 4566
    - Anvil (local Ethereum node)
@@ -450,6 +465,7 @@ Before running tests, ensure you have:
 1. **E2E Tests** 🔄
 
    🚧 Development test environment:
+
    - End-to-end workflow testing
    - Tests orchestrator functionality on block 66645 of Starknet
    - Uses mocked proving endpoints
