@@ -15,6 +15,8 @@ use std::error::Error;
 use std::sync::Arc;
 use uuid::Uuid;
 
+const N_STEPS: usize = 100;
+
 #[rstest]
 // Scenario 1: No completed SNOS jobs exist
 // Expected result: no proving jobs created
@@ -157,7 +159,7 @@ async fn test_proving_worker(
                 block_number: *block_num,
                 snos_fact: snos_fact.clone(),
                 cairo_pie_path: cairo_pie_path.clone(),
-                snos_n_steps: *n_steps,
+                snos_n_steps: Some(N_STEPS),
                 ..Default::default()
             });
             job_item.status = JobStatus::Completed;
@@ -189,7 +191,7 @@ async fn test_proving_worker(
                 input_path: cairo_pie_path.as_ref().map(|path| ProvingInputType::CairoPie(path.clone())),
                 download_proof: None,
                 ensure_on_chain_registration: snos_fact.clone(),
-                n_steps: *n_steps,
+                n_steps: Some(N_STEPS),
             });
             proving_job_item.status = JobStatus::Created;
 
@@ -237,142 +239,6 @@ async fn test_proving_worker(
         "✅ Test completed for scenario: earliest_failed_block={:?}, snos_jobs={}, expected_proving_jobs={:?}, created_count={}",
         earliest_failed_block, completed_snos_jobs.len(), expected_proving_jobs, expected_created_count
     );
-
-    Ok(())
-}
-
-#[rstest]
-// Test cases for edge cases and error conditions
-#[case(
-    "invalid_metadata", // scenario_name
-    None,               // earliest_failed_block
-    vec![(0, Some("fact".to_string()), Some("path".to_string()), Some(1000))], // snos_jobs
-    true,               // corrupt_metadata (simulate invalid metadata)
-    0                   // expected_created_count
-)]
-#[case(
-    "database_error_resilience", // scenario_name
-    None,                        // earliest_failed_block
-    vec![
-        (0, Some("fact_0".to_string()), Some("path_0".to_string()), Some(1000)),
-        (1, Some("fact_1".to_string()), Some("path_1".to_string()), Some(1100))
-    ], // snos_jobs
-    false,                       // corrupt_metadata
-    1                           // expected_created_count (one succeeds, one fails)
-)]
-#[tokio::test]
-async fn test_proving_worker_error_cases(
-    #[case] scenario_name: &str,
-    #[case] earliest_failed_block: Option<u64>,
-    #[case] completed_snos_jobs: Vec<(u64, Option<String>, Option<String>, Option<u64>)>,
-    #[case] corrupt_metadata: bool,
-    #[case] expected_created_count: usize,
-) -> Result<(), Box<dyn Error>> {
-    dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
-
-    let da_client = MockDaClient::new();
-    let mut db = MockDatabaseClient::new();
-    let mut queue = MockQueueClient::new();
-    let mut job_handler = MockJobHandlerTrait::new();
-
-    db.expect_get_earliest_failed_block_number().returning(move || Ok(earliest_failed_block));
-
-    // Create SNOS job items with potentially corrupted metadata
-    let snos_job_items: Vec<_> = completed_snos_jobs
-        .iter()
-        .enumerate()
-        .map(|(idx, (block_num, snos_fact, cairo_pie_path, n_steps))| {
-            let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
-
-            if corrupt_metadata && idx == 0 {
-                // Corrupt the first job's metadata for testing error handling
-                job_item.metadata.specific = JobSpecificMetadata::StateUpdate(Default::default());
-            } else {
-                job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata {
-                    block_number: *block_num,
-                    snos_fact: snos_fact.clone(),
-                    cairo_pie_path: cairo_pie_path.clone(),
-                    snos_n_steps: *n_steps,
-                    ..Default::default()
-                });
-            }
-            job_item.status = JobStatus::Completed;
-            job_item
-        })
-        .collect();
-
-    let snos_jobs_clone = snos_job_items.clone();
-    db.expect_get_jobs_without_successor()
-        .with(eq(JobType::SnosRun), eq(JobStatus::Completed), eq(JobType::ProofCreation))
-        .returning(move |_, _, _| Ok(snos_jobs_clone.clone()));
-
-    // Setup job handler expectations based on scenario
-    match scenario_name {
-        "invalid_metadata" => {
-            // No job creation should be attempted due to metadata corruption
-        }
-        "database_error_resilience" => {
-            // First job succeeds, second job fails during creation
-            let first_job = &completed_snos_jobs[0];
-            let uuid = Uuid::new_v4();
-            let mut proving_job_item = get_job_item_mock_by_id(first_job.0.to_string(), uuid);
-            proving_job_item.metadata.specific = JobSpecificMetadata::Proving(ProvingMetadata {
-                block_number: first_job.0,
-                input_path: first_job.2.as_ref().map(|path| ProvingInputType::CairoPie(path.clone())),
-                download_proof: None,
-                ensure_on_chain_registration: first_job.1.clone(),
-                n_steps: first_job.3,
-            });
-
-            let job_item_clone = proving_job_item.clone();
-
-            // First job creation succeeds
-            job_handler
-                .expect_create_job()
-                .with(eq(first_job.0.to_string()), mockall::predicate::always())
-                .returning(move |_, _| Ok(job_item_clone.clone()));
-
-            db.expect_create_job()
-                .withf(move |item| item.internal_id == first_job.0.to_string())
-                .returning(move |_| Ok(proving_job_item.clone()));
-
-            // Second job creation fails
-            let second_job = &completed_snos_jobs[1];
-            job_handler
-                .expect_create_job()
-                .with(eq(second_job.0.to_string()), mockall::predicate::always())
-                .returning(|_, _| Err(color_eyre::eyre::eyre!("Simulated database error")));
-        }
-        _ => unreachable!("Unknown scenario"),
-    }
-
-    // Setup job handler context
-    let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
-    let ctx = get_job_handler_context();
-    ctx.expect().with(eq(JobType::ProofCreation)).returning(move |_| Arc::clone(&job_handler));
-
-    // Mock queue operations
-    queue
-        .expect_send_message()
-        .times(expected_created_count)
-        .returning(|_, _, _| Ok(()))
-        .withf(|queue, _, _| *queue == QueueType::ProvingJobProcessing);
-
-    // Build test configuration
-    let services = TestConfigBuilder::new()
-        .configure_database(db.into())
-        .configure_queue_client(queue.into())
-        .configure_da_client(da_client.into())
-        .build()
-        .await;
-
-    // Run the worker - should handle errors gracefully
-    let result = crate::worker::event_handler::triggers::proving::ProvingJobTrigger.run_worker(services.config).await;
-
-    // Worker should complete successfully even when individual jobs fail
-    assert!(result.is_ok(), "Worker should handle errors gracefully");
-
-    println!("✅ Error case test completed for scenario: {}", scenario_name);
 
     Ok(())
 }

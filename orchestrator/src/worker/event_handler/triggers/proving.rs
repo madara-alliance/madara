@@ -170,14 +170,14 @@ impl ProvingJobTrigger {
 }
 
 /// Context for processing jobs, containing shared data and configuration
-struct ProcessingContext {
-    config: Arc<Config>,
-    earliest_failed_block: Option<u64>,
+pub struct ProcessingContext {
+    pub config: Arc<Config>,
+    pub earliest_failed_block: Option<u64>,
 }
 
 impl ProcessingContext {
     /// Creates a new processing context with necessary data fetched
-    async fn new(config: Arc<Config>) -> color_eyre::Result<Self> {
+    pub async fn new(config: Arc<Config>) -> color_eyre::Result<Self> {
         let earliest_failed_block = config.database().get_earliest_failed_block_number().await?;
 
         Ok(Self { config, earliest_failed_block })
