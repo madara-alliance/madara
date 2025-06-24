@@ -243,7 +243,7 @@ impl MadaraBackend {
         let col = self.db.get_column(Column::BlockStorageMeta);
         tracing::debug!("WRITE LAST CONFIRMED l1: {l1_last}");
         self.db.put_cf(&col, ROW_L1_LAST_CONFIRMED_BLOCK, bincode::serialize(&l1_last)?)?;
-        self.watch_blocks.update_last_confirmed_block(l1_last);
+        self.watch_blocks.update_last_block_on_l1(l1_last);
         Ok(())
     }
 
