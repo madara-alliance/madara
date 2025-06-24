@@ -470,7 +470,7 @@ mod test {
     fn starknet() -> Starknet {
         let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
-        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true };
+        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: false };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
             mc_mempool::MempoolConfig::for_testing(),
