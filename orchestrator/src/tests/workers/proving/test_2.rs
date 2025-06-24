@@ -15,8 +15,6 @@ use std::error::Error;
 use std::sync::Arc;
 use uuid::Uuid;
 
-const N_STEPS: usize = 100;
-
 #[rstest]
 // Scenario 1: No completed SNOS jobs exist
 // Expected result: no proving jobs created
@@ -135,7 +133,7 @@ const N_STEPS: usize = 100;
 #[tokio::test]
 async fn test_proving_worker(
     #[case] earliest_failed_block: Option<u64>,
-    #[case] completed_snos_jobs: Vec<(u64, Option<String>, Option<String>, Option<u64>)>, // (block_num, snos_fact, cairo_pie_path, n_steps)
+    #[case] completed_snos_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, snos_fact, cairo_pie_path, n_steps)
     #[case] expected_proving_jobs: Vec<u64>,
     #[case] expected_created_count: usize,
 ) -> Result<(), Box<dyn Error>> {
@@ -159,7 +157,7 @@ async fn test_proving_worker(
                 block_number: *block_num,
                 snos_fact: snos_fact.clone(),
                 cairo_pie_path: cairo_pie_path.clone(),
-                snos_n_steps: Some(N_STEPS),
+                snos_n_steps: *n_steps,
                 ..Default::default()
             });
             job_item.status = JobStatus::Completed;
@@ -191,7 +189,7 @@ async fn test_proving_worker(
                 input_path: cairo_pie_path.as_ref().map(|path| ProvingInputType::CairoPie(path.clone())),
                 download_proof: None,
                 ensure_on_chain_registration: snos_fact.clone(),
-                n_steps: Some(N_STEPS),
+                n_steps: *n_steps,
             });
             proving_job_item.status = JobStatus::Created;
 
