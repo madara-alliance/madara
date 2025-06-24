@@ -8,8 +8,8 @@ RUN apt-get update && apt-get install -y \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.85
+# Install Rust using rustup (will respect rust-toolchain.toml)
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2024-09-04
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Set the working directory
@@ -18,9 +18,14 @@ WORKDIR /usr/src/madara/
 # Copy the local codebase
 COPY . .
 
+
+# Install the toolchain specified in rust-toolchain.toml
+# we might need to use toolchain.toml to install the correct toolchain for the project
+# but it's not working as expected, so we're using custom nightly version temprarily
+# RUN rustup show
+
 # Setting it to avoid building artifacts again inside docker
 ENV RUST_BUILD_DOCKER=true
-
 
 # Build only the orchestrator binary
 RUN cargo build --bin orchestrator --release
@@ -79,4 +84,36 @@ RUN while read dir; do \
     cp /tmp/trusted_setup.txt "$dir/trusted_setup.txt"; \
     done < /tmp/kzg_dirs.txt
 
-ENTRYPOINT ["/bin/bash"]
+# Expose the default port
+EXPOSE 3000
+
+# Create a startup script based on Makefile commands
+RUN echo '#!/bin/bash' > start.sh && \
+    echo 'set -e' >> start.sh && \
+    echo '' >> start.sh && \
+    echo '# Check if we want to run setup or run command' >> start.sh && \
+    echo 'if [ "$1" = "setup-l2" ]; then' >> start.sh && \
+    echo '    echo "Running orchestrator setup L2..."' >> start.sh && \
+    echo '    ./orchestrator setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule' >> start.sh && \
+    echo 'elif [ "$1" = "setup-l3" ]; then' >> start.sh && \
+    echo '    echo "Running orchestrator setup L3..."' >> start.sh && \
+    echo '    ./orchestrator setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule' >> start.sh && \
+    echo 'elif [ "$1" = "run-l2" ]; then' >> start.sh && \
+    echo '    echo "Running orchestrator L2..."' >> start.sh && \
+    echo '    ./orchestrator run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum' >> start.sh && \
+    echo 'elif [ "$1" = "run-l3" ]; then' >> start.sh && \
+    echo '    echo "Running orchestrator L3..."' >> start.sh && \
+    echo '    ./orchestrator run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' >> start.sh && \
+    echo 'else' >> start.sh && \
+    echo '    echo "Usage: $0 {setup-l2|setup-l3|run-l2|run-l3}"' >> start.sh && \
+    echo '    echo "Available commands:"' >> start.sh && \
+    echo '    echo "  setup-l2  - Setup orchestrator with L2 layer"' >> start.sh && \
+    echo '    echo "  setup-l3  - Setup orchestrator with L3 layer"' >> start.sh && \
+    echo '    echo "  run-l2    - Run orchestrator with L2 (Ethereum settlement)"' >> start.sh && \
+    echo '    echo "  run-l3    - Run orchestrator with L3 (Starknet settlement)"' >> start.sh && \
+    echo '    exit 1' >> start.sh && \
+    echo 'fi' >> start.sh && \
+    chmod +x start.sh
+
+ENTRYPOINT ["./start.sh"]
+CMD ["run-l3"]

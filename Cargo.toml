@@ -315,9 +315,4 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain", features = [
-  "testing",
-] }
-
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2" }
+# cairo-vm = { git = "https://github.com/itsparser/cairo-vm", branch = "patch-1"}
