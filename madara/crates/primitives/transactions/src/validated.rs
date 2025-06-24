@@ -37,7 +37,7 @@ impl TxTimestamp {
 }
 
 /// A transaction that has been validated, but not yet included into a block.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ValidatedMempoolTx {
     pub tx: Transaction,
     /// Only filled in for L1HandlerTransaction.

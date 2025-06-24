@@ -14,6 +14,7 @@ use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 use std::collections::{btree_map, hash_map, BTreeMap, BTreeSet, HashMap, HashSet};
 
+mod score;
 mod deployed_contracts;
 mod intent;
 mod limits;
@@ -145,22 +146,24 @@ use crate::CheckInvariants;
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(Clone))]
 pub struct MempoolInner {
+    pub score_function: ScoreFunction,
+
     /// We have one [Nonce] to [MempoolTransaction] mapping per contract
     /// address.
     ///
     /// [Nonce]: starknet_api::core::Nonce
     // TODO: this can be replace with a hasmap with a tupple key
     pub nonce_mapping: HashMap<Felt, NonceTxMapping>,
-    /// FIFO queue of all [ready] intents.
+    /// Queue of all [ready] intents.
     ///
     /// [ready]: TransactionIntentReady
     pub(crate) tx_intent_queue_ready: BTreeSet<TransactionIntentReady>,
-    /// FIFO queue of all [pending] intents, sorted by their [Nonce].
+    /// Queue of all [pending] intents, sorted by their [Nonce].
     ///
     /// [pending]: TransactionIntentPendingByNonce
     // TODO: can remove contract_address from TransactionIntentPendingByNonce
     pub(crate) tx_intent_queue_pending_by_nonce: HashMap<Felt, BTreeMap<TransactionIntentPendingByNonce, ()>>,
-    /// FIFO queue of all [pending] intents, sorted by their time of arrival.
+    /// Queue of all [pending] intents, sorted by their time of arrival.
     ///
     /// This is required for the rapid removal of age-exceeded txs in
     /// [remove_age_exceeded_txs] and must be kept in sync with
@@ -368,6 +371,19 @@ impl MempoolInner {
             } else {
                 None
             };
+
+        // Remove oldest
+        // 1) Get tx from timestamp queue
+        // 2) Add account state with new tx => enum AccountUpdate
+        // 3) Apply AccountUpdate to ready queue
+        // 4) Apply AccountUpdate to timestamp queue
+        // 5) Apply AccountUpdate to machin queue
+        // 6) Apply AccountUpdate to bidule queue
+
+        // Entry exists, new tx, is now ready
+        // Entry exists, new tx, is not ready yet
+        // Entry exists, replace tx, is now ready
+        // Entry exists, replace tx, is not ready yet
 
         // Inserts the transaction into the nonce tx mapping for the current
         // contract

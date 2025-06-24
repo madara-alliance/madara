@@ -22,9 +22,11 @@ use starknet_types_core::felt::Felt;
 use std::borrow::Cow;
 use std::sync::Arc;
 
-mod inner;
+// mod inner;
 mod l1;
+mod new_inner;
 mod notify;
+use new_inner as inner;
 
 pub use inner::*;
 #[cfg(any(test, feature = "testing"))]
@@ -104,6 +106,7 @@ impl From<MempoolError> for SubmitTransactionError {
 
         match value {
             err @ (E::StorageError(_) | E::ValidatedToBlockifier(_) | E::Internal(_)) => Internal(anyhow::anyhow!(err)),
+            err @ E::InnerMempool(TxInsertionError::TooOld { .. }) => Internal(anyhow::anyhow!(err)),
             E::InnerMempool(TxInsertionError::DuplicateTxn) => {
                 rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
             }
@@ -111,6 +114,17 @@ impl From<MempoolError> for SubmitTransactionError {
             E::InnerMempool(TxInsertionError::NonceConflict) => rejected(
                 InvalidTransactionNonce,
                 "A transaction with this nonce already exists in the transaction pool",
+            ),
+            E::InnerMempool(TxInsertionError::PendingDeclare) => {
+                rejected(InvalidTransactionNonce, "Cannot add a declare transaction with a future nonce")
+            }
+            E::InnerMempool(TxInsertionError::MinTipBump { min_tip_bump }) => rejected(
+                ValidateFailure,
+                format!("Replacing a transaction requires at least a tip bump of at least {min_tip_bump} units"),
+            ),
+            E::InnerMempool(TxInsertionError::NonceTooLow { account_nonce }) => rejected(
+                InvalidTransactionNonce,
+                format!("Nonce needs to be greater than the account nonce {account_nonce}"),
             ),
             E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
         }

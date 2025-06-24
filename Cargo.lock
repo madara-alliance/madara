@@ -9500,6 +9500,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "smallvec",
  "starknet-types-core",
  "starknet_api 0.13.0-rc.1",
  "thiserror 2.0.3",
@@ -13536,9 +13537,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.13.2"
+version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
  "serde",
 ]
