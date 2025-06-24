@@ -69,7 +69,7 @@ impl BlockWatch {
         self.last_confirmed_block.send_replace(Some(latest_block));
     }
 
-    pub fn clear_pending(&self, parent_block: Option<&MadaraBlockInfo>) {
+    pub fn pending_clear(&self, parent_block: Option<&MadaraBlockInfo>) {
         self.update_pending(make_fake_pending_block(parent_block));
     }
 
@@ -121,7 +121,7 @@ impl MadaraBackend {
         self.watch_blocks.subscribe_last_confirmed_block()
     }
     #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
-    pub fn latest_pending_block(&self) -> std::sync::Arc<PendingBlockTransport> {
+    pub fn pending_latest(&self) -> std::sync::Arc<PendingBlockTransport> {
         self.watch_blocks.latest_pending_block()
     }
 }

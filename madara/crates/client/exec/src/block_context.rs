@@ -51,7 +51,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
     }
 
     fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error> {
-        let pending_block = self.latest_pending_block();
+        let pending_block = self.pending_latest();
         let block_n = self.get_latest_block_n()?.map(|n| n + 1).unwrap_or(/* genesis */ 0);
         Ok(StatefulValidator::create(
             CachedState::new(BlockifierStateAdapter::new(Arc::clone(self), block_n, Some(DbBlockId::Pending))),

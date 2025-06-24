@@ -88,7 +88,7 @@ impl MadaraBackend {
 
         let is_pending = requested_id.is_pending();
         if is_pending {
-            if let Some(class_info) = self.latest_pending_block().classes.class_info.get(class_hash) {
+            if let Some(class_info) = self.pending_latest().classes.class_info.get(class_hash) {
                 return Ok(Some(class_info.clone()));
             }
         }
@@ -135,7 +135,7 @@ impl MadaraBackend {
 
         let is_pending = requested_id.is_pending();
         if is_pending {
-            if let Some(compiled_class) = self.latest_pending_block().classes.class_compiled.get(compiled_class_hash) {
+            if let Some(compiled_class) = self.pending_latest().classes.class_compiled.get(compiled_class_hash) {
                 return Ok(Some(compiled_class.as_ref().clone()));
             }
         }

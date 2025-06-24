@@ -4,10 +4,8 @@ use crate::MadaraStorageError;
 use crate::{Column, DatabaseExt, MadaraBackend, SyncStatus, WriteBatchWithTransaction};
 use anyhow::Context;
 use mp_block::event_with_info::{drain_block_events, event_match_filter, EventWithInfo};
-use mp_block::header::{GasPrices, PendingHeader};
 use mp_block::{
     BlockId, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
-    MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use mp_state_update::StateDiff;
 use rocksdb::{Direction, IteratorMode};
@@ -23,9 +21,6 @@ struct ChainInfo {
 }
 
 const ROW_CHAIN_INFO: &[u8] = b"chain_info";
-const ROW_PENDING_INFO: &[u8] = b"pending_info";
-const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
-const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
 
 #[derive(Debug, PartialEq, Eq)]
@@ -120,92 +115,10 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        match self.latest_pending_block().block.header.block_number {
+        match self.pending_latest().block.header.block_number {
             0 => Ok(None),
             n => Ok(Some(n - 1)),
         }
-    }
-
-    // Pending block quirk: We should act as if there is always a pending block in db, to match
-    //  juno and pathfinder's handling of pending blocks.
-
-    pub(crate) fn get_pending_block_info_from_db(&self) -> Result<MadaraPendingBlockInfo> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
-            // See pending block quirk
-
-            let Some(latest_block_id) = self.get_latest_block_n()? else {
-                // Second quirk: if there is not even a genesis block in db, make up the gas prices and everything else
-                return Ok(MadaraPendingBlockInfo {
-                    header: PendingHeader {
-                        parent_block_hash: Felt::ZERO,
-                        block_number: 0,
-                        // Sequencer address is ZERO for chains where we don't produce blocks. This means that trying to simulate/trace a transaction on Pending when
-                        // genesis has not been loaded yet will return an error. That probably fine because the ERC20 fee contracts are not even deployed yet - it
-                        // will error somewhere else anyway.
-                        sequencer_address: **self.chain_config().sequencer_address,
-                        block_timestamp: Default::default(), // Junk timestamp: unix epoch
-                        protocol_version: self.chain_config.latest_protocol_version,
-                        l1_gas_price: GasPrices {
-                            eth_l1_gas_price: 1,
-                            strk_l1_gas_price: 1,
-                            eth_l1_data_gas_price: 1,
-                            strk_l1_data_gas_price: 1,
-                        },
-                        l1_da_mode: self.chain_config.l1_da_mode,
-                    },
-                    tx_hashes: vec![],
-                });
-            };
-
-            let latest_block_info =
-                self.get_block_info_from_block_n(latest_block_id)?.ok_or(MadaraStorageError::MissingChainInfo)?;
-
-            return Ok(MadaraPendingBlockInfo {
-                header: PendingHeader {
-                    parent_block_hash: latest_block_info.block_hash,
-                    block_number: latest_block_info.header.block_number + 1,
-                    sequencer_address: latest_block_info.header.sequencer_address,
-                    block_timestamp: latest_block_info.header.block_timestamp,
-                    protocol_version: latest_block_info.header.protocol_version,
-                    l1_gas_price: latest_block_info.header.l1_gas_price.clone(),
-                    l1_da_mode: latest_block_info.header.l1_da_mode,
-                },
-                tx_hashes: vec![],
-            });
-        };
-        let res = bincode::deserialize(&res)?;
-        Ok(res)
-    }
-
-    fn get_pending_block_inner(&self) -> Result<MadaraBlockInner> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_PENDING_INNER)? else {
-            // See pending block quirk
-            return Ok(MadaraBlockInner::default());
-        };
-        let res = bincode::deserialize(&res)?;
-        Ok(res)
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    /// Returns true if the database has a pending block. Note getting a pending block will always succeed, because if there is
-    /// no pending block we will return a virtual one which has no in it transaction.
-    /// This function returns `false` in the case where getting a pending block will return a virtual one.
-    pub fn has_pending_block(&self) -> Result<bool> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        Ok(self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)?.is_some())
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_pending_block_state_update(&self) -> Result<StateDiff> {
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        let Some(res) = self.db.get_cf(&col, ROW_PENDING_STATE_UPDATE)? else {
-            // See pending block quirk
-            return Ok(StateDiff::default());
-        };
-        let res = bincode::deserialize(&res)?;
-        Ok(res)
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
@@ -218,28 +131,6 @@ impl MadaraBackend {
     }
 
     // DB write
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub(crate) fn block_db_store_pending(&self, block: &MadaraPendingBlock, state_update: &StateDiff) -> Result<()> {
-        let mut tx = WriteBatchWithTransaction::default();
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        tx.put_cf(&col, ROW_PENDING_INFO, bincode::serialize(&block.info)?);
-        tx.put_cf(&col, ROW_PENDING_INNER, bincode::serialize(&block.inner)?);
-        tx.put_cf(&col, ROW_PENDING_STATE_UPDATE, bincode::serialize(&state_update)?);
-        self.db.write_opt(tx, &self.writeopts_no_wal)?;
-        Ok(())
-    }
-
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub(crate) fn block_db_clear_pending(&self) -> Result<()> {
-        let mut tx = WriteBatchWithTransaction::default();
-        let col = self.db.get_column(Column::BlockStorageMeta);
-        tx.delete_cf(&col, ROW_PENDING_INFO);
-        tx.delete_cf(&col, ROW_PENDING_INNER);
-        tx.delete_cf(&col, ROW_PENDING_STATE_UPDATE);
-        self.db.write_opt(tx, &self.writeopts_no_wal)?;
-        Ok(())
-    }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn write_last_confirmed_block(&self, l1_last: u64) -> Result<()> {
@@ -265,7 +156,6 @@ impl MadaraBackend {
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
         let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
         let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
-        let meta = self.db.get_column(Column::BlockStorageMeta);
 
         let block_hash_encoded = bincode::serialize(&block.info.block_hash)?;
         let block_n_encoded = bincode::serialize(&block.info.header.block_number)?;
@@ -309,9 +199,7 @@ impl MadaraBackend {
         }
 
         // clear pending
-        tx.delete_cf(&meta, ROW_PENDING_INFO);
-        tx.delete_cf(&meta, ROW_PENDING_INNER);
-        tx.delete_cf(&meta, ROW_PENDING_STATE_UPDATE);
+        self.pending_clear();
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
@@ -321,7 +209,7 @@ impl MadaraBackend {
 
     fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
-            RawDbBlockId::Pending => Ok(Some(self.latest_pending_block().block.info())),
+            RawDbBlockId::Pending => Ok(Some(self.pending_latest().block.info())),
             RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
             }
@@ -330,7 +218,7 @@ impl MadaraBackend {
 
     fn storage_to_inner(&self, id: &RawDbBlockId) -> Result<Option<MadaraBlockInner>> {
         match id {
-            RawDbBlockId::Pending => Ok(Some(self.get_pending_block_inner()?)),
+            RawDbBlockId::Pending => Ok(Some(self.pending_latest().block.inner())),
             RawDbBlockId::Number(block_n) => self.get_block_inner_from_block_n(*block_n),
         }
     }
@@ -360,7 +248,7 @@ impl MadaraBackend {
     pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<StateDiff>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
-            RawDbBlockId::Pending => Ok(Some(self.get_pending_block_state_update()?)),
+            RawDbBlockId::Pending => Ok(Some(self.pending_latest().block.state_diff)),
             RawDbBlockId::Number(block_n) => self.get_state_update(block_n),
         }
     }
@@ -404,7 +292,7 @@ impl MadaraBackend {
                 Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
             None => {
-                let pending = &self.latest_pending_block().block;
+                let pending = &self.pending_latest().block;
                 let tx_index = pending.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash);
                 match tx_index {
                     Some(tx_index) => Ok(Some((pending.info(), TxIndex(tx_index as _)))),
@@ -425,7 +313,7 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
-                let pending = &self.latest_pending_block().block;
+                let pending = &self.pending_latest().block;
                 let tx_index = pending.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash);
                 match tx_index {
                     Some(tx_index) => Ok(Some((

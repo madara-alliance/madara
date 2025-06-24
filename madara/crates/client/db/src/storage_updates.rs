@@ -115,21 +115,14 @@ impl MadaraBackend {
         Ok(block_info)
     }
 
-    pub fn store_pending_block_with_classes(
+    pub fn store_pending_block(
         &self,
         block: PendingFullBlock,
         converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
-        self.class_db_store_pending(converted_classes)?;
-        self.store_pending_block(block)?;
-        Ok(())
-    }
-
-    pub fn store_pending_block(&self, block: PendingFullBlock) -> Result<(), MadaraStorageError> {
-        // store_events_to_receipts(&mut inner.receipts, block.events.clone())?;
-
         let transport = std::sync::Arc::new(crate::watch::PendingBlockTransport {
             contracts: crate::contract_db::ContractUpdates::from_state_diff(block.state_diff.clone()),
+            classes: crate::class_db::ClassUpdates::from_converted_classes(self, converted_classes)?,
             block,
         });
         self.watch_blocks.update_pending(transport);
@@ -140,7 +133,7 @@ impl MadaraBackend {
         // Clear pending block when storing a new block header. This is the best place to do it IMO since
         // it would make no sense to be able to store a block header if there is also a pending block, and
         // we want to be sure to clear the pending block if we restart the sync pipeline.
-        self.clear_pending_block()?;
+        self.pending_clear()?;
 
         let mut tx = WriteBatchWithTransaction::default();
         let block_n = header.header.block_number;
@@ -311,7 +304,7 @@ impl MadaraBackend {
         Ok(())
     }
 
-    pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {
+    pub fn pending_clear(&self) -> Result<(), MadaraStorageError> {
         let parent_block = if let Some(block_n) = self.get_latest_block_n()? {
             Some(
                 self.get_block_info(&DbBlockId::Number(block_n))?
@@ -324,7 +317,7 @@ impl MadaraBackend {
         } else {
             None
         };
-        self.watch_blocks.clear_pending(parent_block.as_ref());
+        self.watch_blocks.pending_clear(parent_block.as_ref());
         self.block_db_clear_pending()?;
         self.contract_db_clear_pending()?;
         self.class_db_clear_pending()?;
