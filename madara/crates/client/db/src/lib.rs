@@ -81,6 +81,7 @@ pub mod l1_db;
 pub mod mempool_db;
 pub mod storage_updates;
 pub mod stream;
+#[cfg(any(test, feature = "testing"))]
 pub mod tests;
 mod update_global_trie;
 
@@ -443,6 +444,7 @@ impl Drop for MadaraBackend {
     fn drop(&mut self) {
         tracing::info!("⏳ Gracefully closing the database...");
         self.flush().expect("Error when flushing the database"); // flush :)
+        self.db.cancel_all_background_work(true);
     }
 }
 
