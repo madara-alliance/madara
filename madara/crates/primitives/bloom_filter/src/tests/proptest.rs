@@ -13,13 +13,13 @@ proptest! {
         let input_set: HashSet<u64> = input_set.iter().cloned().collect();
 
         input_set.par_iter().for_each(|item| {
-            filter.add(item);
+            filter.add(&item.to_be_bytes());
         });
 
         let ro_filter = filter.finalize();
 
         let false_negatives: Vec<_> = input_set.par_iter()
-            .filter(|&&item| !ro_filter.might_contain(&item))
+            .filter(|&&item| !ro_filter.might_contain(&item.to_be_bytes()))
             .collect();
 
         prop_assert!(false_negatives.is_empty(), "Found {} false negatives!", false_negatives.len());

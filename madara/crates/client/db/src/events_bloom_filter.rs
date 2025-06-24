@@ -1,6 +1,6 @@
-use ahash::AHasher;
 use mp_receipt::Event;
 use serde::{Deserialize, Deserializer, Serialize};
+use siphasher::sip::SipHasher;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashSet, fmt};
 
@@ -25,7 +25,7 @@ const HASH_COUNT: u8 = 7;
 /// - p is the desired false positive rate (0.01)
 const BITS_PER_ELEMENT: f64 = 9.6;
 
-type BloomHasher = AHasher;
+type BloomHasher = SipHasher;
 
 /// Writer component for creating event-based Bloom filters.
 ///

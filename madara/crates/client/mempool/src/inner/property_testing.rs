@@ -68,6 +68,11 @@ pub enum TxTy {
 
 impl TxTy {
     fn tx(self, contract_address: Felt) -> blockifier::transaction::transaction_execution::Transaction {
+        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let ordering = std::sync::atomic::Ordering::AcqRel;
+        let tx_hash = starknet_api::transaction::TransactionHash(HASH.fetch_add(1, ordering).into());
+
         match self {
             Self::Declare => blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
                 blockifier::transaction::account_transaction::AccountTransaction::Declare(
@@ -78,7 +83,7 @@ impl TxTy {
                                 ..Default::default()
                             },
                         ),
-                        starknet_api::transaction::TransactionHash::default(),
+                        tx_hash,
                         blockifier::execution::contract_class::ClassInfo::new(
                             &blockifier::execution::contract_class::ContractClass::V0(
                                 blockifier::execution::contract_class::ContractClassV0::default(),
@@ -97,7 +102,7 @@ impl TxTy {
                         tx: starknet_api::transaction::DeployAccountTransaction::V1(
                             starknet_api::transaction::DeployAccountTransactionV1::default(),
                         ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        tx_hash,
                         contract_address: ContractAddress::try_from(contract_address).unwrap(),
                         only_query: false,
                     },
@@ -112,7 +117,7 @@ impl TxTy {
                                 ..Default::default()
                             },
                         ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
+                        tx_hash,
                         only_query: false,
                     },
                 ),
@@ -123,7 +128,7 @@ impl TxTy {
                         contract_address: ContractAddress::try_from(contract_address).unwrap(),
                         ..Default::default()
                     },
-                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    tx_hash,
                     paid_fee_on_l1: starknet_api::transaction::Fee::default(),
                 },
             ),
