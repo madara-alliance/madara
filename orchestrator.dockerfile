@@ -87,33 +87,5 @@ RUN while read dir; do \
 # Expose the default port
 EXPOSE 3000
 
-# Create a startup script based on Makefile commands
-RUN echo '#!/bin/bash' > start.sh && \
-    echo 'set -e' >> start.sh && \
-    echo '' >> start.sh && \
-    echo '# Check if we want to run setup or run command' >> start.sh && \
-    echo 'if [ "$1" = "setup-l2" ]; then' >> start.sh && \
-    echo '    echo "Running orchestrator setup L2..."' >> start.sh && \
-    echo '    ./orchestrator setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule' >> start.sh && \
-    echo 'elif [ "$1" = "setup-l3" ]; then' >> start.sh && \
-    echo '    echo "Running orchestrator setup L3..."' >> start.sh && \
-    echo '    ./orchestrator setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule' >> start.sh && \
-    echo 'elif [ "$1" = "run-l2" ]; then' >> start.sh && \
-    echo '    echo "Running orchestrator L2..."' >> start.sh && \
-    echo '    ./orchestrator run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum' >> start.sh && \
-    echo 'elif [ "$1" = "run-l3" ]; then' >> start.sh && \
-    echo '    echo "Running orchestrator L3..."' >> start.sh && \
-    echo '    ./orchestrator run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' >> start.sh && \
-    echo 'else' >> start.sh && \
-    echo '    echo "Usage: $0 {setup-l2|setup-l3|run-l2|run-l3}"' >> start.sh && \
-    echo '    echo "Available commands:"' >> start.sh && \
-    echo '    echo "  setup-l2  - Setup orchestrator with L2 layer"' >> start.sh && \
-    echo '    echo "  setup-l3  - Setup orchestrator with L3 layer"' >> start.sh && \
-    echo '    echo "  run-l2    - Run orchestrator with L2 (Ethereum settlement)"' >> start.sh && \
-    echo '    echo "  run-l3    - Run orchestrator with L3 (Starknet settlement)"' >> start.sh && \
-    echo '    exit 1' >> start.sh && \
-    echo 'fi' >> start.sh && \
-    chmod +x start.sh
 
-ENTRYPOINT ["./start.sh"]
-CMD ["run-l3"]
+ENTRYPOINT ["./orchestrator"]
