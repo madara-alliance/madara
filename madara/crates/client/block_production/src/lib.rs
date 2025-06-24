@@ -86,7 +86,7 @@ pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(Pen
         .context("No pending block")?
         .into_pending()
         .context("Block is not pending")?;
-    let state_diff = backend.get_pending_block_state_update().context("Getting pending state update")?;
+    let state_diff = backend.pending_latest().block.state_diff.clone();
 
     let classes: Vec<_> = state_diff
         .deprecated_declared_classes
@@ -256,30 +256,6 @@ impl BlockProductionTask {
         }
     }
 
-    /// Closes the last pending block store in db (if any).
-    ///
-    /// This avoids re-executing transaction by re-adding them to the [Mempool],
-    /// as was done before.
-    async fn close_pending_block_if_exists(&mut self) -> anyhow::Result<()> {
-        // We cannot use `backend.get_block` to check for the existence of the
-        // pending block as it will ALWAYS return a pending block, even if there
-        // is none in db (it uses the Default::default in that case).
-        if !self.backend.has_pending_block().context("Error checking if pending block exists")? {
-            return Ok(());
-        }
-
-        tracing::debug!("Close pending block on startup.");
-
-        let (block, declared_classes) = get_pending_block_from_db(&self.backend)?;
-
-        self.backend.clear_pending_block().context("Error clearing pending block")?;
-
-        let block_n = self.backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
-        self.close_and_save_block(block_n, block, declared_classes, vec![]).await?;
-
-        Ok(())
-    }
-
     /// Returns the block_hash.
     #[tracing::instrument(skip(self, block, classes))]
     async fn close_and_save_block(
@@ -388,12 +364,13 @@ impl BlockProductionTask {
 
     fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let TaskState::Executing(state) = self.current_state.as_mut().context("No current state")? {
-            let (block, classes) = state
+            let (block, converted_classes) = state
                 .block
                 .clone()
                 .into_full_block_with_classes(&self.backend, state.block_n)
                 .context("Converting to full pending block")?;
-            self.backend.store_pending_block_with_classes(block, &classes)?;
+
+            self.backend.store_pending_block(block, &converted_classes)?;
 
             let stats = mem::take(&mut state.stats_for_tick);
             if stats.n_added_to_block > 0 {
@@ -416,16 +393,10 @@ impl BlockProductionTask {
     pub async fn run(mut self, mut ctx: ServiceContext) -> Result<(), anyhow::Error> {
         self.backend.chain_config().precheck_block_production()?;
 
-        if let Err(err) = self.close_pending_block_if_exists().await {
-            // This error should not stop block production from working. If it happens, that's too bad. We drop the pending state and start from
-            // a fresh one.
-            tracing::error!("Failed to continue the pending block state: {err:#}");
-        }
-
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
 
         // initial state
-        let latest_block_n = self.backend.get_latest_block_n().context("Getting latest block_n")?;
+        let latest_block_n = self.backend.get_latest_block_n();
         let latest_block_hash = if let Some(block_n) = latest_block_n {
             self.backend
                 .get_block_hash(&DbBlockId::Number(block_n))

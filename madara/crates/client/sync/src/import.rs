@@ -145,17 +145,14 @@ pub struct BlockImporterCtx {
 impl BlockImporterCtx {
     // Pending block
 
-    pub fn save_pending_block(&self, block: PendingFullBlock) -> Result<(), BlockImportError> {
+    pub fn save_pending_block(
+        &self,
+        block: PendingFullBlock,
+        converted_classes: &[ConvertedClass],
+    ) -> Result<(), BlockImportError> {
         self.db
-            .store_pending_block(block)
+            .store_pending_block(block, converted_classes)
             .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending block".into() })?;
-        Ok(())
-    }
-
-    pub fn save_pending_classes(&self, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
-        self.db
-            .class_db_store_pending(&classes)
-            .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending classes".into() })?;
         Ok(())
     }
 

@@ -123,6 +123,7 @@ impl BlockExecutionContext {
     pub fn into_header(self, parent_block_hash: Felt) -> PendingHeader {
         PendingHeader {
             parent_block_hash,
+            block_number: self.block_n,
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp.into(),
             protocol_version: self.protocol_version,

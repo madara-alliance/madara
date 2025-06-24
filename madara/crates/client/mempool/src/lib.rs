@@ -31,7 +31,6 @@ pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolConsumerView;
 
-pub mod header;
 pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]

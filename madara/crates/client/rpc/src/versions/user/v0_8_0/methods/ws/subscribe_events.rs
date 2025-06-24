@@ -20,11 +20,7 @@ pub async fn subscribe_events(
     let mut rx = starknet.backend.subscribe_events(from_address);
 
     if let Some(block_id) = block_id {
-        let latest_block = starknet
-            .backend
-            .get_latest_block_n()
-            .or_internal_server_error("Failed to retrieve latest block")?
-            .ok_or(StarknetWsApiError::NoBlocks)?;
+        let latest_block = starknet.backend.get_latest_block_n().ok_or(StarknetWsApiError::NoBlocks)?;
 
         let block_n = starknet
             .backend

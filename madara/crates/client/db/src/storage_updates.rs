@@ -1,4 +1,4 @@
-use crate::contract_db::ContractDbBlockUpdate;
+use crate::contract_db::ContractUpdates;
 use crate::db_block_id::DbBlockId;
 use crate::events_bloom_filter::EventBloomWriter;
 use crate::Column;
@@ -7,13 +7,12 @@ use crate::MadaraBackend;
 use crate::MadaraStorageError;
 use crate::WriteBatchWithTransaction;
 use mp_block::commitments::CommitmentComputationContext;
+use mp_block::BlockHeaderWithSignatures;
 use mp_block::FullBlock;
 use mp_block::MadaraBlockInfo;
 use mp_block::MadaraBlockInner;
-use mp_block::MadaraPendingBlockInfo;
 use mp_block::PendingFullBlock;
 use mp_block::TransactionWithReceipt;
-use mp_block::{BlockHeaderWithSignatures, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
@@ -116,29 +115,17 @@ impl MadaraBackend {
         Ok(block_info)
     }
 
-    pub fn store_pending_block_with_classes(
+    pub fn store_pending_block(
         &self,
         block: PendingFullBlock,
         converted_classes: &[ConvertedClass],
     ) -> Result<(), MadaraStorageError> {
-        self.class_db_store_pending(converted_classes)?;
-        self.store_pending_block(block)?;
-        Ok(())
-    }
-
-    pub fn store_pending_block(&self, block: PendingFullBlock) -> Result<(), MadaraStorageError> {
-        let info = MadaraPendingBlockInfo {
-            header: block.header,
-            tx_hashes: block.transactions.iter().map(|tx| tx.receipt.transaction_hash()).collect(),
-        };
-        let (transactions, receipts) = block.transactions.into_iter().map(|tx| (tx.transaction, tx.receipt)).unzip();
-        let mut inner = MadaraBlockInner { transactions, receipts };
-        store_events_to_receipts(&mut inner.receipts, block.events)?;
-
-        self.block_db_store_pending(&MadaraPendingBlock { info: info.clone(), inner }, &block.state_diff)?;
-        self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
-
-        self.watch_blocks.update_pending(info.into());
+        let transport = std::sync::Arc::new(crate::watch::PendingBlockTransport {
+            contracts: crate::contract_db::ContractUpdates::from_state_diff(block.state_diff.clone()),
+            classes: crate::class_db::ClassUpdates::from_converted_classes(self, converted_classes)?,
+            block,
+        });
+        self.watch_blocks.update_pending(transport);
         Ok(())
     }
 
@@ -146,7 +133,7 @@ impl MadaraBackend {
         // Clear pending block when storing a new block header. This is the best place to do it IMO since
         // it would make no sense to be able to store a block header if there is also a pending block, and
         // we want to be sure to clear the pending block if we restart the sync pipeline.
-        self.clear_pending_block()?;
+        self.pending_clear()?;
 
         let mut tx = WriteBatchWithTransaction::default();
         let block_n = header.header.block_number;
@@ -207,7 +194,7 @@ impl MadaraBackend {
         batch.put_cf(&block_n_to_state_diff, &block_n_encoded, &bincode::serialize(&value)?);
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
-        self.contract_db_store_block(block_n, ContractDbBlockUpdate::from_state_diff(value))?;
+        self.contract_db_store_block(block_n, ContractUpdates::from_state_diff(value))?;
 
         Ok(())
     }
@@ -255,70 +242,70 @@ impl MadaraBackend {
         Ok(())
     }
 
-    /// NB: This functions needs to run on the rayon thread pool
-    /// todo: depreacate this function. It is only used in tests.
-    // #[cfg(any(test, feature = "testing"))]
-    pub fn store_block(
-        &self,
-        block: mp_block::MadaraMaybePendingBlock,
-        state_diff: StateDiff,
-        converted_classes: Vec<ConvertedClass>,
-    ) -> Result<(), MadaraStorageError> {
-        use mp_block::{MadaraBlock, MadaraMaybePendingBlockInfo};
+    // /// NB: This functions needs to run on the rayon thread pool
+    // /// todo: depreacate this function. It is only used in tests.
+    // // #[cfg(any(test, feature = "testing"))]
+    // pub fn store_block(
+    //     &self,
+    //     block: mp_block::MadaraMaybePendingBlock,
+    //     state_diff: StateDiff,
+    //     converted_classes: Vec<ConvertedClass>,
+    // ) -> Result<(), MadaraStorageError> {
+    //     use mp_block::{MadaraBlock, MadaraMaybePendingBlockInfo};
+    //
+    //     let block_n = block.info.block_n();
+    //     let state_diff_cpy = state_diff.clone();
+    //
+    //     let task_block_db = || match block.info {
+    //         MadaraMaybePendingBlockInfo::Pending(info) => {
+    //             self.block_db_store_pending(
+    //                 &MadaraPendingBlock { info: info.clone(), inner: block.inner },
+    //                 &state_diff_cpy,
+    //             )?;
+    //             self.watch_blocks.update_pending(info.into());
+    //             Ok(())
+    //         }
+    //         MadaraMaybePendingBlockInfo::NotPending(info) => {
+    //             self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)
+    //         }
+    //     };
+    //
+    //     let task_contract_db = || {
+    //         let update = ContractUpdates::from_state_diff(state_diff);
+    //
+    //         match block_n {
+    //             None => self.contract_db_store_pending(update),
+    //             Some(block_n) => self.contract_db_store_block(block_n, update),
+    //         }
+    //     };
+    //
+    //     let task_class_db = || match block_n {
+    //         None => self.class_db_store_pending(&converted_classes),
+    //         Some(block_n) => self.store_block_classes(block_n, &converted_classes),
+    //     };
+    //
+    //     let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
+    //
+    //     r1.and(r2).and(r3)?;
+    //
+    //     self.snapshots.set_new_head(crate::db_block_id::DbBlockId::from_block_n(block_n));
+    //
+    //     if let Some(block_n) = block_n {
+    //         self.head_status.full_block.set_current(Some(block_n));
+    //         self.head_status.headers.set_current(Some(block_n));
+    //         self.head_status.state_diffs.set_current(Some(block_n));
+    //         self.head_status.transactions.set_current(Some(block_n));
+    //         self.head_status.classes.set_current(Some(block_n));
+    //         self.head_status.events.set_current(Some(block_n));
+    //         self.head_status.global_trie.set_current(Some(block_n));
+    //         self.save_head_status_to_db()?;
+    //     }
+    //
+    //     Ok(())
+    // }
 
-        let block_n = block.info.block_n();
-        let state_diff_cpy = state_diff.clone();
-
-        let task_block_db = || match block.info {
-            MadaraMaybePendingBlockInfo::Pending(info) => {
-                self.block_db_store_pending(
-                    &MadaraPendingBlock { info: info.clone(), inner: block.inner },
-                    &state_diff_cpy,
-                )?;
-                self.watch_blocks.update_pending(info.into());
-                Ok(())
-            }
-            MadaraMaybePendingBlockInfo::NotPending(info) => {
-                self.block_db_store_block(&MadaraBlock { info, inner: block.inner }, &state_diff_cpy)
-            }
-        };
-
-        let task_contract_db = || {
-            let update = ContractDbBlockUpdate::from_state_diff(state_diff);
-
-            match block_n {
-                None => self.contract_db_store_pending(update),
-                Some(block_n) => self.contract_db_store_block(block_n, update),
-            }
-        };
-
-        let task_class_db = || match block_n {
-            None => self.class_db_store_pending(&converted_classes),
-            Some(block_n) => self.store_block_classes(block_n, &converted_classes),
-        };
-
-        let ((r1, r2), r3) = rayon::join(|| rayon::join(task_block_db, task_contract_db), task_class_db);
-
-        r1.and(r2).and(r3)?;
-
-        self.snapshots.set_new_head(crate::db_block_id::DbBlockId::from_block_n(block_n));
-
-        if let Some(block_n) = block_n {
-            self.head_status.full_block.set_current(Some(block_n));
-            self.head_status.headers.set_current(Some(block_n));
-            self.head_status.state_diffs.set_current(Some(block_n));
-            self.head_status.transactions.set_current(Some(block_n));
-            self.head_status.classes.set_current(Some(block_n));
-            self.head_status.events.set_current(Some(block_n));
-            self.head_status.global_trie.set_current(Some(block_n));
-            self.save_head_status_to_db()?;
-        }
-
-        Ok(())
-    }
-
-    pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {
-        let parent_block = if let Some(block_n) = self.get_latest_block_n()? {
+    pub fn pending_clear(&self) -> Result<(), MadaraStorageError> {
+        let parent_block = if let Some(block_n) = self.get_latest_block_n() {
             Some(
                 self.get_block_info(&DbBlockId::Number(block_n))?
                     .ok_or(MadaraStorageError::InconsistentStorage("Can't find block info".into()))?
@@ -330,10 +317,7 @@ impl MadaraBackend {
         } else {
             None
         };
-        self.watch_blocks.clear_pending(parent_block.as_ref());
-        self.block_db_clear_pending()?;
-        self.contract_db_clear_pending()?;
-        self.class_db_clear_pending()?;
+        self.watch_blocks.pending_clear(parent_block.as_ref());
         Ok(())
     }
 }
