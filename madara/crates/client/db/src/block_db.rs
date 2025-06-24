@@ -114,10 +114,10 @@ impl MadaraBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
+    pub fn get_latest_block_n(&self) -> Option<u64> {
         match self.pending_latest().block.header.block_number {
-            0 => Ok(None),
-            n => Ok(Some(n - 1)),
+            0 => None,
+            n => Some(n - 1),
         }
     }
 
@@ -199,7 +199,7 @@ impl MadaraBackend {
         }
 
         // clear pending
-        self.pending_clear();
+        self.pending_clear()?;
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
@@ -248,7 +248,7 @@ impl MadaraBackend {
     pub fn get_block_state_diff(&self, id: &impl DbBlockIdResolvable) -> Result<Option<StateDiff>> {
         let Some(ty) = id.resolve_db_block_id(self)? else { return Ok(None) };
         match ty {
-            RawDbBlockId::Pending => Ok(Some(self.pending_latest().block.state_diff)),
+            RawDbBlockId::Pending => Ok(Some(self.pending_latest().block.state_diff.clone())),
             RawDbBlockId::Number(block_n) => self.get_state_update(block_n),
         }
     }

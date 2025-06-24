@@ -74,7 +74,7 @@ impl BlockProductionService {
     pub async fn setup_devnet(&self) -> anyhow::Result<()> {
         let Self { backend, n_devnet_contracts, .. } = self;
 
-        let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
+        let keys = if backend.get_latest_block_n().is_none() {
             // deploy devnet genesis
             tracing::info!("⛏️  Deploying devnet genesis block");
 

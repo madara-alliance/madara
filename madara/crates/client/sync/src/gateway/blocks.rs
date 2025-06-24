@@ -133,7 +133,7 @@ impl PipelineSteps for GatewaySyncSteps {
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
         tracing::debug!("Gateway sync sequential step: {block_range:?}");
         if let Some(block_n) = block_range.last() {
-            self.backend.clear_pending_block().context("Clearing pending block")?;
+            self.backend.pending_clear().context("Clearing pending block")?;
             self.backend.head_status().headers.set_current(Some(block_n));
             self.backend.head_status().state_diffs.set_current(Some(block_n));
             self.backend.head_status().transactions.set_current(Some(block_n));
@@ -186,27 +186,25 @@ pub fn gateway_pending_block_sync(
                     return Ok(None);
                 }
 
-                if backend.has_pending_block().context("Checking if db has a pending block")? {
-                    let db_block = backend
-                        .get_block_info(&BlockId::Tag(BlockTag::Pending))
-                        .context("Getting latest block hash")?
-                        .context("Backend should have a pending block")?;
-                    let db_block = db_block.as_pending().context("Asked for a pending block, got a closed one.")?;
+                let pending = backend
+                    .get_block_info(&BlockId::Tag(BlockTag::Pending))
+                    .context("Getting latest block hash")?
+                    .context("Backend should have a pending block")?;
+                let pending = pending.as_pending().context("Asked for a pending block, got a closed one.")?;
 
-                    // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
-                    let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
-                        == db_block.header
-                        && block.block.transaction_receipts.len() == db_block.tx_hashes.len()
-                        && block
-                            .block
-                            .transaction_receipts
-                            .iter()
-                            .map(|tx| &tx.transaction_hash)
-                            .eq(db_block.tx_hashes.iter());
+                // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
+                let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
+                    == pending.header
+                    && block.block.transaction_receipts.len() == pending.tx_hashes.len()
+                    && block
+                        .block
+                        .transaction_receipts
+                        .iter()
+                        .map(|tx| &tx.transaction_hash)
+                        .eq(pending.tx_hashes.iter());
 
-                    if block_has_not_changed {
-                        return Ok(None);
-                    }
+                if block_has_not_changed {
+                    return Ok(None);
                 }
 
                 tracing::debug!("Importing pending block with parent_hash {parent_hash:#x}");
@@ -225,8 +223,7 @@ pub fn gateway_pending_block_sync(
                     .run_in_rayon_pool(move |importer| {
                         let classes =
                             importer.verify_compile_classes(None, classes, &block.state_diff.all_declared_classes())?;
-                        importer.save_pending_classes(classes)?;
-                        importer.save_pending_block(block)?;
+                        importer.save_pending_block(block, &classes)?;
                         anyhow::Ok(())
                     })
                     .await?;

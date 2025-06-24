@@ -7,13 +7,11 @@ use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-const LAST_KEY: &[u8] = &[0xFF; 64];
-
 type ClassHash = Felt;
 type ClassHashCompiled = Felt;
 
 #[derive(Debug, Default)]
-pub(crate) struct ClassUpdates {
+pub struct ClassUpdates {
     class_info: std::collections::BTreeMap<ClassHash, ClassInfo>,
     class_compiled: std::collections::BTreeMap<ClassHashCompiled, std::sync::Arc<CompiledSierra>>,
 }

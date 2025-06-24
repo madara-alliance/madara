@@ -93,8 +93,7 @@ pub fn get_storage_proof(
         .or_internal_server_error("Resolving block number")?
         .ok_or(StarknetRpcApiError::NoBlocks)?;
 
-    let Some(latest) = starknet.backend.get_latest_block_n().or_internal_server_error("Getting latest block in db")?
-    else {
+    let Some(latest) = starknet.backend.get_latest_block_n() else {
         return Err(StarknetRpcApiError::BlockNotFound.into());
     };
 

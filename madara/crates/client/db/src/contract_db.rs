@@ -14,7 +14,7 @@ type StorageKey = (ContractAddress, starknet_types_core::felt::Felt);
 type StorageVal = starknet_types_core::felt::Felt;
 
 #[derive(Default, Debug)]
-pub(crate) struct ContractUpdates {
+pub struct ContractUpdates {
     contract_address_to_class_hash: std::collections::BTreeMap<ContractAddress, ClassHash>,
     contract_address_to_nonce: std::collections::BTreeMap<ContractAddress, Nonce>,
     contract_address_to_storage: std::collections::BTreeMap<StorageKey, StorageVal>,
@@ -58,8 +58,6 @@ impl ContractUpdates {
 pub(crate) const CONTRACT_STORAGE_PREFIX_LEN: usize = 64;
 pub(crate) const CONTRACT_CLASS_HASH_PREFIX_LEN: usize = 32;
 pub(crate) const CONTRACT_NONCES_PREFIX_LEN: usize = 32;
-
-const LAST_KEY: &[u8] = &[0xFF; 64];
 
 fn make_storage_key_prefix(
     contract_address: starknet_types_core::felt::Felt,

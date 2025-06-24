@@ -239,7 +239,7 @@ impl MadaraBackend {
                 let latest_plus_one = match self.latest_plus_one {
                     Some(n) => n,
                     None => {
-                        self.backend.get_latest_block_n()?.map(|n| n.saturating_add(1)).unwrap_or(/* genesis */ 0)
+                        self.backend.get_latest_block_n().map(|n| n.saturating_add(1)).unwrap_or(/* genesis */ 0)
                     }
                 };
                 self.latest_plus_one = Some(latest_plus_one);
