@@ -1,13 +1,15 @@
 use std::sync::Arc;
 
 use blockifier::context::TransactionContext;
-use blockifier::execution::entry_point::{CallEntryPoint, CallType, EntryPointExecutionContext};
+use blockifier::execution::entry_point::{
+    CallEntryPoint, CallType, EntryPointExecutionContext, SierraGasRevertTracker,
+};
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
+use starknet_api::contract_class::EntryPointType;
 use starknet_api::core::EntryPointSelector;
-use starknet_api::deprecated_contract_class::EntryPointType;
-use starknet_api::transaction::Calldata;
+use starknet_api::transaction::fields::Calldata;
 use starknet_types_core::felt::Felt;
 
 use crate::{CallContractError, Error, ExecutionContext};
@@ -38,21 +40,22 @@ impl ExecutionContext {
             calldata: Calldata(Arc::new(calldata.to_vec())),
             storage_address,
             call_type: CallType::Call,
-            initial_gas: self.block_context.versioned_constants().tx_initial_gas(),
+            initial_gas: self.block_context.versioned_constants().infinite_gas_for_vm_mode(),
             ..Default::default()
         };
 
-        let mut resources = cairo_vm::vm::runners::cairo_runner::ExecutionResources::default();
         let mut entry_point_execution_context = EntryPointExecutionContext::new_invoke(
             Arc::new(TransactionContext {
-                block_context: self.block_context.clone(),
+                block_context: Arc::clone(&self.block_context),
                 tx_info: TransactionInfo::Deprecated(DeprecatedTransactionInfo::default()),
             }),
-            false,
-        )
-        .map_err(make_err)?;
+            /* limit_steps_by_ressources */ false,
+            SierraGasRevertTracker::new(entrypoint.initial_gas.into()),
+        );
 
         let mut cached_state = self.init_cached_state();
+
+        let mut remaining_gas = entrypoint.initial_gas;
 
         let class_hash = cached_state
             .get_class_hash_at(storage_address)
@@ -60,7 +63,7 @@ impl ExecutionContext {
             .map_err(make_err)?;
 
         let res = entrypoint
-            .execute(&mut cached_state, &mut resources, &mut entry_point_execution_context)
+            .execute(&mut cached_state, &mut entry_point_execution_context, &mut remaining_gas)
             .map_err(|error| TransactionExecutionError::ExecutionError {
                 error,
                 class_hash,

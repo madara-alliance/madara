@@ -5,5 +5,3 @@ pub mod starknet_core_contract;
 pub mod starknet_dev_core_contract;
 pub mod token_bridge;
 pub mod utils;
-
-pub mod legacy_class;

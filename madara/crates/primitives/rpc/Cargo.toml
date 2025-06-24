@@ -25,7 +25,6 @@ includes-code-from = [
 starknet-types-core = { workspace = true }
 
 # Other
-primitive-types = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 
 [dev-dependencies]
