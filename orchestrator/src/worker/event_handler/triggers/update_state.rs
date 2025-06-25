@@ -103,13 +103,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                 }
             }
             None => {
-                // If the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to min_block_to_process
-                // let min_block_to_process = config.service_config().min_block_to_process.unwrap_or(0);
-                // if batches_to_process[0] != min_block_to_process {
-                //     tracing::warn!("Aggregator job for the first block is not yet completed. Returning safely...");
-                //     return Ok(());
-                // }
-                // if the last processed batch is not there, (i.e. this is the first StateTransition job), check if the batch being processed is equal to 1
+                // if the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to 1
                 if batches_to_process[0] != 1 {
                     tracing::warn!("Aggregator job for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", batches_to_process[0]);
                     return Ok(());
@@ -146,15 +140,9 @@ impl JobTrigger for UpdateStateJobTrigger {
             })?;
 
             // Add the snos output path, program output path and blob data path in state transition metadata
-            if let Some(snos_path) = &aggregator_metadata.snos_output_path {
-                state_metadata.snos_output_paths.push(snos_path.clone());
-            }
-            if let Some(program_path) = &aggregator_metadata.program_output_path {
-                state_metadata.program_output_paths.push(program_path.clone());
-            }
-            if let Some(blob_data_path) = &aggregator_metadata.blob_data_path {
-                state_metadata.blob_data_paths.push(blob_data_path.clone());
-            }
+            state_metadata.snos_output_paths.push(aggregator_metadata.snos_output_path.clone());
+            state_metadata.program_output_paths.push(aggregator_metadata.program_output_path.clone());
+            state_metadata.blob_data_paths.push(aggregator_metadata.blob_data_path.clone());
         }
 
         // Create StateTransition job metadata

@@ -1,12 +1,11 @@
-use std::fs::metadata;
+use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::core::StorageClient;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::batch::BatchStatus;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{
-    AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata,
-};
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
@@ -20,13 +19,15 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
-use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus};
+use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus, TaskType};
 use prove_block::prove_block;
 use starknet_os::io::output::StarknetOsOutput;
+use std::fs::metadata;
 use std::io::Read;
 use std::sync::Arc;
+use starknet_core::types::Felt;
 use tempfile::NamedTempFile;
-use crate::types::batch::BatchStatus;
+use crate::error::job::snos::SnosError;
 
 pub struct AggregatorJobHandler;
 
@@ -62,7 +63,6 @@ impl JobHandlerTrait for AggregatorJobHandler {
         /// Now, we follow the following logic:
         /// 1. Calculate the fact for the batch and save it in job metadata
         /// 2. Call close batch for the bucket
-        // TODO: add logic to calculate fact for the batch and add it in aggregator metadata (i think we'll need to do it in verification step)
         let internal_id = job.internal_id.clone();
         tracing::info!(
             log_type = "starting",
@@ -136,6 +136,16 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 JobError::Other(OtherError(e))
             })?;
 
+        // Get task ID from external_id
+        let task_id: String = job
+            .external_id
+            .unwrap_string()
+            .map_err(|e| {
+                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to unwrap external_id");
+                JobError::Other(OtherError(e))
+            })?
+            .into();
+
         match task_status {
             TaskStatus::Processing => {
                 tracing::info!(
@@ -149,19 +159,31 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                // If proof download path is specified, store the proof
+                // Download the following from the prover client and store in storage
+                // - cairo pie
+                // - snos output
+                // Calculate the program output from these and store this as well in storage
+                // If the proof download path is specified, download this as well
+
+                let cairo_pie_string = AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "pie.cairo0.zip", &metadata.cairo_pie_path).await?;
+                // AggregatorJobHandler::fetch_and_store_artifact(config, &task_id, "snos_output.json", &metadata.snos_output_path).await?;
+
+                let cairo_pie = CairoPie::from_bytes(cairo_pie_string.as_bytes()).map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
+                let fact_info = get_fact_info(&cairo_pie, None)?;
+                let program_output = fact_info.program_output;
+
+                AggregatorJobHandler::store_program_output(&config, job.internal_id.clone(), program_output, &metadata.program_output_path).await?;
+
+                // TODO: We can check if the fact got registered here only and fail verification if it didn't
+
                 if let Some(download_path) = metadata.download_proof {
-                    tracing::debug!(
-                        job_id = %job.internal_id,
-                        "Downloading and storing proof to path: {}",
-                        download_path
-                    );
-                    // TODO: Implement snos output and cairo pie download and storage -> calculate fact and program output using cairo pie
-                    // TODO: Implement proof download and storage
-                    // TODO: Add the path of all these in
+                    AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "proof.json", &download_path).await?;
                 }
 
-                config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::ReadyForStateUpdate).await?;
+                config
+                    .database()
+                    .update_batch_status_by_index(metadata.batch_num, BatchStatus::ReadyForStateUpdate)
+                    .await?;
 
                 tracing::info!(
                     log_type = "completed",
@@ -174,7 +196,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
-                config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::VerificationFailed).await?;
+                config
+                    .database()
+                    .update_batch_status_by_index(metadata.batch_num, BatchStatus::VerificationFailed)
+                    .await?;
                 tracing::info!(
                     log_type = "failed",
                     category = "aggregator",
@@ -205,5 +230,35 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
     fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
         None
+    }
+}
+
+impl AggregatorJobHandler {
+    pub async fn fetch_and_store_artifact(
+        config: &Arc<Config>,
+        task_id: &str,
+        file_name: &str,
+        storage_path: &str,
+    ) -> Result<String, JobError> {
+        tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
+        let cairo_pie =
+            config.prover_client().get_task_artifacts(&task_id, TaskType::Query, file_name).await.map_err(|e| {
+                tracing::error!(error = %e, "Failed to download {}", file_name);
+                JobError::Other(OtherError(eyre!(e)))
+            })?;
+
+        config.storage().put_data(bytes::Bytes::from(cairo_pie.clone().into_bytes()), storage_path).await?;
+        Ok(cairo_pie)
+    }
+
+    pub async fn store_program_output(config: &Arc<Config>, batch_index: String, program_output: Vec<Felt>, storage_path: &str) -> Result<(), SnosError> {
+        let program_output: Vec<[u8; 32]> = program_output.iter().map(|f| f.to_bytes_be()).collect();
+        let encoded_data = bincode::serialize(&program_output).map_err(|e| {
+            SnosError::ProgramOutputUnserializable { internal_id: batch_index.clone(), message: e.to_string() }
+        })?;
+        config.storage().put_data(encoded_data.into(), storage_path).await.map_err(|e| {
+            SnosError::ProgramOutputUnstorable { internal_id: batch_index.clone(), message: e.to_string() }
+        })?;
+        Ok(())
     }
 }

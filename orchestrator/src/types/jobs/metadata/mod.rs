@@ -83,16 +83,16 @@ pub struct AggregatorMetadata {
     /// in the provided storage.
     pub download_proof: Option<String>,
     /// Path of blob data
-    pub blob_data_path: Option<String>,
+    pub blob_data_path: String,
 
     // Job populated field
     // We'll get these from the Prover client after the aggregator job is completed
     /// Path to the Cairo PIE file
-    pub cairo_pie_path: Option<String>,
+    pub cairo_pie_path: String,
     /// Path to the SNOS output file
-    pub snos_output_path: Option<String>,
+    pub snos_output_path: String,
     /// Path to the program output file
-    pub program_output_path: Option<String>,
+    pub program_output_path: String,
 }
 
 /// Metadata specific to proving jobs.

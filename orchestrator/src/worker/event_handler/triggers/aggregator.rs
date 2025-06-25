@@ -13,6 +13,8 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use starknet_os::hints::block_context::block_number;
 use std::sync::Arc;
+use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR};
+use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 
 pub struct AggregatorJobTrigger;
 
@@ -24,10 +26,12 @@ impl JobTrigger for AggregatorJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::info!(log_type = "starting", category = "AggregatorWorker", "AggregatorWorker started.");
 
+        // Get all the closed batches
         let closed_batches = config.database().get_batches_by_status(BatchStatus::Closed, Some(10)).await?;
 
         tracing::debug!("Found {} closed batches", closed_batches.len());
 
+        // Process each batch
         for batch in closed_batches {
             // Check if all the child jobs are Completed
             match self.check_child_jobs_status(batch.start_block, batch.end_block, config.clone()).await {
@@ -45,6 +49,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 }
             }
 
+            // Get the bucket_id from batch
             let bucket_id = match batch.bucket_id {
                 Some(bucket_id) => bucket_id,
                 None => {
@@ -53,15 +58,22 @@ impl JobTrigger for AggregatorJobTrigger {
                 }
             };
 
+            // Construct aggregator job metadata
             let metadata = JobMetadata {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
-                    bucket_id,
                     batch_num: batch.index,
+                    bucket_id,
+                    download_proof: Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME)),
+                    blob_data_path: format!("{}/batch/{}", STORAGE_BLOB_DIR, batch.index),
+                    cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, CAIRO_PIE_FILE_NAME),
+                    snos_output_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, SNOS_OUTPUT_FILE_NAME),
+                    program_output_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROGRAM_OUTPUT_FILE_NAME),
                     ..AggregatorMetadata::default()
                 }),
             };
 
+            // Create a new job
             match JobHandlerService::create_job(
                 JobType::Aggregator,
                 batch.index.to_string(),
