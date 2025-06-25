@@ -4,6 +4,7 @@ use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
 use reqwest::header::{HeaderValue, ACCEPT, CONTENT_TYPE};
 use reqwest::Method;
+use tracing::debug;
 use url::Url;
 
 use crate::error::AtlanticError;
@@ -62,6 +63,19 @@ impl AtlanticClient {
         };
 
         Self { client, proving_layer }
+    }
+
+    pub async fn get_artifacts(&self, artifact_path: String) -> Result<String, AtlanticError> {
+        debug!("Getting artifacts from {}", artifact_path);
+        let client = reqwest::Client::new();
+        let response = client.get(&artifact_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
+
+        if response.status().is_success() {
+            let response_text = response.text().await.map_err(AtlanticError::GetJobResultFailure)?;
+            Ok(response_text)
+        } else {
+            Err(AtlanticError::SharpService(response.status()))
+        }
     }
 
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {

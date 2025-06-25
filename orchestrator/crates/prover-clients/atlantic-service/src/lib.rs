@@ -1,6 +1,8 @@
 pub mod client;
+mod constants;
 pub mod error;
 pub mod types;
+
 use std::str::FromStr;
 
 pub use crate::types::AtlanticQueryStatus;
@@ -8,11 +10,14 @@ use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{
+    AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+};
 use tempfile::NamedTempFile;
 use url::Url;
 
 use crate::client::AtlanticClient;
+use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
 use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQueryStep};
 
 #[derive(Debug, Clone)]
@@ -26,7 +31,7 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_prover_type: String,
     pub atlantic_network: String,
     pub atlantic_cairo_vm: AtlanticCairoVm,
-    pub atlantic_result: AtlanticQueryStep
+    pub atlantic_result: AtlanticQueryStep,
 }
 
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
@@ -170,6 +175,24 @@ impl ProverClient for AtlanticProverService {
                     }
                 }
             }
+        }
+    }
+
+    async fn get_task_artifacts(
+        &self,
+        task_id: &str,
+        task_type: TaskType,
+        file_name: &str,
+    ) -> Result<String, ProverClientError> {
+        match task_type {
+            TaskType::Query => Ok(self
+                .atlantic_client
+                .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
+                .await?),
+            TaskType::Bucket => Ok(self
+                .atlantic_client
+                .get_artifacts(format!("{}/buckets/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
+                .await?),
         }
     }
 }

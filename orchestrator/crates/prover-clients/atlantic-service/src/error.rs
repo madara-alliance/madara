@@ -7,8 +7,11 @@ pub enum AtlanticError {
     #[error("Failed to to add Atlantic job: {0}")]
     AddJobFailure(#[source] reqwest::Error),
 
-    #[error("Failed to to get status of a Atlantic job: {0}")]
+    #[error("Failed to to get status of an Atlantic job: {0}")]
     GetJobStatusFailure(#[source] reqwest::Error),
+
+    #[error("Failed to get artifacts of an Atlantic job: {0}")]
+    GetJobResultFailure(#[source] reqwest::Error),
 
     #[error("Atlantic service returned an error {0}")]
     SharpService(StatusCode),

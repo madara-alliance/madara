@@ -28,6 +28,17 @@ pub trait ProverClient: Send + Sync {
         fact: Option<String>,
         cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError>;
+    async fn get_task_artifacts(
+        &self,
+        task_id: &str,
+        task_type: TaskType,
+        file_name: &str,
+    ) -> Result<String, ProverClientError>;
+}
+
+pub enum TaskType {
+    Query,
+    Bucket,
 }
 
 pub enum Task {
