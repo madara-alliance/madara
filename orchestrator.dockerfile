@@ -22,7 +22,7 @@ COPY . .
 # Install the toolchain specified in rust-toolchain.toml
 # we might need to use toolchain.toml to install the correct toolchain for the project
 # but it's not working as expected, so we're using custom nightly version temprarily
-# RUN rustup show
+RUN rustup show
 
 # Setting it to avoid building artifacts again inside docker
 ENV RUST_BUILD_DOCKER=true
