@@ -1219,7 +1219,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1239,7 +1239,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -2786,7 +2786,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.8.0-rc.3"
-source = "git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain#40236a1b402b706d6a5cd102f1e3d383744ef1e2"
+source = "git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo#52889ab3bc2a7b03b7cf86709fe7d43498212f87"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -2798,7 +2798,7 @@ dependencies = [
  "cairo-lang-runner",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cairo-vm",
  "derive_more 0.99.18",
  "indexmap 2.6.0",
  "itertools 0.10.5",
@@ -2818,7 +2818,7 @@ dependencies = [
  "sha2 0.10.8",
  "sha3",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "strum 0.25.0",
  "strum_macros 0.25.3",
  "thiserror 1.0.65",
@@ -2827,7 +2827,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.8.0-rc.3"
-source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb#17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -2839,7 +2839,7 @@ dependencies = [
  "cairo-lang-runner",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cairo-vm",
  "derive_more 0.99.18",
  "indexmap 2.6.0",
  "itertools 0.10.5",
@@ -2859,7 +2859,7 @@ dependencies = [
  "sha2 0.10.8",
  "sha3",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "strum 0.25.0",
  "strum_macros 0.25.3",
  "thiserror 1.0.65",
@@ -2973,7 +2973,7 @@ dependencies = [
  "dotenv",
  "env_logger 0.11.6",
  "ethereum-instance",
- "ethers 2.0.11",
+ "ethers",
  "flate2",
  "hex",
  "indexmap 2.6.0",
@@ -4014,7 +4014,7 @@ dependencies = [
  "cairo-lang-sierra-type-size 2.8.2",
  "cairo-lang-starknet 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "cairo-vm",
  "itertools 0.12.1",
  "keccak",
  "num-bigint",
@@ -5000,7 +5000,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-corrected#dd7e219176dfa7432ff61239f8e1eea6012d753b"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -5010,38 +5010,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "58363ad8065ed891e3b14a8191b707677c7c7cb5b9d10030822506786d8d8108"
-dependencies = [
- "anyhow",
- "bincode 2.0.0-rc.3",
- "bitvec",
- "generic-array",
- "hashbrown 0.14.5",
- "hex",
- "keccak",
- "lazy_static",
- "nom",
- "num-bigint",
- "num-integer",
- "num-prime",
- "num-traits 0.2.19",
- "rand",
- "rust_decimal",
- "serde",
- "serde_json",
- "sha2 0.10.8",
- "sha3",
- "starknet-crypto 0.6.2",
- "starknet-types-core",
- "thiserror-no-std",
- "zip",
-]
-
-[[package]]
-name = "cairo-vm"
-version = "1.0.1"
-source = "git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
+source = "git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -6319,24 +6288,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "enr"
-version = "0.10.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2a3d8dc56e02f954cac8eb489772c552c473346fc34f67412bb6244fd647f7e4"
-dependencies = [
- "base64 0.21.7",
- "bytes",
- "hex",
- "k256",
- "log",
- "rand",
- "rlp",
- "serde",
- "sha3",
- "zeroize",
-]
-
-[[package]]
 name = "enum-as-inner"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6469,10 +6420,10 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "dirs",
- "ethers 2.0.14",
+ "ethers",
  "hex",
  "log",
  "serde_json",
@@ -6501,29 +6452,14 @@ name = "ethers"
 version = "2.0.11"
 source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
 dependencies = [
- "ethers-addressbook 2.0.11",
- "ethers-contract 2.0.11",
- "ethers-core 2.0.11",
- "ethers-etherscan 2.0.11",
- "ethers-middleware 2.0.11",
- "ethers-providers 2.0.11",
- "ethers-signers 2.0.11",
- "ethers-solc 2.0.11",
-]
-
-[[package]]
-name = "ethers"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "ethers-addressbook 2.0.14",
- "ethers-contract 2.0.14",
- "ethers-core 2.0.14",
- "ethers-etherscan 2.0.14",
- "ethers-middleware 2.0.14",
- "ethers-providers 2.0.14",
- "ethers-signers 2.0.14",
- "ethers-solc 2.0.14",
+ "ethers-addressbook",
+ "ethers-contract",
+ "ethers-core",
+ "ethers-etherscan",
+ "ethers-middleware",
+ "ethers-providers",
+ "ethers-signers",
+ "ethers-solc",
 ]
 
 [[package]]
@@ -6531,18 +6467,7 @@ name = "ethers-addressbook"
 version = "2.0.11"
 source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
 dependencies = [
- "ethers-core 2.0.11",
- "once_cell",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "ethers-addressbook"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "ethers-core 2.0.14",
+ "ethers-core",
  "once_cell",
  "serde",
  "serde_json",
@@ -6554,28 +6479,10 @@ version = "2.0.11"
 source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
 dependencies = [
  "const-hex",
- "ethers-contract-abigen 2.0.11",
- "ethers-contract-derive 2.0.11",
- "ethers-core 2.0.11",
- "ethers-providers 2.0.11",
- "futures-util",
- "once_cell",
- "pin-project",
- "serde",
- "serde_json",
- "thiserror 1.0.65",
-]
-
-[[package]]
-name = "ethers-contract"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "const-hex",
- "ethers-contract-abigen 2.0.14",
- "ethers-contract-derive 2.0.14",
- "ethers-core 2.0.14",
- "ethers-providers 2.0.14",
+ "ethers-contract-abigen",
+ "ethers-contract-derive",
+ "ethers-core",
+ "ethers-providers",
  "futures-util",
  "once_cell",
  "pin-project",
@@ -6592,31 +6499,8 @@ dependencies = [
  "Inflector",
  "const-hex",
  "dunce",
- "ethers-core 2.0.11",
- "ethers-etherscan 2.0.11",
- "eyre",
- "prettyplease",
- "proc-macro2",
- "quote",
- "regex",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "syn 2.0.89",
- "toml 0.8.19",
- "walkdir",
-]
-
-[[package]]
-name = "ethers-contract-abigen"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "Inflector",
- "const-hex",
- "dunce",
- "ethers-core 2.0.14",
- "ethers-etherscan 2.0.14",
+ "ethers-core",
+ "ethers-etherscan",
  "eyre",
  "prettyplease",
  "proc-macro2",
@@ -6637,23 +6521,8 @@ source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a68
 dependencies = [
  "Inflector",
  "const-hex",
- "ethers-contract-abigen 2.0.11",
- "ethers-core 2.0.11",
- "proc-macro2",
- "quote",
- "serde_json",
- "syn 2.0.89",
-]
-
-[[package]]
-name = "ethers-contract-derive"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "Inflector",
- "const-hex",
- "ethers-contract-abigen 2.0.14",
- "ethers-core 2.0.14",
+ "ethers-contract-abigen",
+ "ethers-core",
  "proc-macro2",
  "quote",
  "serde_json",
@@ -6690,56 +6559,12 @@ dependencies = [
 ]
 
 [[package]]
-name = "ethers-core"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "arrayvec 0.7.6",
- "bytes",
- "cargo_metadata",
- "chrono",
- "const-hex",
- "elliptic-curve 0.13.8",
- "ethabi",
- "generic-array",
- "k256",
- "num_enum",
- "once_cell",
- "open-fastrlp",
- "rand",
- "rlp",
- "serde",
- "serde_json",
- "strum 0.26.3",
- "syn 2.0.89",
- "tempfile",
- "thiserror 1.0.65",
- "tiny-keccak",
- "unicode-xid",
-]
-
-[[package]]
 name = "ethers-etherscan"
 version = "2.0.11"
 source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
 dependencies = [
  "chrono",
- "ethers-core 2.0.11",
- "reqwest 0.11.27",
- "semver 1.0.23",
- "serde",
- "serde_json",
- "thiserror 1.0.65",
- "tracing",
-]
-
-[[package]]
-name = "ethers-etherscan"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "chrono",
- "ethers-core 2.0.14",
+ "ethers-core",
  "reqwest 0.11.27",
  "semver 1.0.23",
  "serde",
@@ -6755,37 +6580,11 @@ source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a68
 dependencies = [
  "async-trait",
  "auto_impl",
- "ethers-contract 2.0.11",
- "ethers-core 2.0.11",
- "ethers-etherscan 2.0.11",
- "ethers-providers 2.0.11",
- "ethers-signers 2.0.11",
- "futures-channel",
- "futures-locks",
- "futures-util",
- "instant",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "thiserror 1.0.65",
- "tokio",
- "tracing",
- "tracing-futures",
- "url",
-]
-
-[[package]]
-name = "ethers-middleware"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "async-trait",
- "auto_impl",
- "ethers-contract 2.0.14",
- "ethers-core 2.0.14",
- "ethers-etherscan 2.0.14",
- "ethers-providers 2.0.14",
- "ethers-signers 2.0.14",
+ "ethers-contract",
+ "ethers-core",
+ "ethers-etherscan",
+ "ethers-providers",
+ "ethers-signers",
  "futures-channel",
  "futures-locks",
  "futures-util",
@@ -6810,44 +6609,8 @@ dependencies = [
  "base64 0.21.7",
  "bytes",
  "const-hex",
- "enr 0.9.1",
- "ethers-core 2.0.11",
- "futures-core",
- "futures-timer",
- "futures-util",
- "hashers",
- "http 0.2.12",
- "instant",
- "jsonwebtoken 8.3.0",
- "once_cell",
- "pin-project",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "thiserror 1.0.65",
- "tokio",
- "tokio-tungstenite 0.20.1",
- "tracing",
- "tracing-futures",
- "url",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
- "ws_stream_wasm",
-]
-
-[[package]]
-name = "ethers-providers"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "async-trait",
- "auto_impl",
- "base64 0.22.1",
- "bytes",
- "const-hex",
- "enr 0.10.0",
- "ethers-core 2.0.14",
+ "enr",
+ "ethers-core",
  "futures-core",
  "futures-timer",
  "futures-util",
@@ -6883,25 +6646,7 @@ dependencies = [
  "const-hex",
  "elliptic-curve 0.13.8",
  "eth-keystore",
- "ethers-core 2.0.11",
- "rand",
- "sha2 0.10.8",
- "thiserror 1.0.65",
- "tracing",
-]
-
-[[package]]
-name = "ethers-signers"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "async-trait",
- "coins-bip32",
- "coins-bip39",
- "const-hex",
- "elliptic-curve 0.13.8",
- "eth-keystore",
- "ethers-core 2.0.14",
+ "ethers-core",
  "rand",
  "sha2 0.10.8",
  "thiserror 1.0.65",
@@ -6917,38 +6662,7 @@ dependencies = [
  "const-hex",
  "dirs",
  "dunce",
- "ethers-core 2.0.11",
- "glob",
- "home",
- "md-5",
- "num_cpus",
- "once_cell",
- "path-slash",
- "rayon",
- "regex",
- "semver 1.0.23",
- "serde",
- "serde_json",
- "solang-parser",
- "svm-rs",
- "thiserror 1.0.65",
- "tiny-keccak",
- "tokio",
- "tracing",
- "walkdir",
- "yansi 0.5.1",
-]
-
-[[package]]
-name = "ethers-solc"
-version = "2.0.14"
-source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
-dependencies = [
- "cfg-if",
- "const-hex",
- "dirs",
- "dunce",
- "ethers-core 2.0.14",
+ "ethers-core",
  "glob",
  "home",
  "md-5",
@@ -9348,12 +9062,12 @@ dependencies = [
  "bigdecimal 0.4.5",
  "bincode 1.3.3",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "bonsai-trie",
  "bytes",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "clap",
  "crypto-bigint 0.5.5",
  "derive_more 2.0.1",
@@ -9436,7 +9150,7 @@ dependencies = [
  "starknet-providers 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "syn 2.0.89",
  "tempfile",
  "thiserror 2.0.3",
@@ -9557,7 +9271,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "futures",
  "lazy_static",
  "m-cairo-test-contracts",
@@ -9590,7 +9304,7 @@ dependencies = [
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9606,7 +9320,7 @@ dependencies = [
  "anyhow",
  "bincode 1.3.3",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "bonsai-trie",
  "futures",
  "lazy_static",
@@ -9637,7 +9351,7 @@ dependencies = [
  "serde_json",
  "siphasher 1.0.1",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9653,7 +9367,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "build-version",
  "futures",
  "m-cairo-test-contracts",
@@ -9685,7 +9399,7 @@ dependencies = [
  "starknet-core 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tokio",
  "tracing",
  "tracing-core",
@@ -9697,8 +9411,8 @@ dependencies = [
 name = "mc-exec"
 version = "0.8.0"
 dependencies = [
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
+ "cairo-vm",
  "mc-db",
  "mp-block",
  "mp-chain-config",
@@ -9716,7 +9430,7 @@ dependencies = [
  "opentelemetry_sdk",
  "rstest 0.18.2",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9795,7 +9509,7 @@ dependencies = [
  "assert_matches",
  "async-trait",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "futures",
  "lazy_static",
  "mc-analytics",
@@ -9828,7 +9542,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tokio-util",
@@ -9845,7 +9559,7 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "futures",
  "jsonrpsee",
  "m-proc-macros",
@@ -9869,7 +9583,7 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9886,7 +9600,7 @@ dependencies = [
  "async-trait",
  "bigdecimal 0.4.5",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "dotenv",
  "futures",
  "httpmock 0.7.0",
@@ -9920,7 +9634,7 @@ dependencies = [
  "starknet-providers 0.12.0",
  "starknet-signers 0.10.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -9938,7 +9652,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "futures",
  "mc-db",
  "mc-exec",
@@ -9946,7 +9660,7 @@ dependencies = [
  "mp-convert",
  "mp-rpc",
  "mp-transactions",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tokio",
  "tracing",
@@ -9994,7 +9708,7 @@ dependencies = [
  "serde_json",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
@@ -10223,7 +9937,7 @@ name = "mp-block"
 version = "0.8.0"
 dependencies = [
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "bonsai-trie",
  "mp-chain-config",
  "mp-class",
@@ -10243,7 +9957,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
  "tracing-core",
@@ -10278,7 +9992,7 @@ name = "mp-chain-config"
 version = "0.8.0"
 dependencies = [
  "anyhow",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "lazy_static",
  "mp-rpc",
  "mp-utils",
@@ -10288,7 +10002,7 @@ dependencies = [
  "serde_json",
  "serde_yaml",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
  "url",
@@ -10299,7 +10013,7 @@ name = "mp-class"
 version = "0.8.0"
 dependencies = [
  "base64 0.22.1",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "cairo-lang-starknet 1.0.0-alpha.6",
  "cairo-lang-starknet 1.0.0-rc0",
  "cairo-lang-starknet 1.1.1",
@@ -10308,7 +10022,7 @@ dependencies = [
  "cairo-lang-utils 1.0.0-rc0",
  "cairo-lang-utils 1.1.1",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "flate2",
  "lazy_static",
  "mp-convert",
@@ -10336,7 +10050,7 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
 ]
 
@@ -10384,8 +10098,8 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
+ "cairo-vm",
  "mp-chain-config",
  "mp-convert",
  "mp-rpc",
@@ -10397,7 +10111,7 @@ dependencies = [
  "sha3",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -10430,10 +10144,10 @@ dependencies = [
  "anyhow",
  "assert_matches",
  "base64 0.22.1",
- "blockifier 0.8.0-rc.3 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "mp-chain-config",
  "mp-class",
  "mp-convert",
@@ -10444,7 +10158,7 @@ dependencies = [
  "serde_with 3.11.0",
  "starknet-core 0.12.0",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo)",
  "thiserror 2.0.3",
  "tracing",
 ]
@@ -10976,7 +10690,7 @@ dependencies = [
  "bincode 1.3.3",
  "build-version",
  "bytes",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "chrono",
  "clap",
  "color-eyre",
@@ -11042,7 +10756,7 @@ version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "async-trait",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "color-eyre",
  "dotenvy",
  "env_logger 0.11.6",
@@ -11116,7 +10830,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "c-kzg",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "color-eyre",
  "dotenvy",
  "lazy_static",
@@ -11153,7 +10867,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bincode 1.3.3",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "dotenvy",
  "itertools 0.13.0",
  "log",
@@ -11180,7 +10894,7 @@ name = "orchestrator-prover-client-interface"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "mockall",
  "orchestrator-gps-fact-checker",
  "orchestrator-utils",
@@ -11209,7 +10923,7 @@ dependencies = [
  "alloy-primitives 0.8.18",
  "async-trait",
  "base64 0.22.1",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "color-eyre",
  "dotenvy",
  "hex",
@@ -12162,13 +11876,13 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-corrected#dd7e219176dfa7432ff61239f8e1eea6012d753b"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
 dependencies = [
  "anyhow",
- "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "clap",
  "env_logger 0.11.6",
  "futures-core",
@@ -12187,7 +11901,7 @@ dependencies = [
  "starknet-os",
  "starknet-os-types",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "thiserror 1.0.65",
  "tokio",
 ]
@@ -12718,7 +12432,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-corrected#dd7e219176dfa7432ff61239f8e1eea6012d753b"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -12733,16 +12447,16 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-corrected#dd7e219176dfa7432ff61239f8e1eea6012d753b"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
 dependencies = [
- "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "cairo-lang-starknet-classes 2.8.2",
  "rpc-client",
  "serde",
  "serde_json",
  "starknet 0.11.0",
  "starknet-os-types",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "thiserror 1.0.65",
  "tokio",
 ]
@@ -14091,10 +13805,10 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "starknet-proxy-client",
@@ -14105,10 +13819,10 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "starknet-proxy-client",
@@ -14247,10 +13961,10 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "starknet-proxy-client",
@@ -14358,11 +14072,11 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethereum-instance",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "starknet-proxy-client",
@@ -14373,10 +14087,10 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "starknet-proxy-client",
@@ -14433,7 +14147,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-corrected#dd7e219176dfa7432ff61239f8e1eea6012d753b"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -14442,13 +14156,13 @@ dependencies = [
  "ark-secp256r1",
  "base64 0.21.7",
  "bitvec",
- "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "c-kzg",
  "cairo-lang-casm 2.8.2",
  "cairo-lang-starknet 2.8.2",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-type-derive",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "futures",
  "futures-util",
  "heck 0.4.1",
@@ -14472,7 +14186,7 @@ dependencies = [
  "starknet-crypto 0.6.2",
  "starknet-gateway-types",
  "starknet-os-types",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "thiserror 1.0.65",
  "tokio",
  "uuid 1.12.0",
@@ -14482,13 +14196,14 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-corrected#dd7e219176dfa7432ff61239f8e1eea6012d753b"
+source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
 dependencies = [
- "blockifier 0.8.0-rc.3 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "cairo-lang-starknet-classes 2.8.2",
- "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
+ "cairo-vm",
  "flate2",
  "num-bigint",
+ "once_cell",
  "serde",
  "serde_json",
  "serde_with 3.11.0",
@@ -14496,7 +14211,7 @@ dependencies = [
  "starknet-crypto 0.6.2",
  "starknet-gateway-types",
  "starknet-types-core",
- "starknet_api 0.13.0-rc.1 (git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73)",
+ "starknet_api 0.13.0-rc.1 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "thiserror 1.0.65",
  "tokio",
 ]
@@ -14546,11 +14261,11 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethereum-instance",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "serde_json",
@@ -14595,10 +14310,10 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "starknet-proxy-client",
@@ -14644,7 +14359,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain#40236a1b402b706d6a5cd102f1e3d383744ef1e2"
+source = "git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo#52889ab3bc2a7b03b7cf86709fe7d43498212f87"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes 2.8.2",
@@ -14667,7 +14382,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb#17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes 2.8.2",
@@ -16104,10 +15819,10 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
- "ethers 2.0.14",
+ "ethers",
  "log",
  "num-traits 0.2.19",
  "serde_json",
@@ -16928,3 +16643,8 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
+
+[[patch.unused]]
+name = "starknet-core"
+version = "0.14.0"
+source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#ebdb4249592c406837f284fe58042240c417cddb"

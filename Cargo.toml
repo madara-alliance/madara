@@ -97,7 +97,7 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
   "cairo-1-hints",
   "extensive_hints",
   "mod_builtin",
@@ -114,11 +114,11 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain", features = [
+blockifier = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
   "testing",
   "concurrency",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
+starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo" }
 cairo-lang-starknet-classes = "=2.8.2"
 cairo-lang-utils = "=2.8.2"
 
@@ -215,7 +215,7 @@ siphasher = "1.0"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
-once_cell = "1.19"
+once_cell = "1.21.3"
 itertools = "0.13.0"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
@@ -285,15 +285,15 @@ swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.7" }
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.2" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/0.13.2-corrected" }
-prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/0.13.2-corrected" }
+starknet-os = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
+prove_block = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -315,4 +315,9 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-# cairo-vm = { git = "https://github.com/itsparser/cairo-vm", branch = "patch-1"}
+starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
+  "testing",
+] }
+
+starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex" }
