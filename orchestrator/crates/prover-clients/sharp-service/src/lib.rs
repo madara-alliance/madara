@@ -172,6 +172,7 @@ impl ProverClient for SharpProverService {
         _task_id: &str,
         _fact: &str,
         _n_steps: Option<usize>,
+        _cairo_verifier: &str,
     ) -> Result<String, ProverClientError> {
         todo!()
     }

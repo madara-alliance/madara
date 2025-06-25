@@ -6,6 +6,7 @@ use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadat
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
+use crate::utils::COMPILED_VERIFIER;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use anyhow::Context;
 use async_trait::async_trait;
@@ -68,10 +69,11 @@ impl JobHandlerTrait for RegisterProofJobHandler {
 
         let task_id = job.internal_id.clone();
 
+        let proof_verifier = String::from_utf8_lossy(COMPILED_VERIFIER).to_string();
         // Submit proof for L2 verification
         let external_id = config
             .prover_client()
-            .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps)
+            .submit_l2_query(&task_id, &formatted_proof, proving_metadata.n_steps, &proof_verifier)
             .await
             .context(format!(
                 "Failed to submit proof for L2 verification for job_id: {}, task_id: {}",
