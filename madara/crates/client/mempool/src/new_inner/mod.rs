@@ -5,7 +5,7 @@ use crate::new_inner::{
     limits::{MempoolLimitReached, MempoolLimiter},
     ready_queue::ReadyQueue,
     timestamp_queue::TimestampQueue,
-    tx::{EvictionScore, MempoolTransaction, Score, ScoreFunction},
+    tx::{EvictionScore, MempoolTransaction, ScoreFunction},
 };
 use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
 use starknet_api::{
@@ -19,6 +19,7 @@ pub(crate) mod by_tx_hash_index;
 pub(crate) mod eviction;
 pub(crate) mod limits;
 pub(crate) mod ready_queue;
+pub(crate) mod tests;
 pub(crate) mod timestamp_queue;
 pub(crate) mod tx;
 
@@ -36,6 +37,9 @@ pub enum TxInsertionError {
     TooOld { ttl: Duration },
     #[error("Cannot add a declare transaction with a future nonce")]
     PendingDeclare,
+    /// Transactions without tips are not supported when using the mempool in tip mode.
+    #[error("Cannot add a transaction without a tip into the mempool")]
+    NoTip,
     #[error(transparent)]
     Limit(#[from] MempoolLimitReached),
 }
@@ -43,7 +47,6 @@ pub enum TxInsertionError {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
-    pub min_score_bump: Option<Score>,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
     pub ttl: Duration,
@@ -83,7 +86,7 @@ pub struct InnerMempoolConfig {
 pub struct InnerMempool {
     config: InnerMempoolConfig,
 
-    /// Backing datastructure. Indexed by TxKey = (ContractAddress, Nonce).
+    /// Backing datastructure, single source of truth for the other datastructure. Contains account nonces and queued txs for each account.
     accounts: Accounts,
 
     // Secondary indices
@@ -95,7 +98,7 @@ pub struct InnerMempool {
     timestamp_queue: TimestampQueue,
     /// Index TxHash => TxKey.
     by_tx_hash: ByTxHashIndex,
-    /// Queue of all acounts sorted by eviction score. Eviction score only tracks the last queued tx of an account.
+    /// Queue of all acounts sorted by eviction score of the the last queued tx of each account.
     eviction_queue: EvictionQueue,
 }
 
@@ -109,6 +112,21 @@ impl InnerMempool {
         self.timestamp_queue.check_invariants(&self.accounts);
         self.by_tx_hash.check_invariants(&self.accounts);
         self.eviction_queue.check_invariants(&self.accounts);
+    }
+
+    pub fn get_account_nonce(&self, contract_address: &ContractAddress) -> Option<&Nonce> {
+        self.accounts.all_accounts().get(contract_address).map(|acc| &acc.current_nonce)
+    }
+
+    pub fn account_nonces(&self) -> impl Iterator<Item = (&ContractAddress, &Nonce)> {
+        self.accounts
+            .all_accounts()
+            .iter()
+            .map(|(contract_address, account)| (contract_address, &account.current_nonce))
+    }
+
+    pub fn transactions(&self) -> impl Iterator<Item = &ValidatedMempoolTx> {
+        self.accounts.all_accounts().iter().flat_map(|(_, acc)| acc.queued_txs.values()).map(|t| &t.inner)
     }
 }
 
@@ -139,6 +157,7 @@ impl InnerMempool {
     ///
     /// ## Arguments
     ///
+    /// * `now`: current time.
     /// * `account_nonce`: the current nonce for the contract_address. Caller is responsible to get it from the backend. If the account already exists
     ///   within the mempool, this argument will be ignored.
     /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping if necessary (remove from
@@ -149,16 +168,16 @@ impl InnerMempool {
     /// Returns nothing, or an error if the transaction was rejected. If an error is returned, the transaction is not inserted.
     pub fn insert_tx(
         &mut self,
+        now: TxTimestamp,
         tx: ValidatedMempoolTx,
         account_nonce: Nonce,
         removed_txs: &mut impl Extend<ValidatedMempoolTx>,
     ) -> Result<(), TxInsertionError> {
-        let now = TxTimestamp::now();
         // Prechecks: TTL
         if tx.arrived_at <= now.checked_sub(self.config.ttl).unwrap_or(TxTimestamp::UNIX_EPOCH) {
             return Err(TxInsertionError::TooOld { ttl: self.config.ttl });
         }
-        let mempool_tx = MempoolTransaction::new(tx, &self.config.score_function);
+        let mempool_tx = MempoolTransaction::new(tx, &self.config.score_function)?;
 
         // Entry in the backing accounts datastructure. This will not insert the tx into the mempool yet.
         let mut entry = self.accounts.tx_entry_for_insertion(&mempool_tx, account_nonce)?;
@@ -182,7 +201,7 @@ impl InnerMempool {
             // Limiter check
             self.limiter.check_room_for_replacement(previous_tx, &mempool_tx)?;
             // Check tip bump
-            self.config.score_function.check_tip_bump(previous_tx, &mempool_tx);
+            self.config.score_function.check_tip_bump(previous_tx, &mempool_tx)?;
         }
         // Otherwise, we are adding a new transaction into a new slot.
         else {
@@ -227,11 +246,8 @@ impl InnerMempool {
         true // we made room! :)
     }
 
-    /// Update an account nonce. This gets rid of all obselete transacctions, and needs to be called everytime new state (statediff NonceUpdate) is
-    /// committed to the db.
-    ///
-    /// **Important note**: When a transaction is popped from the mempool and it is not included into a block (not executed or rejected), this function **needs** to be
-    /// called again with the account nonce. This is important to roll-back the account nonce after a previous `pop_next_ready` incremented it.
+    /// Update an account nonce. This gets rid of all obselete transactions, and needs to be called everytime new state (statediff NonceUpdate)
+    /// should be applied.
     ///
     /// ## Arguments
     ///
@@ -241,8 +257,8 @@ impl InnerMempool {
     ///   db, send update notifications...)
     pub fn update_account_nonce(
         &mut self,
-        contract_address: ContractAddress,
-        account_nonce: Nonce,
+        contract_address: &ContractAddress,
+        account_nonce: &Nonce,
         removed_txs: &mut impl Extend<ValidatedMempoolTx>,
     ) {
         let Some(account_update) = self.accounts.update_account_nonce(contract_address, account_nonce) else { return };
@@ -250,14 +266,16 @@ impl InnerMempool {
     }
 
     /// Pop the next ready transaction for block building, or `None` if the mempool has no ready transaction.
+    /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until a `update_account_nonce` is issued.
     pub fn pop_next_ready(&mut self) -> Option<ValidatedMempoolTx> {
         // Get the next ready account,
         let account_key = self.ready_queue.get_first()?;
 
         // Remove from the backing datastructure.
-        let mut account_update = self.accounts.pop_ready_tx_increment_account_nonce(account_key);
+        let mut account_update = self.accounts.remove_ready_tx(account_key);
 
         // Update indices.
+        self.limiter.apply_account_update(&account_update);
         self.ready_queue.apply_account_update(&account_update);
         self.timestamp_queue.apply_account_update(&account_update);
         self.by_tx_hash.apply_account_update(&account_update);
@@ -266,7 +284,7 @@ impl InnerMempool {
         assert_eq!(
             account_update.removed_txs.len(),
             1,
-            "pop_ready_tx_increment_account_nonce should remove exactly one tx from the mempool"
+            "remove_ready_tx should remove exactly one tx from the mempool"
         );
         account_update.removed_txs.pop().map(|tx| tx.into_inner())
     }
@@ -275,21 +293,34 @@ impl InnerMempool {
     ///
     /// ## Arguments
     ///
+    /// * `now`: current time.
     /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping if necessary (remove from
     ///   db, send update notifications...)
-    pub fn remove_all_ttl_exceeded_txs(&mut self, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
-        let limit_ts = TxTimestamp::now().checked_sub(self.config.ttl).unwrap_or(TxTimestamp::UNIX_EPOCH);
+    pub fn remove_all_ttl_exceeded_txs(&mut self, now: TxTimestamp, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
+        let limit_ts = now.checked_sub(self.config.ttl).unwrap_or(TxTimestamp::UNIX_EPOCH);
         while let Some(tx_key) = self.timestamp_queue.first_older_than(limit_ts) {
             let account_update = self.accounts.remove_tx(tx_key);
             self.apply_update(account_update, removed_txs);
         }
     }
 
-    pub fn contains_tx(&self, tx_hash: TransactionHash) -> bool {
+    pub fn get_transaction_by_hash(&self, tx_hash: &TransactionHash) -> Option<&ValidatedMempoolTx> {
+        self.by_tx_hash.get(tx_hash).and_then(|key| self.accounts.get_tx_by_key(key)).map(|tx| &tx.inner)
+    }
+
+    pub fn contains_tx_by_hash(&self, tx_hash: &TransactionHash) -> bool {
         self.by_tx_hash.contains(tx_hash)
     }
 
     pub fn has_ready_transactions(&self) -> bool {
         self.ready_queue.has_ready_transactions()
+    }
+
+    pub fn ready_transactions(&self) -> usize {
+        self.ready_queue.ready_transactions()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.accounts.is_empty()
     }
 }

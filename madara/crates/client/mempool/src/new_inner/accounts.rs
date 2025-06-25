@@ -5,7 +5,6 @@ use crate::{
     },
     tx::{Score, TxInfo},
 };
-use mp_convert::Felt;
 use starknet_api::core::{ContractAddress, Nonce};
 use std::{
     collections::{btree_map, hash_map, BTreeMap, HashMap},
@@ -76,8 +75,8 @@ impl AccountState {
         })
     }
 
-    pub fn remove_tx(&mut self, nonce: Nonce) -> Option<MempoolTransaction> {
-        self.queued_txs.remove(&nonce)
+    pub fn remove_tx(&mut self, nonce: &Nonce) -> Option<MempoolTransaction> {
+        self.queued_txs.remove(nonce)
     }
 
     pub fn pop_first(&mut self) -> Option<MempoolTransaction> {
@@ -278,10 +277,10 @@ impl Accounts {
     // Important: Caller needs to return `Some` when an update needs to be made, `None` otherwise.
     fn account_update_helper<R>(
         &mut self,
-        contract_address: ContractAddress,
+        contract_address: &ContractAddress,
         update_fn: impl FnOnce(&mut AccountState) -> Option<R>,
     ) -> Option<(AccountUpdateData, R)> {
-        let hash_map::Entry::Occupied(mut account_entry) = self.accounts.entry(contract_address) else { return None };
+        let hash_map::Entry::Occupied(mut account_entry) = self.accounts.entry(*contract_address) else { return None };
 
         let previous_eviction_score = account_entry.get().eviction_score();
         let previous_status = account_entry.get().status();
@@ -310,25 +309,25 @@ impl Accounts {
     /// This function may return multiple removed txs.
     pub fn update_account_nonce(
         &mut self,
-        contract_address: ContractAddress,
-        account_nonce: Nonce,
+        contract_address: &ContractAddress,
+        account_nonce: &Nonce,
     ) -> Option<AccountUpdate> {
         let (account_data, removed_txs) = self.account_update_helper(contract_address, move |account_state| {
-            account_state.current_nonce = account_nonce;
+            account_state.current_nonce = *account_nonce;
             let removed_txs = account_state.pop_invalid_txs().collect();
 
             Some(removed_txs)
         })?;
 
-        Some(AccountUpdate { account_key: AccountKey(contract_address), removed_txs, added_tx: None, account_data })
+        Some(AccountUpdate { account_key: AccountKey(*contract_address), removed_txs, added_tx: None, account_data })
     }
 
     /// Caller must supply a valid AccountKey for an account in ready state.
-    pub fn pop_ready_tx_increment_account_nonce(&mut self, AccountKey(contract_address): AccountKey) -> AccountUpdate {
+    /// Nonce is not incrmented after the transaction is removed.
+    pub fn remove_ready_tx(&mut self, AccountKey(contract_address): &AccountKey) -> AccountUpdate {
         let Some((account_data, removed)) = self.account_update_helper(contract_address, move |account_state| {
             let removed = account_state.pop_first().expect("Invariant violation: account entry is empty");
             assert_eq!(removed.nonce(), account_state.current_nonce, "Tried to pop a tx queue that was not ready");
-            account_state.current_nonce.0 += Felt::ONE; // increment
 
             Some(removed)
         }) else {
@@ -337,7 +336,7 @@ impl Accounts {
         };
 
         AccountUpdate {
-            account_key: AccountKey(contract_address),
+            account_key: AccountKey(*contract_address),
             removed_txs: [removed].into(),
             added_tx: None,
             account_data,
@@ -345,7 +344,7 @@ impl Accounts {
     }
 
     /// Caller must supply a valid TxKey.
-    pub fn remove_tx(&mut self, TxKey(contract_address, nonce): TxKey) -> AccountUpdate {
+    pub fn remove_tx(&mut self, TxKey(contract_address, nonce): &TxKey) -> AccountUpdate {
         let Some((data, removed)) = self.account_update_helper(contract_address, move |account_state| {
             let Some(removed) = account_state.remove_tx(nonce) else {
                 unreachable!(
@@ -360,7 +359,7 @@ impl Accounts {
         };
 
         AccountUpdate {
-            account_key: AccountKey(contract_address),
+            account_key: AccountKey(*contract_address),
             removed_txs: [removed].into(),
             added_tx: None,
             account_data: data,
@@ -369,7 +368,7 @@ impl Accounts {
 
     /// Caller must supply a valid AccountKey.
     /// This function is used with the eviction queue to make room when the mempool is full.
-    pub fn pop_last_tx_from_account(&mut self, AccountKey(contract_address): AccountKey) -> AccountUpdate {
+    pub fn pop_last_tx_from_account(&mut self, AccountKey(contract_address): &AccountKey) -> AccountUpdate {
         let Some((account_data, removed)) = self.account_update_helper(contract_address, move |account_state| {
             let removed = account_state.pop_last().expect("Invariant violation: account entry is empty");
 
@@ -380,10 +379,18 @@ impl Accounts {
         };
 
         AccountUpdate {
-            account_key: AccountKey(contract_address),
+            account_key: AccountKey(*contract_address),
             removed_txs: [removed].into(),
             added_tx: None,
             account_data,
         }
+    }
+
+    pub fn get_tx_by_key(&self, TxKey(contract_address, nonce): &TxKey) -> Option<&MempoolTransaction> {
+        self.accounts.get(contract_address).and_then(|account| account.queued_txs.get(nonce))
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.accounts.is_empty()
     }
 }

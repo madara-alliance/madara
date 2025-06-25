@@ -14,7 +14,7 @@ use starknet_api::transaction::{Fee, Transaction as ApiTransaction, TransactionH
 use std::time::{Duration, SystemTime};
 
 /// Timestamp, in millis.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct TxTimestamp(pub u128);
 impl TxTimestamp {
@@ -37,7 +37,7 @@ impl TxTimestamp {
 }
 
 /// A transaction that has been validated, but not yet included into a block.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct ValidatedMempoolTx {
     pub tx: Transaction,
     /// Only filled in for L1HandlerTransaction.

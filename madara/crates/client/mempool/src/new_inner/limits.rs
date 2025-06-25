@@ -3,8 +3,8 @@ use crate::new_inner::{accounts::AccountUpdate, tx::MempoolTransaction};
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq, Clone))]
 struct MempoolLimiterConfig {
-    pub max_transactions: usize,
-    pub max_declare_transactions: Option<usize>,
+    max_transactions: usize,
+    max_declare_transactions: Option<usize>,
 }
 
 #[derive(Debug, Default)]
@@ -85,10 +85,7 @@ impl MempoolLimiter {
     ) -> Result<(), MempoolLimitReached> {
         if let Some(max) = self.config.max_declare_transactions {
             // Adding a new declare tx
-            if new_tx.is_declare()
-                && !previous_tx.is_declare()
-                && self.state.declare_transactions.saturating_add(1) >= max
-            {
+            if new_tx.is_declare() && !previous_tx.is_declare() && self.state.declare_transactions >= max {
                 return Err(MempoolLimitReached::MaxDeclareTransactions { max });
             }
         }
@@ -99,12 +96,12 @@ impl MempoolLimiter {
     pub fn check_room_for_new_tx(&self, tx: &MempoolTransaction) -> Result<(), MempoolLimitReached> {
         if let Some(max) = self.config.max_declare_transactions {
             // Adding a new declare tx
-            if tx.is_declare() && self.state.declare_transactions.saturating_add(1) >= max {
+            if tx.is_declare() && self.state.declare_transactions >= max {
                 return Err(MempoolLimitReached::MaxDeclareTransactions { max });
             }
         }
 
-        if self.state.transactions.saturating_add(1) >= self.config.max_transactions {
+        if self.state.transactions >= self.config.max_transactions {
             return Err(MempoolLimitReached::MaxTransactions { max: self.config.max_transactions });
         }
 

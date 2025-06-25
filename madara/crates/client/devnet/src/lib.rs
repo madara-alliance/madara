@@ -362,7 +362,7 @@ mod tests {
             strk_l1_data_gas_price: 128,
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::new(mempool_limits)));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::new_fcfs(mempool_limits)));
         let metrics = BlockProductionMetrics::register();
 
         let block_production = BlockProductionTask::new(

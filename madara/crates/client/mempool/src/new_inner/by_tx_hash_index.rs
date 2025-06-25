@@ -35,7 +35,11 @@ impl ByTxHashIndex {
         }
     }
 
-    pub fn contains(&self, hash: TransactionHash) -> bool {
-        self.0.contains_key(&hash)
+    pub fn contains(&self, hash: &TransactionHash) -> bool {
+        self.0.contains_key(hash)
+    }
+
+    pub fn get(&self, hash: &TransactionHash) -> Option<&TxKey> {
+        self.0.get(hash)
     }
 }

@@ -8,8 +8,8 @@ use starknet_api::{
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq, Clone))]
 pub struct MempoolTransaction {
-    inner: ValidatedMempoolTx,
-    score: Score,
+    pub inner: ValidatedMempoolTx,
+    pub score: Score,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
@@ -26,8 +26,8 @@ impl EvictionScore {
 }
 
 impl MempoolTransaction {
-    pub fn new(inner: ValidatedMempoolTx, score_function: &ScoreFunction) -> MempoolTransaction {
-        Self { score: score_function.get_score(&inner), inner }
+    pub fn new(inner: ValidatedMempoolTx, score_function: &ScoreFunction) -> Result<MempoolTransaction, TxInsertionError> {
+        Ok(Self { score: score_function.get_score(&inner).ok_or(TxInsertionError::NoTip)?, inner })
     }
     pub fn into_inner(self) -> ValidatedMempoolTx {
         self.inner
@@ -84,11 +84,11 @@ pub enum ScoreFunction {
 pub struct Score(u128);
 
 impl ScoreFunction {
-    pub fn get_score(&self, tx: &ValidatedMempoolTx) -> Score {
+    pub fn get_score(&self, tx: &ValidatedMempoolTx) -> Option<Score> {
         match self {
             // Reverse the order, so that higher score means priority.
-            Self::Timestamp => Score(u128::MAX - tx.arrived_at.0),
-            Self::Tip { .. } => todo!(),
+            Self::Timestamp => Some(Score(u128::MAX - tx.arrived_at.0)),
+            Self::Tip { .. } => Some(Score(tx.tx.tip()?.into())),
         }
     }
 
@@ -98,15 +98,20 @@ impl ScoreFunction {
         new_tx: &MempoolTransaction,
     ) -> Result<(), TxInsertionError> {
         match self {
-            // FCFS serve never supports replacing a transaction.
-            Self::Timestamp => Err(TxInsertionError::NonceConflict),
+            Self::Timestamp => {
+                // FCFS will always replace newer txs with older txs. This is important when re-adding transactions if a
+                // pre-confirmed block is not confirmed, for example. The transactions will be re-added to the mempool.
+                if new_tx.arrived_at() >= previous_tx.arrived_at() {
+                    return Err(TxInsertionError::NonceConflict);
+                }
+            }
             Self::Tip { min_tip_bump } => {
                 if new_tx.score().0.saturating_sub(previous_tx.score().0) < *min_tip_bump {
-                    return Err(TxInsertionError::DuplicateTxn);
+                    return Err(TxInsertionError::MinTipBump { min_tip_bump: *min_tip_bump });
                 }
-                Ok(())
             }
         }
+        Ok(())
     }
 }
 

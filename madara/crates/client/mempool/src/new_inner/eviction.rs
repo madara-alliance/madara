@@ -43,7 +43,7 @@ impl EvictionQueue {
     }
 
     /// Get the next account where we can evict a transaction if it is less desirable than `other`.
-    pub fn get_next_if_less_desirable_than(&self, other: &EvictionScore) -> Option<AccountKey> {
-        self.0.first().filter(|e| e.0 < *other).map(|e| e.1)
+    pub fn get_next_if_less_desirable_than(&self, other: &EvictionScore) -> Option<&AccountKey> {
+        self.0.first().filter(|e| e.0 < *other).map(|e| &e.1)
     }
 }

@@ -45,11 +45,15 @@ impl ReadyQueue {
         }
     }
 
-    pub fn get_first(&self) -> Option<AccountKey> {
-        self.0.first().map(|acc| acc.1)
+    pub fn get_first(&self) -> Option<&AccountKey> {
+        self.0.first().map(|acc| &acc.1)
     }
 
     pub fn has_ready_transactions(&self) -> bool {
         !self.0.is_empty()
+    }
+
+    pub fn ready_transactions(&self) -> usize {
+        self.0.len()
     }
 }

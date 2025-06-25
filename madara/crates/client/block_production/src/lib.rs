@@ -463,7 +463,7 @@ impl BlockProductionTask {
                     return anyhow::Ok(());
                 };
                 let mut batch = BatchToExecute::with_capacity(batch_size);
-                let Some(mempool_consumer) = ctx.run_until_cancelled(mempool.get_consumer_wait_for_ready_tx()).await
+                let Some(mempool_consumer) = ctx.run_until_cancelled(mempool.get_mempool_consumer()).await
                 else {
                     // Stop condition: service stopped (ctx).
                     return anyhow::Ok(());
