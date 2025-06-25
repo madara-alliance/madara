@@ -1,4 +1,4 @@
-use crate::core::config::Config;
+use crate::core::config::{Config, StarknetVersion};
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -22,6 +22,7 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
 use std::str::FromStr;
 use std::sync::Arc;
+use crate::compression::blob::da_word;
 
 pub struct DAJobHandler;
 
@@ -61,48 +62,6 @@ impl DAJobHandler {
         state_update.storage_diffs.extend(
             new_addresses.into_iter().map(|address| ContractStorageDiffItem { address, storage_entries: Vec::new() }),
         );
-    }
-
-    /// DA word encoding:
-    /// |---padding---|---class flag---|---new nonce---|---num changes---|
-    ///     127 bits        1 bit           64 bits          64 bits
-    fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Result<Felt, JobError> {
-        // padding of 127 bits
-        let mut binary_string = "0".repeat(127);
-
-        // class flag of one bit
-        if class_flag {
-            binary_string += "1"
-        } else {
-            binary_string += "0"
-        }
-
-        // checking for nonce here
-        if let Some(new_nonce) = nonce_change {
-            let bytes: [u8; 32] = new_nonce.to_bytes_be();
-            let biguint = BigUint::from_bytes_be(&bytes);
-            let binary_string_local = format!("{:b}", biguint);
-            let padded_binary_string = format!("{:0>64}", binary_string_local);
-            binary_string += &padded_binary_string;
-        } else {
-            let binary_string_local = "0".repeat(64);
-            binary_string += &binary_string_local;
-        }
-
-        let binary_representation = format!("{:b}", num_changes);
-        let padded_binary_string = format!("{:0>64}", binary_representation);
-        binary_string += &padded_binary_string;
-
-        let biguint = BigUint::from_str_radix(binary_string.as_str(), 2)
-            .wrap_err("Failed to convert binary string to BigUint")
-            .map_err(|e| JobError::Other(OtherError(e)))?;
-
-        // Now convert the BigUint to a decimal string
-        let decimal_string = biguint.to_str_radix(10);
-
-        Felt::from_dec_str(&decimal_string)
-            .wrap_err("Failed to convert decimal string to FieldElement")
-            .map_err(|e| JobError::Other(OtherError(e)))
     }
 
     #[tracing::instrument(skip(elements))]
@@ -186,7 +145,7 @@ impl DAJobHandler {
 
                 nonce = Some(get_current_nonce_result);
             }
-            let da_word = Self::da_word(class_flag.is_some(), nonce, storage_entries.len() as u64)?;
+            let da_word = da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, config.params.madara_version)?;
             blob_data.push(address);
             blob_data.push(da_word);
 
@@ -443,6 +402,8 @@ pub mod test {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::JsonRpcClient;
     use url::Url;
+    use crate::compression::blob::da_word;
+    use crate::core::config::StarknetVersion;
 
     /// Tests `da_word` function with various inputs for class flag, new nonce, and number of
     /// changes. Verifies that `da_word` produces the correct Felt based on the provided
@@ -460,8 +421,9 @@ pub mod test {
         #[case] num_changes: u64,
         #[case] expected: String,
     ) {
+        // TODO: add test for v0.13.3+ version
         let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
-        let da_word = DAJobHandler::da_word(class_flag, new_nonce, num_changes).expect("Failed to create DA word");
+        let da_word = da_word(class_flag, new_nonce, num_changes, StarknetVersion::V0_13_2).expect("Failed to create DA word");
         let expected = Felt::from_dec_str(expected.as_str()).unwrap();
         assert_eq!(da_word, expected);
     }
