@@ -15,11 +15,9 @@ use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
 use starknet_core::types::contract::{CompiledClass, SierraClass};
 use starknet_core::types::BlockTag::Pending;
+use starknet_core::types::CompressedLegacyContractClass;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
-use crate::contract_clients::legacy_class::{
-    Address, CompressedLegacyContractClass, DeprecatedContractClass, Signature,
-};
 use crate::contract_clients::utils::DeclarationInput::{DeclarationInputs, LegacyDeclarationInputs};
 use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
 use crate::utils::{invoke_contract, save_to_json, wait_for_transaction, JsonValueType};
@@ -104,18 +102,6 @@ pub struct BroadcastedDeclareTransactionV0 {
     pub is_query: bool,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct BroadcastedDeclareTxnV0 {
-    /// The class to be declared
-    pub contract_class: DeprecatedContractClass,
-    /// The maximal fee that can be charged for including the transaction
-    pub max_fee: Felt,
-    /// The address of the account contract sending the declaration transaction
-    pub sender_address: Address,
-    pub signature: Signature,
-    pub is_query: bool,
-}
-
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct RpcResult<T> {
     jsonrpc: String,
@@ -179,10 +165,10 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
                 return class_hash;
             }
 
-            let contract_abi_artifact: DeprecatedContractClass =
+            let contract_abi_artifact =
                 contract_abi_artifact.clone().compress().expect("Error : Failed to compress the contract class").into();
 
-            let params: BroadcastedDeclareTxnV0 = BroadcastedDeclareTxnV0 {
+            let params = BroadcastedDeclareTransactionV0 {
                 sender_address: Felt::from_hex("0x1").unwrap(),
                 max_fee: Felt::ZERO,
                 signature: Vec::new(),

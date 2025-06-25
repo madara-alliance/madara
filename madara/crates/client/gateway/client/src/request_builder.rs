@@ -16,7 +16,7 @@ use tower::Service;
 use url::Url;
 
 pub(crate) fn url_join_segment(url: &mut Url, segment: &str) {
-    if url.path_segments().expect("Invalid base URL").last().is_some_and(|e| e.is_empty()) {
+    if url.path_segments().expect("Invalid base URL").next_back().is_some_and(|e| e.is_empty()) {
         url.path_segments_mut().expect("Invalid base URL").pop();
     }
     url.path_segments_mut().expect("Invalid base URL").extend(&[segment]);

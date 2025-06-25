@@ -1,8 +1,13 @@
+use std::sync::Arc;
+
 use mp_convert::hex_serde::U64AsHex;
 use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
+
+type Signature = Arc<Vec<Felt>>;
+type Calldata = Arc<Vec<Felt>>;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type")]
@@ -131,8 +136,8 @@ pub struct InvokeTransactionV0 {
     #[serde(alias = "contract_address")]
     pub sender_address: Felt,
     pub entry_point_selector: Felt,
-    pub calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub calldata: Calldata,
+    pub signature: Signature,
     pub max_fee: Felt,
     pub transaction_hash: Felt,
 }
@@ -166,8 +171,8 @@ impl From<InvokeTransactionV0> for mp_transactions::InvokeTransactionV0 {
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
-    pub calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub calldata: Calldata,
+    pub signature: Signature,
     pub max_fee: Felt,
     pub nonce: Felt,
     pub transaction_hash: Felt,
@@ -210,9 +215,9 @@ pub struct InvokeTransactionV3 {
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub sender_address: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub transaction_hash: Felt,
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     pub account_deployment_data: Vec<Felt>,
 }
 
@@ -258,7 +263,7 @@ pub struct L1HandlerTransaction {
     pub entry_point_selector: Felt,
     #[serde(default)]
     pub nonce: Felt,
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     pub transaction_hash: Felt,
     pub version: Felt,
 }
@@ -338,7 +343,7 @@ pub struct DeclareTransactionV0 {
     pub nonce: Felt,
     pub sender_address: Felt,
     #[serde(default)]
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub transaction_hash: Felt,
 }
 
@@ -374,7 +379,7 @@ pub struct DeclareTransactionV1 {
     pub nonce: Felt,
     pub sender_address: Felt,
     #[serde(default)]
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub transaction_hash: Felt,
 }
 
@@ -411,7 +416,7 @@ pub struct DeclareTransactionV2 {
     pub nonce: Felt,
     pub sender_address: Felt,
     #[serde(default)]
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub transaction_hash: Felt,
     pub compiled_class_hash: Felt,
 }
@@ -457,7 +462,7 @@ pub struct DeclareTransactionV3 {
     pub paymaster_data: Vec<Felt>,
     pub sender_address: Felt,
     #[serde(default)]
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub transaction_hash: Felt,
     pub compiled_class_hash: Felt,
     pub account_deployment_data: Vec<Felt>,
@@ -575,7 +580,7 @@ pub struct DeployAccountTransactionV1 {
     pub transaction_hash: Felt,
     pub max_fee: Felt,
     pub version: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
@@ -623,7 +628,7 @@ pub struct DeployAccountTransactionV3 {
     pub tip: u64,
     pub paymaster_data: Vec<Felt>,
     pub sender_address: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub transaction_hash: Felt,
     pub version: Felt,
     pub contract_address_salt: Felt,
