@@ -220,6 +220,7 @@ WORKDIR ../cairo_lang
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
 COPY --from=cairo-lang $CAIRO_LANG_DIR/os_latest.json .
+COPY --from=cairo-lang $CAIRO_LANG_DIR/cairo_verifier.json .
 
 WORKDIR ../braavos
 
