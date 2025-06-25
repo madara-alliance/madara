@@ -177,6 +177,9 @@ async fn test_data_submission_worker(
         .with(eq(JobType::ProofCreation), eq(JobStatus::Completed), eq(JobType::DataSubmission))
         .returning(move |_, _, _| Ok(proving_jobs_clone.clone()));
 
+    // Mock get_job_by_internal_id_and_type to always return None
+    db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
+
     // Mock job creation for expected data submission jobs
     for &block_num in &expected_data_submission_jobs {
         let uuid = Uuid::new_v4();
