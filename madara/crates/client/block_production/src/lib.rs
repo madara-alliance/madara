@@ -14,7 +14,7 @@ use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
-use mp_state_update::DeclaredClassItem;
+use mp_state_update::{DeclaredClassItem, NonceUpdate};
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
@@ -361,6 +361,21 @@ impl BlockProductionTask {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
 
+                self.mempool
+                    .on_tx_batch_executed(
+                        batch_execution_result
+                            .blockifier_results
+                            .iter()
+                            .filter_map(|r| r.as_ref().ok())
+                            .flat_map(|r| r.1.nonces.iter())
+                            .map(|(contract_address, nonce)| NonceUpdate {
+                                contract_address: contract_address.to_felt(),
+                                nonce: nonce.to_felt(),
+                            }),
+                        batch_execution_result.executed_txs.txs.iter().map(|tx| tx.tx_hash().to_felt()),
+                    )
+                    .await
+                    .context("Updating mempool state")?;
                 state.append_batch(batch_execution_result);
             }
             ExecutorMessage::EndBlock => {
@@ -463,20 +478,18 @@ impl BlockProductionTask {
                     return anyhow::Ok(());
                 };
                 let mut batch = BatchToExecute::with_capacity(batch_size);
-                let Some(mempool_consumer) = ctx.run_until_cancelled(mempool.get_mempool_consumer()).await
-                else {
+                let Some(mempool_consumer) = ctx.run_until_cancelled(mempool.get_consumer()).await else {
                     // Stop condition: service stopped (ctx).
                     return anyhow::Ok(());
                 };
 
-                // TODO: add this to the debug logging just below. (the number is wrong right now (?))
-                // let n_txs_in_mempool = iterator.n_txs_total();
-
                 let iterator = mempool_consumer.take(batch_size); // only take a batch
 
                 for tx in iterator {
-                    let additional = AdditionalTxInfo { declared_class: tx.converted_class };
-                    batch.push(tx.tx, additional);
+                    let (tx, _timestamp, declared_class) =
+                        tx.into_blockifier().context("Converting to blockifier transaction")?;
+                    let additional = AdditionalTxInfo { declared_class };
+                    batch.push(tx, additional);
                 }
 
                 if !batch.is_empty() {

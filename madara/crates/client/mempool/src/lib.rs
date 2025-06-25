@@ -174,8 +174,7 @@ impl Mempool {
         if self.config.no_saving {
             // If saving is disabled, we don't want to read from db. Otherwise, if there are txs in the database, they will be re-inserted
             // everytime we restart the node, but will never be removed from db once they're consumed.
-            return Ok(())
-            
+            return Ok(());
         }
         for res in self.backend.get_mempool_transactions() {
             let tx = res.context("Getting mempool transactions")?;
@@ -249,7 +248,7 @@ impl Mempool {
     }
 
     /// Temporary: this will move to the backend. Called by block production & locally when txs are added to the chain.
-    pub fn remove_from_received(&mut self, txs: &[Felt]) {
+    fn remove_from_received(&self, txs: &[Felt]) {
         if !self.config.no_saving {
             if let Err(err) = self.backend.remove_mempool_transactions(txs.iter().copied()) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
@@ -262,14 +261,17 @@ impl Mempool {
         }
     }
 
-    async fn on_new_tx_in_backend(
+    /// This is called directly by the block production task for now.
+    pub async fn on_tx_batch_executed(
         &self,
         new_nonce_updates: impl IntoIterator<Item = NonceUpdate>,
+        executed_txs: impl IntoIterator<Item = Felt>,
     ) -> anyhow::Result<()> {
         let updates = new_nonce_updates
             .into_iter()
             .map(|el| Ok((el.contract_address.try_into()?, Nonce(el.nonce))))
             .collect::<anyhow::Result<Vec<_>>>()?;
+        let executed_txs = executed_txs.into_iter().collect::<Vec<_>>();
 
         let mut removed_txs = smallvec::SmallVec::<[ValidatedMempoolTx; 1]>::new();
         {
@@ -279,6 +281,9 @@ impl Mempool {
             }
         }
         self.on_txs_removed(&removed_txs);
+
+        self.remove_from_received(&executed_txs);
+
         Ok(())
     }
 
@@ -294,7 +299,6 @@ impl Mempool {
     }
 
     pub async fn run_mempool_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
-        let mut pending_txs_receiver = self.backend.subscribe_pending_txs();
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -302,10 +306,6 @@ impl Mempool {
             tokio::select! {
                 _ = ctx.cancelled() => return Ok(()),
                 _ = interval.tick() => self.remove_ttl_exceeded_txs().await.context("Removing TTL-exceeded txs.")?,
-                res = pending_txs_receiver.recv() => {
-                    // let update = res.unwrap();
-                    // update
-                }
             }
         }
     }
