@@ -58,16 +58,6 @@ Targets:
 
   - images             Downloads the Madara Docker image
 
-  [ BUILD ARTIFACTS ]
-
-  Build artifacts using multi-platform Docker builds. Automatically detects
-  your platform (Intel/AMD64 or Apple Silicon/ARM64) for optimal compatibility.
-
-  - artifacts          Build artifacts for current platform (auto-detected, memory-optimized)
-  - artifacts-multi    Build artifacts for multiple platforms (AMD64 + ARM64)
-  - artifacts-light    Build lightweight artifacts (skips heavy components)
-  - artifacts-seq      Build artifacts sequentially (for low-memory systems)
-
   [ CLEANING DEPENDECIES ]
 
   Will remove running containers, images and even local db. Use the latter with
@@ -215,56 +205,8 @@ artifacts:
 	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@echo -e "$(DIM)Building multi-platform artifacts (auto-detecting platform with memory optimization)...$(RESET)"
-	@$(ARTIFACTS)/build-memory-optimized.sh --tag artifacts
-	@echo -e "$(DIM)Extracting artifacts from container...$(RESET)"
-	@ID=$$(docker create madara-build-artifacts:artifacts do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
-	@echo -e "$(PASS)Artifacts extracted successfully!$(RESET)"
-
-.PHONY: artifacts-multi
-artifacts-multi:
-	@if [ -d "$(ARTIFACTS)/argent"             ] || \
-			[ -d "$(ARTIFACTS)/bravoos"            ] || \
-			[ -d "$(ARTIFACTS)/cairo_lang"         ] || \
-			[ -d "$(ARTIFACTS)/js_tests"           ] || \
-			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
-			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
-			[ -d "$(ARTIFACTS)/starkgate_legacy"   ]; \
-	then \
-		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
-		read ans && \
-		case "$$ans" in \
-			[yY]*) true;; \
-		*) false;; \
-	esac \
-	fi
-	@rm -rf "$(ARTIFACTS)/argent"
-	@rm -rf "$(ARTIFACTS)/bravoos"
-	@rm -rf "$(ARTIFACTS)/cairo_lang"
-	@rm -rf "$(ARTIFACTS)/js_tests"
-	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
-	@rm -rf "$(ARTIFACTS)/starkgate_latest"
-	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@echo -e "$(DIM)Building multi-platform artifacts for AMD64 and ARM64...$(RESET)"
-	@$(ARTIFACTS)/build-multiplatform.sh --platform linux/amd64,linux/arm64 --name madara-build-artifacts --tag artifacts-multi
-	@echo -e "$(INFO)Multi-platform build completed! Image can be pushed to registry for distribution.$(RESET)"
-	@echo -e "$(DIM)To push to registry: $(ARTIFACTS)/build-multiplatform.sh --platform linux/amd64,linux/arm64 --push --registry your-registry.com$(RESET)"
-
-.PHONY: artifacts-light
-artifacts-light:
-	@echo -e "$(DIM)Building lightweight artifacts (skipping heavy components)...$(RESET)"
-	@$(ARTIFACTS)/build-memory-optimized.sh --skip-heavy --tag artifacts-light
-	@echo -e "$(DIM)Extracting artifacts from container...$(RESET)"
-	@ID=$$(docker create madara-build-artifacts:artifacts-light do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
-	@echo -e "$(PASS)Lightweight artifacts extracted successfully!$(RESET)"
-
-.PHONY: artifacts-seq
-artifacts-seq:
-	@echo -e "$(DIM)Building artifacts sequentially (memory-optimized for low-memory systems)...$(RESET)"
-	@$(ARTIFACTS)/build-memory-optimized.sh --sequential --tag artifacts-seq
-	@echo -e "$(DIM)Extracting artifacts from container...$(RESET)"
-	@ID=$$(docker create madara-build-artifacts:artifacts-seq do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
-	@echo -e "$(PASS)Sequential artifacts extracted successfully!$(RESET)"
+	@docker build -f $(ARTIFACTS)/build.docker -t contracts .
+	@ID=$$(docker create contracts do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
 
 .PHONY: check
 check:
