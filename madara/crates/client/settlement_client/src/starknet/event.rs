@@ -21,7 +21,7 @@ use crate::error::SettlementClientError;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::starknet::error::StarknetClientError;
 use futures::Stream;
-use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
+use starknet_core::types::{BlockId, EmittedEvent, EventFilter, EventsPage};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::{JsonRpcClient, Provider};
 use starknet_types_core::felt::Felt;
@@ -82,6 +82,45 @@ impl StarknetEventStream {
         Self { provider, filter, processed_events: HashSet::new(), future: None, polling_interval }
     }
 
+    async fn fetch_events_with_retry(
+        provider: &Arc<JsonRpcClient<HttpTransport>>,
+        filter: EventFilter,
+        continuation_token: Option<String>,
+    ) -> anyhow::Result<EventsPage> {
+        const MAX_RETRIES: u8 = 3;
+        const RETRY_TIMEOUT: u64 = 5;
+        let mut retries = 0;
+        loop {
+            match provider
+                .get_events(
+                    EventFilter {
+                        from_block: filter.from_block,
+                        to_block: filter.to_block,
+                        address: filter.address,
+                        keys: filter.keys.clone(),
+                    },
+                    continuation_token.clone(),
+                    1000,
+                )
+                .await {
+                Ok(res) => {
+                    return Ok(res);
+                },
+                Err(e) => {
+                    if retries < MAX_RETRIES {
+                        retries += 1;
+                        tracing::warn!("Error in fetch_events, retrying: {:?}", e);
+                        sleep(Duration::from_secs(RETRY_TIMEOUT)).await;
+                        continue;
+                    } else {
+                        tracing::error!("Error in fetch_events, {:?}", e);
+                        return Err(anyhow::anyhow!("Starknet error: {}", e));
+                    }
+                }
+            }
+        }
+    }
+
     /// Fetches events from the Starknet provider based on the provided filter.
     ///
     /// This method implements a stateful polling mechanism that:
@@ -131,25 +170,14 @@ impl StarknetEventStream {
     ) -> anyhow::Result<(Option<EmittedEvent>, EventFilter)> {
         // Adding sleep to introduce delay
         sleep(polling_interval).await;
-    
+
         async {
             let mut page_indicator = false;
             let mut continuation_token: Option<String> = None;
-    
+
             while !page_indicator {
-                let events = provider
-                    .get_events(
-                        EventFilter {
-                            from_block: filter.from_block,
-                            to_block: filter.to_block,
-                            address: filter.address,
-                            keys: filter.keys.clone(),
-                        },
-                        continuation_token.clone(),
-                        1000,
-                    )
-                    .await?;
-    
+                let events = Self::fetch_events_with_retry(&provider, filter.clone(), continuation_token.clone()).await?;
+
                 // Process this page of events immediately
                 for event in &events.events {
                     if let Some(nonce) = event.data.get(1) {
@@ -159,7 +187,7 @@ impl StarknetEventStream {
                         }
                     }
                 }
-    
+
                 // Continue pagination logic
                 if let Some(token) = events.continuation_token {
                     continuation_token = Some(token);
@@ -167,13 +195,13 @@ impl StarknetEventStream {
                     page_indicator = true;
                 }
             }
-    
+
             // If we get here, we didn't find any unprocessed events
             // So we update the filter and return None
             let latest_block = provider.block_number().await?;
             filter.from_block = filter.to_block;
             filter.to_block = Some(BlockId::Number(latest_block));
-    
+
             Ok::<_, anyhow::Error>((None, filter))
         }
         .await
@@ -184,7 +212,6 @@ impl StarknetEventStream {
             anyhow::anyhow!("Starknet error: {}", e)
         })
     }
-
 }
 
 /// Implementation of the `Stream` trait for `StarknetEventStream`.
