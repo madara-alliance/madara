@@ -21,7 +21,7 @@ use crate::error::SettlementClientError;
 use crate::messaging::L1toL2MessagingEventData;
 use crate::starknet::error::StarknetClientError;
 use futures::Stream;
-use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
+use starknet_core::types::{BlockId, EmittedEvent, EventFilter, EventsPage};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::{JsonRpcClient, Provider};
 use starknet_types_core::felt::Felt;
@@ -80,6 +80,45 @@ impl StarknetEventStream {
     /// A new `StarknetEventStream` instance configured with the provided parameters.
     pub fn new(provider: Arc<JsonRpcClient<HttpTransport>>, filter: EventFilter, polling_interval: Duration) -> Self {
         Self { provider, filter, processed_events: HashSet::new(), future: None, polling_interval }
+    }
+
+    async fn fetch_events_with_retry(
+        provider: &Arc<JsonRpcClient<HttpTransport>>,
+        filter: EventFilter,
+        continuation_token: Option<String>,
+    ) -> anyhow::Result<EventsPage> {
+        const MAX_RETRIES: u8 = 3;
+        const RETRY_TIMEOUT: u64 = 5;
+        let mut retries = 0;
+        loop {
+            match provider
+                .get_events(
+                    EventFilter {
+                        from_block: filter.from_block,
+                        to_block: filter.to_block,
+                        address: filter.address,
+                        keys: filter.keys.clone(),
+                    },
+                    continuation_token.clone(),
+                    1000,
+                )
+                .await {
+                Ok(res) => {
+                    return Ok(res);
+                },
+                Err(e) => {
+                    if retries < MAX_RETRIES {
+                        retries += 1;
+                        tracing::warn!("Error in fetch_events, retrying: {:?}", e);
+                        sleep(Duration::from_secs(RETRY_TIMEOUT)).await;
+                        continue;
+                    } else {
+                        tracing::error!("Error in fetch_events, {:?}", e);
+                        return Err(anyhow::anyhow!("Starknet error: {}", e));
+                    }
+                }
+            }
+        }
     }
 
     /// Fetches events from the Starknet provider based on the provided filter.
