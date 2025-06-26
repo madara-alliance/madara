@@ -89,7 +89,7 @@ pub use bonsai_db::GlobalTrie;
 pub use bonsai_trie::{id::BasicId, MultiProof, ProofNode};
 pub use error::{BonsaiStorageError, MadaraStorageError, TrieType};
 pub use rocksdb_options::{RocksDBConfig, StatsLevel};
-pub use watch::{ClosedBlocksReceiver, LastConfirmedBlockReceived, PendingBlockReceiver, PendingTxsReceiver};
+pub use watch::{ClosedBlocksReceiver, LastBlockOnL1Receiver, PendingBlockReceiver, PendingTxsReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
