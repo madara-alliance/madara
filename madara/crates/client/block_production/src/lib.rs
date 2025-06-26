@@ -620,6 +620,8 @@ pub(crate) mod tests {
             strk_l1_gas_price: 128,
             eth_l1_data_gas_price: 128,
             strk_l1_data_gas_price: 128,
+            eth_l2_gas_price: 128,
+            strk_l2_gas_price: 128,
         });
         let l1_data_provider = Arc::new(l1_data_provider);
 

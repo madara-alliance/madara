@@ -144,15 +144,21 @@ impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
                     sequencer_address,
                     block_timestamp: timestamp,
                     protocol_version,
-                    l1_gas_price,
+                    gas_prices,
                     l1_da_mode,
                     ..
                 },
             block_hash,
             ..
         } = info;
-        let GasPrices { eth_l1_gas_price, strk_l1_gas_price, eth_l1_data_gas_price, strk_l1_data_gas_price } =
-            l1_gas_price;
+        let GasPrices {
+            eth_l1_gas_price,
+            strk_l1_gas_price,
+            eth_l1_data_gas_price,
+            strk_l1_data_gas_price,
+            eth_l2_gas_price: _,
+            strk_l2_gas_price: _,
+        } = gas_prices;
 
         Self {
             block_hash,

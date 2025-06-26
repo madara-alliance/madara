@@ -171,11 +171,13 @@ impl ChainGenesisDescription {
                             .as_secs(),
                     ),
                     protocol_version: chain_config.latest_protocol_version,
-                    l1_gas_price: GasPrices {
+                    gas_prices: GasPrices {
                         eth_l1_gas_price: 5,
                         strk_l1_gas_price: 5,
                         eth_l1_data_gas_price: 5,
                         strk_l1_data_gas_price: 5,
+                        eth_l2_gas_price: 5,
+                        strk_l2_gas_price: 5,
                     },
                     l1_da_mode: chain_config.l1_da_mode,
                 },
@@ -361,6 +363,8 @@ mod tests {
             strk_l1_gas_price: 128,
             eth_l1_data_gas_price: 128,
             strk_l1_data_gas_price: 128,
+            eth_l2_gas_price: 128,
+            strk_l2_gas_price: 128,
         });
         let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::new(mempool_limits)));

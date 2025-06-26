@@ -114,7 +114,7 @@ pub(crate) struct BlockExecutionContext {
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
-    pub l1_gas_price: GasPrices,
+    pub gas_prices: GasPrices,
     /// The mode of data availability for this block
     pub l1_da_mode: L1DataAvailabilityMode,
 }
@@ -126,7 +126,7 @@ impl BlockExecutionContext {
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp.into(),
             protocol_version: self.protocol_version,
-            l1_gas_price: self.l1_gas_price,
+            gas_prices: self.gas_prices,
             l1_da_mode: self.l1_da_mode,
         }
     }
@@ -136,7 +136,7 @@ impl BlockExecutionContext {
             block_number: starknet_api::block::BlockNumber(self.block_n),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
             sequencer_address: self.sequencer_address.try_into()?,
-            gas_prices: (&self.l1_gas_price).into(),
+            gas_prices: (&self.gas_prices).into(),
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
         })
     }
@@ -151,7 +151,7 @@ pub(crate) fn create_execution_context(
         sequencer_address: **backend.chain_config().sequencer_address,
         block_timestamp: SystemTime::now(),
         protocol_version: backend.chain_config().latest_protocol_version,
-        l1_gas_price: l1_data_provider.get_gas_prices(),
+        gas_prices: l1_data_provider.get_gas_prices(),
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_n,
     }
