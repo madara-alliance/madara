@@ -5000,7 +5000,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -11876,7 +11876,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "anyhow",
  "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
@@ -12432,7 +12432,7 @@ checksum = "afab94fb28594581f62d981211a9a4d53cc8130bbcbbb89a0440d9b8e81a7746"
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -12447,10 +12447,11 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "cairo-lang-starknet-classes 2.8.2",
+ "log",
  "rpc-client",
  "serde",
  "serde_json",
@@ -14147,7 +14148,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -14196,7 +14197,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "blockifier 0.8.0-rc.3 (git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb)",
  "cairo-lang-starknet-classes 2.8.2",
