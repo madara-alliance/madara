@@ -204,7 +204,25 @@ pub async fn compress(
     // Deprecated declared classes remain as it is as it only contains class hashes
     // block_hash, new_root and old_root remain as it is
 
+    // Sort the compressed StateUpdate
+    sort_state_diff(&mut state_update);
+
     Ok(state_update)
+}
+
+pub fn sort_state_diff(state_diff: &mut StateUpdate) {
+    // Sort storage diffs
+    &mut state_diff.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+    for diff in &mut state_diff.state_diff.storage_diffs {
+        diff.storage_entries.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+
+    // Sort the rest
+    &mut state_diff.state_diff.deprecated_declared_classes.sort_by(|a, b| a.cmp(&b));
+    &mut state_diff.state_diff.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
+    &mut state_diff.state_diff.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
+    &mut state_diff.state_diff.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+    &mut state_diff.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
 }
 
 fn parse_results<T>(results: Vec<Result<T>>) -> Result<Vec<T>> {

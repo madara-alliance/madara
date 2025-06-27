@@ -11,6 +11,7 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use crate::compression::stateful::sort_state_diff;
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
@@ -131,7 +132,10 @@ pub async fn squash_state_updates(
     state_diff.deprecated_declared_classes = deprecated_classes_set.into_iter().collect();
 
     // Create the merged StateUpdate
-    let merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
+    let mut merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
+
+    // Sort the merged StateUpdate
+    sort_state_diff(&mut merged_update);
 
     Ok(merged_update)
 }
