@@ -4,3 +4,6 @@ pub mod proving;
 pub mod snos;
 mod update_state;
 pub mod utils;
+
+#[cfg(test)]
+pub mod data_submission;

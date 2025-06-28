@@ -129,7 +129,7 @@ impl JobService {
                 JobItemUpdates::new()
                     .update_status(JobStatus::PendingVerification)
                     .update_metadata(job.metadata.clone())
-                    .build(),
+                    .build()?,
             )
             .await?;
 
@@ -182,7 +182,7 @@ impl JobService {
             .database()
             .update_job(
                 job,
-                JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build(),
+                JobItemUpdates::new().update_status(JobStatus::Failed).update_metadata(job_metadata).build()?,
             )
             .await
         {
