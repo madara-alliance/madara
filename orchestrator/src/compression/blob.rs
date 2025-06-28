@@ -51,12 +51,12 @@ pub async fn state_update_to_blob_data(
 
         // First, try deployed contracts
         if let Some(hash) = deployed_contracts.remove(&address) {
-            // println!("Found deployed contract at address {}: class_hash={}", address, hash);
+            tracing::debug!("Found deployed contract at address {} with class_hash {}", address, hash);
             class_hash = Some(hash);
         }
         // Then try replaced classes
         else if let Some(hash) = replaced_classes.remove(&address) {
-            // println!("Found replaced class at address {}: class_hash={}", address, hash);
+            tracing::debug!("Found replaced class at address {} with class_hash {}", address, hash);
             class_hash = Some(hash);
         }
 
@@ -73,7 +73,7 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
-            // println!("Adding class hash {} for address {}", hash, address);
+            tracing::debug!("Adding class hash {} for address {}", hash, address);
         }
 
         // Sort storage entries by key for deterministic output
@@ -93,6 +93,7 @@ pub async fn state_update_to_blob_data(
     for (address, class_hash) in deployed_contracts.iter() {
         if !processed_addresses.contains(address) {
             leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
+            tracing::debug!("Found leftover deployed contract: address={}, class_hash={}", address, class_hash);
         }
     }
 
@@ -100,6 +101,7 @@ pub async fn state_update_to_blob_data(
     for (address, class_hash) in replaced_classes.iter() {
         if !processed_addresses.contains(address) {
             leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
+            tracing::debug!("Found leftover replaced class: address={}, class_hash={}", address, class_hash);
         }
     }
 
@@ -107,16 +109,29 @@ pub async fn state_update_to_blob_data(
     for (address, nonce) in nonces.iter() {
         if !processed_addresses.contains(address) {
             leftover_addresses.push((*address, None, Some(*nonce)));
+            tracing::debug!("Found leftover nonce: address={}, nonce={}", address, nonce);
         }
     }
 
     // Sort leftover addresses for deterministic output
     leftover_addresses.sort_by_key(|(address, _, _)| *address);
 
+    tracing::debug!(
+        "Processing {} leftover addresses with nonce or class updates but no storage updates",
+        leftover_addresses.len()
+    );
+
     // Process each leftover address
     for (address, class_hash, nonce) in leftover_addresses.clone() {
         // Create DA word with zero storage entries
         let da_word = da_word(class_hash.is_some(), nonce, 0, version)?;
+
+        tracing::debug!(
+            "Processing leftover address {}: class_hash={:?}, nonce={:?}",
+            address,
+            class_hash.map(|h| h.to_string()),
+            nonce.map(|n| n.to_string())
+        );
 
         // Add address and DA word to blob data
         blob_data.push(address);
@@ -125,12 +140,14 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
+            tracing::debug!("Adding class hash {} for leftover address {}", hash, address);
         }
     }
 
     // Update the first element with the total number of contracts (original storage diffs and leftover addresses)
     let total_contracts = state_diff.storage_diffs.len() + leftover_addresses.len();
     blob_data[0] = Felt::from(total_contracts);
+    tracing::debug!("Total contract updates in blob: {}", total_contracts);
 
     // Add declared classes count
     blob_data.push(Felt::from(state_diff.declared_classes.len()));
@@ -143,6 +160,8 @@ pub async fn state_update_to_blob_data(
         blob_data.push(class_hash);
         blob_data.push(compiled_class_hash);
     }
+
+    tracing::debug!("Created blob data with {} elements", blob_data.len());
 
     Ok(blob_data)
 }
