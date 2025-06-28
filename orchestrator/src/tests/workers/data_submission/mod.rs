@@ -1,3 +1,4 @@
+#![allow(clippy::type_complexity)]
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
@@ -139,9 +140,7 @@ use uuid::Uuid;
 #[tokio::test]
 async fn test_data_submission_worker(
     #[case] earliest_failed_block: Option<u64>,
-    #[allow(clippy::type_complexity)]
-    #[case]
-    completed_proving_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, input_path, proof_hash, n_steps)
+    #[case] completed_proving_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, input_path, proof_hash, n_steps)
     #[case] expected_data_submission_jobs: Vec<u64>,
     #[case] expected_created_count: usize,
 ) -> Result<(), Box<dyn Error>> {

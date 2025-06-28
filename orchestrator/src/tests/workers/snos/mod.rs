@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
