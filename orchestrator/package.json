@@ -16,7 +16,8 @@
   "dependencies": {
     "ethers": "^6.13.4",
     "migrate-mongo": "^11.0.0",
-    "mongodb": "^6.9.0",
+    "dotenv": "^16.5.0",
+    "mongodb": "^6.17.0",
     "prettier-plugin-solidity": "^1.4.2",
     "starknet": "^6.11.0",
     "uuid": "^10.0.0"
