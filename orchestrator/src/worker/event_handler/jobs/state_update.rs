@@ -4,6 +4,7 @@ use crate::core::config::Config;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::batch::BatchStatus;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -19,7 +20,6 @@ use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use starknet_os::io::output::StarknetOsOutput;
 use uuid::Uuid;
-use crate::types::batch::BatchStatus;
 
 pub struct StateUpdateJobHandler;
 #[async_trait]
@@ -96,7 +96,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // self.validate_block_numbers(config.clone(), &state_metadata.batches_to_settle).await?;
 
         // Filter block numbers if there was a previous failure
-        let last_failed_batch = state_metadata.last_failed_batch_no.unwrap_or(1);  // The lowest possible batch number is 1
+        let last_failed_batch = state_metadata.last_failed_batch_no.unwrap_or(1); // The lowest possible batch number is 1
         let filtered_indices: Vec<usize> = state_metadata
             .batches_to_settle
             .iter()

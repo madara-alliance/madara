@@ -1,3 +1,4 @@
+use crate::compression::stateful::sort_state_diff;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use color_eyre::eyre::eyre;
@@ -11,7 +12,6 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use crate::compression::stateful::sort_state_diff;
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;

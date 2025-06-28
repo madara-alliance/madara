@@ -1,5 +1,9 @@
 use crate::core::config::Config;
 use crate::types::batch::BatchStatus;
+use crate::types::constant::{
+    CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR,
+    STORAGE_BLOB_DIR,
+};
 use crate::types::jobs::metadata::{
     AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata,
     SnosMetadata,
@@ -7,14 +11,13 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
+use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use alloy::consensus::EnvKzgSettings::Default;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use starknet_os::hints::block_context::block_number;
 use std::sync::Arc;
-use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR};
-use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 
 pub struct AggregatorJobTrigger;
 
@@ -64,26 +67,33 @@ impl JobTrigger for AggregatorJobTrigger {
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
                     bucket_id,
-                    download_proof: Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME)),
+                    download_proof: Some(format!(
+                        "{}/batch/{}/{}",
+                        STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME
+                    )),
                     blob_data_path: format!("{}/batch/{}", STORAGE_BLOB_DIR, batch.index),
                     cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, CAIRO_PIE_FILE_NAME),
-                    snos_output_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, SNOS_OUTPUT_FILE_NAME),
-                    program_output_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROGRAM_OUTPUT_FILE_NAME),
+                    snos_output_path: format!(
+                        "{}/batch/{}/{}",
+                        STORAGE_ARTIFACTS_DIR, batch.index, SNOS_OUTPUT_FILE_NAME
+                    ),
+                    program_output_path: format!(
+                        "{}/batch/{}/{}",
+                        STORAGE_ARTIFACTS_DIR, batch.index, PROGRAM_OUTPUT_FILE_NAME
+                    ),
                     ..AggregatorMetadata::default()
                 }),
             };
 
             // Create a new job
-            match JobHandlerService::create_job(
-                JobType::Aggregator,
-                batch.index.to_string(),
-                metadata,
-                config.clone(),
-            )
-            .await
+            match JobHandlerService::create_job(JobType::Aggregator, batch.index.to_string(), metadata, config.clone())
+                .await
             {
                 Ok(_) => {
-                    config.database().update_batch_status_by_index(batch.index, BatchStatus::PendingAggregatorRun).await?;
+                    config
+                        .database()
+                        .update_batch_status_by_index(batch.index, BatchStatus::PendingAggregatorRun)
+                        .await?;
                     tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
                 Err(e) => {
@@ -110,8 +120,10 @@ impl AggregatorJobTrigger {
         end_block: u64,
         config: Arc<Config>,
     ) -> color_eyre::Result<bool> {
-        let jobs =
-            config.database().get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, start_block, end_block).await?;
+        let jobs = config
+            .database()
+            .get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, start_block, end_block)
+            .await?;
         Ok(jobs.len() > (end_block - start_block + 1) as usize)
     }
 

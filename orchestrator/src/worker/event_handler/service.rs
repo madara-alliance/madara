@@ -649,7 +649,7 @@ impl JobHandlerService {
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::Batching => Box::new(BatchingTrigger),
-            WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger)
+            WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
         }
     }
 }

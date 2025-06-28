@@ -1,6 +1,6 @@
 use clap::Args;
-use url::Url;
 use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
+use url::Url;
 
 /// Parameters used to config Atlantic.
 #[derive(Debug, Clone, Args)]

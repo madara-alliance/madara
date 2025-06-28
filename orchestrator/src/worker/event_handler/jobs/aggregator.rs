@@ -1,6 +1,7 @@
 use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::core::StorageClient;
+use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::BatchStatus;
@@ -21,13 +22,12 @@ use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
 use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus, TaskType};
 use prove_block::prove_block;
+use starknet_core::types::Felt;
 use starknet_os::io::output::StarknetOsOutput;
 use std::fs::metadata;
 use std::io::Read;
 use std::sync::Arc;
-use starknet_core::types::Felt;
 use tempfile::NamedTempFile;
-use crate::error::job::snos::SnosError;
 
 pub struct AggregatorJobHandler;
 
@@ -89,7 +89,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 JobError::Other(OtherError(e)) // TODO: Add a new error type to be used for prover client error
             })?;
 
-        config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingAggregatorVerification).await?;
+        config
+            .database()
+            .update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingAggregatorVerification)
+            .await?;
 
         Ok(external_id)
     }
@@ -165,19 +168,33 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Calculate the program output from these and store this as well in storage
                 // If the proof download path is specified, download this as well
 
-                let cairo_pie_string = AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "pie.cairo0.zip", &metadata.cairo_pie_path).await?;
+                let cairo_pie_string = AggregatorJobHandler::fetch_and_store_artifact(
+                    &config,
+                    &task_id,
+                    "pie.cairo0.zip",
+                    &metadata.cairo_pie_path,
+                )
+                .await?;
                 // AggregatorJobHandler::fetch_and_store_artifact(config, &task_id, "snos_output.json", &metadata.snos_output_path).await?;
 
-                let cairo_pie = CairoPie::from_bytes(cairo_pie_string.as_bytes()).map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
+                let cairo_pie = CairoPie::from_bytes(cairo_pie_string.as_bytes())
+                    .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
                 let fact_info = get_fact_info(&cairo_pie, None)?;
                 let program_output = fact_info.program_output;
 
-                AggregatorJobHandler::store_program_output(&config, job.internal_id.clone(), program_output, &metadata.program_output_path).await?;
+                AggregatorJobHandler::store_program_output(
+                    &config,
+                    job.internal_id.clone(),
+                    program_output,
+                    &metadata.program_output_path,
+                )
+                .await?;
 
                 // TODO: We can check if the fact got registered here only and fail verification if it didn't
 
                 if let Some(download_path) = metadata.download_proof {
-                    AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "proof.json", &download_path).await?;
+                    AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "proof.json", &download_path)
+                        .await?;
                 }
 
                 config
@@ -251,10 +268,16 @@ impl AggregatorJobHandler {
         Ok(cairo_pie)
     }
 
-    pub async fn store_program_output(config: &Arc<Config>, batch_index: String, program_output: Vec<Felt>, storage_path: &str) -> Result<(), SnosError> {
+    pub async fn store_program_output(
+        config: &Arc<Config>,
+        batch_index: String,
+        program_output: Vec<Felt>,
+        storage_path: &str,
+    ) -> Result<(), SnosError> {
         let program_output: Vec<[u8; 32]> = program_output.iter().map(|f| f.to_bytes_be()).collect();
-        let encoded_data = bincode::serialize(&program_output).map_err(|e| {
-            SnosError::ProgramOutputUnserializable { internal_id: batch_index.clone(), message: e.to_string() }
+        let encoded_data = bincode::serialize(&program_output).map_err(|e| SnosError::ProgramOutputUnserializable {
+            internal_id: batch_index.clone(),
+            message: e.to_string(),
         })?;
         config.storage().put_data(encoded_data.into(), storage_path).await.map_err(|e| {
             SnosError::ProgramOutputUnstorable { internal_id: batch_index.clone(), message: e.to_string() }
