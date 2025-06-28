@@ -83,7 +83,7 @@ impl JobTrigger for AggregatorJobTrigger {
             .await
             {
                 Ok(_) => {
-                    config.database().update_batch_status_by_index(batch.index, BatchStatus::PendingAggregator).await?;
+                    config.database().update_batch_status_by_index(batch.index, BatchStatus::PendingAggregatorRun).await?;
                     tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
                 Err(e) => {

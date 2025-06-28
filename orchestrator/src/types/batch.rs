@@ -15,9 +15,9 @@ pub enum BatchStatus {
     Closed,
     /// Batch can be processed by the aggregator job
     /// This means that all the child jobs completed by the prover client, and we can close the bucket
-    PendingAggregator,
+    PendingAggregatorRun,
     /// Batch is closed, and we are waiting for SUCCESS from the prover client for the bucket ID
-    PendingVerification,
+    PendingAggregatorVerification,
     /// Bucket is verified and is ready for state update
     ReadyForStateUpdate,
     /// Batch processing is complete and state update is done

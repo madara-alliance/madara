@@ -89,7 +89,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 JobError::Other(OtherError(e)) // TODO: Add a new error type to be used for prover client error
             })?;
 
-        config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingVerification).await?;
+        config.database().update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingAggregatorVerification).await?;
 
         Ok(external_id)
     }

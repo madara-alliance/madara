@@ -74,7 +74,7 @@ pub struct AggregatorMetadata {
     pub batch_num: u64,
     /// Bucker ID received from the prover client
     pub bucket_id: String,
-    /// SNOS fact to check for on-chain registration during verification.
+    /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.
     /// If `Some(value)`, it checks for `value` on the chain.
     pub ensure_on_chain_registration: Option<String>,
