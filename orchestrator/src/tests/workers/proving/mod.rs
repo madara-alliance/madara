@@ -135,7 +135,9 @@ use uuid::Uuid;
 #[tokio::test]
 async fn test_proving_worker(
     #[case] earliest_failed_block: Option<u64>,
-    #[case] completed_snos_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, snos_fact, cairo_pie_path, n_steps)
+    #[allow(clippy::type_complexity)]
+    #[case]
+    completed_snos_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, snos_fact, cairo_pie_path, n_steps)
     #[case] expected_proving_jobs: Vec<u64>,
     #[case] expected_created_count: usize,
 ) -> Result<(), Box<dyn Error>> {

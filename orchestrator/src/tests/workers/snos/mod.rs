@@ -175,7 +175,7 @@ async fn test_snos_worker(
         .with(eq(JobType::SnosRun), eq(JobStatus::Completed))
         .returning(move |_, _| Ok(latest_snos_job.clone()));
 
-    db.expect_get_earliest_failed_block_number().with().returning(move || Ok(earliest_failed_block.clone()));
+    db.expect_get_earliest_failed_block_number().with().returning(move || Ok(earliest_failed_block));
 
     // Mock get_job_by_internal_id_and_type to always return None
     db.expect_get_job_by_internal_id_and_type().returning(|_, _| Ok(None));
