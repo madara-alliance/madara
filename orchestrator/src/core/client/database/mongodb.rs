@@ -779,12 +779,14 @@ impl DatabaseClient for MongoDbClient {
     async fn get_jobs_between_internal_ids(
         &self,
         job_type: JobType,
+        status: JobStatus,
         gte: u64,
         lte: u64,
     ) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "job_type": bson::to_bson(&job_type)?,
+            "status": bson::to_bson(&status)?,
             "$expr": {
                 "$and": [
                     { "$gte": [{ "$toInt": "$internal_id" }, gte as i64 ] },

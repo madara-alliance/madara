@@ -86,6 +86,7 @@ pub trait DatabaseClient: Send + Sync {
     async fn get_jobs_between_internal_ids(
         &self,
         job_type: JobType,
+        status: JobStatus,
         gte: u64,
         lte: u64,
     ) -> Result<Vec<JobItem>, DatabaseError>;

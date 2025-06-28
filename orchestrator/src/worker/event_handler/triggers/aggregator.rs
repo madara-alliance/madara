@@ -111,16 +111,8 @@ impl AggregatorJobTrigger {
         config: Arc<Config>,
     ) -> color_eyre::Result<bool> {
         let jobs =
-            config.database().get_jobs_between_internal_ids(JobType::ProofCreation, start_block, end_block).await?;
-        let mut next_internal_id = start_block;
-        for job in jobs {
-            if job.status != JobStatus::Completed || self.str_to_u64(&job.internal_id)? != next_internal_id {
-                return Ok(false);
-            }
-            next_internal_id += 1;
-        }
-
-        Ok(true)
+            config.database().get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, start_block, end_block).await?;
+        Ok(jobs.len() > (end_block - start_block + 1) as usize)
     }
 
     /// Convert &str to u64
