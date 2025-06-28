@@ -92,8 +92,6 @@ impl ProverClient for AtlanticProverService {
             }
             Task::CreateBucket => {
                 let response = self.atlantic_client.create_bucket(self.atlantic_api_key.clone()).await?;
-                // sleep for 10 seconds to make sure the bucket is created
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
