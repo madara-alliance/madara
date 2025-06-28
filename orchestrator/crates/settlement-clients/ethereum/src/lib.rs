@@ -236,38 +236,13 @@ impl SettlementClient for EthereumSettlementClient {
         let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &KZG_SETTINGS).await?;
         let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
 
+        let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
+
         // Get EIP1559 estimate, chain ID and blob base fee
         let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
         let max_fee_per_blob_gas: u128 = self.provider.get_blob_base_fee().await?.to_string().parse()?;
-
-        let n_blobs = u64::from_be_bytes(program_output[N_BLOBS_OFFSET][24..32].try_into()?);
-
-        let mut y_0_values: Vec<Bytes32> = vec![];
-        for i in 0..n_blobs {
-            y_0_values.push(Bytes32::from(
-                convert_stark_bigint_to_u256(
-                    bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET]),
-                    bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET]),
-                )
-                .to_be_bytes(),
-            ));
-        }
-
-        // x_0_value : program_output[10]
-        // Updated with starknet 0.13.2 spec
-        let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
-            .wrap_err("Failed to get x_0 point params")?;
-
-        let kzg_proofs =
-            Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values).wrap_err("Failed to build KZG proofs")?;
-
-        // Convert Vec<KzgProof> to Vec<[u8; 48]>
-        let kzg_proofs_bytes: Vec<[u8; 48]> =
-            kzg_proofs.into_iter().map(|proof| proof.to_bytes().into_inner()).collect();
-
-        let input_bytes = get_input_data_for_eip_4844(program_output, kzg_proofs_bytes)?;
 
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
 
@@ -419,6 +394,35 @@ impl SettlementClient for EthereumSettlementClient {
     async fn get_nonce(&self) -> Result<u64> {
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
         Ok(nonce)
+    }
+}
+
+impl EthereumSettlementClient {
+    pub async fn build_input_bytes(program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
+        let n_blobs = u64::from_be_bytes(program_output[N_BLOBS_OFFSET][24..32].try_into()?);
+
+        let mut y_0_values: Vec<Bytes32> = vec![];
+        for i in 0..n_blobs {
+            y_0_values.push(Bytes32::from(
+                convert_stark_bigint_to_u256(
+                    bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET]),
+                    bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET]),
+                )
+                    .to_be_bytes(),
+            ));
+        }
+
+        let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
+            .wrap_err("Failed to get x_0 point params")?;
+
+        let kzg_proofs =
+            Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values).wrap_err("Failed to build KZG proofs")?;
+
+        // Convert Vec<KzgProof> to Vec<[u8; 48]>
+        let kzg_proofs_bytes: Vec<[u8; 48]> =
+            kzg_proofs.into_iter().map(|proof| proof.to_bytes().into_inner()).collect();
+
+        Ok(get_input_data_for_eip_4844(program_output, kzg_proofs_bytes)?)
     }
 }
 
