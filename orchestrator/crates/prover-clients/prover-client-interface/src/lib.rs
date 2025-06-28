@@ -18,8 +18,6 @@ pub trait ProverClient: Send + Sync {
         &self,
         task: Task,
         n_steps: Option<usize>,
-        bucket_id: Option<String>,
-        bucket_job_index: Option<u64>,
     ) -> Result<String, ProverClientError>;
     async fn get_task_status(
         &self,
@@ -42,7 +40,7 @@ pub enum TaskType {
 }
 
 pub enum Task {
-    CairoPie(Box<CairoPie>), // TODO: Check if we can add bucket_id, bucket_job_index and other things needed for proving job task in CairoPie
+    CreateJob(Box<CairoPie>, Option<String>, Option<u64>),
     CreateBucket,
     CloseBucket(String),
 }

@@ -52,8 +52,6 @@ impl ProverClient for AtlanticProverService {
         &self,
         task: Task,
         n_steps: Option<usize>,
-        bucket_id: Option<String>,
-        bucket_job_index: Option<u64>,
     ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
@@ -62,7 +60,7 @@ impl ProverClient for AtlanticProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CairoPie(cairo_pie) => {
+            Task::CreateJob(cairo_pie, bucket_id, bucket_job_index) => {
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();

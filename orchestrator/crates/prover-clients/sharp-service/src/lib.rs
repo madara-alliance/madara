@@ -45,8 +45,6 @@ impl ProverClient for SharpProverService {
         &self,
         task: Task,
         _n_steps: Option<usize>,
-        _: Option<String>,
-        _: Option<u64>,
     ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
@@ -55,7 +53,7 @@ impl ProverClient for SharpProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CairoPie(cairo_pie) => {
+            Task::CreateJob(cairo_pie, _, _) => {
                 let encoded_pie =
                     starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
                 let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;

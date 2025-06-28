@@ -82,10 +82,8 @@ impl JobHandlerTrait for ProvingJobHandler {
         let external_id = config
             .prover_client()
             .submit_task(
-                Task::CairoPie(cairo_pie),
+                Task::CreateJob(cairo_pie, proving_metadata.bucked_id, proving_metadata.bucket_job_index),
                 proving_metadata.n_steps,
-                proving_metadata.bucked_id,
-                proving_metadata.bucket_job_index,
             )
             .await
             .wrap_err("Prover Client Error".to_string())

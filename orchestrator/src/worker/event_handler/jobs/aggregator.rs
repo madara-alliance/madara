@@ -81,7 +81,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
         // Call close bucket
         let external_id = config
             .prover_client()
-            .submit_task(Task::CloseBucket(metadata.bucket_id), None, None, None)
+            .submit_task(Task::CloseBucket(metadata.bucket_id), None)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
