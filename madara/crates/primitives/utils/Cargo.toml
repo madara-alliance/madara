@@ -26,7 +26,6 @@ anyhow.workspace = true
 async-trait.workspace = true
 crypto-bigint.workspace = true
 futures.workspace = true
-num-traits.workspace = true
 paste.workspace = true
 rand.workspace = true
 rayon.workspace = true
