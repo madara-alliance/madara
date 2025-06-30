@@ -963,6 +963,40 @@ impl DatabaseClient for MongoDbClient {
 
         Ok(results)
     }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_orphaned_jobs(&self, job_type: JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        // Calculate the cutoff time (current time - timeout)
+        let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
+
+        // Query for jobs of specific type in LockedForProcessing status with process_started_at older than cutoff
+        let filter = doc! {
+            "job_type": mongodb::bson::to_bson(&job_type)?,
+            "status": mongodb::bson::to_bson(&JobStatus::LockedForProcessing)?,
+            "metadata.common.process_started_at": {
+                "$lt": cutoff_time.timestamp()
+            }
+        };
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            timeout_seconds = timeout_seconds,
+            cutoff_time = %cutoff_time,
+            orphaned_count = jobs.len(),
+            category = "db_call",
+            "Found orphaned jobs in LockedForProcessing status"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_orphaned_jobs")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
 }
 
 // Generic utility function to convert Vec<T> to Option<T>
