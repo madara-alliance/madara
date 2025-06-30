@@ -6,7 +6,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use num_traits::ToPrimitive;
 use opentelemetry::KeyValue;
 use starknet::providers::Provider;
@@ -403,12 +403,25 @@ impl SnosJobTrigger {
     /// - If database returns StateTransition job with non-StateUpdate metadata
     async fn get_latest_completed_state_update_block(&self, config: &Arc<Config>) -> Result<Option<u64>> {
         let db = config.database();
-        match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
+        let latest_batch_num =
+            match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
+                None => None,
+                Some(job_item) => match job_item.metadata.specific {
+                    JobSpecificMetadata::StateUpdate(metadata) => metadata.batches_to_settle.iter().max().copied(),
+                    _ => panic!("Unexpected metadata type for StateUpdate job"),
+                },
+            };
+
+        match latest_batch_num {
+            Some(latest_batch_num) => {
+                let latest_batch = db.get_batches_by_indexes(vec![latest_batch_num]).await?;
+                if latest_batch.is_empty() {
+                    Err(eyre!("Failed to fetch latest batch {} from database", latest_batch_num))
+                } else {
+                    Ok(Some(latest_batch[0].end_block))
+                }
+            }
             None => Ok(None),
-            Some(job_item) => match job_item.metadata.specific {
-                JobSpecificMetadata::StateUpdate(metadata) => Ok(metadata.blocks_to_settle.iter().max().copied()),
-                _ => panic!("Unexpected metadata type for StateUpdate job"),
-            },
         }
     }
 
