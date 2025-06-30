@@ -46,15 +46,15 @@ impl JobTrigger for BatchingTrigger {
 
         // Getting the latest batch in DB
         let latest_batch = config.database().get_latest_batch().await?;
-        let latest_block_in_db = latest_batch.map_or(0, |batch| batch.end_block);
+        let latest_block_in_db = latest_batch.map_or(-1, |batch| batch.end_block);
 
         // Calculating the first block number to for which a batch needs to be assigned
-        let first_block_to_assign_batch = config
-            .service_config()
-            .min_block_to_process
-            .map_or(latest_block_in_db + 1, |min_block| max(min_block, latest_block_in_db + 1));
+        let first_block_to_assign_batch = max(config.service_config().min_block_to_process, latest_block_in_db + 1);
 
-        self.assign_batch_to_blocks(first_block_to_assign_batch, last_block_to_assign_batch, config.clone()).await?;
+        if first_block_to_assign_batch <= last_block_to_assign_batch {
+            self.assign_batch_to_blocks(first_block_to_assign_batch, last_block_to_assign_batch, config.clone())
+                .await?;
+        }
 
         tracing::trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
         Ok(())
