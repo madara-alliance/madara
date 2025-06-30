@@ -78,6 +78,8 @@ pub trait DatabaseClient: Send + Sync {
 
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
+    /// get_batches_by_index - Get all the batches with the given indexes
+    async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError>;
     async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError>;
     async fn update_batch(
         &self,

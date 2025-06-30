@@ -813,6 +813,22 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
+    async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "index": {
+                "$in": indexes.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
+        };
+
+        let jobs: Vec<Batch> = self.get_batch_collection().find(filter, None).await?.try_collect().await?;
+        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved batch by indexes");
+        let attributes = [KeyValue::new("db_operation_name", "get_batches_by_indexes")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(jobs)
+    }
+
     /// Update a batch by its index
     async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
