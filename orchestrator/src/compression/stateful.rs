@@ -119,7 +119,7 @@ impl ValueMapping {
             return Ok(key.clone());
         }
         let mut attempts = 0;
-        let mut error;
+        let mut error = String::from("Dummy Error");
         while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
             match provider
                 .get_storage_at(Felt::from_hex(SPECIAL_ADDRESS).unwrap(), key, BlockId::Number(pre_range_block))
@@ -127,18 +127,18 @@ impl ValueMapping {
             {
                 Ok(value) => return Ok(value),
                 Err(e) => {
-                    error = e;
+                    error = e.to_string();
                     attempts += 1;
-                    continue
-                },
+                    continue;
+                }
             }
         }
         let err_message = format!(
             "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
             SPECIAL_ADDRESS, key, pre_range_block, error
-        ));
+        );
         error!("{}", &err_message);
-        Err(ProviderError::StarknetError(StarknetError::UnexpectedError(err_message))
+        Err(ProviderError::StarknetError(StarknetError::UnexpectedError(err_message)))
     }
 
     fn get_value(&self, value: &Felt) -> Result<Felt> {
