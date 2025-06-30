@@ -36,6 +36,7 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+/// Starknet versions supported by the service
 macro_rules! versions {
     ($(($variant:ident, $version:expr)),* $(,)?) => {
         #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -85,6 +86,9 @@ macro_rules! versions {
     }
 }
 
+/// Add more versions here whenever necessary. Follow the following rules:
+/// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
+/// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
 versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
 
 #[derive(Debug, Clone)]
