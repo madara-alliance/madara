@@ -139,7 +139,7 @@ impl BatchingTrigger {
                         // Squash the state updates
                         let squashed_state_update = squash_state_updates(
                             vec![prev_state_update.clone(), state_update.clone()],
-                            current_batch.start_block.saturating_sub(1),
+                            if current_batch.start_block == 0 { None } else { Some(current_batch.start_block - 1) },
                             provider,
                         )
                         .await?;

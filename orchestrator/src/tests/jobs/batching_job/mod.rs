@@ -19,6 +19,8 @@ use num_traits::{Num, ToPrimitive, Zero};
 use rstest::*;
 use starknet_core::types::Felt;
 use std::collections::HashMap;
+use tracing::log::info;
+use tracing::{error, warn};
 use url::Url;
 
 #[rstest]
@@ -28,7 +30,7 @@ async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String, #[ca
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
-            println!("Ignoring test: {} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV);
+            warn!("Ignoring test: {} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV);
             return Ok(());
         }
     };
@@ -104,7 +106,7 @@ pub fn bytes_to_biguints(bytes: &[u8]) -> Vec<BigUint> {
         result.push(num);
     }
 
-    println!("Converted {} bytes to {} BigUint values", bytes.len(), result.len());
+    info!("Converted {} bytes to {} BigUint values", bytes.len(), result.len());
     result
 }
 
@@ -146,7 +148,7 @@ pub fn convert_biguints_to_felts(biguints: &[BigUint]) -> Result<Vec<Felt>> {
 /// Updated parse_state_diffs function with version support
 pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     if data.is_empty() {
-        println!("Error: Empty data array");
+        error!("Error: Empty data array");
         return DataJson {
             state_update_size: 0,
             state_update: Vec::new(),
@@ -176,7 +178,7 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     let contract_updated_num = match data[i].to_usize() {
         Some(num) => num,
         None => {
-            println!("Error: Could not parse number of contract updates");
+            error!("Error: Could not parse number of contract updates");
             return DataJson {
                 state_update_size: 0,
                 state_update: Vec::new(),
@@ -190,29 +192,16 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     // 1st index should have a special address 0x1
     let special_address = &data[i];
     if special_address != &BigUint::from(1u32) {
-        println!("Warning: Expected special address 0x1 at index 1, found {}", special_address);
+        warn!("Warning: Expected special address 0x1 at index 1, found {}", special_address);
     }
 
     // Process contract updates
     for _ in 0..contract_updated_num {
         if i >= data.len() {
-            println!("Warning: Reached end of data while reading contract updates");
             break;
         }
 
-        let mut do_show = false;
-
         let address = data[i].clone();
-
-        if address
-            == BigUint::from_str_radix(
-                "239581092100565142154720645091883797094198622446298991221224471056964065863",
-                10,
-            )
-            .expect("Invalid address")
-        {
-            do_show = true
-        }
 
         if address == BigUint::zero() {
             break;
@@ -220,19 +209,12 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
         i += 1;
 
         if i >= data.len() {
-            println!("Warning: Reached end of data or blob length limit");
             break;
         }
 
         let info_word = &data[i];
         let (nonce, number_of_storage_updates, class_flag) = if is_new_version {
             let (new_nonce, storage_updates, class_flag) = extract_bits_v2(info_word);
-            if do_show {
-                println!(
-                    "given the right address, here are the new_noce, storage_updates, class_flag: {:?}, {:?}, {:?}",
-                    new_nonce, storage_updates, class_flag
-                );
-            }
             (new_nonce, storage_updates, class_flag)
         } else {
             let (class_flag, nonce, storage_updates) = extract_bits(info_word);
@@ -242,7 +224,6 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
 
         let new_class_hash = if class_flag {
             if i >= data.len() {
-                println!("Warning: Reached end of data while reading class hash");
                 None
             } else {
                 let hash = Some(data[i].clone());
@@ -256,7 +237,6 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
         let mut storage_updates = Vec::new();
         for _ in 0..number_of_storage_updates {
             if i + 1 >= data.len() {
-                println!("Warning: Reached end of data or blob length limit while reading storage updates");
                 break;
             }
 
@@ -279,7 +259,6 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     let declared_classes_len: usize = if i < data.len() {
         data[i].to_usize().unwrap_or(0)
     } else {
-        println!("Warning: Reached end of data before reading declared classes length");
         0
     };
     i += 1;
@@ -287,19 +266,16 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     let mut class_declaration_updates = Vec::new();
     for _ in 0..declared_classes_len {
         if i >= data.len() {
-            println!("Warning: Reached end of data while reading class declarations");
             break;
         }
 
         let class_hash = data[i].clone();
         if class_hash == BigUint::zero() {
-            println!("Warning: Found zero class hash when expecting non-zero");
             break;
         }
         i += 1;
 
         if i >= data.len() {
-            println!("Warning: Reached end of data or blob length limit while reading compiled class hash");
             break;
         }
 

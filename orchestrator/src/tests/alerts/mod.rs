@@ -1,7 +1,7 @@
 use crate::core::client::SNS;
 use crate::tests::common::{get_sns_client, get_sqs_client};
 use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::types::params::AlertArgs;
+use crate::types::params::{AWSResourceIdentifier, AlertArgs};
 use aws_sdk_sqs::types::QueueAttributeName::QueueArn;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
@@ -29,9 +29,10 @@ async fn sns_alert_subscribe_to_topic_receive_alert_works() {
 
     let queue_arn = queue_attributes.attributes().unwrap().get(&QueueArn).unwrap();
 
-    let alert_topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
-    let alert_config = AlertArgs { alert_topic_name };
-    let sns = SNS::new(services.provider_config.get_aws_client_or_panic(), Some(&alert_config));
+    let alert_identifier =
+        AWSResourceIdentifier::Name(get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER"));
+    let alert_config = AlertArgs { alert_identifier };
+    let sns = SNS::new(services.provider_config.get_aws_client_or_panic(), &alert_config);
 
     let sns_arn = sns.get_topic_arn().await.unwrap();
 
