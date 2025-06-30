@@ -104,6 +104,9 @@ jobs:
           # the self hosted runner has a different region so we override it here
           AWS_REGION: us-east-1
         run: |
+          export COVERAGE_BIN=$(realpath target/release/orchestrator)
+          rm -f target/orchestrator-* lcov.info
+
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
           RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
             --release \
