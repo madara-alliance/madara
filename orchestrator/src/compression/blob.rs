@@ -1,11 +1,10 @@
-use crate::compression::constants::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
+use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::worker::event_handler::jobs::da::DAJobHandler;
 use num_bigint::BigUint;
 use num_traits::{Num, Zero};
-use rayon::prelude::*;
 use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
 use std::collections::{HashMap, HashSet};
 
@@ -269,34 +268,15 @@ pub fn da_word(
 /// Converts a vector of felt into a vector of bigUint
 /// The output length depends on the input length (ceil(input_len / BLOB_LEN) * BLOB_LEN)
 pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
-    let input_len = elements.len();
-    if input_len == 0 {
-        return Vec::new(); // Return an empty vector for an empty input
-    }
-
-    // Calculate the required output size: ceil(input_len / 4096.0) * 4096
-    // Integer division trick: (input_len + 4095) / 4096 gives the ceiling division result
-    let num_blocks = (input_len + BLOB_LEN - 1) / BLOB_LEN;
+    let num_blocks = (elements.len() + BLOB_LEN - 1) / BLOB_LEN;
     let output_len = num_blocks * BLOB_LEN;
+    let pad_len = output_len - elements.len();
 
-    // Initialize the vector with the calculated size, filled with zeros
-    let mut biguint_vec = vec![BigUint::zero(); output_len];
-
-    // Iterate over the input elements and place them in the output vector
-    for (i, element) in elements.iter().enumerate() {
-        // Remove .take(4096)
-        // Convert Felt to [u8; 32]
-        let bytes: [u8; 32] = element.to_bytes_be();
-
-        // Convert [u8; 32] to BigUint
-        let biguint = BigUint::from_bytes_be(&bytes);
-
-        // Place the converted value at the correct index
-        // This automatically leaves remaining spots as zeros
-        biguint_vec[i] = biguint;
-    }
-
-    biguint_vec
+    elements
+        .iter()
+        .map(|e| BigUint::from_bytes_be(&e.to_bytes_be()))
+        .chain(std::iter::repeat(BigUint::zero()).take(pad_len))
+        .collect()
 }
 
 /// Converts a vector of felts into blob data (vec of big uint)
