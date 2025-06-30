@@ -1,0 +1,10 @@
+{
+  "base_layer": {
+    "layer": "Ethereum",
+    "rpc_url": "http://localhost:8545",
+    "implementation_address": {}
+  },
+  "madara": {
+    "rpc_url": "http://localhost:9944"
+  }
+}
