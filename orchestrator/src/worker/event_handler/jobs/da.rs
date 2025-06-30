@@ -1,7 +1,9 @@
+use crate::compression::blob::da_word;
 use crate::core::config::{Config, StarknetVersion};
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR, TWO};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -22,29 +24,8 @@ use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
 use std::str::FromStr;
 use std::sync::Arc;
-use crate::compression::blob::da_word;
 
 pub struct DAJobHandler;
-
-lazy_static! {
-    /// EIP-4844 BLS12-381 modulus.
-    ///
-    /// As defined in https://eips.ethereum.org/EIPS/eip-4844
-
-    /// Generator of the group of evaluation points (EIP-4844 parameter).
-    pub static ref GENERATOR: BigUint = BigUint::from_str(
-        "39033254847818212395286706435128746857159659164139250548781411570340225835782",
-    )
-    .expect("Failed to convert to biguint");
-
-    pub static ref BLS_MODULUS: BigUint = BigUint::from_str(
-        "52435875175126190479447740508185965837690552500527637822603658699938581184513",
-    )
-    .expect("Failed to convert to biguint");
-    pub static ref TWO: BigUint = 2u32.to_biguint().expect("Failed to convert to biguint");
-
-    pub static ref BLOB_LEN: usize = 4096;
-}
 
 impl DAJobHandler {
     fn refactor_state_update(state_update: &mut StateDiff) {
@@ -66,7 +47,7 @@ impl DAJobHandler {
 
     #[tracing::instrument(skip(elements))]
     pub fn fft_transformation(elements: Vec<BigUint>) -> Result<Vec<BigUint>, JobError> {
-        let xs: Vec<BigUint> = (0..*BLOB_LEN)
+        let xs: Vec<BigUint> = (0..BLOB_LEN)
             .map(|i| {
                 let bin = format!("{:012b}", i);
                 let bin_rev = bin.chars().rev().collect::<String>();
@@ -145,7 +126,8 @@ impl DAJobHandler {
 
                 nonce = Some(get_current_nonce_result);
             }
-            let da_word = da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, config.params.madara_version)?;
+            let da_word =
+                da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, config.params.madara_version)?;
             blob_data.push(address);
             blob_data.push(da_word);
 
@@ -387,6 +369,8 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
+    use crate::compression::blob::da_word;
+    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -402,8 +386,6 @@ pub mod test {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::JsonRpcClient;
     use url::Url;
-    use crate::compression::blob::da_word;
-    use crate::core::config::StarknetVersion;
 
     /// Tests `da_word` function with various inputs for class flag, new nonce, and number of
     /// changes. Verifies that `da_word` produces the correct Felt based on the provided
@@ -423,7 +405,8 @@ pub mod test {
     ) {
         // TODO: add test for v0.13.3+ version
         let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
-        let da_word = da_word(class_flag, new_nonce, num_changes, StarknetVersion::V0_13_2).expect("Failed to create DA word");
+        let da_word =
+            da_word(class_flag, new_nonce, num_changes, StarknetVersion::V0_13_2).expect("Failed to create DA word");
         let expected = Felt::from_dec_str(expected.as_str()).unwrap();
         assert_eq!(da_word, expected);
     }
