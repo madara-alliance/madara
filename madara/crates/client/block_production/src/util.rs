@@ -1,6 +1,5 @@
 use blockifier::{state::cached_state::StateMaps, transaction::transaction_execution::Transaction};
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_mempool::L1DataProvider;
 use mp_block::header::{BlockTimestamp, GasPrices, PendingHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
@@ -32,6 +31,8 @@ pub struct ExecutionStats {
     pub n_rejected: usize,
     /// Number of declared classes.
     pub declared_classes: usize,
+    /// Total L2 gas consumed by the transactions in the block.
+    pub l2_gas_consumed: u64,
     /// Execution time
     pub exec_duration: Duration,
 }
@@ -46,6 +47,7 @@ impl Add for ExecutionStats {
             n_reverted: self.n_reverted + other.n_reverted,
             n_rejected: self.n_rejected + other.n_rejected,
             declared_classes: self.declared_classes + other.declared_classes,
+            l2_gas_consumed: self.l2_gas_consumed + other.l2_gas_consumed,
             exec_duration: self.exec_duration + other.exec_duration,
         }
     }
@@ -143,15 +145,16 @@ impl BlockExecutionContext {
 }
 
 pub(crate) fn create_execution_context(
-    l1_data_provider: &Arc<dyn L1DataProvider>,
     backend: &Arc<MadaraBackend>,
     block_n: u64,
+    previous_l2_gas_price: u128,
+    previous_l2_gas_used: u64,
 ) -> BlockExecutionContext {
     BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
         block_timestamp: SystemTime::now(),
         protocol_version: backend.chain_config().latest_protocol_version,
-        gas_prices: l1_data_provider.get_gas_prices(),
+        gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used),
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_n,
     }

@@ -223,7 +223,7 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
     use mc_db::MadaraBackend;
-    use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MempoolLimits, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig, MempoolLimits};
     use mc_submit_tx::{
         RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
         TransactionValidator, TransactionValidatorConfig,
@@ -357,25 +357,10 @@ mod tests {
         g.build_and_store(&backend).await.unwrap();
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
-        let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-            eth_l1_gas_price: 128,
-            strk_l1_gas_price: 128,
-            eth_l1_data_gas_price: 128,
-            strk_l1_data_gas_price: 128,
-            eth_l2_gas_price: 128,
-            strk_l2_gas_price: 128,
-        });
-        let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::new(mempool_limits)));
         let metrics = BlockProductionMetrics::register();
 
-        let block_production = BlockProductionTask::new(
-            Arc::clone(&backend),
-            Arc::clone(&mempool),
-            Arc::new(metrics),
-            Arc::clone(&l1_data_provider),
-        );
+        let block_production = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), Arc::new(metrics));
 
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,

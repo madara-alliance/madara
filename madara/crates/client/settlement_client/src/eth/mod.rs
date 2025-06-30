@@ -940,8 +940,8 @@ mod eth_client_event_subscription_test {
             let db = backend.clone();
             tokio::spawn(async move {
                 state_update_worker::<EthereumClientConfig, EthereumEventStream>(
-                    db,
                     Arc::new(eth_client),
+                    db,
                     ServiceContext::new_for_testing(),
                     snd,
                     Arc::new(l1_block_metrics),

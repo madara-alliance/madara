@@ -11,13 +11,14 @@ use blockifier::{
         state_api::{StateReader, StateResult},
     },
 };
+use mp_block::{header::GasPrices, BlockId};
 use starknet_api::{
     contract_class::ContractClass as ApiContractClass,
     core::{ClassHash, CompiledClassHash, ContractAddress, Nonce},
     state::StorageKey,
 };
 
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mc_db::{db_block_id::DbBlockId, MadaraBackend, MadaraStorageError};
 use mp_convert::Felt;
 
 use crate::BlockifierStateAdapter;
@@ -36,16 +37,41 @@ struct CacheByBlock {
 /// previous blocks once we know they are imported into the database.
 pub struct LayeredStateAdaptor {
     inner: BlockifierStateAdapter,
+    gas_prices: GasPrices,
     cached_states_by_block_n: VecDeque<CacheByBlock>,
     backend: Arc<MadaraBackend>,
 }
+
 impl LayeredStateAdaptor {
     pub fn new(backend: Arc<MadaraBackend>) -> Result<Self, crate::Error> {
         let on_top_of_block_n = backend.get_latest_block_n()?;
         let block_number = on_top_of_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        let gas_prices = if let Some(on_top_of_block_n) = on_top_of_block_n {
+            let latest_gas_prices = backend
+                .get_block_info(&BlockId::Number(on_top_of_block_n))?
+                .ok_or(MadaraStorageError::InconsistentStorage(
+                    format!("No block info found for block_n {on_top_of_block_n}").into(),
+                ))?
+                .gas_prices()
+                .clone();
+
+            let latest_gas_used = backend
+                .get_block_inner(&BlockId::Number(on_top_of_block_n))?
+                .ok_or(MadaraStorageError::InconsistentStorage(
+                    format!("No block info found for block_n {on_top_of_block_n}").into(),
+                ))?
+                .receipts
+                .iter()
+                .fold(0, |acc, receipt| acc + receipt.execution_resources().total_gas_consumed.l2_gas);
+
+            backend.calculate_gas_prices(latest_gas_prices.strk_l2_gas_price, latest_gas_used)
+        } else {
+            backend.calculate_gas_prices(0, 0)
+        };
 
         Ok(Self {
             inner: BlockifierStateAdapter::new(backend.clone(), block_number, on_top_of_block_n.map(DbBlockId::Number)),
+            gas_prices,
             backend,
             cached_states_by_block_n: Default::default(),
         })
@@ -93,6 +119,10 @@ impl LayeredStateAdaptor {
         );
 
         Ok(())
+    }
+
+    pub fn latest_gas_prices(&self) -> &GasPrices {
+        &self.gas_prices
     }
 }
 

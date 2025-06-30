@@ -30,7 +30,6 @@ mc-db = { workspace = true }
 mc-exec = { workspace = true }
 mc-submit-tx = { workspace = true }
 mp-block = { workspace = true, default-features = true }
-mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
 mp-gateway = { workspace = true }

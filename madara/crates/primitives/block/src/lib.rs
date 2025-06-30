@@ -119,6 +119,13 @@ impl MadaraMaybePendingBlockInfo {
             MadaraMaybePendingBlockInfo::Pending(block) => block.header.block_timestamp,
         }
     }
+
+    pub fn gas_prices(&self) -> &GasPrices {
+        match self {
+            MadaraMaybePendingBlockInfo::NotPending(block) => &block.header.gas_prices,
+            MadaraMaybePendingBlockInfo::Pending(block) => &block.header.gas_prices,
+        }
+    }
 }
 
 impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
@@ -395,6 +402,14 @@ impl PendingFullBlock {
             events: self.events,
         }
     }
+}
+
+/// Gas quote for calculating gas prices.
+#[derive(Clone, Default)]
+pub struct L1GasQuote {
+    pub l1_gas_price: u128,
+    pub l1_data_gas_price: u128,
+    pub strk_per_eth: (u128, u32),
 }
 
 #[cfg(test)]

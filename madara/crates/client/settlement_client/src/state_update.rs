@@ -58,8 +58,8 @@ impl StateUpdateWorker {
 }
 
 pub async fn state_update_worker<C, S>(
-    backend: Arc<MadaraBackend>,
     settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
+    backend: Arc<MadaraBackend>,
     mut ctx: ServiceContext,
     l1_head_sender: L1HeadSender,
     block_metrics: Arc<L1BlockMetrics>,

@@ -8,7 +8,7 @@ use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
-use mc_mempool::{L1DataProvider, Mempool};
+use mc_mempool::Mempool;
 use mp_block::header::PendingHeader;
 use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
@@ -210,7 +210,6 @@ impl BlockProductionHandle {
 /// documentation.
 pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     mempool: Arc<Mempool>,
     current_state: Option<TaskState>,
     metrics: Arc<BlockProductionMetrics>,
@@ -220,16 +219,10 @@ pub struct BlockProductionTask {
 }
 
 impl BlockProductionTask {
-    pub fn new(
-        backend: Arc<MadaraBackend>,
-        mempool: Arc<Mempool>,
-        metrics: Arc<BlockProductionMetrics>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
-    ) -> Self {
+    pub fn new(backend: Arc<MadaraBackend>, mempool: Arc<Mempool>, metrics: Arc<BlockProductionMetrics>) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         Self {
             backend,
-            l1_data_provider,
             mempool,
             current_state: None,
             metrics,
@@ -438,7 +431,6 @@ impl BlockProductionTask {
 
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
-            Arc::clone(&self.l1_data_provider),
             self.executor_commands_recv.take().context("Task already started")?,
         )
         .context("Starting executor thread")?;
@@ -529,9 +521,8 @@ pub(crate) mod tests {
     };
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
-    use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::header::GasPrices;
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_rpc::{
@@ -583,14 +574,7 @@ pub(crate) mod tests {
         #[default(Duration::from_secs(30))] block_time: Duration,
         #[default(Some(Duration::from_secs(2)))] pending_block_update_time: Option<Duration>,
         #[default(false)] use_bouncer_weights: bool,
-    ) -> (
-        Arc<MadaraBackend>,
-        Arc<BlockProductionMetrics>,
-        Arc<MockL1DataProvider>,
-        Arc<Mempool>,
-        Arc<TransactionValidator>,
-        DevnetKeys,
-    ) {
+    ) -> (Arc<MadaraBackend>, Arc<BlockProductionMetrics>, Arc<Mempool>, Arc<TransactionValidator>, DevnetKeys) {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -614,17 +598,6 @@ pub(crate) mod tests {
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
         genesis.build_and_store(&backend).await.unwrap();
 
-        let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-            eth_l1_gas_price: 128,
-            strk_l1_gas_price: 128,
-            eth_l1_data_gas_price: 128,
-            strk_l1_data_gas_price: 128,
-            eth_l2_gas_price: 128,
-            strk_l2_gas_price: 128,
-        });
-        let l1_data_provider = Arc::new(l1_data_provider);
-
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing()));
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,
@@ -632,14 +605,7 @@ pub(crate) mod tests {
             TransactionValidatorConfig::default(),
         ));
 
-        (
-            backend,
-            Arc::new(BlockProductionMetrics::register()),
-            Arc::clone(&l1_data_provider),
-            mempool,
-            tx_validator,
-            contracts,
-        )
+        (backend, Arc::new(BlockProductionMetrics::register()), mempool, tx_validator, contracts)
     }
 
     #[rstest::fixture]
@@ -1019,7 +985,6 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
@@ -1039,7 +1004,7 @@ pub(crate) mod tests {
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
     ) {
-        let (backend, metrics, l1_data_provider, mempool, _tx_validator, _contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, _tx_validator, _contracts) = devnet_setup.await;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1138,8 +1103,7 @@ pub(crate) mod tests {
         // ================================================================== //
 
         // This should load the pending block from db and close it
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
@@ -1191,7 +1155,6 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
@@ -1230,7 +1193,7 @@ pub(crate) mod tests {
         #[with(Felt::TWO, Felt::TWO)]
         converted_class_sierra_2: mp_class::ConvertedClass,
     ) {
-        let (backend, metrics, l1_data_provider, mempool, _tx_validator, _contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, _tx_validator, _contracts) = devnet_setup.await;
 
         // ================================================================== //
         //                   PART 1: we prepare the ready block               //
@@ -1386,8 +1349,7 @@ pub(crate) mod tests {
 
         // This should load the pending block from db and close it on top of the
         // previous block.
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         // Now we check this was the case.
@@ -1453,17 +1415,15 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, _tx_validator, _contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, _tx_validator, _contracts) = devnet_setup.await;
 
         // Simulates starting block production without a pending block in db
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         assert_eq!(backend.get_latest_block_n().unwrap(), Some(0)); // there is a genesis block in the db.
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
@@ -1480,7 +1440,6 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
@@ -1491,7 +1450,7 @@ pub(crate) mod tests {
         tx_deploy: TxFixtureInfo,
         tx_deploy_account: TxFixtureInfo,
     ) {
-        let (backend, metrics, l1_data_provider, mempool, _tx_validator, _contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, _tx_validator, _contracts) = devnet_setup.await;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1566,8 +1525,7 @@ pub(crate) mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x1
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         let err = block_production_task.close_pending_block_if_exists().await.expect_err("Should error");
 
         assert!(format!("{err:#}").contains("not found"), "{err:#}");
@@ -1582,7 +1540,6 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
@@ -1593,7 +1550,7 @@ pub(crate) mod tests {
         tx_deploy: TxFixtureInfo,
         tx_deploy_account: TxFixtureInfo,
     ) {
-        let (backend, metrics, l1_data_provider, mempool, _tx_validator, _contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, _tx_validator, _contracts) = devnet_setup.await;
 
         // ================================================================== //
         //                  PART 1: we prepare the pending block              //
@@ -1668,8 +1625,7 @@ pub(crate) mod tests {
 
         // This should fail since the pending state update references a
         // non-existent declared class at address 0x0
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         let err = block_production_task.close_pending_block_if_exists().await.expect_err("Should error");
 
         assert!(format!("{err:#}").contains("not found"), "{err:#}");
@@ -1684,13 +1640,12 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -1708,8 +1663,7 @@ pub(crate) mod tests {
 
         // Since there are no new pending blocks, this shouldn't
         // seal any blocks
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
@@ -1749,13 +1703,12 @@ pub(crate) mod tests {
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add transactions to the mempool              //
@@ -1773,8 +1726,7 @@ pub(crate) mod tests {
         //                PART 2: create block production task                //
         // ================================================================== //
 
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
@@ -1816,13 +1768,12 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -1840,8 +1791,7 @@ pub(crate) mod tests {
 
         // Since there are no new pending blocks, this shouldn't
         // seal any blocks
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
@@ -1883,13 +1833,12 @@ pub(crate) mod tests {
         #[future] devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //               PART 1: add a transaction to the mempool             //
@@ -1909,8 +1858,7 @@ pub(crate) mod tests {
         // have no transactions on it after the method ran for at
         // least block_time
 
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -1952,13 +1900,12 @@ pub(crate) mod tests {
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, tx_validator, contracts) = devnet_setup.await;
+        let (backend, metrics, mempool, tx_validator, contracts) = devnet_setup.await;
 
         // ================================================================== //
         //             PART 1: we add a transaction to the mempool            //
@@ -1978,8 +1925,7 @@ pub(crate) mod tests {
         // have no transactions on it after the method ran for at
         // least block_time
 
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
@@ -2005,15 +1951,13 @@ pub(crate) mod tests {
         devnet_setup: (
             Arc<MadaraBackend>,
             Arc<BlockProductionMetrics>,
-            Arc<MockL1DataProvider>,
             Arc<Mempool>,
             Arc<TransactionValidator>,
             DevnetKeys,
         ),
     ) {
-        let (backend, metrics, l1_data_provider, mempool, _tx_validator, _contracts) = devnet_setup.await;
-        let mut block_production_task =
-            BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
+        let (backend, metrics, mempool, _tx_validator, _contracts) = devnet_setup.await;
+        let mut block_production_task = BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics);
 
         let mut notifications = block_production_task.subscribe_state_notifications();
         let control = block_production_task.handle();

@@ -879,8 +879,8 @@ mod starknet_client_event_subscription_test {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
                 state_update_worker::<StarknetClientConfig, StarknetEventStream>(
-                    Arc::clone(db.backend()),
                     Arc::new(starknet_client),
+                    Arc::clone(db.backend()),
                     ServiceContext::new_for_testing(),
                     snd,
                     Arc::new(l1_block_metrics),

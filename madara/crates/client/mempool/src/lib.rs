@@ -22,13 +22,9 @@ use std::borrow::Cow;
 use std::sync::Arc;
 
 mod inner;
-mod l1;
 mod notify;
 
 pub use inner::*;
-#[cfg(any(test, feature = "testing"))]
-pub use l1::MockL1DataProvider;
-pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolConsumerView;
 
 pub mod header;

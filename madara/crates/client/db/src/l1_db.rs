@@ -1,5 +1,8 @@
 use crate::error::DbError;
 use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
+use bigdecimal::ToPrimitive;
+use mp_block::header::GasPrices;
+use mp_block::L1GasQuote;
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
@@ -136,5 +139,60 @@ impl MadaraBackend {
         let mut iter = self.db.iterator_cf(&nonce_column, IteratorMode::End);
         let nonce = iter.next().transpose()?.map(|(bytes, _)| bincode::deserialize(&bytes)).transpose()?;
         Ok(nonce)
+    }
+
+    pub fn set_last_l1_gas_quote(&self, l1_gas_quote: L1GasQuote) {
+        self.watch_gas_quote.send_replace(Some(l1_gas_quote));
+    }
+
+    pub fn get_last_l1_gas_quote(&self) -> Option<L1GasQuote> {
+        self.watch_gas_quote.borrow().clone()
+    }
+
+    pub fn calculate_gas_prices(&self, previous_strk_l2_gas_price: u128, previous_l2_gas_used: u64) -> GasPrices {
+        let l1_gas_quote = self.get_last_l1_gas_quote().unwrap_or_default();
+        let eth_l1_gas_price = l1_gas_quote.l1_gas_price;
+        let eth_l1_data_gas_price = l1_gas_quote.l1_data_gas_price;
+        let strk_per_eth = {
+            let (digits, scale) = l1_gas_quote.strk_per_eth;
+            bigdecimal::BigDecimal::new(digits.into(), scale.into())
+        };
+        let strk_l1_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_gas_price) * &strk_per_eth)
+            .to_u128()
+            .expect("Failed to convert STRK L1 gas price to u128");
+        let strk_l1_data_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_data_gas_price) * &strk_per_eth)
+            .to_u128()
+            .expect("Failed to convert STRK L1 data gas price to u128");
+
+        let l2_gas_target = self.chain_config().l2_gas_target;
+        let strk_l2_gas_price = calculate_gas_price(previous_strk_l2_gas_price, previous_l2_gas_used, l2_gas_target)
+            .max(self.chain_config().min_l2_gas_price);
+        let eth_l2_gas_price = (&bigdecimal::BigDecimal::from(strk_l2_gas_price) / &strk_per_eth)
+            .to_u128()
+            .expect("Failed to convert ETH L2 gas price to u64");
+
+        GasPrices {
+            eth_l1_gas_price,
+            strk_l1_gas_price,
+            eth_l1_data_gas_price,
+            strk_l1_data_gas_price,
+            eth_l2_gas_price,
+            strk_l2_gas_price,
+        }
+    }
+}
+
+fn calculate_gas_price(previous_gas_price: u128, previous_gas_used: u64, target_gas_used: u64) -> u128 {
+    const MAX_CHANGE_DENOMINATOR: u64 = 8;
+    let delta = previous_gas_used.abs_diff(target_gas_used);
+    // use U256 instead of u128
+    let price_change = ((previous_gas_price).saturating_mul(delta as u128))
+        .saturating_div(target_gas_used as u128)
+        .saturating_div(MAX_CHANGE_DENOMINATOR as u128);
+
+    if previous_gas_used > target_gas_used {
+        previous_gas_price.saturating_add(price_change)
+    } else {
+        previous_gas_price.saturating_sub(price_change)
     }
 }

@@ -161,6 +161,10 @@ pub struct ChainConfig {
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+    // The target gas usage per block for the block production. This is used to estimate the l2 gas price for the next block.
+    pub l2_gas_target: u64,
+    // The minimum l2 gas price for the block production. This is used to ensure that the l2 gas price does not go below this value.
+    pub min_l2_gas_price: u128,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -265,6 +269,8 @@ impl ChainConfig {
             mempool_tx_limit: 10_000,
             mempool_declare_tx_limit: 20,
             mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
+            l2_gas_target: 2_000_000_000,
+            min_l2_gas_price: 0x5f5e100,
 
             block_production_concurrency: BlockProductionConfig::default(),
         }
