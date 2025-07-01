@@ -17,6 +17,7 @@
           (import rust-overlay)
           (final: prev: {
             scarb = final.callPackage (./. + "/tools/scarb.nix") {};
+            foundry = final.callPackage (./. + "/tools/foundry.nix") {};
           })
         ];
 
@@ -26,9 +27,13 @@
 
         rustToolchain = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
       in {
-        # Export the scarb package
+        # Export the scarb and foundry package
         packages.scarb = pkgs.scarb;
-        packages.default = pkgs.scarb;
+        packages.foundry = pkgs.foundry;
+        packages.default = with pkgs; [
+          scarb
+          foundry
+        ];
 
         devShells.default = pkgs.mkShell {
           nativeBuildInputs = with pkgs; [
@@ -42,10 +47,11 @@
             alejandra
             yq
             scarb
+            foundry
             gnumake
-            mold
             wget
             git
+            cargo-nextest
           ];
 
           buildInputs = with pkgs;
@@ -59,9 +65,9 @@
             ];
 
           shellHook = ''
-          # Increase the limit of open file descriptors
-          echo "[INFO] Increasing open file descriptor limit to 65535 (ulimit -n)"
-          ulimit -n 65535 || echo "[WARN] Failed to set ulimit -n to 65535"
+            # Increase the limit of open file descriptors
+            echo "[INFO] Increasing open file descriptor limit to 65535 (ulimit -n)"
+            ulimit -n 65535 || echo "[WARN] Failed to set ulimit -n to 65535"
 
             # --- NPM Global Installation Workaround for Nix Shell ---
             # The starkgate-contracts setup script tries to install npm packages globally.

@@ -60,7 +60,7 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-location: llvm-cov-target/release
-          cache-key: orchestrator-test
+          cache-key: orchestrator-test-${{ runner.os }}-rust-1.86
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -111,7 +111,7 @@ jobs:
             --lcov \
             --output-path lcov.info \
             --test-threads=1 \
-            --package "orchestrator-*" \
+            --package "orchestrator*" \
             --no-fail-fast
 
       - name: Upload coverage to Coveralls
