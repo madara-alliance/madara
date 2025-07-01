@@ -20,6 +20,16 @@ use crate::utils::wait_for_transaction;
 ///    - Upgrading to the new implementation
 ///    - Registering governance and upgrade administrators
 ///    - Adding and replacing the new implementation class hash
+/// 4. SNOS currently has a bug where if you upgrade a cairo 0 class to cairo 1, and interact with it in the same block,
+///    the snos running for that block fails. 
+///    The workaround currently is that upgrade of cairo 0 happens in a separate block.
+/// 5. For this sleeps are are added to ensure that the upgrade happens in a separate block.
+///    This sleep delay time has to be greater than ideally the block time of the network while running the boostrapper.
+///    The default block time is 10 seconds, so delays are added for 11 seconds. 
+/// 6. After boostrapper run is complete block can be updated not affect any generality.
+///    This is a temporary fix and will be removed after boostrapper-v2 for starknet: v0.14.0
+///    where cairo 0 classes cannot be declared
+///
 ///
 /// # Arguments
 /// * `account` - The RPC account used to perform the transactions

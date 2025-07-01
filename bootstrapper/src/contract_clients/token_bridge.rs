@@ -314,11 +314,9 @@ impl StarknetTokenBridge {
         self.manager.register_app_role_admin(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : manager : register_app_role_admin : l1_multisig_address ✅");
 
-
         self.token_bridge.register_security_agent(governor).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : token_bridge : register_security_agent ✅");
 
-       
         self.registry.register_app_role_admin(l1_multisig_address).await.unwrap();
         log::debug!("setup_permissions_with_bridge_l1 : registry : register_app_role_admin : l1_multisig_address ✅");
     }

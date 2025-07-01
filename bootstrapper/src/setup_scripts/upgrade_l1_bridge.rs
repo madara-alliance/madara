@@ -92,7 +92,6 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
         .await
         .unwrap();
 
-   
     new_eth_bridge_client
         .register_governance_admin(hexstring_to_address(&config_file.l1_deployer_address))
         .send()
@@ -101,7 +100,6 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
         .await
         .unwrap();
 
-   
     new_eth_bridge_client
         .register_app_governor(hexstring_to_address(&config_file.l1_deployer_address))
         .send()
