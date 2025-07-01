@@ -60,7 +60,7 @@ impl StarknetLegacyEthBridge {
 
     pub async fn deploy_l2_contracts(
         rpc_provider_l2: &JsonRpcClient<HttpTransport>,
-        legacy_eth_bridge_class_hash: Felt,
+        _legacy_eth_bridge_class_hash: Felt,
         legacy_eth_bridge_proxy_address: Felt,
         account: &RpcAccount<'_>,
     ) -> Felt {

@@ -5,7 +5,7 @@ use starknet_types_core::{
 
 use crate::{
     convert::{parse_compressed_legacy_class, ParseCompressedLegacyClassError},
-    mainnet_legacy_class_hashes::get_real_class_hash_2,
+    mainnet_legacy_class_hashes::get_real_class_hash_for_any_block,
     CompressedLegacyContractClass, ContractClass, FlattenedSierraClass, LegacyContractClass, SierraEntryPoint,
 };
 use starknet_core::types::contract::ComputeClassHashError as StarknetComputeClassHashError;
@@ -70,7 +70,7 @@ impl LegacyContractClass {
             program: self.program.clone(),
         }
         .class_hash()?;
-        let corrected_class_hash = get_real_class_hash_2(computed_class_hash);
+        let corrected_class_hash = get_real_class_hash_for_any_block(computed_class_hash);
         Ok(corrected_class_hash)
     }
 }
@@ -80,8 +80,7 @@ impl CompressedLegacyContractClass {
         let legacy_contract_class = parse_compressed_legacy_class(self.clone().into())?;
         let class_hash = legacy_contract_class.class_hash().map_err(ComputeClassHashError::from)?;
         // re-write the class-hash here!
-        let corrected_class_hash = get_real_class_hash_2(class_hash);
-        println!("Changed class hash from {:#x} to {:#x}", class_hash, corrected_class_hash);
+        let corrected_class_hash = get_real_class_hash_for_any_block(class_hash);
         Ok(corrected_class_hash)
     }
 }

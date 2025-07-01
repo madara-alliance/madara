@@ -261,7 +261,7 @@ pub(crate) async fn deploy_proxy_contract(
     log::debug!("txn hash (proxy deployment) : {:?}", txn.transaction_hash);
 
     let deployed_address = get_contract_address_from_deploy_tx(account.provider(), &txn).await.unwrap();
-    log::info!("[IMP] Event : {:?}", deployed_address);
+    log::debug!("[IMP] Proxy deployed at: {:?}", deployed_address);
 
     deployed_address
 }
