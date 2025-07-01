@@ -225,7 +225,7 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
         panic!("Unexpected job type");
     }
     let mut state_transition_job_updated = state_transition_job.clone();
-    state_transition_job_updated.metadata.specific = state_transition_job_specific_metadata.into();
+    state_transition_job_updated.metadata.specific = state_transition_job_specific_metadata;
 
     config.database().create_job(snos_job.clone()).await.unwrap();
     config.database().create_job(proving_job.clone()).await.unwrap();
