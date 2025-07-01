@@ -175,18 +175,7 @@ impl StarknetEventStream {
         let mut continuation_token: Option<String> = None;
 
         while !page_indicator {
-            let events = provider
-                .get_events(
-                    EventFilter {
-                        from_block: filter.from_block,
-                        to_block: filter.to_block,
-                        address: filter.address,
-                        keys: filter.keys.clone(),
-                    },
-                    continuation_token.clone(),
-                    1000,
-                )
-                .await?;
+            let events = Self::fetch_events_with_retry(&provider, filter.clone(), continuation_token.clone()).await?;
 
             // Process this page of events immediately
             for event in &events.events {
