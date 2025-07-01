@@ -119,12 +119,12 @@ pub fn filter_output_from_program_output(program_output: Vec<Felt252>) -> Result
     let mut output_start = 1;
     for _ in 0..num_blocks {
         let block_size = program_output[output_start].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
-        output_start += block_size + 1;
+        output_start += block_size;
     }
 
     let n_blobs =
         program_output[output_start + N_BLOBS_OFFSET].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
-    let message_start = output_start + N_BLOBS_OFFSET + n_blobs * 2 + 1;
+    let message_start = output_start + N_BLOBS_OFFSET + n_blobs * 2 * 2 + 1;
     let n_l2_to_l1_messages = program_output[message_start].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
     let n_l1_to_l2_messages = program_output[message_start + n_l2_to_l1_messages + 1]
         .to_usize()
