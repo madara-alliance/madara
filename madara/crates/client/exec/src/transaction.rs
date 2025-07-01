@@ -1,4 +1,3 @@
-use blockifier::execution::errors::ContractClassError;
 use blockifier::transaction::transaction_execution as btx;
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mp_block::BlockId;
@@ -16,8 +15,6 @@ pub enum Error {
     Storage(#[from] MadaraStorageError),
     #[error("Class compilation error: {0:#}")]
     ClassCompilationError(#[from] ClassCompilationError),
-    #[error("Contract class error: {0:#}")]
-    ContractClassError(#[from] ContractClassError),
     #[error("{0}")]
     Internal(Cow<'static, str>),
 }

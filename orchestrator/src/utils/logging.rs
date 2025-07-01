@@ -38,7 +38,7 @@ where
         write!(writer, "{}{:<5}{} ", level_color, *meta.level(), reset)?;
 
         if let (Some(file), Some(line)) = (meta.file(), meta.line()) {
-            let file_name = file.split('/').last().unwrap_or(file);
+            let file_name = file.split('/').next_back().unwrap_or(file);
             let module_path = meta.module_path().unwrap_or("");
             let last_module = module_path.split("::").last().unwrap_or(module_path);
 

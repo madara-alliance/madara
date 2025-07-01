@@ -1,27 +1,32 @@
-use crate::BlockifierStateAdapter;
-use blockifier::{
-    execution::contract_class::ContractClass,
-    state::{
-        cached_state::StateMaps,
-        state_api::{StateReader, StateResult},
-    },
-};
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_convert::Felt;
-use starknet_api::{
-    core::{ClassHash, CompiledClassHash, ContractAddress, Nonce},
-    state::StorageKey,
-};
 use std::{
     collections::{HashMap, VecDeque},
     sync::Arc,
 };
 
+use blockifier::{
+    execution::contract_class::RunnableCompiledClass,
+    state::{
+        cached_state::StateMaps,
+        errors::StateError,
+        state_api::{StateReader, StateResult},
+    },
+};
+use starknet_api::{
+    contract_class::ContractClass as ApiContractClass,
+    core::{ClassHash, CompiledClassHash, ContractAddress, Nonce},
+    state::StorageKey,
+};
+
+use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mp_convert::Felt;
+
+use crate::BlockifierStateAdapter;
+
 #[derive(Debug)]
 struct CacheByBlock {
     block_n: u64,
     state_diff: StateMaps,
-    classes: HashMap<ClassHash, ContractClass>,
+    classes: HashMap<ClassHash, ApiContractClass>,
 }
 
 /// Special cache that allows us to execute blocks past what the db currently has saved. Only used for
@@ -69,7 +74,7 @@ impl LayeredStateAdaptor {
     pub fn finish_block(
         &mut self,
         state_diff: StateMaps,
-        classes: HashMap<ClassHash, ContractClass>,
+        classes: HashMap<ClassHash, ApiContractClass>,
     ) -> Result<(), crate::Error> {
         let latest_db_block = self.backend.get_latest_block_n()?;
         // Remove outdated cache entries
@@ -116,13 +121,14 @@ impl StateReader for LayeredStateAdaptor {
         }
         self.inner.get_class_hash_at(contract_address)
     }
-    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         for s in &self.cached_states_by_block_n {
             if let Some(el) = s.classes.get(&class_hash) {
-                return Ok(el.clone());
+                return <ApiContractClass as TryInto<RunnableCompiledClass>>::try_into(el.clone())
+                    .map_err(StateError::ProgramError);
             }
         }
-        self.inner.get_compiled_contract_class(class_hash)
+        self.inner.get_compiled_class(class_hash)
     }
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
         for s in &self.cached_states_by_block_n {
