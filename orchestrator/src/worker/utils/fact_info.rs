@@ -11,6 +11,8 @@ use cairo_vm::types::builtin_name::BuiltinName;
 use cairo_vm::types::relocatable::MaybeRelocatable;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
+use num_traits::ToPrimitive;
+use orchestrator_ethereum_settlement_client::N_BLOBS_OFFSET;
 use starknet::core::types::Felt;
 
 /// Default bootloader program version.
@@ -108,6 +110,32 @@ pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result
     Ok(FactInfo { program_output, fact_topology, fact })
 }
 
+/// The output of the aggregator program returns both the input and the output to it.
+/// This is because it is used further by applicative bootloader which requires it.
+/// This function is used to filter the output from the complete output
+pub fn filter_output_from_program_output(program_output: Vec<Felt252>) -> Result<Vec<Felt252>, FactError> {
+    let num_blocks = program_output[0].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
+
+    let mut output_start = 1;
+    for _ in 0..num_blocks {
+        let block_size = program_output[output_start].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
+        output_start += block_size + 1;
+    }
+
+    let n_blobs =
+        program_output[output_start + N_BLOBS_OFFSET].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
+    let message_start = output_start + N_BLOBS_OFFSET + n_blobs * 2 + 1;
+    let n_l2_to_l1_messages = program_output[message_start].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
+    let n_l1_to_l2_messages = program_output[message_start + n_l2_to_l1_messages + 1]
+        .to_usize()
+        .ok_or(FactError::FeltToUsizeConversionError)?;
+    let message_end = message_start + n_l2_to_l1_messages + 1 + n_l1_to_l2_messages;
+
+    assert!(message_end < program_output.len());
+
+    Ok(program_output[output_start..(message_end + 1)].to_vec())
+}
+
 pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactError> {
     let segment_info =
         cairo_pie.metadata.builtin_segments.get(&BuiltinName::output).ok_or(FactError::OutputBuiltinNoSegmentInfo)?;
@@ -134,7 +162,7 @@ pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactErro
         return Err(FactError::InvalidSegment);
     }
 
-    Ok(output)
+    Ok(filter_output_from_program_output(output)?)
 }
 
 #[cfg(test)]

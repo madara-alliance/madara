@@ -48,4 +48,6 @@ pub enum FactError {
     TreeStructureRootOffsetInvalid(usize, usize),
     #[error("Program output doesn't match the segment size.")]
     InvalidSegment,
+    #[error("Failed to convert felt to usize during parsing of the program output.")]
+    FeltToUsizeConversionError,
 }

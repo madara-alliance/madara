@@ -44,10 +44,10 @@ use tokio::time::sleep;
 use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
-const N_BLOBS_OFFSET: usize = 11;
-const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
-const Y_LOW_POINT_OFFSET: usize = 11;
-const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
+pub const N_BLOBS_OFFSET: usize = 11;
+pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
+pub const Y_LOW_POINT_OFFSET: usize = 11;
+pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 
 // Ethereum Transaction Finality
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
