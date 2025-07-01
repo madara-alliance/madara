@@ -16,7 +16,7 @@
   "verifier_address": "0x000000000000000000000000000000000000abcd",
   "operator_address": "0x000000000000000000000000000000000000abcd",
   "dev": false,
-  "core_contract_address": "0xa258947f8a08556650037a31421ea326a435afc1",
-  "core_contract_implementation_address": "0x21257155d40b830e884c3b3b11372853529fb344",
+  "core_contract_address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
+  "core_contract_implementation_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
   "core_contract_mode": "Dev"
 }
