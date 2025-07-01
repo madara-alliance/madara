@@ -118,6 +118,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .await
         .unwrap();
 
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
 
     log::debug!(
@@ -139,6 +142,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .await
         .unwrap();
 
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
 
     log::debug!(
@@ -194,6 +200,9 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .await
         .unwrap();
 
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
 
     log::debug!(
@@ -215,6 +224,10 @@ pub async fn upgrade_eth_token_to_cairo_1(
         .await
         .unwrap();
 
+
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
 
     log::debug!(

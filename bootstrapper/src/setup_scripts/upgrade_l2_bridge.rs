@@ -110,6 +110,9 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_add_implementation_txn.transaction_hash, "Interact ETH bridge")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : add_implementation : eth bridge ✅, Txn hash : {:?}",
@@ -136,6 +139,9 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_upgrade_to_txn.transaction_hash, "Interact ETH bridge")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : upgrade_to : eth bridge ✅, Txn hash : {:?}",
@@ -189,6 +195,9 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_add_new_implementation_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : add_new_implementation : eth bridge ✅, Txn hash : {:?}",
@@ -208,6 +217,9 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_replace_to_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
     sleep(Duration::from_secs(11)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : replace_to : eth bridge ✅, Txn hash : {:?}",
