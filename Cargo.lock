@@ -3685,7 +3685,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -4984,7 +4984,7 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "dirs",
  "ethers",
@@ -9084,7 +9084,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9584,7 +9584,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9599,10 +9599,11 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
+ "log",
  "rpc-client",
  "serde",
  "serde_json",
@@ -10901,7 +10902,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -10915,7 +10916,7 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11056,7 +11057,7 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11193,7 +11194,7 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -11208,7 +11209,7 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11268,7 +11269,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11317,7 +11318,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/heemankv/snos?rev=ff68f29ee87113dc35d3bf03110edd346fb6839e#ff68f29ee87113dc35d3bf03110edd346fb6839e"
+source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
@@ -11382,7 +11383,7 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -11431,7 +11432,7 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -12811,7 +12812,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.4#403e0f79d1acee9b7812f5f1015cb4fb35f8ae04"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
 dependencies = [
  "async-trait",
  "ethers",
@@ -13625,11 +13626,6 @@ dependencies = [
  "cc",
  "pkg-config",
 ]
-
-[[patch.unused]]
-name = "appchain-core-contract-client"
-version = "0.1.0"
-source = "git+https://github.com/Mohiiit/zaun?rev=878cf6fac215c260858b070f72fb52a70bf5e460#878cf6fac215c260858b070f72fb52a70bf5e460"
 
 [[patch.unused]]
 name = "librocksdb-sys"
