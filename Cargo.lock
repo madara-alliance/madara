@@ -2708,7 +2708,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.8.0-rc.3"
-source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -3685,7 +3685,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#3561584fda96f25bb1c9720d0fa7b9b090c4da8a"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -9081,7 +9081,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#3561584fda96f25bb1c9720d0fa7b9b090c4da8a"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9102,7 +9102,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 3.11.0",
- "starknet 0.12.0",
+ "starknet 0.11.0",
  "starknet-os",
  "starknet-os-types",
  "starknet-types-core",
@@ -9581,13 +9581,13 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#3561584fda96f25bb1c9720d0fa7b9b090c4da8a"
 dependencies = [
  "log",
  "reqwest 0.11.27",
  "serde",
  "serde_json",
- "starknet 0.12.0",
+ "starknet 0.11.0",
  "starknet-os",
  "starknet-types-core",
  "thiserror 1.0.65",
@@ -9596,14 +9596,14 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#3561584fda96f25bb1c9720d0fa7b9b090c4da8a"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
  "rpc-client",
  "serde",
  "serde_json",
- "starknet 0.12.0",
+ "starknet 0.11.0",
  "starknet-os-types",
  "starknet_api 0.13.0-rc.1",
  "thiserror 1.0.65",
@@ -11265,7 +11265,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#3561584fda96f25bb1c9720d0fa7b9b090c4da8a"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11314,7 +11314,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/keep-starknet-strange/snos?branch=madara-monorepo#8acf9741329e240aa3c63be507ea13775735f2f0"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#3561584fda96f25bb1c9720d0fa7b9b090c4da8a"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11325,7 +11325,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with 3.11.0",
- "starknet-core 0.12.0",
+ "starknet-core 0.11.1",
  "starknet-crypto 0.6.2",
  "starknet-gateway-types",
  "starknet-types-core",
@@ -11475,7 +11475,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes 2.8.4",
@@ -13615,3 +13615,8 @@ source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-option
 name = "rocksdb"
 version = "0.22.0"
 source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
+
+[[patch.unused]]
+name = "starknet_api"
+version = "0.13.0-rc.1"
+source = "git+https://github.com/Moonsong-Labs/sequencer?branch=madara-monorepo#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
