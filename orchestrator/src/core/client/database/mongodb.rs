@@ -882,6 +882,55 @@ impl DatabaseClient for MongoDbClient {
             }
         }
     }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let block_number_i64 = block_number as i64; // MongoDB typically handles numbers as i32 or i64
+
+        // Query for jobs where metadata.specific.block_number matches
+        let query1 = doc! {
+            "metadata.specific.block_number": block_number_i64,
+            "job_type": {
+                "$in": [
+                    mongodb::bson::to_bson(&JobType::SnosRun)?,
+                    mongodb::bson::to_bson(&JobType::ProofCreation)?,
+                    mongodb::bson::to_bson(&JobType::ProofRegistration)?,
+                    mongodb::bson::to_bson(&JobType::DataSubmission)?,
+                ]
+            }
+        };
+
+        // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
+        let query2 = doc! {
+            "job_type": mongodb::bson::to_bson(&JobType::StateTransition)?,
+            "metadata.specific.blocks_to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
+        };
+
+        let mut results: Vec<JobItem> = Vec::new();
+
+        let job_collection = self.get_job_collection();
+
+        // Execute first query
+        let cursor1 = job_collection.find(query1, None).await?;
+        results.extend(cursor1.try_collect::<Vec<JobItem>>().await?);
+
+        // Execute second query
+        let cursor2 = job_collection.find(query2, None).await?;
+        results.extend(cursor2.try_collect::<Vec<JobItem>>().await?);
+
+        tracing::debug!(
+            block_number = block_number,
+            count = results.len(),
+            category = "db_call",
+            "Fetched jobs by block number"
+        );
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_block_number")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(results)
+    }
 }
 
 // Generic utility function to convert Vec<T> to Option<T>
