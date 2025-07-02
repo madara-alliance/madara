@@ -4,10 +4,12 @@ use crate::error::job::fact::FactError;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::BYTE_CHUNK_SIZE;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::helpers::JobProcessingState;
 use crate::utils::COMPILED_OS;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{build_on_chain_data, get_fact_info, get_fact_l2, get_program_output};
@@ -18,9 +20,9 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use orchestrator_utils::layer::Layer;
 use prove_block::prove_block;
 use starknet_os::io::output::StarknetOsOutput;
-use std::io::Read;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
@@ -93,7 +95,7 @@ impl JobHandlerTrait for SnosJobHandler {
         // And in case of KZG flag == 1 :
         //      we calculate the fact info
         let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
-            debug!(job_id = %job.internal_id, "Using L2 as settlement layer");
+            debug!(job_id = %job.internal_id, "Using calldata for settlement layer");
             // Get the program output from CairoPie
             let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
                 error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
@@ -105,7 +107,7 @@ impl JobHandlerTrait for SnosJobHandler {
             })?;
             (fact_hash, program_output)
         } else if snos_output.use_kzg_da == Felt252::ONE {
-            debug!(job_id = %job.internal_id, "Using L1 as settlement layer");
+            debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
             // Get the program output from CairoPie
             let fact_info = get_fact_info(&cairo_pie, None)?;
             (fact_info.fact, fact_info.program_output)
@@ -123,7 +125,7 @@ impl JobHandlerTrait for SnosJobHandler {
         }
 
         debug!(job_id = %job.internal_id, "Storing SNOS outputs");
-        if snos_output.use_kzg_da == Felt252::ZERO {
+        if config.layer() == &Layer::L3 {
             // Store the on-chain data path
             self.store_l2(
                 internal_id.clone(),
@@ -134,7 +136,7 @@ impl JobHandlerTrait for SnosJobHandler {
                 program_output,
             )
             .await?;
-        } else if snos_output.use_kzg_da == Felt252::ONE {
+        } else if config.layer() == &Layer::L2 {
             // Store the Cairo Pie path
             self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
                 .await?;
@@ -172,6 +174,10 @@ impl JobHandlerTrait for SnosJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         1
+    }
+
+    fn job_processing_lock(&self, config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
+        config.processing_locks().snos_job_processing_lock.clone()
     }
 }
 
@@ -290,8 +296,7 @@ impl SnosJobHandler {
         let file_size = tmp_file.as_file().metadata()?.len() as usize;
         let mut buffer = Vec::with_capacity(file_size);
 
-        const CHUNK_SIZE: usize = 8192; // 8KB chunks
-        let mut chunk = vec![0; CHUNK_SIZE];
+        let mut chunk = vec![0; BYTE_CHUNK_SIZE];
 
         let mut file = tokio::fs::File::from_std(tmp_file.as_file().try_clone()?);
 
@@ -302,16 +307,6 @@ impl SnosJobHandler {
             buffer.extend_from_slice(&chunk[..n]);
         }
 
-        Ok(Bytes::from(buffer))
-    }
-
-    /// Converts a [NamedTempFile] to [Bytes].
-    /// This function reads the file in chunks and appends them to the buffer.
-    /// This is useful when the file is too large to be read in one go.
-    #[allow(dead_code)]
-    fn tempfile_to_bytes(&self, tmp_file: &mut NamedTempFile) -> Result<Bytes> {
-        let mut buffer = Vec::new();
-        tmp_file.as_file_mut().read_to_end(&mut buffer)?;
         Ok(Bytes::from(buffer))
     }
 }

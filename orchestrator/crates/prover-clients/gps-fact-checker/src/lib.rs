@@ -45,13 +45,12 @@ type TransportT = Http<Client>;
 type ProviderT = RootProvider<TransportT>;
 
 impl FactChecker {
-    pub fn new(sharp_rpc_node_url: Url, gps_verifier_contract_address: String, settlement_layer: String) -> Self {
-        // TODO:L3 Fix the fact registry contract address
+    pub fn new(rpc_url: Url, gps_verifier_contract_address: String, settlement_layer: String) -> Self {
         let settlement_layer = SettlementLayer::from_str(&settlement_layer).expect("Invalid settlement layer");
 
         match settlement_layer {
             SettlementLayer::Ethereum => {
-                let provider = ProviderBuilder::new().on_http(sharp_rpc_node_url);
+                let provider = ProviderBuilder::new().on_http(rpc_url);
                 let fact_registry = FactRegistry::new(
                     Address::from_str(gps_verifier_contract_address.as_str())
                         .expect("Invalid GPS verifier contract address"),

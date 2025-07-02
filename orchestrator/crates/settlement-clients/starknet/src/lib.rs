@@ -136,7 +136,7 @@ impl SettlementClient for StarknetSettlementClient {
         let size = U256::from_words(low, high);
 
         let invoke_result = core_contract
-            .update_state(snos_output, program_output, onchain_data_hash, size)// snos_output,
+            .update_state(snos_output, program_output, onchain_data_hash, size)
             .await
             .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
         tracing::info!(

@@ -33,7 +33,7 @@ impl Resource for InnerAWSSNS {
         tracing::info!("Topic Name: {}", alert_name);
 
         // Validate topic name before proceeding
-        if !self.is_valid_topic_name(&alert_name) {
+        if !InnerAWSSNS::is_valid_topic_name(&alert_name) {
             return Err(OrchestratorError::ResourceSetupError(format!(
                 "Invalid topic name: {}. Topic names must be made up of letters, numbers, hyphens, and underscores.",
                 alert_name

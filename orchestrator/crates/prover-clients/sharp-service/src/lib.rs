@@ -159,10 +159,14 @@ impl ProverClient for SharpProverService {
         }
     }
 
-    async fn get_proof(&self, _task_id: &str, _fact: &str) -> Result<String, ProverClientError> {
+    /// TODO: We need to implement this function for the prover client while adding the testcase
+    /// or while using the sharp prover client.
+    async fn get_proof(&self, _task_id: &str) -> Result<String, ProverClientError> {
         todo!()
     }
 
+    /// TODO: We need to implement this function for the prover client while adding the testcase
+    /// or while using the sharp prover client.
     async fn submit_l2_query(
         &self,
         _task_id: &str,

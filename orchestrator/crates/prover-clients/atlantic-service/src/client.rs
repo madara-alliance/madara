@@ -1,3 +1,4 @@
+use crate::constants::ATLANTIC_PROOF_URL;
 use crate::error::AtlanticError;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticGetStatusResponse, AtlanticQueryStep,
@@ -132,8 +133,7 @@ impl AtlanticClient {
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
         // Note: It seems this code will be replaced by the proper API once it is available
         debug!("Getting proof for task_id: {}", task_id);
-        let proof_path =
-            format!("https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json", task_id);
+        let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
         let client = reqwest::Client::new();
         let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
 
@@ -153,7 +153,6 @@ impl AtlanticClient {
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        let proof_layout = LayoutName::recursive_with_poseidon.to_str();
 
         let api = self.client
             .request()
@@ -162,10 +161,10 @@ impl AtlanticClient {
             .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
             .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
             .form_file_bytes("programFile", cairo_verifier.as_bytes().to_vec(), "cairo_verifier.json", Some("application/json"))?
-            .form_text("layout", proof_layout)
+            .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
             .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
             .form_text("network", atlantic_network.as_ref())
-            .form_text("result", "PROOF_VERIFICATION_ON_L2")
+            .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
             .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
             .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str());
         debug!("Triggering the debug Request for: {:?}", api);

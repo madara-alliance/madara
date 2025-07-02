@@ -14,9 +14,10 @@ Targets:
 
   [ SETUP ]
 
-  - setup-l2           Setup orchestrator with L2 layer (default)
-  - setup-l3           Setup orchestrator with L3 layer
-  - run-orchestrator   Run the orchestrator with AWS services and Ethereum settlement
+  - setup-l2                Setup orchestrator with L2 layer (default)
+  - setup-l3                Setup orchestrator with L3 layer
+  - run-orchestrator-l2     Run the orchestrator with AWS services and Ethereum settlement
+  - run-orchestrator-l3     Run the orchestrator with AWS services and Starknet settlement
 
   [ RUNNING MADARA ]
 
@@ -283,12 +284,18 @@ setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
 	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
-.PHONY: run-orchestrator
-run-orchestrator:
+.PHONY: run-orchestrator-l2
+run-orchestrator-l2:
 	@echo -e "$(DIM)Running orchestrator...$(RESET)"
-	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-ethereum 2>&1
+	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum 2>&1
+
+
+.PHONY: run-orchestrator-l3
+run-orchestrator-l3:
+	@echo -e "$(DIM)Running orchestrator...$(RESET)"
+	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet 2>&1
 
 .PHONY: watch-orchestrator
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
-	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-ethereum' 2>&1
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1

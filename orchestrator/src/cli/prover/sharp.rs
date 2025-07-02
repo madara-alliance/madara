@@ -1,4 +1,3 @@
-// orchestrator/src/cli/prover/sharp.rs
 use clap::Args;
 use url::Url;
 

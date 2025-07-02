@@ -7,6 +7,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::OnChainData;
 use crate::worker::utils::{fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block};
@@ -262,7 +263,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 Ok(block_status.into())
             }
             None => {
-                panic!("How do we still have special_address_ after settling")
+                panic!("Incorrect state after settling blocks")
             }
         }
     }
@@ -277,6 +278,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         60
+    }
+
+    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
+        None
     }
 }
 

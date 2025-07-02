@@ -8,11 +8,11 @@ pub enum Layer {
 impl FromStr for Layer {
     type Err = String;
     fn from_str(s: &str) -> Result<Self, Self::Err> {
-        match s {
+        match s.to_lowercase().as_str() {
             "l2" => Ok(Layer::L2),
             "l3" => Ok(Layer::L3),
-            "Layer2" => Ok(Layer::L2),
-            "Layer3" => Ok(Layer::L3),
+            "layer2" => Ok(Layer::L2),
+            "layer3" => Ok(Layer::L3),
             other => Err(format!("Unknown layer: {}", other)),
         }
     }

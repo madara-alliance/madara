@@ -5,7 +5,6 @@ use crate::error::{
     ConsumptionError,
 };
 use crate::types::queue::{JobState, QueueType};
-use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::parser::{job_queue_message::JobQueueMessage, worker_trigger_message::WorkerTriggerMessage};
 use crate::worker::traits::message::{MessageParser, ParsedMessage};
@@ -14,7 +13,6 @@ use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tracing::{debug, error, info, info_span};
 
@@ -27,7 +25,6 @@ pub enum MessageType {
 pub struct EventWorker {
     queue_type: QueueType,
     config: Arc<Config>,
-    queue_control: QueueControlConfig,
 }
 
 impl EventWorker {
@@ -40,9 +37,7 @@ impl EventWorker {
     /// * `EventWorker` - A new EventWorker instance
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> Self {
         info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
-        let queue_control =
-            QUEUES.get(&queue_type).map(|q| q.queue_control.clone().unwrap_or_default()).unwrap_or_default();
-        Self { queue_type, config, queue_control }
+        Self { queue_type, config }
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -51,7 +46,7 @@ impl EventWorker {
 
     /// get_message - Get the next message from the queue
     /// This function returns the next message from the queue
-    /// It returns a Result<Option<Delivery>, EventSystemError> indicating whether the operation was successful or not
+    /// It returns a Result<MessageType, EventSystemError> indicating whether the operation was successful or not
     pub async fn get_message(&self) -> EventSystemResult<Option<Delivery>> {
         let mut consumer = self.consumer().await?;
         debug!("Waiting for message from queue {:?}", self.queue_type);
@@ -224,15 +219,19 @@ impl EventWorker {
                 }
             };
 
+            // Negative acknowledgment of the message so it can be retried
             message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
 
             // TODO: Since we are using SNS, we need to send the error message to the DLQ in future
             // self.config.alerts().send_message(error_context).await?;
 
+            // Return the specific error
             return Err(consumption_error.into());
         }
 
+        // Only acknowledge if processing was successful
         message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))?;
+
         Ok(())
     }
 
@@ -284,33 +283,24 @@ impl EventWorker {
     /// * It will also sleep for a longer duration if an error occurs to prevent a tight loop
     /// * It will log errors and messages for debugging purposes
     pub async fn run(&self) -> EventSystemResult<()> {
-        let mut tasks = JoinSet::new();
-        let max_concurrent_tasks = self.queue_control.max_message_count.unwrap_or(10) as usize;
-        info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
-
         loop {
-            while tasks.len() >= max_concurrent_tasks {
-                if let Some(Err(e)) = tasks.join_next().await {
-                    error!("Task failed: {:?}", e);
-                }
-            }
-
             match self.get_message().await {
                 Ok(Some(message)) => match self.parse_message(&message) {
                     Ok(parsed_message) => {
                         let worker = self.clone();
-                        let parsed_message = parsed_message.clone();
-                        tasks.spawn(async move { worker.process_message(message, parsed_message).await });
+                        tokio::spawn(async move { worker.process_message(message, parsed_message).await });
                     }
                     Err(e) => {
                         error!("Failed to parse message: {:?}", e);
                     }
                 },
                 Ok(None) => {
+                    // Sleep to prevent tight loop and allow memory cleanup
                     sleep(Duration::from_secs(1)).await;
                 }
                 Err(e) => {
                     error!("Error receiving message: {:?}", e);
+                    // Sleep before retrying to prevent tight loop
                     sleep(Duration::from_secs(5)).await;
                 }
             }

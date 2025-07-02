@@ -53,6 +53,8 @@ impl DaClient for StarknetDaClient {
         6
     }
 
+    // max_bytes_per_blob - return's the maximum size of a blob in Starknet
+    // Maximum size of a blob in Starknet is 128KB (131072 bytes)
     async fn max_bytes_per_blob(&self) -> u64 {
         131072
     }

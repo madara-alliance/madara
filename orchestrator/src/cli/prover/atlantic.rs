@@ -1,4 +1,3 @@
-// orchestrator/src/cli/prover/atlantic.rs
 use clap::Args;
 use url::Url;
 
@@ -43,6 +42,10 @@ pub struct AtlanticCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS", long)]
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_verifier_contract_address: Option<String>,
+
+    /// The verifier contract address for Atlantic.
+    #[arg(env = "MADARA_ORCHESTRATOR_CAIRO_V0_VERIFIER_PROGRAM_HASH", long)]
+    pub cairo_verifier_program_hash: Option<String>,
 
     /// Network being used for the prover.
     #[arg(

@@ -2,11 +2,11 @@ use crate::core::config::Config;
 use crate::error::job::proving::ProvingError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
@@ -110,7 +110,7 @@ impl JobHandlerTrait for ProvingJobHandler {
         );
 
         let task_status =
-            config.prover_client().get_task_status(&task_id, fact.clone(), cross_verify).await.inspect_err(|e| {
+            config.prover_client().get_task_status(&task_id, fact, cross_verify).await.inspect_err(|e| {
                 tracing::error!(
                     job_id = %job.internal_id,
                     error = %e,
@@ -131,33 +131,22 @@ impl JobHandlerTrait for ProvingJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                if fact.is_none() {
-                    tracing::error!(
-                        job_id = %job.internal_id,
-                        "Fact is None, cannot fetch proof without a fact"
-                    );
-                    return Err(JobError::Other(OtherError(eyre!("Fact is None, cannot fetch proof without a fact"))));
-                }
                 // If proof download path is specified, store the proof
-                let fetched_proof =
-                    config.prover_client().get_proof(&task_id, &fact.unwrap()).await.inspect_err(|e| {
+                if let Some(download_path) = &proving_metadata.download_proof {
+                    let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
                         tracing::error!(
                             job_id = %job.internal_id,
                             error = %e,
                             "Failed to get task status from prover client"
                         );
                     })?;
-                let proof_key = format!("{internal_id}/{PROOF_FILE_NAME}");
-                config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), &proof_key).await?;
-
-                if let Some(download_path) = proving_metadata.download_proof {
                     tracing::debug!(
                         job_id = %job.internal_id,
                         "Downloading and storing proof to path: {}",
                         download_path
                     );
+                    config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-
                 tracing::info!(
                     log_type = "completed",
                     category = "proving",
@@ -195,5 +184,9 @@ impl JobHandlerTrait for ProvingJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         30
+    }
+
+    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
+        None
     }
 }

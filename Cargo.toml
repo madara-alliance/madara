@@ -296,8 +296,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
-prove_block = { git = "https://github.com/heemankv/snos", rev = "ff68f29ee87113dc35d3bf03110edd346fb6839e" }
+starknet-os = { git = "https://github.com/karnotxyz/snos", rev = "ce48bf01f9b24a003175436b2574dde0157ec563" }
+prove_block = { git = "https://github.com/karnotxyz/snos", rev = "ce48bf01f9b24a003175436b2574dde0157ec563" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -314,7 +314,6 @@ orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
 
 [patch.crates-io]
-appchain-core-contract-client = { git = "https://github.com/Mohiiit/zaun", rev = "878cf6fac215c260858b070f72fb52a70bf5e460" }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 

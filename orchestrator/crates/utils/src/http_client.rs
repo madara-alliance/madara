@@ -56,6 +56,24 @@ pub struct HttpClientBuilder {
     default_body_params: String,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum MimeType {
+    OctetStream,
+    Zip,
+    Json,
+}
+
+impl std::fmt::Display for MimeType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mime_str = match self {
+            MimeType::OctetStream => "application/octet-stream",
+            MimeType::Zip => "application/zip",
+            MimeType::Json => "application/json",
+        };
+        write!(f, "{}", mime_str)
+    }
+}
+
 impl HttpClient {
     /// Creates a new builder for constructing an HttpClient.
     pub fn builder(base_url: &str) -> std::result::Result<HttpClientBuilder, ParseError> {
@@ -284,7 +302,8 @@ impl<'a> RequestBuilder<'a> {
         file_name: &str,
         mime_type: Option<&str>,
     ) -> io::Result<Self> {
-        let mime_type = mime_type.unwrap_or("application/octet-stream");
+        let default_mime = MimeType::OctetStream.to_string();
+        let mime_type = mime_type.unwrap_or(&default_mime);
         let part = Part::bytes(bytes)
             .file_name(file_name.to_string())
             .mime_str(mime_type)
@@ -634,7 +653,7 @@ mod http_client_tests {
                 .header("Authorization", "Bearer token")
                 .body(r#"{"name":"test"}"#);
 
-            then.status(200).header("content-type", "application/json").body(r#"{"status": "ok"}"#);
+            then.status(200).header("content-type", MimeType::Json.to_string()).body(r#"{"status": "ok"}"#);
         });
 
         let client = HttpClient::builder(&mock_server.base_url())

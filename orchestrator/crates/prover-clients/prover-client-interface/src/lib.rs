@@ -27,7 +27,7 @@ pub trait ProverClient: Send + Sync {
         fact: Option<String>,
         cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError>;
-    async fn get_proof(&self, task_id: &str, fact: &str) -> Result<String, ProverClientError>;
+    async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError>;
     async fn submit_l2_query(
         &self,
         task_id: &str,
@@ -70,4 +70,6 @@ pub enum ProverClientError {
     NetworkError(String),
     #[error("Invalid proof format: {0}")]
     InvalidProofFormat(String),
+    #[error("Missing Cairo verifier program hash")]
+    MissingCairoVerifierProgramHash,
 }
