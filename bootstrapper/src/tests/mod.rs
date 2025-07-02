@@ -188,6 +188,7 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         .arg("0")
         .arg("--blob-gas-price")
         .arg("0")
+        .arg("--no-charge-fee")
         .arg("--rpc-admin")
         .arg("--rpc-admin-port")
         .arg("19943")
@@ -204,7 +205,7 @@ fn ensure_toolchain() -> color_eyre::Result<()> {
     let output = Command::new("rustup").arg("toolchain").arg("list").output()?;
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    if !output_str.contains("1.85") {
+    if !output_str.contains("1.86") {
         Command::new("rustup").arg("install").arg("1.81").status()?;
     }
     Ok(())
