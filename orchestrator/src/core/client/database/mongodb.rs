@@ -372,11 +372,6 @@ impl DatabaseClient for MongoDbClient {
             }
         });
 
-        // throw an error if there's no field to be updated
-        if non_null_updates.is_empty() {
-            return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
-        }
-
         // Add additional fields that are always updated
         non_null_updates.insert("version", Bson::Int32(current_job.version + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
@@ -774,6 +769,74 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
+    /// Get all the jobs with status 'Failed' or 'VerificationTimeout'
+    /// Sort all the jobs by their block_number
+    /// Get the first job's block number
+    /// Or maintain a min flag while iteration over all!
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_earliest_failed_block_number(&self) -> Result<Option<u64>, DatabaseError> {
+        let start = Instant::now();
+
+        // Convert job statuses to Bson
+        let failed_status_bson = mongodb::bson::to_bson(&JobStatus::Failed)?;
+        let timeout_status_bson = mongodb::bson::to_bson(&JobStatus::VerificationTimeout)?;
+
+        // Construct the aggregation pipeline
+        let pipeline = vec![
+            // Stage 1: Match jobs with status 'Failed' or 'VerificationTimeout'
+            doc! {
+                "$match": {
+                    "$or": [
+                        { "status": failed_status_bson },
+                        { "status": timeout_status_bson }
+                    ]
+                }
+            },
+            doc! {
+                "$addFields": {
+                    "numeric_internal_id": { "$toLong": "$internal_id" }
+                }
+            },
+            doc! {
+                "$sort": {
+                    "numeric_internal_id": -1
+                }
+            },
+            doc! {
+                "$limit": 1
+            },
+            // Stage 4: Project only the block_number field for efficiency
+            doc! {
+                "$project": {
+                    "block_number": "$numeric_internal_id"
+                }
+            },
+        ];
+
+        tracing::debug!(category = "db_call", "Fetching earliest failed block number");
+
+        let collection: Collection<JobItem> = self.get_job_collection();
+
+        // Define a simple struct for the projection result
+        #[derive(Deserialize)]
+        struct BlockNumberResult {
+            block_number: u64,
+        }
+
+        // Execute pipeline
+        let results = self.execute_pipeline::<JobItem, BlockNumberResult>(collection, pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_earliest_failed_block_number")];
+
+        // Convert results to single result and extract block number
+        let result = vec_to_single_result(results, "get_earliest_failed_block_number")?;
+
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(result.map(|block_result| block_result.block_number))
+    }
+
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
         let start = Instant::now();
         let pipeline = vec![
@@ -829,11 +892,6 @@ impl DatabaseClient for MongoDbClient {
                 non_null_updates.insert(k, v);
             }
         });
-
-        // throw an error if there's no field to be updated
-        if non_null_updates.is_empty() {
-            return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
-        }
 
         // Add additional fields that are always updated
         non_null_updates.insert("size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));

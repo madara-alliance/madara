@@ -20,7 +20,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
-use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
+use crate::worker::event_handler::triggers::data_submission::DataSubmissionJobTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
 use crate::worker::event_handler::triggers::proving::ProvingJobTrigger;
 use crate::worker::event_handler::triggers::snos::SnosJobTrigger;
@@ -185,7 +185,7 @@ impl JobHandlerService {
                 JobItemUpdates::new()
                     .update_status(JobStatus::LockedForProcessing)
                     .update_metadata(job.metadata.clone())
-                    .build(),
+                    .build()?,
             )
             .await
             .map_err(|e| {
@@ -240,7 +240,7 @@ impl JobHandlerService {
                     .update_status(JobStatus::PendingVerification)
                     .update_metadata(job.metadata.clone())
                     .update_external_id(external_id.clone().into())
-                    .build(),
+                    .build()?,
             )
             .await
             .map_err(|e| {
@@ -350,7 +350,7 @@ impl JobHandlerService {
         job.metadata.common.verification_started_at = Some(Utc::now());
         let mut job = config
             .database()
-            .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
+            .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build()?)
             .await
             .map_err(|e| {
                 tracing::error!(job_id = ?id, error = ?e, "Failed to update job status");
@@ -390,7 +390,7 @@ impl JobHandlerService {
                         JobItemUpdates::new()
                             .update_metadata(job.metadata.clone())
                             .update_status(JobStatus::Completed)
-                            .build(),
+                            .build()?,
                     )
                     .await
                     .map_err(|e| {
@@ -420,7 +420,7 @@ impl JobHandlerService {
                             JobItemUpdates::new()
                                 .update_status(JobStatus::VerificationFailed)
                                 .update_metadata(job.metadata.clone())
-                                .build(),
+                                .build()?,
                         )
                         .await
                         .map_err(|e| {
@@ -448,7 +448,7 @@ impl JobHandlerService {
                     tracing::warn!(job_id = ?id, "Max verification attempts reached. Marking job as timed out");
                     config
                         .database()
-                        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::VerificationTimeout).build())
+                        .update_job(&job, JobItemUpdates::new().update_status(JobStatus::VerificationTimeout).build()?)
                         .await
                         .map_err(|e| {
                             tracing::error!(job_id = ?id, error = ?e, "Failed to update job status to VerificationTimeout");
@@ -461,7 +461,7 @@ impl JobHandlerService {
 
                     config
                         .database()
-                        .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
+                        .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build()?)
                         .await
                         .map_err(|e| {
                             tracing::error!(job_id = ?id, error = ?e, "Failed to update job metadata");
@@ -585,7 +585,7 @@ impl JobHandlerService {
                 JobItemUpdates::new()
                     .update_status(JobStatus::PendingRetry)
                     .update_metadata(job.metadata.clone())
-                    .build(),
+                    .build()?,
             )
             .await
             .map_err(|e| {
