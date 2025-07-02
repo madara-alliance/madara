@@ -18,10 +18,6 @@ on:
         required: false
         default: ghcr.io
         type: string
-      cairo-artifacts-hash:
-        description: "Hash used to retrieve the cairo artifacts"
-        required: true
-        type: string
     outputs:
       nightly:
         description: Nightly image tag
@@ -46,11 +42,17 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Download Cairo artiracts
-        uses: actions/download-artifact@v4
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
         with:
-          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
-          path: build-artifacts/
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: madara-${{ runner.os }}-rust-1.86
+
+      - name: Download artifacts
+        run: cargo check
 
       - name: Tags
         id: tag

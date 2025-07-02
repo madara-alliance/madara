@@ -12,7 +12,7 @@ use mc_submit_tx::SubmitL1HandlerTransaction;
 use mp_convert::ToFelt;
 use mp_utils::service::ServiceContext;
 use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
-use starknet_api::transaction::{Calldata, L1HandlerTransaction, TransactionVersion};
+use starknet_api::transaction::{fields::Calldata, L1HandlerTransaction, TransactionVersion};
 use starknet_core::types::EmittedEvent;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
