@@ -7,19 +7,19 @@ pub struct MadaraSetup {
 }
 
 impl MadaraSetup {
-    pub fn new(madara_config: MadaraConfig) -> Self {
+    pub fn new(madara_config: MadaraConfig, _private_key: String) -> Self {
         Self { rpc_url: madara_config.rpc_url }
     }
 
-    pub fn init(&self) -> anyhow::Result<()> {
+    pub fn init(&self) -> color_eyre::Result<()> {
         Ok(())
     }
 
-    pub fn setup(&self) -> anyhow::Result<()> {
+    pub fn setup(&self) -> color_eyre::Result<()> {
         Ok(())
     }
 
-    pub fn post_madara_setup(&self) -> anyhow::Result<()> {
+    pub fn post_madara_setup(&self) -> color_eyre::Result<()> {
         Ok(())
     }
 }
