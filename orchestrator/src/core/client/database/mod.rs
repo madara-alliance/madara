@@ -83,4 +83,6 @@ pub trait DatabaseClient: Send + Sync {
     async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError>;
     /// create_batch - Create a new batch
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
+    /// get_jobs_by_block_number - Get all jobs for a specific block number
+    async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError>;
 }
