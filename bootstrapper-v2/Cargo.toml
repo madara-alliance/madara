@@ -9,7 +9,6 @@ license.workspace = true
 
 [dependencies]
 clap = { workspace = true, features = ["derive"] }
-anyhow = { workspace = true }
 thiserror = { workspace = true }
 color-eyre = { workspace = true }
 serde = { workspace = true, features = ["derive"] }

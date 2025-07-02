@@ -29,7 +29,7 @@ pub struct MadaraConfig {
 }
 
 impl BaseConfigOuter {
-    pub fn get_base_layer_setup(&self, private_key: String) -> anyhow::Result<Box<dyn BaseLayerSetupTrait>> {
+    pub fn get_base_layer_setup(&self, private_key: String) -> color_eyre::Result<Box<dyn BaseLayerSetupTrait>> {
         match &self.base_layer {
             BaseLayerConfig::Ethereum { rpc_url, implementation_addresses } => {
                 Ok(Box::new(EthereumSetup::new(rpc_url.clone(), implementation_addresses.clone())))
@@ -39,8 +39,3 @@ impl BaseConfigOuter {
     }
 }
 
-impl MadaraConfigOuter {
-    pub fn get_madara_setup(&self, private_key: String) -> anyhow::Result<Box<dyn BaseLayerSetupTrait>> {
-        Ok(Box::new(MadaraSetup::new(self.madara.rpc_url.clone(), private_key)))
-    }
-}
