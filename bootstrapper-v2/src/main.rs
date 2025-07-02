@@ -5,10 +5,11 @@ mod setup {
     pub mod madara;
 }
 
+use anyhow::Context;
 use clap::Parser;
 use cli::{CliArgs, Commands};
 use color_eyre::Result;
-use config::Config;
+use config::{BaseConfigOuter, MadaraConfigOuter};
 use setup::madara::MadaraSetup;
 use std::fs::File;
 
@@ -20,37 +21,22 @@ fn main() -> Result<()> {
 
     match args.command {
         Commands::SetupBase(setup_base) => {
-            let config: Config = serde_json::from_reader(File::open(setup_base.config_path)?)?;
-            config.validate()?;
+            let config: BaseConfigOuter = serde_json::from_reader(File::open(setup_base.config_path)?)?;
 
-            let private_key = dotenvy::var("BASE_LAYER_PRIVATE_KEY")?;
             let base_layer_setup =
-                config.get_base_layer_setup(private_key).map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
-            base_layer_setup
-                .init()
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
-            base_layer_setup
-                .setup()
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
+                config.get_base_layer_setup(setup_base.private_key).map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
+
+            base_layer_setup.init().context("Failed to initialise the base layer setup");
+            base_layer_setup.setup().context("Failed to setup base layer setup");
         }
         Commands::SetupMadara(setup_madara) => {
-            let config: Config = serde_json::from_reader(File::open(setup_madara.config_path)?)?;
-            config.validate()?;
-            let madara_setup = MadaraSetup::new(config.madara.unwrap());
-            madara_setup
-                .init()
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
-            madara_setup
-                .setup()
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
-            madara_setup
-                .post_madara_setup()
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))
-                .map_err(|e| color_eyre::eyre::eyre!("{}", e))?;
+            let config: MadaraConfigOuter = serde_json::from_reader(File::open(setup_madara.config_path)?)?;
+            let madara_setup = MadaraSetup::new(config.madara);
+
+            madara_setup.init().context("Failed to initialise the madara setup");
+            madara_setup.setup().context("Failed to setup madara setup");
+
+            madara_setup.post_madara_setup().context("Failed to post madara setup");
         }
     }
 
