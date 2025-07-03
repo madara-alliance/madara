@@ -111,7 +111,7 @@ impl PendingHeader {
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp,
             protocol_version: self.protocol_version,
-            l1_gas_price: self.l1_gas_price,
+            gas_prices: self.gas_prices,
             l1_da_mode: self.l1_da_mode,
             global_state_root,
             transaction_count: commitments.transaction.transaction_count,
@@ -210,7 +210,7 @@ mod tests {
             sequencer_address: Felt::ZERO,
             block_timestamp: BlockTimestamp(0),
             protocol_version: StarknetVersion::V0_13_2,
-            l1_gas_price: GasPrices::default(),
+            gas_prices: GasPrices::default(),
             l1_da_mode: L1DataAvailabilityMode::Blob,
         }
     }

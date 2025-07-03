@@ -74,7 +74,7 @@ impl TransactionReceipt {
         }
     }
 
-    pub fn data_availability(&self) -> &L1Gas {
+    pub fn data_availability(&self) -> &GasVector {
         match self {
             TransactionReceipt::Invoke(receipt) => &receipt.execution_resources.data_availability,
             TransactionReceipt::L1Handler(receipt) => &receipt.execution_resources.data_availability,
@@ -84,7 +84,7 @@ impl TransactionReceipt {
         }
     }
 
-    pub fn total_gas_consumed(&self) -> &L1Gas {
+    pub fn total_gas_consumed(&self) -> &GasVector {
         match self {
             TransactionReceipt::Invoke(receipt) => &receipt.execution_resources.total_gas_consumed,
             TransactionReceipt::L1Handler(receipt) => &receipt.execution_resources.total_gas_consumed,
@@ -172,6 +172,10 @@ impl TransactionReceipt {
             self.total_gas_consumed().l1_gas.into(),
             self.total_gas_consumed().l1_data_gas.into(),
         ])
+    }
+
+    pub fn l2_gas_used(&self) -> u64 {
+        self.execution_resources().total_gas_consumed.l2_gas
     }
 }
 
@@ -374,16 +378,16 @@ pub struct ExecutionResources {
     pub bitwise_builtin_applications: u64,
     pub keccak_builtin_applications: u64,
     pub segment_arena_builtin: u64,
-    pub data_availability: L1Gas,
-    pub total_gas_consumed: L1Gas,
+    pub data_availability: GasVector,
+    pub total_gas_consumed: GasVector,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
-// TODO: Extend this to include latest fields
-// #[serde(deny_unknown_fields)]
-pub struct L1Gas {
-    pub l1_gas: u128,
-    pub l1_data_gas: u128,
+#[serde(deny_unknown_fields)]
+pub struct GasVector {
+    pub l1_gas: u64,
+    pub l1_data_gas: u64,
+    pub l2_gas: u64,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -437,8 +441,8 @@ mod tests {
                 bitwise_builtin_applications: 16,
                 keccak_builtin_applications: 17,
                 segment_arena_builtin: 18,
-                data_availability: L1Gas { l1_gas: 19, l1_data_gas: 20 },
-                total_gas_consumed: L1Gas { l1_gas: 21, l1_data_gas: 22 },
+                data_availability: GasVector { l1_gas: 19, l1_data_gas: 20, l2_gas: 21 },
+                total_gas_consumed: GasVector { l1_gas: 22, l1_data_gas: 23, l2_gas: 24 },
             },
             execution_result: ExecutionResult::Succeeded,
         });
@@ -572,9 +576,8 @@ mod tests {
             bitwise_builtin_applications: 8,
             keccak_builtin_applications: 9,
             segment_arena_builtin: 10,
-            data_availability: L1Gas { l1_gas: 11, l1_data_gas: 12 },
-            // TODO: Change with non-default values when starknet-rs supports it.
-            total_gas_consumed: Default::default(),
+            data_availability: GasVector { l1_gas: 11, l1_data_gas: 12, l2_gas: 13 },
+            total_gas_consumed: GasVector { l1_gas: 14, l1_data_gas: 15, l2_gas: 16 },
         }
     }
 

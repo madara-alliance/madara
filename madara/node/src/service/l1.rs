@@ -1,29 +1,28 @@
 use crate::cli::l1::{L1SyncParams, MadaraSettlementLayer};
 use alloy::primitives::Address;
-use anyhow::Context;
+use anyhow::{bail, Context};
 use futures::Stream;
 use mc_db::{DatabaseService, MadaraBackend};
-use mc_mempool::{GasPriceProvider, Mempool};
+use mc_mempool::Mempool;
 use mc_settlement_client::client::SettlementClientTrait;
 use mc_settlement_client::error::SettlementClientError;
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
-use mc_settlement_client::gas_price::L1BlockMetrics;
+use mc_settlement_client::gas_price::{GasPriceProviderConfig, GasPriceProviderConfigBuilder, L1BlockMetrics};
 use mc_settlement_client::messaging::L1toL2MessagingEventData;
 use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
+use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_core::types::Felt;
 use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 
 // Configuration struct to group related parameters
 pub struct L1SyncConfig<'a> {
     pub db: &'a DatabaseService,
-    pub l1_gas_provider: GasPriceProvider,
     pub l1_core_address: String,
     pub authority: bool,
     pub devnet: bool,
@@ -40,9 +39,7 @@ where
     db_backend: Arc<MadaraBackend>,
     l1_head_snd: Option<L1HeadSender>,
     settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
-    l1_gas_provider: GasPriceProvider,
-    gas_price_sync_disabled: bool,
-    gas_price_poll: Duration,
+    gas_provider_config: Option<GasPriceProviderConfig>,
     mempool: Arc<Mempool>,
     l1_block_metrics: Arc<L1BlockMetrics>,
 }
@@ -107,32 +104,56 @@ where
         sync_config: L1SyncConfig<'_>,
         settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     ) -> anyhow::Result<Self> {
-        let gas_price_sync_enabled = sync_config.authority
-            && !sync_config.devnet
-            && (config.gas_price.is_none() || config.blob_gas_price.is_none());
-        let gas_price_poll = config.gas_price_poll;
-
-        if gas_price_sync_enabled {
-            let settlement_client =
-                settlement_client.clone().context("L1 gas prices require the service to be enabled...")?;
-            tracing::info!("⏳ Getting initial L1 gas prices");
-            mc_settlement_client::gas_price::gas_price_worker_once(
-                settlement_client,
-                &sync_config.l1_gas_provider,
-                gas_price_poll,
-                sync_config.l1_block_metrics.clone(),
+        let gas_price_needed = sync_config.authority && !sync_config.devnet;
+        let gas_provider_config = if gas_price_needed {
+            let mut gas_price_provider_builder = GasPriceProviderConfigBuilder::default();
+            if let Some(fix_gas) = config.gas_price {
+                gas_price_provider_builder.set_fix_gas_price(fix_gas);
+            }
+            if let Some(fix_blob_gas) = config.blob_gas_price {
+                gas_price_provider_builder.set_fix_data_gas_price(fix_blob_gas);
+            }
+            if let Some(strk_per_eth_fix) = config.strk_per_eth {
+                gas_price_provider_builder.set_fix_strk_per_eth(strk_per_eth_fix);
+            }
+            if let Some(ref oracle_url) = config.oracle_url {
+                if let Some(ref oracle_api_key) = config.oracle_api_key {
+                    let oracle = PragmaOracleBuilder::new()
+                        .with_api_url(oracle_url.clone())
+                        .with_api_key(oracle_api_key.clone())
+                        .build();
+                    gas_price_provider_builder.set_oracle_provider(Arc::new(oracle));
+                } else {
+                    bail!("Only Pragma oracle is supported, please provide the oracle API key");
+                }
+            }
+            Some(
+                gas_price_provider_builder
+                    .with_poll_interval(config.gas_price_poll)
+                    .build()
+                    .context("Building gas price provider config")?,
             )
-            .await
-            .context("Getting initial gas prices")?;
+        } else {
+            None
+        };
+
+        if let Some(config) = gas_provider_config.as_ref() {
+            if !config.all_is_fixed() {
+                let settlement_client =
+                    settlement_client.clone().context("L1 gas prices require the service to be enabled...")?;
+                tracing::info!("⏳ Getting initial L1 gas prices");
+                let l1_gas_quote = mc_settlement_client::gas_price::update_gas_price(settlement_client, config)
+                    .await
+                    .context("Getting initial gas prices")?;
+                sync_config.db.backend().set_last_l1_gas_quote(l1_gas_quote);
+            }
         }
 
         Ok(Self {
             db_backend: Arc::clone(sync_config.db.backend()),
             settlement_client,
-            l1_gas_provider: sync_config.l1_gas_provider,
-            gas_price_sync_disabled: !gas_price_sync_enabled,
-            gas_price_poll,
             mempool: sync_config.mempool,
+            gas_provider_config,
             l1_block_metrics: sync_config.l1_block_metrics,
             l1_head_snd: Some(sync_config.l1_head_snd),
         })
@@ -157,20 +178,15 @@ where
         if let Some(settlement_client) = &self.settlement_client {
             let db_backend = Arc::clone(&self.db_backend);
             let settlement_client = Arc::clone(settlement_client);
-            let l1_gas_provider = self.l1_gas_provider.clone();
-            let gas_price_sync_disabled = self.gas_price_sync_disabled;
-            let gas_price_poll = self.gas_price_poll;
+            let gas_provider_config = self.gas_provider_config.clone();
             let mempool = Arc::clone(&self.mempool);
             let l1_block_metrics = self.l1_block_metrics.clone();
             let l1_head_sender = self.l1_head_snd.take().expect("Service already starteds");
-
             runner.service_loop(move |ctx| {
                 mc_settlement_client::sync::sync_worker(SyncWorkerConfig {
                     backend: db_backend,
                     settlement_client,
-                    l1_gas_provider,
-                    gas_price_sync_disabled,
-                    gas_price_poll_ms: gas_price_poll,
+                    gas_provider_config,
                     mempool,
                     l1_head_sender,
                     ctx,

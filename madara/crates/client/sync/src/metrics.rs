@@ -158,8 +158,8 @@ impl SyncMetrics {
         self.transaction_count.add(header.transaction_count, &[]);
         self.event_count.add(header.event_count, &[]);
 
-        self.l1_gas_price_wei.record(f64::from_u128(header.l1_gas_price.eth_l1_gas_price).unwrap_or(0f64), &[]);
-        self.l1_gas_price_strk.record(f64::from_u128(header.l1_gas_price.strk_l1_gas_price).unwrap_or(0f64), &[]);
+        self.l1_gas_price_wei.record(f64::from_u128(header.gas_prices.eth_l1_gas_price).unwrap_or(0f64), &[]);
+        self.l1_gas_price_strk.record(f64::from_u128(header.gas_prices.strk_l1_gas_price).unwrap_or(0f64), &[]);
 
         let last_update_duration = self.last_db_metrics_update_instant.map(|inst| now.duration_since(inst));
 

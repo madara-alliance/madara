@@ -103,6 +103,8 @@ pub struct ChainConfigOverridesInner {
     pub mempool_declare_tx_limit: usize,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub mempool_tx_max_age: Option<Duration>,
+    pub l2_gas_target: u64,
+    pub min_l2_gas_price: u128,
     pub no_empty_blocks: bool,
     pub block_production_concurrency: BlockProductionConfig,
 }
@@ -126,6 +128,8 @@ impl ChainConfigOverrideParams {
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
             mempool_tx_limit: chain_config.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config.mempool_declare_tx_limit,
+            l2_gas_target: chain_config.l2_gas_target,
+            min_l2_gas_price: chain_config.min_l2_gas_price,
             mempool_tx_max_age: chain_config.mempool_tx_max_age,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
@@ -182,6 +186,8 @@ impl ChainConfigOverrideParams {
             private_key: chain_config.private_key,
             mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
             mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
+            l2_gas_target: chain_config_overrides.l2_gas_target,
+            min_l2_gas_price: chain_config_overrides.min_l2_gas_price,
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,

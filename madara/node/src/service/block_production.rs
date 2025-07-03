@@ -3,7 +3,7 @@ use anyhow::Context;
 use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
-use mc_mempool::{L1DataProvider, Mempool};
+use mc_mempool::Mempool;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::{io::Write, sync::Arc};
 
@@ -11,7 +11,6 @@ pub struct BlockProductionService {
     backend: Arc<MadaraBackend>,
     mempool: Arc<Mempool>,
     metrics: Arc<BlockProductionMetrics>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     n_devnet_contracts: u64,
     disabled: bool,
 }
@@ -22,13 +21,11 @@ impl BlockProductionService {
         config: &BlockProductionParams,
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
         Ok(Self {
             backend: Arc::clone(db_service.backend()),
-            l1_data_provider,
             mempool,
             metrics,
             n_devnet_contracts: config.devnet_contracts,
@@ -41,14 +38,10 @@ impl BlockProductionService {
 impl Service for BlockProductionService {
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let Self { backend, l1_data_provider, mempool, metrics, disabled, .. } = self;
+        let Self { backend, mempool, metrics, disabled, .. } = self;
 
-        let block_production_task = BlockProductionTask::new(
-            Arc::clone(backend),
-            Arc::clone(mempool),
-            Arc::clone(metrics),
-            Arc::clone(l1_data_provider),
-        );
+        let block_production_task =
+            BlockProductionTask::new(Arc::clone(backend), Arc::clone(mempool), Arc::clone(metrics));
 
         if !*disabled {
             runner.service_loop(move |ctx| block_production_task.run(ctx));
