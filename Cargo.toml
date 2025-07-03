@@ -310,6 +310,7 @@ orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clie
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+orchestrator-mock-atlantic-server = { path = "orchestrator/crates/prover-clients/mock-atlantic-server" }
 orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
 
