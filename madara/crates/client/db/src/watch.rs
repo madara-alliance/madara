@@ -5,7 +5,7 @@ use std::sync::Arc;
 pub type ClosedBlocksReceiver = tokio::sync::broadcast::Receiver<Arc<MadaraBlockInfo>>;
 pub type PendingBlockReceiver = tokio::sync::watch::Receiver<Arc<MadaraPendingBlockInfo>>;
 pub type PendingTxsReceiver = tokio::sync::broadcast::Receiver<mp_block::TransactionWithReceipt>;
-pub type LastConfirmedBlockReceived = tokio::sync::watch::Receiver<Option<u64>>;
+pub type LastBlockOnL1Receiver = tokio::sync::watch::Receiver<Option<u64>>;
 
 fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<MadaraPendingBlockInfo> {
     let Some(parent_block) = parent_block else {
@@ -29,7 +29,7 @@ pub(crate) struct BlockWatch {
     closed_blocks: tokio::sync::broadcast::Sender<Arc<MadaraBlockInfo>>,
     pending_block: tokio::sync::watch::Sender<Arc<MadaraPendingBlockInfo>>,
     pending_txs: tokio::sync::broadcast::Sender<mp_block::TransactionWithReceipt>,
-    last_confirmed_block: tokio::sync::watch::Sender<Option<u64>>,
+    last_block_on_l1: tokio::sync::watch::Sender<Option<u64>>,
 }
 
 impl BlockWatch {
@@ -38,7 +38,7 @@ impl BlockWatch {
             closed_blocks: tokio::sync::broadcast::channel(100).0,
             pending_block: tokio::sync::watch::channel(make_fake_pending_block(None)).0,
             pending_txs: tokio::sync::broadcast::channel(100).0,
-            last_confirmed_block: tokio::sync::watch::channel(None).0,
+            last_block_on_l1: tokio::sync::watch::channel(None).0,
         }
     }
 
@@ -46,7 +46,7 @@ impl BlockWatch {
         let block = db.get_pending_block_info_from_db()?;
         let latest_block = db.get_l1_last_confirmed_block()?;
         self.pending_block.send_replace(block.into());
-        self.last_confirmed_block.send_replace(latest_block);
+        self.last_block_on_l1.send_replace(latest_block);
         Ok(())
     }
 
@@ -54,8 +54,8 @@ impl BlockWatch {
         self.pending_block.send_replace(block);
     }
 
-    pub fn update_last_confirmed_block(&self, latest_block: u64) {
-        self.last_confirmed_block.send_replace(Some(latest_block));
+    pub fn update_last_block_on_l1(&self, latest_block: u64) {
+        self.last_block_on_l1.send_replace(Some(latest_block));
     }
 
     pub fn clear_pending(&self, parent_block: Option<&MadaraBlockInfo>) {
@@ -80,8 +80,8 @@ impl BlockWatch {
     pub fn subscribe_pending_block(&self) -> PendingBlockReceiver {
         self.pending_block.subscribe()
     }
-    pub fn subscribe_last_confirmed_block(&self) -> LastConfirmedBlockReceived {
-        self.last_confirmed_block.subscribe()
+    pub fn subscribe_last_block_on_l1(&self) -> LastBlockOnL1Receiver {
+        self.last_block_on_l1.subscribe()
     }
     pub fn latest_pending_block(&self) -> Arc<MadaraPendingBlockInfo> {
         self.pending_block.borrow().clone()
@@ -106,8 +106,8 @@ impl MadaraBackend {
         self.watch_blocks.subscribe_pending_block()
     }
     #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
-    pub fn subscribe_last_confirmed_block(&self) -> LastConfirmedBlockReceived {
-        self.watch_blocks.subscribe_last_confirmed_block()
+    pub fn subscribe_last_block_on_l1(&self) -> LastBlockOnL1Receiver {
+        self.watch_blocks.subscribe_last_block_on_l1()
     }
     #[tracing::instrument(skip_all, fields(module = "MadaraBackendWatch"))]
     pub fn latest_pending_block(&self) -> Arc<MadaraPendingBlockInfo> {

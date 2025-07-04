@@ -60,7 +60,7 @@ jobs:
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-location: llvm-cov-target/release
-          cache-key: orchestrator-test
+          cache-key: orchestrator-test-${{ runner.os }}-rust-1.86
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -106,7 +106,6 @@ jobs:
         run: |
           echo "MADARA_ORCHESTRATOR_MADARA_BINARY_PATH: $MADARA_ORCHESTRATOR_MADARA_BINARY_PATH"
           RUST_LOG=debug RUST_BACKTRACE=1 cargo llvm-cov nextest \
-            --release \
             --features testing \
             --lcov \
             --output-path lcov.info \

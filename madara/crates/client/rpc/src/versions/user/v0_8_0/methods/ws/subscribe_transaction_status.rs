@@ -78,7 +78,7 @@ impl<'a> SubscriptionState<'a> {
         // avoid missing any updates.
         let channel_mempool = common.starknet.add_transaction_provider.subscribe_new_transactions().await;
         let channel_pending_tx = common.starknet.backend.subscribe_pending_txs();
-        let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
+        let channel_confirmed = common.starknet.backend.subscribe_last_block_on_l1();
 
         let block_info = starknet.backend.find_tx_hash_block_info(&tx_hash).or_else_internal_server_error(|| {
             format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
@@ -232,7 +232,7 @@ struct StateTransitionAcceptedOnL2<'a> {
 struct StateTransitionAcceptedOnL1<'a> {
     common: StateTransitionCommon<'a>,
     block_number: u64,
-    channel_confirmed: mc_db::LastConfirmedBlockReceived,
+    channel_confirmed: mc_db::LastBlockOnL1Receiver,
 }
 struct StateTransitionEnd<'a> {
     common: StateTransitionCommon<'a>,
@@ -270,7 +270,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
     async fn transition(self) -> Result<Self::TransitionTo, crate::errors::StarknetWsApiError> {
         let Self { common, mut channel_mempool, .. } = self;
 
-        let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
+        let channel_confirmed = common.starknet.backend.subscribe_last_block_on_l1();
         let tx_hash = &common.tx_hash;
 
         loop {
@@ -319,7 +319,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
     async fn transition(self) -> Result<Self::TransitionTo, crate::errors::StarknetWsApiError> {
         let Self { common, mut channel_pending_tx } = self;
 
-        let channel_confirmed = common.starknet.backend.subscribe_last_confirmed_block();
+        let channel_confirmed = common.starknet.backend.subscribe_last_block_on_l1();
         let tx_hash = &common.tx_hash;
 
         // Step 1: we wait for the tx to be ACCEPTED in the pending block
@@ -470,7 +470,7 @@ mod test {
     fn starknet() -> Starknet {
         let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
-        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true };
+        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: false };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
             mc_mempool::MempoolConfig::for_testing(),
