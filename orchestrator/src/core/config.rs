@@ -259,7 +259,7 @@ impl Config {
                             .parse()
                             .expect("Failed to parse mock server URL"),
                         atlantic_rpc_node_url: atlantic_params.atlantic_rpc_node_url.clone(),
-                        atlantic_verifier_contract_address: "0x0000000000000000000000000000000000000000".to_string(), // Hard-coded for mock mode
+                        atlantic_verifier_contract_address: "0x007a9a039a9471a7bea2962695cebc03f01a702ffa848763a6749052b0396ccc".to_string(), // Hard-coded for mock mode
                         atlantic_settlement_layer: atlantic_params.atlantic_settlement_layer.clone(),
                         atlantic_mock_fact_hash: atlantic_params.atlantic_mock_fact_hash.clone(),
                         atlantic_prover_type: atlantic_params.atlantic_prover_type.clone(),
@@ -268,7 +268,7 @@ impl Config {
                     };
 
                     tracing::info!("Configured Atlantic client to use mock server at http://127.0.0.1:{}", mock_port);
-                    tracing::info!("Using hardcoded verifier contract address for mock mode: 0x0000000000000000000000000000000000000000");
+                    tracing::info!("Using hardcoded verifier contract address for mock mode: 0x007a9a039a9471a7bea2962695cebc03f01a702ffa848763a6749052b0396ccc");
 
                     // Create the Atlantic service with mock server configuration
                     Box::new(AtlanticProverService::new_with_args(&mock_atlantic_params))

@@ -11,7 +11,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use uuid::Uuid;
 
 use crate::types::{
     AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticChain, AtlanticClient,
@@ -43,43 +42,109 @@ impl MockAtlanticState {
 
     async fn create_mock_job(&self, job_id: String, layout: Option<String>, network: Option<String>) -> MockJobData {
         let now = Utc::now();
-        let query = AtlanticQuery {
-            id: job_id.clone(),
-            external_id: None,
-            transaction_id: None,
-            status: AtlanticQueryStatus::Received,
-            step: Some(AtlanticQueryStep::TraceGeneration),
-            program_hash: Some("0x123456789abcdef".to_string()),
-            integrity_fact_hash: Some("0xfedcba9876543210".to_string()),
-            sharp_fact_hash: Some("0xabcdef1234567890".to_string()),
-            layout,
-            is_fact_mocked: Some(true),
-            chain: Some(AtlanticChain::L1),
-            job_size: Some(AtlanticJobSize::S),
-            declared_job_size: Some(AtlanticJobSize::S),
-            cairo_vm: Some(AtlanticCairoVm::Rust),
-            cairo_version: Some(AtlanticCairoVersion::Cairo0),
-            steps: vec![AtlanticQueryStep::TraceGeneration],
-            error_reason: None,
-            submitted_by_client: "mock-client".to_string(),
-            project_id: "mock-project".to_string(),
-            created_at: now.to_rfc3339(),
-            completed_at: None,
-            result: None,
-            network,
-            client: AtlanticClient {
-                client_id: Some("mock-client-id".to_string()),
-                name: Some("Mock Client".to_string()),
-                email: Some("mock@example.com".to_string()),
-                is_email_verified: Some(true),
-                image: None,
-            },
+
+        // Use realistic data for the dynamic layout job
+        let query = if job_id == "01JXMTC7TZMSNDTJ88212KTH7W" {
+            AtlanticQuery {
+                id: job_id.clone(),
+                external_id: Some("".to_string()),
+                transaction_id: Some("01JXMTCJNPFPDW84NNVPHQYZ7H".to_string()),
+                status: AtlanticQueryStatus::Done,
+                step: Some(AtlanticQueryStep::ProofGeneration),
+                program_hash: Some("0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d".to_string()),
+                integrity_fact_hash: Some(
+                    "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4".to_string(),
+                ),
+                sharp_fact_hash: Some("0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123".to_string()),
+                layout: Some("dynamic".to_string()),
+                is_fact_mocked: None,
+                chain: Some(AtlanticChain::OFFCHAIN),
+                job_size: Some(AtlanticJobSize::S),
+                declared_job_size: Some(AtlanticJobSize::S),
+                cairo_vm: Some(AtlanticCairoVm::Rust),
+                cairo_version: Some(AtlanticCairoVersion::Cairo0),
+                steps: vec![AtlanticQueryStep::TraceAndMetadataGeneration, AtlanticQueryStep::ProofGeneration],
+                error_reason: None,
+                submitted_by_client: "01JT14WV07E44PE11ZWWCED6BG".to_string(),
+                project_id: "01JNFXEF9JFBQFCKXDANCBE5CN".to_string(),
+                created_at: "2025-06-13T14:16:24.771Z".to_string(),
+                completed_at: Some("2025-06-13T14:17:48.204Z".to_string()),
+                result: Some(AtlanticQueryStep::ProofGeneration),
+                network: Some("TESTNET".to_string()),
+                client: AtlanticClient {
+                    client_id: Some("01JT14WV07E44PE11ZWWCED6BG".to_string()),
+                    name: Some("itsparser".to_string()),
+                    email: Some("itsparser@gmail.com".to_string()),
+                    is_email_verified: Some(true),
+                    image: Some("https://avatars.githubusercontent.com/u/13918750?v=4".to_string()),
+                },
+            }
+        } else {
+            // Default mock data for other job IDs
+            AtlanticQuery {
+                id: job_id.clone(),
+                external_id: None,
+                transaction_id: None,
+                status: AtlanticQueryStatus::Received,
+                step: Some(AtlanticQueryStep::TraceGeneration),
+                program_hash: Some("0x123456789abcdef".to_string()),
+                integrity_fact_hash: Some("0xfedcba9876543210".to_string()),
+                sharp_fact_hash: Some("0xabcdef1234567890".to_string()),
+                layout,
+                is_fact_mocked: Some(true),
+                chain: Some(AtlanticChain::L1),
+                job_size: Some(AtlanticJobSize::S),
+                declared_job_size: Some(AtlanticJobSize::S),
+                cairo_vm: Some(AtlanticCairoVm::Rust),
+                cairo_version: Some(AtlanticCairoVersion::Cairo0),
+                steps: vec![AtlanticQueryStep::TraceGeneration],
+                error_reason: None,
+                submitted_by_client: "mock-client".to_string(),
+                project_id: "mock-project".to_string(),
+                created_at: now.to_rfc3339(),
+                completed_at: None,
+                result: None,
+                network,
+                client: AtlanticClient {
+                    client_id: Some("mock-client-id".to_string()),
+                    name: Some("Mock Client".to_string()),
+                    email: Some("mock@example.com".to_string()),
+                    is_email_verified: Some(true),
+                    image: None,
+                },
+            }
         };
 
-        MockJobData { query, proof_data: None, created_at: now }
+        // Set proof data immediately for the realistic job since it's already completed
+        let proof_data = if job_id == "01JXMTC7TZMSNDTJ88212KTH7W" {
+            Some(r#"{
+                        "config": {
+                            "cairo_version": "cairo0",
+                            "layout": "dynamic",
+                            "memory_layout": "standard"
+                        },
+                        "proof": {
+                            "proof_a": ["0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4", "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"],
+                            "proof_b": [["0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123", "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4"], ["0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d", "0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123"]],
+                            "proof_c": ["0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4", "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"],
+                            "public_inputs": ["0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123", "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4"]
+                        },
+                        "fact_hash": "0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123",
+                        "verification_result": "VALID"
+                    }"#.to_string())
+        } else {
+            None
+        };
+
+        MockJobData { query, proof_data, created_at: now }
     }
 
     async fn update_job_status(&self, job_id: &str) {
+        // Skip dynamic status updates for the realistic job - it's already completed
+        if job_id == "01JXMTC7TZMSNDTJ88212KTH7W" {
+            return;
+        }
+
         let mut jobs = self.jobs.write().await;
         if let Some(job_data) = jobs.get_mut(job_id) {
             let elapsed = Utc::now().signed_duration_since(job_data.created_at);
@@ -93,8 +158,24 @@ impl MockAtlanticState {
                     job_data.query.step = Some(AtlanticQueryStep::ProofVerificationOnL1);
                     job_data.query.completed_at = Some(Utc::now().to_rfc3339());
 
-                    // Add mock proof data
-                    job_data.proof_data = Some(
+                    // Add mock proof data - use realistic data for the dynamic layout job
+                    let proof_data = if job_id == "01JXMTC7TZMSNDTJ88212KTH7W" {
+                        r#"{
+                        "config": {
+                            "cairo_version": "cairo0",
+                            "layout": "dynamic",
+                            "memory_layout": "standard"
+                        },
+                        "proof": {
+                            "proof_a": ["0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4", "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"],
+                            "proof_b": [["0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123", "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4"], ["0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d", "0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123"]],
+                            "proof_c": ["0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4", "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"],
+                            "public_inputs": ["0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123", "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4"]
+                        },
+                        "fact_hash": "0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123",
+                        "verification_result": "VALID"
+                    }"#
+                    } else {
                         r#"{
                         "config": {
                             "cairo_version": "0.12.0",
@@ -110,8 +191,8 @@ impl MockAtlanticState {
                         "fact_hash": "0xfedcba9876543210abcdef1234567890",
                         "verification_result": "VALID"
                     }"#
-                        .to_string(),
-                    );
+                    };
+                    job_data.proof_data = Some(proof_data.to_string());
                 }
             } else if elapsed.num_milliseconds() > self.config.processing_delay_ms as i64 {
                 job_data.query.status = AtlanticQueryStatus::InProgress;
@@ -128,7 +209,6 @@ pub async fn add_job_handler(
 ) -> Result<Json<AtlanticAddJobResponse>, StatusCode> {
     info!("Received add_job request with API key: {:?}", query.api_key);
 
-    let job_id = Uuid::new_v4().to_string();
     let mut layout = None;
     let mut network = None;
     let mut declared_job_size = None;
@@ -170,13 +250,25 @@ pub async fn add_job_handler(
         }
     }
 
-    debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}", 
-           layout, network, declared_job_size, cairo_version, cairo_vm, result_type);
+    // Determine job ID based on layout
+    let job_id = match layout.as_deref() {
+        Some("recursive_with_poseidon") => "01JXMXQAX4KNNSQDKDZTSHG8FC".to_string(),
+        Some("dynamic") => "01JXMTC7TZMSNDTJ88212KTH7W".to_string(),
+        _ => {
+            // Default to dynamic layout ID for other layouts
+            debug!("Using default job ID for layout: {:?}", layout);
+            "01JXMTC7TZMSNDTJ88212KTH7W".to_string()
+        }
+    };
 
-    let job_data = state.create_mock_job(job_id.clone(), layout, network).await;
+    debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, job_id: {}", 
+           layout, network, declared_job_size, cairo_version, cairo_vm, result_type, job_id);
+
+    let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
+    let job_layout = job_data.query.layout.clone();
     state.jobs.write().await.insert(job_id.clone(), job_data);
 
-    info!("Created mock job with ID: {}", job_id);
+    info!("Created mock job with ID: {} for layout: {:?}", job_id, job_layout);
 
     Ok(Json(AtlanticAddJobResponse { atlantic_query_id: job_id }))
 }
