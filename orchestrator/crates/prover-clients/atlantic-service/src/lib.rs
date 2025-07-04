@@ -175,7 +175,7 @@ impl ProverClient for AtlanticProverService {
         task_id: &str,
         task_type: TaskType,
         file_name: &str,
-    ) -> Result<String, ProverClientError> {
+    ) -> Result<Vec<u8>, ProverClientError> {
         match task_type {
             TaskType::Query => Ok(self
                 .atlantic_client

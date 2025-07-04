@@ -3,7 +3,7 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
 // ProverClient
-use orchestrator_prover_client_interface::ProverClient;
+use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient};
 use orchestrator_prover_client_interface::{Task, TaskStatus};
 use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -88,7 +88,12 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
     });
 
     let task_status = sharp_service
-        .get_task_status("c31381bf-4739-4667-b5b8-b08af1c6b1c7", Some(TEST_FACT.to_string()), false)
+        .get_task_status(
+            AtlanticStatusType::Job,
+            "c31381bf-4739-4667-b5b8-b08af1c6b1c7",
+            Some(TEST_FACT.to_string()),
+            false,
+        )
         .await
         .unwrap();
     assert_eq!(task_status, get_task_status_expectation(&cairo_job_status), "Cairo Job Status assertion failed");

@@ -1,6 +1,5 @@
 use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
-use crate::core::StorageClient;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
@@ -157,26 +156,28 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                // Download the following from the prover client and store in storage
-                // - cairo pie
-                // - snos output
-                // Calculate the program output from these and store this as well in storage
-                // If the proof download path is specified, download this as well
-
-                let cairo_pie_string = AggregatorJobHandler::fetch_and_store_artifact(
+                // Fetch aggregator cairo pie and store it in storage
+                let cairo_pie_bytes = AggregatorJobHandler::fetch_and_store_artifact(
                     &config,
                     &task_id,
                     "pie.cairo0.zip",
                     &metadata.cairo_pie_path,
                 )
                 .await?;
+
+                // Fetch aggregator snos output and store it in storage
+                // TODO: Check if Atlantic provide this or if we need this
                 // AggregatorJobHandler::fetch_and_store_artifact(config, &task_id, "snos_output.json", &metadata.snos_output_path).await?;
 
-                let cairo_pie = CairoPie::from_bytes(cairo_pie_string.as_bytes())
+
+                // Calculate the program output from the cairo pie
+                let cairo_pie = CairoPie::from_bytes(&cairo_pie_bytes)
                     .map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
                 let fact_info = get_fact_info(&cairo_pie, None)?;
                 let program_output = fact_info.program_output;
 
+
+                // Store the program output in storage
                 AggregatorJobHandler::store_program_output(
                     &config,
                     job.internal_id.clone(),
@@ -187,11 +188,13 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
                 // TODO: We can check if the fact got registered here only and fail verification if it didn't
 
+                // Download the proof if the path is specified
                 if let Some(download_path) = metadata.download_proof {
                     AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "proof.json", &download_path)
                         .await?;
                 }
 
+                // Update the batch status to ReadyForStateUpdate
                 config
                     .database()
                     .update_batch_status_by_index(metadata.batch_num, BatchStatus::ReadyForStateUpdate)
@@ -205,6 +208,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     batch_no = %internal_id,
                     "Aggregator job verification completed."
                 );
+
+                // Return the status that the job is verified
                 Ok(JobVerificationStatus::Verified)
             }
             TaskStatus::Failed(err) => {
@@ -251,7 +256,7 @@ impl AggregatorJobHandler {
         task_id: &str,
         file_name: &str,
         storage_path: &str,
-    ) -> Result<String, JobError> {
+    ) -> Result<Vec<u8>, JobError> {
         tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
         let cairo_pie =
             config.prover_client().get_task_artifacts(&task_id, TaskType::Query, file_name).await.map_err(|e| {
@@ -259,7 +264,8 @@ impl AggregatorJobHandler {
                 JobError::Other(OtherError(eyre!(e)))
             })?;
 
-        config.storage().put_data(bytes::Bytes::from(cairo_pie.clone().into_bytes()), storage_path).await?;
+        config.storage().put_data(bytes::Bytes::from(cairo_pie.clone()), storage_path).await?;
+
         Ok(cairo_pie)
     }
 

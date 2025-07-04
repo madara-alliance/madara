@@ -30,7 +30,7 @@ pub trait ProverClient: Send + Sync {
         task_id: &str,
         task_type: TaskType,
         file_name: &str,
-    ) -> Result<String, ProverClientError>;
+    ) -> Result<Vec<u8>, ProverClientError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

@@ -65,14 +65,14 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
-    pub async fn get_artifacts(&self, artifact_path: String) -> Result<String, AtlanticError> {
+    pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, AtlanticError> {
         debug!("Getting artifacts from {}", artifact_path);
         let client = reqwest::Client::new();
         let response = client.get(&artifact_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
 
         if response.status().is_success() {
-            let response_text = response.text().await.map_err(AtlanticError::GetJobResultFailure)?;
-            Ok(response_text)
+            let response_text = response.bytes().await.map_err(AtlanticError::GetJobResultFailure)?;
+            Ok(response_text.to_vec())
         } else {
             Err(AtlanticError::SharpService(response.status()))
         }
