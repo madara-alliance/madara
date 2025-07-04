@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0.
-pragma solidity >=0.6.0 <0.9.0;
+pragma solidity ^0.8.0;
 
 /*
   This contract provides means to block direct call of an external function.
@@ -10,7 +10,7 @@ pragma solidity >=0.6.0 <0.9.0;
 abstract contract BlockDirectCall {
     address immutable this_;
 
-    constructor() internal {
+    constructor() {
         this_ = address(this);
     }
 

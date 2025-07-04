@@ -71,14 +71,6 @@ library RolesLib {
     }
 
     function initialize(address provisionalGovernor, address provisionalSecAdmin) internal {
-        initialize(provisionalGovernor, provisionalSecAdmin, false);
-    }
-
-    function initialize(
-        address provisionalGovernor,
-        address provisionalSecAdmin,
-        bool subGovernors
-    ) internal {
         if (governanceRolesInitialized()) {
             // Support Proxied contract initialization.
             // In case the Proxy already initialized the roles,
@@ -88,7 +80,7 @@ library RolesLib {
                 "ROLES_ALREADY_INITIALIZED"
             );
         } else {
-            initGovernanceRoles(provisionalGovernor, subGovernors);
+            initGovernanceRoles(provisionalGovernor);
         }
 
         if (securityRolesInitialized()) {
@@ -110,7 +102,7 @@ library RolesLib {
         AccessControl._grantRole(SECURITY_ADMIN, provisionalSecAdmin);
     }
 
-    function initGovernanceRoles(address provisionalGovernor, bool subGovernors) private {
+    function initGovernanceRoles(address provisionalGovernor) private {
         AccessControl._grantRole(GOVERNANCE_ADMIN, provisionalGovernor);
         AccessControl._setRoleAdmin(APP_GOVERNOR, APP_ROLE_ADMIN);
         AccessControl._setRoleAdmin(APP_ROLE_ADMIN, GOVERNANCE_ADMIN);
@@ -118,10 +110,5 @@ library RolesLib {
         AccessControl._setRoleAdmin(OPERATOR, APP_ROLE_ADMIN);
         AccessControl._setRoleAdmin(TOKEN_ADMIN, APP_ROLE_ADMIN);
         AccessControl._setRoleAdmin(UPGRADE_GOVERNOR, GOVERNANCE_ADMIN);
-        if (subGovernors) {
-            AccessControl._grantRole(APP_ROLE_ADMIN, provisionalGovernor);
-            AccessControl._grantRole(GOVERNANCE_ADMIN, provisionalGovernor);
-            AccessControl._grantRole(UPGRADE_GOVERNOR, provisionalGovernor);
-        }
     }
 }

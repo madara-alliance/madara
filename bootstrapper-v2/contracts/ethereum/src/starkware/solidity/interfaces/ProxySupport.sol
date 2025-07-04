@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0.
-pragma solidity >=0.6.0 <0.9.0;
+pragma solidity ^0.8.0;
 
-import "src/starkware/solidity/interfaces/MGovernance.sol";
+import "src/starkware/solidity/components/Roles.sol";
+import "src/starkware/solidity/libraries/RolesLib.sol";
 import "src/starkware/solidity/libraries/Addresses.sol";
 import "src/starkware/solidity/interfaces/BlockDirectCall.sol";
 import "src/starkware/solidity/interfaces/ContractInitializer.sol";
@@ -11,10 +12,8 @@ import "src/starkware/solidity/interfaces/ContractInitializer.sol";
   an upgradability proxy.
   It perform the required semantics of the proxy pattern,
   but in a generic manner.
-  Instantiation of the Governance and of the ContractInitializer, that are the app specific
-  part of initialization, has to be done by the using contract.
 */
-abstract contract ProxySupport is MGovernance, BlockDirectCall, ContractInitializer {
+abstract contract ProxySupport is BlockDirectCall, ContractInitializer, Roles(true) {
     using Addresses for address;
 
     // The two function below (isFrozen & initialize) needed to bind to the Proxy.
@@ -59,7 +58,7 @@ abstract contract ProxySupport is MGovernance, BlockDirectCall, ContractInitiali
             // Contract was not initialized yet.
             validateInitData(initData);
             initializeContractState(initData);
-            initGovernance();
+            RolesLib.initialize();
         }
     }
 
@@ -74,16 +73,5 @@ abstract contract ProxySupport is MGovernance, BlockDirectCall, ContractInitiali
         );
         require(success, string(returndata));
         require(returndata.length == 0, string(returndata));
-    }
-
-    function safeAddImplementation(address newImplementation, bytes calldata data) external {
-        bytes memory msgdata = abi.encodeWithSignature(
-            "addImplementation(address,bytes,bool)",
-            newImplementation,
-            data,
-            false
-        );
-        (bool success, bytes memory returndata) = address(this).delegatecall(msgdata);
-        require(success, string(returndata));
     }
 }

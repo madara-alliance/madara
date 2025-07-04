@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0.
 pragma solidity ^0.8.0;
 
-import "src/starkware/solidity/libraries/NamedStorage8.sol";
+import "src/starkware/solidity/libraries/NamedStorage.sol";
 
 /*
   Holds the Proxy-specific state variables.

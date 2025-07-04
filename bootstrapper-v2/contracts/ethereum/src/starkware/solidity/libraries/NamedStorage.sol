@@ -32,17 +32,9 @@ library NamedStorage {
     function addressToUint256Mapping(string memory tag_)
         internal
         pure
-        returns (mapping(address => uint256) storage)
-    {
-        bytes32 location = keccak256(abi.encodePacked(tag_));
-        return _addressToUint256Mapping(location);
-    }
-
-    function _addressToUint256Mapping(bytes32 location)
-        internal
-        pure
         returns (mapping(address => uint256) storage randomVariable)
     {
+        bytes32 location = keccak256(abi.encodePacked(tag_));
         assembly {
             randomVariable.slot := location
         }
@@ -95,17 +87,9 @@ library NamedStorage {
     function addressToBoolMapping(string memory tag_)
         internal
         pure
-        returns (mapping(address => bool) storage)
-    {
-        bytes32 location = keccak256(abi.encodePacked(tag_));
-        return _addressToBoolMapping(location);
-    }
-
-    function _addressToBoolMapping(bytes32 location)
-        internal
-        pure
         returns (mapping(address => bool) storage randomVariable)
     {
+        bytes32 location = keccak256(abi.encodePacked(tag_));
         assembly {
             randomVariable.slot := location
         }

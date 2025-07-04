@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0.
-pragma solidity >=0.6.0 <0.9.0;
+pragma solidity ^0.8.0;
 
 /**
   StorageSlots holds the arbitrary storage slots used throughout the Proxy pattern.

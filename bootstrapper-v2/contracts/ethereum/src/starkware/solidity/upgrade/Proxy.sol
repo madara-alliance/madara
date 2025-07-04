@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0.
 pragma solidity ^0.8.20;
 
-import "src/starkware/solidity/upgrade/ProxyV5Storage.sol";
+import "src/starkware/solidity/upgrade/ProxyStorage.sol";
 import "src/starkware/solidity/upgrade/StorageSlots.sol";
-import "src/starkware/solidity/components/ProxyRoles.sol";
+import "src/starkware/solidity/components/Roles.sol";
 import "src/starkware/solidity/libraries/Addresses.sol";
 
 /**
@@ -17,8 +17,8 @@ import "src/starkware/solidity/libraries/Addresses.sol";
   - :sol:func:`upgradeTo`: Once an implementation is added, the governor may upgrade to that implementation only after a safety time period has passed (time lock), the current implementation is not the last version and the implementation is not frozen (see :sol:mod:`FullWithdrawals`).
   - :sol:func:`removeImplementation`: Any announced implementation may be removed. Removing an implementation is especially important once it has been used for an upgrade in order to avoid an additional unwanted revert to an older version.
 
-  The only entity allowed to perform the above operations is the upgrade governor
-  (see :sol:mod:`ProxyRoles`).
+  The only entity allowed to perform the above operations is the proxy governor
+  (see :sol:mod:`ProxyGovernance`).
 
   Every implementation is required to have an `initialize` function that replaces the constructor
   of a normal contract. Furthermore, the only parameter of this function is an array of bytes
@@ -35,7 +35,7 @@ import "src/starkware/solidity/libraries/Addresses.sol";
   The Proxy storage variables are not in the low slot addresses (a.k.a linear storage) - to avoid
   storage collision.
 */
-contract ProxyV5 is ProxyStorage, StorageSlots, ProxyRoles {
+contract Proxy is ProxyStorage, StorageSlots, Roles {
     // Emitted when the active implementation is replaced.
     event ImplementationUpgraded(address indexed implementation, bytes initializer);
 
@@ -53,11 +53,10 @@ contract ProxyV5 is ProxyStorage, StorageSlots, ProxyRoles {
 
     uint256 public constant MAX_UPGRADE_DELAY = 180 days;
 
-    string public constant PROXY_VERSION = "5.1.0";
+    string public constant PROXY_VERSION = "5.0.0";
 
     // Initialize Roles(false) so that we cannot renounce governance.
-    // And assign all governance roles to the deployer.
-    constructor(uint256 upgradeActivationDelay) ProxyRoles(false, true) {
+    constructor(uint256 upgradeActivationDelay) Roles(false) {
         setUpgradeActivationDelay(upgradeActivationDelay);
         setEnableWindowDuration(14 days);
     }
@@ -232,13 +231,6 @@ contract ProxyV5 is ProxyStorage, StorageSlots, ProxyRoles {
     }
 
     /*
-      Identical to addImplementation, without the finalize opiton.
-    */
-    function safeAddImplementation(address newImplementation, bytes calldata data) external {
-        addImplementation(newImplementation, data, false);
-    }
-
-    /*
       Introduce an implementation and its initialization vector,
       and start the time-lock before it can be upgraded to.
       addImplementation is not blocked when frozen or finalized.
@@ -248,7 +240,7 @@ contract ProxyV5 is ProxyStorage, StorageSlots, ProxyRoles {
         address newImplementation,
         bytes calldata data,
         bool finalize
-    ) public onlyUpgradeGovernor {
+    ) external onlyUpgradeGovernor {
         require(newImplementation.isContract(), "ADDRESS_NOT_CONTRACT");
 
         bytes32 implVectorHash = keccak256(abi.encode(newImplementation, data, finalize));
@@ -282,13 +274,6 @@ contract ProxyV5 is ProxyStorage, StorageSlots, ProxyRoles {
     }
 
     /*
-      Identical to upgradeTo, without the finalize opiton.
-    */
-    function upgradeTo(address newImplementation, bytes calldata data) external {
-        upgradeTo(newImplementation, data, false);
-    }
-
-    /*
       Upgrades the proxy to a new implementation, with its initialization.
       to upgrade successfully, implementation must have been added time-lock agreeably
       before, and the init vector must be identical ot the one submitted before.
@@ -310,7 +295,7 @@ contract ProxyV5 is ProxyStorage, StorageSlots, ProxyRoles {
         address newImplementation,
         bytes calldata data,
         bool finalize
-    ) public payable onlyUpgradeGovernor notFinalized notFrozen {
+    ) external payable onlyUpgradeGovernor notFinalized notFrozen {
         bytes32 implVectorHash = keccak256(abi.encode(newImplementation, data, finalize));
         uint256 activationTime = enabledTime()[implVectorHash];
         uint256 lastActivationTime = expirationTime()[implVectorHash];
