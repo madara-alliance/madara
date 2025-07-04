@@ -296,7 +296,7 @@ async fn database_test_update_batch(
     assert_eq!(updated_batch.num_blocks, updates.end_block.unwrap() - batch.start_block + 1);
     assert_eq!(updated_batch.start_block, batch.start_block);
     assert_eq!(updated_batch.end_block, updates.end_block.unwrap());
-    assert_eq!(updated_batch.is_batch_ready, true);
+    assert!(updated_batch.is_batch_ready);
     assert_eq!(updated_batch.status, BatchStatus::Closed);
     assert_eq!(updated_batch.bucket_id, batch.bucket_id);
     assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
