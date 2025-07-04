@@ -149,7 +149,6 @@ impl AtlanticClient {
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-
         let response = self.client
             .request()
             .method(Method::POST)
