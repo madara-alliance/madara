@@ -6,39 +6,20 @@ import {Pausable} from "@openzeppelin/contracts/utils/Pausable.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import "./libraries/DataTypes.sol";
 import {ProxySetup} from "./libraries/ProxySetup.sol";
-import {FactoryStorage} from "./FactoryStorage.sol";
+import {Implementations} from "./Implementations.sol";
 
 import {IOperator} from "./interfaces/IOperator.sol";
+import {IRoles} from "./interfaces/IRoles.sol";
 import {IGovernor} from "./interfaces/IGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 
 // Avoiding having anything in storage to make it cheaper
-contract Factory is Ownable, Pausable, FactoryStorage {
+contract Factory is Ownable, Pausable, Implementations {
   constructor(
     address owner,
     ImplementationContracts memory _implementationContracts
   ) Ownable(owner) {
     implementationContracts = _implementationContracts;
-  }
-
-  event ImplementationContractsUpdated(
-    ImplementationContracts implementationContracts
-  );
-
-  function updateImplementations(
-    ImplementationContracts calldata _implementationContracts
-  ) public onlyOwner whenNotPaused {
-    implementationContracts = _implementationContracts;
-
-    emit ImplementationContractsUpdated(implementationContracts);
-  }
-
-  function getImplementations()
-    public
-    view
-    returns (ImplementationContracts memory)
-  {
-    return implementationContracts;
   }
 
   function setup(
@@ -66,28 +47,32 @@ contract Factory is Ownable, Pausable, FactoryStorage {
     address multiBridgeProxy = setupMultiBridge(
       implementationContracts.multipBridge,
       address(baseLayerContracts.manager),
-      address(baseLayerContracts.coreContract)
+      address(baseLayerContracts.coreContract),
+      governor
     );
 
     baseLayerContracts.ethTokenBridge = setupEthBridge(
       implementationContracts.ethBridge,
       address(baseLayerContracts.manager),
       address(baseLayerContracts.coreContract),
-      implementationContracts.ethBridgeEIC
+      implementationContracts.ethBridgeEIC,
+      governor
     );
 
     // Setting up the Registry
     setupRegistry(
       baseLayerContracts.registry,
       implementationContracts.registry,
-      address(baseLayerContracts.manager)
+      address(baseLayerContracts.manager),
+      governor
     );
 
     setupManager(
       baseLayerContracts.manager,
       implementationContracts.manager,
       multiBridgeProxy,
-      address(baseLayerContracts.registry)
+      address(baseLayerContracts.registry),
+      governor
     );
 
     return baseLayerContracts;
@@ -137,7 +122,8 @@ contract Factory is Ownable, Pausable, FactoryStorage {
   function setupMultiBridge(
     address multiBridgeImplementation,
     address managerProxy,
-    address messagingContract // coreContract
+    address messagingContract, // coreContract
+    address governor
   ) public returns (address) {
     _requireNotPaused();
     Proxy multiBridgeProxy = new Proxy(0);
@@ -152,6 +138,8 @@ contract Factory is Ownable, Pausable, FactoryStorage {
       initData
     );
 
+    registerAdmins(address(multiBridgeProxy), governor);
+
     return address(multiBridgeProxy);
   }
 
@@ -159,7 +147,8 @@ contract Factory is Ownable, Pausable, FactoryStorage {
     address ethBridgeImplementation,
     address manager,
     address messagingContract, // coreContractProxy
-    address eicContract
+    address eicContract,
+    address governor
   ) public returns (address) {
     _requireNotPaused();
     Proxy ethBridgePxoxy = new Proxy(0);
@@ -170,36 +159,49 @@ contract Factory is Ownable, Pausable, FactoryStorage {
       ethBridgeImplementation,
       initData
     );
+
+    registerAdmins(address(ethBridgePxoxy), governor);
     return address(ethBridgePxoxy);
   }
 
   function setupRegistry(
     address registryProxy,
     address registryImplementation,
-    address managerProxy
-  ) public {
-    _requireNotPaused();
+    address managerProxy,
+    address governor
+  ) public whenNotPaused {
     bytes memory initData = abi.encode(address(0), managerProxy);
     ProxySetup.addImplementationAndUpgrade(
       address(registryProxy),
       registryImplementation,
       initData
     );
+
+    registerAdmins(registryProxy, governor);
   }
 
   function setupManager(
     address managerProxy,
     address managerImplementation,
     address bridgeProxy,
-    address registryProxy
-  ) public {
-    _requireNotPaused();
+    address registryProxy,
+    address governor
+  ) public whenNotPaused {
     bytes memory initData = abi.encode(address(0), bridgeProxy, registryProxy);
     ProxySetup.addImplementationAndUpgrade(
       managerProxy,
       managerImplementation,
       initData
     );
+    registerAdmins(managerProxy, governor);
+  }
+
+  function registerAdmins(
+    address proxyContract,
+    address governanceAdmin
+  ) private {
+    IRoles(proxyContract).registerGovernanceAdmin(governanceAdmin);
+    IRoles(proxyContract).registerSecurityAdmin(governanceAdmin);
   }
 
   function pause() external onlyOwner {
