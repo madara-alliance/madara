@@ -59,6 +59,7 @@ orchestrator-ethereum-settlement-client = { workspace = true }
 orchestrator-prover-client-interface = { workspace = true }
 orchestrator-settlement-client-interface = { workspace = true }
 orchestrator-sharp-service = { workspace = true }
+orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 prove_block = { workspace = true }
@@ -71,6 +72,7 @@ starknet-core = { workspace = true }
 starknet-os = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
+swiftness_proof_parser = { workspace = true }
 tempfile = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -115,14 +117,15 @@ jemallocator = "0.5.4"
 tracing-test = "0.2.5"
 
 [features]
-default = ["ethereum", "with_mongodb", "with_sqs"]
+default = ["ethereum", "with_mongodb", "with_sqs", "starknet"]
 ethereum = ["orchestrator-ethereum-da-client"]
+starknet = ["orchestrator-starknet-da-client"]
 with_mongodb = ["mongodb"]
 with_sqs = ["omniqueue"]
 testing = ["orchestrator-ethereum-settlement-client/testing"]
 
 [dev-dependencies]
-hyper = { version = "0.14", features = ["full"] }
+hyper = { version = "1.6.0", features = ["full"] }
 rstest = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 

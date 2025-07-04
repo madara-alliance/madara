@@ -1,8 +1,8 @@
 use alloy::providers::{ProviderBuilder, RootProvider};
 use alloy::sol;
 use alloy::transports::http::{Client, Http};
-use alloy_primitives::B256;
-use orchestrator_utils::address_try_from_str;
+use alloy_primitives::{Address, B256};
+use std::str::FromStr;
 use url::Url;
 
 sol!(
@@ -18,25 +18,76 @@ pub enum FactCheckerError {
     InvalidFact(#[source] alloy::contract::Error),
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub enum SettlementLayer {
+    Ethereum,
+    Starknet,
+}
+
+impl FromStr for SettlementLayer {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "ethereum" => Ok(SettlementLayer::Ethereum),
+            "starknet" => Ok(SettlementLayer::Starknet),
+            _ => Err(format!("Unknown settlement layer: {}", s)),
+        }
+    }
+}
+
 pub struct FactChecker {
-    fact_registry: FactRegistry::FactRegistryInstance<TransportT, ProviderT>,
+    fact_registry: Option<FactRegistry::FactRegistryInstance<TransportT, ProviderT>>,
+    settlement_layer: SettlementLayer,
 }
 
 type TransportT = Http<Client>;
 type ProviderT = RootProvider<TransportT>;
 
 impl FactChecker {
-    pub fn new(sharp_rpc_node_url: Url, gps_verifier_contract_address: String) -> Self {
-        let provider = ProviderBuilder::new().on_http(sharp_rpc_node_url);
-        let verifier_address =
-            address_try_from_str(&gps_verifier_contract_address).expect("Invalid GPS verifier contract address");
-        let fact_registry = FactRegistry::new(verifier_address, provider);
-        Self { fact_registry }
+    pub fn new(rpc_url: Url, gps_verifier_contract_address: String, settlement_layer: String) -> Self {
+        let settlement_layer = SettlementLayer::from_str(&settlement_layer).expect("Invalid settlement layer");
+
+        match settlement_layer {
+            SettlementLayer::Ethereum => {
+                let provider = ProviderBuilder::new().on_http(rpc_url);
+                let fact_registry = FactRegistry::new(
+                    Address::from_str(gps_verifier_contract_address.as_str())
+                        .expect("Invalid GPS verifier contract address"),
+                    provider,
+                );
+                Self { fact_registry: Some(fact_registry), settlement_layer }
+            }
+            SettlementLayer::Starknet => Self { fact_registry: None, settlement_layer },
+        }
     }
 
     pub async fn is_valid(&self, fact: &B256) -> Result<bool, FactCheckerError> {
-        let FactRegistry::isValidReturn { _0 } =
-            self.fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)?;
-        Ok(_0)
+        match self.settlement_layer {
+            SettlementLayer::Ethereum => {
+                let fact_registry =
+                    self.fact_registry.as_ref().expect("Fact registry should be initialized for Ethereum");
+                let FactRegistry::isValidReturn { _0 } =
+                    fact_registry.isValid(*fact).call().await.map_err(FactCheckerError::InvalidFact)?;
+                Ok(_0)
+            }
+            SettlementLayer::Starknet => {
+                // TODO:L3 Implement actual Starknet fact checking
+                // For now, return true as a mock implementation
+                Ok(true)
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_settlement_layer_from_str() {
+        assert_eq!(SettlementLayer::from_str("ethereum").unwrap(), SettlementLayer::Ethereum);
+        assert_eq!(SettlementLayer::from_str("starknet").unwrap(), SettlementLayer::Starknet);
+        assert!(SettlementLayer::from_str("invalid").is_err());
     }
 }

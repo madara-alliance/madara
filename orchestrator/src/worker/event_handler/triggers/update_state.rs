@@ -106,8 +106,8 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         let mut blocks_to_process = find_successive_blocks_in_vector(blocks_to_process);
-        if blocks_to_process.len() > 10 {
-            blocks_to_process = blocks_to_process.into_iter().take(10).collect();
+        if blocks_to_process.len() > 0 {
+            blocks_to_process = blocks_to_process.into_iter().take(1).collect();
         }
 
         // Prepare state transition metadata
