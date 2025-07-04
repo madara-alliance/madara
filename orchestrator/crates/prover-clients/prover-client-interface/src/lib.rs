@@ -17,7 +17,6 @@ pub trait ProverClient: Send + Sync {
     async fn submit_task(
         &self,
         task: Task,
-        n_steps: Option<usize>,
     ) -> Result<String, ProverClientError>;
     async fn get_task_status(
         &self,
@@ -34,13 +33,14 @@ pub trait ProverClient: Send + Sync {
     ) -> Result<String, ProverClientError>;
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TaskType {
     Query,
     Bucket,
 }
 
 pub enum Task {
-    CreateJob(Box<CairoPie>, Option<String>, Option<u64>),
+    CreateJob(Box<CairoPie>, Option<String>, Option<u64>, Option<usize>),
     CreateBucket,
     CloseBucket(String),
 }

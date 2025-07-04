@@ -81,7 +81,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
         // Call close bucket
         let external_id = config
             .prover_client()
-            .submit_task(Task::CloseBucket(metadata.bucket_id), None)
+            .submit_task(Task::CloseBucket(metadata.bucket_id))
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
@@ -120,14 +120,9 @@ impl JobHandlerTrait for AggregatorJobHandler {
             "Getting bucket status from prover client"
         );
 
-        let (cross_verify, fact) = match &metadata.ensure_on_chain_registration {
-            Some(fact_str) => (true, Some(fact_str.clone())),
-            None => (false, None),
-        };
-
         let task_status = config
             .prover_client()
-            .get_task_status(AtlanticStatusType::Bucket, &bucket_id, fact, cross_verify)
+            .get_task_status(AtlanticStatusType::Bucket, &bucket_id, None, false)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {

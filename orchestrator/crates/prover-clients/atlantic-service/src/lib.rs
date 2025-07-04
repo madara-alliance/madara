@@ -48,11 +48,7 @@ pub struct AtlanticProverService {
 #[async_trait]
 impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self, task))]
-    async fn submit_task(
-        &self,
-        task: Task,
-        n_steps: Option<usize>,
-    ) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -60,7 +56,7 @@ impl ProverClient for AtlanticProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(cairo_pie, bucket_id, bucket_job_index) => {
+            Task::CreateJob(cairo_pie, bucket_id, bucket_job_index, n_steps) => {
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();

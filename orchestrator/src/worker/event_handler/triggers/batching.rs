@@ -195,7 +195,7 @@ impl BatchingTrigger {
         // Start a new bucket
         let bucket_id = config
             .prover_client()
-            .submit_task(Task::CreateBucket, None)
+            .submit_task(Task::CreateBucket)
             .await
             .map_err(|e| {
                 tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);

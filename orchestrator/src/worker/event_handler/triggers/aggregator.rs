@@ -96,7 +96,7 @@ impl JobTrigger for AggregatorJobTrigger {
                         .await?;
                     tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
-                Err(e) => {
+                Err(_) => {
                     tracing::warn!(batch_id = %batch.id, batch_index = %batch.index, "Failed to create new aggregator job");
                     let attributes = [
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),

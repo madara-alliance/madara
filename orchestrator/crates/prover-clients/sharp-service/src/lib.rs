@@ -8,7 +8,9 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus, TaskType};
+use orchestrator_prover_client_interface::{
+    AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 
@@ -41,11 +43,7 @@ pub struct SharpProverService {
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
     /// Not using two parameters as the sharp client is not being used
-    async fn submit_task(
-        &self,
-        task: Task,
-        _n_steps: Option<usize>,
-    ) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -53,7 +51,7 @@ impl ProverClient for SharpProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(cairo_pie, _, _) => {
+            Task::CreateJob(cairo_pie, _, _, _) => {
                 let encoded_pie =
                     starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
                 let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
@@ -65,8 +63,12 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(job_key.to_string())
             }
-            Task::CreateBucket => {todo!()},
-            Task::CloseBucket(_) => {todo!()},
+            Task::CreateBucket => {
+                todo!()
+            }
+            Task::CloseBucket(_) => {
+                todo!()
+            }
         }
     }
 
