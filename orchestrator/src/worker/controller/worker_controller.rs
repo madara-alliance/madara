@@ -3,7 +3,6 @@ use crate::error::event::EventSystemError;
 use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::worker::controller::event_worker::EventWorker;
-use color_eyre::eyre::eyre;
 use futures::future::try_join_all;
 use std::sync::Arc;
 use std::sync::Mutex;
