@@ -9,10 +9,11 @@ use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, JobId, JobRouteResult};
+use super::super::types::{ApiResponse, BlockJobStatusResponse, JobId, JobRouteResult, JobStatusResponseItem};
+use crate::core::config::Config;
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
-use crate::{core::config::Config, utils::metrics::ORCHESTRATOR_METRICS};
 
 /// Handles HTTP requests to process a job.
 ///
@@ -46,7 +47,8 @@ async fn handle_process_job_request(
             ORCHESTRATOR_METRICS
                 .successful_job_operations
                 .add(1.0, &[KeyValue::new("operation_type", "queue_process")]);
-            Ok(Json(ApiResponse::success(Some(format!("Job with id {} queued for processing", id)))).into_response())
+            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for processing", id))))
+                .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for processing");
@@ -86,7 +88,8 @@ async fn handle_verify_job_request(
         Ok(_) => {
             info!("Job queued for verification successfully");
             ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);
-            Ok(Json(ApiResponse::success(Some(format!("Job with id {} queued for verification", id)))).into_response())
+            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for verification", id))))
+                .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for verification");
@@ -129,7 +132,7 @@ async fn handle_retry_job_request(
                 &[KeyValue::new("operation_type", "process_job"), KeyValue::new("operation_info", "retry_job")],
             );
 
-            Ok(Json(ApiResponse::success(Some(format!("Job with id {} retry initiated", id)))).into_response())
+            Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} retry initiated", id)))).into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to retry job");
@@ -153,7 +156,45 @@ async fn handle_retry_job_request(
 /// # Returns
 /// * `Router` - Configured router with all job endpoints
 pub fn job_router(config: Arc<Config>) -> Router {
-    Router::new().nest("/:id", job_trigger_router(config.clone()))
+    Router::new()
+        .nest("/:id", job_trigger_router(config.clone()))
+        .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))
+}
+
+/// Handles HTTP requests to get job statuses by block number.
+///
+/// This endpoint retrieves all job statuses for a given block number.
+///
+/// # Arguments
+/// * `Path(block_number)` - The block number extracted from the URL path
+/// * `State(config)` - Shared application configuration
+///
+/// # Returns
+/// * `JobRouteResult<BlockJobStatusResponse>` - Success response with job statuses or error details
+#[instrument(skip(config), fields(block_number = %block_number))]
+async fn handle_get_job_status_by_block_request(
+    Path(block_number): Path<u64>,
+    State(config): State<Arc<Config>>,
+) -> JobRouteResult {
+    match config.database().get_jobs_by_block_number(block_number).await {
+        Ok(jobs) => {
+            let mut job_status_items = Vec::new();
+            for job in jobs {
+                // ProofRegistration is now always included if found
+                job_status_items.push(JobStatusResponseItem { job_type: job.job_type, id: job.id, status: job.status });
+            }
+            info!(count = job_status_items.len(), "Successfully fetched job statuses for block");
+            Ok(Json(ApiResponse::<BlockJobStatusResponse>::success_with_data(
+                BlockJobStatusResponse { jobs: job_status_items },
+                Some(format!("Successfully fetched job statuses for block {}", block_number)),
+            ))
+            .into_response())
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to fetch job statuses for block");
+            Err(JobRouteError::ProcessingError(e.to_string()))
+        }
+    }
 }
 
 /// Creates the nested router for job trigger endpoints.
