@@ -1,4 +1,3 @@
-use core::num::NonZeroU128;
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
 use serde::Deserialize;
@@ -75,6 +74,7 @@ pub struct PendingHeader {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Starknet header definition.
+// TODO: add L2 gas
 pub struct Header {
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
@@ -116,15 +116,25 @@ pub struct GasPrices {
     pub strk_l1_data_gas_price: u128,
 }
 
-impl From<&GasPrices> for blockifier::blockifier::block::GasPrices {
+// Starknet API can't have null gas prices, so the default null gas prices are set to 1.
+impl From<&GasPrices> for starknet_api::block::GasPrices {
     fn from(gas_prices: &GasPrices) -> Self {
-        let one = NonZeroU128::new(1).unwrap();
-
         Self {
-            eth_l1_gas_price: NonZeroU128::new(gas_prices.eth_l1_gas_price).unwrap_or(one),
-            strk_l1_gas_price: NonZeroU128::new(gas_prices.strk_l1_gas_price).unwrap_or(one),
-            eth_l1_data_gas_price: NonZeroU128::new(gas_prices.eth_l1_data_gas_price).unwrap_or(one),
-            strk_l1_data_gas_price: NonZeroU128::new(gas_prices.strk_l1_data_gas_price).unwrap_or(one),
+            eth_gas_prices: starknet_api::block::GasPriceVector {
+                l1_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l1_gas_price.into())
+                    .unwrap_or_default(),
+                l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l1_data_gas_price.into())
+                    .unwrap_or_default(),
+                // TODO: L2 gas price is not used in the current implementation, but it should be set to 1
+                l2_gas_price: Default::default(), // 1
+            },
+            strk_gas_prices: starknet_api::block::GasPriceVector {
+                l1_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l1_gas_price.into())
+                    .unwrap_or_default(),
+                l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l1_data_gas_price.into())
+                    .unwrap_or_default(),
+                l2_gas_price: Default::default(), // 1
+            },
         }
     }
 }

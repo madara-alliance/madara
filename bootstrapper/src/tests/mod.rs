@@ -14,7 +14,7 @@ use url::Url;
 use crate::contract_clients::config::Clients;
 use crate::tests::erc20_bridge::erc20_bridge_test_helper;
 use crate::tests::eth_bridge::eth_bridge_test_helper;
-use crate::{bootstrap, setup_core_contract, setup_l2, BootstrapperOutput, ConfigFile};
+use crate::{bootstrap, setup_core_contract, setup_l2, BootstrapperOutput, ConfigBuilder, ConfigFile};
 
 async fn test_setup(args: &ConfigFile, clients: &Clients) -> BootstrapperOutput {
     // Setup L1 (core contract)
@@ -150,7 +150,7 @@ fn kill_process_on_port(port: u16) {
 }
 
 fn get_test_config_file() -> ConfigFile {
-    ConfigFile::default()
+    ConfigBuilder::default().build().expect("Failed to convert config builder to final config")
 }
 
 async fn wait_for_madara() -> color_eyre::Result<()> {
@@ -188,6 +188,7 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         .arg("0")
         .arg("--blob-gas-price")
         .arg("0")
+        .arg("--no-charge-fee")
         .arg("--rpc-admin")
         .arg("--rpc-admin-port")
         .arg("19943")
@@ -204,7 +205,7 @@ fn ensure_toolchain() -> color_eyre::Result<()> {
     let output = Command::new("rustup").arg("toolchain").arg("list").output()?;
 
     let output_str = String::from_utf8_lossy(&output.stdout);
-    if !output_str.contains("1.85") {
+    if !output_str.contains("1.86") {
         Command::new("rustup").arg("install").arg("1.81").status()?;
     }
     Ok(())

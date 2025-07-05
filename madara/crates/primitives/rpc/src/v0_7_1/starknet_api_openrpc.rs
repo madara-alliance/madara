@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 use super::{BlockId, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn};
 use crate::custom_serde::NumAsHex;
 use serde::ser::SerializeMap;
@@ -643,7 +645,7 @@ pub enum FunctionAbiType {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct FunctionCall {
     /// The parameters passed to the function
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     pub contract_address: Address,
     pub entry_point_selector: Felt,
 }
@@ -668,11 +670,11 @@ pub struct InvokeTxnReceipt {
     pub common_receipt_properties: CommonReceiptProperties,
 }
 
-/// invokes a specific function in the desired contract (not necessarily an account)
+/// Invokes a specific function in the desired contract (not necessarily an account)
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct InvokeTxnV0 {
     /// The parameters passed to the function
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     pub contract_address: Address,
     pub entry_point_selector: Felt,
     /// The maximal fee that can be charged for including the transaction
@@ -683,7 +685,7 @@ pub struct InvokeTxnV0 {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct InvokeTxnV1 {
     /// The data expected by the account's `execute` function (in most usecases, this includes the called contract address and a function selector)
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     /// The maximal fee that can be charged for including the transaction
     pub max_fee: Felt,
     pub nonce: Felt,
@@ -696,7 +698,7 @@ pub struct InvokeTxnV3 {
     /// data needed to deploy the account contract from which this tx will be initiated
     pub account_deployment_data: Vec<Felt>,
     /// The data expected by the account's `execute` function (in most usecases, this includes the called contract address and a function selector)
-    pub calldata: Vec<Felt>,
+    pub calldata: Calldata,
     /// The storage domain of the account's balance from which fee will be charged
     pub fee_data_availability_mode: DaMode,
     pub nonce: Felt,
@@ -860,7 +862,10 @@ pub struct SierraEntryPoint {
 }
 
 /// A transaction signature
-pub type Signature = Vec<Felt>;
+pub type Signature = Arc<Vec<Felt>>;
+
+/// A transaction calldata
+pub type Calldata = Arc<Vec<Felt>>;
 
 /// Flags that indicate how to simulate a given transaction. By default, the sequencer behavior is replicated locally
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
