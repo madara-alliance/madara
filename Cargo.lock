@@ -3685,7 +3685,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.2.1#67766e344d586978ae0aa8a9240cf916d96fefb4"
+source = "git+https://github.com/karnotxyz/snos?rev=035d6fe92b6a5369d363a20fa033b325dbc959cf#035d6fe92b6a5369d363a20fa033b325dbc959cf"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -8530,7 +8530,7 @@ dependencies = [
 [[package]]
 name = "pathfinder-common"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=b395d62bf7f0fe259477abf1db312c6a800752cc#b395d62bf7f0fe259477abf1db312c6a800752cc"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
 dependencies = [
  "anyhow",
  "bitvec",
@@ -8555,7 +8555,7 @@ dependencies = [
 [[package]]
 name = "pathfinder-crypto"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=b395d62bf7f0fe259477abf1db312c6a800752cc#b395d62bf7f0fe259477abf1db312c6a800752cc"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
 dependencies = [
  "bitvec",
  "fake",
@@ -8566,7 +8566,7 @@ dependencies = [
 [[package]]
 name = "pathfinder-serde"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=b395d62bf7f0fe259477abf1db312c6a800752cc#b395d62bf7f0fe259477abf1db312c6a800752cc"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
 dependencies = [
  "anyhow",
  "num-bigint",
@@ -9113,7 +9113,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.2.1#67766e344d586978ae0aa8a9240cf916d96fefb4"
+source = "git+https://github.com/karnotxyz/snos?rev=035d6fe92b6a5369d363a20fa033b325dbc959cf#035d6fe92b6a5369d363a20fa033b325dbc959cf"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9613,7 +9613,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.2.1#67766e344d586978ae0aa8a9240cf916d96fefb4"
+source = "git+https://github.com/karnotxyz/snos?rev=035d6fe92b6a5369d363a20fa033b325dbc959cf#035d6fe92b6a5369d363a20fa033b325dbc959cf"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9628,7 +9628,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.2.1#67766e344d586978ae0aa8a9240cf916d96fefb4"
+source = "git+https://github.com/karnotxyz/snos?rev=035d6fe92b6a5369d363a20fa033b325dbc959cf#035d6fe92b6a5369d363a20fa033b325dbc959cf"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11266,7 +11266,7 @@ dependencies = [
 [[package]]
 name = "starknet-gateway-types"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=b395d62bf7f0fe259477abf1db312c6a800752cc#b395d62bf7f0fe259477abf1db312c6a800752cc"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
 dependencies = [
  "anyhow",
  "fake",
@@ -11298,7 +11298,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.2.1#67766e344d586978ae0aa8a9240cf916d96fefb4"
+source = "git+https://github.com/karnotxyz/snos?rev=035d6fe92b6a5369d363a20fa033b325dbc959cf#035d6fe92b6a5369d363a20fa033b325dbc959cf"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11347,7 +11347,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.2.1#67766e344d586978ae0aa8a9240cf916d96fefb4"
+source = "git+https://github.com/karnotxyz/snos?rev=035d6fe92b6a5369d363a20fa033b325dbc959cf#035d6fe92b6a5369d363a20fa033b325dbc959cf"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11843,7 +11843,7 @@ dependencies = [
 [[package]]
 name = "tagged"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=b395d62bf7f0fe259477abf1db312c6a800752cc#b395d62bf7f0fe259477abf1db312c6a800752cc"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
 dependencies = [
  "fake",
 ]
@@ -11851,7 +11851,7 @@ dependencies = [
 [[package]]
 name = "tagged-debug-derive"
 version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=b395d62bf7f0fe259477abf1db312c6a800752cc#b395d62bf7f0fe259477abf1db312c6a800752cc"
+source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
 dependencies = [
  "proc-macro2",
  "quote",
