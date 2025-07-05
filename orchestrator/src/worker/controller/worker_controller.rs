@@ -88,13 +88,13 @@ impl WorkerController {
     /// * `Vec<QueueType>` - A list of queues for L3 network
     fn get_l3_queues() -> Vec<QueueType> {
         vec![
-            // QueueType::SnosJobProcessing,
-            // QueueType::ProvingJobProcessing,
+            QueueType::SnosJobProcessing,
+            QueueType::ProvingJobProcessing,
             QueueType::ProofRegistrationJobProcessing,
             QueueType::DataSubmissionJobProcessing,
             QueueType::UpdateStateJobProcessing,
-            // QueueType::SnosJobVerification,
-            // QueueType::ProvingJobVerification,
+            QueueType::SnosJobVerification,
+            QueueType::ProvingJobVerification,
             QueueType::ProofRegistrationJobVerification,
             QueueType::DataSubmissionJobVerification,
             QueueType::UpdateStateJobVerification,
