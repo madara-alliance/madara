@@ -2,8 +2,6 @@ use crate::core::config::Config;
 use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::types::queue::QueueType;
-use crate::types::queue_control::QUEUES;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -63,7 +61,7 @@ impl JobTrigger for SnosJobTrigger {
     /// 1. Calculates processing boundaries based on sequencer state and completed jobs
     /// 2. Determines available concurrency slots
     /// 3. Schedules blocks for processing within slot constraints
-    /// 4. Create the actual jobs in the database
+    /// 4. Creates the actual jobs in the database
     ///
     /// # Arguments
     /// * `config` - Application configuration containing database, client, and service settings
@@ -157,12 +155,9 @@ impl SnosJobTrigger {
         config: &Arc<Config>,
         bounds: ProcessingBounds,
     ) -> Result<JobSchedulingContext> {
-        let max_slots = QUEUES
-            .get(&QueueType::SnosJobProcessing)
-            .ok_or_else(|| color_eyre::eyre::eyre!("SnosJobProcessing queue config not found"))?
-            .queue_control
-            .max_message_count as u64;
+        let service_config = config.service_config();
 
+        let max_slots = service_config.max_concurrent_created_snos_jobs;
         let pending_jobs_count = self.count_pending_snos_jobs(config, max_slots.to_i64()).await?;
         let available_slots = max_slots.saturating_sub(pending_jobs_count);
 
@@ -203,7 +198,7 @@ impl SnosJobTrigger {
         config: &Arc<Config>,
         context: &mut JobSchedulingContext,
     ) -> Result<()> {
-        // Handle a case where no SNOS jobs have completed yet
+        // Handle case where no SNOS jobs have completed yet
         if context.bounds.block_n_completed.is_none() {
             return self.schedule_initial_jobs(config, context).await;
         }
