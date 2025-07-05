@@ -13,7 +13,6 @@ import {IRoles} from "./interfaces/IRoles.sol";
 import {IGovernor} from "./interfaces/IGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 
-// Avoiding having anything in storage to make it cheaper
 contract Factory is Ownable, Pausable, Implementations {
   constructor(
     address owner,
@@ -202,6 +201,9 @@ contract Factory is Ownable, Pausable, Implementations {
   ) private {
     IRoles(proxyContract).registerGovernanceAdmin(governanceAdmin);
     IRoles(proxyContract).registerSecurityAdmin(governanceAdmin);
+    IRoles(proxyContract).registerUpgradeGovernor(governanceAdmin);
+    IRoles(proxyContract).registerAppRoleAdmin(governanceAdmin);
+    IRoles(proxyContract).registerAppGovernor(governanceAdmin);
   }
 
   function pause() external onlyOwner {
