@@ -217,7 +217,7 @@ impl<'a> EthBridge<'a> {
 pub async fn deploy_eth_token_on_l2(
     rpc_provider_l2: &JsonRpcClient<HttpTransport>,
     eth_proxy_address: Felt,
-    eth_erc20_class_hash: Felt,
+    _eth_erc20_class_hash: Felt,
     account: &RpcAccount<'_>,
     eth_legacy_bridge_address: Felt,
 ) -> Felt {
