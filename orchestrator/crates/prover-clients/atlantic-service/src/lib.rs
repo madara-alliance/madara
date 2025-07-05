@@ -74,7 +74,6 @@ impl ProverClient for AtlanticProverService {
                     .await?;
 
                 tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
-                // The temporary file will be automatically deleted when `temp_file` goes out of scope
                 Ok(atlantic_job_response.atlantic_query_id)
             }
         }
@@ -163,6 +162,7 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
+
         let atlantic_job_response = self
             .atlantic_client
             .submit_l2_query(proof, cairo_verifier, n_steps, &self.atlantic_network, &self.atlantic_api_key)
