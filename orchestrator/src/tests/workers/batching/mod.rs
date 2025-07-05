@@ -5,6 +5,7 @@ use crate::core::client::storage::MockStorageClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::worker::event_handler::triggers::JobTrigger;
 use httpmock::MockServer;
+use orchestrator_prover_client_interface::MockProverClient;
 use rstest::rstest;
 use serde_json::json;
 use starknet::providers::jsonrpc::HttpTransport;
@@ -12,9 +13,9 @@ use starknet::providers::JsonRpcClient;
 use url::Url;
 
 #[rstest]
+#[tokio::test]
 #[case(false)]
 #[case(true)]
-#[tokio::test]
 async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Box<dyn Error>> {
     let server = MockServer::start();
     let mut db = MockDatabaseClient::new();
@@ -24,21 +25,28 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
 
     // Mocking database expectations
     if !has_existing_batch {
+        // DB does not have an existing batch
+        // Returning None to specify no existing batch
         db.expect_get_latest_batch().returning(|| Ok(None));
+
+        // Batch containing blocks from 0 to 5
         start_block = 0;
         end_block = 5;
     } else {
-        // Mock existing batch
+        // DB does have an existing batch
         let existing_batch = crate::types::batch::Batch {
             index: 1,
             start_block: 0,
             end_block: 3,
-            size: 4,
+            num_blocks: 4,
             squashed_state_updates_path: "state_update/batch/1.json".to_string(),
             is_batch_ready: false,
             ..Default::default()
         };
+        // Returning Some(existing_batch) to specify an existing batch
         db.expect_get_latest_batch().returning(move || Ok(Some(existing_batch.clone())));
+
+        // Batch containing blocks from 4 to 7
         start_block = 4;
         end_block = 7;
     }
@@ -74,16 +82,16 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
                 .withf(move |batch| {
                     batch.start_block == block_num
                         && batch.end_block == block_num
-                        && batch.size == 1
+                        && batch.num_blocks == 1
                         && batch.squashed_state_updates_path == state_update_path
                 })
                 .returning(|batch| Ok(batch));
         } else {
-            db.expect_update_batch()
+            db.expect_update_or_create_batch()
                 .withf(move |batch, updates| {
                     batch.end_block == block_num - 1
-                        && updates.end_block == block_num
-                        && updates.is_batch_ready == false
+                        && updates.end_block == Some(block_num)
+                        && updates.is_batch_ready == Some(false)
                 })
                 .returning(|batch, update| Ok(batch.clone()));
         }
@@ -93,10 +101,14 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         Url::parse(format!("http://localhost:{}", server.port()).as_str()).expect("Failed to parse URL"),
     ));
 
+    let mut prover_client = MockProverClient::new();
+    prover_client.expect_submit_task().times(1).returning(|_| Ok("bucket_id".to_string()));
+
     let services = TestConfigBuilder::new()
         .configure_starknet_client(provider.into())
         .configure_database(db.into())
         .configure_storage_client(storage.into())
+        .configure_prover_client(prover_client.into())
         .build()
         .await;
 
