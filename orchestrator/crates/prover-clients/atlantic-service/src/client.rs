@@ -41,7 +41,6 @@ impl ProvingLayer for StarknetLayer {
 pub struct AtlanticClient {
     client: HttpClient,
     proving_layer: Box<dyn ProvingLayer>,
-    // is_mock: bool,
 }
 
 impl AtlanticClient {
@@ -96,9 +95,6 @@ impl AtlanticClient {
                 .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))?,
         );
         debug!("Triggering the debug Request for: {:?}", api);
-        // if self.is_mock {
-        //     return Ok(AtlanticAddJobResponse { atlantic_query_id: "01JXMTC7TZMSNDTJ88212KTH7W".to_string() });
-        // }
         let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
@@ -153,8 +149,7 @@ impl AtlanticClient {
         atlantic_network: impl AsRef<str>,
         atlantic_api_key: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-
-        let api = self.client
+        let response = self.client
             .request()
             .method(Method::POST)
             .path("atlantic-query")
@@ -166,13 +161,10 @@ impl AtlanticClient {
             .form_text("network", atlantic_network.as_ref())
             .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
             .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
-            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str());
-        debug!("Triggering the debug Request for: {:?}", api);
-        // if self.is_mock {
-        //     return Ok(AtlanticAddJobResponse { atlantic_query_id: "01JXMXQAX4KNNSQDKDZTSHG8FC".to_string() });
-        // }
-
-        let response = api.send().await.map_err(AtlanticError::AddJobFailure)?;
+            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+            .send()
+            .await
+            .map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
