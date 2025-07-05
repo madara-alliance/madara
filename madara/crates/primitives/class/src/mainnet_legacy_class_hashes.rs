@@ -83,6 +83,24 @@ pub fn get_real_class_hash(block_n: u64, computed: Felt) -> Felt {
     computed
 }
 
+/// This function iterates through the `CLASS_HASHES` constant to find a matching computed class hash.
+/// If a match is found, it returns the corresponding "real" class hash.
+/// Otherwise, it returns the original computed class hash.
+/// This is used to handle specific legacy Cairo v0 class hashes on Mainnet
+/// where the on-chain class hash differs from the computed one.
+pub fn get_real_class_hash_for_any_block(computed: Felt) -> Felt {
+    // Search through all entries to find matching computed hash
+    for (_entry_block_n, entry_real_hash, entry_computed) in &CLASS_HASHES {
+        if entry_computed == &computed {
+            // Found matching computed hash, return the real hash
+            return *entry_real_hash;
+        }
+    }
+
+    // Not found, return the original computed value
+    computed
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

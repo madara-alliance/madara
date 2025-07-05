@@ -1,7 +1,3 @@
-use std::time::Duration;
-
-use tokio::time::sleep;
-
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::{
     build_single_owner_account, declare_contract, deploy_account_using_priv_key, DeclarationInput, RpcAccount,
@@ -22,15 +18,12 @@ pub async fn account_init<'a>(clients: &'a Clients, arg_config: &'a ConfigFile) 
     .await;
     log::info!("OZ Account Class Hash Declared");
     save_to_json("oz_account_class_hash", &JsonValueType::StringType(oz_account_class_hash.to_string())).unwrap();
-    sleep(Duration::from_secs(10)).await;
 
     log::info!("Waiting for block to be mined [/]");
-    sleep(Duration::from_secs(10)).await;
 
     let account_address_temp =
         deploy_account_using_priv_key(TEMP_ACCOUNT_PRIV_KEY.to_string(), clients.provider_l2(), oz_account_class_hash)
             .await;
-    sleep(Duration::from_secs(10)).await;
 
     let user_account_temp = build_single_owner_account(
         clients.provider_l2(),
@@ -47,7 +40,6 @@ pub async fn account_init<'a>(clients: &'a Clients, arg_config: &'a ConfigFile) 
     .await;
     save_to_json("oz_account_caio_1_class_hash", &JsonValueType::StringType(oz_account_caio_1_class_hash.to_string()))
         .unwrap();
-    sleep(Duration::from_secs(10)).await;
     // >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
 
     // Using Account Cairo 1 contract

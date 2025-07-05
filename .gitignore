@@ -78,3 +78,4 @@ test-artifacts/madara
 
 # global npm package installation directory for nix
 .npm-global
+
