@@ -55,9 +55,13 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     setup_server(config.clone()).await?;
 
     debug!("Application router initialized");
-    initialize_worker(config.clone()).await?;
+    // Initialize workers and keep the controller for shutdown
+    let worker_controller = initialize_worker(config.clone()).await?;
 
     tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
+
+    // Graceful shutdown for workers
+    worker_controller.shutdown().await?;
 
     // Analytics Shutdown
     instrumentation.shutdown()?;

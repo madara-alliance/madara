@@ -2,8 +2,9 @@ use crate::cli::Layer;
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::queue::QueueType;
+use crate::types::queue_control::QUEUES;
 use crate::{
-    core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES, types::params::QueueArgs,
+    core::cloud::CloudProvider, core::traits::resource::Resource, types::params::QueueArgs,
     OrchestratorError, OrchestratorResult,
 };
 use async_trait::async_trait;
@@ -35,7 +36,7 @@ impl Resource for InnerSQS {
     /// TODO: The dead letter queues will have a visibility timeout of 300 seconds and a max receive count of 5.
     /// If the dead letter queue is not configured, the dead letter queue will not be created.
     async fn setup(&self, layer: &Layer, args: Self::SetupArgs) -> OrchestratorResult<Self::SetupResult> {
-        for queue in QUEUES.iter() {
+        for (queue_type, queue) in QUEUES.iter() {
             if !queue.supported_layers.contains(layer) {
                 continue;
             }
@@ -43,21 +44,21 @@ impl Resource for InnerSQS {
             // Good first issue to resolve!
             // It is to note that we skip just after we check if queue exists,
             // Ideally we would want to check the DL queue & policy inclusion as well.
-            if self.check_if_exists(&(args.queue_template_identifier.clone(), queue.name.clone())).await? {
-                tracing::info!(" ⏭️️ SQS queue already exists. Queue Type: {}", &queue.name);
+            if self.check_if_exists(&(args.queue_template_identifier.clone(), queue_type.clone())).await? {
+                tracing::info!(" ⏭️️ SQS queue already exists. Queue Type: {}", queue_type);
                 continue;
             }
 
             match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
                     // If ARN is provided, we just check if it exists
-                    let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, &queue.name);
+                    let queue_name = InnerSQS::get_queue_name_from_type(&arn.resource, queue_type);
                     tracing::info!("Queue Arn provided, skipping setup for {}", &queue_name);
                     continue;
                 }
 
                 AWSResourceIdentifier::Name(name) => {
-                    let queue_name = InnerSQS::get_queue_name_from_type(name, &queue.name);
+                    let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
                     // Create the queue
                     let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
@@ -71,7 +72,7 @@ impl Resource for InnerSQS {
                         .queue_url()
                         .ok_or_else(|| OrchestratorError::ResourceSetupError("Failed to get queue url".to_string()))?;
 
-                    tracing::info!("Queue created for type {}", &queue.name);
+                    tracing::info!("Queue created for type {}", queue_type);
 
                     let mut attributes = HashMap::new();
                     attributes.insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
@@ -95,7 +96,7 @@ impl Resource for InnerSQS {
                             OrchestratorError::ResourceSetupError("Failed to get dl queue url".to_string())
                         })?;
 
-                        tracing::info!("DL Queue listed for type {}", &queue.name);
+                        tracing::info!("DL Queue listed for type {}", queue_type);
 
                         let dlq_arn = self.get_queue_arn_from_url(dlq_url).await?;
 
@@ -112,7 +113,7 @@ impl Resource for InnerSQS {
                         .set_attributes(Some(attributes))
                         .send()
                         .await?;
-                    tracing::info!("Setup completed for queue: {}", &queue.name);
+                    tracing::info!("Setup completed for queue: {}", queue_type);
                 }
             }
         }
@@ -151,13 +152,13 @@ impl Resource for InnerSQS {
     }
 
     async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
-        for queue in QUEUES.iter() {
+        for (queue_type, queue) in QUEUES.iter() {
             if !queue.supported_layers.contains(layer) {
                 continue;
             }
             let queue_exists = match &args.queue_template_identifier {
                 AWSResourceIdentifier::ARN(arn) => {
-                    let queue_url = self.get_queue_url_from_arn(arn, &queue.name)?;
+                    let queue_url = self.get_queue_url_from_arn(arn, queue_type)?;
                     self.client()
                         .get_queue_attributes()
                         .queue_url(queue_url)
@@ -167,7 +168,7 @@ impl Resource for InnerSQS {
                         .is_ok()
                 }
                 AWSResourceIdentifier::Name(name) => {
-                    let queue_name = InnerSQS::get_queue_name_from_type(name, &queue.name);
+                    let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
                     match self.get_queue_url_from_client(queue_name.as_str()).await {
                         Ok(queue_url) => self.client().get_queue_attributes().queue_url(queue_url).send().await.is_ok(),
                         Err(_) => false,

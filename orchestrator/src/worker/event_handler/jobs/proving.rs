@@ -15,7 +15,6 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 
 pub struct ProvingJobHandler;
@@ -204,9 +203,5 @@ impl JobHandlerTrait for ProvingJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         30
-    }
-
-    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        None
     }
 }
