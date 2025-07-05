@@ -4,9 +4,8 @@ use crate::compression::blob::convert_to_biguint;
 use crate::compression::stateless::decompress;
 use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
-use crate::tests::jobs::batching_job::compare::compare_data_json;
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
-use crate::tests::utils::{read_blob_from_file, read_data_json_from_file};
+use crate::tests::utils::read_blob_from_file;
 use crate::types::batch::{ClassDeclaration, ContractUpdate, DataJson, StorageUpdate};
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -16,6 +15,7 @@ use color_eyre::Result;
 use majin_blob_core::blob;
 use num_bigint::BigUint;
 use num_traits::{Num, ToPrimitive, Zero};
+use orchestrator_prover_client_interface::MockProverClient;
 use rstest::*;
 use starknet_core::types::Felt;
 use std::collections::HashMap;
@@ -26,7 +26,7 @@ use url::Url;
 #[rstest]
 #[case("src/tests/jobs/batching_job/test_data/blob/8373665/", "0.13.5")]
 #[tokio::test]
-async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String, #[case] version: &str) -> Result<()> {
+async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String, #[case] version: &str) -> Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
@@ -35,10 +35,14 @@ async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String, #[ca
         }
     };
 
+    let mut mock_prover_client = MockProverClient::new();
+    mock_prover_client.expect_submit_task().returning(|_| Ok("01234ABCD".to_string()));
+
     let services = TestConfigBuilder::new()
         .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url)))
         .configure_storage_client(ConfigType::Actual)
         .configure_database(ConfigType::Actual)
+        .configure_prover_client(mock_prover_client.into())
         .build()
         .await;
 
@@ -46,41 +50,31 @@ async fn test_assign_batch_to_block_new_batch(#[case] datajson_dir: String, #[ca
 
     assert!(result.is_ok());
 
-    let generated_data_json = get_data_json_from_s3_paths(
-        vec!["blob/batch/1/1.txt", "blob/batch/1/2.txt"],
-        services.config.storage(),
-        version,
-    )
-    .await?;
+    let generated_blobs =
+        get_blobs_from_s3_paths(vec!["blob/batch/1/1.bin", "blob/batch/1/2.bin"], services.config.storage()).await?;
 
-    let real_data_json =
-        get_data_json_from_files(vec![&format!("{datajson_dir}1.txt"), &format!("{datajson_dir}2.txt")], version)?;
+    let real_blobs = get_blobs_from_files(vec![&format!("{blob_dir}1.txt"), &format!("{blob_dir}2.txt")])?;
 
-    let report = compare_data_json(&real_data_json, &generated_data_json);
-
-    assert!(report.is_ok());
+    assert_eq!(generated_blobs[0], real_blobs[0]);
+    assert_eq!(generated_blobs[1], real_blobs[1]);
 
     Ok(())
 }
 
-async fn get_data_json_from_s3_paths(
-    s3_paths: Vec<&str>,
-    storage: &dyn StorageClient,
-    version: &str,
-) -> Result<DataJson> {
+async fn get_blobs_from_s3_paths(s3_paths: Vec<&str>, storage: &dyn StorageClient) -> Result<Vec<BigUint>> {
     let mut blob: Vec<BigUint> = Vec::new();
     for path in s3_paths {
         blob.append(&mut get_felt_vec(&hex::encode(storage.get_data(path).await?))?);
     }
-    get_data_json_from_vec_biguints(&blob, version)
+    Ok(blob)
 }
 
-fn get_data_json_from_files(file_paths: Vec<&str>, version: &str) -> Result<DataJson> {
+fn get_blobs_from_files(file_paths: Vec<&str>) -> Result<Vec<BigUint>> {
     let mut blob: Vec<BigUint> = Vec::new();
     for path in file_paths {
         blob.append(&mut get_felt_vec(&read_blob_from_file(path)?)?);
     }
-    get_data_json_from_vec_biguints(&blob, version)
+    Ok(blob)
 }
 
 fn get_data_json_from_vec_biguints(data: &Vec<BigUint>, version: &str) -> Result<DataJson> {
@@ -256,11 +250,7 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     }
 
     // Process class declarations (remains the same for both versions)
-    let declared_classes_len: usize = if i < data.len() {
-        data[i].to_usize().unwrap_or(0)
-    } else {
-        0
-    };
+    let declared_classes_len: usize = if i < data.len() { data[i].to_usize().unwrap_or(0) } else { 0 };
     i += 1;
 
     let mut class_declaration_updates = Vec::new();

@@ -34,4 +34,6 @@ pub enum JobType {
     ProofRegistration,
     /// Updating the state root on the base layer
     StateTransition,
+    /// Aggregating the batches
+    Aggregator,
 }

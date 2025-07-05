@@ -38,6 +38,18 @@ lazy_static! {
             supported_layers: vec![Layer::L2, Layer::L3]
         },
         QueueConfig {
+            name: QueueType::AggregatorJobProcessing,
+            visibility_timeout: 300,
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            supported_layers: vec![Layer::L2, Layer::L3]
+        },
+        QueueConfig {
+            name: QueueType::AggregatorJobVerification,
+            visibility_timeout: 300,
+            dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
+            supported_layers: vec![Layer::L2, Layer::L3]
+        },
+        QueueConfig {
             name: QueueType::ProvingJobProcessing,
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),

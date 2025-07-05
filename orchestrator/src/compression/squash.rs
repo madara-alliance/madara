@@ -1,3 +1,4 @@
+use crate::compression::stateful::sort_state_diff;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use aws_credential_types::provider;
@@ -145,7 +146,10 @@ pub async fn squash_state_updates(
     state_diff.deprecated_declared_classes = deprecated_classes_set.into_iter().collect();
 
     // Create the merged StateUpdate
-    let merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
+    let mut merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
+
+    // Sort the merged StateUpdate
+    sort_state_diff(&mut merged_update);
 
     Ok(merged_update)
 }

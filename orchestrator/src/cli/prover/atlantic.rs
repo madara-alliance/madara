@@ -1,4 +1,5 @@
 use clap::Args;
+use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
 use url::Url;
 
 /// Parameters used to config Atlantic.
@@ -37,6 +38,14 @@ pub struct AtlanticCliArgs {
     /// The verifier contract address for Atlantic.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS", long)]
     pub atlantic_verifier_contract_address: Option<String>,
+
+    /// The cairo vm for atlantic
+    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_CAIRO_VM", long, default_value = "rust")]
+    pub atlantic_verifier_cairo_vm: Option<AtlanticCairoVm>,
+
+    /// The type of job atlantic should process
+    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_RESULT", long, default_value = "PROOF_GENERATION")]
+    pub atlantic_verifier_result: Option<AtlanticQueryStep>,
 
     /// Network being used for the prover.
     #[arg(

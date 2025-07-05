@@ -1,3 +1,4 @@
+pub mod aggregator;
 pub mod da;
 pub mod proving;
 pub mod snos;
