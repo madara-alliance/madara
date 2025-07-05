@@ -15,23 +15,19 @@ pub struct DlqConfig {
 pub struct QueueControlConfig {
     // Max message count is the maximum number of messages to receive from the queue.
     pub max_message_count: usize,
-    // Retry count is the number of times to retry the job if it fails.
-    pub retry_count: usize,
-    // Retry delay is the delay between retries in seconds.
-    pub retry_delay: u32,
 }
 impl QueueControlConfig {
     pub fn default_with_message_count(max_message_count: usize) -> Self {
-        Self { max_message_count, retry_count: 3, retry_delay: 0 }
+        Self { max_message_count }
     }
-    pub fn new(max_message_count: usize, retry_count: usize, retry_delay: u32) -> Self {
-        Self { max_message_count, retry_count, retry_delay }
+    pub fn new(max_message_count: usize) -> Self {
+        Self { max_message_count }
     }
 }
 
 impl Default for QueueControlConfig {
     fn default() -> Self {
-        Self { max_message_count: 10, retry_count: 3, retry_delay: 0 }
+        Self { max_message_count: 10 }
     }
 }
 
@@ -86,7 +82,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 3, 30),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -95,7 +91,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 300, 30),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -104,7 +100,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 3, 30),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L3],
         },
     );
@@ -113,7 +109,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 300, 30),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L3],
         },
     );
@@ -122,7 +118,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 3, 60),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -131,7 +127,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 3, 60),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -140,7 +136,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 900,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 3, 60),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -149,7 +145,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10, 10, 60),
+            queue_control: QueueControlConfig::new(10),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
