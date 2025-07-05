@@ -1,5 +1,7 @@
+use crate::types::jobs::types::{JobStatus, JobType};
 use axum::response::Response;
 use serde::{Deserialize, Serialize};
+use uuid::Uuid;
 
 use super::error::JobRouteError;
 
@@ -43,29 +45,18 @@ pub struct JobId {
 /// assert_eq!(response.message, Some("Invalid job ID".to_string()));
 /// ```
 #[derive(Serialize, Deserialize)]
-pub struct ApiResponse {
+pub struct ApiResponse<T = ()> {
     /// Indicates if the operation was successful
     pub success: bool,
+    /// Optional data payload
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub data: Option<T>,
     /// Optional message, typically used for error details
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub message: Option<String>,
 }
 
-impl ApiResponse {
-    /// Creates a successful response with no message.
-    ///
-    /// # Returns
-    /// Returns an `ApiResponse` with `success` set to `true` and no message.
-    ///
-    /// # Examples
-    /// ```
-    /// use orchestrator::server::types::ApiResponse;
-    /// let response = ApiResponse::success(None);
-    /// assert_eq!(response.success, true);
-    /// ```
-    pub fn success(message: Option<String>) -> Self {
-        Self { success: true, message }
-    }
-
+impl ApiResponse<()> {
     /// Creates an error response with the specified message.
     ///
     /// # Arguments
@@ -82,7 +73,29 @@ impl ApiResponse {
     /// assert_eq!(response.message, Some("Operation failed".to_string()));
     /// ```
     pub fn error(message: String) -> Self {
-        Self { success: false, message: Some(message) }
+        Self { success: false, data: None, message: Some(message) }
+    }
+}
+
+impl<T> ApiResponse<T> {
+    /// Creates a successful response with optional data and message.
+    pub fn success_with_data(data: T, message: Option<String>) -> Self {
+        Self { success: true, data: Some(data), message }
+    }
+
+    /// Creates a successful response with no message.
+    ///
+    /// # Returns
+    /// Returns an `ApiResponse` with `success` set to `true` and no message.
+    ///
+    /// # Examples
+    /// ```
+    /// use orchestrator::server::types::ApiResponse;
+    /// let response = ApiResponse::success(None);
+    /// assert_eq!(response.success, true);
+    /// ```
+    pub fn success(message: Option<String>) -> Self {
+        Self { success: true, data: None, message }
     }
 }
 
@@ -98,10 +111,22 @@ impl ApiResponse {
 ///
 ///  async fn handle_job() -> JobRouteResult {
 ///     // Success case
-///     Ok(Json(ApiResponse::success()).into_response())
-///     
+///     Ok(Json(ApiResponse::success(None)).into_response())
+///
 ///     // Error case
 ///     Err(JobRouteError::NotFound("123".to_string()))
 /// }
 /// ```
-pub type JobRouteResult = Result<Response, JobRouteError>;
+pub type JobRouteResult = Result<Response<axum::body::Body>, JobRouteError>;
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct JobStatusResponseItem {
+    pub job_type: JobType,
+    pub id: Uuid,
+    pub status: JobStatus,
+}
+
+#[derive(Debug, Serialize, Deserialize, Clone)]
+pub struct BlockJobStatusResponse {
+    pub jobs: Vec<JobStatusResponseItem>,
+}

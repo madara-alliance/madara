@@ -11,22 +11,12 @@ pending_block_update_time: ""
 execution_batch_size:
 bouncer_config:
   block_max_capacity:
-    builtin_count:
-      add_mod:
-      bitwise:
-      ecdsa:
-      ec_op:
-      keccak:
-      mul_mod:
-      pedersen:
-      poseidon:
-      range_check:
-      range_check96:
-    gas:
-    n_steps:
-    message_segment_length:
-    n_events:
-    state_diff_size:
+    sierra_gas: ""
+    message_segment_length: ""
+    n_events: ""
+    state_diff_size: ""
+    l1_gas: ""
+    n_txs: ""
 sequencer_address: ""
 eth_core_contract_address: ""
 eth_gps_statement_verifier: ""
