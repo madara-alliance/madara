@@ -36,13 +36,14 @@ impl JobTrigger for ProvingJobTrigger {
             })?;
 
             // Get SNOS fact early to handle the error case
-            let snos_fact = match &snos_metadata.snos_fact {
-                Some(fact) => fact.clone(),
-                None => {
-                    tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
-                    continue;
-                }
-            };
+            // Commenting this out because we don't want to verify the individual SNOS proofs
+            // let snos_fact = match &snos_metadata.snos_fact {
+            //     Some(fact) => fact.clone(),
+            //     None => {
+            //         tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
+            //         continue;
+            //     }
+            // };
 
             match config.database().get_batch_for_block(snos_metadata.block_number).await? {
                 Some(batch) => {
