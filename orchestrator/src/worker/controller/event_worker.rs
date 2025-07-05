@@ -15,7 +15,7 @@ use std::time::Duration;
 use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
-use tracing::{debug, error, info, info_span};
+use tracing::{debug, error, info, info_span, warn};
 
 pub enum MessageType {
     Message(Delivery),
@@ -299,54 +299,79 @@ impl EventWorker {
         info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
 
         loop {
-            // Check for shutdown signal
             if self.is_shutdown.load(Ordering::SeqCst) {
-                info!("Shutdown signal received. Waiting for tasks to finish...");
-                while let Some(res) = tasks.join_next().await {
-                    if let Err(e) = res {
-                        error!("Task failed: {:?}", e);
-                    }
+                info!("Shutdown requested, waiting for {} tasks...", tasks.len());
+                while let Some(result) = tasks.join_next().await {
+                    Self::handle_task_result(result);
                 }
-                info!("All tasks finished. Exiting run loop.");
                 break;
             }
 
-            while tasks.len() >= max_concurrent_tasks {
-                if let Some(Err(e)) = tasks.join_next().await {
-                    error!("Task failed: {:?}", e);
-                }
-            }
-
             tokio::select! {
-                // The biased keyword makes tokio::select! check branches in order,
-                // prioritizing the shutdown signal check before message processing
                 biased;
+
+                // Immediate cleanup when tasks complete
+                Some(result) = tasks.join_next(), if !tasks.is_empty() => {
+                    Self::handle_task_result(result);
+
+                    if tasks.len() >= max_concurrent_tasks - 1 {
+                        warn!("Backpressure activated - waiting for tasks to complete. Active: {}", tasks.len());
+                    } else {
+                        debug!("Task completed, active tasks: {}", tasks.len());
+                    }
+                }
+
+                // Handle shutdown signal
                 _ = self.shutdown_notify.notified() => {
-                    info!("Shutdown notify received. Exiting run loop soon.");
+                    info!("Shutdown signal received");
                     continue;
                 }
-                result = self.get_message() => {
-                    match result {
-                        Ok(Some(message)) => match self.parse_message(&message) {
-                            Ok(parsed_message) => {
+
+                // Process new messages (with backpressure)
+                message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
+                    match message_result {
+                        Ok(Some(message)) => {
+                            if let Ok(parsed_message) = self.parse_message(&message) {
                                 let worker = self.clone();
-                                tasks.spawn(async move { worker.process_message(message, parsed_message).await });
+                                tasks.spawn(async move {
+                                    worker.process_message(message, parsed_message).await
+                                });
+                                debug!("Spawned task, active: {}", tasks.len());
                             }
-                            Err(e) => {
-                                error!("Failed to parse message: {:?}", e);
-                            }
-                        },
+                        }
                         Ok(None) => {
-                            sleep(Duration::from_secs(1)).await;
+                            sleep(Duration::from_millis(10)).await;
                         }
                         Err(e) => {
                             error!("Error receiving message: {:?}", e);
-                            sleep(Duration::from_secs(5)).await;
+                            sleep(Duration::from_secs(1)).await;
                         }
                     }
                 }
             }
         }
+
         Ok(())
+    }
+
+    // handle_task_result - Handle the result of a task
+    /// This function handles the result of a task
+    /// It logs the result of the task
+    /// # Arguments
+    /// * `result` - The result of the task
+    /// # Returns
+    /// * `Result<(), EventSystemError>` - A result indicating whether the operation was successful or not
+    fn handle_task_result(result: Result<EventSystemResult<()>, tokio::task::JoinError>) {
+        match result {
+            Ok(Ok(_)) => {
+                debug!("Task completed successfully");
+            }
+            Ok(Err(e)) => {
+                error!("Task failed with application error: {:?}", e);
+            }
+            Err(e) => {
+                error!("Task panicked or was cancelled: {:?}", e);
+            }
+        }
     }
 }
