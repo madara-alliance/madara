@@ -2,7 +2,7 @@
 version = 1
 
 [[package]]
-name = "l2_factory"
+name = "madara_factory_contracts"
 version = "0.1.0"
 dependencies = [
  "snforge_std",

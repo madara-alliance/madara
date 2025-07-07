@@ -1,3 +1,0 @@
-[submodule "bootstrapper-v2/l1_factory-2/lib/forge-std"]
-	path = bootstrapper-v2/l1_factory-2/lib/forge-std
-	url = https://github.com/foundry-rs/forge-std

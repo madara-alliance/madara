@@ -1,5 +1,5 @@
 [package]
-name = "madara-contracts"
+name = "madara_factory_contracts"
 version = "0.1.0"
 edition = "2024_07"
 

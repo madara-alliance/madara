@@ -7,7 +7,7 @@
 // [MultiBridge](https://github.com/starknet-io/starkgate-contracts/blob/cairo-1/src/solidity/StarknetTokenBridge.sol#L24)
 //
 // 2. The legacy bridge suppports one token per contract, while the Multi
-// bridge supports multiple tokens for the same contract Starknet has upgraded the contract with
+// bridge supports multiple tokens for the same contract. Starknet has upgraded the contract of 
 // the LegacyBridge code with the new TokenBridge as well.
 //
 // # Aim
@@ -20,18 +20,21 @@
 // Contracts for EthBridge and TokenBridge(Starkgate overrides the existing functions like `deposit`
 // and `acceptDeposit`)
 //
-// 5. Also `token_bridge.cairo` strores the `l1_bridge` which can have only single value(obviously)
+// 5. Also `token_bridge.cairo` on appchain stores the `l1_bridge` which can have 
+// only single value(obviously !!, either EthBridge or MultiBridge)
 //
 // 6. Combining 4. and 5. mandates that we will have to have 2 instances of `token_bridge.cairo` on
 // on L2 as well.
 //
-// 7. The EthBridge has the `enroll_token` disabled, while uses the `bridgeToken()` which can be set
-// using the EIC 8. The `l1_handler` for `deposit` on `token_bridge.cairo` will need to have the
+// 7. The EthBridge on Ethereum has the `enroll_token` disabled, and uses the `bridgeToken()` 
+// to store the token to be bridged which can be set using the EIC
+//
+// 8. The `l1_handler` on the appchain for `deposit` on `token_bridge.cairo` will need to have the
 // maps `l1_l2_token_map` and `l2_l1_token_map` being set (for Eth in this case)
 //
-// 8. Because of 7. this can't be done with existing flows, we will have to uuse an EIC to set them
-// during deployment. Also it will be good that we set `l2_token` although not strictly needed, as
-// this is how the corresponding bridge on L1 assumes it to work
+// 9. Because of 8. this can't be done with existing flows, we will have to use an EIC to set them
+// during deployment. Also it will be good that we set `l2_token` although not strictly needed, 
+// but preferred as this is how the corresponding bridge on L1 assumes it to work
 //
 #[starknet::contract]
 mod EIC {
@@ -51,8 +54,12 @@ mod EIC {
         l1_l2_token_map: starknet::storage::Map<EthAddress, ContractAddress>,
         l2_l1_token_map: starknet::storage::Map<ContractAddress, EthAddress>,
         // `l2_token` is a legacy storage variable from older versions.
-        // It should be written to as well to prevent multiple init, making the bridge a single.
-        // and also to support legact L1-L2 msgs.
+        // As old versions had a single token per contract, while the MultiBridge uses token maps 
+        // as multiple tokens are supported,
+        // it should be written to as well to prevent multiple 
+        // init, making the bridge a single.
+        // Multiple init will be prevented as the `set_token_maps` asserts that 
+        // `l2_token` to be zero.
         l2_token: ContractAddress,
     }
 
