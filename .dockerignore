@@ -4,11 +4,5 @@
 .vscode
 scripts
 target/
-
-# Ignore dockerfiles
 *dockerfile
-
-# Ignore OS specific files
-.DS_Store
-Thumbs.db
 .npm-global
