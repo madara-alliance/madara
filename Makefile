@@ -213,7 +213,7 @@ check:
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
-	@npx prettier --check .
+	@npx prettier@3.5.3 --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
