@@ -33,6 +33,8 @@
 //! [`UnsupportedQueryTransaction`]: UserTransactionConversionError::UnsupportedQueryTransaction
 //! [`ContractClassDecodeError`]: UserTransactionConversionError::ContractClassDecodeError
 
+use std::sync::Arc;
+
 use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
 use mp_rpc::{
@@ -44,6 +46,9 @@ use mp_transactions::{DataAvailabilityMode, ResourceBoundsMapping};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
+
+type Signature = Arc<Vec<Felt>>;
+type Calldata = Arc<Vec<Felt>>;
 
 /// Gateway response when a transaction is successfully added to the mempool.
 /// Generic type T represents the specific transaction result type
@@ -186,7 +191,7 @@ pub struct UserDeclareV1Transaction {
     pub contract_class: CompressedLegacyContractClass,
     pub sender_address: Felt,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
 }
 
@@ -195,7 +200,7 @@ impl From<UserDeclareV1Transaction> for BroadcastedDeclareTxnV1 {
         Self {
             sender_address: transaction.sender_address,
             max_fee: transaction.max_fee,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             contract_class: transaction.contract_class.into(),
         }
@@ -209,7 +214,7 @@ impl TryFrom<BroadcastedDeclareTxnV1> for UserDeclareV1Transaction {
         Ok(Self {
             sender_address: transaction.sender_address,
             max_fee: transaction.max_fee,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             contract_class: transaction.contract_class.try_into()?,
         })
@@ -222,7 +227,7 @@ pub struct UserDeclareV2Transaction {
     pub compiled_class_hash: Felt,
     pub sender_address: Felt,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
 }
 
@@ -236,7 +241,7 @@ impl TryFrom<UserDeclareV2Transaction> for BroadcastedDeclareTxnV2 {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
             max_fee: transaction.max_fee,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             contract_class: flattened_sierra_class.into(),
         })
@@ -253,7 +258,7 @@ impl TryFrom<BroadcastedDeclareTxnV2> for UserDeclareV2Transaction {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
             max_fee: transaction.max_fee,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             contract_class: flattened_sierra_class.try_into()?,
         })
@@ -266,7 +271,7 @@ pub struct UserDeclareV3Transaction {
     pub contract_class: CompressedSierraClass,
     pub compiled_class_hash: Felt,
     pub sender_address: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
@@ -286,7 +291,7 @@ impl TryFrom<UserDeclareV3Transaction> for BroadcastedDeclareTxnV3 {
         Ok(Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
@@ -308,7 +313,7 @@ impl TryFrom<BroadcastedDeclareTxnV3> for UserDeclareV3Transaction {
         Ok(Self {
             sender_address: transaction.sender_address,
             compiled_class_hash: transaction.compiled_class_hash,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
@@ -361,8 +366,8 @@ impl TryFrom<BroadcastedInvokeTxn> for UserInvokeFunctionTransaction {
 pub struct UserInvokeFunctionV0Transaction {
     pub sender_address: Felt,
     pub entry_point_selector: Felt,
-    pub calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub calldata: Calldata,
+    pub signature: Signature,
     pub max_fee: Felt,
 }
 
@@ -372,7 +377,7 @@ impl From<UserInvokeFunctionV0Transaction> for InvokeTxnV0 {
             contract_address: transaction.sender_address,
             entry_point_selector: transaction.entry_point_selector,
             calldata: transaction.calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             max_fee: transaction.max_fee,
         }
     }
@@ -384,7 +389,7 @@ impl From<InvokeTxnV0> for UserInvokeFunctionV0Transaction {
             sender_address: transaction.contract_address,
             entry_point_selector: transaction.entry_point_selector,
             calldata: transaction.calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             max_fee: transaction.max_fee,
         }
     }
@@ -393,8 +398,8 @@ impl From<InvokeTxnV0> for UserInvokeFunctionV0Transaction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserInvokeFunctionV1Transaction {
     pub sender_address: Felt,
-    pub calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub calldata: Calldata,
+    pub signature: Signature,
     pub max_fee: Felt,
     pub nonce: Felt,
 }
@@ -404,7 +409,7 @@ impl From<UserInvokeFunctionV1Transaction> for InvokeTxnV1 {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             max_fee: transaction.max_fee,
             nonce: transaction.nonce,
         }
@@ -416,7 +421,7 @@ impl From<InvokeTxnV1> for UserInvokeFunctionV1Transaction {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             max_fee: transaction.max_fee,
             nonce: transaction.nonce,
         }
@@ -427,8 +432,8 @@ impl From<InvokeTxnV1> for UserInvokeFunctionV1Transaction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UserInvokeFunctionV3Transaction {
     pub sender_address: Felt,
-    pub calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub calldata: Calldata,
+    pub signature: Signature,
     pub nonce: Felt,
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
@@ -444,7 +449,7 @@ impl From<UserInvokeFunctionV3Transaction> for InvokeTxnV3 {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
@@ -461,7 +466,7 @@ impl From<InvokeTxnV3> for UserInvokeFunctionV3Transaction {
         Self {
             sender_address: transaction.sender_address,
             calldata: transaction.calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
@@ -511,7 +516,7 @@ pub struct UserDeployAccountV1Transaction {
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
     pub max_fee: Felt,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
 }
 
@@ -522,7 +527,7 @@ impl From<UserDeployAccountV1Transaction> for DeployAccountTxnV1 {
             contract_address_salt: transaction.contract_address_salt,
             constructor_calldata: transaction.constructor_calldata,
             max_fee: transaction.max_fee,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
         }
     }
@@ -535,7 +540,7 @@ impl From<DeployAccountTxnV1> for UserDeployAccountV1Transaction {
             contract_address_salt: transaction.contract_address_salt,
             constructor_calldata: transaction.constructor_calldata,
             max_fee: transaction.max_fee,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
         }
     }
@@ -547,7 +552,7 @@ pub struct UserDeployAccountV3Transaction {
     pub class_hash: Felt,
     pub contract_address_salt: Felt,
     pub constructor_calldata: Vec<Felt>,
-    pub signature: Vec<Felt>,
+    pub signature: Signature,
     pub nonce: Felt,
     pub nonce_data_availability_mode: DataAvailabilityMode,
     pub fee_data_availability_mode: DataAvailabilityMode,
@@ -563,7 +568,7 @@ impl From<UserDeployAccountV3Transaction> for DeployAccountTxnV3 {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,
             constructor_calldata: transaction.constructor_calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
@@ -580,7 +585,7 @@ impl From<DeployAccountTxnV3> for UserDeployAccountV3Transaction {
             class_hash: transaction.class_hash,
             contract_address_salt: transaction.contract_address_salt,
             constructor_calldata: transaction.constructor_calldata,
-            signature: transaction.signature,
+            signature: Arc::clone(&transaction.signature),
             nonce: transaction.nonce,
             nonce_data_availability_mode: transaction.nonce_data_availability_mode.into(),
             fee_data_availability_mode: transaction.fee_data_availability_mode.into(),
