@@ -8,13 +8,13 @@ version.workspace = true
 license.workspace = true
 
 [dependencies]
-clap = { workspace = true, features = ["derive"] }
-thiserror = { workspace = true }
 anyhow = { workspace = true }
+clap = { workspace = true, features = ["derive"] }
+dotenvy = { workspace = true }
 serde = { workspace = true, features = ["derive"] }
 serde_json = { workspace = true }
 starknet = { workspace = true }
-dotenvy = { workspace = true }
+thiserror = { workspace = true }
 
 [lints]
 workspace = true

@@ -2,6 +2,8 @@
 #                              STARKNET NODE RUNNER                            #
 # ============================================================================ #
 
+SHELL := /bin/zsh
+
 define HELP
 Madara Node Runner
 
