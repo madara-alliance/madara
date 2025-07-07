@@ -1,7 +1,7 @@
 pub mod ethereum;
 pub mod starknet;
 
-use color_eyre::Result;
+use anyhow::Result;
 
 #[allow(dead_code)]
 pub trait BaseLayerSetupTrait {

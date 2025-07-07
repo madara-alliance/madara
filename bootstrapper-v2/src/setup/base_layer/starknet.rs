@@ -23,15 +23,15 @@ impl StarknetSetup {
 }
 
 impl BaseLayerSetupTrait for StarknetSetup {
-    fn init(&self) -> color_eyre::Result<()> {
+    fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn setup(&self) -> color_eyre::Result<()> {
+    fn setup(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn post_madara_setup(&self) -> color_eyre::Result<()> {
+    fn post_madara_setup(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }

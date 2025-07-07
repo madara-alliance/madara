@@ -11,15 +11,15 @@ impl MadaraSetup {
         Self { rpc_url: madara_config.rpc_url }
     }
 
-    pub fn init(&self) -> color_eyre::Result<()> {
+    pub fn init(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    pub fn setup(&self) -> color_eyre::Result<()> {
+    pub fn setup(&self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    pub fn post_madara_setup(&self) -> color_eyre::Result<()> {
+    pub fn post_madara_setup(&self) -> anyhow::Result<()> {
         Ok(())
     }
 }
