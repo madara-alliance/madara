@@ -106,7 +106,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         let mut blocks_to_process = find_successive_blocks_in_vector(blocks_to_process);
-        if blocks_to_process.len() > 0 {
+        if !blocks_to_process.is_empty() {
             blocks_to_process = blocks_to_process.into_iter().take(1).collect();
         }
 
