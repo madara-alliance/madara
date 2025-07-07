@@ -102,10 +102,11 @@ impl StarknetEventStream {
                     continuation_token.clone(),
                     1000,
                 )
-                .await {
+                .await
+            {
                 Ok(res) => {
                     return Ok(res);
-                },
+                }
                 Err(e) => {
                     if retries < MAX_RETRIES {
                         retries += 1;
@@ -124,7 +125,7 @@ impl StarknetEventStream {
     /// Fetches events from the Starknet provider based on the provided filter.
     ///
     /// This method implements a stateful polling mechanism that:
-    /// 1. Sleeps for the configured polling interval to avoid excessive requests
+    /// 1. Sleeps for the configured polling interval to avoid overwhelming the Starknet node
     /// 2. Fetches events from the Starknet provider using pagination (up to 1000 events per request)
     /// 3. Processes events to find unprocessed ones (based on nonce)
     /// 4. Updates the filter to implement a sliding window approach for continuous monitoring
@@ -466,9 +467,11 @@ mod starknet_event_stream_tests {
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
-        assert_matches!(stream.next().await, Some(Err(_)), "Expected error");
+        // The stream should return an error after max retries
+        assert_matches!(stream.next().await, Some(Err(_)), "Expected error after max retries");
 
-        error_mock.assert();
+        // Verify that the error mock was called (max retries exceeded)
+        error_mock.assert_hits(4);
     }
 
     #[tokio::test]
