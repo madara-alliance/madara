@@ -1,14 +1,7 @@
 # Madara docker ignore file
 .devcontainer
 .github
-
-# Ignore editor and IDE files
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# Ignore scripts and target directory
+.vscode
 scripts
 target/
 
