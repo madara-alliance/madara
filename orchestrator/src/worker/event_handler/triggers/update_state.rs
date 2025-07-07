@@ -214,7 +214,6 @@ impl ProcessingContext {
     }
 
     /// Determines which blocks should be processed based on completed DA jobs and previous state transitions
-    /// Determines which blocks should be processed based on completed DA jobs and previous state transitions
     async fn determine_blocks_to_process(&self) -> color_eyre::Result<Option<Vec<u64>>> {
         let latest_job = self.config.database().get_latest_job_by_type(JobType::StateTransition).await?;
 
