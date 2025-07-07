@@ -96,10 +96,6 @@ ENV PATH="$CAIRO_LANG_DIR/venv/bin:$PATH"
 RUN pip install "cairo-lang==0.13.3" "sympy<1.13.0"
 
 RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.json --cairo_path src
-
-# Download cairo verifier from Google Drive
-RUN wget -O cairo_verifier.json "https://drive.google.com/uc?export=download&id=1dRb5c4Co2Abny1gWeHzio0UOPuG5qJD-"
-
 # =========================================================================== #
 #                               BRAAVOS CONTRACTS                             #
 # =========================================================================== #
@@ -220,7 +216,6 @@ WORKDIR ../cairo_lang
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
 COPY --from=cairo-lang $CAIRO_LANG_DIR/os_latest.json .
-COPY --from=cairo-lang $CAIRO_LANG_DIR/cairo_verifier.json .
 
 WORKDIR ../braavos
 
