@@ -24,94 +24,86 @@ use uuid::Uuid;
     None,     // earliest_failed_block
     vec![],   // completed_proving_jobs (no completed proving jobs)
     vec![],   // expected_data_submission_jobs (no jobs to create)
-    0         // expected_created_count
 )]
 // Scenario 2: Single completed proving job with valid metadata
 // Expected result: one data submission job created
 #[case(
     None,     // earliest_failed_block
     vec![
-        (0, Some("path/to/cairo_pie_0".to_string()), Some("valid_proof_hash_0".to_string()), Some(1000))
-    ], // completed_proving_jobs (block_num, input_path, proof_hash, n_steps)
+        (0, Some("path/to/cairo_pie_0".to_string()), Some("valid_proof_path_0".to_string()), Some(1000))
+    ], // completed_proving_jobs (block_num, input_path, proof_path, n_steps)
     vec![0],  // expected_data_submission_jobs
-    1         // expected_created_count
 )]
 // Scenario 3: Multiple completed proving jobs with valid metadata
 // Expected result: data submission jobs created for all
 #[case(
     None,     // earliest_failed_block
     vec![
-        (0, Some("path/to/cairo_pie_0".to_string()), Some("proof_hash_0".to_string()), Some(1000)),
-        (1, Some("path/to/cairo_pie_1".to_string()), Some("proof_hash_1".to_string()), Some(1500)),
-        (2, Some("path/to/cairo_pie_2".to_string()), Some("proof_hash_2".to_string()), Some(2000))
+        (0, Some("path/to/cairo_pie_0".to_string()), Some("proof_path_0".to_string()), Some(1000)),
+        (1, Some("path/to/cairo_pie_1".to_string()), Some("proof_path_1".to_string()), Some(1500)),
+        (2, Some("path/to/cairo_pie_2".to_string()), Some("proof_path_2".to_string()), Some(2000))
     ], // completed_proving_jobs
     vec![0, 1, 2], // expected_data_submission_jobs
-    3              // expected_created_count
 )]
 // Scenario 4: Proving jobs without input_path (should still create data submission job)
 // Expected result: data submission jobs created (input_path is not required for data submission)
 #[case(
     None,     // earliest_failed_block
     vec![
-        (0, None, Some("proof_hash_0".to_string()), Some(1000)), // No input_path
+        (0, None, Some("proof_path_0".to_string()), Some(1000)), // No input_path
         (1, Some("path/to/cairo_pie_1".to_string()), None, Some(1500)) // No proof hash
     ], // completed_proving_jobs
     vec![0, 1], // expected_data_submission_jobs (both should be created)
-    2           // expected_created_count
 )]
 // Scenario 5: Proving jobs with earliest_failed_block constraint
 // Expected result: data submission jobs created only for blocks before failed block
 #[case(
     Some(1),  // earliest_failed_block (blocks >= 1 should be skipped)
     vec![
-        (0, Some("path/to/cairo_pie_0".to_string()), Some("proof_hash_0".to_string()), Some(1000)), // Valid (< failed block)
-        (1, Some("path/to/cairo_pie_1".to_string()), Some("proof_hash_1".to_string()), Some(1500)), // Skipped (>= failed block)
-        (2, Some("path/to/cairo_pie_2".to_string()), Some("proof_hash_2".to_string()), Some(2000))  // Skipped (>= failed block)
+        (0, Some("path/to/cairo_pie_0".to_string()), Some("proof_path_0".to_string()), Some(1000)), // Valid (< failed block)
+        (1, Some("path/to/cairo_pie_1".to_string()), Some("proof_path_1".to_string()), Some(1500)), // Skipped (>= failed block)
+        (2, Some("path/to/cairo_pie_2".to_string()), Some("proof_path_2".to_string()), Some(2000))  // Skipped (>= failed block)
     ], // completed_proving_jobs
     vec![0],  // expected_data_submission_jobs (only block 0)
-    1         // expected_created_count
 )]
 // Scenario 6: All proving jobs are beyond failed block
 // Expected result: no data submission jobs created (all skipped)
 #[case(
     Some(0),  // earliest_failed_block (all blocks >= 0 should be skipped)
     vec![
-        (0, Some("path/to/cairo_pie_0".to_string()), Some("proof_hash_0".to_string()), Some(1000)),
-        (1, Some("path/to/cairo_pie_1".to_string()), Some("proof_hash_1".to_string()), Some(1500)),
-        (2, Some("path/to/cairo_pie_2".to_string()), Some("proof_hash_2".to_string()), Some(2000))
+        (0, Some("path/to/cairo_pie_0".to_string()), Some("proof_path_0".to_string()), Some(1000)),
+        (1, Some("path/to/cairo_pie_1".to_string()), Some("proof_path_1".to_string()), Some(1500)),
+        (2, Some("path/to/cairo_pie_2".to_string()), Some("proof_path_2".to_string()), Some(2000))
     ], // completed_proving_jobs
     vec![],   // expected_data_submission_jobs (all skipped)
-    0         // expected_created_count
 )]
 // Scenario 7: Large number of completed proving jobs
 // Expected result: data submission jobs created for all valid ones
 #[case(
     None,     // earliest_failed_block
     vec![
-        (0, Some("pie_0".to_string()), Some("hash_0".to_string()), Some(1000)),
-        (1, Some("pie_1".to_string()), Some("hash_1".to_string()), Some(1100)),
-        (2, Some("pie_2".to_string()), Some("hash_2".to_string()), Some(1200)),
-        (3, Some("pie_3".to_string()), Some("hash_3".to_string()), Some(1300)),
-        (4, Some("pie_4".to_string()), Some("hash_4".to_string()), Some(1400)),
-        (5, Some("pie_5".to_string()), Some("hash_5".to_string()), Some(1500))
+        (0, Some("pie_0".to_string()), Some("proof_path_0".to_string()), Some(1000)),
+        (1, Some("pie_1".to_string()), Some("proof_path_1".to_string()), Some(1100)),
+        (2, Some("pie_2".to_string()), Some("proof_path_2".to_string()), Some(1200)),
+        (3, Some("pie_3".to_string()), Some("proof_path_3".to_string()), Some(1300)),
+        (4, Some("pie_4".to_string()), Some("proof_path_4".to_string()), Some(1400)),
+        (5, Some("pie_5".to_string()), Some("proof_path_5".to_string()), Some(1500))
     ], // completed_proving_jobs
     vec![0, 1, 2, 3, 4, 5], // expected_data_submission_jobs
-    6                       // expected_created_count
 )]
 // Scenario 8: Mix of valid proving jobs with failed block constraint
 // Expected result: data submission jobs created only for valid blocks before failed block
 #[case(
     Some(3),  // earliest_failed_block
     vec![
-        (0, Some("pie_0".to_string()), Some("hash_0".to_string()), Some(1000)), // Valid
-        (1, Some("pie_1".to_string()), Some("hash_1".to_string()), Some(1100)), // Valid
-        (2, Some("pie_2".to_string()), Some("hash_2".to_string()), Some(1200)), // Valid
-        (3, Some("pie_3".to_string()), Some("hash_3".to_string()), Some(1300)), // Skipped - at failed block
-        (4, Some("pie_4".to_string()), Some("hash_4".to_string()), Some(1400)), // Skipped - beyond failed block
-        (5, Some("pie_5".to_string()), Some("hash_5".to_string()), Some(1500))  // Skipped - beyond failed block
+        (0, Some("pie_0".to_string()), Some("proof_path_0".to_string()), Some(1000)), // Valid
+        (1, Some("pie_1".to_string()), Some("proof_path_1".to_string()), Some(1100)), // Valid
+        (2, Some("pie_2".to_string()), Some("proof_path_2".to_string()), Some(1200)), // Valid
+        (3, Some("pie_3".to_string()), Some("proof_path_3".to_string()), Some(1300)), // Skipped - at failed block
+        (4, Some("pie_4".to_string()), Some("proof_path_4".to_string()), Some(1400)), // Skipped - beyond failed block
+        (5, Some("pie_5".to_string()), Some("proof_path_5".to_string()), Some(1500))  // Skipped - beyond failed block
     ], // completed_proving_jobs
     vec![0, 1, 2], // expected_data_submission_jobs (only blocks before failed block)
-    3              // expected_created_count
 )]
 // Scenario 9: Proving jobs with minimal metadata (testing edge cases)
 // Expected result: data submission jobs created for all (minimal metadata is acceptable)
@@ -123,26 +115,23 @@ use uuid::Uuid;
         (2, Some("".to_string()), Some("".to_string()), Some(1000)) // Empty strings
     ], // completed_proving_jobs
     vec![0, 1, 2], // expected_data_submission_jobs (all should be created)
-    3              // expected_created_count
 )]
 // Scenario 10: High block numbers with failed block constraint
 // Expected result: data submission jobs created only for blocks before failed block
 #[case(
     Some(1000),  // earliest_failed_block
     vec![
-        (999, Some("pie_999".to_string()), Some("hash_999".to_string()), Some(10000)),  // Valid
-        (1000, Some("pie_1000".to_string()), Some("hash_1000".to_string()), Some(11000)), // Skipped - at failed block
-        (1001, Some("pie_1001".to_string()), Some("hash_1001".to_string()), Some(12000))  // Skipped - beyond failed block
+        (999, Some("pie_999".to_string()), Some("proof_path_999".to_string()), Some(10000)),  // Valid
+        (1000, Some("pie_1000".to_string()), Some("proof_path_1000".to_string()), Some(11000)), // Skipped - at failed block
+        (1001, Some("pie_1001".to_string()), Some("proof_path_1001".to_string()), Some(12000))  // Skipped - beyond failed block
     ], // completed_proving_jobs
     vec![999], // expected_data_submission_jobs (only block 999)
-    1          // expected_created_count
 )]
 #[tokio::test]
 async fn test_data_submission_worker(
     #[case] earliest_failed_block: Option<u64>,
-    #[case] completed_proving_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, input_path, proof_hash, n_steps)
+    #[case] completed_proving_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, input_path, proof_path, n_steps)
     #[case] expected_data_submission_jobs: Vec<u64>,
-    #[case] expected_created_count: usize,
 ) -> Result<(), Box<dyn Error>> {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
@@ -158,12 +147,12 @@ async fn test_data_submission_worker(
     // Create completed proving job items
     let proving_job_items: Vec<_> = completed_proving_jobs
         .iter()
-        .map(|(block_num, input_path, proof_hash, n_steps)| {
+        .map(|(block_num, input_path, proof_path, n_steps)| {
             let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
             job_item.metadata.specific = JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number: *block_num,
                 input_path: input_path.as_ref().map(|path| ProvingInputType::CairoPie(path.clone())),
-                download_proof: proof_hash.clone(),
+                download_proof: proof_path.clone(),
                 ensure_on_chain_registration: None, // Not needed for data submission
                 n_steps: *n_steps,
             });
@@ -219,6 +208,8 @@ async fn test_data_submission_worker(
     let ctx = get_job_handler_context();
     ctx.expect().with(eq(JobType::DataSubmission)).returning(move |_| Arc::clone(&job_handler));
 
+    let expected_created_count = expected_data_submission_jobs.len();
+
     // Mock queue operations for successful job creations
     queue
         .expect_send_message()
@@ -238,11 +229,6 @@ async fn test_data_submission_worker(
     crate::worker::event_handler::triggers::data_submission::DataSubmissionJobTrigger
         .run_worker(services.config)
         .await?;
-
-    println!(
-        "✅ Test completed for scenario: earliest_failed_block={:?}, proving_jobs={}, expected_data_submission_jobs={:?}, created_count={}",
-        earliest_failed_block, completed_proving_jobs.len(), expected_data_submission_jobs, expected_created_count
-    );
 
     Ok(())
 }

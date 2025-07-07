@@ -239,10 +239,5 @@ async fn test_proving_worker(
     // Run the Proving worker
     crate::worker::event_handler::triggers::proving::ProvingJobTrigger.run_worker(services.config).await?;
 
-    println!(
-        "✅ Test completed for scenario: earliest_failed_block={:?}, snos_jobs={}, expected_proving_jobs={:?}, created_count={}",
-        earliest_failed_block, completed_snos_jobs.len(), expected_proving_jobs, expected_created_count
-    );
-
     Ok(())
 }
