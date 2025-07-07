@@ -14,6 +14,7 @@ fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<Madara
     MadaraPendingBlockInfo {
         header: PendingHeader {
             parent_block_hash: parent_block.block_hash,
+            parent_block_number: Some(parent_block.header.block_number),
             sequencer_address: parent_block.header.sequencer_address,
             block_timestamp: parent_block.header.block_timestamp, // Junk timestamp: unix epoch
             protocol_version: parent_block.header.protocol_version,

@@ -207,6 +207,7 @@ mod tests {
     fn dummy_header() -> PendingHeader {
         PendingHeader {
             parent_block_hash: Felt::ZERO,
+            parent_block_number: None,
             sequencer_address: Felt::ZERO,
             block_timestamp: BlockTimestamp(0),
             protocol_version: StarknetVersion::V0_13_2,

@@ -221,6 +221,8 @@ impl ProviderBlock {
 #[cfg_attr(test, derive(Eq))]
 pub struct ProviderBlockPending {
     pub parent_block_hash: Felt,
+    #[serde(skip)]
+    pub parent_block_number: Option<u64>,
     pub status: BlockStatus,
     pub l1_da_mode: L1DataAvailabilityMode,
     pub l1_gas_price: ResourcePrice,
@@ -253,6 +255,7 @@ impl ProviderBlockPending {
 
         Self {
             parent_block_hash: block.info.header.parent_block_hash,
+            parent_block_number: block.info.header.parent_block_number,
             status: BlockStatus::Pending,
             l1_da_mode: block.info.header.l1_da_mode,
             l1_gas_price: ResourcePrice {
@@ -274,6 +277,7 @@ impl ProviderBlockPending {
     pub fn header(&self) -> Result<PendingHeader, FromGatewayError> {
         Ok(PendingHeader {
             parent_block_hash: self.parent_block_hash,
+            parent_block_number: self.parent_block_number,
             sequencer_address: self.sequencer_address,
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
             protocol_version: protocol_version_pending(self.starknet_version.as_deref())?,

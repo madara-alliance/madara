@@ -138,6 +138,7 @@ impl MadaraBackend {
                 return Ok(MadaraPendingBlockInfo {
                     header: PendingHeader {
                         parent_block_hash: Felt::ZERO,
+                        parent_block_number: None,
                         // Sequencer address is ZERO for chains where we don't produce blocks. This means that trying to simulate/trace a transaction on Pending when
                         // genesis has not been loaded yet will return an error. That probably fine because the ERC20 fee contracts are not even deployed yet - it
                         // will error somewhere else anyway.
@@ -162,6 +163,7 @@ impl MadaraBackend {
             return Ok(MadaraPendingBlockInfo {
                 header: PendingHeader {
                     parent_block_hash: latest_block_info.block_hash,
+                    parent_block_number: Some(latest_block_info.header.block_number),
                     sequencer_address: latest_block_info.header.sequencer_address,
                     block_timestamp: latest_block_info.header.block_timestamp,
                     protocol_version: latest_block_info.header.protocol_version,

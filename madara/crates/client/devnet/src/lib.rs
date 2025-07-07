@@ -163,6 +163,7 @@ impl ChainGenesisDescription {
             PendingFullBlock {
                 header: PendingHeader {
                     parent_block_hash: Felt::ZERO,
+                    parent_block_number: None,
                     sequencer_address: chain_config.sequencer_address.to_felt(),
                     block_timestamp: mp_block::header::BlockTimestamp(
                         SystemTime::now()
