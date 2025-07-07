@@ -207,6 +207,7 @@ mod tests {
                 PendingFullBlock {
                     header: PendingHeader {
                         parent_block_hash: Felt::ZERO,
+                        block_number: 0,
                         sequencer_address: backend.chain_config().sequencer_address.to_felt(),
                         block_timestamp: BlockTimestamp::now(),
                         protocol_version: StarknetVersion::LATEST,

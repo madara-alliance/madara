@@ -7166,6 +7166,7 @@ dependencies = [
  "bitvec",
  "blockifier",
  "bonsai-trie",
+ "itertools 0.13.0",
  "mp-chain-config",
  "mp-convert",
  "mp-receipt",

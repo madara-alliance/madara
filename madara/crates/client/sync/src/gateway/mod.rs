@@ -86,7 +86,7 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
-        let starting_block_n = backend.head_status().next_full_block();
+        let starting_block_n = backend.get_next_block_n();
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -216,7 +216,7 @@ impl ForwardPipeline for GatewayForwardSync {
     }
 
     fn latest_block(&self) -> Option<u64> {
-        self.backend.head_status().latest_full_block_n()
+        self.backend.get_latest_block_n()
     }
 }
 

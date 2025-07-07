@@ -79,11 +79,6 @@ impl Service for SyncService {
             .stop_on_sync(this.params.stop_on_sync)
             .no_pending_block(this.params.no_pending_sync);
 
-        if let Some(starting_block) = this.params.unsafe_starting_block {
-            // We state that starting_block - 1 is the chain head.
-            this.db_backend.head_status().set_latest_full_block_n(starting_block.checked_sub(1));
-        }
-
         runner.service_loop(move |ctx| async move {
             // Warp update
             if let Some(WarpUpdateConfig {

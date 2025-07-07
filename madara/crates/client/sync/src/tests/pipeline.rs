@@ -72,7 +72,7 @@ async fn test_probed(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap().unwrap(), felt!("0x12"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(3)).unwrap().unwrap(), felt!("0x13"));
-    assert!(ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 4);
     assert_eq!(
         ctx.backend
             .get_block_info(&DbBlockId::Pending)
@@ -97,6 +97,7 @@ async fn test_probed(mut ctx: TestContext) {
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 6 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 7);
 }
 
 #[rstest]
@@ -125,7 +126,7 @@ async fn test_pending_block_update(mut ctx: TestContext) {
 
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 2);
 
     // 2. Pending block appears
     // add a pending block, pipeline should pick it up.
@@ -135,7 +136,6 @@ async fn test_pending_block_update(mut ctx: TestContext) {
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
 
-    assert!(ctx.backend.has_pending_block().unwrap());
     assert_eq!(
         ctx.backend
             .get_block_info(&DbBlockId::Pending)
@@ -156,7 +156,6 @@ async fn test_pending_block_update(mut ctx: TestContext) {
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
 
-    assert!(ctx.backend.has_pending_block().unwrap());
     assert_eq!(
         ctx.backend
             .get_block_info(&DbBlockId::Pending)
@@ -202,7 +201,7 @@ async fn test_follows_l1(mut ctx: TestContext) {
 
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap(), None);
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 1);
 
     l1_snd
         .send(Some(StateUpdate { block_hash: felt!("0x12"), block_number: Some(2), global_root: Felt::ZERO }))
@@ -214,7 +213,7 @@ async fn test_follows_l1(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap().unwrap(), felt!("0x12"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(3)).unwrap(), None);
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 3);
 }
 
 #[rstest]
@@ -241,7 +240,7 @@ async fn test_no_pending(mut ctx: TestContext) {
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
 
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 1);
 }
 
 #[rstest]
@@ -273,11 +272,12 @@ async fn test_stop_on_sync(mut ctx: TestContext) {
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
     assert_eq!(ctx.service_state_recv.recv().await, None); // task ended
 
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 4);
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap().unwrap(), felt!("0x12"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(3)).unwrap().unwrap(), felt!("0x13"));
-    assert!(ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 4);
     assert_eq!(
         ctx.backend
             .get_block_info(&DbBlockId::Pending)
@@ -339,7 +339,7 @@ async fn test_stop_at_block_n(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap().unwrap(), felt!("0x12"));
     // third block should not be imported
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(3)).unwrap(), None);
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 3);
 
     task.await // task returned.
 }
@@ -381,7 +381,7 @@ async fn test_global_stop(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(2)).unwrap(), None);
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 2);
 
     task.await.unwrap(); // task returned.
 
@@ -414,7 +414,7 @@ async fn test_pending_declared_class(mut ctx: TestContext) {
 
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap(), Some(felt!("0x10")));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap(), None);
-    assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 1);
 
     mock.delete();
 
@@ -433,7 +433,7 @@ async fn test_pending_declared_class(mut ctx: TestContext) {
 
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
 
-    assert!(ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.pending_latest().block.header.block_number, 3);
 
     assert_eq!(
         ctx.backend

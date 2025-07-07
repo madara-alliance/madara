@@ -61,7 +61,7 @@ impl BlockWatch {
         })
     }
 
-    pub fn update_pending(&self, block: std::sync::Arc<PendingBlockTransport>) {
+    pub fn pending_update(&self, block: std::sync::Arc<PendingBlockTransport>) {
         self.pending_block.send_replace(block);
     }
 
@@ -70,7 +70,7 @@ impl BlockWatch {
     }
 
     pub fn pending_clear(&self, parent_block: Option<&MadaraBlockInfo>) {
-        self.update_pending(make_fake_pending_block(parent_block));
+        self.pending_update(make_fake_pending_block(parent_block));
     }
 
     pub fn on_new_pending_tx(&self, tx: mp_block::TransactionWithReceipt) {
@@ -79,7 +79,7 @@ impl BlockWatch {
 
     pub fn on_new_block(&self, block: std::sync::Arc<MadaraBlockInfo>) {
         let _no_listener_error = self.closed_blocks.send(std::sync::Arc::clone(&block));
-        self.update_pending(make_fake_pending_block(Some(&block)));
+        self.pending_update(make_fake_pending_block(Some(&block)));
     }
 
     pub fn subscribe_closed_blocks(&self) -> ClosedBlocksReceiver {

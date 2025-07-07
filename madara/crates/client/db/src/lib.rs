@@ -392,7 +392,7 @@ impl DatabaseService {
 
         let handle = MadaraBackend::open(chain_config, config).await?;
 
-        if let Some(block_n) = handle.head_status().latest_full_block_n() {
+        if let Some(block_n) = handle.get_latest_block_n() {
             tracing::info!("📦 Database latest block: #{block_n}");
         }
 
@@ -566,7 +566,7 @@ impl MadaraBackend {
         backend.check_configuration()?;
         backend.load_head_status_from_db()?;
         backend.update_metrics();
-        backend.set_starting_block(backend.head_status.latest_full_block_n());
+        backend.set_starting_block(backend.get_latest_block_n());
         Ok(Arc::new(backend))
     }
 
@@ -578,7 +578,6 @@ impl MadaraBackend {
         events: impl IntoIterator<Item = EventWithTransactionHash>,
     ) -> anyhow::Result<()> {
         let block_n = block_info.header.block_number;
-        self.head_status.set_latest_full_block_n(Some(block_n));
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(block_n));
 
         for (index, event) in events.into_iter().enumerate() {

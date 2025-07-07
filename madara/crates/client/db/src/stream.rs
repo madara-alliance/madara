@@ -125,7 +125,7 @@ impl MadaraBackend {
                     for _ in 0..BUFFER_SIZE {
                         // End condition when moving forward is the latest full block in db.
                         if self.iteration.direction == Direction::Forward
-                            && self.backend.head_status().next_full_block() <= next_block_n
+                            && self.backend.get_next_block_n() <= next_block_n
                         {
                             break;
                         }

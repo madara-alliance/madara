@@ -67,7 +67,7 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+        if self.get_latest_block_n().is_none_or(|n| n < block_n) {
             return Ok(None);
         }
         Ok(Some(block_n))
@@ -80,7 +80,7 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+        if self.get_latest_block_n().is_none_or(|n| n < block_n) {
             return Ok(None);
         }
         Ok(Some(block_n))
@@ -119,6 +119,11 @@ impl MadaraBackend {
             0 => None,
             n => Some(n - 1),
         }
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_next_block_n(&self) -> u64 {
+        self.pending_latest().block.header.block_number
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
@@ -198,10 +203,11 @@ impl MadaraBackend {
                 });
         }
 
+        self.db.write_opt(tx, &self.writeopts_no_wal)?;
+
         // clear pending
         self.pending_clear()?;
 
-        self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
     }
 

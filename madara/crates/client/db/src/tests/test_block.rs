@@ -125,7 +125,7 @@ mod block_tests {
         let latest_block = finalized_block_one();
         backend.store_block(latest_block.clone(), finalized_state_diff_one(), vec![]).unwrap();
 
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
+        assert_eq!(backend.get_latest_block_n().unwrap(), 1);
     }
 
     #[tokio::test]

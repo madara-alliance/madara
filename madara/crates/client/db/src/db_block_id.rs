@@ -67,7 +67,7 @@ impl DbBlockIdResolvable for BlockId {
         let block_id = match self {
             BlockId::Hash(hash) => backend.block_hash_to_block_n(hash)?.map(DbBlockId::Number),
             BlockId::Number(block_n) => Some(DbBlockId::Number(*block_n)),
-            BlockId::Tag(BlockTag::Latest) => backend.head_status().full_block.current().map(DbBlockId::Number),
+            BlockId::Tag(BlockTag::Latest) => backend.get_latest_block_n().map(DbBlockId::Number),
             BlockId::Tag(BlockTag::Pending) => Some(DbBlockId::Pending),
         };
         let Some(block_id) = block_id else {
@@ -82,7 +82,7 @@ impl DbBlockIdResolvable for DbBlockId {
         match self {
             DbBlockId::Pending => Ok(Some(RawDbBlockId::Pending)),
             DbBlockId::Number(block_n) => {
-                let Some(latest_block) = backend.head_status().full_block.current() else {
+                let Some(latest_block) = backend.get_latest_block_n() else {
                     // No blocks on DB.
                     return Ok(None);
                 };
