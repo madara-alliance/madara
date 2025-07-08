@@ -2720,7 +2720,7 @@ dependencies = [
  "cairo-lang-runner",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm",
+ "cairo-vm 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "derive_more 0.99.18",
  "indexmap 2.6.0",
  "itertools 0.10.5",
@@ -3300,7 +3300,7 @@ dependencies = [
  "cairo-lang-sierra-type-size 2.8.2",
  "cairo-lang-starknet",
  "cairo-lang-utils 2.8.2",
- "cairo-vm",
+ "cairo-vm 1.0.1 (registry+https://github.com/rust-lang/crates.io-index)",
  "itertools 0.12.1",
  "keccak",
  "num-bigint",
@@ -3685,11 +3685,42 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
+source = "git+https://github.com/karnotxyz/snos?branch=l3%2Fv2#bd3f6cc4315ed9ba569ea60cfbf833f46cfcab14"
 dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.89",
+]
+
+[[package]]
+name = "cairo-vm"
+version = "1.0.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "58363ad8065ed891e3b14a8191b707677c7c7cb5b9d10030822506786d8d8108"
+dependencies = [
+ "anyhow",
+ "bincode 2.0.0-rc.3",
+ "bitvec",
+ "generic-array",
+ "hashbrown 0.14.5",
+ "hex",
+ "keccak",
+ "lazy_static",
+ "nom",
+ "num-bigint",
+ "num-integer",
+ "num-prime",
+ "num-traits 0.2.19",
+ "rand",
+ "rust_decimal",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "sha3",
+ "starknet-crypto 0.6.2",
+ "starknet-types-core",
+ "thiserror-no-std",
+ "zip",
 ]
 
 [[package]]
@@ -7952,7 +7983,7 @@ dependencies = [
  "bincode 1.3.3",
  "build-version",
  "bytes",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "chrono",
  "clap",
  "color-eyre",
@@ -8018,7 +8049,7 @@ version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "async-trait",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "color-eyre",
  "dotenvy",
  "env_logger",
@@ -8092,7 +8123,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "c-kzg",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "color-eyre",
  "dotenvy",
  "lazy_static",
@@ -8129,7 +8160,7 @@ dependencies = [
  "aws-config",
  "aws-sdk-s3",
  "bincode 1.3.3",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "dotenvy",
  "itertools 0.13.0",
  "log",
@@ -8156,7 +8187,7 @@ name = "orchestrator-prover-client-interface"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "mockall",
  "orchestrator-gps-fact-checker",
  "orchestrator-utils",
@@ -8185,7 +8216,7 @@ dependencies = [
  "alloy-primitives 0.8.18",
  "async-trait",
  "base64 0.22.1",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "color-eyre",
  "dotenvy",
  "hex",
@@ -8501,15 +8532,14 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-common"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "anyhow",
  "bitvec",
  "fake",
  "metrics",
  "num-bigint",
- "num-traits 0.2.19",
  "paste",
  "pathfinder-crypto",
  "primitive-types",
@@ -8526,8 +8556,8 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-crypto"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "bitvec",
  "fake",
@@ -8537,8 +8567,8 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-serde"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "anyhow",
  "num-bigint",
@@ -9085,13 +9115,13 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
+source = "git+https://github.com/karnotxyz/snos?branch=l3%2Fv2#bd3f6cc4315ed9ba569ea60cfbf833f46cfcab14"
 dependencies = [
  "anyhow",
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-lang-utils 2.8.2",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "clap",
  "env_logger",
  "futures-core",
@@ -9585,7 +9615,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
+source = "git+https://github.com/karnotxyz/snos?branch=l3%2Fv2#bd3f6cc4315ed9ba569ea60cfbf833f46cfcab14"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9600,7 +9630,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
+source = "git+https://github.com/karnotxyz/snos?branch=l3%2Fv2#bd3f6cc4315ed9ba569ea60cfbf833f46cfcab14"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
@@ -11212,8 +11242,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-gateway-types"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "anyhow",
  "fake",
@@ -11245,7 +11275,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
+source = "git+https://github.com/karnotxyz/snos?branch=l3%2Fv2#bd3f6cc4315ed9ba569ea60cfbf833f46cfcab14"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11260,7 +11290,7 @@ dependencies = [
  "cairo-lang-starknet",
  "cairo-lang-starknet-classes 2.8.2",
  "cairo-type-derive",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "futures",
  "futures-util",
  "heck 0.4.1",
@@ -11294,11 +11324,11 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
+source = "git+https://github.com/karnotxyz/snos?branch=l3%2Fv2#bd3f6cc4315ed9ba569ea60cfbf833f46cfcab14"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
- "cairo-vm",
+ "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "flate2",
  "num-bigint",
  "once_cell",
@@ -11806,16 +11836,16 @@ dependencies = [
 
 [[package]]
 name = "tagged"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "fake",
 ]
 
 [[package]]
 name = "tagged-debug-derive"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "proc-macro2",
  "quote",

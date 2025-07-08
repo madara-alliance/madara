@@ -289,8 +289,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/0.13.2-appchain" }
-prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/0.13.2-appchain" }
+starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "l3/v2" }
+prove_block = { git = "https://github.com/karnotxyz/snos", branch = "l3/v2" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -314,4 +314,4 @@ starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branc
 
 starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
 
-cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2" }
+#cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2" }
