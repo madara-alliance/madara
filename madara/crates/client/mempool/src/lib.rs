@@ -502,7 +502,7 @@ pub(crate) mod tests {
         let mempool_tx = mempool.get_consumer().await.next().expect("Mempool should contain a transaction");
         assert_eq!(mempool_tx.arrived_at, timestamp);
 
-        assert!(mempool.inner.read().await.is_empty(), "Mempool should be empty");
+        assert!(mempool.is_empty().await, "Mempool should be empty");
 
         mempool.inner.read().await.check_invariants();
     }
