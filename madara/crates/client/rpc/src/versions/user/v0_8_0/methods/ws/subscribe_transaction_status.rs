@@ -88,15 +88,7 @@ impl<'a> SubscriptionState<'a> {
             Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
                 // Tx has not yet been accepted on L1 but is included on L2, hence it is marked
                 // as accepted on L2. We wait for it to be accepted on L1
-                let block_number = common
-                    .starknet
-                    .backend
-                    .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
-                    .or_else_internal_server_error(|| {
-                        format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
-                    })?
-                    .map(|n| n + 1)
-                    .unwrap_or(0);
+                let block_number = block_info.header.parent_block_number.map(|n| n + 1).unwrap_or(0);
                 tracing::debug!("WaitAcceptedOnL1");
                 common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
                 Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel_confirmed }))
@@ -343,15 +335,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                 )?;
             match block_info {
                 Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
-                    break common
-                        .starknet
-                        .backend
-                        .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
-                        .or_else_internal_server_error(|| {
-                            format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
-                        })?
-                        .map(|n| n + 1)
-                        .unwrap_or(0);
+                    break block_info.header.parent_block_number.map(|n| n + 1).unwrap_or(0);
                 }
                 Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
                     break block_info.header.block_number;
