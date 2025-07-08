@@ -1,4 +1,4 @@
-use crate::new_inner::{
+use crate::inner::{
     accounts::AccountUpdate,
     tx::{AccountKey, EvictionScore},
 };

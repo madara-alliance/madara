@@ -1,5 +1,5 @@
 use crate::{
-    new_inner::{
+    inner::{
         tx::{AccountKey, EvictionScore, MempoolTransaction, TxKey},
         TxInsertionError,
     },

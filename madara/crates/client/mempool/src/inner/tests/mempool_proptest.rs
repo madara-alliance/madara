@@ -4,8 +4,8 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 
 fn arb_tx() -> impl Strategy<Value = TestTx> {
     (
-        (1u64..=5).prop_map(|n| felt!(n)), // nonce: 1-5
-        (1u64..=3).prop_map(|n| felt!(n)), // contract_address: 1-3
+        (0u64..=5).prop_map(|n| felt!(n)), // nonce: 0-5
+        (0u64..=3).prop_map(|n| felt!(n)), // contract_address: 0-3
         (0u128..=5000),                    // arrived_at: 0-5000
         prop::option::of(10u64..=100),     // tip: Some(10-100) or None
         any::<bool>(),                     // is_declare
@@ -62,6 +62,7 @@ proptest! {
             max_declare_transactions,
             Duration::from_millis(ttl_millis)
         );
+        tracing::info!("{ops:#?}");
 
         // Apply all operations
         for op in ops {
@@ -103,6 +104,7 @@ proptest! {
             max_declare_transactions,
             Duration::from_millis(ttl_millis)
         );
+        tracing::info!("{ops:#?}");
 
         // Apply all operations
         for op in ops {

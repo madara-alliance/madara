@@ -1,4 +1,4 @@
-use crate::{new_inner::accounts::AccountUpdate, tx::TxKey};
+use crate::{inner::accounts::AccountUpdate, tx::TxKey};
 use starknet_api::transaction::TransactionHash;
 use std::collections::HashMap;
 

@@ -1,6 +1,6 @@
 use crate::{
     accounts::AccountStatus,
-    new_inner::{accounts::AccountUpdate, tx::AccountKey},
+    inner::{accounts::AccountUpdate, tx::AccountKey},
     tx::Score,
 };
 use std::collections::BTreeSet;

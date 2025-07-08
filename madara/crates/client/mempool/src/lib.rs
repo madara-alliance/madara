@@ -19,11 +19,9 @@ use std::collections::HashSet;
 use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
-// mod inner;
+mod inner;
 mod l1;
-mod new_inner;
 mod notify;
-use new_inner as inner;
 
 pub use inner::*;
 #[cfg(any(test, feature = "testing"))]
@@ -504,10 +502,7 @@ pub(crate) mod tests {
         let mempool_tx = mempool.get_consumer().await.next().expect("Mempool should contain a transaction");
         assert_eq!(mempool_tx.arrived_at, timestamp);
 
-        assert!(
-            mempool.get_consumer().await.next().is_none(),
-            "It should not be possible to take a transaction from an empty mempool"
-        );
+        assert!(mempool.inner.read().await.is_empty(), "Mempool should be empty");
 
         mempool.inner.read().await.check_invariants();
     }

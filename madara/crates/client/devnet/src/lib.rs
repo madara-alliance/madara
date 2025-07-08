@@ -242,7 +242,6 @@ mod tests {
         backend: Arc<MadaraBackend>,
         contracts: DevnetKeys,
         block_production: Option<BlockProductionTask>,
-        mempool: Arc<Mempool>,
         tx_validator: Arc<TransactionValidator>,
     }
 
@@ -375,7 +374,7 @@ mod tests {
             TransactionValidatorConfig::default(),
         ));
 
-        DevnetForTesting { backend, contracts, block_production: Some(block_production), mempool, tx_validator }
+        DevnetForTesting { backend, contracts, block_production: Some(block_production), tx_validator }
     }
 
     #[rstest]
