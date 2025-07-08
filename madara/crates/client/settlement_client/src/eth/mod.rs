@@ -279,7 +279,7 @@ impl SettlementLayerProvider for EthereumClient {
     /// Get cancellation status of an L1 to L2 message
     ///
     /// This function query the core contract to know if a L1->L2 exists in the contract. This is useful
-    /// for processing old L1 to L2 messages, because when a message is fully canceled we will find its old event
+    /// for processing old L1 to L2 messages, because when a message is fully cancelled we will find its old event
     /// but no associated message or cancellation request.
     ///
     /// # Arguments

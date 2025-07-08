@@ -2178,11 +2178,6 @@ pub(crate) mod tests {
         tracing::info!("Events = {:?}", receipt.events());
         assert_eq!(receipt.events().len(), 1);
 
-        // pub struct CalledFromL1 {
-        //     pub from_address: felt252,
-        //     pub arg1: felt252,
-        //     pub arg2: felt252,
-        // }
         assert_eq!(
             receipt.events()[0],
             Event {

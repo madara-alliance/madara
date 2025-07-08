@@ -18,7 +18,7 @@ impl TryFrom<EmittedEvent> for MessageToL2WithMetadata {
 
     fn try_from(event: EmittedEvent) -> Result<Self, Self::Error> {
         // https://github.com/keep-starknet-strange/piltover/blob/a7dc4141fd21300f6d7c23b87d496004a739f430/src/messaging/component.cairo#L86-L96
-        // keys: ['LogStateUpdate', message_hash, from_address, to_address]
+        // keys: ['MessageSent', message_hash, from_address, to_address]
         // data: [selector, nonce, payload_len, payload[]...]
 
         let block_number = event.block_number.ok_or_else(|| {

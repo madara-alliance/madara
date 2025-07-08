@@ -87,7 +87,7 @@ async fn sync_inner(
     notify_consumer: Arc<Notify>,
 ) -> Result<(), SettlementClientError> {
     // Note: Reprocessing events.
-    // It's really important to make sure we don't mess up, we really want a strong guarantee we can't, in any circonstance, include an
+    // It's really important to make sure we don't mess up, we really want a strong guarantee we can't, in any circumstance, include an
     // l1 message that was already processed into a new block during sequencing.
     // Why? => if we do that, the state transition will be rejected when updating the core contract. That's really bad!
     // We can't make this guarantee here though. As such, we allow ourselves to reprocess events here, re-include them as pending & cie.

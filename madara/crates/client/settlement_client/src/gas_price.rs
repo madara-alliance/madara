@@ -58,7 +58,7 @@ impl L1BlockMetrics {
 
 impl L1ClientImpl {
     pub(crate) async fn gas_price_worker(
-        self: Arc<Self>,
+        &self,
         l1_gas_provider: GasPriceProvider,
         gas_price_poll_ms: Duration,
         mut ctx: ServiceContext,

@@ -220,7 +220,11 @@ pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8]) -> Felt {
         mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm().unwrap();
 
     let result = account.declare_v2(Arc::new(flattened_class), compiled_class_hash).send().await.unwrap();
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // wait one block
+    let start = account.provider().block_number().await.unwrap();
+    while account.provider().block_number().await.unwrap() <= start {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
     let deployment = account
         .execute_v3(vec![Call {
             to: Felt::from_str(UDC_ADDRESS).unwrap(),
@@ -232,7 +236,11 @@ pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8]) -> Felt {
         .unwrap();
     let deployed_contract_address =
         get_deployed_contract_address(deployment.transaction_hash, account.provider()).await.unwrap();
-    tokio::time::sleep(Duration::from_secs(5)).await;
+    // wait one block
+    let start = account.provider().block_number().await.unwrap();
+    while account.provider().block_number().await.unwrap() <= start {
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
     deployed_contract_address
 }
 

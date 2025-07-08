@@ -10,7 +10,6 @@ use futures::{
     StreamExt,
 };
 use mc_db::MadaraBackend;
-use mp_convert::L1TransactionHash;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
 use tokio::sync::Notify;
@@ -31,10 +30,6 @@ mod utils;
 pub trait SettlementClient: Send + Sync + 'static {
     /// Create a stream consuming pending messages to l2.
     fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>;
-    /// Get the messages to l2 that an l1 transaction sent to the core contract.
-    /// Mainly useful for the get_message_status rpc method.
-    fn get_transaction_messages(&self, transaction_hash: L1TransactionHash)
-        -> Option<Vec<L1HandlerTransactionWithFee>>;
 }
 
 pub struct L1ClientImpl {
@@ -66,7 +61,7 @@ impl L1ClientImpl {
     ) -> anyhow::Result<Self> {
         let provider = StarknetClient::new(StarknetClientConfig { rpc_url, core_contract_address })
             .await
-            .context("Creating ethereum client")?;
+            .context("Creating starknet client")?;
         Ok(Self::new(backend, Arc::new(provider)))
     }
 }
@@ -81,13 +76,6 @@ impl SettlementClient for L1ClientImpl {
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })
             .boxed()
     }
-
-    fn get_transaction_messages(
-        &self,
-        _transaction_hash: L1TransactionHash,
-    ) -> Option<Vec<L1HandlerTransactionWithFee>> {
-        None
-    }
 }
 
 /// This is the implementation that is used when the L1 sync is disabled.
@@ -95,12 +83,6 @@ pub struct L1SyncDisabledClient;
 impl SettlementClient for L1SyncDisabledClient {
     fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         stream::empty().boxed()
-    }
-    fn get_transaction_messages(
-        &self,
-        _transaction_hash: L1TransactionHash,
-    ) -> Option<Vec<L1HandlerTransactionWithFee>> {
-        None
     }
 }
 
@@ -119,12 +101,6 @@ impl SettlementClient for L1ClientMock {
             tx.map(|tx| (Ok(tx), recv))
         })
         .boxed()
-    }
-    fn get_transaction_messages(
-        &self,
-        _transaction_hash: L1TransactionHash,
-    ) -> Option<Vec<L1HandlerTransactionWithFee>> {
-        None
     }
 }
 #[cfg(feature = "testing")]

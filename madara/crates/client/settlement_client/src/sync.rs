@@ -35,12 +35,17 @@ impl L1ClientImpl {
         ));
 
         if !config.gas_price_sync_disabled {
-            join_set.spawn(self.clone().gas_price_worker(
-                config.l1_gas_provider,
-                config.gas_price_poll,
-                ctx.clone(),
-                config.l1_block_metrics,
-            ));
+            let client_ = self.clone();
+            join_set.spawn(async move {
+                client_
+                    .gas_price_worker(
+                        config.l1_gas_provider,
+                        config.gas_price_poll,
+                        ctx.clone(),
+                        config.l1_block_metrics,
+                    )
+                    .await
+            });
         }
 
         while let Some(res) = join_set.join_next().await {
