@@ -368,7 +368,6 @@ impl StateUpdateJobHandler {
             let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof));
             let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
 
-            // let program_output = self.fetch_program_output_for_block(block_no, config.clone()).await;
             let onchain_data = self.fetch_onchain_data_for_block(block_no, config.clone()).await;
             settlement_client
                 .update_state_calldata(
