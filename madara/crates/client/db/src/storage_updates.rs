@@ -100,6 +100,29 @@ impl MadaraBackend {
 
         self.on_full_block_imported(block_info.into(), events).await?;
         self.flush()?;
+
+        // NOTE: (Trantorian)
+        //
+        // Pending block storage is divided into two parts:
+        //
+        // - in-db source of truth
+        // - RAM cache
+        //
+        //     This presents some challenges in flushing the pending block since it is not possible
+        // to synchronize RAM updates to a db flush so as to be atomic.
+        //
+        //     To fix this, we only clear the pending cache AFTER we have flushed the db. This has
+        // the effect that the pending cache might briefly lag by AT MOST ONE block with the state
+        // of the pending block in db.
+        //     This is okay since we call this method at the end of a block and will not begin to
+        // update the pending state again until we have returned from this function. In practice,
+        // this means that we should not be writing to the pending cache BEFORE it is cleared and
+        // AFTER the db has been flushed (this would lead to a cache mismatch, as we clear out
+        // transactions in the cache which were to be part of the next block!).
+        //     It is still possible for the pending cache to be read during this period but that
+        // does not present any issues since we derive the advancement of the chain from this cache
+        // and not the db, so as far as the node is concerned we have not fully flushed the pending
+        // block until the pending cache has been cleared.
         self.clear_pending_block_in_ram()?;
 
         Ok(block_hash)
