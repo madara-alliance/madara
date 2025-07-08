@@ -1213,7 +1213,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1233,7 +1233,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.7#54c0767c018c421d60967ea3eef382797b872f48"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -2708,7 +2708,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.8.0-rc.3"
-source = "git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb#17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb"
+source = "git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain#40236a1b402b706d6a5cd102f1e3d383744ef1e2"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -3685,7 +3685,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3695,7 +3695,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
+source = "git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -8501,14 +8501,15 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-common"
-version = "0.14.3"
-source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
+version = "0.15.2"
+source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
 dependencies = [
  "anyhow",
  "bitvec",
  "fake",
  "metrics",
  "num-bigint",
+ "num-traits 0.2.19",
  "paste",
  "pathfinder-crypto",
  "primitive-types",
@@ -8525,8 +8526,8 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-crypto"
-version = "0.14.3"
-source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
+version = "0.15.2"
+source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
 dependencies = [
  "bitvec",
  "fake",
@@ -8536,8 +8537,8 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-serde"
-version = "0.14.3"
-source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
+version = "0.15.2"
+source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
 dependencies = [
  "anyhow",
  "num-bigint",
@@ -9084,7 +9085,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9584,7 +9585,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9599,7 +9600,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
@@ -11211,8 +11212,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-gateway-types"
-version = "0.14.3"
-source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
+version = "0.15.2"
+source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
 dependencies = [
  "anyhow",
  "fake",
@@ -11244,7 +11245,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11293,7 +11294,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?rev=ce48bf01f9b24a003175436b2574dde0157ec563#ce48bf01f9b24a003175436b2574dde0157ec563"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2-appchain#8f47b3b17979f46a25dfdd8c5db881c96732bde0"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.2",
@@ -11454,7 +11455,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/byteZorvin/sequencer?rev=17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb#17c3525dc5ab20dc6a6e6a26a26d6234c7c9afbb"
+source = "git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2-appchain#40236a1b402b706d6a5cd102f1e3d383744ef1e2"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes 2.8.2",
@@ -11805,16 +11806,16 @@ dependencies = [
 
 [[package]]
 name = "tagged"
-version = "0.14.3"
-source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
+version = "0.15.2"
+source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
 dependencies = [
  "fake",
 ]
 
 [[package]]
 name = "tagged-debug-derive"
-version = "0.14.3"
-source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
+version = "0.15.2"
+source = "git+https://github.com/karnotxyz/pathfinder?branch=release%2F0.13.2-appchain#dc18410973fda40da354771888858987bb5d5be9"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -13611,13 +13612,3 @@ source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-option
 name = "rocksdb"
 version = "0.22.0"
 source = "git+https://github.com/madara-alliance/rust-rocksdb?branch=read-options-set-raw-snapshot#75f13c78fdf970b0afd2f21f52caf3317341341c"
-
-[[patch.unused]]
-name = "starknet-core"
-version = "0.14.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?branch=fork#ebdb4249592c406837f284fe58042240c417cddb"
-
-[[patch.unused]]
-name = "starknet_api"
-version = "0.13.0-rc.1"
-source = "git+https://github.com/byteZorvin/sequencer?branch=madara-monorepo#52889ab3bc2a7b03b7cf86709fe7d43498212f87"
