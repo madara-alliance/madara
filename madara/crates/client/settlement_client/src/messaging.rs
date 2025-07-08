@@ -186,7 +186,7 @@ mod messaging_module_tests {
                     nonce,
                     contract_address: Felt::from(456),
                     entry_point_selector: Felt::from(789),
-                    calldata: vec![Felt::from(123), Felt::from(1), Felt::from(2)],
+                    calldata: vec![Felt::from(123), Felt::from(1), Felt::from(2)].into(),
                 },
                 1000,
             ),

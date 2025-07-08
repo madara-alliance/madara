@@ -19,6 +19,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mp-utils = { workspace = true, features = ["testing"] }
+mc-mempool = { workspace = true, features = ["testing"] }
+assert_matches = { workspace = true }
 
 [dependencies]
 
@@ -27,13 +29,10 @@ m-proc-macros = { workspace = true }
 mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
-mc-gateway-client = { workspace = true }
-mc-mempool = { workspace = true }
 mc-submit-tx = { workspace = true }
 mp-block = { workspace = true, default-features = true }
 mp-bloom-filter = { workspace = true }
 mp-chain-config = { workspace = true }
-mp-class = { workspace = true }
 mp-convert = { workspace = true, default-features = true }
 mp-gateway = { workspace = true }
 mp-receipt = { workspace = true }
@@ -50,6 +49,7 @@ starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
 bitvec = { workspace = true }
+futures = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",
   "server",
@@ -59,3 +59,4 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -70,7 +70,7 @@ impl TryFrom<EmittedEvent> for MessageToL2WithMetadata {
                     })?,
                     contract_address: *to,
                     entry_point_selector: *selector,
-                    calldata: iter::once(*from).chain(event.data.iter().skip(3).copied()).collect(),
+                    calldata: iter::once(*from).chain(event.data.iter().skip(3).copied()).collect::<Vec<_>>().into(),
                 },
                 /* paid_fee_on_l1 */ 1, // TODO: we need the paid fee here.
             ),

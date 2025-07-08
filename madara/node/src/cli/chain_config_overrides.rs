@@ -8,8 +8,8 @@ use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_chain_config::{
-    deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
-    BlockProductionConfig, ChainConfig, L1DataAvailabilityMode, StarknetVersion,
+    deserialize_starknet_version, serialize_starknet_version, BlockProductionConfig, ChainConfig,
+    L1DataAvailabilityMode, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -95,7 +95,6 @@ pub struct ChainConfigOverridesInner {
     pub block_time: Duration,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub pending_block_update_time: Option<Duration>,
-    #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: String,

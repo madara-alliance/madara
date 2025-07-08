@@ -377,6 +377,7 @@ impl From<SubmitTransactionError> for StarknetRpcApiError {
 #[derive(Debug)]
 pub enum StarknetWsApiError {
     TooManyBlocksBack,
+    TooManyAddressesInFilter,
     NoBlocks,
     BlockNotFound,
     Pending,
@@ -388,6 +389,7 @@ impl StarknetWsApiError {
     fn code(&self) -> i32 {
         match self {
             Self::TooManyBlocksBack => 68,
+            Self::TooManyAddressesInFilter => 67,
             Self::NoBlocks => 32,
             Self::BlockNotFound => 24,
             Self::Pending => 69,
@@ -398,6 +400,7 @@ impl StarknetWsApiError {
     fn message(&self) -> &str {
         match self {
             Self::TooManyBlocksBack => "Cannot go back more than 1024 blocks",
+            Self::TooManyAddressesInFilter => "Too many addresses in filter sender_address filter",
             Self::NoBlocks => "There are no blocks",
             Self::BlockNotFound => "Block not found",
             // See https://github.com/starkware-libs/starknet-specs/pull/237
@@ -410,6 +413,12 @@ impl StarknetWsApiError {
     pub fn internal_server_error<C: std::fmt::Display>(context: C) -> Self {
         display_internal_server_error(context);
         StarknetWsApiError::Internal
+    }
+}
+
+impl From<StarknetWsApiError> for jsonrpsee::types::ErrorObjectOwned {
+    fn from(err: StarknetWsApiError) -> Self {
+        Self::owned(err.code(), err.message(), None::<()>)
     }
 }
 

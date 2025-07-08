@@ -83,6 +83,7 @@ pub struct Mempool {
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
     config: MempoolConfig,
+    tx_sender: tokio::sync::broadcast::Sender<Felt>,
 }
 
 impl From<MempoolError> for SubmitTransactionError {
@@ -117,7 +118,18 @@ impl From<MempoolError> for SubmitTransactionError {
 #[async_trait]
 impl SubmitValidatedTransaction for Mempool {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
-        Ok(self.accept_tx(tx).await?)
+        let tx_hash = tx.tx_hash;
+        self.accept_tx(tx).await?;
+        let _ = self.tx_sender.send(tx_hash);
+        Ok(())
+    }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        Some(self.inner.read().await.has_transaction(&starknet_api::transaction::TransactionHash(hash)))
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        Some(self.tx_sender.subscribe())
     }
 }
 
@@ -127,6 +139,7 @@ impl Mempool {
             backend,
             inner: MempoolInnerWithNotify::new(config.limits.clone()),
             metrics: MempoolMetrics::register(),
+            tx_sender: tokio::sync::broadcast::channel(100).0,
             config,
         }
     }
@@ -137,7 +150,7 @@ impl Mempool {
 
             let tx_hash = tx.tx_hash;
             let (tx, arrived_at, converted_class) = tx
-                .into_blockifier()
+                .into_blockifier_for_sequencing()
                 .context("Converting validated tx to blockifier")
                 .map_err(SubmitTransactionError::Internal)?;
 
@@ -164,7 +177,7 @@ impl Mempool {
         }
 
         let tx_hash = tx.tx_hash;
-        let (tx, arrived_at, converted_class) = tx.into_blockifier()?;
+        let (tx, arrived_at, converted_class) = tx.into_blockifier_for_sequencing()?;
 
         self.add_to_inner_mempool(tx_hash, tx, arrived_at, converted_class, nonce_info).await?;
 
@@ -315,20 +328,22 @@ pub(crate) mod tests {
 
     #[rstest::fixture]
     pub fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V0(
-                            starknet_api::transaction::InvokeTransactionV0 {
-                                contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                                ..Default::default()
-                            },
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        only_query: false,
-                    },
-                ),
+        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+        let ordering = std::sync::atomic::Ordering::AcqRel;
+        let tx_hash = starknet_api::transaction::TransactionHash(HASH.fetch_add(1, ordering).into());
+
+        ValidatedMempoolTx::from_starknet_api(
+            starknet_api::executable_transaction::AccountTransaction::Invoke(
+                starknet_api::executable_transaction::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V0(
+                        starknet_api::transaction::InvokeTransactionV0 {
+                            contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                            ..Default::default()
+                        },
+                    ),
+                    tx_hash,
+                },
             ),
             TxTimestamp::now(),
             None,
@@ -337,17 +352,14 @@ pub(crate) mod tests {
 
     #[rstest::fixture]
     pub fn tx_account_v1_invalid() -> ValidatedMempoolTx {
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V1(
-                            starknet_api::transaction::InvokeTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        only_query: true,
-                    },
-                ),
+        ValidatedMempoolTx::from_starknet_api(
+            starknet_api::executable_transaction::AccountTransaction::Invoke(
+                starknet_api::executable_transaction::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V1(
+                        starknet_api::transaction::InvokeTransactionV1::default(),
+                    ),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                },
             ),
             TxTimestamp::now(),
             None,
@@ -356,18 +368,15 @@ pub(crate) mod tests {
 
     #[rstest::fixture]
     pub fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
-                    blockifier::transaction::transactions::DeployAccountTransaction {
-                        tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                            starknet_api::transaction::DeployAccountTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                        only_query: false,
-                    },
-                ),
+        ValidatedMempoolTx::from_starknet_api(
+            starknet_api::executable_transaction::AccountTransaction::DeployAccount(
+                starknet_api::executable_transaction::DeployAccountTransaction {
+                    tx: starknet_api::transaction::DeployAccountTransaction::V1(
+                        starknet_api::transaction::DeployAccountTransactionV1::default(),
+                    ),
+                    tx_hash: starknet_api::transaction::TransactionHash::default(),
+                    contract_address: ContractAddress::try_from(contract_address).unwrap(),
+                },
             ),
             TxTimestamp::now(),
             None,
@@ -463,7 +472,7 @@ pub(crate) mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            tx: tx_deploy_v1_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -499,7 +508,7 @@ pub(crate) mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -523,7 +532,7 @@ pub(crate) mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            tx: tx_deploy_v1_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -561,7 +570,7 @@ pub(crate) mod tests {
         // First, we insert the deploy account transaction
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            tx: tx_deploy_v1_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -582,7 +591,7 @@ pub(crate) mod tests {
         // Now we replace the previous transaction with a non-deploy account tx
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -625,7 +634,7 @@ pub(crate) mod tests {
         // First, we insert the deploy account transaction
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_deploy_v1_valid.into_blockifier().unwrap().0,
+            tx: tx_deploy_v1_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::UNIX_EPOCH,
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -714,7 +723,7 @@ pub(crate) mod tests {
         // they are in the ready as well as the pending intent queues.
         let arrived_at = TxTimestamp::now();
         let tx_new_1_mempool = MempoolTransaction {
-            tx: tx_new_1.into_blockifier().unwrap().0,
+            tx: tx_new_1.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ZERO),
@@ -722,7 +731,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_new_1_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)))
+            .insert_tx(
+                tx_new_1_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -740,7 +754,7 @@ pub(crate) mod tests {
 
         let arrived_at = TxTimestamp::now();
         let tx_new_2_mempool = MempoolTransaction {
-            tx: tx_new_2.into_blockifier().unwrap().0,
+            tx: tx_new_2.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ZERO),
@@ -748,7 +762,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_new_2_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)))
+            .insert_tx(
+                tx_new_2_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -766,7 +785,7 @@ pub(crate) mod tests {
 
         let arrived_at = TxTimestamp::now();
         let tx_new_3_mempool = MempoolTransaction {
-            tx: tx_new_3.into_blockifier().unwrap().0,
+            tx: tx_new_3.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -774,7 +793,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_new_3_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_new_3_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -799,7 +823,7 @@ pub(crate) mod tests {
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_1_mempool = MempoolTransaction {
-            tx: tx_old_1.into_blockifier().unwrap().0,
+            tx: tx_old_1.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -807,7 +831,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_1_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_old_1_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -825,7 +854,7 @@ pub(crate) mod tests {
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_2_mempool = MempoolTransaction {
-            tx: tx_old_2.into_blockifier().unwrap().0,
+            tx: tx_old_2.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -833,7 +862,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_2_mempool.clone(), true, false, NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_old_2_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -851,7 +885,7 @@ pub(crate) mod tests {
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_3_mempool = MempoolTransaction {
-            tx: tx_old_3.into_blockifier().unwrap().0,
+            tx: tx_old_3.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::TWO),
@@ -859,7 +893,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_3_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)))
+            .insert_tx(
+                tx_old_3_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -884,7 +923,7 @@ pub(crate) mod tests {
 
         let arrived_at = TxTimestamp::UNIX_EPOCH;
         let tx_old_4_mempool = MempoolTransaction {
-            tx: tx_old_4.into_blockifier().unwrap().0,
+            tx: tx_old_4.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: Nonce(Felt::ONE),
@@ -892,7 +931,12 @@ pub(crate) mod tests {
         };
         let res = mempool
             .inner
-            .insert_tx(tx_old_4_mempool.clone(), true, false, NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)))
+            .insert_tx(
+                tx_old_4_mempool.clone(),
+                /* force */ true,
+                /* update_limits */ false,
+                NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO)),
+            )
             .await;
         assert!(res.is_ok());
         assert!(
@@ -1050,9 +1094,8 @@ pub(crate) mod tests {
     ///
     /// [ready]: inner::TransactionIntentReady;
     /// [pending]: inner::TransactionInentPending;
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
+    #[rstest::rstest]
     async fn mempool_readiness_check(
         #[future] backend: Arc<mc_db::MadaraBackend>,
         #[from(tx_account_v0_valid)] mut tx_ready: ValidatedMempoolTx,
@@ -1399,7 +1442,7 @@ pub(crate) mod tests {
         let arrived_at = TxTimestamp::now();
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let tx_1_mempool = MempoolTransaction {
-            tx: tx_1.into_blockifier().unwrap().0,
+            tx: tx_1.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -1438,7 +1481,7 @@ pub(crate) mod tests {
         let arrived_at = arrived_at.checked_add(Duration::from_secs(1)).unwrap();
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let tx_2_mempool = MempoolTransaction {
-            tx: tx_2.into_blockifier().unwrap().0,
+            tx: tx_2.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: nonce_info.nonce,
@@ -1490,7 +1533,7 @@ pub(crate) mod tests {
         let arrived_at = arrived_at.checked_add(Duration::from_secs(1)).unwrap();
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let tx_3_mempool = MempoolTransaction {
-            tx: tx_3.into_blockifier().unwrap().0,
+            tx: tx_3.into_blockifier_for_sequencing().unwrap().0,
             arrived_at,
             converted_class: None,
             nonce: nonce_info.nonce,

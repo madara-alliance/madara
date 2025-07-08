@@ -1,20 +1,25 @@
-use crate::{
-    from_broadcasted_transaction::is_query,
-    into_starknet_api::TransactionApiError,
-    validated::{TxTimestamp, ValidatedMempoolTx},
-    L1HandlerTransactionWithFee, Transaction, TransactionWithHash,
-};
+use crate::validated::TxTimestamp;
+use crate::validated::ValidatedMempoolTx;
+use crate::L1HandlerTransactionWithFee;
+use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
+use blockifier::transaction::account_transaction::ExecutionFlags;
 use blockifier::{
-    execution::{contract_class::ClassInfo as BClassInfo, errors::ContractClassError},
-    transaction::{errors::TransactionExecutionError, transaction_execution::Transaction as BTransaction},
+    transaction::errors::TransactionExecutionError, transaction::transaction_execution::Transaction as BTransaction,
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
     class_hash, compile::ClassCompilationError, CompressedLegacyContractClass, ConvertedClass, FlattenedSierraClass,
     LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
-use mp_rpc::{admin::BroadcastedDeclareTxnV0, BroadcastedDeclareTxn, BroadcastedTxn};
-use starknet_api::transaction::{Fee, TransactionHash};
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
+use starknet_api::contract_class::ClassInfo as ApiClassInfo;
+use starknet_api::core::ContractAddress;
+use starknet_api::executable_transaction::{
+    AccountTransaction as ApiAccountTransaction, DeclareTransaction as ApiDeclareTransaction,
+    DeployAccountTransaction as ApiDeployAccountTransaction, InvokeTransaction as ApiInvokeTransaction,
+};
+use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -39,14 +44,14 @@ impl TransactionWithHash {
         let class_info = match &self.transaction {
             Transaction::Declare(_txn) => {
                 let class = class.ok_or(ToBlockifierError::MissingClass)?;
-                Some(class.to_blockifier_class_info()?)
+                Some(class.try_into()?)
             }
             _ => None,
         };
 
         // see doc comment
         let paid_fee_on_l1 =
-            self.transaction.as_l1_handler().map(|_| starknet_api::transaction::Fee(1_000_000_000_000));
+            self.transaction.as_l1_handler().map(|_| starknet_api::transaction::fields::Fee(1_000_000_000_000));
 
         let deployed_address = match &self.transaction {
             // todo: this shouldnt be computed here...
@@ -61,17 +66,17 @@ impl TransactionWithHash {
             class_info,
             paid_fee_on_l1,
             deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
-            /* is_query */ false,
+            ExecutionFlags::default(),
         )?)
     }
 }
 
-pub trait IntoBlockifierExt: Sized {
-    fn into_blockifier(
+pub trait IntoStarknetApiExt: Sized {
+    fn into_starknet_api(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError>;
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError>;
 
     fn into_validated_tx(
         self,
@@ -79,17 +84,17 @@ pub trait IntoBlockifierExt: Sized {
         starknet_version: StarknetVersion,
         arrived_at: TxTimestamp,
     ) -> Result<ValidatedMempoolTx, ToBlockifierError> {
-        let (btx, class) = self.into_blockifier(chain_id, starknet_version)?;
-        Ok(ValidatedMempoolTx::from_blockifier(btx, arrived_at, class))
+        let (btx, class) = self.into_starknet_api(chain_id, starknet_version)?;
+        Ok(ValidatedMempoolTx::from_starknet_api(btx, arrived_at, class))
     }
 }
 
-impl IntoBlockifierExt for BroadcastedTxn {
-    fn into_blockifier(
+impl IntoStarknetApiExt for BroadcastedTxn {
+    fn into_starknet_api(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) = match &self {
             BroadcastedTxn::Declare(tx) => match tx {
                 BroadcastedDeclareTxn::V1(tx) | BroadcastedDeclareTxn::QueryV1(tx) => {
@@ -105,68 +110,88 @@ impl IntoBlockifierExt for BroadcastedTxn {
             _ => (None, None, None),
         };
 
-        let is_query = is_query(&self);
         let TransactionWithHash { transaction, hash } =
             TransactionWithHash::from_broadcasted(self, chain_id, starknet_version, class_hash);
         let deployed_address = match &transaction {
             Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
             _ => None,
         };
+        let transaction = match transaction {
+            Transaction::Declare(tx) => ApiAccountTransaction::Declare(ApiDeclareTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                class_info: class_info.expect("BroadcastedDeclareTxn generate a ClassInfo"),
+            }),
+            Transaction::DeployAccount(tx) => ApiAccountTransaction::DeployAccount(ApiDeployAccountTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+                contract_address: ContractAddress(
+                    deployed_address
+                        .expect("BroadcastedDeployAccount generate a DeployedAddress")
+                        .try_into()
+                        .expect("Calculated deployed_address is in bound"),
+                ),
+            }),
+            Transaction::Invoke(tx) => ApiAccountTransaction::Invoke(ApiInvokeTransaction {
+                tx: tx.try_into()?,
+                tx_hash: TransactionHash(hash),
+            }),
+            Transaction::L1Handler(_) | Transaction::Deploy(_) => {
+                unreachable!("BroadcastedTxn can't be L1Handler or Deploy")
+            }
+        };
+
+        Ok((transaction, converted_class))
+    }
+}
+
+impl L1HandlerTransactionWithFee {
+    pub fn into_blockifier(
+        self,
+        chain_id: Felt,
+        _starknet_version: StarknetVersion,
+    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        let hash = self.tx.compute_hash(chain_id, /* offset_version */ false, /* legacy */ false);
+        let transaction = Transaction::L1Handler(self.tx);
         let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
         Ok((
             BTransaction::from_api(
                 transaction,
                 TransactionHash(hash),
-                class_info,
                 None,
-                deployed_address.map(|address| address.try_into().expect("Address conversion should never fail")),
-                is_query,
+                Some(Fee(self.paid_fee_on_l1)),
+                None,
+                ExecutionFlags::default(),
             )?,
-            converted_class,
-        ))
-    }
-}
-
-impl IntoBlockifierExt for L1HandlerTransactionWithFee {
-    fn into_blockifier(
-        self,
-        chain_id: Felt,
-        _starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
-        let paid_fee_on_l1 = self.paid_fee_on_l1;
-        let hash = self.tx.compute_hash(chain_id, false, false);
-        let transaction = Transaction::L1Handler(self.tx);
-        let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
-
-        Ok((
-            BTransaction::from_api(transaction, TransactionHash(hash), None, Some(Fee(paid_fee_on_l1)), None, false)?,
             None,
         ))
     }
 }
 
-impl IntoBlockifierExt for BroadcastedDeclareTxnV0 {
-    fn into_blockifier(
+impl IntoStarknetApiExt for BroadcastedDeclareTxnV0 {
+    fn into_starknet_api(
         self,
         chain_id: Felt,
-        starknet_version: StarknetVersion,
-    ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        _starknet_version: StarknetVersion,
+    ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
         let (class_info, converted_class, class_hash) =
             handle_class_legacy(Arc::new((self.contract_class).clone().try_into()?))?;
 
         let is_query = self.is_query;
-        let transaction = Transaction::Declare(crate::DeclareTransaction::from_broadcasted_declare_v0(
+        let transaction = crate::DeclareTransaction::from_broadcasted_declare_v0(
             self,
             class_hash.expect("Class hash must be provided for DeclareTransaction"),
-        ));
-        let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
-        let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
+        );
+        let hash = transaction.compute_hash(chain_id, is_query);
+        // let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
+        let transaction = ApiAccountTransaction::Declare(ApiDeclareTransaction {
+            tx: transaction.try_into()?,
+            tx_hash: TransactionHash(hash),
+            class_info: class_info.expect("BroadcastedDeclareTxnV0 generate a ClassInfo"),
+        });
 
-        Ok((
-            BTransaction::from_api(transaction, TransactionHash(hash), class_info, None, None, is_query)?,
-            converted_class,
-        ))
+        Ok((transaction, converted_class))
     }
 }
 
@@ -184,32 +209,33 @@ pub enum ToBlockifierError {
     ConvertToTxApiError(#[from] TransactionApiError),
     #[error("Failed to convert transaction to blockifier: {0}")]
     ConvertTxBlockifierError(#[from] TransactionExecutionError),
-    #[error("Failed to convert contract class: {0}")]
-    ConvertContractClassError(#[from] ContractClassError),
     #[error("Compiled class hash mismatch: expected {expected}, actual {compilation}")]
     CompiledClassHashMismatch { expected: Felt, compilation: Felt },
     #[error("Failed to convert base64 program to cairo program: {0}")]
     Base64ToCairoError(#[from] std::io::Error),
     #[error("Missing class")]
     MissingClass,
+    #[error("Failed to convert class to api: {0}")]
+    ConvertClassToApiError(#[from] serde_json::Error),
 }
 
 #[allow(clippy::type_complexity)]
 fn handle_class_legacy(
     contract_class: Arc<CompressedLegacyContractClass>,
-) -> Result<(Option<BClassInfo>, Option<ConvertedClass>, Option<Felt>), ToBlockifierError> {
+) -> Result<(Option<ApiClassInfo>, Option<ConvertedClass>, Option<Felt>), ToBlockifierError> {
     let class_hash = contract_class.compute_class_hash()?;
     tracing::debug!("Computed legacy class hash: {:?}", class_hash);
     let converted_class =
         ConvertedClass::Legacy(LegacyConvertedClass { class_hash, info: LegacyClassInfo { contract_class } });
-    Ok((Some(converted_class.to_blockifier_class_info()?), Some(converted_class), Some(class_hash)))
+    let api_class_info = (&converted_class).try_into()?;
+    Ok((Some(api_class_info), Some(converted_class), Some(class_hash)))
 }
 
 #[allow(clippy::type_complexity)]
 fn handle_class_sierra(
     contract_class: Arc<FlattenedSierraClass>,
     expected_compiled_class_hash: Felt,
-) -> Result<(Option<BClassInfo>, Option<ConvertedClass>, Option<Felt>), ToBlockifierError> {
+) -> Result<(Option<ApiClassInfo>, Option<ConvertedClass>, Option<Felt>), ToBlockifierError> {
     let class_hash = contract_class.compute_class_hash()?;
     let (compiled_class_hash, compiled) = contract_class.compile_to_casm()?;
     if expected_compiled_class_hash != compiled_class_hash {
@@ -221,7 +247,8 @@ fn handle_class_sierra(
     let converted_class = ConvertedClass::Sierra(SierraConvertedClass {
         class_hash,
         info: SierraClassInfo { contract_class, compiled_class_hash },
-        compiled: Arc::new(compiled),
+        compiled: Arc::new((&compiled).try_into()?),
     });
-    Ok((Some(converted_class.to_blockifier_class_info()?), Some(converted_class), Some(class_hash)))
+    let api_class_info = (&converted_class).try_into()?;
+    Ok((Some(api_class_info), Some(converted_class), Some(class_hash)))
 }

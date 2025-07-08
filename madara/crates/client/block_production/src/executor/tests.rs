@@ -9,7 +9,7 @@ use mc_exec::execution::TxInfo;
 use mp_chain_config::StarknetVersion;
 use mp_convert::ToFelt;
 use mp_rpc::BroadcastedTxn;
-use mp_transactions::IntoBlockifierExt;
+use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rstest::fixture;
 use starknet_core::utils::get_selector_from_name;
@@ -17,9 +17,16 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
-fn make_tx(backend: &MadaraBackend, tx: impl IntoBlockifierExt) -> (Transaction, AdditionalTxInfo) {
-    let (tx, declared_class) =
-        tx.into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST).unwrap();
+fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (Transaction, AdditionalTxInfo) {
+    let (tx, _ts, declared_class) = tx
+        .into_validated_tx(
+            backend.chain_config().chain_id.to_felt(),
+            StarknetVersion::LATEST,
+            mp_transactions::validated::TxTimestamp::UNIX_EPOCH,
+        )
+        .unwrap()
+        .into_blockifier_for_sequencing()
+        .unwrap();
     (tx, AdditionalTxInfo { declared_class })
 }
 
@@ -31,19 +38,19 @@ fn make_l1_handler_tx(
     arg1: Felt,
     arg2: Felt,
 ) -> (Transaction, AdditionalTxInfo) {
-    make_tx(
-        backend,
-        L1HandlerTransactionWithFee::new(
-            L1HandlerTransaction {
-                version: Felt::ZERO,
-                nonce,
-                contract_address,
-                entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
-                calldata: vec![from_l1_address, arg1, arg2],
-            },
-            /* paid_fee_on_l1 */ 128328,
-        ),
+    let (tx, declared_class) = L1HandlerTransactionWithFee::new(
+        L1HandlerTransaction {
+            version: Felt::ZERO,
+            nonce,
+            contract_address,
+            entry_point_selector: get_selector_from_name("l1_handler_entrypoint").unwrap(),
+            calldata: vec![from_l1_address, arg1, arg2].into(),
+        },
+        /* paid_fee_on_l1 */ 128328,
     )
+    .into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST)
+    .unwrap();
+    (tx, AdditionalTxInfo { declared_class })
 }
 
 struct L1HandlerSetup {

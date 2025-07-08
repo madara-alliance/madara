@@ -1,11 +1,12 @@
 use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
+use crate::utils::{tx_api_to_blockifier, ResultExt};
 use crate::Starknet;
+use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
 use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
-use mp_transactions::IntoBlockifierExt;
+use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 use std::sync::Arc;
 
 pub async fn simulate_transactions(
@@ -27,11 +28,16 @@ pub async fn simulate_transactions(
 
     let user_transactions = transactions
         .into_iter()
-        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
-        .collect::<Result<Vec<_>, _>>()
+        .map(|tx| {
+            let only_query = tx.is_query();
+            let (api_tx, _) = tx.into_starknet_api(starknet.chain_id(), starknet_version)?;
+            let execution_flags = ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check: true };
+            Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
+        })
+        .collect::<Result<Vec<_>, ToBlockifierError>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 
-    let execution_resuls = exec_context.re_execute_transactions([], user_transactions, charge_fee, validate)?;
+    let execution_resuls = exec_context.re_execute_transactions([], user_transactions)?;
 
     let simulated_transactions = execution_resuls
         .iter()

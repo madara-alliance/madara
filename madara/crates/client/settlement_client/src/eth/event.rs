@@ -45,7 +45,7 @@ impl TryFrom<LogMessageToL2> for L1HandlerTransactionWithFee {
                 entry_point_selector: event.selector.to_felt(),
                 calldata: iter::once(Felt::from_bytes_be_slice(event.fromAddress.as_slice()))
                     .chain(event.payload.into_iter().map(ToFelt::to_felt))
-                    .collect(),
+                    .collect::<Vec<_>>().into(),
             },
             event.fee.try_into().map_err(|_| -> SettlementClientError {
                 EthereumClientError::Conversion("Fee value too large for u128 conversion".to_string()).into()

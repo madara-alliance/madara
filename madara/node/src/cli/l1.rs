@@ -1,7 +1,8 @@
-use derive_more::FromStr;
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::time::Duration;
+
+use derive_more::FromStr;
+use serde::{Deserialize, Serialize};
 use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};

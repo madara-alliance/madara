@@ -8,7 +8,7 @@ use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_convert::ToFelt;
-use mp_transactions::{validated::ValidatedMempoolTx, IntoBlockifierExt, L1HandlerTransactionWithFee};
+use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransactionWithFee};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -60,10 +60,13 @@ impl Batcher {
             // and we want to fill in a batch with them, with some priority
             // this is a perfect candidate for the futures-rs stream select api :)
 
+            let (chain_id, sn_version) =
+                (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
+
             let bypass_txs_stream = stream::unfold(&mut self.bypass_in, |chan| async move {
                 chan.recv().await.map(|tx| {
                     (
-                        tx.into_blockifier()
+                        tx.into_blockifier_for_sequencing()
                             .map(|(btx, _ts, declared_class)| (btx, AdditionalTxInfo { declared_class }))
                             .map_err(anyhow::Error::from),
                         chan,
@@ -71,8 +74,6 @@ impl Batcher {
                 })
             });
 
-            let (chain_id, sn_version) =
-                (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
             let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
                 Ok(res?
                     .into_blockifier(chain_id, sn_version)

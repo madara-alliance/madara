@@ -20,6 +20,14 @@ impl SubmitValidatedTransaction for BypassInput {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
         self.0.send(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
     }
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        None
+    }
+    async fn subscribe_new_transactions(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        None
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -93,11 +101,27 @@ impl SubmitTransaction for BlockProductionHandle {
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
         self.tx_converter.submit_invoke_transaction(tx).await
     }
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        None
+    }
+    async fn subscribe_new_transactions(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        None
+    }
 }
 
 #[async_trait]
 impl SubmitValidatedTransaction for BlockProductionHandle {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
         self.send_tx_raw(tx).await.map_err(|e| SubmitTransactionError::Internal(anyhow::anyhow!(e)))
+    }
+    async fn received_transaction(&self, _hash: starknet_types_core::felt::Felt) -> Option<bool> {
+        None
+    }
+    async fn subscribe_new_transactions(
+        &self,
+    ) -> Option<tokio::sync::broadcast::Receiver<starknet_types_core::felt::Felt>> {
+        None
     }
 }

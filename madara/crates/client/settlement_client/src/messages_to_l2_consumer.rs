@@ -86,7 +86,7 @@ mod tests {
                 nonce,
                 contract_address: Felt::TWO * Felt::from(nonce),
                 entry_point_selector: Felt::ZERO,
-                calldata: vec![Felt::THREE, Felt::ONE],
+                calldata: vec![Felt::THREE, Felt::ONE].into(),
             },
             paid_fee_on_l1: nonce as u128 * 3,
         }

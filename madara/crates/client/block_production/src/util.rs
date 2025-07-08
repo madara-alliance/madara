@@ -151,8 +151,8 @@ impl BlockExecutionContext {
         }
     }
 
-    pub fn to_blockifier(&self) -> Result<blockifier::blockifier::block::BlockInfo, StarknetApiError> {
-        Ok(blockifier::blockifier::block::BlockInfo {
+    pub fn to_blockifier(&self) -> Result<starknet_api::block::BlockInfo, StarknetApiError> {
+        Ok(starknet_api::block::BlockInfo {
             block_number: starknet_api::block::BlockNumber(self.block_n),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
             sequencer_address: self.sequencer_address.try_into()?,

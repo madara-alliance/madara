@@ -20,7 +20,6 @@ A few notes on the current design:
 ## Tests
 
 - E2E test #1
-
   - Launch Anvil Node
   - Launch Worker
   - Send L1->L2 message
@@ -32,7 +31,6 @@ A few notes on the current design:
   - Assert that the tx was correctly executed
 
 - E2E test #2
-
   - Should fail if we try to send multiple messages with same nonces
 
 - E2E test #3
