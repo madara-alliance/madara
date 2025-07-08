@@ -37,6 +37,8 @@ pub enum TxInsertionError {
     TooOld { ttl: Duration },
     #[error("Cannot add a declare transaction with a future nonce")]
     PendingDeclare,
+    #[error("Invalid contract address")]
+    InvalidContractAddress,
     /// Transactions without tips are not supported when using the mempool in tip mode.
     #[error("Cannot add a transaction without a tip into the mempool")]
     NoTip,
@@ -145,6 +147,7 @@ impl InnerMempool {
 
     /// Update indices based on an account update, and extend `removed_txs` with the removed txs.
     fn apply_update(&mut self, account_update: AccountUpdate, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
+        tracing::debug!("Apply update {account_update:?}");
         self.ready_queue.apply_account_update(&account_update);
         self.timestamp_queue.apply_account_update(&account_update);
         self.by_tx_hash.apply_account_update(&account_update);
@@ -212,6 +215,7 @@ impl InnerMempool {
                 }
                 // Try to make space by evicting less desirable transactions.
                 let new_tx_eviction_score = EvictionScore::new(&mempool_tx, account_nonce);
+                tracing::debug!("Try make room: {new_tx_eviction_score:?}");
                 if !self.try_make_room_for(&new_tx_eviction_score, removed_txs) {
                     return Err(err.into()); // Failed to make room
                 }
@@ -269,7 +273,7 @@ impl InnerMempool {
     /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until a `update_account_nonce` is issued.
     pub fn pop_next_ready(&mut self) -> Option<ValidatedMempoolTx> {
         // Get the next ready account,
-        let account_key = self.ready_queue.get_first()?;
+        let account_key = self.ready_queue.get_next_ready()?;
 
         // Remove from the backing datastructure.
         let mut account_update = self.accounts.remove_ready_tx(account_key);
@@ -306,6 +310,10 @@ impl InnerMempool {
 
     pub fn get_transaction_by_hash(&self, tx_hash: &TransactionHash) -> Option<&ValidatedMempoolTx> {
         self.by_tx_hash.get(tx_hash).and_then(|key| self.accounts.get_tx_by_key(key)).map(|tx| &tx.inner)
+    }
+
+    pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&ValidatedMempoolTx> {
+        self.accounts.get_transaction(contract_address, nonce).map(|tx| &tx.inner)
     }
 
     pub fn contains_tx_by_hash(&self, tx_hash: &TransactionHash) -> bool {

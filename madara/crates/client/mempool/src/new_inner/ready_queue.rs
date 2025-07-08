@@ -45,8 +45,10 @@ impl ReadyQueue {
         }
     }
 
-    pub fn get_first(&self) -> Option<&AccountKey> {
-        self.0.first().map(|acc| &acc.1)
+    /// Get the next ready account with the highest score.
+    pub fn get_next_ready(&self) -> Option<&AccountKey> {
+        // We want the highest score which is last.
+        self.0.last().map(|acc| &acc.1)
     }
 
     pub fn has_ready_transactions(&self) -> bool {

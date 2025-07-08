@@ -19,7 +19,7 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolConfig, MempoolLimits};
+use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolConfig};
 use mc_settlement_client::eth::event::EthereumEventStream;
 use mc_settlement_client::eth::EthereumClientConfig;
 use mc_settlement_client::gas_price::L1BlockMetrics;
@@ -192,7 +192,7 @@ async fn main() -> anyhow::Result<()> {
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mut mempool = Mempool::new(
         Arc::clone(service_db.backend()),
-        MempoolConfig::new_fcfs(MempoolLimits::new(&chain_config))
+        MempoolConfig::new(&chain_config)
             .with_no_saving(run_cmd.validator_params.no_mempool_saving),
     );
     mempool.load_txs_from_db().await.context("Loading mempool transactions")?;

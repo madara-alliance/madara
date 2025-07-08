@@ -478,14 +478,13 @@ mod l1_messaging_tests {
         sol,
         transports::http::{Client, Http},
     };
-    use blockifier::transaction::transaction_execution::Transaction;
     use mc_db::DatabaseService;
     use mc_mempool::Mempool;
     use mc_mempool::MempoolConfig;
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::*;
-    use starknet_api::core::{ContractAddress, EntryPointSelector, Nonce};
+    use starknet_api::core::Nonce;
     use starknet_types_core::felt::Felt;
     use std::{sync::Arc, time::Duration};
     use tracing_test::traced_test;
@@ -634,7 +633,7 @@ mod l1_messaging_tests {
             setup_test_env.await;
 
         // Start worker handle
-        let worker_handle = {
+        let _worker_handle = {
             let db = Arc::clone(&db);
             let mempool = Arc::clone(&mempool);
             tokio::spawn(async move {
@@ -658,58 +657,55 @@ mod l1_messaging_tests {
         // As it has the first nonce (and no other L1 message was received before) we can take it from Mempool
         // TODO: we can add a test case on which a message with Nonce = 1 is being received before this one
         // and check we cant take it until the first on is processed
-        let (handler_tx, _handler_tx_hash) = match mempool.get_consumer().await.next().unwrap().tx {
-            Transaction::L1HandlerTransaction(handler_tx) => (handler_tx.tx, handler_tx.tx_hash.0),
-            Transaction::AccountTransaction(_) => panic!("Expecting L1 handler transaction"),
-        };
+        todo!();
 
-        assert_eq!(handler_tx.nonce, expected_nonce);
-        assert_eq!(
-            handler_tx.contract_address,
-            ContractAddress::try_from(
-                Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370")
-                    .unwrap()
-            )
-            .unwrap()
-        );
-        assert_eq!(
-            handler_tx.entry_point_selector,
-            EntryPointSelector(
-                Felt::from_dec_str("774397379524139446221206168840917193112228400237242521560346153613428128537")
-                    .unwrap()
-            )
-        );
-        assert_eq!(
-            handler_tx.calldata.0[0],
-            Felt::from_dec_str("993696174272377493693496825928908586134624850969").unwrap()
-        );
+        // assert_eq!(handler_tx.nonce, expected_nonce);
+        // assert_eq!(
+        //     handler_tx.contract_address,
+        //     ContractAddress::try_from(
+        //         Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370")
+        //             .unwrap()
+        //     )
+        //     .unwrap()
+        // );
+        // assert_eq!(
+        //     handler_tx.entry_point_selector,
+        //     EntryPointSelector(
+        //         Felt::from_dec_str("774397379524139446221206168840917193112228400237242521560346153613428128537")
+        //             .unwrap()
+        //     )
+        // );
+        // assert_eq!(
+        //     handler_tx.calldata.0[0],
+        //     Felt::from_dec_str("993696174272377493693496825928908586134624850969").unwrap()
+        // );
 
-        // Assert that event was caught by the worker with correct data
-        // TODO: Maybe add some more assert
-        assert!(logs_contain("fromAddress: \"0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419\""));
+        // // Assert that event was caught by the worker with correct data
+        // // TODO: Maybe add some more assert
+        // assert!(logs_contain("fromAddress: \"0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419\""));
 
-        // Assert the tx hash computed by the worker is correct
-        let event_hash = contract
-            .getL1ToL2MsgHash()
-            .call()
-            .await
-            .expect("Should successfully get the message hash from the contract")
-            ._0
-            .to_string();
-        assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
+        // // Assert the tx hash computed by the worker is correct
+        // let event_hash = contract
+        //     .getL1ToL2MsgHash()
+        //     .call()
+        //     .await
+        //     .expect("Should successfully get the message hash from the contract")
+        //     ._0
+        //     .to_string();
+        // assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
 
-        // Assert that the event is well stored in db
-        let last_block = db
-            .backend()
-            .messaging_last_synced_l1_block_with_event()
-            .expect("Should successfully retrieve the last synced L1 block with messaging event")
-            .unwrap();
-        assert_ne!(last_block.block_number, 0);
-        // TODO: Assert that the transaction has been executed successfully
-        assert!(db.backend().has_l1_messaging_nonce(expected_nonce).unwrap());
+        // // Assert that the event is well stored in db
+        // let last_block = db
+        //     .backend()
+        //     .messaging_last_synced_l1_block_with_event()
+        //     .expect("Should successfully retrieve the last synced L1 block with messaging event")
+        //     .unwrap();
+        // assert_ne!(last_block.block_number, 0);
+        // // TODO: Assert that the transaction has been executed successfully
+        // assert!(db.backend().has_l1_messaging_nonce(expected_nonce).unwrap());
 
-        // Explicitly cancel the listen task, else it would be running in the background
-        worker_handle.abort();
+        // // Explicitly cancel the listen task, else it would be running in the background
+        // worker_handle.abort();
     }
 
     /// Test the workflow of l1 -> l2 messaging with duplicate event

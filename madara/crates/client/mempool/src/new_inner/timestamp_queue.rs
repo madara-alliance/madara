@@ -36,6 +36,7 @@ impl TimestampQueue {
     }
 
     pub fn first_older_than(&self, ts: TxTimestamp) -> Option<&TxKey> {
+        // Oldest is first (min `arrived_at`)
         self.0.first().filter(|tx| tx.0 < ts).map(|e| &e.1)
     }
 }

@@ -143,21 +143,22 @@ impl<'a> TxEntryForInsertion<'a> {
         assert_eq!(self.tx_key, tx.tx_key());
 
         use TxEntryForInsertionInner::*;
-        match self.inner {
+        let removed_txs = match self.inner {
             NewAccount { account_nonce, entry } => {
                 entry.insert(AccountState::new_with_first_tx(account_nonce, tx));
+                Default::default()
             }
-            Replace(mut entry) => {
-                entry.insert(tx);
-            }
+            // Old value is removed tx
+            Replace(mut entry) => iter::once(entry.insert(tx)).collect(),
             Add(entry) => {
                 entry.insert(tx);
+                Default::default()
             }
-        }
+        };
 
         AccountUpdate {
             account_key: info.account_key(),
-            removed_txs: Default::default(),
+            removed_txs,
             added_tx: Some(info),
             account_data: self.update_data,
         }
@@ -255,6 +256,9 @@ impl Accounts {
             }
             // No existing mempool account.
             hash_map::Entry::Vacant(entry) => {
+                if tx.nonce() < account_nonce {
+                    return Err(TxInsertionError::NonceTooLow { account_nonce });
+                }
                 let new_status =
                     if tx.nonce() == account_nonce { AccountStatus::Ready(tx.score()) } else { AccountStatus::Pending };
                 (
@@ -387,6 +391,9 @@ impl Accounts {
     }
 
     pub fn get_tx_by_key(&self, TxKey(contract_address, nonce): &TxKey) -> Option<&MempoolTransaction> {
+        self.accounts.get(contract_address).and_then(|account| account.queued_txs.get(nonce))
+    }
+    pub fn get_transaction(&self, contract_address: &ContractAddress, nonce: &Nonce) -> Option<&MempoolTransaction> {
         self.accounts.get(contract_address).and_then(|account| account.queued_txs.get(nonce))
     }
 

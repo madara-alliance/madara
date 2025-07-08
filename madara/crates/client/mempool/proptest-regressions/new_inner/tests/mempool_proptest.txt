@@ -1,0 +1,12 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc 5e8e884b1c9d7eaa415ccd81a2865eb433ca41108fa893f2ffa3ac1be06d564e # shrinks to max_transactions = 1, max_declare_transactions = None, ttl_millis = 0, ops = [InsertTx(TestTx { nonce: 0x1, contract_address: 0x1, arrived_at: 1, tip: None, tx_hash: 0x1, is_declare: false }, 0x1)]
+cc 897abc4fdacc0339bb480fc35d4add10c03fb7d5139e99d3602b6d2da6c48d48 # shrinks to max_transactions = 1, min_tip_bump = 0, max_declare_transactions = None, ttl_millis = 0, ops = [InsertTx(TestTx { nonce: 0x1, contract_address: 0x1, arrived_at: 1, tip: Some(10), tx_hash: 0x1, is_declare: false }, 0x1)]
+cc 9abc261b731231cfcc1094e61c006e50d79ef1fa0fef20165cdc6042dc94e677 # shrinks to max_transactions = 1, max_declare_transactions = None, ttl_millis = 0, ops = [InsertTx(TestTx { nonce: 0x2, contract_address: 0x1, arrived_at: 1, tip: None, tx_hash: 0x1, is_declare: false }, 0x1)]
+cc 61769943b360c321a158a62a9eff270eaeebf4bae5325f3f8b159e7c1b8aeea0 # shrinks to max_transactions = 2, min_tip_bump = 0, max_declare_transactions = None, ttl_millis = 1690, ops = [InsertTx(TestTx { nonce: 0x2, contract_address: 0x1, arrived_at: 1, tip: Some(10), tx_hash: 0x4, is_declare: false }, 0x1), InsertTx(TestTx { nonce: 0x3, contract_address: 0x1, arrived_at: 1, tip: Some(10), tx_hash: 0x4, is_declare: false }, 0x1)]
+cc f301710efec60a6f28e8b8cb0f772d236d018d589e3c144388507610ff546a24 # shrinks to max_transactions = 2, max_declare_transactions = None, ttl_millis = 2633, ops = [InsertTx(TestTx { nonce: 0x2, contract_address: 0x1, arrived_at: 1019, tip: None, tx_hash: 0x1, is_declare: false }, 0x1), InsertTx(TestTx { nonce: 0x2, contract_address: 0x1, arrived_at: 1, tip: None, tx_hash: 0x2, is_declare: false }, 0x1)]
+cc 2d9c798d77387a12e65ea3d6a4ba4b9a75b9da15367e6c18b12eb8ebaf6abca0 # shrinks to max_transactions = 2, max_declare_transactions = None, ttl_millis = 3118, ops = [InsertTx(TestTx { nonce: 0x3, contract_address: 0x1, arrived_at: 1, tip: None, tx_hash: 0x4, is_declare: false }, 0x1), InsertTx(TestTx { nonce: 0x4, contract_address: 0x1, arrived_at: 1, tip: None, tx_hash: 0x4, is_declare: false }, 0x1)]

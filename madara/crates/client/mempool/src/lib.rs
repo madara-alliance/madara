@@ -130,6 +130,9 @@ impl From<MempoolError> for SubmitTransactionError {
                 ValidateFailure,
                 format!("Replacing a transaction requires at least a tip bump of at least {min_tip_bump} units"),
             ),
+            E::InnerMempool(TxInsertionError::InvalidContractAddress) => {
+                rejected(ValidateFailure, "Invalid contract address")
+            }
             E::InnerMempool(TxInsertionError::NonceTooLow { account_nonce }) => rejected(
                 InvalidTransactionNonce,
                 format!("Nonce needs to be greater than the account nonce {:#x}", account_nonce.to_felt()),
@@ -155,6 +158,17 @@ impl SubmitValidatedTransaction for Mempool {
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
         Some(self.tx_sender.subscribe())
+    }
+}
+
+#[async_trait]
+impl mc_submit_tx::SubmitL1HandlerTransaction for Mempool {
+    async fn submit_l1_handler_transaction(
+        &self,
+        _tx: mp_transactions::L1HandlerTransaction,
+        _paid_fees_on_l1: u128,
+    ) -> Result<mp_transactions::L1HandlerTransactionResult, SubmitTransactionError> {
+        unimplemented!()
     }
 }
 
@@ -312,6 +326,16 @@ impl Mempool {
 
     pub async fn is_empty(&self) -> bool {
         self.inner.read().await.is_empty()
+    }
+
+    pub async fn get_transaction<R>(
+        &self,
+        contract_address: Felt,
+        nonce: Felt,
+        f: impl FnOnce(&ValidatedMempoolTx) -> R,
+    ) -> Option<R> {
+        let lock = self.inner.read().await;
+        lock.get_transaction(&contract_address.try_into().ok()?, &Nonce(nonce)).map(f)
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]

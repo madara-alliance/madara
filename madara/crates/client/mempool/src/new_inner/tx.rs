@@ -12,11 +12,23 @@ pub struct MempoolTransaction {
     pub score: Score,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+/// Eviction score. Lower is better.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct EvictionScore {
     /// Last tx nonce of the account - current account nonce
     pub chain_nonce_len: Nonce,
     pub score: Score,
+}
+
+impl Ord for EvictionScore {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        self.chain_nonce_len.cmp(&other.chain_nonce_len).then(self.score.cmp(&other.score).reverse())
+    }
+}
+impl PartialOrd for EvictionScore {
+    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+        Some(self.cmp(other))
+    }
 }
 
 impl EvictionScore {
@@ -26,7 +38,12 @@ impl EvictionScore {
 }
 
 impl MempoolTransaction {
-    pub fn new(inner: ValidatedMempoolTx, score_function: &ScoreFunction) -> Result<MempoolTransaction, TxInsertionError> {
+    pub fn new(
+        inner: ValidatedMempoolTx,
+        score_function: &ScoreFunction,
+    ) -> Result<MempoolTransaction, TxInsertionError> {
+        let _: ContractAddress =
+            inner.contract_address.try_into().map_err(|_| TxInsertionError::InvalidContractAddress)?;
         Ok(Self { score: score_function.get_score(&inner).ok_or(TxInsertionError::NoTip)?, inner })
     }
     pub fn into_inner(self) -> ValidatedMempoolTx {
@@ -49,13 +66,13 @@ impl MempoolTransaction {
         Nonce(self.inner.tx.nonce())
     }
     pub fn contract_address(&self) -> ContractAddress {
-        todo!()
+        self.inner.contract_address.try_into().expect("Invalid contract address")
     }
     pub fn tx_hash(&self) -> TransactionHash {
-        todo!()
+        TransactionHash(self.inner.tx_hash)
     }
     pub fn arrived_at(&self) -> TxTimestamp {
-        todo!()
+        self.inner.arrived_at
     }
     pub fn account_key(&self) -> AccountKey {
         AccountKey(self.contract_address())
@@ -64,7 +81,7 @@ impl MempoolTransaction {
         TxKey(self.contract_address(), self.nonce())
     }
     pub fn is_declare(&self) -> bool {
-        self.inner.tx.as_deploy().is_some()
+        self.inner.tx.as_declare().is_some()
     }
 }
 
@@ -139,5 +156,37 @@ impl TxInfo {
     }
     pub fn tx_key(&self) -> TxKey {
         TxKey(self.contract_address, self.nonce)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::cmp::Ordering;
+    use starknet_api::core::Nonce;
+
+    use crate::tx::{EvictionScore, Score};
+
+    #[test]
+    fn test_eviction_score_order() {
+        assert_eq!(std::cmp::Ord::cmp(
+            &EvictionScore { chain_nonce_len: Nonce((1).into()), score: Score(5) },
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
+        ), Ordering::Less);
+        assert_eq!(std::cmp::Ord::cmp(
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(10) },
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
+        ), Ordering::Less);
+        assert_eq!(std::cmp::Ord::cmp(
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
+        ), Ordering::Equal);
+        assert_eq!(std::cmp::Ord::cmp(
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
+            &EvictionScore { chain_nonce_len: Nonce((1).into()), score: Score(5) }
+        ), Ordering::Greater);
+        assert_eq!(std::cmp::Ord::cmp(
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
+            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(10) }
+        ), Ordering::Greater);
     }
 }

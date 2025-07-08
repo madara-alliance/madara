@@ -11,6 +11,8 @@ use std::{
     time::Duration,
 };
 
+mod mempool_proptest;
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct TestTx {
     pub nonce: Felt,
@@ -102,10 +104,15 @@ pub struct MempoolTester {
 
 impl MempoolTester {
     pub fn new(config: InnerMempoolConfig) -> Self {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
         Self { inner: InnerMempool::new(config), added_txs: Default::default(), current_time: 0 }
     }
 
     fn check_invariants(&self) {
+        tracing::debug!("-> STATE: {:#?}", self.inner);
         self.inner.check_invariants();
         let expected = self.inner.transactions().cloned().map(Into::into).collect::<HashSet<_>>();
         assert_eq!(expected, self.added_txs);
@@ -117,6 +124,7 @@ impl MempoolTester {
 
     pub fn insert_tx(&mut self, tx: TestTx, account_nonce: Felt) -> Result<(), TxInsertionError> {
         let mut removed = vec![];
+        tracing::debug!("TRY INSERT {tx:?} < {account_nonce:?}");
         let res =
             self.inner.insert_tx(TxTimestamp(self.current_time), tx.clone().into(), Nonce(account_nonce), &mut removed);
         for el in removed {
@@ -128,11 +136,13 @@ impl MempoolTester {
             assert!(inserted);
         }
         self.check_invariants();
+        tracing::debug!("RES INSERT {res:?}");
         res
     }
 
     pub fn update_account_nonce(&mut self, contract_address: Felt, account_nonce: Felt) {
         let mut removed = vec![];
+        tracing::debug!("UPDATE_NONCE {contract_address:#x} => {account_nonce:#x}");
         self.inner.update_account_nonce(&contract_address.try_into().unwrap(), &Nonce(account_nonce), &mut removed);
         for el in removed {
             let removed = self.added_txs.remove(&el.into());
@@ -143,16 +153,20 @@ impl MempoolTester {
 
     pub fn pop_next_ready(&mut self) -> Option<TestTx> {
         let ret = self.inner.pop_next_ready();
+        tracing::debug!("POP_READY");
         if let Some(removed) = ret.clone() {
             let removed = self.added_txs.remove(&removed.into());
             assert!(removed);
         }
+        let r = ret.map(Into::into);
+        tracing::debug!("RES POP_READY => {r:?}");
         self.check_invariants();
-        ret.map(Into::into)
+        r
     }
 
     pub fn remove_all_ttl_exceeded_txs(&mut self) {
         let mut removed = vec![];
+        tracing::debug!("REMOVE_TTL_TXS");
         self.inner.remove_all_ttl_exceeded_txs(TxTimestamp(self.current_time), &mut removed);
         for el in removed {
             let removed = self.added_txs.remove(&el.into());

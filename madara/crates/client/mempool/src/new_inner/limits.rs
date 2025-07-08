@@ -51,15 +51,15 @@ impl MempoolLimiter {
 
         // Is less than limit
         assert!(
-            self.state.transactions < self.config.max_transactions,
-            "Mempool has {} < {} tx limit",
+            self.state.transactions <= self.config.max_transactions,
+            "Mempool has {} > {} tx limit",
             self.state.transactions,
             self.config.max_transactions
         );
         if let Some(declare_max) = self.config.max_declare_transactions {
             assert!(
-                self.state.declare_transactions < declare_max,
-                "Mempool has {} < {} declare tx limit",
+                self.state.declare_transactions <= declare_max,
+                "Mempool has {} > {} declare tx limit",
                 self.state.declare_transactions,
                 declare_max
             );
