@@ -101,11 +101,6 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
-  "cairo-1-hints",
-  "extensive_hints",
-  "mod_builtin",
-] }
 starknet-accounts = "0.11.0"
 starknet-contract = "0.11.0"
 starknet-core = "0.12"
@@ -114,15 +109,25 @@ starknet-providers = "0.12"
 starknet-signers = "0.10"
 starknet = "0.12.0"
 
-starknet-types-core = { version = "0.1.7", default-features = false, features = [
-  "hash",
-] }
 
+# NOTE: Using this custom repo as a temporary dependency. Once the SNOS issue is resolved,
+# we will switch back to using only the karnotxyz repo.
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+  "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
+] }
 blockifier = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
   "testing",
   "concurrency",
 ] }
 starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo" }
+starknet-os = { git = "https://github.com/karnotxyz/snos", rev = "ce48bf01f9b24a003175436b2574dde0157ec563" }
+prove_block = { git = "https://github.com/karnotxyz/snos", rev = "ce48bf01f9b24a003175436b2574dde0157ec563" }
+
+starknet-types-core = { version = "0.1.7", default-features = false, features = [
+  "hash",
+] }
 cairo-lang-starknet-classes = "=2.8.2"
 cairo-lang-utils = "=2.8.2"
 
@@ -296,8 +301,6 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/karnotxyz/snos", rev = "ce48bf01f9b24a003175436b2574dde0157ec563" }
-prove_block = { git = "https://github.com/karnotxyz/snos", rev = "ce48bf01f9b24a003175436b2574dde0157ec563" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -319,6 +322,8 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
+# NOTE: Using this custom repo as a temporary dependency. Once the SNOS issue is resolved,
+# we will switch back to using only the karnotxyz repo.
 starknet_api = { git = "https://github.com/byteZorvin/sequencer", branch = "madara-monorepo", features = [
   "testing",
 ] }
