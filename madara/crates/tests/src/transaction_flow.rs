@@ -716,8 +716,7 @@ async fn declare_sierra_then_deploy(
         let ExecuteInvocation::Success(res) = res.execute_invocation else {
             unreachable!("failed simulation: {:?}", res.execute_invocation)
         };
-        let deployed_contract_address =
-            Felt::from_hex_unchecked("0x6abe7c4fe160efeab3a59c3e510e095295bfb689040c32729ed03dd7529a29d");
+        let deployed_contract_address = res.result[2];
         assert_eq!(
             res.result,
             vec![

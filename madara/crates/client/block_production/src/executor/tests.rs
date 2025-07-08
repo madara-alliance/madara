@@ -234,12 +234,12 @@ async fn test_duplicate_l1_handler_same_height_different_batch(#[future] l1_hand
         assert_eq!(res.executed_txs.txs[0].l1_handler_tx_nonce().map(ToFelt::to_felt), Some(55u64.into()));
     });
     // Close block.
-    let (sender, recv) = oneshot::channel();
-    setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
-    recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         assert_eq!(res.executed_txs.len(), 0); // zero
     });
+    let (sender, recv) = oneshot::channel();
+    setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
+    recv.await.unwrap().unwrap();
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         assert_eq!(res.executed_txs.len(), 0); // zero
     });

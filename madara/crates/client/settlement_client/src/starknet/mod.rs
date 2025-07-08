@@ -751,7 +751,7 @@ mod starknet_client_messaging_test {
         };
 
         // Firing the event
-        fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await?;
+        fire_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Assert that the event is well stored in db
@@ -788,10 +788,11 @@ mod starknet_client_messaging_test {
         };
 
         let message_hash =
-            get_message_hash_from_cairo(&fixture.context.account, fixture.context.deployed_appchain_contract_address)
+            get_message_hash_from_cairo(&fixture.context.account, fixture.context.deployed_messaging_contract_address)
                 .await;
 
-        cancel_messaging_event(&fixture.context.account, fixture.context.deployed_appchain_contract_address).await?;
+        cancel_messaging_event(&fixture.context.account, fixture.context.deployed_messaging_contract_address).await;
+        tokio::time::sleep(Duration::from_secs(5)).await;
         assert!(fixture.starknet_client.message_to_l2_has_cancel_request(&message_hash.to_bytes_be()).await.unwrap());
 
         Ok(())

@@ -78,7 +78,7 @@ mod MessagingContract {
         to: felt252,
         selector: felt252,
         payload: Span<felt252>,
-        nonce: Nonce,
+        nonce: felt252,
     }
 
     #[storage]
@@ -161,7 +161,9 @@ mod MessagingContract {
         }
 
         fn cancel_event(ref self: ContractState) {
-            self.is_canceled.write(value);
+            self.is_canceled.write(true);
+            let data = self.get_message_data();
+            let hash = self.get_l1_to_l2_msg_hash();
             self
                 .emit(
                     Event::MessageCancellationStarted(
@@ -170,7 +172,7 @@ mod MessagingContract {
                             from: data.from,
                             to: data.to,
                             selector: data.selector,
-                            payload: data.payload,
+                            payload: data.payload.span(),
                             nonce: data.nonce,
                         }
                     )

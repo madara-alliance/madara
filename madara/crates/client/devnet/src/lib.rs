@@ -404,7 +404,7 @@ mod tests {
             nonce: Felt::ZERO,
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
-                l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
+                l1_gas: ResourceBounds { max_amount: 220000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
             },
             tip: 0,
@@ -596,10 +596,6 @@ mod tests {
 
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), notif);
-            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
-            {
-                break;
-            }
         }
 
         assert_eq!(res.contract_address, account.address);

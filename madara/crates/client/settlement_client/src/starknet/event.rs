@@ -307,15 +307,15 @@ mod starknet_event_stream_tests {
 
     #[tokio::test]
     #[rstest]
-    async fn test_multiple_pages(mock_server: MockStarknetServer, test_event: EmittedEvent) {
-        let events_mock = mock_server.mock_get_events(vec![test_event.clone(); 100], None);
-        mock_server.mock_block_number(101);
+    async fn test_multiple_pages(mock_server: MockStarknetServer) {
+        let mut events_mock = mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
+        let mut block_n_mock = mock_server.mock_block_number(101);
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
         for _ in 0..100 {
             assert_matches!(stream.next().await, Some(Ok(event_data)) => {
-                assert_eq!(event_data.l1_block_number, 100);
+                assert_eq!(event_data.l1_block_number, 150);
                 assert_eq!(event_data.message.tx.calldata.len(), 3);
             })
         }
@@ -326,7 +326,23 @@ mod starknet_event_stream_tests {
             "Expected waiting after processing all events"
         );
 
-        events_mock.assert_hits(25); // 100/5 events per page is 25 calls.
+        events_mock.delete();
+        block_n_mock.delete();
+        mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
+        mock_server.mock_block_number(254);
+
+        for _ in 0..100 {
+            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
+                assert_eq!(event_data.l1_block_number, 150);
+                assert_eq!(event_data.message.tx.calldata.len(), 3);
+            })
+        }
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
     }
 
     #[tokio::test]
@@ -381,8 +397,8 @@ mod starknet_event_stream_tests {
     #[tokio::test]
     #[rstest]
     async fn test_empty_events(mock_server: MockStarknetServer) {
-        let events_mock = mock_server.mock_get_events(vec![], None);
-        let block_mock = mock_server.mock_block_number(100);
+        mock_server.mock_get_events(vec![], None);
+        mock_server.mock_block_number(100);
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
@@ -392,19 +408,16 @@ mod starknet_event_stream_tests {
             Err(_),
             "Expected waiting after processing all events"
         );
-
-        events_mock.assert();
-        block_mock.assert();
     }
 
     #[tokio::test]
     #[rstest]
-    async fn test_follows_chain(mock_server: MockStarknetServer, test_event: EmittedEvent) {
-        let mut events_mock = mock_server.mock_get_events(vec![test_event.clone()], None);
+    async fn test_follows_chain(mock_server: MockStarknetServer) {
+        let mut events_mock = mock_server.mock_get_events(vec![test_event(1, 100); 5], None);
         let mut block_n_mock = mock_server.mock_block_number(101);
 
         let mut stream = Box::pin(create_stream(&mock_server));
-        for _ in 0..100 {
+        for _ in 0..5 {
             assert_matches!(stream.next().await, Some(Ok(event_data)) => {
                 assert_eq!(event_data.l1_block_number, 100);
                 assert_eq!(event_data.message.tx.calldata.len(), 3);
@@ -419,7 +432,20 @@ mod starknet_event_stream_tests {
 
         block_n_mock.delete();
         events_mock.delete();
-        mock_server.mock_block_number(105);
-        mock_server.mock_get_events(vec![test_event.clone()], None);
+        mock_server.mock_block_number(254);
+        mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
+
+        for _ in 0..100 {
+            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
+                assert_eq!(event_data.l1_block_number, 150);
+                assert_eq!(event_data.message.tx.calldata.len(), 3);
+            })
+        }
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
     }
 }

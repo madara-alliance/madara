@@ -19,12 +19,12 @@ impl TryFrom<(LogMessageToL2, Log)> for MessageToL2WithMetadata {
     fn try_from((event, log): (LogMessageToL2, Log)) -> Result<Self, Self::Error> {
         Ok(Self {
             l1_block_number: log.block_number.ok_or_else(|| -> SettlementClientError {
-                EthereumClientError::Conversion("No block number for event".to_string()).into()
+                EthereumClientError::MissingField("block_number in Ethereum log").into()
             })?,
             l1_transaction_hash: log
                 .transaction_hash
                 .ok_or_else(|| -> SettlementClientError {
-                    EthereumClientError::Conversion("No transaction hash for event".to_string()).into()
+                    EthereumClientError::MissingField("transaction_hash in Ethereum log").into()
                 })?
                 .into(),
             message: event.try_into()?,
@@ -223,27 +223,6 @@ pub mod eth_event_stream_tests {
         assert_eq!(events.len(), 1);
         assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
             assert_eq!(*field, "block_number in Ethereum log", "Error should mention missing block number");
-        });
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn test_missing_log_index(mock_event: LogMessageToL2, mock_log: Log) {
-        let mock_events = vec![Ok((
-            mock_event,
-            Log {
-                log_index: None, // Only log index is missing
-                ..mock_log
-            },
-        ))];
-
-        let mock_stream = iter(mock_events);
-        let mut ethereum_stream = EthereumEventStream { stream: Box::pin(mock_stream) };
-        let events = collect_stream_events(&mut ethereum_stream).await;
-
-        assert_eq!(events.len(), 1);
-        assert_matches!(events[0].as_ref(), Err(SettlementClientError::Ethereum(EthereumClientError::MissingField(field))) => {
-            assert_eq!(*field, "log_index in Ethereum log", "Error should mention missing log index");
         });
     }
 

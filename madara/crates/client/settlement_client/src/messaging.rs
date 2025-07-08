@@ -1,6 +1,7 @@
 use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
 use alloy::primitives::{B256, U256};
+use anyhow::Context;
 use futures::{StreamExt, TryStreamExt};
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
@@ -55,6 +56,8 @@ pub async fn check_message_to_l2_validity(
         return Ok(false);
     }
 
+    tracing::debug!("Checking for has cancel, event hash: {:?}", converted_event_hash);
+
     let cancellation_timestamp = settlement_client
         .message_to_l2_has_cancel_request(&event_hash)
         .await
@@ -102,6 +105,7 @@ async fn sync_inner(
         block_n
     } else {
         let latest_block_n = settlement_client.get_latest_block_number().await?;
+        tracing::debug!("Find start, latest {latest_block_n}...");
         find_start_block::find_replay_block_n_start(&settlement_client, replay_max_duration, latest_block_n).await?
     };
 
@@ -113,13 +117,7 @@ async fn sync_inner(
         .map_err(|e| SettlementClientError::StreamProcessing(format!("Failed to create messaging stream: {}", e)))?
         .map(|message| {
             let (backend, settlement_client) = (backend.clone(), settlement_client.clone());
-            async move {
-                // TODO: fix this case!
-                // // If the message has felts that are out of range, conversion will fail. We shouldn't quit the worker because of that.
-                // if let Err(SettlementClientError::ConversionError(e)) = message {
-                //     tracing::error!("Invalid message to l2: {e}");
-                //     return Ok(None)
-                // }
+            let fut = async move {
                 let message = message?;
                 tracing::debug!(
                     "Processing Message from block: {:?}, transaction_hash: {:#x}, fromAddress: {:#x}",
@@ -128,13 +126,17 @@ async fn sync_inner(
                     message.message.tx.calldata[0],
                 );
 
-                if check_message_to_l2_validity(&settlement_client, &backend, &message.message).await? {
+                if check_message_to_l2_validity(&settlement_client, &backend, &message.message).await
+                    .with_context(|| format!("Checking validity for message in {}, {}", message.l1_transaction_hash, message.l1_block_number))? {
                     // Add the pending message to db.
                     backend
                         .add_pending_message_to_l2(message.message)
                         .map_err(|e| SettlementClientError::DatabaseError(format!("Adding l1 to l2 message to db: {}", e)))?;
                 }
-                Ok(message.l1_block_number)
+                anyhow::Ok((message.l1_transaction_hash, message.l1_block_number))
+            };
+            async move {
+                Ok(fut.await)
             }
         })
         .buffered(/* concurrency */ 5) // add a bit of concurrency to speed up the catch up time if needed.
@@ -143,11 +145,17 @@ async fn sync_inner(
             let backend = backend.clone();
             let notify_consumer = notify_consumer.clone();
             async move {
-                tracing::debug!("Set l1_messaging_sync_tip={block_n}");
-                backend.set_l1_messaging_sync_tip(block_n).map_err(|e| {
-                    SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e))
-                })?;
-                notify_consumer.notify_waiters(); // notify
+                match block_n {
+                    Err(err) => tracing::debug!("Error while parsing the next ethereum message: {err:#}"),
+                    Ok((tx_hash, block_n)) => {
+                        tracing::debug!("Processed {tx_hash} {block_n}");
+                        tracing::debug!("Set l1_messaging_sync_tip={block_n}");
+                        backend.set_l1_messaging_sync_tip(block_n).map_err(|e| {
+                            SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e))
+                        })?;
+                        notify_consumer.notify_waiters(); // notify
+                    }
+                }
                 Ok(())
             }
         })
@@ -262,9 +270,10 @@ mod messaging_module_tests {
         // nonce 5, is not pending, not being cancelled, not consumed in db. => NOT OK
         mock_l1_handler_tx(&mut client, 5, false, false);
         // nonce 10, is pending, being cancelled, not consumed in db. => NOT OK
-        mock_l1_handler_tx(&mut client, 10, true, false);
+        mock_l1_handler_tx(&mut client, 10, true, true);
         // nonce 18, is pending, not being cancelled, consumed in db. => NOT OK
         mock_l1_handler_tx(&mut client, 18, true, false);
+        backend.set_l1_handler_txn_hash_by_nonce(18, Felt::ONE).unwrap();
 
         // Mock get_client_type
         client.expect_get_client_type().returning(|| ClientType::Eth);

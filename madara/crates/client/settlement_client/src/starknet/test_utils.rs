@@ -148,23 +148,24 @@ pub async fn get_message_hash_from_cairo(account: &StarknetAccount, appchain_con
 ///
 /// # Errors
 /// Returns an error if the transaction fails
-pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> anyhow::Result<u64> {
+pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> u64 {
     let call = account
         .execute_v1(vec![Call {
             to: appchain_contract_address,
-            selector: get_selector_from_name("fire_event")?,
+            selector: get_selector_from_name("fire_event").unwrap(),
             calldata: vec![],
         }])
         .send()
-        .await?;
-    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await?;
+        .await
+        .unwrap();
+    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await.unwrap();
     assert_eq!(receipt.receipt.execution_result(), &ExecutionResult::Succeeded);
 
-    let latest_block_number_recorded = account.provider().block_number().await?;
+    let latest_block_number_recorded = account.provider().block_number().await.unwrap();
 
     match receipt.block.block_number() {
-        Some(block_number) => Ok(block_number),
-        None => Ok(latest_block_number_recorded + 1),
+        Some(block_number) => block_number,
+        None => latest_block_number_recorded + 1,
     }
 }
 
@@ -179,22 +180,23 @@ pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_a
 ///
 /// # Errors
 /// Returns an error if the transaction fails
-pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> anyhow::Result<u64> {
+pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> u64 {
     let call = account
         .execute_v1(vec![Call {
             to: appchain_contract_address,
-            selector: get_selector_from_name("cancel_event")?,
+            selector: get_selector_from_name("cancel_event").unwrap(),
             calldata: vec![],
         }])
         .send()
-        .await?;
-    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await?;
+        .await
+        .unwrap();
+    let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await.unwrap();
 
-    let latest_block_number_recorded = account.provider().block_number().await?;
+    let latest_block_number_recorded = account.provider().block_number().await.unwrap();
 
     match receipt.block.block_number() {
-        Some(block_number) => Ok(block_number),
-        None => Ok(latest_block_number_recorded + 1),
+        Some(block_number) => block_number,
+        None => latest_block_number_recorded + 1,
     }
 }
 
