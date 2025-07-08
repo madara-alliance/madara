@@ -272,7 +272,8 @@ impl BlockProductionTask {
 
         let (block, declared_classes) = get_pending_block_from_db(&self.backend)?;
 
-        self.backend.clear_pending_block().context("Error clearing pending block")?;
+        self.backend.clear_pending_block_in_db().context("Error clearing pending block")?;
+        self.backend.clear_pending_block_in_ram().context("Error clearing pending block")?;
 
         let block_n = self.backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
         self.close_and_save_block(block_n, block, declared_classes, vec![]).await?;

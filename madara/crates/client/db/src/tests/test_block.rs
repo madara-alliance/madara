@@ -93,7 +93,8 @@ mod block_tests {
 
         backend.store_block(finalized_block_zero(Header::default()), finalized_state_diff_zero(), vec![]).unwrap();
         backend.store_block(pending_block_one(), pending_state_diff_one(), vec![]).unwrap();
-        backend.clear_pending_block().unwrap();
+        backend.clear_pending_block_in_db().unwrap();
+        backend.clear_pending_block_in_ram().unwrap();
 
         assert!(backend.get_block(&BLOCK_ID_PENDING).unwrap().unwrap().inner.transactions.is_empty());
         assert!(

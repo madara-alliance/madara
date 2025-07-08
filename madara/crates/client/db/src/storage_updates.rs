@@ -87,6 +87,7 @@ impl MadaraBackend {
         let events = block.events.clone();
 
         let block_info = self.store_full_block(block)?;
+        self.clear_pending_block_in_db()?;
         self.head_status.headers.set_current(Some(block_n));
         self.head_status.transactions.set_current(Some(block_n));
         self.head_status.state_diffs.set_current(Some(block_n));
@@ -99,6 +100,7 @@ impl MadaraBackend {
 
         self.on_full_block_imported(block_info.into(), events).await?;
         self.flush()?;
+        self.clear_pending_block_in_ram()?;
 
         Ok(block_hash)
     }
@@ -143,11 +145,6 @@ impl MadaraBackend {
     }
 
     pub fn store_block_header(&self, header: BlockHeaderWithSignatures) -> Result<MadaraBlockInfo, MadaraStorageError> {
-        // Clear pending block when storing a new block header. This is the best place to do it IMO since
-        // it would make no sense to be able to store a block header if there is also a pending block, and
-        // we want to be sure to clear the pending block if we restart the sync pipeline.
-        self.clear_pending_block()?;
-
         let mut tx = WriteBatchWithTransaction::default();
         let block_n = header.header.block_number;
 
@@ -317,7 +314,14 @@ impl MadaraBackend {
         Ok(())
     }
 
-    pub fn clear_pending_block(&self) -> Result<(), MadaraStorageError> {
+    pub fn clear_pending_block_in_db(&self) -> Result<(), MadaraStorageError> {
+        self.block_db_clear_pending()?;
+        self.contract_db_clear_pending()?;
+        self.class_db_clear_pending()?;
+        Ok(())
+    }
+
+    pub fn clear_pending_block_in_ram(&self) -> Result<(), MadaraStorageError> {
         let parent_block = if let Some(block_n) = self.get_latest_block_n()? {
             Some(
                 self.get_block_info(&DbBlockId::Number(block_n))?
@@ -331,9 +335,6 @@ impl MadaraBackend {
             None
         };
         self.watch_blocks.clear_pending(parent_block.as_ref());
-        self.block_db_clear_pending()?;
-        self.contract_db_clear_pending()?;
-        self.class_db_clear_pending()?;
         Ok(())
     }
 }
