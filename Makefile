@@ -200,7 +200,7 @@ artifacts:
 	fi
 	@rm -rf "$(ARTIFACTS)/argent"
 	@rm -rf "$(ARTIFACTS)/bravoos"
-	@rm -rf "$(ARTIFACTS)/cairo_lang/cairo_verifier.json"
+	@rm -rf "$(ARTIFACTS)/cairo_lang"
 	@rm -rf "$(ARTIFACTS)/js_tests"
 	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
