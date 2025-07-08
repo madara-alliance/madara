@@ -52,7 +52,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
 
     fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error> {
         let pending_block = self.latest_pending_block();
-        let block_n = self.get_latest_block_n()?.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        let block_n = self.get_block_n_latest().map(|n| n + 1).unwrap_or(/* genesis */ 0);
         Ok(StatefulValidator::create(
             CachedState::new(BlockifierStateAdapter::new(Arc::clone(self), block_n, Some(DbBlockId::Pending))),
             BlockContext::new(
@@ -121,7 +121,7 @@ impl ExecutionContext {
     ) -> Result<Self, Error> {
         let (latest_visible_block, header_block_id) = match block_info {
             MadaraMaybePendingBlockInfo::Pending(_block) => {
-                let latest_block_n = backend.get_latest_block_n()?;
+                let latest_block_n = backend.get_block_n_latest();
                 (
                     latest_block_n.map(DbBlockId::Number),
                     // when the block is pending, we use the latest block n + 1 to make the block header
@@ -150,7 +150,7 @@ impl ExecutionContext {
     ) -> Result<Self, Error> {
         let (latest_visible_block, header_block_id) = match block_info {
             MadaraMaybePendingBlockInfo::Pending(_block) => {
-                let latest_block_n = backend.get_latest_block_n()?;
+                let latest_block_n = backend.get_block_n_latest();
                 (Some(DbBlockId::Pending), latest_block_n.map(|el| el + 1).unwrap_or(0))
             }
             MadaraMaybePendingBlockInfo::NotPending(block) => {

@@ -275,7 +275,7 @@ impl BlockProductionTask {
         self.backend.clear_pending_block_in_db().context("Error clearing pending block")?;
         self.backend.clear_pending_block_in_ram().context("Error clearing pending block")?;
 
-        let block_n = self.backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
+        let block_n = self.backend.get_block_n_latest().map(|n| n + 1).unwrap_or(0);
         self.close_and_save_block(block_n, block, declared_classes, vec![]).await?;
 
         Ok(())
@@ -426,7 +426,7 @@ impl BlockProductionTask {
         let batch_size = self.backend.chain_config().block_production_concurrency.batch_size;
 
         // initial state
-        let latest_block_n = self.backend.get_latest_block_n().context("Getting latest block_n")?;
+        let latest_block_n = self.backend.get_block_n_latest();
         let latest_block_hash = if let Some(block_n) = latest_block_n {
             self.backend
                 .get_block_hash(&DbBlockId::Number(block_n))
@@ -1139,11 +1139,11 @@ pub(crate) mod tests {
         // This should load the pending block from db and close it
         let mut block_production_task =
             BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
-        assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+        assert_eq!(backend.get_block_n_latest(), Some(0));
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         // Now we check this was the case.
-        assert_eq!(backend.get_latest_block_n().unwrap(), Some(1));
+        assert_eq!(backend.get_block_n_latest(), Some(1));
 
         let block_inner = backend
             .get_block(&mp_block::BlockId::Tag(mp_block::BlockTag::Latest))
@@ -1390,7 +1390,7 @@ pub(crate) mod tests {
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         // Now we check this was the case.
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 1);
 
         // Block 0 should not have been overridden!
         let block = backend
@@ -1463,11 +1463,11 @@ pub(crate) mod tests {
         // Simulates starting block production without a pending block in db
         let mut block_production_task =
             BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
-        assert_eq!(backend.get_latest_block_n().unwrap(), Some(0)); // there is a genesis block in the db.
+        assert_eq!(backend.get_block_n_latest(), Some(0)); // there is a genesis block in the db.
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
         // Now we check no block was added to the db
-        assert_eq!(backend.get_latest_block_n().unwrap(), Some(0));
+        assert_eq!(backend.get_block_n_latest(), Some(0));
     }
 
     /// This test makes sure that closing the pending block from db will fail if
@@ -1714,7 +1714,7 @@ pub(crate) mod tests {
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
         assert_eq!(pending_block.inner.transactions.len(), 0);
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 0);
 
         // ================================================================== //
         //                  PART 3: call on pending time tick                 //
@@ -1734,7 +1734,7 @@ pub(crate) mod tests {
 
         assert!(mempool.is_empty().await);
         assert_eq!(pending_block.inner.transactions.len(), 1);
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 0);
     }
 
     // This test makes sure that the pending tick closes the block
@@ -1779,7 +1779,7 @@ pub(crate) mod tests {
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
         assert_eq!(pending_block.inner.transactions.len(), 0);
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 0);
 
         // ================================================================== //
         //                  PART 3: call on pending time tick                 //
@@ -1846,7 +1846,7 @@ pub(crate) mod tests {
         let pending_block: mp_block::MadaraMaybePendingBlock = backend.get_block(&DbBlockId::Pending).unwrap().unwrap();
 
         assert_eq!(pending_block.inner.transactions.len(), 0);
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 0);
 
         // ================================================================== //
         //                      PART 3: call on block time                    //
@@ -1870,7 +1870,7 @@ pub(crate) mod tests {
 
         assert!(mempool.is_empty().await);
         assert!(pending_block.inner.transactions.is_empty());
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 1);
     }
 
     // This test checks when the block production task starts on
@@ -1912,7 +1912,7 @@ pub(crate) mod tests {
             BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 0);
 
         // ================================================================== //
         //                  PART 3: init block production task                //
@@ -1937,7 +1937,7 @@ pub(crate) mod tests {
         assert!(mempool.is_empty().await);
         assert!(pending_block.inner.transactions.is_empty());
         assert_eq!(block_inner.transactions.len(), 1);
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 1);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 1);
     }
 
     // This test just verifies that pre validation checks and
@@ -1981,7 +1981,7 @@ pub(crate) mod tests {
             BlockProductionTask::new(Arc::clone(&backend), Arc::clone(&mempool), metrics, l1_data_provider);
         block_production_task.close_pending_block_if_exists().await.unwrap();
 
-        assert_eq!(backend.get_latest_block_n().unwrap().unwrap(), 0);
+        assert_eq!(backend.get_block_n_latest().unwrap(), 0);
 
         // ================================================================== //
         //                  PART 3: init block production task                //

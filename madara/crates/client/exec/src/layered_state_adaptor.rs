@@ -41,7 +41,7 @@ pub struct LayeredStateAdaptor {
 }
 impl LayeredStateAdaptor {
     pub fn new(backend: Arc<MadaraBackend>) -> Result<Self, crate::Error> {
-        let on_top_of_block_n = backend.get_latest_block_n()?;
+        let on_top_of_block_n = backend.get_block_n_latest();
         let block_number = on_top_of_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
 
         Ok(Self {
@@ -76,7 +76,7 @@ impl LayeredStateAdaptor {
         state_diff: StateMaps,
         classes: HashMap<ClassHash, ApiContractClass>,
     ) -> Result<(), crate::Error> {
-        let latest_db_block = self.backend.get_latest_block_n()?;
+        let latest_db_block = self.backend.get_block_n_latest();
         // Remove outdated cache entries
         self.remove_cache_before_including(latest_db_block);
 

@@ -74,7 +74,7 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+        if self.get_block_n_latest().is_none_or(|n| n < block_n) {
             return Ok(None);
         }
         Ok(Some(block_n))
@@ -87,7 +87,7 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+        if self.get_block_n_latest().is_none_or(|n| n < block_n) {
             return Ok(None);
         }
         Ok(Some(block_n))
@@ -120,11 +120,6 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        Ok(self.head_status().latest_full_block_n())
-    }
-
     // Pending block quirk: We should act as if there is always a pending block in db, to match
     //  juno and pathfinder's handling of pending blocks.
 
@@ -133,7 +128,7 @@ impl MadaraBackend {
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
             // See pending block quirk
 
-            let Some(latest_block_id) = self.get_latest_block_n()? else {
+            let Some(latest_block_id) = self.get_block_n_latest() else {
                 // Second quirk: if there is not even a genesis block in db, make up the gas prices and everything else
                 return Ok(MadaraPendingBlockInfo {
                     header: PendingHeader {
@@ -345,6 +340,29 @@ impl MadaraBackend {
             RawDbBlockId::Number(block_id) => Ok(Some(*block_id)),
             RawDbBlockId::Pending => Ok(None),
         }
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_n_latest(&self) -> Option<u64> {
+        self.watch_blocks.latest_pending_block().header.parent_block_number
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_n_next(&self) -> u64 {
+        self.watch_blocks.latest_pending_block().header.parent_block_number.map(|n| n.saturating_add(1)).unwrap_or(0)
+    }
+
+    /// This method is not atomic in respects to the rest of the block production and should only be
+    /// used in cases where you are sure this will not conflict with updates to the pending block!!!
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn set_block_n_unsafe(&self, n: Option<u64>) {
+        self.watch_blocks.clear_pending(
+            n.map(|block_number| MadaraBlockInfo {
+                header: mp_block::Header { block_number, ..Default::default() },
+                ..Default::default()
+            })
+            .as_ref(),
+        )
     }
 
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]

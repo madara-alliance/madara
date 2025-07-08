@@ -90,7 +90,7 @@ impl MadaraBackend {
                     return Ok(Some(bincode::deserialize(&res)?)); // found in pending
                 }
 
-                let Some(block_n) = self.get_latest_block_n()? else { return Ok(None) };
+                let Some(block_n) = self.get_block_n_latest() else { return Ok(None) };
                 block_n
             }
             RawDbBlockId::Number(block_n) => block_n,

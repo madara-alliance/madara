@@ -43,26 +43,9 @@ pub struct ChainHead {
     pub transactions: BlockNStatus,
     pub events: BlockNStatus,
     pub global_trie: BlockNStatus,
-
-    /// Incremented by [`MadaraBackend::on_block`].
-    pub full_block: BlockNStatus,
 }
 
 impl ChainHead {
-    /// When None, the genesis block is not yet in the database.
-    pub fn latest_full_block_n(&self) -> Option<u64> {
-        self.full_block.current()
-    }
-
-    /// The next block to import.
-    pub fn next_full_block(&self) -> u64 {
-        self.latest_full_block_n().map(|n| n + 1).unwrap_or(0)
-    }
-
-    pub fn set_latest_full_block_n(&self, block_n: Option<u64>) {
-        self.full_block.set_current(block_n);
-    }
-
     pub(crate) fn load_from_db(db: &DB) -> Result<Self, MadaraStorageError> {
         let col = db.get_column(Column::BlockStorageMeta);
         if let Some(res) = db.get_pinned_cf(&col, ROW_HEAD_STATUS)? {

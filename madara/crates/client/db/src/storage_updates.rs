@@ -301,7 +301,6 @@ impl MadaraBackend {
         self.snapshots.set_new_head(crate::db_block_id::DbBlockId::from_block_n(block_n));
 
         if let Some(block_n) = block_n {
-            self.head_status.full_block.set_current(Some(block_n));
             self.head_status.headers.set_current(Some(block_n));
             self.head_status.state_diffs.set_current(Some(block_n));
             self.head_status.transactions.set_current(Some(block_n));
@@ -322,7 +321,7 @@ impl MadaraBackend {
     }
 
     pub fn clear_pending_block_in_ram(&self) -> Result<(), MadaraStorageError> {
-        let parent_block = if let Some(block_n) = self.get_latest_block_n()? {
+        let parent_block = if let Some(block_n) = self.get_block_n_latest() {
             Some(
                 self.get_block_info(&DbBlockId::Number(block_n))?
                     .ok_or(MadaraStorageError::InconsistentStorage("Can't find block info".into()))?

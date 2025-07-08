@@ -48,11 +48,7 @@ pub async fn subscribe_new_heads(
 
             block_n
         }
-        BlockId::Tag(BlockTag::Latest) => starknet
-            .backend
-            .get_latest_block_n()
-            .or_internal_server_error("Failed to retrieve block info for latest block")?
-            .ok_or(StarknetWsApiError::NoBlocks)?,
+        BlockId::Tag(BlockTag::Latest) => starknet.backend.get_block_n_latest().ok_or(StarknetWsApiError::NoBlocks)?,
         BlockId::Tag(BlockTag::Pending) => {
             return Err(StarknetWsApiError::Pending);
         }
