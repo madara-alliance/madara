@@ -8,7 +8,8 @@ use blockifier::{
     state::errors::StateError,
     transaction::{
         account_transaction::{AccountTransaction, ExecutionFlags},
-        errors::{TransactionExecutionError, TransactionPreValidationError}, objects::HasRelatedFeeType,
+        errors::{TransactionExecutionError, TransactionPreValidationError},
+        objects::HasRelatedFeeType,
     },
 };
 use mc_db::MadaraBackend;

@@ -111,13 +111,15 @@ RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.jso
 # =========================================================================== #
 
 FROM builder AS braavos
+ARG TARGETOS
+ARG TARGETARCH
 ENV BRAAVOS_REV="12b82a87b93ba9bfdf2cbbde2566437df2e0c6c8"
 ENV SCARB_VERSION="2.8.4"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
-  else \
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
     echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
   fi
 
 # clone repository
@@ -136,13 +138,15 @@ RUN ./scarb/bin/scarb build
 # =========================================================================== #
 
 FROM builder AS argent
+ARG TARGETOS
+ARG TARGETARCH
 ENV ARGENT_REV="1352198956f36fb35fa544c4e46a3507a3ec20e3"
 ENV SCARB_VERSION="2.6.3"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
-  else \
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
     echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
   fi
 
 # clone repository
@@ -161,12 +165,14 @@ RUN ./scarb/bin/scarb build
 # =========================================================================== #
 
 FROM builder AS js-tests
+ARG TARGETOS
+ARG TARGETARCH
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
-  else \
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
     echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
   fi
 
 # Copy over contracts
@@ -184,12 +190,14 @@ RUN ./scarb/bin/scarb build
 # =========================================================================== #
 
 FROM builder AS orchestrator-tests
+ARG TARGETOS
+ARG TARGETARCH
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
-  else \
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
     echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
   fi
 
 # Copy over contracts
