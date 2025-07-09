@@ -1,5 +1,6 @@
-use color_eyre::{eyre, Result};
+use color_eyre::{eyre, Report, Result};
 use futures::{stream, StreamExt};
+use itertools::Itertools;
 use starknet::core::types::{
     ContractStorageDiffItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem, StateUpdate, StorageEntry,
 };
@@ -11,15 +12,13 @@ use std::sync::Arc;
 use tracing::log::error;
 use crate::error::job::JobError;
 
-const SPECIAL_ADDRESS: &str = "0x2";
-const MAPPING_START: &str = "0x80"; // 128
+const SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
+const MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 
 /// Represents a mapping from one value to another
 #[derive(Debug)]
-struct ValueMapping {
-    mappings: HashMap<Felt, Felt>,
-}
+struct ValueMapping(HashMap<Felt, Felt>);
 
 impl ValueMapping {
     /// Creates a new ValueMapping using state update and provider
@@ -32,11 +31,7 @@ impl ValueMapping {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().for_each(|diff| {
-            // Skip the special address
-            if ValueMapping::skip(diff.address) {
-                return;
-            }
+        state_update.state_diff.storage_diffs.iter().filter(|diff| ValueMapping::skip(diff.address)).for_each(|diff| {
             keys.insert(diff.address);
             diff.storage_entries.iter().for_each(|entry| {
                 keys.insert(entry.key);
@@ -55,9 +50,9 @@ impl ValueMapping {
         // Fetch the values for the keys from the special address (0x2)
         let special_address_mappings = ValueMapping::get_special_address_mappings(state_update)?;
 
-        // Fetch the value for the keys in special address either from the current mapping or from the provider
+        // Fetch the value for the keys in the special address either from the current mapping or from the provider
         // Doing this in parallel
-        let fetch_results: Vec<_> = stream::iter(keys)
+        stream::iter(keys)
             .map(|key| {
                 let special_address_mappings = special_address_mappings.clone();
                 async move {
@@ -70,33 +65,30 @@ impl ValueMapping {
                 }
             })
             .buffer_unordered(3000)
-            .collect()
-            .await;
+            .collect::<Vec<_>>()
+            .await
+            .into_iter()
+            .try_collect::<_, Vec<(Felt, Felt)>, ProviderError>()?
+            .iter()
+            .for_each(|(key, value)| {
+                mappings.insert(*key, *value);
+            });
 
-        for (key, value) in parse_results(fetch_results)? {
-            mappings.insert(key, value);
-        }
-
-        Ok(ValueMapping { mappings })
+        Ok(ValueMapping(mappings))
     }
 
     /// get_special_address_mappings create a hashmap from the storage mappings at the special address
     fn get_special_address_mappings(state_update: &StateUpdate) -> Result<HashMap<Felt, Felt>> {
         // Find the special address storage entries
-        if let Some(special_contract) = state_update
-            .state_diff
-            .storage_diffs
-            .iter()
-            .find(|diff| diff.address == Felt::from_hex(SPECIAL_ADDRESS).unwrap())
+        if let Some(special_contract) =
+            state_update.state_diff.storage_diffs.iter().find(|diff| diff.address == SPECIAL_ADDRESS)
         {
             let mut mappings: HashMap<Felt, Felt> = HashMap::new();
 
             // Add each key-value pair to our mapping, ignoring the global counter-slot
-            for entry in &special_contract.storage_entries {
-                if !ValueMapping::skip(entry.key) {
-                    mappings.insert(entry.key, entry.value);
-                }
-            }
+            special_contract.storage_entries.iter().filter(|entry| !ValueMapping::skip(entry.key)).for_each(|entry| {
+                mappings.insert(entry.key, entry.value);
+            });
 
             Ok(mappings)
         } else {
@@ -106,7 +98,7 @@ impl ValueMapping {
 
     /// skip determines if we can skip a contract or storage address from stateful compression mapping
     fn skip(address: Felt) -> bool {
-        address < Felt::from_hex(MAPPING_START).unwrap()
+        address < MAPPING_START
     }
 
     /// get_value_from_provider returns the mapping for a key after fetching it from the provider
@@ -121,10 +113,7 @@ impl ValueMapping {
         let mut attempts = 0;
         let mut error = String::from("Dummy Error");
         while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
-            match provider
-                .get_storage_at(Felt::from_hex(SPECIAL_ADDRESS).unwrap(), key, BlockId::Number(pre_range_block))
-                .await
-            {
+            match provider.get_storage_at(MAPPING_START, key, BlockId::Number(pre_range_block)).await {
                 Ok(value) => return Ok(value),
                 Err(e) => {
                     error = e.to_string();
@@ -142,10 +131,7 @@ impl ValueMapping {
     }
 
     fn get_value(&self, value: &Felt) -> Result<Felt> {
-        match self.mappings.get(value).cloned() {
-            Some(value) => Ok(value),
-            None => Err(eyre::eyre!("Value not found in mapping: {}", value)),
-        }
+        self.0.get(value).cloned().ok_or(eyre::eyre!("Value not found in mapping: {}", value))
     }
 }
 
@@ -221,17 +207,4 @@ pub async fn compress(
     // block_hash, new_root and old_root remain as it is
 
     Ok(state_update)
-}
-
-fn parse_results<T>(results: Vec<Result<T>>) -> Result<Vec<T>> {
-    let mut values = Vec::new();
-    for result in results {
-        match result {
-            Ok(value) => {
-                values.push(value);
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Ok(values)
 }

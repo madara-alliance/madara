@@ -8,7 +8,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError};
 use starknet_core::types::{
     BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
-    StateDiff, StateUpdate, StorageEntry,
+    StarknetError, StateDiff, StateUpdate, StorageEntry,
 };
 use starknet_os::hints::execution::contract_address;
 use std::collections::{HashMap, HashSet};
@@ -218,8 +218,8 @@ async fn process_class(
     contract_address: Felt,
     class_hash: Felt,
 ) -> Result<(Felt, Option<Felt>), JobError> {
-    let prev_class_hash = get_class_hash_at(provider, pre_range_block, contract_address).await?;
-    if prev_class_hash == class_hash {
+    let (exists, prev_class_hash) = get_class_hash_at(provider, pre_range_block, contract_address).await?;
+    if exists && prev_class_hash == class_hash {
         Ok((contract_address, None))
     } else {
         Ok((contract_address, Some(class_hash)))
@@ -229,7 +229,7 @@ async fn process_class(
 /// Processes the storage of a single contract to do the following
 /// 1. Check if the contract existed in the `pre_range_block`
 /// 2. If yes, check the value of all keys in the storage map of this contract in the `pre_range_block`
-/// 3. If no, filter the non-zero values in storage map
+/// 3. If no, filter the non-zero values in the storage map
 async fn process_single_contract(
     contract_addr: Felt,
     storage_map: HashMap<Felt, Felt>,
@@ -249,13 +249,13 @@ async fn process_single_contract(
         }
         Some(pre_range_block) => {
             // Check if contract existed at pre-range block
-            let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await;
+            let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await?;
 
             if contract_existed {
                 // Process storage entries only for an existing contract
                 let results: Vec<_> = stream::iter(storage_map)
                     .map(|(key, value)| {
-                        let provider = provider.clone();
+                        let provider = Arc::clone(provider);
                         async move {
                             let pre_range_value =
                                 check_pre_range_storage_value(&provider, contract_addr, key, pre_range_block).await?;
@@ -292,63 +292,81 @@ async fn process_single_contract(
     }
 }
 
+/// This function tells if the contract existed at the given block number
 pub async fn check_contract_existed_at_block(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     contract_address: Felt,
     block_number: u64,
-) -> bool {
-    match get_class_hash_at(provider, block_number, contract_address).await {
-        Ok(_) => true,
-        Err(_) => false,
-    }
+) -> Result<bool, JobError> {
+    Ok(get_class_hash_at(provider, block_number, contract_address).await?.0)
 }
 
+/// This function returns the class hash of a contract at a given block number
+/// If it exists, it returns the class hash along with `exists=true`
+/// If it doesn't exist, it returns the zero-class hash along with `exists=false`
+/// It retries up to `MAX_GET_STORAGE_AT_CALL_RETRY` times
+/// This function does not return error when the contract does not exist
 pub async fn get_class_hash_at(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     block_number: u64,
     contract_address: Felt,
-) -> Result<Felt, JobError> {
+) -> Result<(bool, Felt), JobError> {
     const MAX_RETRY_ATTEMPTS: u64 = 3;
     let mut attempts = 0;
-    let mut error = String::from("Dummy Error");
+    let mut error: Option<String> = None;
+
     while attempts < MAX_RETRY_ATTEMPTS {
         match provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await {
-            Ok(class_hash) => return Ok(class_hash),
+            Ok(class_hash) => return Ok((true, class_hash)),
             Err(e) => {
-                error = e.to_string();
+                if let ProviderError::StarknetError(StarknetError::ClassHashNotFound { .. }) = e {
+                    return Ok((false, Felt::ZERO));
+                }
+                error = Some(e.to_string());
                 attempts += 1;
                 continue;
             }
         }
     }
-    Err(JobError::ProviderError(format!(
+
+    let err_message = format!(
         "Failed to get class hash for contract: {} at block {}: {}",
-        contract_address, block_number, error
-    )))
+        contract_address,
+        block_number,
+        error.unwrap_or_else(|| "Unknown error".to_string())
+    );
+    error!("{}", &err_message);
+    Err(JobError::ProviderError(err_message))
 }
 
+/// This function returns the storage value of a key at a given block number
+/// It retries up to `MAX_GET_STORAGE_AT_CALL_RETRY` times
 pub async fn check_pre_range_storage_value(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     contract_address: Felt,
     key: Felt,
     pre_range_block: u64,
 ) -> Result<Felt, JobError> {
-    // Get storage value at the block before our range
     let mut attempts = 0;
-    let mut error = String::from("Dummy Error");
+    let mut error: Option<String> = None;
+
     while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
         match provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await {
             Ok(value) => return Ok(value),
             Err(e) => {
-                error = e.to_string();
+                error = Some(e.to_string());
                 attempts += 1;
                 continue;
             }
         }
     }
+
     let err_message = format!(
         "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-        contract_address, key, pre_range_block, error
+        contract_address,
+        key,
+        pre_range_block,
+        error.unwrap_or_else(|| "Unknown error".to_string())
     );
     error!("{}", &err_message);
     Err(JobError::ProviderError(err_message))

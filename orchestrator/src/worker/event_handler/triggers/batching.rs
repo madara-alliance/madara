@@ -249,7 +249,7 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        Ok(stateless_compress(&vec_felts))
+        Ok(stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))?)
     }
 
     /// get_state_update_file_name returns the file path for storing the state update in storage

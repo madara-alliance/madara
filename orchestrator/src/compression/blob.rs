@@ -1,11 +1,11 @@
-use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
 use crate::worker::event_handler::jobs::da::DAJobHandler;
 use num_bigint::BigUint;
-use num_traits::{Num, Zero};
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
+use num_traits::{Num, One, ToPrimitive, Zero};
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate, U256};
 use std::collections::{HashMap, HashSet};
 
 /// Converts a StateUpdate to a vector of Felt values for blob creation
@@ -20,6 +20,7 @@ pub async fn state_update_to_blob_data(
     state_update: StateUpdate,
     version: StarknetVersion,
 ) -> Result<Vec<Felt>, JobError> {
+    // Create a state_diff copy
     let mut state_diff = state_update.state_diff;
 
     // Create a vector to hold the blob data
@@ -39,9 +40,18 @@ pub async fn state_update_to_blob_data(
 
     // Sort storage diffs by address for deterministic output
     state_diff.storage_diffs.sort_by_key(|diff| diff.address);
+    // For each storage diff, sort storage entries by key for deterministic output
+    for diff in &mut state_diff.storage_diffs {
+        diff.storage_entries.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+    // Sort declared classes by class_hash for deterministic output
+    state_diff.declared_classes.sort_by_key(|class| class.class_hash);
+
+    let len_storage_diffs = state_diff.storage_diffs.len();
 
     // Process each storage diff
-    for ContractStorageDiffItem { address, mut storage_entries } in state_diff.storage_diffs.clone().into_iter() {
+    for ContractStorageDiffItem { address, storage_entries } in state_diff.storage_diffs.into_iter() {
+        tracing::debug!("Processing storage diffs for address {}", address);
         // Mark this address as processed
         processed_addresses.insert(address);
 
@@ -62,7 +72,7 @@ pub async fn state_update_to_blob_data(
         // Get nonce if it exists and remove from the map since we're processing this address
         let nonce = nonces.remove(&address);
 
-        // Create the DA word - class_flag is true if class_hash is Some
+        // Create the DA word - class_flag is true if class_hash is Some (i.e., the class is replaced)
         let da_word = da_word(class_hash.is_some(), nonce, storage_entries.len() as u64, version)?;
 
         // Add address and DA word to blob data
@@ -72,11 +82,7 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
-            tracing::debug!("Adding class hash {} for address {}", hash, address);
         }
-
-        // Sort storage entries by key for deterministic output
-        storage_entries.sort_by_key(|entry| entry.key);
 
         // Add storage entries to blob data
         for entry in storage_entries {
@@ -89,28 +95,28 @@ pub async fn state_update_to_blob_data(
     let mut leftover_addresses = Vec::new();
 
     // Check for any addresses with deployed contracts that weren't processed
-    for (address, class_hash) in deployed_contracts.iter() {
-        if !processed_addresses.contains(address) {
-            leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
-            tracing::debug!("Found leftover deployed contract: address={}, class_hash={}", address, class_hash);
-        }
-    }
+    leftover_addresses.extend(
+        deployed_contracts
+            .drain()
+            .filter(|(address, _)| !processed_addresses.contains(address))
+            .map(|(address, class_hash)| (address, Some(class_hash), nonces.remove(&address))),
+    );
 
     // Check for any addresses with replaced classes that weren't processed
-    for (address, class_hash) in replaced_classes.iter() {
-        if !processed_addresses.contains(address) {
-            leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
-            tracing::debug!("Found leftover replaced class: address={}, class_hash={}", address, class_hash);
-        }
-    }
+    leftover_addresses.extend(
+        replaced_classes
+            .drain()
+            .filter(|(address, _)| !processed_addresses.contains(address))
+            .map(|(address, class_hash)| (address, Some(class_hash), nonces.remove(&address))),
+    );
 
     // Check for any addresses with only nonce updates that weren't processed
-    for (address, nonce) in nonces.iter() {
-        if !processed_addresses.contains(address) {
-            leftover_addresses.push((*address, None, Some(*nonce)));
-            tracing::debug!("Found leftover nonce: address={}, nonce={}", address, nonce);
-        }
-    }
+    leftover_addresses.extend(
+        nonces
+            .drain()
+            .filter(|(address, _)| !processed_addresses.contains(address))
+            .map(|(address, nonce)| (address, None, Some(nonce))),
+    );
 
     // Sort leftover addresses for deterministic output
     leftover_addresses.sort_by_key(|(address, _, _)| *address);
@@ -139,20 +145,16 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
-            tracing::debug!("Adding class hash {} for leftover address {}", hash, address);
         }
     }
 
     // Update the first element with the total number of contracts (original storage diffs and leftover addresses)
-    let total_contracts = state_diff.storage_diffs.len() + leftover_addresses.len();
+    let total_contracts = len_storage_diffs + leftover_addresses.len();
     blob_data[0] = Felt::from(total_contracts);
     tracing::debug!("Total contract updates in blob: {}", total_contracts);
 
     // Add declared classes count
     blob_data.push(Felt::from(state_diff.declared_classes.len()));
-
-    // Sort declared classes by class_hash for deterministic output
-    state_diff.declared_classes.sort_by_key(|class| class.class_hash);
 
     // Process each declared class
     for DeclaredClassItem { class_hash, compiled_class_hash } in state_diff.declared_classes.into_iter() {
@@ -183,23 +185,39 @@ pub fn da_word(
 ) -> Result<Felt, JobError> {
     // Parse version to determine format
     let is_gte_v0_13_3 = version >= StarknetVersion::V0_13_3;
-    let mut binary_string = String::new();
+    // let mut da_word = Felt::ZERO;
+
+    let mut da_word = BigUint::zero();
+
     if is_gte_v0_13_3 {
         // v0.13.3+ format:
-        // - new_nonce (64 bits)
-        // - n_updates (8 or 64 bits depending on size)
-        // - n_updates_len (1 bit)
-        // - class_flag (1 bit)
+        //
+        // Binary encoding layout (252 bits total):
+        //
+        // Bit positions:
+        // 251                                                                    0
+        // |                                                                      |
+        // v                                                                      v
+        // ┌───────────────┬─────────────────────────────────────┬───┬───┬────────┐
+        // │   new_nonce   │           n_updates                 │n_u│cls│ Zeros  │
+        // │   (64 bits)   │        (8 or 64 bits)               │len│flg│        │
+        // │   [251:188]   │     [187:124] or [187:180]          │[1]│[0]│        │
+        // └───────────────┴─────────────────────────────────────┴───┴───┴────────┘
+        //
+        // Field breakdown:
+        // - new_nonce (64 bits)     : [251:188] - Nonce value
+        // - n_updates (variable)    : [187:124] (64-bit) or [187:180] (8-bit, then padded by 0s) - Number of updates
+        // - n_updates_len (1 bit)   : [1] - Length indicator (1=8-bit, 0=64-bit n_updates)
+        // - class_flag (1 bit)      : [0] - Class changed or not
+        //
+        // Total used bits: 64 + (8|64) + 1 + 1 = 74 or 130 bits
+        // Remaining bits: 252 - (74|130) = 178 or 122 bits (reserved/padding)
+        //
 
         // Add new_nonce (64 bits)
         if let Some(new_nonce) = nonce_change {
-            let bytes: [u8; 32] = new_nonce.to_bytes_be();
-            let big_uint_value = BigUint::from_bytes_be(&bytes);
-            let nonce_binary = format!("{:b}", big_uint_value);
-            binary_string += &format!("{:0>64}", nonce_binary);
-        } else {
-            // If nonce unchanged, use 64 zeros
-            binary_string += &"0".repeat(64);
+            let new_nonce = new_nonce.to_u64().expect("nonce too big");
+            da_word |= BigUint::from(new_nonce) << 188;
         }
 
         // Determine if we need 8 or 64 bits for num_changes
@@ -207,62 +225,53 @@ pub fn da_word(
 
         if needs_large_updates {
             // Use 64 bits for updates
-            let updates_binary = format!("{:b}", num_changes);
-            binary_string += &format!("{:0>64}", updates_binary);
-            // Add remaining padding to reach 254 bits
-            binary_string = format!("{:0>254}", binary_string);
-            // Add n_updates_len (1) and class_flag
-            binary_string.push('0'); // n_updates_len = 1 for large updates
+            da_word |= BigUint::from(num_changes) << 124;
         } else {
             // Use 8 bits for updates
-            let updates_binary = format!("{:b}", num_changes);
-            binary_string += &format!("{:0>8}", updates_binary);
-            // Add remaining padding to reach 254 bits
-            binary_string = format!("{:0>254}", binary_string);
-            // Add n_updates_len (0) and class_flag
-            binary_string.push('1'); // n_updates_len = 0 for small updates
+            da_word |= BigUint::from(num_changes) << 180;
+            da_word |= BigUint::one() << 123;
         }
 
-        // Add class_flag as LSB
-        binary_string.push(if class_flag { '1' } else { '0' });
+        // Class flag
+        da_word |= if class_flag { BigUint::one() << 122 } else { BigUint::zero() };
     } else {
         // Old format (pre-0.13.3)
-        // padding of 127 bits
-        binary_string = "0".repeat(127);
+        //
+        // Binary encoding layout (252 bits total):
+        //
+        // Bit positions:
+        // 251                                                                                   0
+        // |                                                                                     |
+        // v                                                                                     v
+        // ┌───────────────────────────────────────────────────────┬─────┬─────────┬─────────────┐
+        // │                 Zero Padding                          │cls  │  nonce  │ num_changes │
+        // │                  (123 bits)                           │flg  │(64 bits)│ (64 bits)   │
+        // │                  [251:129]                            │[128]│[127:64] │  [63:0]     │
+        // └───────────────────────────────────────────────────────┴─────┴─────────┴─────────────┘
+        //
+        // Field breakdown:
+        // - Zero Padding (123 bits)  : [251:129] - Padded with zeros
+        // - class_flag (1 bit)       : [128]     - Class type flag
+        // - nonce (64 bits)          : [127:64]  - Nonce value
+        // - num_changes (64 bits)    : [63:0]    - Number of changes
+        //
+        // Total used bits: 123 + 1 + 64 + 64 = 252 bits (exactly)
+        //
 
-        // class flag of one bit
-        if class_flag {
-            binary_string += "1"
-        } else {
-            binary_string += "0"
-        }
+        // Class flag
+        da_word |= if class_flag { BigUint::one() << 128 } else { BigUint::zero() };
 
-        // checking for nonce here
+        // Nonce
         if let Some(new_nonce) = nonce_change {
-            let bytes: [u8; 32] = new_nonce.to_bytes_be();
-            let binary_string_local = format!("{:b}", BigUint::from_bytes_be(&bytes));
-            let padded_binary_string = format!("{:0>64}", binary_string_local);
-            binary_string += &padded_binary_string;
-        } else {
-            let binary_string_local = "0".repeat(64);
-            binary_string += &binary_string_local;
+            let new_nonce = new_nonce.to_u64().expect("nonce too big");
+            da_word |= BigUint::from(new_nonce) << 64;
         }
 
-        let binary_representation = format!("{:b}", num_changes);
-        let padded_binary_string = format!("{:0>64}", binary_representation);
-        binary_string += &padded_binary_string;
+        // Number of changes
+        da_word |= BigUint::from(num_changes);
     }
 
-    // Convert binary string to decimal string
-    let decimal_string = BigUint::from_str_radix(binary_string.as_str(), 2)
-        .map_err(|e| {
-            JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert binary string to BigUint: {e}")))
-        })?
-        .to_str_radix(10);
-
-    Felt::from_dec_str(&decimal_string).map_err(|e| {
-        JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert decimal string to FieldElement: {}", e)))
-    })
+    Ok(Felt::from(da_word))
 }
 
 /// Converts a vector of felt into a vector of bigUint

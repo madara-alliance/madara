@@ -7,6 +7,7 @@ use std::iter::Iterator; // Needed for decompress signature
 use color_eyre::eyre::{bail, eyre, Context};
 use color_eyre::Result;
 use indexmap::IndexMap;
+use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::{ToPrimitive, Zero};
 use starknet::core::types::Felt; // Assuming starknet re-exports Felt from starknet-types-core
@@ -14,18 +15,20 @@ use std::cmp::min;
 use strum::EnumCount;
 use strum_macros::Display;
 
-// --- Constants ---
+// This code is mostly taken from Starkware's SNOS implementation. Here's the link for reference:
+// https://github.com/starkware-libs/sequencer/blob/3b978f202e92714f07710c23d7d259ea6ca2f9e2/crates/starknet_os/src/hints/hint_implementation/stateless_compression/utils.rs
+
+// Constants
 pub(crate) const COMPRESSION_VERSION: u8 = 0;
 pub(crate) const HEADER_ELM_N_BITS: usize = 20; // Max value ~1M
 pub(crate) const HEADER_ELM_BOUND: u32 = 1 << HEADER_ELM_N_BITS;
 pub(crate) const HEADER_LEN: usize = 1 + 1 + N_UNIQUE_BUCKETS + 1; // version, len, buckets, repeating_len
-
 pub(crate) const N_UNIQUE_BUCKETS: usize = BitLength::COUNT;
 pub(crate) const TOTAL_N_BUCKETS: usize = N_UNIQUE_BUCKETS + 1; // Includes repeating bucket
-
 pub(crate) const MAX_N_BITS: usize = 251;
 
-// --- BitLength Enum ---
+// BitLength enum
+// This is used for dividing the uncompressed state update data into buckets for compression
 #[derive(Debug, Display, strum_macros::EnumCount, Clone, Copy)]
 pub(crate) enum BitLength {
     Bits15,
@@ -67,11 +70,11 @@ impl BitLength {
     }
 }
 
-// --- BitsArray ---
-// **** Revert to using a stack array based on original code ****
+// BitsArray
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) struct BitsArray<const LENGTH: usize>(pub(crate) [bool; LENGTH]);
 
+// Implementing TryFrom<Felt> for BitsArray<LENGTH>
 impl<const LENGTH: usize> TryFrom<Felt> for BitsArray<LENGTH> {
     type Error = color_eyre::Report;
 
@@ -104,6 +107,7 @@ impl<const LENGTH: usize> TryFrom<Felt> for BitsArray<LENGTH> {
     }
 }
 
+// Implementing TryFrom<BitsArray<LENGTH>> for Felt
 impl<const LENGTH: usize> TryFrom<BitsArray<LENGTH>> for Felt {
     type Error = color_eyre::Report;
 
@@ -112,6 +116,7 @@ impl<const LENGTH: usize> TryFrom<BitsArray<LENGTH>> for Felt {
     }
 }
 
+/// Converts a slice of bits into a Felt
 /// Returns an error in case the length is not guaranteed to fit in Felt (more than 251 bits).
 pub(crate) fn felt_from_bits_le(bits: &[bool]) -> Result<Felt> {
     if bits.len() > MAX_N_BITS {
@@ -137,19 +142,19 @@ pub(crate) fn felt_from_bits_le(bits: &[bool]) -> Result<Felt> {
     Ok(Felt::from_bytes_be(&bytes_le_to_be(&bytes)))
 }
 
-// Helper (keep as is)
+// Helper function to reverse the bytes of a byte slice
 fn bytes_le_to_be(bytes_le: &[u8; 32]) -> [u8; 32] {
     let mut bytes_be = *bytes_le;
     bytes_be.reverse();
     bytes_be
 }
+
 // Helper function to convert Felt to BigUint
-// (You might have this elsewhere, ensure consistency or use a library function if available)
 fn felt_to_big_uint(value: &Felt) -> BigUint {
-    // Use the UfeHex helper for robust conversion, handles potential leading zeros if using bytes
     BigUint::from_bytes_be(&value.to_bytes_be())
 }
 
+// Creating BucketElements for different bit lengths
 pub(crate) type BucketElement15 = BitsArray<15>;
 pub(crate) type BucketElement31 = BitsArray<31>;
 pub(crate) type BucketElement62 = BitsArray<62>;
@@ -157,40 +162,29 @@ pub(crate) type BucketElement83 = BitsArray<83>;
 pub(crate) type BucketElement125 = BitsArray<125>;
 pub(crate) type BucketElement252 = Felt;
 
-// --- BucketElementTrait ---
-// **** Modify trait to match an original structure (no bit_length, unpack_from_felts) ****
+// BucketElementTrait
+// Modify trait to match an original structure (no bit_length, unpack_from_felts)
 pub(crate) trait BucketElementTrait: Sized + Clone {
     fn pack_in_felts(elms: &[Self]) -> Vec<Felt>;
-    // Add an associated type or const for length if needed by packers/unpackers
-    // const N_BITS: usize; // Example
 }
 
 macro_rules! impl_bucket_element_trait {
-    ($bucket_element:ident, $bit_length_enum:ident) => { // Removed $len parameter
+    ($bucket_element:ident, $bit_length_enum:ident) => {
+        // Removed $len parameter
         impl BucketElementTrait for $bucket_element {
-             // const N_BITS: usize = BitLength::$bit_length_enum.n_bits(); // Example if needed
-
             fn pack_in_felts(elms: &[Self]) -> Vec<Felt> {
                 let bit_length = BitLength::$bit_length_enum;
                 elms.chunks(bit_length.n_elems_in_felt())
                     .map(|chunk| {
-                        felt_from_bits_le(
-                            &(chunk
-                                .iter()
-                                // **** Use AsRef<[bool]> to work with [bool; LENGTH] ****
-                                .flat_map(|elem| elem.0.as_ref())
-                                .copied()
-                                .collect::<Vec<_>>()),
-                        ).expect(&format!( // Use expect to match original style
-                            "Chunks of size {}, each of bit length {}, fit in felts.",
-                            bit_length.n_elems_in_felt(),
-                            bit_length
-                        ))
+                        felt_from_bits_le(&(chunk.iter().flat_map(|elem| elem.0.as_ref()).copied().collect::<Vec<_>>()))
+                            .expect(&format!(
+                                "Chunks of size {}, each of bit length {}, fit in felts.",
+                                bit_length.n_elems_in_felt(),
+                                bit_length
+                            ))
                     })
                     .collect()
             }
-
-             // Remove unpack_from_felts from trait implementation if not in original trait concept
         }
     };
 }
@@ -202,14 +196,12 @@ impl_bucket_element_trait!(BucketElement83, Bits83);
 impl_bucket_element_trait!(BucketElement125, Bits125);
 
 impl BucketElementTrait for BucketElement252 {
-    // const N_BITS: usize = BitLength::Bits252.n_bits(); // Example
     fn pack_in_felts(elms: &[Self]) -> Vec<Felt> {
         elms.to_vec()
     }
-    // Remove unpack_from_felts
 }
 
-// --- BucketElement Enum ---
+// BucketElement Enum
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub(crate) enum BucketElement {
     BucketElement15(BucketElement15),
@@ -220,8 +212,8 @@ pub(crate) enum BucketElement {
     BucketElement252(BucketElement252),
 }
 
-// **** Revert From<Felt> to original logic (using expect) ****
-// Note: This loses the nice Result propagation but matches the provided code.
+// Revert From<Felt> to original logic (using expect)
+// Note: This loses the nice Result propagation but matches the provided code
 // If Result is preferred, keep the TryFrom implementation instead.
 impl From<Felt> for BucketElement {
     fn from(felt: Felt) -> Self {
@@ -236,7 +228,7 @@ impl From<Felt> for BucketElement {
     }
 }
 
-// **** Keep TryFrom<BucketElement> for Felt for decompression ****
+// Keep TryFrom<BucketElement> for Felt for decompression
 impl TryFrom<BucketElement> for Felt {
     type Error = color_eyre::Report;
     fn try_from(bucket_element: BucketElement) -> Result<Self, Self::Error> {
@@ -251,8 +243,8 @@ impl TryFrom<BucketElement> for Felt {
     }
 }
 
-// --- UniqueValueBucket ---
-// **** Revert pack_in_felts signature ****
+// UniqueValueBucket
+// Revert pack_in_felts signature
 #[derive(Clone, Debug)]
 struct UniqueValueBucket<SizedElement: BucketElementTrait + Eq + Hash> {
     value_to_index: IndexMap<SizedElement, usize>,
@@ -278,10 +270,8 @@ impl<SizedElement: BucketElementTrait + Clone + Eq + Hash> UniqueValueBucket<Siz
         self.value_to_index.get(value)
     }
 
-    // **** Return Vec<Felt> not Result ****
     fn pack_in_felts(self) -> Vec<Felt> {
         let values = self.value_to_index.into_keys().collect::<Vec<_>>();
-        // SizedElement::pack_in_felts already returns Vec<Felt>
         SizedElement::pack_in_felts(&values)
     }
 
@@ -290,10 +280,10 @@ impl<SizedElement: BucketElementTrait + Clone + Eq + Hash> UniqueValueBucket<Siz
     }
 }
 
-// --- Buckets ---
+// Buckets
 #[derive(Clone, Debug)]
 pub(crate) struct Buckets {
-    // **** Add bucket fields ****
+    // Add bucket fields
     bucket15: UniqueValueBucket<BucketElement15>,
     bucket31: UniqueValueBucket<BucketElement31>,
     bucket62: UniqueValueBucket<BucketElement62>,
@@ -313,7 +303,7 @@ impl Buckets {
             bucket252: UniqueValueBucket::new(),
         }
     }
-    // **** Implement Buckets::bucket_indices ****
+    // Implement Buckets::bucket_indices
     // Returns (bucket_index, inverse_bucket_index)
     fn bucket_indices(&self, bucket_element: &BucketElement) -> (usize, usize) {
         let bucket_index = match bucket_element {
@@ -326,7 +316,7 @@ impl Buckets {
         };
         (bucket_index, N_UNIQUE_BUCKETS - 1 - bucket_index)
     }
-    // **** Implement Buckets::get_element_index ****
+    // Implement Buckets::get_element_index
     pub(crate) fn get_element_index(&self, bucket_element: &BucketElement) -> Option<&usize> {
         match bucket_element {
             BucketElement::BucketElement15(be) => self.bucket15.get_index(be),
@@ -337,7 +327,7 @@ impl Buckets {
             BucketElement::BucketElement252(be) => self.bucket252.get_index(be),
         }
     }
-    // **** Implement Buckets::add ****
+    // Implement Buckets::add
     pub(crate) fn add(&mut self, bucket_element: BucketElement) {
         match bucket_element {
             BucketElement::BucketElement15(be) => self.bucket15.add(be),
@@ -348,7 +338,7 @@ impl Buckets {
             BucketElement::BucketElement252(be) => self.bucket252.add(be),
         }
     }
-    // **** Implement Buckets::lengths ****
+    // Implement Buckets::lengths
     pub(crate) fn lengths(&self) -> [usize; N_UNIQUE_BUCKETS] {
         [
             self.bucket252.len(), // Order matters here for header
@@ -360,7 +350,7 @@ impl Buckets {
         ]
     }
 
-    // **** Return Vec<Felt> not Result ****
+    // Return Vec<Felt> not Result
     fn pack_in_felts(self) -> Vec<Felt> {
         [
             self.bucket15.pack_in_felts(),
@@ -376,10 +366,10 @@ impl Buckets {
         .collect()
     }
 
-    // **** Remove unpack_from_felts if not in an original concept ****
+    // Remove unpack_from_felts if not in an original concept
 
     // Gets all unique values ordered from the largest bit bucket to the smallest.
-    // **** Keep this helper method as it's useful for decompress ****
+    // Keep this helper method as it's useful for decompress
     fn get_all_unique_values(self) -> Vec<BucketElement> {
         self.bucket252
             .get_values()
@@ -394,18 +384,18 @@ impl Buckets {
     }
 }
 
-// --- CompressionSet ---
+// CompressionSet
 #[derive(Clone, Debug)]
 pub(crate) struct CompressionSet {
-    // **** Add fields ****
+    // Add fields
     unique_value_buckets: Buckets,
     repeating_value_bucket: Vec<(usize, usize)>, // (bucket_index, element_index)
     bucket_index_per_elm: Vec<usize>,
 }
 impl CompressionSet {
-    // **** Revert new signature and logic to match the original (no Result, use expect) ****
+    // Revert new signature and logic to match the original (no Result, use expect)
     pub fn new(values: &[Felt]) -> Self {
-        // **** Initialize Self with fields ****
+        // Initialize Self with fields
         let mut obj = Self {
             unique_value_buckets: Buckets::new(),
             repeating_value_bucket: Vec::new(),
@@ -461,15 +451,15 @@ impl CompressionSet {
             .collect()
     }
 
-    // **** Return Vec<Felt> not Result ****
+    // Return Vec<Felt> not Result
     pub fn pack_unique_values(self) -> Vec<Felt> {
         self.unique_value_buckets.pack_in_felts()
     }
 }
 
-// --- Compression Logic ---
-// **** Revert compress signature and logic (no Result, use expect/panic) ****
-pub fn compress(data: &[Felt]) -> Vec<Felt> {
+// Compression Logic
+// Revert compress signature and logic (no Result, use expect/panic)
+pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
     let data_len_usize = data.len();
     // Use assert! like Python version
     assert!(data_len_usize < HEADER_ELM_BOUND as usize, "Data is too long: {} >= {}", data_len_usize, HEADER_ELM_BOUND);
@@ -478,15 +468,17 @@ pub fn compress(data: &[Felt]) -> Vec<Felt> {
     if data.is_empty() {
         let header: Vec<usize> = vec![COMPRESSION_VERSION.into(), 0, 0, 0, 0, 0, 0, 0, 0];
         // Return packed header directly, handle potential packing errors with expect/panic
-        return vec![pack_usize_in_felt(&header, HEADER_ELM_BOUND)];
+        return Ok(vec![pack_usize_in_felt(&header, HEADER_ELM_BOUND)?]);
     }
 
     let compression_set = CompressionSet::new(data); // Uses new which now returns Self
 
     let unique_value_bucket_lengths = compression_set.get_unique_value_bucket_lengths();
     let n_unique_values: usize = unique_value_bucket_lengths.iter().sum();
+
     // Use expect for conversions
-    let n_unique_values_u32 = u32::try_from(n_unique_values).expect("Too many unique values to fit in u32");
+    let n_unique_values_u32 =
+        u32::try_from(n_unique_values).map_err(|err| eyre!("Too many unique values to fit in u32: {}", err))?;
     let repeating_pointers_bound = max(n_unique_values_u32, 1);
 
     let header: Vec<usize> = [COMPRESSION_VERSION.into(), data.len()]
@@ -496,23 +488,23 @@ pub fn compress(data: &[Felt]) -> Vec<Felt> {
         .collect();
 
     // Use expect/panic where Results were previously handled
-    let packed_header = pack_usize_in_felt(&header, HEADER_ELM_BOUND);
+    let packed_header = pack_usize_in_felt(&header, HEADER_ELM_BOUND)?;
     let packed_repeating_value_pointers =
-        pack_usize_in_felts(&compression_set.get_repeating_value_pointers(), repeating_pointers_bound);
+        pack_usize_in_felts(&compression_set.get_repeating_value_pointers(), repeating_pointers_bound)?;
     let packed_bucket_index_per_elm = pack_usize_in_felts(
         &compression_set.bucket_index_per_elm,
-        u32::try_from(TOTAL_N_BUCKETS).expect("TOTAL_N_BUCKETS fits in u32"),
-    );
+        u32::try_from(TOTAL_N_BUCKETS).map_err(|err| eyre!("TOTAL_N_BUCKETS does not fit in u32: {}", err))?,
+    )?;
     let unique_values = compression_set.pack_unique_values(); // Now returns Vec<Felt>
 
-    [vec![packed_header], unique_values, packed_repeating_value_pointers, packed_bucket_index_per_elm]
+    Ok([vec![packed_header], unique_values, packed_repeating_value_pointers, packed_bucket_index_per_elm]
         .into_iter()
         .flatten()
-        .collect()
+        .collect())
 }
 
-// --- Decompression Logic ---
-// **** Need unpack_chunk equivalent and match Python's reconstruction ****
+// Decompression Logic
+// Need unpack_chunk equivalent and match Python's reconstruction
 // Helper function similar to Python's unpack_chunk
 fn unpack_chunk(compressed_iter: &mut std::vec::IntoIter<Felt>, n_elms: usize, elm_bound: u32) -> Result<Vec<usize>> {
     // Keep Result for unpacking errors
@@ -525,7 +517,7 @@ fn unpack_chunk(compressed_iter: &mut std::vec::IntoIter<Felt>, n_elms: usize, e
         bail!("Element bound cannot be 0 for unpacking chunk");
     }
 
-    let n_elms_per_felt = get_n_elms_per_felt(elm_bound); // Removed ?
+    let n_elms_per_felt = get_n_elms_per_felt(elm_bound)?;
     if n_elms_per_felt == 0 {
         bail!("Calculated n_elms_per_felt is 0, likely due to too large elm_bound {}", elm_bound);
     }
@@ -552,7 +544,7 @@ fn unpack_felts(
     if elm_bound == 0 {
         bail!("Element bound cannot be 0 for unpacking felts");
     }
-    let n_elms_per_felt = get_n_elms_per_felt(elm_bound); // Removed ?
+    let n_elms_per_felt = get_n_elms_per_felt(elm_bound)?;
     if n_elms_per_felt == 0 {
         bail!("Calculated n_elms_per_felt is 0 in unpack_felts, likely due to too large elm_bound {}", elm_bound);
     }
@@ -595,7 +587,7 @@ fn unpack_felt(packed_felt: Felt, elm_bound: u32, n_elms: usize) -> Result<Vec<u
     Ok(res)
 }
 
-// **** Rewrite decompress using unpack_chunk and Python's reconstruction logic ****
+// Rewrite decompress using unpack_chunk and Python's reconstruction logic
 pub fn decompress(compressed_data: &[Felt]) -> Result<Vec<Felt>> {
     // Keep Result for error handling
     if compressed_data.is_empty() {
@@ -769,55 +761,54 @@ pub fn decompress(compressed_data: &[Felt]) -> Result<Vec<Felt>> {
     Ok(original_data)
 }
 
-// --- Packing/Unpacking Utilities ---
-// **** Revert signatures (no Result) and use expect/panic ****
-pub fn get_n_elms_per_felt(elm_bound: u32) -> usize {
+// Packing/Unpacking Utilities
+// Revert signatures (no Result) and use expect/panic
+pub fn get_n_elms_per_felt(elm_bound: u32) -> Result<usize> {
     if elm_bound == 0 {
-        panic!("Element bound cannot be 0"); // Panic like Python assert
+        return Err(eyre!("Element bound cannot be 0"));
     }
     if elm_bound <= 1 {
-        return MAX_N_BITS;
+        return Ok(MAX_N_BITS);
     }
     let n_bits_required = (elm_bound - 1).ilog2() + 1;
-    MAX_N_BITS / usize::try_from(n_bits_required).expect("Failed usize conversion for bits required")
+    Ok(MAX_N_BITS
+        / usize::try_from(n_bits_required)
+            .map_err(|err| eyre!("Failed usize conversion for bits required: {}", err))?)
 }
 
-pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> Vec<Felt> {
+pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> Result<Vec<Felt>> {
     if elm_bound == 0 {
-        panic!("Element bound cannot be 0 for packing");
+        return Err(eyre!("Element bound cannot be 0 for packing"));
     }
     // Check elements are within bound
     for elm in elms {
-        let elm_u32 = u32::try_from(*elm).expect("Cannot convert element to u32");
+        let elm_u32 = u32::try_from(*elm).map_err(|err| eyre!("Cannot convert element to u32: {}", err))?;
         assert!(elm_u32 < elm_bound, "Element {} exceeds bound {}", elm, elm_bound);
     }
 
-    let n_per_felt = get_n_elms_per_felt(elm_bound);
+    let n_per_felt = get_n_elms_per_felt(elm_bound)?;
     if n_per_felt == 0 {
-        panic!("Element bound {} too large to fit in Felt", elm_bound);
+        return Err(eyre!("Element bound {} too large to fit in Felt", elm_bound));
     }
 
-    elms.chunks(n_per_felt).map(|chunk| pack_usize_in_felt(chunk, elm_bound)).collect()
+    Ok(elms.chunks(n_per_felt).map(|chunk| pack_usize_in_felt(chunk, elm_bound)).try_collect()?)
 }
 
-fn pack_usize_in_felt(elms: &[usize], elm_bound: u32) -> Felt {
+fn pack_usize_in_felt(elms: &[usize], elm_bound: u32) -> Result<Felt> {
     let elm_bound_big = BigUint::from(elm_bound);
-    let packed_big = elms.iter().enumerate().fold(BigUint::zero(), |acc, (i, elm)| {
-        // Bounds check should happen in pack_usize_in_felts ideally
-        assert!(
-            u32::try_from(*elm).expect("usize->u32 failed") < elm_bound,
-            "Element {} exceeds bound {}",
-            elm,
-            elm_bound
-        );
-        acc + BigUint::from(*elm) * elm_bound_big.pow(u32::try_from(i).expect("Index i does not fit in u32"))
-    });
-
-    // **** Match original: Direct .into() assumes BigUint -> Felt conversion exists and handles potential errors/overflow ****
-    Felt::from(packed_big.clone())
+    let packed_big = elms.iter().enumerate().try_fold(BigUint::zero(), |acc, (i, elm)| {
+        let elm_u32 =
+            u32::try_from(*elm).map_err(|err| eyre!("usize to u32 conversion failed for element {}: {}", elm, err))?;
+        if elm_u32 >= elm_bound {
+            return Err(eyre!("Element {} exceeds bound {}", elm, elm_bound));
+        }
+        let i_u32 = u32::try_from(i).map_err(|err| eyre!("Index i does not fit in u32: {}", err))?;
+        Ok(acc + BigUint::from(*elm) * elm_bound_big.pow(i_u32))
+    })?;
+    Ok(Felt::from(packed_big.clone()))
 }
 
-// **** get_bucket_offsets needs slice input like original ****
+// get_bucket_offsets needs slice input like original
 pub(crate) fn get_bucket_offsets(bucket_lengths: &[usize]) -> Vec<usize> {
     let mut offsets = Vec::with_capacity(bucket_lengths.len());
     let mut current = 0;
