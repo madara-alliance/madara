@@ -1,61 +1,72 @@
-# ==============================================
-# Karnot Bootstrapper
-# ==============================================
-FROM ubuntu:22.04 AS builder
-
-# Install basic dependencies
-RUN apt-get update && apt-get install -y \
-    curl \
-    build-essential \
-    clang \
-    mold \
-    pkg-config \
-    libssl-dev \
-    git \
-    libffi-dev \
-    nodejs \
-    npm \
-    make \
-    libgmp-dev \
-    g++ \
-    unzip \
-    cmake \
-    wget \
-    software-properties-common \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Rust
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
-ENV PATH="/root/.cargo/bin:${PATH}"
-
-# Set working directory
+# Step 0: setup tooling (rust)
+FROM rust:1.86 AS base-rust
 WORKDIR /app
 
-# Copy the entire project
+# Note that we do not install cargo chef and sccache through docker to avoid
+# having to compile them from source
+ENV SCCACHE_VERSION=v0.10.0
+ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_BIN=/bin/sccache
+ENV SCCACHE_DIR=/sccache
+ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
+
+ENV CHEF_VERSION=v0.1.71
+ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+
+ENV RUSTC_WRAPPER=/bin/sccache
+
+ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
+
+RUN apt-get update -y && apt-get install -y wget clang
+
+RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
+RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
+
+# Step 1: Cache dependencies
+FROM base-rust AS planner
+
 COPY . .
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
-# Setting it to avoid building artifacts again inside docker
-ENV RUST_BUILD_DOCKER=true
+# Step 2: Build crate
+FROM base-rust AS builder-rust
 
-# Build the Rust project with specific binary name
-RUN cargo build --release --workspace --bin bootstrapper
+COPY --from=planner /app/recipe.json recipe.json
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
-# Runtime stage
+COPY Cargo.toml Cargo.lock .
+COPY bootstrapper bootstrapper
+COPY build-artifacts build-artifacts
+
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path bootstrapper/Cargo.toml --release
+
+# Step 5: runner
 FROM debian:bookworm-slim
 
-RUN apt-get update && apt-get install -y curl
+RUN apt-get -y update && \
+    apt-get install -y openssl ca-certificates tini curl &&\
+    apt-get autoremove -y; \
+    apt-get clean; \
+    rm -rf /var/lib/apt/lists/*
 
-# Copy only the compiled binary and artifacts
-COPY --from=builder /app/target/release/bootstrapper /usr/local/bin/
-COPY --from=builder /app/build-artifacts /app/build-artifacts
-COPY --from=builder /app/bootstrapper/src/contracts/ /app/bootstrapper/src/contracts/
-
-
-# Set working directory
 WORKDIR /app
 
-# Environment variables
-ENV RUST_LOG=info
+COPY --from=builder-rust /app/target/release/bootstrapper /bin
+COPY --from=builder-rust /app/build-artifacts /app/build-artifacts
+COPY --from=builder-rust /app/bootstrapper/src/contracts /app/bootstrapper/src/contracts
 
-# Run the binary
-ENTRYPOINT ["/usr/local/bin/bootstrapper"]
+ENV TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
+RUN chmod +x /bin/tini
+
+# Set the entrypoint
+ENTRYPOINT ["tini", "--", "bootstrapper"]
+CMD ["--help"]
