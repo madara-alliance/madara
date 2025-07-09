@@ -8,7 +8,7 @@ use blockifier::{
     state::errors::StateError,
     transaction::{
         account_transaction::{AccountTransaction, ExecutionFlags},
-        errors::{TransactionExecutionError, TransactionPreValidationError},
+        errors::{TransactionExecutionError, TransactionPreValidationError}, objects::HasRelatedFeeType,
     },
 };
 use mc_db::MadaraBackend;
@@ -215,14 +215,6 @@ impl TransactionValidator {
             )
             .into());
         };
-        if tx.version() < TransactionVersion::ONE {
-            // Some v0 txs don't have a nonce. (declare)
-            return Err(RejectedTransactionError::new(
-                RejectedTransactionErrorKind::InvalidTransactionVersion,
-                "Cannot submit v0 transaction",
-            )
-            .into());
-        };
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
         let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);
@@ -238,6 +230,15 @@ impl TransactionValidator {
         };
 
         if !self.config.disable_validation {
+            if account_tx.version() < TransactionVersion::ONE {
+                // Some v0 txs don't have a nonce. (declare)
+                return Err(RejectedTransactionError::new(
+                    RejectedTransactionErrorKind::InvalidTransactionVersion,
+                    "Cannot submit v0 transaction",
+                )
+                .into());
+            };
+
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
             let mut validator = self.backend.new_transaction_validator()?;
