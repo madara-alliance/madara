@@ -23,12 +23,12 @@ use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
     IntoStarknetApiExt, ToBlockifierError,
 };
-use starknet_types_core::felt::Felt;
-use std::{borrow::Cow, fmt, sync::Arc};
 use starknet_api::{
     executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
     transaction::TransactionVersion,
 };
+use starknet_types_core::felt::Felt;
+use std::{borrow::Cow, fmt, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))

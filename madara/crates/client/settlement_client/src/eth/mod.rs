@@ -745,7 +745,8 @@ mod l1_messaging_tests {
                             .expect("Should parse valid payload[0] hex"),
                         Felt::from_hex("0x2c68af0bb140000").expect("Should parse valid payload[1] hex"),
                         Felt::from_hex("0x0").expect("Should parse valid payload[2] hex"),
-                    ].into(),
+                    ]
+                    .into(),
                 },
             })
             .expect("Should successfully compute L1 to L2 message hash");

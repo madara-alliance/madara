@@ -25,8 +25,8 @@ mc-mempool.workspace = true
 mc-submit-tx.workspace = true
 mp-chain-config.workspace = true
 mp-convert.workspace = true
-mp-utils.workspace = true
 mp-transactions.workspace = true
+mp-utils.workspace = true
 
 # Starknet
 blockifier.workspace = true

@@ -739,7 +739,7 @@ impl MempoolInner {
         self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx_mempool));
         // debug_assert!(
         self.tx_received.remove(&tx_mempool.tx_hash());
-            // "Tried to remove a ready transaction which had not already been marked as received"
+        // "Tried to remove a ready transaction which had not already been marked as received"
         // );
 
         Some(tx_mempool)

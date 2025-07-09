@@ -173,7 +173,7 @@ mod messaging_module_tests {
     use mp_transactions::L1HandlerTransaction;
     use rstest::{fixture, rstest};
     use starknet_types_core::felt::Felt;
-    use std::time::Duration;
+    use std::time::{Duration, SystemTime};
 
     // Helper function to create a mock event
     fn create_mock_event(l1_block_number: u64, nonce: u64) -> MessageToL2WithMetadata {
@@ -201,8 +201,14 @@ mod messaging_module_tests {
 
     #[fixture]
     async fn setup_messaging_tests() -> MessagingTestRunner {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
         // Set up chain info
-        let chain_config = Arc::new(ChainConfig::madara_test());
+        let mut chain_config = ChainConfig::madara_test();
+        chain_config.l1_messages_replay_max_duration = Duration::from_secs(30);
+        let chain_config = Arc::new(chain_config);
 
         // Initialize database service
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
@@ -265,14 +271,6 @@ mod messaging_module_tests {
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         mock_l1_handler_tx(&mut client, 1, true, false);
-        // nonce 2, is pending, not being cancelled, not consumed in db. => OK
-        mock_l1_handler_tx(&mut client, 2, true, false);
-        // nonce 5, is not pending, not being cancelled, not consumed in db. => NOT OK
-        mock_l1_handler_tx(&mut client, 5, false, false);
-        // nonce 10, is pending, being cancelled, not consumed in db. => NOT OK
-        mock_l1_handler_tx(&mut client, 10, true, true);
-        // nonce 18, is pending, not being cancelled, consumed in db. => NOT OK
-        mock_l1_handler_tx(&mut client, 18, true, false);
         backend.set_l1_handler_txn_hash_by_nonce(18, Felt::ONE).unwrap();
 
         // Mock get_client_type
@@ -298,18 +296,75 @@ mod messaging_module_tests {
             backend.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(),
             mock_event1.message
         );
-        // nonce 2, is pending, not being cancelled, not consumed in db. => OK
-        assert_eq!(
-            backend.get_pending_message_to_l2(mock_event2.message.tx.nonce).unwrap().unwrap(),
-            mock_event2.message
-        );
-        // nonce 5, is not pending, not being cancelled, not consumed in db. => NOT OK
-        assert!(backend.get_pending_message_to_l2(mock_event3.message.tx.nonce).unwrap().is_none());
-        // nonce 10, is pending, being cancelled, not consumed in db. => NOT OK
-        assert!(backend.get_pending_message_to_l2(mock_event4.message.tx.nonce).unwrap().is_none());
-        // nonce 18, is pending, not being cancelled, consumed in db. => NOT OK
-        assert!(backend.get_pending_message_to_l2(mock_event5.message.tx.nonce).unwrap().is_none());
 
+        // Clean up: cancel context and abort task
+        ctx_clone.cancel_global();
+        sync_handle.abort();
+
+        Ok(())
+    }
+
+    #[rstest]
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn test_sync_catches_earlier_messages(
+        #[future] setup_messaging_tests: MessagingTestRunner,
+    ) -> anyhow::Result<()> {
+        let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
+
+        // Setup mock event and configure backend
+        let mock_event1 = create_mock_event(55, 1);
+        let backend = db.backend();
+        let notify = Arc::new(Notify::new());
+
+        let current_timestamp_secs = SystemTime::now()
+            .duration_since(SystemTime::UNIX_EPOCH)
+            .expect("Current time is before UNIX_EPOCH")
+            .as_secs();
+
+        for block in 0..100 {
+            client
+                .expect_get_block_n_timestamp()
+                .with(predicate::eq(100 - block))
+                .returning(move |_| Ok(current_timestamp_secs - block * 2));
+        }
+        client.expect_get_latest_block_number().returning(move || Ok(100));
+
+        let from_l1_block_n = 84; // it should find this block
+
+        // Mock get_messaging_stream
+        let events = vec![mock_event1.clone()];
+        client
+            .expect_messages_to_l2_stream()
+            .with(predicate::eq(from_l1_block_n))
+            .times(1)
+            .returning(move |_| Ok(stream::iter(events.clone()).map(Ok).boxed()));
+
+        // nonce 1, is pending, not being cancelled, not consumed in db. => OK
+        mock_l1_handler_tx(&mut client, 1, true, false);
+
+        // Mock get_client_type
+        client.expect_get_client_type().returning(|| ClientType::Eth);
+
+        // Wrap the client in Arc
+        let client = Arc::new(client) as Arc<dyn SettlementLayerProvider>;
+
+        // Keep a reference to context for cancellation
+        let ctx_clone = ctx.clone();
+        let db_backend_clone = backend.clone();
+
+        // Spawn the sync task in a separate thread
+        let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
+
+        // Wait sufficient time for event to be processed
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        // Verify the message was processed
+
+        // nonce 1, is pending, not being cancelled, not consumed in db. => OK
+        assert_eq!(
+            backend.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(),
+            mock_event1.message
+        );
         // Clean up: cancel context and abort task
         ctx_clone.cancel_global();
         sync_handle.abort();

@@ -565,7 +565,8 @@ pub mod starknet_client_tests {
                     Felt::from_hex("0x463a5a7d814c754e6c3c10f9de8024b2bdf20eb56ad5168076636a858402d7e")
                         .expect("Failed to parse payload"),
                     Felt::from_hex("0x2b2822").expect("Failed to parse payload"),
-                ].into(),
+                ]
+                .into(),
             },
             /* paid_fee_on_l1 */ 1,
         );
