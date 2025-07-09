@@ -256,11 +256,7 @@ pub fn parse_state_diffs(data: &[BigUint], version: &str) -> DataJson {
     }
 
     // Process class declarations (remains the same for both versions)
-    let declared_classes_len: usize = if i < data.len() {
-        data[i].to_usize().unwrap_or(0)
-    } else {
-        0
-    };
+    let declared_classes_len: usize = if i < data.len() { data[i].to_usize().unwrap_or(0) } else { 0 };
     i += 1;
 
     let mut class_declaration_updates = Vec::new();

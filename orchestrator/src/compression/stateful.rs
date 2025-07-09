@@ -1,3 +1,4 @@
+use crate::error::job::JobError;
 use color_eyre::{eyre, Report, Result};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
@@ -10,7 +11,6 @@ use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::log::error;
-use crate::error::job::JobError;
 
 const SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
 const MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
