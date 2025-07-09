@@ -422,7 +422,7 @@ mod test {
             Felt::from_hex_unchecked("0x371b5f7c5517d84205365a87f02dcef230efa7b4dd91a9e4ba7e04c5b69d69b");
         let computed_class_hash =
             Felt::from_hex_unchecked("0x92d5e5e82d6eaaef47a8ba076f0ea0989d2c5aeb84d74d8ade33fe773cbf67");
-        assert_eq!(class.class_hash().unwrap(), computed_class_hash);
+        assert_eq!(class.class_hash().unwrap(), real_class_hash);
 
         assert_eq!(
             crate::mainnet_legacy_class_hashes::get_real_class_hash(20732, computed_class_hash),
