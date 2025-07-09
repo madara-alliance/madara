@@ -395,9 +395,7 @@ mod tests {
         let sierra_class: SierraClass = serde_json::from_slice(contract).unwrap();
         let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
-        // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json
-        let compiled_contract_class_hash =
-            Felt::from_hex("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27").unwrap();
+        let (compiled_contract_class_hash, _compiled_class) = flattened_class.compile_to_casm().unwrap();
 
         let declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: sender_address.address,
@@ -406,7 +404,7 @@ mod tests {
             nonce: Felt::ZERO,
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
-                l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
+                l1_gas: ResourceBounds { max_amount: 220000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
             },
             tip: 0,
