@@ -273,7 +273,6 @@ impl BlockProductionTask {
         let (block, declared_classes) = get_pending_block_from_db(&self.backend)?;
 
         self.backend.clear_pending_block_in_db().context("Error clearing pending block")?;
-        self.backend.clear_pending_block_in_ram().context("Error clearing pending block")?;
 
         let block_n = self.backend.get_block_n_latest().map(|n| n + 1).unwrap_or(0);
         self.close_and_save_block(block_n, block, declared_classes, vec![]).await?;
@@ -1122,7 +1121,7 @@ pub(crate) mod tests {
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
                     info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
-                        header: mp_block::header::PendingHeader::default(),
+                        header: mp_block::header::PendingHeader { parent_block_number: Some(0), ..Default::default() },
                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
                     }),
                     inner: pending_inner.clone(),
@@ -1369,7 +1368,7 @@ pub(crate) mod tests {
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
                     info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
-                        header: mp_block::header::PendingHeader::default(),
+                        header: mp_block::header::PendingHeader { parent_block_number: Some(0), ..Default::default() },
                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
                     }),
                     inner: pending_inner.clone(),

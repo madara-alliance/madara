@@ -11,6 +11,7 @@ use mp_block::{
     BlockId, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlock, MadaraPendingBlockInfo,
 };
+use mp_rpc::BlockTag;
 use mp_state_update::StateDiff;
 use rocksdb::{Direction, IteratorMode};
 use starknet_api::core::ChainId;
@@ -128,7 +129,7 @@ impl MadaraBackend {
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
             // See pending block quirk
 
-            let Some(latest_block_id) = self.get_block_n_latest() else {
+            let Some(latest_block_id) = self.get_block_n_latest_db()? else {
                 // Second quirk: if there is not even a genesis block in db, make up the gas prices and everything else
                 return Ok(MadaraPendingBlockInfo {
                     header: PendingHeader {
@@ -345,6 +346,26 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_block_n_latest(&self) -> Option<u64> {
         self.watch_blocks.latest_pending_block().header.parent_block_number
+    }
+
+    /// This is necessary since other block_n methods will rely on the pending cache in ram to
+    /// retrieve the latest block number. Since we need the latest block_n to initialize the pending
+    /// cache, we use this to retrieve the block_n when the ram state has not yet been initialized.
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_n_latest_db(&self) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::BlockNToBlockInfo);
+        let iter_mode = IteratorMode::End;
+        let mut iter = self.db.iterator_cf(&col, iter_mode);
+
+        iter.next()
+            .map(|kvs| {
+                kvs.map_err(MadaraStorageError::from).map(|(key, _)| {
+                    let mut bytes = [0u8; 8];
+                    bytes.copy_from_slice(&key);
+                    u64::from_be_bytes(bytes)
+                })
+            })
+            .transpose()
     }
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
