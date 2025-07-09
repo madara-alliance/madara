@@ -27,7 +27,6 @@ mod notify;
 pub use inner::*;
 pub use notify::MempoolConsumerView;
 
-pub mod header;
 pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]

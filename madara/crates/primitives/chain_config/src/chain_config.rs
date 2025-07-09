@@ -165,6 +165,8 @@ pub struct ChainConfig {
     pub l2_gas_target: u64,
     // The minimum l2 gas price for the block production. This is used to ensure that the l2 gas price does not go below this value.
     pub min_l2_gas_price: u128,
+    // The maximum change in l2 gas price per block. This is used to ensure that the l2 gas price does not change too much between blocks.
+    pub l2_gas_price_max_change_denominator: u64,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -270,7 +272,8 @@ impl ChainConfig {
             mempool_declare_tx_limit: 20,
             mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
             l2_gas_target: 2_000_000_000,
-            min_l2_gas_price: 0x5f5e100,
+            min_l2_gas_price: 100000,
+            l2_gas_price_max_change_denominator: 48,
 
             block_production_concurrency: BlockProductionConfig::default(),
         }

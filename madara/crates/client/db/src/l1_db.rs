@@ -1,5 +1,6 @@
 use crate::error::DbError;
 use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError};
+use alloy::primitives::U256;
 use bigdecimal::ToPrimitive;
 use mp_block::header::GasPrices;
 use mp_block::L1GasQuote;
@@ -165,8 +166,14 @@ impl MadaraBackend {
             .expect("Failed to convert STRK L1 data gas price to u128");
 
         let l2_gas_target = self.chain_config().l2_gas_target;
-        let strk_l2_gas_price = calculate_gas_price(previous_strk_l2_gas_price, previous_l2_gas_used, l2_gas_target)
-            .max(self.chain_config().min_l2_gas_price);
+        let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
+        let strk_l2_gas_price = calculate_gas_price(
+            previous_strk_l2_gas_price,
+            previous_l2_gas_used,
+            l2_gas_target,
+            max_change_denominator,
+        )
+        .max(self.chain_config().min_l2_gas_price);
         let eth_l2_gas_price = (&bigdecimal::BigDecimal::from(strk_l2_gas_price) / &strk_per_eth)
             .to_u128()
             .expect("Failed to convert ETH L2 gas price to u64");
@@ -182,13 +189,20 @@ impl MadaraBackend {
     }
 }
 
-fn calculate_gas_price(previous_gas_price: u128, previous_gas_used: u64, target_gas_used: u64) -> u128 {
-    const MAX_CHANGE_DENOMINATOR: u64 = 8;
+fn calculate_gas_price(
+    previous_gas_price: u128,
+    previous_gas_used: u64,
+    target_gas_used: u64,
+    max_change_denominator: u64,
+) -> u128 {
+    assert!(max_change_denominator > 0, "max_change_denominator must be greater than 0");
+    assert!(target_gas_used > 0, "target_gas_used must be greater than 0");
     let delta = previous_gas_used.abs_diff(target_gas_used);
-    // use U256 instead of u128
-    let price_change = ((previous_gas_price).saturating_mul(delta as u128))
-        .saturating_div(target_gas_used as u128)
-        .saturating_div(MAX_CHANGE_DENOMINATOR as u128);
+    let price_change = ((U256::from(previous_gas_price)).saturating_mul(U256::from(delta)))
+        .checked_div(U256::from((target_gas_used as u128).saturating_mul(max_change_denominator as u128)))
+        .expect("Failed to calculate price change")
+        .try_into()
+        .expect("Failed to convert price change to u128");
 
     if previous_gas_used > target_gas_used {
         previous_gas_price.saturating_add(price_change)

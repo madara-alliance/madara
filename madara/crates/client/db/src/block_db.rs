@@ -167,7 +167,7 @@ impl MadaraBackend {
                     sequencer_address: latest_block_info.header.sequencer_address,
                     block_timestamp: latest_block_info.header.block_timestamp,
                     protocol_version: latest_block_info.header.protocol_version,
-                    gas_prices: latest_block_info.header.gas_prices.clone(),
+                    gas_prices: latest_block_info.header.gas_prices,
                     l1_da_mode: latest_block_info.header.l1_da_mode,
                 },
                 tx_hashes: vec![],
