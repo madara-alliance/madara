@@ -2,11 +2,9 @@ use starknet::accounts::{Account, ConnectedAccount};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 use starknet_types_core::felt::Felt;
-use std::time::Duration;
-use tokio::time::sleep;
 
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
-use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
+use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, wait_at_least_block, AccountActions};
 use crate::utils::constants::{
     EIC_ETH_TOKEN_CASM_PATH, EIC_ETH_TOKEN_SIERRA_PATH, NEW_ETH_TOKEN_CASM_PATH, NEW_ETH_TOKEN_SIERRA_PATH,
 };
@@ -26,7 +24,7 @@ use crate::utils::wait_for_transaction;
 /// 5. For this sleeps are are added to ensure that the upgrade happens in a separate block.
 ///    This sleep delay time has to be greater than ideally the block time of the network while running the boostrapper.
 ///    The default block time is 10 seconds, so delays are added for 11 seconds.
-/// 6. After boostrapper run is complete block can be updated not affect any generality.
+/// 6. After boostrapper run is complete block time can be updated thus not affecting any generality.
 ///    This is a temporary fix and will be removed after boostrapper-v2 for starknet: v0.14.0
 ///    where cairo 0 classes cannot be declared
 ///
@@ -121,7 +119,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    sleep(Duration::from_secs(11)).await;
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : add implementation : eth proxy ✅, Txn hash : {:?}",
@@ -145,7 +143,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    sleep(Duration::from_secs(11)).await;
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : upgrade to : eth proxy ✅, Txn hash : {:?}",
@@ -203,7 +201,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    sleep(Duration::from_secs(11)).await;
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : add_new_implementation : eth proxy ✅, Txn hash : {:?}",
@@ -227,7 +225,7 @@ pub async fn upgrade_eth_token_to_cairo_1(
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
     // where cairo 0 classes cannot be declared
     // Refer the description in `upgrade_eth_token_to_cairo_1` for more details
-    sleep(Duration::from_secs(11)).await;
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
 
     log::debug!(
         "upgrade_eth_token_to_cairo_1 : replace_to : eth proxy ✅, Txn hash : {:?}",
