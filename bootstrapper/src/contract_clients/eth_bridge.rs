@@ -64,7 +64,7 @@ impl StarknetLegacyEthBridge {
         legacy_eth_bridge_proxy_address: Felt,
         account: &RpcAccount<'_>,
     ) -> Felt {
-        // This is a workaournd for the SNOS bug where it incorrectly calculates cairo 0 class hash
+        // This is a workaournd for the madara bug where it incorrectly calculates cairo 0 class hash
         // Check function `get_real_class_hash_for_any_block` in `madara/crates/primitives/class/src/class_hash.rs` more details
         // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support where one cant declare cairo 0 classes
         let legacy_eth_bridge_class_hash_correct =
