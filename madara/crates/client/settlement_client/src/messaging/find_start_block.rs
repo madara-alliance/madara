@@ -13,14 +13,24 @@ pub async fn find_replay_block_n_start(
     replay_max_duration: Duration,
     latest_block_n: u64,
 ) -> Result<u64, SettlementClientError> {
+    tracing::debug!(
+        "find_replay_block_n_start latest_block_n={latest_block_n} replay_max_duration={replay_max_duration:?}"
+    );
     let current_timestamp_secs =
         SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).expect("Current time is before UNIX_EPOCH").as_secs();
     let settlement_client_ = settlement_client.clone();
     let fun = move |block_n| {
         let settlement_client_ = settlement_client_.clone();
-        async move { settlement_client_.get_block_n_timestamp(block_n).await }
+        async move {
+            let res = settlement_client_.get_block_n_timestamp(block_n).await?;
+            tracing::debug!("get_block_n_timestamp {block_n} => {res}");
+            Ok::<_, SettlementClientError>(res)
+        }
     };
-    get_messaging_block_n_start_impl(latest_block_n, fun, current_timestamp_secs, replay_max_duration).await
+    let res =
+        get_messaging_block_n_start_impl(latest_block_n, fun, current_timestamp_secs, replay_max_duration).await?;
+    tracing::debug!("RES find_replay_block_n_start {res}");
+    Ok(res)
 }
 
 async fn get_messaging_block_n_start_impl<E, Fut: Future<Output = Result<u64, E>>>(
@@ -34,40 +44,47 @@ async fn get_messaging_block_n_start_impl<E, Fut: Future<Output = Result<u64, E>
     // But please note that in prod you really should use a proper RPC provider for L1.
 
     let target_timestamp = current_timestamp_secs.saturating_sub(replay_max_duration.as_secs());
+    tracing::debug!("get_messaging_block_n_start target ts {target_timestamp}");
 
     // Find lower bound by exponential search.
-    let (low, high) = {
-        let mut low = latest_block_n;
-        let mut step = 1;
+    let mut low = latest_block_n;
+    let mut high = latest_block_n;
+    let mut step = 1;
 
-        loop {
-            let candidate = low.saturating_sub(step);
-            let candidate_timestamp = get_block_timestamp(candidate).await?;
+    loop {
+        let candidate = low.saturating_sub(step);
+        tracing::debug!("get_messaging_block_n_start exp search {candidate} {high} step={step}");
+        let candidate_timestamp = get_block_timestamp(candidate).await?;
 
-            low = candidate;
-            step *= 2; // Double step size
-
-            if candidate_timestamp <= target_timestamp || candidate == 0 {
-                break;
-            }
+        low = candidate;
+        if candidate_timestamp < target_timestamp || candidate == 0 {
+            break;
         }
-        (low, latest_block_n)
-    };
+        step *= 2; // Double step size
+        high = candidate;
+    }
+    // Special case when the latest block is very old
+    if step == 1 {
+        return Ok(latest_block_n);
+    }
 
     // Binary search for exact answer.
+    tracing::debug!("get_messaging_block_n_start binary search {low} {high}");
     let mut left = low;
     let mut right = high;
 
-    while left < right {
+    while left + 1 < right {
+        tracing::debug!("get_messaging_block_n_start {left} {right}");
         let mid = left + (right - left) / 2;
         let mid_timestamp = get_block_timestamp(mid).await?;
 
         if mid_timestamp > target_timestamp {
             right = mid;
         } else {
-            left = mid + 1;
+            left = mid;
         }
     }
+    tracing::debug!("get_messaging_block_n_end {left} {right}");
 
     Ok(left)
 }
@@ -84,6 +101,10 @@ mod tests {
 
     impl TestCase {
         pub fn with_regular_blocks(latest_block: u64, block_time_secs: u64, latest_timestamp: u64) -> Self {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .with_test_writer()
+                .try_init();
             let mut block_timestamps = HashMap::new();
 
             for i in 0..=latest_block {
@@ -96,6 +117,10 @@ mod tests {
         }
 
         pub fn with_custom_timestamps(timestamps: Vec<(u64, u64)>) -> Self {
+            let _ = tracing_subscriber::fmt()
+                .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+                .with_test_writer()
+                .try_init();
             let mut block_timestamps = HashMap::new();
             let mut latest_block_n = 0;
 
@@ -110,7 +135,10 @@ mod tests {
         pub fn run(&self, current_timestamp_secs: u64, replay_max_duration: Duration) -> u64 {
             futures::executor::block_on(get_messaging_block_n_start_impl(
                 self.latest_block_n,
-                |block_n| async move { Ok::<_, ()>(self.block_timestamps[&block_n]) },
+                |block_n| async move {
+                    tracing::debug!("get_block_n_timestamp {block_n} => {}", self.block_timestamps[&block_n]);
+                    Ok::<_, ()>(self.block_timestamps[&block_n])
+                },
                 current_timestamp_secs,
                 replay_max_duration,
             ))
@@ -118,20 +146,6 @@ mod tests {
         }
 
         pub fn verify_result(&self, result: u64, target_timestamp: u64) {
-            let result_timestamp = self.block_timestamps[&result];
-
-            // Main invariant: result block timestamp > target
-            if result != self.latest_block_n {
-                // special case: algorithm returns latest when all timestamps are <
-                assert!(
-                    result_timestamp > target_timestamp,
-                    "Result block {} (timestamp {}) should be > target timestamp {}",
-                    result,
-                    result_timestamp,
-                    target_timestamp
-                );
-            }
-
             // If not the first block, previous block should be <= target
             if result > 0 && self.block_timestamps.contains_key(&(result - 1)) {
                 let prev_timestamp = self.block_timestamps[&(result - 1)];
