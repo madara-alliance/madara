@@ -235,7 +235,7 @@ impl SettlementLayerProvider for EthereumClient {
         Ok((*eth_gas_price, avg_blob_base_fee))
     }
 
-    fn get_messaging_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError> {
+    fn calculate_message_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError> {
         let from = event.tx.calldata[0];
         let from_address_start_index = from.to_bytes_be().as_slice().len().saturating_sub(20);
         // encoding used here is taken from: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#l1_l2_message_structure
@@ -718,7 +718,7 @@ mod l1_messaging_tests {
             setup_test_env().await;
 
         let msg = eth_client
-            .get_messaging_hash(&L1HandlerTransactionWithFee {
+            .calculate_message_hash(&L1HandlerTransactionWithFee {
                 paid_fee_on_l1: u128::try_from(Felt::from_bytes_be_slice(U256::ZERO.to_be_bytes_vec().as_slice()))
                     .unwrap(),
                 tx: L1HandlerTransaction {

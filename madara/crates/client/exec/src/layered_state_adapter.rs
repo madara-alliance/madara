@@ -35,12 +35,12 @@ struct CacheByBlock {
 /// We need this because when a block is produced, saving it do the database is done asynchronously by another task. This means
 /// that we need to keep the state of the previous block around to execute the next one. We can only remove the cached state of the
 /// previous blocks once we know they are imported into the database.
-pub struct LayeredStateAdaptor {
+pub struct LayeredStateAdapter {
     inner: BlockifierStateAdapter,
     cached_states_by_block_n: VecDeque<CacheByBlock>,
     backend: Arc<MadaraBackend>,
 }
-impl LayeredStateAdaptor {
+impl LayeredStateAdapter {
     pub fn new(backend: Arc<MadaraBackend>) -> Result<Self, crate::Error> {
         let on_top_of_block_n = backend.get_latest_block_n()?;
         let block_number = on_top_of_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
@@ -107,7 +107,7 @@ impl LayeredStateAdaptor {
     }
 }
 
-impl StateReader for LayeredStateAdaptor {
+impl StateReader for LayeredStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
         if let Some(el) =
             self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.storage.get(&(contract_address, key)))
@@ -150,7 +150,7 @@ impl StateReader for LayeredStateAdaptor {
 
 #[cfg(test)]
 mod tests {
-    use super::LayeredStateAdaptor;
+    use super::LayeredStateAdapter;
     use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use mc_db::MadaraBackend;
     use mp_block::{
@@ -162,9 +162,9 @@ mod tests {
     use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 
     #[tokio::test]
-    async fn test_layered_state_adaptor() {
+    async fn test_layered_state_adapter() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
-        let mut adaptor = LayeredStateAdaptor::new(backend.clone()).unwrap();
+        let mut adaptor = LayeredStateAdapter::new(backend.clone()).unwrap();
 
         // initial state (no genesis block)
 

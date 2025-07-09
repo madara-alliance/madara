@@ -185,7 +185,7 @@ impl Mempool {
     }
 
     async fn accept_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
-        if tx.tx.as_l1_handler().is_some() {
+        if tx.tx.is_l1_handler() {
             return Err(MempoolError::L1HandlerTransaction); // We don't accept l1handlertransactions.
         }
         let nonce_info = if tx.tx.version() == TransactionVersion::ZERO {

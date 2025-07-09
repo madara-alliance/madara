@@ -40,7 +40,7 @@ pub async fn check_message_to_l2_validity(
     // * it is currently being cancelled => we can find this out by checking pending cancellations.
 
     // Check message hash and cancellation
-    let event_hash = settlement_client.get_messaging_hash(tx)?;
+    let event_hash = settlement_client.calculate_message_hash(tx)?;
     let converted_event_hash = match settlement_client.get_client_type() {
         ClientType::Eth => B256::from_slice(event_hash.as_slice()).to_string(),
         ClientType::Starknet => Felt::from_bytes_be_slice(event_hash.as_slice()).to_hex_string(),
@@ -226,7 +226,7 @@ mod messaging_module_tests {
     }
 
     fn mock_l1_handler_tx(mock: &mut MockSettlementLayerProvider, nonce: u64, is_pending: bool, has_cancel_req: bool) {
-        mock.expect_get_messaging_hash()
+        mock.expect_calculate_message_hash()
             .with(predicate::eq(create_mock_event(0, nonce).message))
             .returning(move |_| Ok(vec![nonce as u8; 32]));
         mock.expect_message_to_l2_has_cancel_request()

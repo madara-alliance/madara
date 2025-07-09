@@ -215,6 +215,14 @@ impl TransactionValidator {
             )
             .into());
         };
+        if tx.version() < TransactionVersion::ONE {
+            // Some v0 txs don't have a nonce. (declare)
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit v0 transaction",
+            )
+            .into());
+        };
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
         let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);

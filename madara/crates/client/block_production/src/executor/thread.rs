@@ -19,7 +19,7 @@ use tokio::{
 };
 
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_exec::{execution::TxInfo, LayeredStateAdaptor, MadaraBackendExecutionExt};
+use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
 use mc_mempool::L1DataProvider;
 use mp_convert::{Felt, ToFelt};
 
@@ -30,14 +30,14 @@ struct ExecutorStateExecuting {
     /// Note: We have a special StateAdaptor here. This is because saving the block to the database can actually lag a
     /// bit behind our execution. As such, any change that we make will need to be cached in our state adaptor so that
     /// we can be sure the state of the last block is always visible to the new one.
-    executor: TransactionExecutor<LayeredStateAdaptor>,
+    executor: TransactionExecutor<LayeredStateAdapter>,
     declared_classes: HashMap<ClassHash, ContractClass>,
     consumed_l1_to_l2_nonces: HashSet<u64>,
 }
 
 struct ExecutorStateNewBlock {
     /// Keep the cached adaptor around to keep the cache around.
-    state_adaptor: LayeredStateAdaptor,
+    state_adaptor: LayeredStateAdapter,
     consumed_l1_to_l2_nonces: HashSet<u64>,
 }
 
@@ -63,7 +63,8 @@ impl ExecutorThreadState {
             ExecutorThreadState::NewBlock(s) => &mut s.consumed_l1_to_l2_nonces,
         }
     }
-    fn layered_state_adaptor(&mut self) -> &mut LayeredStateAdaptor {
+    /// Returns a mutable reference to the state adapter.
+    fn layered_state_adapter_mut(&mut self) -> &mut LayeredStateAdapter {
         match self {
             ExecutorThreadState::Executing(s) => {
                 &mut s.executor.block_state.as_mut().expect("State already taken").state
@@ -205,15 +206,15 @@ impl ExecutorThread {
         let mut cached_state = state.executor.block_state.take().expect("Executor block state already taken");
 
         let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?.state_maps;
-        let mut cached_adaptor = cached_state.state;
-        cached_adaptor.finish_block(
+        let mut cached_adapter = cached_state.state;
+        cached_adapter.finish_block(
             state_diff,
             mem::take(&mut state.declared_classes),
             mem::take(&mut state.consumed_l1_to_l2_nonces),
         )?;
 
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
-            state_adaptor: cached_adaptor,
+            state_adaptor: cached_adapter,
             consumed_l1_to_l2_nonces: HashSet::new(),
         }))
     }
@@ -225,7 +226,7 @@ impl ExecutorThread {
     ) -> anyhow::Result<(ExecutorStateExecuting, HashMap<StorageEntry, Felt>)> {
         let exec_ctx = create_execution_context(&self.l1_data_provider, &self.backend, state.state_adaptor.block_n());
 
-        // Create the TransactionExecution, but reuse the layered_state_adaptor.
+        // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
             self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
 
@@ -262,7 +263,7 @@ impl ExecutorThread {
 
     fn initial_state(&self) -> anyhow::Result<ExecutorThreadState> {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
-            state_adaptor: LayeredStateAdaptor::new(Arc::clone(&self.backend))?,
+            state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
             consumed_l1_to_l2_nonces: HashSet::new(),
         }))
     }
@@ -315,7 +316,7 @@ impl ExecutorThread {
                         let nonce: u64 = nonce.to_felt().try_into().context("Converting nonce from felt to u64")?;
 
                         if state
-                            .layered_state_adaptor()
+                            .layered_state_adapter_mut()
                             .is_l1_to_l2_message_nonce_consumed(nonce)
                             .context("Checking is l1 to l2 message nonce is already consumed")?
                             || !state.consumed_l1_to_l2_nonces().insert(nonce)

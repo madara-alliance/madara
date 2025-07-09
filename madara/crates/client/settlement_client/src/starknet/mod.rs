@@ -231,7 +231,7 @@ impl SettlementLayerProvider for StarknetClient {
         Ok((0, 0))
     }
 
-    fn get_messaging_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError> {
+    fn calculate_message_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError> {
         Ok(poseidon_hash_many(&self.event_to_felts(event).collect::<Vec<_>>()).to_bytes_be().to_vec())
     }
 
@@ -575,7 +575,7 @@ pub mod starknet_client_tests {
         let client = fixture.client;
 
         // Call the function and check the result
-        match client.get_messaging_hash(&event) {
+        match client.calculate_message_hash(&event) {
             Ok(hash) => {
                 // Replace with the expected hash value
                 let event_hash = Felt::from_bytes_be_slice(hash.as_slice()).to_hex_string();

@@ -83,7 +83,7 @@ pub trait SettlementLayerProvider: Send + Sync {
     async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError>;
 
     /// Computes the hash of a messaging event for verification purposes
-    fn get_messaging_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError>;
+    fn calculate_message_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError>;
 
     /// Get cancellation status of an L1 to L2 message
     ///

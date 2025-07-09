@@ -93,7 +93,7 @@ mod tests {
     }
 
     fn mock_l1_handler_tx(mock: &mut MockSettlementLayerProvider, nonce: u64, is_pending: bool, has_cancel_req: bool) {
-        mock.expect_get_messaging_hash()
+        mock.expect_calculate_message_hash()
             .with(predicate::eq(l1_handler_tx(nonce)))
             .returning(move |_| Ok(nonce.to_be_bytes().to_vec()));
         mock.expect_message_to_l2_has_cancel_request()
