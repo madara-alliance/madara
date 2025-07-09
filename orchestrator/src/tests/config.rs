@@ -599,7 +599,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
-        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_PROOF_SETTLEMENT_LAYER"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     });
 
     EnvParams {
