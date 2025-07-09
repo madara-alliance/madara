@@ -221,7 +221,7 @@ pub async fn deploy_eth_token_on_l2(
     account: &RpcAccount<'_>,
     eth_legacy_bridge_address: Felt,
 ) -> Felt {
-    // This is a workaournd for the SNOS bug where it incorrectly calculates cairo 0 class hash
+    // This is a workaround for the Madara bug where it incorrectly calculates cairo 0 class hash
     // Check function `get_real_class_hash_for_any_block` in `madara/crates/primitives/class/src/class_hash.rs` more details
     // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support where one cant declare cairo 0 classes
     let eth_erc20_class_hash_correct =
