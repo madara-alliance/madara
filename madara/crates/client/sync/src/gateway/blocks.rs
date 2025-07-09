@@ -158,7 +158,9 @@ pub fn gateway_pending_block_sync(
                     Ok(block) => block,
                     // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
                     // Deserialization fails in this case.
-                    Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
+                    Err(SequencerError::DeserializeBody { .. }) => {
+                        return Ok(None);
+                    }
                     Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
                         tracing::debug!("Pending block not found.");
                         return Ok(None);
@@ -180,6 +182,9 @@ pub fn gateway_pending_block_sync(
                     .context("Getting latest block hash")?
                     .unwrap_or(Felt::ZERO);
 
+                let parent_block_number =
+                    backend.get_block_n(&BlockId::Hash(parent_hash)).context("Getting latest block number")?;
+
                 if block.block.parent_block_hash != parent_hash {
                     tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
                     return Ok(None);
@@ -193,8 +198,8 @@ pub fn gateway_pending_block_sync(
                     let db_block = db_block.as_pending().context("Asked for a pending block, got a closed one.")?;
 
                     // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
-                    let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
-                        == db_block.header
+                    let header = block.block.header(parent_block_number).context("Parsing gateway pending block")?;
+                    let block_has_not_changed = header == db_block.header
                         && block.block.transaction_receipts.len() == db_block.tx_hashes.len()
                         && block
                             .block
@@ -210,7 +215,7 @@ pub fn gateway_pending_block_sync(
 
                 tracing::debug!("Importing pending block with parent_hash {parent_hash:#x}");
 
-                let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
+                let block = block.into_full_block(parent_block_number).context("Parsing gateway pending block")?;
 
                 let classes = super::classes::get_classes(
                     &client,

@@ -277,7 +277,7 @@ impl MadaraBackend {
 
     /// NB: This functions needs to run on the rayon thread pool
     /// todo: depreacate this function. It is only used in tests.
-    // #[cfg(any(test, feature = "testing"))]
+    #[cfg(any(test, feature = "testing"))]
     pub fn store_block(
         &self,
         block: mp_block::MadaraMaybePendingBlock,

@@ -126,6 +126,8 @@ async fn test_pending_block_update(mut ctx: TestContext) {
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(0)).unwrap().unwrap(), felt!("0x10"));
     assert_eq!(ctx.backend.get_block_hash(&DbBlockId::Number(1)).unwrap().unwrap(), felt!("0x11"));
     assert!(!ctx.backend.has_pending_block().unwrap());
+    assert_eq!(ctx.backend.latest_pending_block().header.parent_block_hash, felt!("0x11"));
+    assert_eq!(ctx.backend.latest_pending_block().header.parent_block_number, Some(1));
 
     // 2. Pending block appears
     // add a pending block, pipeline should pick it up.
