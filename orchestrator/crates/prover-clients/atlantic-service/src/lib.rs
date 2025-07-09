@@ -154,7 +154,6 @@ impl ProverClient for AtlanticProverService {
         task_id: &str,
         proof: &str,
         n_steps: Option<usize>,
-        cairo_verifier: &str,
     ) -> Result<String, ProverClientError> {
         tracing::info!(
             task_id = %task_id,
@@ -163,9 +162,11 @@ impl ProverClient for AtlanticProverService {
             function_type = "proof",
             "Submitting L2 query."
         );
+        let program_hash =
+            self.cairo_verifier_program_hash.as_ref().ok_or(ProverClientError::MissingCairoVerifierProgramHash)?;
         let atlantic_job_response = self
             .atlantic_client
-            .submit_l2_query(proof, cairo_verifier, n_steps, &self.atlantic_network, &self.atlantic_api_key)
+            .submit_l2_query(proof, n_steps, &self.atlantic_network, &self.atlantic_api_key, program_hash)
             .await?;
 
         tracing::info!(

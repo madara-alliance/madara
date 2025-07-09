@@ -33,7 +33,6 @@ pub trait ProverClient: Send + Sync {
         task_id: &str,
         fact: &str,
         n_steps: Option<usize>,
-        cairo_verifier: &str,
     ) -> Result<String, ProverClientError>;
 }
 

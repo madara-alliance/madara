@@ -2,6 +2,7 @@ use crate::cli::RunCmd;
 use crate::OrchestratorError;
 use orchestrator_atlantic_service::AtlanticValidatedArgs;
 use orchestrator_sharp_service::SharpValidatedArgs;
+use orchestrator_utils::layer::Layer;
 
 #[derive(Debug, Clone)]
 pub enum ProverConfig {
@@ -53,6 +54,12 @@ impl TryFrom<RunCmd> for ProverConfig {
             }
             (false, true) => {
                 let atlantic_args = run_cmd.atlantic_args;
+                // NOTE: Just Makeing sure Cairo Verifier Program Hash is there for L3
+                if run_cmd.layer == Layer::L3 && atlantic_args.cairo_verifier_program_hash.is_none() {
+                    return Err(OrchestratorError::RunCommandError(
+                        "Cairo verifier program hash is required for L3".to_string(),
+                    ));
+                }
                 Ok(Self::Atlantic(AtlanticValidatedArgs {
                     atlantic_api_key: atlantic_args.atlantic_api_key.ok_or_else(|| {
                         OrchestratorError::RunCommandError("Atlantic API key is required".to_string())
