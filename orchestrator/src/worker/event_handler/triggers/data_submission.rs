@@ -24,7 +24,6 @@ impl JobTrigger for DataSubmissionJobTrigger {
     /// 2. Validates each job can be processed (not beyond failed blocks)
     /// 3. Creates corresponding data submission jobs with proper metadata
     ///
-    /// Note: All job IDs are assumed to be block numbers.
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "DataSubmissionWorker", "DataSubmissionWorker started.");
 
