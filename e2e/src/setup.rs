@@ -180,7 +180,7 @@ impl Setup {
         timeout(self.config.setup_timeout, async {
             self.validate_dependencies().await?;
             self.check_existing_databases().await?;
-            self.start_infrastructure_services().await?;
+            // self.start_infrastructure_services().await?;
             // self.wait_for_services_ready().await?;
             // self.run_setup_validation().await?;
             Ok::<(), SetupError>(())
@@ -188,25 +188,25 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // // Timeout this for 5 mins
-        // timeout(Duration::from_secs(300), async {
-        //     self.start_l1_setup().await?;
-        //     // self.wait_for_services_ready().await?;
-        //     // self.run_setup_validation().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
-
-        // Timeout this for 30 mins
-        timeout(Duration::from_secs(1800), async {
-            self.start_l2_setup().await?;
+        // Timeout this for 5 mins
+        timeout(Duration::from_secs(300), async {
+            self.start_l1_setup().await?;
             // self.wait_for_services_ready().await?;
             // self.run_setup_validation().await?;
             Ok::<(), SetupError>(())
         })
         .await
-        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+
+        // // Timeout this for 30 mins
+        // timeout(Duration::from_secs(1800), async {
+        //     self.start_l2_setup().await?;
+        //     // self.wait_for_services_ready().await?;
+        //     // self.run_setup_validation().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
 
         println!("✅ Setup completed successfully in {:?}", self.context.elapsed());
         Ok(())
@@ -372,7 +372,11 @@ impl Setup {
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
-            let anvil_config = AnvilConfig { port: anvil_port, ..Default::default() };
+            let anvil_config = AnvilConfig {
+                port: anvil_port,
+                dump_state: Some("./data/anvil.json".to_string()),
+                ..Default::default()
+            };
 
             let service = AnvilService::start(anvil_config).await?;
             println!("✅ Anvil started on {}", service.server().endpoint());

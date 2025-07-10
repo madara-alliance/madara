@@ -40,7 +40,6 @@ pub struct Server {
 
 impl Server {
     /// Start a process with the given command and wait for it to be ready
-    /// This is the generic method that all services can use
     pub async fn start_process(mut command: Command, config: ServerConfig) -> Result<Self, ServerError> {
         // Set up stdio for the process
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
@@ -174,13 +173,3 @@ impl Drop for Server {
         let _ = self.stop();
     }
 }
-
-// // Filesystem
-// pub trait Filesystem {
-//     // dump db
-
-//     // load from db
-//     pub fn load_db_files(paths: &Vec<Path>);
-
-//     pub fn dump_db_files(paths: &Vec<Path>);
-// }

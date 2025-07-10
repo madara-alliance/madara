@@ -21,9 +21,11 @@ impl AnvilService {
         }
 
         // Build the anvil command
-        let command = Self::build_anvil_command(&config);
+        let command = Self::build_command(&config);
 
         // Create server config
+        // The port and host should be taken from the service ideally !
+        // what if the port is not available ?
         let server_config = ServerConfig { port: config.port, host: config.host.clone(), ..Default::default() };
 
         // Start the server using the generic Server::start_process
@@ -33,7 +35,7 @@ impl AnvilService {
     }
 
     /// Build the anvil command with all arguments
-    fn build_anvil_command(config: &AnvilConfig) -> Command {
+    fn build_command(config: &AnvilConfig) -> Command {
         let mut command = Command::new("anvil");
         command.arg("--port").arg(config.port.to_string());
         command.arg("--host").arg(&config.host);
@@ -42,12 +44,12 @@ impl AnvilService {
             command.arg("--fork-url").arg(fork_url);
         }
 
-        if let Some(load_db) = &config.load_db {
-            command.arg("--load-db").arg(load_db);
+        if let Some(load_db) = &config.load_state {
+            command.arg("--load-state").arg(load_db);
         }
 
-        if let Some(dump_db) = &config.dump_db {
-            command.arg("--dump-db").arg(dump_db);
+        if let Some(dump_db) = &config.dump_state {
+            command.arg("--dump-state").arg(dump_db);
         }
 
         command
