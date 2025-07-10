@@ -25,7 +25,6 @@ use uuid::Uuid;
     None,     // earliest_failed_block
     vec![],   // completed_snos_jobs (no completed SNOS jobs)
     vec![],   // expected_proving_jobs (no jobs to create)
-    0         // expected_created_count
 )]
 // Scenario 2: Single completed SNOS job with valid snos_fact
 // Expected result: one proving job created
@@ -35,7 +34,6 @@ use uuid::Uuid;
         (0, Some("valid_snos_fact_block_0".to_string()), Some("path/to/cairo_pie_0".to_string()), Some(1000))
     ], // completed_snos_jobs
     vec![0],  // expected_proving_jobs
-    1         // expected_created_count
 )]
 // Scenario 3: Multiple completed SNOS jobs with valid snos_facts
 // Expected result: proving jobs created for all
@@ -47,7 +45,6 @@ use uuid::Uuid;
         (2, Some("valid_snos_fact_block_2".to_string()), Some("path/to/cairo_pie_2".to_string()), Some(2000))
     ], // completed_snos_jobs
     vec![0, 1, 2], // expected_proving_jobs
-    3              // expected_created_count
 )]
 // Scenario 4: SNOS job without snos_fact (should be skipped)
 // Expected result: no proving jobs created
@@ -57,7 +54,6 @@ use uuid::Uuid;
         (0, None, Some("path/to/cairo_pie_0".to_string()), Some(1000)) // Missing snos_fact
     ], // completed_snos_jobs
     vec![],   // expected_proving_jobs (skipped due to missing fact)
-    0         // expected_created_count
 )]
 // Scenario 5: Mix of valid and invalid SNOS jobs
 // Expected result: proving jobs created only for valid ones
@@ -69,7 +65,6 @@ use uuid::Uuid;
         (2, Some("valid_snos_fact_block_2".to_string()), Some("path/to/cairo_pie_2".to_string()), Some(2000))  // Valid
     ], // completed_snos_jobs
     vec![0, 2], // expected_proving_jobs (skip block 1)
-    2           // expected_created_count
 )]
 // Scenario 6: Completed SNOS jobs but earliest_failed_block constraint blocks some
 // Expected result: proving jobs created only for blocks before failed block
@@ -81,7 +76,6 @@ use uuid::Uuid;
         (2, Some("valid_snos_fact_block_2".to_string()), Some("path/to/cairo_pie_2".to_string()), Some(2000))  // Skipped (>= failed block)
     ], // completed_snos_jobs
     vec![0],  // expected_proving_jobs (only block 0)
-    1         // expected_created_count
 )]
 // Scenario 7: All SNOS jobs are beyond failed block
 // Expected result: no proving jobs created (all skipped)
@@ -93,7 +87,6 @@ use uuid::Uuid;
         (2, Some("valid_snos_fact_block_2".to_string()), Some("path/to/cairo_pie_2".to_string()), Some(2000))
     ], // completed_snos_jobs
     vec![],   // expected_proving_jobs (all skipped)
-    0         // expected_created_count
 )]
 // Scenario 8: Large number of completed SNOS jobs
 // Expected result: proving jobs created for all valid ones
@@ -107,7 +100,6 @@ use uuid::Uuid;
         (4, Some("fact_4".to_string()), Some("pie_4".to_string()), Some(1400))
     ], // completed_snos_jobs
     vec![0, 1, 2, 3, 4], // expected_proving_jobs
-    5                    // expected_created_count
 )]
 // Scenario 9: SNOS jobs without cairo_pie_path (should still create proving job)
 // Expected result: proving job created with None input_path
@@ -117,7 +109,6 @@ use uuid::Uuid;
         (0, Some("valid_snos_fact_block_0".to_string()), None, Some(1000)) // No cairo_pie_path
     ], // completed_snos_jobs
     vec![0],  // expected_proving_jobs (should still be created)
-    1         // expected_created_count
 )]
 // Scenario 10: Complex scenario with failed block constraint and mixed validity
 // Expected result: proving jobs created only for valid blocks before failed block
@@ -131,14 +122,12 @@ use uuid::Uuid;
         (4, Some("fact_4".to_string()), Some("pie_4".to_string()), Some(1400))  // Skipped - beyond failed block
     ], // completed_snos_jobs
     vec![0, 2], // expected_proving_jobs (only valid blocks before failed block)
-    2           // expected_created_count
 )]
 #[tokio::test]
 async fn test_proving_worker(
     #[case] earliest_failed_block: Option<u64>,
     #[case] completed_snos_jobs: Vec<(u64, Option<String>, Option<String>, Option<usize>)>, // (block_num, snos_fact, cairo_pie_path, n_steps)
     #[case] expected_proving_jobs: Vec<u64>,
-    #[case] expected_created_count: usize,
 ) -> Result<(), Box<dyn Error>> {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
@@ -224,7 +213,7 @@ async fn test_proving_worker(
     // Mock queue operations for successful job creations
     queue
         .expect_send_message()
-        .times(expected_created_count)
+        .times(expected_proving_jobs.len())
         .returning(|_, _, _| Ok(()))
         .withf(|queue, _, _| *queue == QueueType::ProvingJobProcessing);
 

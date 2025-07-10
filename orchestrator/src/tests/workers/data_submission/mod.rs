@@ -182,7 +182,7 @@ async fn test_data_submission_worker(
             da_job_item.metadata.specific = JobSpecificMetadata::Da(DaMetadata {
                 block_number: block_num,
                 blob_data_path: Some(format!("{}/{}", block_num, BLOB_DATA_FILE_NAME)),
-                tx_hash: None, // Will be populated during processing
+                tx_hash: None,
             });
             da_job_item.status = JobStatus::Created;
 
