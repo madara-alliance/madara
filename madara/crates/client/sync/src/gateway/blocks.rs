@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Context;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header, PendingFullBlock};
+use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header};
 use mp_gateway::{
     error::{SequencerError, StarknetErrorCode},
     state_update::ProviderStateUpdateWithBlockPendingMaybe,

@@ -47,6 +47,7 @@ rocksdb.workspace = true
 serde = { workspace = true }
 siphasher.workspace = true
 tempfile = { workspace = true, optional = true }
+rstest = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
   "macros",
@@ -75,7 +76,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
-tempfile = "3.10"
+tempfile = { workspace = true }
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
 rstest = { workspace = true }
@@ -83,4 +84,4 @@ rand = { workspace = true }
 
 [features]
 default = []
-testing = ["tempfile", "starknet_api/testing"]
+testing = ["tempfile", "rstest", "starknet_api/testing"]
