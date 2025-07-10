@@ -213,7 +213,7 @@ check:
 	@echo -e "$(DIM)Running code quality checks...$(RESET)"
 	@echo -e "$(INFO)Running prettier check...$(RESET)"
 	@npm install
-	@npx prettier@3.5.3 --check .
+	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
@@ -255,7 +255,7 @@ test-orchestrator:
 		--lcov \
 		--output-path lcov.info \
 		--test-threads=1 \
-		--package "orchestrator-*" \
+		--package "orchestrator*" \
 		--no-fail-fast
 	@echo -e "$(PASS)Unit tests completed!$(RESET)"
 
