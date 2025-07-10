@@ -1219,7 +1219,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/bytezorvin/zaun?branch=v3-tx#be97b530eee8061e8f16c94c4bae4a7cac2d205a"
+source = "git+https://github.com/bytezorvin/zaun?branch=v3-tx#60a10710f6686f0f063d969ca8299ab21f19a488"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1229,17 +1229,17 @@ dependencies = [
  "log",
  "num-traits 0.2.19",
  "serde_json",
- "starknet 0.12.0",
- "starknet-accounts 0.11.0",
- "starknet-core 0.12.0",
+ "starknet 0.14.0",
+ "starknet-accounts 0.13.0",
+ "starknet-core 0.13.0",
  "starknet-ff",
- "starknet-providers 0.12.0",
+ "starknet-providers 0.13.0",
 ]
 
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/bytezorvin/zaun?branch=v3-tx#be97b530eee8061e8f16c94c4bae4a7cac2d205a"
+source = "git+https://github.com/bytezorvin/zaun?branch=v3-tx#60a10710f6686f0f063d969ca8299ab21f19a488"
 dependencies = [
  "async-trait",
  "color-eyre",
@@ -1247,13 +1247,13 @@ dependencies = [
  "log",
  "num-traits 0.2.19",
  "serde_json",
- "starknet 0.12.0",
- "starknet-accounts 0.11.0",
- "starknet-contract 0.11.0",
- "starknet-core 0.12.0",
+ "starknet 0.14.0",
+ "starknet-accounts 0.13.0",
+ "starknet-contract 0.13.0",
+ "starknet-core 0.13.0",
  "starknet-ff",
- "starknet-providers 0.12.0",
- "starknet-signers 0.10.0",
+ "starknet-providers 0.13.0",
+ "starknet-signers 0.11.0",
  "thiserror 1.0.65",
  "url",
 ]
@@ -13848,21 +13848,6 @@ dependencies = [
 
 [[package]]
 name = "starknet"
-version = "0.12.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f0c9ac3809cc7630784e8c8565fa3013af819d83c97aa2720d566016d439011"
-dependencies = [
- "starknet-accounts 0.11.0",
- "starknet-contract 0.11.0",
- "starknet-core 0.12.0",
- "starknet-crypto 0.7.4",
- "starknet-macros",
- "starknet-providers 0.12.0",
- "starknet-signers 0.10.0",
-]
-
-[[package]]
-name = "starknet"
 version = "0.14.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "61e2e53e7705c9a9aad7f118a4bac7386afeb8db272b3eb445a464ca4c3dfee5"
@@ -13934,21 +13919,6 @@ dependencies = [
  "starknet-accounts 0.10.0",
  "starknet-core 0.11.1",
  "starknet-providers 0.11.0",
- "thiserror 1.0.65",
-]
-
-[[package]]
-name = "starknet-contract"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd6ee5762d24c4f06ab7e9406550925df406712e73719bd2de905c879c674a87"
-dependencies = [
- "serde",
- "serde_json",
- "serde_with 3.11.0",
- "starknet-accounts 0.11.0",
- "starknet-core 0.12.0",
- "starknet-providers 0.12.0",
  "thiserror 1.0.65",
 ]
 
