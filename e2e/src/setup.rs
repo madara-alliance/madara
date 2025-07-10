@@ -5,6 +5,7 @@ use tokio::time::{sleep, timeout};
 
 // Import all the services we've created
 use crate::servers::anvil::{AnvilConfig, AnvilError, AnvilService};
+use crate::servers::bootstrapper::{BootstrapperConfig, BootstrapperError, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService};
 use crate::servers::madara::{MadaraCMD, MadaraConfig, MadaraError, MadaraService};
@@ -13,6 +14,7 @@ use crate::servers::orchestrator::{
     Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService,
 };
 use crate::servers::pathfinder::{PathfinderConfig, PathfinderError, PathfinderService};
+use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
@@ -114,60 +116,6 @@ impl Context {
     }
 }
 
-// Placeholder for Sequencer and Bootstrapper services
-// These would be implemented similar to the other services
-pub struct SequencerService {
-    // This would be implemented similar to other services
-    endpoint: String,
-}
-
-impl SequencerService {
-    pub async fn start(_config: SequencerConfig) -> Result<Self, SetupError> {
-        // Placeholder implementation
-        Ok(Self { endpoint: "http://127.0.0.1:9944".to_string() })
-    }
-
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
-
-    pub fn stop(&mut self) -> Result<(), SetupError> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct SequencerConfig {
-    pub port: u16,
-    pub data_directory: String,
-}
-
-pub struct BootstrapperService {
-    // This would be implemented similar to other services
-    endpoint: String,
-}
-
-impl BootstrapperService {
-    pub async fn start(_config: BootstrapperConfig) -> Result<Self, SetupError> {
-        // Placeholder implementation
-        Ok(Self { endpoint: "http://127.0.0.1:9945".to_string() })
-    }
-
-    pub fn endpoint(&self) -> &str {
-        &self.endpoint
-    }
-
-    pub fn stop(&mut self) -> Result<(), SetupError> {
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BootstrapperConfig {
-    pub port: u16,
-    pub layer: Layer,
-}
-
 pub struct Setup {
     pub anvil: Option<AnvilService>,
     pub localstack: Option<LocalstackService>,
@@ -219,6 +167,8 @@ impl Setup {
         config.layer = Layer::L3;
         let mut setup = Self::new(config)?;
         setup.run_complete_setup().await?;
+
+        // TODO: bootstrapp L1
         Ok(setup)
     }
 
@@ -230,8 +180,17 @@ impl Setup {
         timeout(self.config.setup_timeout, async {
             self.validate_dependencies().await?;
             self.check_existing_databases().await?;
-            // self.start_infrastructure_services().await?;
-            self.start_core_services().await?;
+            self.start_infrastructure_services().await?;
+            // self.wait_for_services_ready().await?;
+            // self.run_setup_validation().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+
+        // Timeout this for 5 mins
+        timeout(Duration::from_secs(300), async {
+            self.start_l1_setup().await?;
             // self.wait_for_services_ready().await?;
             // self.run_setup_validation().await?;
             Ok::<(), SetupError>(())
@@ -380,7 +339,6 @@ impl Setup {
         //     Ok::<PathfinderService, SetupError>(service)
         // };
 
-
         // 🚀 These run in PARALLEL!
         let (anvil_service, madara_service) = tokio::try_join!(start_anvil, start_madara)?;
 
@@ -390,7 +348,47 @@ impl Setup {
         // self.pathfinder = Some(pathfinder_service);
 
         sleep(Duration::from_secs(100)).await;
-        
+
+        println!("✅ Core services started");
+        Ok(())
+    }
+
+    /// Start L1 setup (Anvil, Bootstrapper)
+    async fn start_l1_setup(&mut self) -> Result<(), SetupError> {
+        println!("🎯 Starting L1 setup...");
+
+        // 🔑 KEY: Capture values first to avoid borrowing issues
+        let anvil_port = self.config.anvil_port;
+
+        // Create async closures that DON'T borrow self
+        let start_anvil = async move {
+            let anvil_config = AnvilConfig { port: anvil_port, ..Default::default() };
+
+            let service = AnvilService::start(anvil_config).await?;
+            println!("✅ Anvil started on {}", service.server().endpoint());
+            Ok::<AnvilService, SetupError>(service)
+        };
+
+        // 🚀 These run in PARALLEL!
+        let (anvil_service,) = tokio::try_join!(start_anvil)?;
+
+        // Assign the services
+        self.anvil = Some(anvil_service);
+
+        println!("Anvil has started");
+
+        let mut maap = HashMap::new();
+        maap.insert(
+            "ETH_PRIVATE_KEY".to_string(),
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+        );
+        maap.insert("ETH_RPC".to_string(), "http://localhost:8545".to_string());
+
+        let bootstrapper_config = BootstrapperConfig { environment_vars: maap, ..Default::default() };
+        let bootstrapper_l1 = BootstrapperService::run(bootstrapper_config)
+            .await
+            .map_err(|err| SetupError::Bootstrapper(err.to_string()))?;
+
         println!("✅ Core services started");
         Ok(())
     }
