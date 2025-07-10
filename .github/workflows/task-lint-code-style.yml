@@ -21,9 +21,8 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Note: We need to use a specific version of prettier to avoid issues with the version in the package.json
       - name: Run prettier
-        run: npx prettier@3.5.3 --check .
+        run: npm install && npx prettier --check .
 
   # Check markdown files for style consistency
   markdown-lint:
