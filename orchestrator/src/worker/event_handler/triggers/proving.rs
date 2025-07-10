@@ -194,9 +194,6 @@ impl ProcessingContext {
 
     /// Determines if a block number should be skipped due to failed block constraints
     fn should_skip_block(&self, block_number: u64) -> bool {
-        match self.earliest_failed_block {
-            Some(failed_block) => block_number >= failed_block,
-            None => false,
-        }
+        self.earliest_failed_block.is_some_and(|failed_block| block_number >= failed_block)
     }
 }
