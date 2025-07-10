@@ -73,6 +73,11 @@ impl StarknetClient {
     }
 }
 
+const POLL_INTERVAL: Duration = Duration::from_secs(5); // Interval between event polling attempts
+const EVENT_SEARCH_BLOCK_RANGE: u64 = 6000; // Number of blocks to search backwards for l1->l2 events
+const STATE_UPDATE_EVENT_SEARCH_BLOCK_RANGE: u64 = 1000;// Number of blocks to search backwards for state update events 
+
+
 // TODO : Remove github refs after implementing the zaun imports
 // Imp ⚠️ : zaun is not yet updated with latest app chain core contract implementations
 //          For this reason we are adding our own call implementations.
@@ -95,7 +100,7 @@ impl SettlementClientTrait for StarknetClient {
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
         let latest_block = self.get_latest_block_number().await?;
         // If block on l2 is not greater than or equal to 6000 we will consider the last block to 0.
-        let last_block = latest_block.saturating_sub(6000);
+        let last_block = latest_block.saturating_sub(EVENT_SEARCH_BLOCK_RANGE);
         let last_events = self
             .get_events(
                 BlockId::Number(last_block),
@@ -169,7 +174,7 @@ impl SettlementClientTrait for StarknetClient {
                 })?;
 
                 self.get_events(
-                    BlockId::Number(latest_block),
+                    BlockId::Number(latest_block.saturating_sub(STATE_UPDATE_EVENT_SEARCH_BLOCK_RANGE)),
                     BlockId::Number(latest_block),
                     self.l2_core_contract,
                     vec![selector],
@@ -215,7 +220,7 @@ impl SettlementClientTrait for StarknetClient {
                 }
             }
 
-            sleep(Duration::from_millis(100)).await;
+            sleep(Duration::from_millis(POLL_INTERVAL)).await;
         }
         Ok(())
     }
@@ -346,7 +351,7 @@ impl SettlementClientTrait for StarknetClient {
                     .into()
             })?]]),
         };
-        Ok(StarknetEventStream::new(self.provider.clone(), filter, Duration::from_secs(1)))
+        Ok(StarknetEventStream::new(self.provider.clone(), filter, POLL_INTERVAL))
     }
 }
 
