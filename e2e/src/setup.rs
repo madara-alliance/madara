@@ -188,15 +188,25 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // Timeout this for 5 mins
-        timeout(Duration::from_secs(300), async {
-            self.start_l1_setup().await?;
+        // // Timeout this for 5 mins
+        // timeout(Duration::from_secs(300), async {
+        //     self.start_l1_setup().await?;
+        //     // self.wait_for_services_ready().await?;
+        //     // self.run_setup_validation().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+
+        // Timeout this for 30 mins
+        timeout(Duration::from_secs(1800), async {
+            self.start_l2_setup().await?;
             // self.wait_for_services_ready().await?;
             // self.run_setup_validation().await?;
             Ok::<(), SetupError>(())
         })
         .await
-        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
 
         println!("✅ Setup completed successfully in {:?}", self.context.elapsed());
         Ok(())
@@ -386,6 +396,51 @@ impl Setup {
 
         let bootstrapper_config = BootstrapperConfig { environment_vars: maap, ..Default::default() };
         let bootstrapper_l1 = BootstrapperService::run(bootstrapper_config)
+            .await
+            .map_err(|err| SetupError::Bootstrapper(err.to_string()))?;
+
+        println!("✅ Core services started");
+        Ok(())
+    }
+
+    /// Start L1 setup (Anvil, Bootstrapper)
+    async fn start_l2_setup(&mut self) -> Result<(), SetupError> {
+        println!("🎯 Starting L1 setup...");
+
+        // 🔑 KEY: Capture values first to avoid borrowing issues
+        let madara_port = self.config.madara_port;
+
+        // Start Madara
+        let start_madara = async move {
+            let mut madara_config = MadaraConfig::default();
+            madara_config.rpc_port = madara_port;
+
+            let service = MadaraService::start(madara_config).await?;
+            println!("✅ Madara started on {}", service.endpoint());
+            Ok::<MadaraService, SetupError>(service)
+        };
+
+        // 🚀 These run in PARALLEL!
+        let (madara_service,) = tokio::try_join!(start_madara)?;
+
+        // Assign the services
+        self.madara = Some(madara_service);
+
+        println!("Madara has started");
+
+        let mut maap = HashMap::new();
+        maap.insert(
+            "ETH_PRIVATE_KEY".to_string(),
+            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
+        );
+        maap.insert("ETH_RPC".to_string(), "http://localhost:8545".to_string());
+
+        let bootstrapper_config = BootstrapperConfig {
+            environment_vars: maap,
+            mode: crate::servers::bootstrapper::BootstrapperMode::SetupL2,
+            ..Default::default()
+        };
+        let bootstrapper_l2 = BootstrapperService::run(bootstrapper_config)
             .await
             .map_err(|err| SetupError::Bootstrapper(err.to_string()))?;
 

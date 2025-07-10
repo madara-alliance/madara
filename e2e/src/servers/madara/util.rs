@@ -101,6 +101,7 @@ impl MadaraCMDBuilder {
         self.add_arg("--rpc-cors", &config.rpc_cors);
         self.add_arg("--gateway-port", &config.gateway_port.to_string());
         self.add_flag("--no-l1-sync");
+        self.add_flag("--no-charge-fee");
         self.add_arg("--strk-gas-price", &config.strk_gas_price.to_string());
         self.add_arg("--strk-blob-gas-price", &config.strk_blob_gas_price.to_string());
         self.add_arg("--gas-price", &config.gas_price.to_string());

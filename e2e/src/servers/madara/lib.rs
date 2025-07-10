@@ -30,6 +30,8 @@ impl MadaraService {
         // Build the command
         let command = Self::build_command(&config, &cmd)?;
 
+        println!("Starting Madara service with command: {:?}", command);
+
         // Create server config
         let server_config = ServerConfig {
             port: config.rpc_port,
