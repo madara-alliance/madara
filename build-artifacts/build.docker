@@ -81,7 +81,7 @@ WORKDIR build/Release/src
 # =========================================================================== #
 
 FROM builder as cairo-lang
-ENV CAIRO_LANG_REV="8e11b8cc65ae1d0959328b1b4a40b92df8b58595"
+ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
 WORKDIR /contracts
@@ -93,7 +93,7 @@ RUN git checkout $CAIRO_LANG_REV
 
 RUN python3 -m venv venv
 ENV PATH="$CAIRO_LANG_DIR/venv/bin:$PATH"
-RUN pip install "cairo-lang==0.13.3" "sympy<1.13.0"
+RUN pip install "cairo-lang==0.13.2" "sympy<1.13.0"
 
 RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.json --cairo_path src
 # =========================================================================== #
