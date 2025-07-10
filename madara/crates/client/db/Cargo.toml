@@ -44,10 +44,10 @@ futures = { workspace = true }
 librocksdb-sys = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
+rstest = { workspace = true, optional = true }
 serde = { workspace = true }
 siphasher.workspace = true
 tempfile = { workspace = true, optional = true }
-rstest = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
   "macros",
