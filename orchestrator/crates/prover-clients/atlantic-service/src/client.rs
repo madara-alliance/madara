@@ -149,12 +149,12 @@ impl AtlanticClient {
         atlantic_api_key: &str,
         program_hash: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        // TODO: we are having two function to atlantic query might need to merge them with en
+        // TODO: we are having two function to atlantic query might need to merge them with appropriate argument
         let response = self.client
             .request()
             .method(Method::POST)
             .path("atlantic-query")
-            .query_param("apiKey", atlantic_api_key.as_ref())// payload is not needed for L2
+            .query_param("apiKey", atlantic_api_key.as_ref())
             .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
             .form_text("programHash", program_hash)
             .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
