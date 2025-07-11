@@ -2,7 +2,6 @@ use crate::compression::stateless::bitops::{BitLength, BitsArray};
 use crate::compression::stateless::constants::N_UNIQUE_BUCKETS;
 use crate::compression::stateless::utils::felt_from_bits_le;
 use indexmap::IndexMap;
-use itertools::Itertools;
 use starknet_core::types::Felt;
 use std::hash::Hash;
 

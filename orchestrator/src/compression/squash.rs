@@ -1,6 +1,5 @@
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use aws_credential_types::provider;
 use color_eyre::eyre::eyre;
 use futures::stream;
 use futures::stream::StreamExt;
@@ -10,7 +9,6 @@ use starknet_core::types::{
     BlockId, ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, Felt, NonceUpdate, ReplacedClassItem,
     StarknetError, StateDiff, StateUpdate, StorageEntry,
 };
-use starknet_os::hints::execution::contract_address;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::log::error;
@@ -86,7 +84,7 @@ fn get_state_diff_map(state_updates: &Vec<StateUpdate>) -> StateDiffMap {
 }
 
 async fn get_state_diff_from_state_diff_map(
-    mut state_diff_map: StateDiffMap,
+    state_diff_map: StateDiffMap,
     pre_range_block: Option<u64>,
     provider: &Arc<JsonRpcClient<HttpTransport>>,
 ) -> Result<StateDiff, JobError> {
@@ -176,7 +174,7 @@ pub async fn squash_state_updates(
     let old_root = state_updates.first().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?.old_root;
 
     // Collecting a simplified squashed state diff map
-    let mut state_diff_map = get_state_diff_map(&state_updates);
+    let state_diff_map = get_state_diff_map(&state_updates);
     let state_diff = get_state_diff_from_state_diff_map(state_diff_map, pre_range_block, provider).await?;
 
     // Create the merged StateUpdate

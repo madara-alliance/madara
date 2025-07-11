@@ -1,5 +1,4 @@
-use crate::error::job::JobError;
-use color_eyre::{eyre, Report, Result};
+use color_eyre::{eyre, Result};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use starknet::core::types::{

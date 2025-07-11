@@ -4,11 +4,11 @@ use crate::types::constant::BLOB_LEN;
 use crate::worker::event_handler::jobs::da::DAJobHandler;
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateDiff, StateUpdate};
 use std::collections::{HashMap, HashSet};
 
 /// Prepares and sorts the state diff for deterministic output
-fn prepare_state_diff(mut state_diff: starknet_core::types::StateDiff) -> starknet_core::types::StateDiff {
+fn prepare_state_diff(mut state_diff: StateDiff) -> StateDiff {
     // Sort storage diffs by address for deterministic output
     state_diff.storage_diffs.sort_by_key(|diff| diff.address);
     // For each storage diff, sort storage entries by key for deterministic output
@@ -169,7 +169,7 @@ pub async fn state_update_to_blob_data(
     version: StarknetVersion,
 ) -> Result<Vec<Felt>, JobError> {
     // Create a state_diff copy
-    let mut state_diff = prepare_state_diff(state_update.state_diff);
+    let state_diff = prepare_state_diff(state_update.state_diff);
 
     // Create a vector to hold the blob data
     // Initialize with placeholder for total contract count (will update later)

@@ -1,9 +1,9 @@
 use crate::compression::blob::da_word;
-use crate::core::config::{Config, StarknetVersion};
+use crate::core::config::Config;
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
-use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR, TWO};
+use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
@@ -13,8 +13,7 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
-use lazy_static::lazy_static;
-use num_bigint::{BigUint, ToBigUint};
+use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use starknet::providers::Provider;
 use starknet_core::types::{
@@ -22,7 +21,6 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub struct DAJobHandler;

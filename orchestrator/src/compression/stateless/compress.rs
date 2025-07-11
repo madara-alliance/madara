@@ -1,4 +1,4 @@
-use crate::compression::stateless::buckets::{get_bucket_offsets, BucketElement, BucketElementTrait, Buckets};
+use crate::compression::stateless::buckets::{get_bucket_offsets, BucketElement, Buckets};
 use crate::compression::stateless::constants::{
     COMPRESSION_VERSION, HEADER_ELM_BOUND, N_UNIQUE_BUCKETS, TOTAL_N_BUCKETS,
 };
@@ -6,7 +6,6 @@ use crate::compression::stateless::utils::{pack_usize_in_felt, pack_usize_in_fel
 use color_eyre::eyre::eyre;
 use starknet_core::types::Felt;
 use std::cmp::max;
-use std::hash::Hash;
 
 // CompressionSet
 #[derive(Clone, Debug)]
