@@ -1,3 +1,4 @@
+use crate::error::job::JobError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::types::JobStatus;
@@ -37,8 +38,11 @@ impl JobItemUpdates {
         self.metadata = Some(metadata);
         self
     }
-    // creating another type JobItemUpdatesBuilder would be an overkill
-    pub fn build(self) -> JobItemUpdates {
-        self
+    pub fn build(self) -> Result<JobItemUpdates, JobError> {
+        if self.status.is_none() && self.external_id.is_none() && self.metadata.is_none() {
+            Err(JobError::Other("No field to be updated, likely a false call".to_string().into()))
+        } else {
+            Ok(self)
+        }
     }
 }
