@@ -150,7 +150,8 @@ impl AtlanticClient {
         program_hash: &str,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
         // TODO: we are having two function to atlantic query might need to merge them with appropriate argument
-        let response = self.client
+        let response = self
+            .client
             .request()
             .method(Method::POST)
             .path("atlantic-query")
