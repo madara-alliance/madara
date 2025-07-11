@@ -136,17 +136,17 @@ impl ValueMapping {
 }
 
 fn process_storage_diffs(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<ContractStorageDiffItem>> {
-    let mut new_storage_diffs = Vec::new();
-    for diff in state_update.state_diff.storage_diffs {
+    let mut new_storage_diffs: Vec<ContractStorageDiffItem> = Vec::new();
+    for diff in &state_update.state_diff.storage_diffs {
         if ValueMapping::skip(diff.address) {
-            new_storage_diffs.push(diff);
+            new_storage_diffs.push(diff.clone());
             continue;
         }
 
         let mapped_address = mapping.get_value(&diff.address)?;
         let mut mapped_entries = Vec::new();
 
-        for entry in diff.storage_entries {
+        for entry in &diff.storage_entries {
             mapped_entries.push(StorageEntry { key: mapping.get_value(&entry.key)?, value: entry.value });
         }
 
@@ -157,7 +157,7 @@ fn process_storage_diffs(state_update: &StateUpdate, mapping: &ValueMapping) -> 
 
 fn process_deployed_contracts(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<DeployedContractItem>> {
     let mut new_deployed_contracts = Vec::new();
-    for item in state_update.state_diff.deployed_contracts {
+    for item in &state_update.state_diff.deployed_contracts {
         new_deployed_contracts
             .push(DeployedContractItem { address: mapping.get_value(&item.address)?, class_hash: item.class_hash });
     }
@@ -166,7 +166,7 @@ fn process_deployed_contracts(state_update: &StateUpdate, mapping: &ValueMapping
 
 fn process_nonces(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<NonceUpdate>> {
     let mut new_nonces = Vec::new();
-    for item in state_update.state_diff.nonces {
+    for item in &state_update.state_diff.nonces {
         new_nonces
             .push(NonceUpdate { contract_address: mapping.get_value(&item.contract_address)?, nonce: item.nonce });
     }
@@ -175,7 +175,7 @@ fn process_nonces(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<
 
 fn process_replaced_classes(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<ReplacedClassItem>> {
     let mut new_replaced_classes = Vec::new();
-    for item in state_update.state_diff.replaced_classes {
+    for item in &state_update.state_diff.replaced_classes {
         new_replaced_classes.push(ReplacedClassItem {
             contract_address: mapping.get_value(&item.contract_address)?,
             class_hash: item.class_hash,

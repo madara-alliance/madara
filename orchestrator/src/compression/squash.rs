@@ -40,38 +40,38 @@ fn get_state_diff_map(state_updates: &Vec<StateUpdate>) -> StateDiffMap {
     // Process each update in order
     for update in state_updates {
         // Process storage diffs
-        for contract_diff in update.state_diff.storage_diffs {
+        for contract_diff in &update.state_diff.storage_diffs {
             let contract_addr = contract_diff.address;
             let contract_storage = storage_diffs.entry(contract_addr).or_default();
 
-            for entry in contract_diff.storage_entries {
+            for entry in &contract_diff.storage_entries {
                 contract_storage.insert(entry.key, entry.value);
             }
         }
 
         // Process deployed contracts
-        for item in update.state_diff.deployed_contracts {
+        for item in &update.state_diff.deployed_contracts {
             deployed_contracts.insert(item.address, item.class_hash);
         }
 
         // Process declared classes
-        for item in update.state_diff.declared_classes {
+        for item in &update.state_diff.declared_classes {
             declared_classes.insert(item.class_hash, item.compiled_class_hash);
         }
 
         // Process nonces
-        for item in update.state_diff.nonces {
+        for item in &update.state_diff.nonces {
             nonces.insert(item.contract_address, item.nonce);
         }
 
         // Process replaced classes
-        for item in update.state_diff.replaced_classes {
+        for item in &update.state_diff.replaced_classes {
             replaced_classes.insert(item.contract_address, item.class_hash);
         }
 
         // Process deprecated classes
-        for class_hash in update.state_diff.deprecated_declared_classes {
-            deprecated_declared_classes.insert(class_hash);
+        for class_hash in &update.state_diff.deprecated_declared_classes {
+            deprecated_declared_classes.insert(*class_hash);
         }
     }
 
