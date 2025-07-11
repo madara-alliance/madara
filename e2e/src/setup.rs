@@ -8,9 +8,9 @@ use crate::servers::anvil::{AnvilConfigBuilder, AnvilConfig, AnvilError, AnvilSe
 use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
-use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService};
-use crate::servers::madara::{MadaraCMDBuilder, MadaraConfig, MadaraError, MadaraService};
-use crate::servers::mongo::{MongoConfig, MongoError, MongoService};
+use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService, LocalstackConfigBuilder};
+use crate::servers::madara::{MadaraConfig, MadaraError, MadaraService, MadaraConfigBuilder};
+use crate::servers::mongo::{MongoConfig, MongoConfigBuilder, MongoError, MongoService};
 use crate::constants::{DEFAULT_DATA_DIR};
 use crate::servers::orchestrator::{
     Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService,
@@ -304,23 +304,10 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-
-
-
-
         Ok(())
 
 
     }
-
-
-
-
-
-
-
-
-
 
     /// Start infrastructure services (Anvil, Localstack, MongoDB)
     async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
@@ -333,11 +320,9 @@ impl Setup {
 
         // Create async closures that DON'T borrow self
         let start_localstack = async move {
-            let localstack_config = LocalstackConfig {
-                port: localstack_port,
-                aws_prefix: Some(format!("{:?}", layer).to_lowercase()),
-                ..Default::default()
-            };
+            let localstack_config = LocalstackConfigBuilder::new()
+                .port(localstack_port)
+                .build();
 
             let service = LocalstackService::start(localstack_config).await?;
             println!("✅ Localstack started on {}", service.server().endpoint());
@@ -345,7 +330,10 @@ impl Setup {
         };
 
         let start_mongo = async move {
-            let mongo_config = MongoConfig { port: mongo_port, ..Default::default() };
+
+            let mongo_config = MongoConfigBuilder::new()
+                .port(mongo_port)
+                .build();
 
             let service = MongoService::start(mongo_config).await?;
             println!("✅ MongoDB started on port {}", service.server().port());
@@ -377,7 +365,9 @@ impl Setup {
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
-            let anvil_config = AnvilConfig { port: anvil_port, ..Default::default() };
+            let anvil_config = AnvilConfigBuilder::new()
+                .port(anvil_port)
+                .build();
 
             let service = AnvilService::start(anvil_config).await?;
             println!("✅ Anvil started on {}", service.server().endpoint());
@@ -386,8 +376,9 @@ impl Setup {
 
         // Start Madara
         let start_madara = async move {
-            let mut madara_config = MadaraConfig::default();
-            madara_config.rpc_port = madara_port;
+            let madara_config = MadaraConfigBuilder::new()
+                .with_rpc_port(madara_port)
+                .build();
 
             let service = MadaraService::start(madara_config).await?;
             println!("✅ Madara started on {}", service.endpoint());
@@ -479,7 +470,7 @@ impl Setup {
 
         // TODO: Should be validating that dependencies are met (Anvil is running)
         // TODO: Should be taking l1 endpoint from anvil!
-        let madara_config = MadaraCMDBuilder::new().with_rpc_port(madara_port).build();
+        let madara_config = MadaraConfigBuilder::new().with_rpc_port(madara_port).build();
 
         // Start Madara
         let start_madara = async move {
