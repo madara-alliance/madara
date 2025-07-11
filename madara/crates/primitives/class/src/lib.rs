@@ -424,6 +424,7 @@ mod test {
             Felt::from_hex_unchecked("0x92d5e5e82d6eaaef47a8ba076f0ea0989d2c5aeb84d74d8ade33fe773cbf67");
         assert_eq!(class.class_hash().unwrap(), real_class_hash);
 
+        //  TODO to re-check this after 0.14.0 compatibility
         assert_eq!(
             crate::mainnet_legacy_class_hashes::get_real_class_hash(20732, computed_class_hash),
             real_class_hash
