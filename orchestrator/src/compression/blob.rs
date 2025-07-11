@@ -222,6 +222,96 @@ pub async fn state_update_to_blob_data(
     Ok(blob_data)
 }
 
+/// Old format (pre-0.13.3)
+///
+/// Binary encoding layout (252 bits total):
+///
+/// Bit positions:
+/// 251                                                                                   0
+/// |                                                                                     |
+/// v                                                                                     v
+/// ┌───────────────────────────────────────────────────────┬─────┬─────────┬─────────────┐
+/// │                 Zero Padding                          │cls  │  nonce  │ num_changes │
+/// │                  (123 bits)                           │flg  │(64 bits)│ (64 bits)   │
+/// │                  [251:129]                            │[128]│[127:64] │  [63:0]     │
+/// └───────────────────────────────────────────────────────┴─────┴─────────┴─────────────┘
+///
+/// Field breakdown:
+/// - Zero Padding (123 bits)  : [251:129] - Padded with zeros
+/// - class_flag (1 bit)       : [128]     - Class type flag
+/// - nonce (64 bits)          : [127:64]  - Nonce value
+/// - num_changes (64 bits)    : [63:0]    - Number of changes
+///
+/// Total used bits: 123 + 1 + 64 + 64 = 252 bits (exactly)
+///
+fn encode_da_word_pre_v0_13_3(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> BigUint {
+    let mut da_word = BigUint::zero();
+
+    // Class flag
+    da_word |= if class_flag { BigUint::one() << 128 } else { BigUint::zero() };
+
+    // Nonce
+    if let Some(new_nonce) = nonce_change {
+        let new_nonce = new_nonce.to_u64().expect("nonce too big");
+        da_word |= BigUint::from(new_nonce) << 64;
+    }
+
+    // Number of changes
+    da_word |= BigUint::from(num_changes);
+
+    da_word
+}
+
+/// v0.13.3+ format:
+///
+/// Binary encoding layout (252 bits total):
+///
+/// Bit positions:
+/// 251                                                                     0
+/// |                                                                       |
+/// v                                                                       v
+/// ┌───────────────┬─────────────────────────────────────┬───┬───┬─────────┐
+/// │   new_nonce   │           n_updates                 │n_u│cls│  Zeros  │
+/// │   (64 bits)   │        (8 or 64 bits)               │len│flg│ Padding │
+/// │   [251:188]   │     [187:124] or [187:180]          │[1]│[0]│         │
+/// └───────────────┴─────────────────────────────────────┴───┴───┴─────────┘
+///
+/// Field breakdown:
+/// - new_nonce (64 bits)     : [251:188] - Nonce value
+/// - n_updates (variable)    : [187:124] (64-bit) or [187:180] (8-bit, then padded by 0s) - Number of updates
+/// - n_updates_len (1 bit)   : [1] - Length indicator (1=8-bit, 0=64-bit n_updates)
+/// - class_flag (1 bit)      : [0] - Class changed or not
+///
+/// Total used bits: 64 + (8|64) + 1 + 1 = 74 or 130 bits
+/// Remaining bits: 252 - (74|130) = 178 or 122 bits (reserved/padding)
+///
+fn encode_da_word_v0_13_3_plus(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> BigUint {
+    let mut da_word = BigUint::zero();
+
+    // Add new_nonce (64 bits)
+    if let Some(new_nonce) = nonce_change {
+        let new_nonce = new_nonce.to_u64().expect("nonce too big");
+        da_word |= BigUint::from(new_nonce) << 188;
+    }
+
+    // Determine if we need 8 or 64 bits for num_changes
+    let needs_large_updates = num_changes >= 256;
+
+    if needs_large_updates {
+        // Use 64 bits for updates
+        da_word |= BigUint::from(num_changes) << 124;
+    } else {
+        // Use 8 bits for updates
+        da_word |= BigUint::from(num_changes) << 180;
+        da_word |= BigUint::one() << 123;
+    }
+
+    // Class flag
+    da_word |= if class_flag { BigUint::one() << 122 } else { BigUint::zero() };
+
+    da_word
+}
+
 /// Creates a DA word with information about a contract
 ///
 /// # Arguments
@@ -240,91 +330,12 @@ pub fn da_word(
 ) -> Result<Felt, JobError> {
     // Parse version to determine format
     let is_gte_v0_13_3 = version >= StarknetVersion::V0_13_3;
-    // let mut da_word = Felt::ZERO;
 
-    let mut da_word = BigUint::zero();
-
-    if is_gte_v0_13_3 {
-        // v0.13.3+ format:
-        //
-        // Binary encoding layout (252 bits total):
-        //
-        // Bit positions:
-        // 251                                                                     0
-        // |                                                                       |
-        // v                                                                       v
-        // ┌───────────────┬─────────────────────────────────────┬───┬───┬─────────┐
-        // │   new_nonce   │           n_updates                 │n_u│cls│  Zeros  │
-        // │   (64 bits)   │        (8 or 64 bits)               │len│flg│ Padding │
-        // │   [251:188]   │     [187:124] or [187:180]          │[1]│[0]│         │
-        // └───────────────┴─────────────────────────────────────┴───┴───┴─────────┘
-        //
-        // Field breakdown:
-        // - new_nonce (64 bits)     : [251:188] - Nonce value
-        // - n_updates (variable)    : [187:124] (64-bit) or [187:180] (8-bit, then padded by 0s) - Number of updates
-        // - n_updates_len (1 bit)   : [1] - Length indicator (1=8-bit, 0=64-bit n_updates)
-        // - class_flag (1 bit)      : [0] - Class changed or not
-        //
-        // Total used bits: 64 + (8|64) + 1 + 1 = 74 or 130 bits
-        // Remaining bits: 252 - (74|130) = 178 or 122 bits (reserved/padding)
-        //
-
-        // Add new_nonce (64 bits)
-        if let Some(new_nonce) = nonce_change {
-            let new_nonce = new_nonce.to_u64().expect("nonce too big");
-            da_word |= BigUint::from(new_nonce) << 188;
-        }
-
-        // Determine if we need 8 or 64 bits for num_changes
-        let needs_large_updates = num_changes >= 256;
-
-        if needs_large_updates {
-            // Use 64 bits for updates
-            da_word |= BigUint::from(num_changes) << 124;
-        } else {
-            // Use 8 bits for updates
-            da_word |= BigUint::from(num_changes) << 180;
-            da_word |= BigUint::one() << 123;
-        }
-
-        // Class flag
-        da_word |= if class_flag { BigUint::one() << 122 } else { BigUint::zero() };
+    let da_word: BigUint = if is_gte_v0_13_3 {
+        encode_da_word_v0_13_3_plus(class_flag, nonce_change, num_changes)
     } else {
-        // Old format (pre-0.13.3)
-        //
-        // Binary encoding layout (252 bits total):
-        //
-        // Bit positions:
-        // 251                                                                                   0
-        // |                                                                                     |
-        // v                                                                                     v
-        // ┌───────────────────────────────────────────────────────┬─────┬─────────┬─────────────┐
-        // │                 Zero Padding                          │cls  │  nonce  │ num_changes │
-        // │                  (123 bits)                           │flg  │(64 bits)│ (64 bits)   │
-        // │                  [251:129]                            │[128]│[127:64] │  [63:0]     │
-        // └───────────────────────────────────────────────────────┴─────┴─────────┴─────────────┘
-        //
-        // Field breakdown:
-        // - Zero Padding (123 bits)  : [251:129] - Padded with zeros
-        // - class_flag (1 bit)       : [128]     - Class type flag
-        // - nonce (64 bits)          : [127:64]  - Nonce value
-        // - num_changes (64 bits)    : [63:0]    - Number of changes
-        //
-        // Total used bits: 123 + 1 + 64 + 64 = 252 bits (exactly)
-        //
-
-        // Class flag
-        da_word |= if class_flag { BigUint::one() << 128 } else { BigUint::zero() };
-
-        // Nonce
-        if let Some(new_nonce) = nonce_change {
-            let new_nonce = new_nonce.to_u64().expect("nonce too big");
-            da_word |= BigUint::from(new_nonce) << 64;
-        }
-
-        // Number of changes
-        da_word |= BigUint::from(num_changes);
-    }
+        encode_da_word_pre_v0_13_3(class_flag, nonce_change, num_changes)
+    };
 
     Ok(Felt::from(da_word))
 }
