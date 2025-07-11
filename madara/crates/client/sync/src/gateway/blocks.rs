@@ -229,8 +229,13 @@ pub fn gateway_pending_block_sync(
                     .run_in_rayon_pool(move |importer| {
                         let classes =
                             importer.verify_compile_classes(None, classes, &block.state_diff.all_declared_classes())?;
-                        importer.save_pending_classes(classes)?;
-                        importer.save_pending_block(block)?;
+
+                        let class_updates = importer.save_pending_classes(classes)?;
+                        let contract_updates = importer.save_pending_block(block.clone())?;
+                        let transport = mc_db::watch::PendingTransport::new(block, class_updates, contract_updates);
+
+                        backend.pending_update(std::sync::Arc::new(transport));
+
                         anyhow::Ok(())
                     })
                     .await?;

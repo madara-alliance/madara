@@ -317,7 +317,7 @@ impl MadaraBackend {
     fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
             RawDbBlockId::Pending => {
-                Ok(Some(MadaraMaybePendingBlockInfo::Pending(Arc::unwrap_or_clone(self.latest_pending_block()))))
+                Ok(Some(MadaraMaybePendingBlockInfo::Pending(Arc::unwrap_or_clone(self.pending_latest()).block.info())))
             }
             RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
@@ -345,7 +345,7 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_block_n_latest(&self) -> Option<u64> {
-        self.watch_blocks.latest_pending_block().header.parent_block_number
+        self.watch_blocks.pending_latest().block.header.parent_block_number
     }
 
     /// This is necessary since other block_n methods will rely on the pending cache in ram to
@@ -370,14 +370,14 @@ impl MadaraBackend {
 
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn get_block_n_next(&self) -> u64 {
-        self.watch_blocks.latest_pending_block().header.parent_block_number.map(|n| n.saturating_add(1)).unwrap_or(0)
+        self.watch_blocks.pending_latest().block.header.parent_block_number.map(|n| n.saturating_add(1)).unwrap_or(0)
     }
 
     /// This method is not atomic in respects to the rest of the block production and should only be
     /// used in cases where you are sure this will not conflict with updates to the pending block!!!
     #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
     pub fn set_block_n_unsafe(&self, n: Option<u64>) {
-        self.watch_blocks.clear_pending(
+        self.watch_blocks.pending_clear(
             n.map(|block_number| MadaraBlockInfo {
                 header: mp_block::Header { block_number, ..Default::default() },
                 ..Default::default()
@@ -444,9 +444,12 @@ impl MadaraBackend {
                 Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
             None => {
-                let info = Arc::unwrap_or_clone(self.latest_pending_block());
-                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
-                Ok(Some((info.into(), TxIndex(tx_index as _))))
+                let block = Arc::unwrap_or_clone(self.pending_latest()).block;
+                let Some(tx_index) = block.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash)
+                else {
+                    return Ok(None);
+                };
+                Ok(Some((block.info().into(), TxIndex(tx_index as _))))
             }
         }
     }
@@ -462,10 +465,13 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
-                let info = Arc::unwrap_or_clone(self.latest_pending_block());
-                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let block = Arc::unwrap_or_clone(self.pending_latest()).block;
+                let Some(tx_index) = block.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash)
+                else {
+                    return Ok(None);
+                };
                 let inner = self.get_pending_block_inner()?;
-                Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
+                Ok(Some((MadaraMaybePendingBlock { info: block.info().into(), inner }, TxIndex(tx_index as _))))
             }
         }
     }

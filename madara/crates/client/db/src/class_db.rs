@@ -15,6 +15,12 @@ struct ClassInfoWithBlockNumber {
     block_id: RawDbBlockId,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ClassDbBlockUpdatePending {
+    class_info_updates: indexmap::IndexMap<Felt, ClassInfo>,
+    class_compiled_updates: indexmap::IndexMap<Felt, Arc<CompiledSierra>>,
+}
+
 impl MadaraBackend {
     #[tracing::instrument(skip(self, key), fields(module = "ClassDB"))]
     fn class_db_get_encoded_kv<V: serde::de::DeserializeOwned>(
@@ -235,17 +241,32 @@ impl MadaraBackend {
 
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, converted_classes), fields(module = "ClassDB"))]
-    pub fn class_db_store_pending(&self, converted_classes: &[ConvertedClass]) -> Result<(), MadaraStorageError> {
+    pub fn class_db_store_pending(
+        &self,
+        converted_classes: &[ConvertedClass],
+    ) -> Result<ClassDbBlockUpdatePending, MadaraStorageError> {
         tracing::debug!(
             "Storing classes pending {:?}",
             converted_classes.iter().map(|c| format!("{:#x}", c.class_hash())).collect::<Vec<_>>()
         );
+
         self.store_classes(
             RawDbBlockId::Pending,
             converted_classes,
             Column::PendingClassInfo,
             Column::PendingClassCompiled,
-        )
+        )?;
+
+        let class_info_updates = converted_classes.iter().map(|class| (class.class_hash(), class.info())).collect();
+        let class_compiled_updates = converted_classes
+            .iter()
+            .filter_map(|converted_class| match converted_class {
+                ConvertedClass::Sierra(sierra) => Some((sierra.info.compiled_class_hash, sierra.compiled.clone())),
+                _ => None,
+            })
+            .collect();
+
+        Ok(ClassDbBlockUpdatePending { class_info_updates, class_compiled_updates })
     }
 
     #[tracing::instrument(fields(module = "ClassDB"))]

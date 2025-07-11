@@ -20,8 +20,8 @@ pub(crate) struct ContractDbBlockUpdate {
     contract_kv_updates: Vec<((Felt, Felt), Felt)>,
 }
 
-#[derive(Debug)]
-pub(crate) struct ContractDbBlockUpdatePending {
+#[derive(Clone, Debug, Default)]
+pub struct ContractDbBlockUpdatePending {
     contract_class_updates: indexmap::IndexMap<Felt, Felt>,
     contract_nonces_updates: indexmap::IndexMap<Felt, Felt>,
     contract_kv_updates: indexmap::IndexMap<(Felt, Felt), Felt>,
@@ -292,8 +292,8 @@ impl MadaraBackend {
     #[tracing::instrument(skip(self, value), fields(module = "ContractDB"))]
     pub(crate) fn contract_db_store_pending(
         &self,
-        value: &ContractDbBlockUpdatePending,
-    ) -> Result<(), MadaraStorageError> {
+        value: ContractDbBlockUpdatePending,
+    ) -> Result<ContractDbBlockUpdatePending, MadaraStorageError> {
         // NOTE: pending has keys in bincode, not bytes
         let col = self.db.get_column(Column::PendingContractToClassHashes);
         let batch = value.contract_class_updates.iter().try_fold(
@@ -325,7 +325,7 @@ impl MadaraBackend {
         )?;
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
-        Ok(())
+        Ok(value)
     }
 
     #[tracing::instrument(fields(module = "ContractDB"))]

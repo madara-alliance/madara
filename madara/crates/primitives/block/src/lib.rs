@@ -362,7 +362,7 @@ pub struct FullBlock {
 }
 
 /// A pending block is a block that has not yet been closed.
-#[derive(Clone, Debug)]
+#[derive(Default, Clone, Debug)]
 pub struct PendingFullBlock {
     pub header: PendingHeader,
     pub state_diff: StateDiff,
@@ -387,6 +387,13 @@ impl PendingFullBlock {
             state_diff: self.state_diff,
             transactions: self.transactions,
             events: self.events,
+        }
+    }
+
+    pub fn info(&self) -> MadaraPendingBlockInfo {
+        MadaraPendingBlockInfo {
+            header: self.header.clone(),
+            tx_hashes: self.transactions.iter().cloned().map(|tx| tx.receipt.transaction_hash()).collect(),
         }
     }
 }
