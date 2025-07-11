@@ -1,3 +1,4 @@
+// Can be extened to support all the args present in configs/args/config.json
 use crate::servers::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -297,6 +298,7 @@ impl MadaraConfig {
         cmd.arg("--strk-blob-gas-price").arg(self.strk_blob_gas_price.to_string());
         cmd.arg("--gas-price").arg(self.gas_price.to_string());
         cmd.arg("--blob-gas-price").arg(self.blob_gas_price.to_string());
+
         // Charge fee flag (inverted logic)
         if !self.charge_fee {
             cmd.arg("--no-charge-fee");
@@ -354,6 +356,6 @@ impl MadaraConfig {
 
         cmd
     }
-    
+
     // Validation + Checking if binary is available should be done here!
 }

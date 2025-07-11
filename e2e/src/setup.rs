@@ -7,6 +7,7 @@ use tokio::time::{sleep, timeout};
 use crate::servers::anvil::{AnvilCMDBuilder, AnvilConfig, AnvilError, AnvilService};
 use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
+use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
 use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService};
 use crate::servers::madara::{MadaraCMDBuilder, MadaraConfig, MadaraError, MadaraService};
 use crate::servers::mongo::{MongoConfig, MongoError, MongoService};
@@ -203,15 +204,15 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-        // // Timeout this for 30 mins
-        // timeout(Duration::from_secs(1800), async {
-        //     self.start_l2_setup().await?;
-        //     // self.wait_for_services_ready().await?;
-        //     // self.run_setup_validation().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+        // Timeout this for 30 mins
+        timeout(Duration::from_secs(1800), async {
+            self.start_l2_setup().await?;
+            // self.wait_for_services_ready().await?;
+            // self.run_setup_validation().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
 
         println!("✅ Setup completed successfully in {:?}", self.context.elapsed());
         Ok(())
@@ -502,6 +503,7 @@ impl Setup {
 
         let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
             .with_mode(BootstrapperMode::SetupL2)
+            .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
             .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
             .add_env_var("ETH_RPC", "http://localhost:8545")
             .build();

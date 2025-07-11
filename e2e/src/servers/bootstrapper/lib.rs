@@ -198,10 +198,10 @@ impl BootstrapperService {
         &self.config.mode
     }
 
-    /// Get the config path that was used
-    pub fn config_path(&self) -> &PathBuf {
-        &self.config.config_path
-    }
+    // /// Get the config path that was used
+    // pub fn config_path(&self) -> &PathBuf {
+    //     &self.config.config_path
+    // }
 
     /// Get the configuration used
     pub fn config(&self) -> &BootstrapperConfig {

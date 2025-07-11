@@ -2,6 +2,8 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use url::Url;
+use std::path::PathBuf;
+
 // Custom error type
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {

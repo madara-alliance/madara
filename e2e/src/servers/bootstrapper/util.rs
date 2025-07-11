@@ -43,8 +43,8 @@ pub enum BootstrapperError {
 pub struct BootstrapperConfig {
     pub mode: BootstrapperMode,
     pub timeout: Duration,
-    pub config_path: PathBuf,
-    pub binary_path: Option<PathBuf>,
+    pub config_path: Option<PathBuf>,
+    pub binary_path: PathBuf,
     pub environment_vars: HashMap<String, String>,
     pub additional_args: Vec<String>,
 }
@@ -54,8 +54,8 @@ impl Default for BootstrapperConfig {
         Self {
             mode: BootstrapperMode::SetupL1,
             timeout: Duration::from_secs(60),
-            config_path: PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG),
-            binary_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY)),
+            config_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG)),
+            binary_path: PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
         }
@@ -66,7 +66,7 @@ pub struct BootstrapperConfigBuilder {
     mode: BootstrapperMode,
     timeout: Duration,
     config_path: Option<PathBuf>,
-    binary_path: Option<PathBuf>,
+    binary_path: PathBuf,
     environment_vars: HashMap<String, String>,
     additional_args: Vec<String>,
 }
@@ -77,7 +77,7 @@ impl BootstrapperConfigBuilder {
             mode: BootstrapperMode::SetupL1,
             timeout: Duration::from_secs(60),
             config_path: None,
-            binary_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY)),
+            binary_path: PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
         }
@@ -94,7 +94,9 @@ impl BootstrapperConfigBuilder {
     }
 
     pub fn with_binary_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
-        self.binary_path = path.map(|p| p.into());
+        if let Some(p) = path {
+            self.binary_path = p.into();
+        }
         self
     }
 
@@ -117,7 +119,7 @@ impl BootstrapperConfigBuilder {
         BootstrapperConfig {
             mode: self.mode,
             timeout: self.timeout,
-            config_path: self.config_path.unwrap_or_else(|| PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG)),
+            config_path: self.config_path,
             binary_path: self.binary_path,
             environment_vars: self.environment_vars,
             additional_args: self.additional_args,
@@ -127,15 +129,16 @@ impl BootstrapperConfigBuilder {
 
 impl BootstrapperConfig {
     pub fn to_command(&self) -> std::process::Command {
-        let binary_path = self.binary_path.as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| DEFAULT_BOOTSTRAPPER_BINARY.to_string());
+        let binary_path = self.binary_path.clone();
 
         let mut cmd = std::process::Command::new(binary_path);
 
         // Core arguments
         cmd.arg("--mode").arg(self.mode.to_string());
-        cmd.arg("--config").arg(&self.config_path);
+
+        if let Some(config_path) = &self.config_path {
+            cmd.arg("--config").arg(config_path);
+        }
 
         // Additional arguments
         for arg in &self.additional_args {
