@@ -1,9 +1,9 @@
 // Can be extened to support all the args present in configs/args/config.json
+
 use crate::servers::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
-
 
 const DEFAULT_MADARA_RPC_PORT: u16 = 9944;
 const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
@@ -41,32 +41,59 @@ impl std::fmt::Display for MadaraMode {
     }
 }
 
+// Builder type that allows configuration
 #[derive(Debug, Clone)]
-pub struct MadaraConfig {
-    pub binary_path: Option<PathBuf>,
-    pub name: String,
-    pub database_path: PathBuf,
-    pub rpc_port: u16,
-    pub rpc_cors: String,
-    pub rpc_external: bool,
-    pub rpc_admin: bool,
-    pub mode: MadaraMode,
-    pub chain_config_path: Option<PathBuf>,
-    pub feeder_gateway_enable: bool,
-    pub gateway_enable: bool,
-    pub gateway_external: bool,
-    pub gateway_port: u16,
-    pub charge_fee: bool,
-    pub l1_endpoint: Option<String>,
-    pub strk_gas_price: u64,
-    pub strk_blob_gas_price: u64,
-    pub gas_price: u64,
-    pub blob_gas_price: u64,
-    pub environment_vars: HashMap<String, String>,
-    pub additional_args: Vec<String>,
+pub struct MadaraConfigBuilder {
+    binary_path: Option<PathBuf>,
+    name: String,
+    database_path: PathBuf,
+    rpc_port: u16,
+    rpc_cors: String,
+    rpc_external: bool,
+    rpc_admin: bool,
+    mode: MadaraMode,
+    chain_config_path: Option<PathBuf>,
+    feeder_gateway_enable: bool,
+    gateway_enable: bool,
+    gateway_external: bool,
+    gateway_port: u16,
+    charge_fee: bool,
+    l1_endpoint: Option<String>,
+    strk_gas_price: u64,
+    strk_blob_gas_price: u64,
+    gas_price: u64,
+    blob_gas_price: u64,
+    environment_vars: HashMap<String, String>,
+    additional_args: Vec<String>,
 }
 
-impl Default for MadaraConfig {
+// Final immutable configuration
+#[derive(Debug, Clone)]
+pub struct MadaraConfig {
+    binary_path: Option<PathBuf>,
+    name: String,
+    database_path: PathBuf,
+    rpc_port: u16,
+    rpc_cors: String,
+    rpc_external: bool,
+    rpc_admin: bool,
+    mode: MadaraMode,
+    chain_config_path: Option<PathBuf>,
+    feeder_gateway_enable: bool,
+    gateway_enable: bool,
+    gateway_external: bool,
+    gateway_port: u16,
+    charge_fee: bool,
+    l1_endpoint: Option<String>,
+    strk_gas_price: u64,
+    strk_blob_gas_price: u64,
+    gas_price: u64,
+    blob_gas_price: u64,
+    environment_vars: HashMap<String, String>,
+    additional_args: Vec<String>,
+}
+
+impl Default for MadaraConfigBuilder {
     fn default() -> Self {
         Self {
             binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
@@ -94,56 +121,10 @@ impl Default for MadaraConfig {
     }
 }
 
-pub struct MadaraCMDBuilder {
-    binary_path: Option<PathBuf>,
-    name: String,
-    database_path: PathBuf,
-    rpc_port: u16,
-    rpc_cors: String,
-    rpc_external: bool,
-    rpc_admin: bool,
-    mode: MadaraMode,
-    chain_config_path: Option<PathBuf>,
-    feeder_gateway_enable: bool,
-    gateway_enable: bool,
-    gateway_external: bool,
-    gateway_port: u16,
-    charge_fee: bool,
-    l1_endpoint: Option<String>,
-    strk_gas_price: u64,
-    strk_blob_gas_price: u64,
-    gas_price: u64,
-    blob_gas_price: u64,
-    environment_vars: HashMap<String, String>,
-    additional_args: Vec<String>,
-}
-
-impl MadaraCMDBuilder {
+impl MadaraConfigBuilder {
+    /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        // TODO : maybe just unwrap madaraconfig default ?
-        Self {
-            binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
-            name: DEFAULT_MADARA_NAME.to_string(),
-            database_path: PathBuf::from("./data/madara-db"),
-            rpc_port: DEFAULT_MADARA_RPC_PORT,
-            rpc_cors: "*".to_string(),
-            rpc_external: true,
-            rpc_admin: true,
-            mode: MadaraMode::Sequencer,
-            chain_config_path: Some(PathBuf::from("../configs/presets/devnet.yaml")),
-            feeder_gateway_enable: true,
-            gateway_enable: true,
-            gateway_external: true,
-            gateway_port: DEFAULT_MADARA_GATEWAY_PORT,
-            charge_fee: false,
-            l1_endpoint: Some("http://127.0.0.1:8545".to_string()),
-            strk_gas_price: 0,
-            strk_blob_gas_price: 0,
-            gas_price: 0,
-            blob_gas_price: 0,
-            environment_vars: HashMap::new(),
-            additional_args: Vec::new(),
-        }
+        Self::default()
     }
 
     pub fn with_binary_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
@@ -251,6 +232,7 @@ impl MadaraCMDBuilder {
         self
     }
 
+    /// Build the final immutable configuration
     pub fn build(self) -> MadaraConfig {
         MadaraConfig {
             binary_path: self.binary_path,
@@ -278,9 +260,113 @@ impl MadaraCMDBuilder {
     }
 }
 
-
-
 impl MadaraConfig {
+    /// Get the binary path
+    pub fn binary_path(&self) -> Option<&PathBuf> {
+        self.binary_path.as_ref()
+    }
+
+    /// Get the name
+    pub fn name(&self) -> &str {
+        &self.name
+    }
+
+    /// Get the database path
+    pub fn database_path(&self) -> &PathBuf {
+        &self.database_path
+    }
+
+    /// Get the RPC port
+    pub fn rpc_port(&self) -> u16 {
+        self.rpc_port
+    }
+
+    /// Get the RPC CORS
+    pub fn rpc_cors(&self) -> &str {
+        &self.rpc_cors
+    }
+
+    /// Get RPC external setting
+    pub fn rpc_external(&self) -> bool {
+        self.rpc_external
+    }
+
+    /// Get RPC admin setting
+    pub fn rpc_admin(&self) -> bool {
+        self.rpc_admin
+    }
+
+    /// Get the mode
+    pub fn mode(&self) -> &MadaraMode {
+        &self.mode
+    }
+
+    /// Get the chain config path
+    pub fn chain_config_path(&self) -> Option<&PathBuf> {
+        self.chain_config_path.as_ref()
+    }
+
+    /// Get feeder gateway enable setting
+    pub fn feeder_gateway_enable(&self) -> bool {
+        self.feeder_gateway_enable
+    }
+
+    /// Get gateway enable setting
+    pub fn gateway_enable(&self) -> bool {
+        self.gateway_enable
+    }
+
+    /// Get gateway external setting
+    pub fn gateway_external(&self) -> bool {
+        self.gateway_external
+    }
+
+    /// Get the gateway port
+    pub fn gateway_port(&self) -> u16 {
+        self.gateway_port
+    }
+
+    /// Get charge fee setting
+    pub fn charge_fee(&self) -> bool {
+        self.charge_fee
+    }
+
+    /// Get the L1 endpoint
+    pub fn l1_endpoint(&self) -> Option<&str> {
+        self.l1_endpoint.as_deref()
+    }
+
+    /// Get STRK gas price
+    pub fn strk_gas_price(&self) -> u64 {
+        self.strk_gas_price
+    }
+
+    /// Get STRK blob gas price
+    pub fn strk_blob_gas_price(&self) -> u64 {
+        self.strk_blob_gas_price
+    }
+
+    /// Get gas price
+    pub fn gas_price(&self) -> u64 {
+        self.gas_price
+    }
+
+    /// Get blob gas price
+    pub fn blob_gas_price(&self) -> u64 {
+        self.blob_gas_price
+    }
+
+    /// Get environment variables
+    pub fn environment_vars(&self) -> &HashMap<String, String> {
+        &self.environment_vars
+    }
+
+    /// Get additional arguments
+    pub fn additional_args(&self) -> &[String] {
+        &self.additional_args
+    }
+
+    /// Convert the configuration to a command
     pub fn to_command(&self) -> Command {
         let binary_path = self.binary_path.as_ref()
             .map(|p| p.to_string_lossy().to_string())
@@ -358,6 +444,4 @@ impl MadaraConfig {
 
         cmd
     }
-
-    // Validation + Checking if binary is available should be done here!
 }

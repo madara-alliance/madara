@@ -25,7 +25,7 @@ impl AnvilService {
         }
 
         // Build the anvil command
-        let command = config.to_command()
+        let command = config.to_command();
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
