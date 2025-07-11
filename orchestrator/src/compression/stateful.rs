@@ -135,6 +135,55 @@ impl ValueMapping {
     }
 }
 
+fn process_storage_diffs(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<ContractStorageDiffItem>> {
+    let mut new_storage_diffs = Vec::new();
+    for diff in state_update.state_diff.storage_diffs {
+        if ValueMapping::skip(diff.address) {
+            new_storage_diffs.push(diff);
+            continue;
+        }
+
+        let mapped_address = mapping.get_value(&diff.address)?;
+        let mut mapped_entries = Vec::new();
+
+        for entry in diff.storage_entries {
+            mapped_entries.push(StorageEntry { key: mapping.get_value(&entry.key)?, value: entry.value });
+        }
+
+        new_storage_diffs.push(ContractStorageDiffItem { address: mapped_address, storage_entries: mapped_entries });
+    }
+    Ok(new_storage_diffs)
+}
+
+fn process_deployed_contracts(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<DeployedContractItem>> {
+    let mut new_deployed_contracts = Vec::new();
+    for item in state_update.state_diff.deployed_contracts {
+        new_deployed_contracts
+            .push(DeployedContractItem { address: mapping.get_value(&item.address)?, class_hash: item.class_hash });
+    }
+    Ok(new_deployed_contracts)
+}
+
+fn process_nonces(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<NonceUpdate>> {
+    let mut new_nonces = Vec::new();
+    for item in state_update.state_diff.nonces {
+        new_nonces
+            .push(NonceUpdate { contract_address: mapping.get_value(&item.contract_address)?, nonce: item.nonce });
+    }
+    Ok(new_nonces)
+}
+
+fn process_replaced_classes(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<ReplacedClassItem>> {
+    let mut new_replaced_classes = Vec::new();
+    for item in state_update.state_diff.replaced_classes {
+        new_replaced_classes.push(ReplacedClassItem {
+            contract_address: mapping.get_value(&item.contract_address)?,
+            class_hash: item.class_hash,
+        });
+    }
+    Ok(new_replaced_classes)
+}
+
 /// Compresses a state update using stateful compression
 ///
 /// This function:
@@ -157,52 +206,18 @@ pub async fn compress(
     let mapping = ValueMapping::from_state_update_or_provider(&state_update, pre_range_block, provider).await?;
 
     // Process storage diffs
-    let mut new_storage_diffs = Vec::new();
-    for diff in state_update.state_diff.storage_diffs {
-        if ValueMapping::skip(diff.address) {
-            new_storage_diffs.push(diff);
-            continue;
-        }
-
-        let mapped_address = mapping.get_value(&diff.address)?;
-        let mut mapped_entries = Vec::new();
-
-        for entry in diff.storage_entries {
-            mapped_entries.push(StorageEntry { key: mapping.get_value(&entry.key)?, value: entry.value });
-        }
-
-        new_storage_diffs.push(ContractStorageDiffItem { address: mapped_address, storage_entries: mapped_entries });
-    }
-    state_update.state_diff.storage_diffs = new_storage_diffs;
+    state_update.state_diff.storage_diffs = process_storage_diffs(&state_update, &mapping)?;
 
     // Process deployed contracts
-    let mut new_deployed_contracts = Vec::new();
-    for item in state_update.state_diff.deployed_contracts {
-        new_deployed_contracts
-            .push(DeployedContractItem { address: mapping.get_value(&item.address)?, class_hash: item.class_hash });
-    }
-    state_update.state_diff.deployed_contracts = new_deployed_contracts;
-
-    // Declared class remain as it is as it only contains class hashes
+    state_update.state_diff.deployed_contracts = process_deployed_contracts(&state_update, &mapping)?;
 
     // Process nonces
-    let mut new_nonces = Vec::new();
-    for item in state_update.state_diff.nonces {
-        new_nonces
-            .push(NonceUpdate { contract_address: mapping.get_value(&item.contract_address)?, nonce: item.nonce });
-    }
-    state_update.state_diff.nonces = new_nonces;
+    state_update.state_diff.nonces = process_nonces(&state_update, &mapping)?;
 
     // Process replaced classes
-    let mut new_replaced_classes = Vec::new();
-    for item in state_update.state_diff.replaced_classes {
-        new_replaced_classes.push(ReplacedClassItem {
-            contract_address: mapping.get_value(&item.contract_address)?,
-            class_hash: item.class_hash,
-        });
-    }
-    state_update.state_diff.replaced_classes = new_replaced_classes;
+    state_update.state_diff.replaced_classes = process_replaced_classes(&state_update, &mapping)?;
 
+    // Declared class remain as it is as it only contains class hashes
     // Deprecated declared classes remain as it is as it only contains class hashes
     // block_hash, new_root and old_root remain as it is
 
