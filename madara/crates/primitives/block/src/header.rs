@@ -157,6 +157,7 @@ impl GasPrices {
         }
     }
 
+    /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self) -> Felt {
         Pedersen::hash_array(&[
             Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0"),
@@ -228,6 +229,7 @@ impl Header {
     }
 
     /// Compute the hash of the header.
+    /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self, chain_id: Felt, pre_v0_13_2_override: bool) -> Felt {
         let hash_version = if self.protocol_version < StarknetVersion::V0_13_2 && pre_v0_13_2_override {
             StarknetVersion::V0_13_2
