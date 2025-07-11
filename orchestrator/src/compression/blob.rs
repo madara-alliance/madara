@@ -1,7 +1,9 @@
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
+use crate::error::other::OtherError;
 use crate::types::constant::BLOB_LEN;
 use crate::worker::event_handler::jobs::da::DAJobHandler;
+use color_eyre::eyre::eyre;
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
 use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateDiff, StateUpdate};
@@ -244,7 +246,11 @@ pub async fn state_update_to_blob_data(
 ///
 /// Total used bits: 123 + 1 + 64 + 64 = 252 bits (exactly)
 ///
-fn encode_da_word_pre_v0_13_3(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> BigUint {
+fn encode_da_word_pre_v0_13_3(
+    class_flag: bool,
+    nonce_change: Option<Felt>,
+    num_changes: u64,
+) -> Result<BigUint, JobError> {
     let mut da_word = BigUint::zero();
 
     // Class flag
@@ -252,14 +258,16 @@ fn encode_da_word_pre_v0_13_3(class_flag: bool, nonce_change: Option<Felt>, num_
 
     // Nonce
     if let Some(new_nonce) = nonce_change {
-        let new_nonce = new_nonce.to_u64().expect("nonce too big");
+        let new_nonce = new_nonce
+            .to_u64()
+            .ok_or_else(|| JobError::Other(OtherError(eyre!("Nonce value {} exceeds u64 maximum", new_nonce))))?;
         da_word |= BigUint::from(new_nonce) << 64;
     }
 
     // Number of changes
     da_word |= BigUint::from(num_changes);
 
-    da_word
+    Ok(da_word)
 }
 
 /// v0.13.3+ format:
@@ -285,12 +293,18 @@ fn encode_da_word_pre_v0_13_3(class_flag: bool, nonce_change: Option<Felt>, num_
 /// Total used bits: 64 + (8|64) + 1 + 1 = 74 or 130 bits
 /// Remaining bits: 252 - (74|130) = 178 or 122 bits (reserved/padding)
 ///
-fn encode_da_word_v0_13_3_plus(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> BigUint {
+fn encode_da_word_v0_13_3_plus(
+    class_flag: bool,
+    nonce_change: Option<Felt>,
+    num_changes: u64,
+) -> Result<BigUint, JobError> {
     let mut da_word = BigUint::zero();
 
     // Add new_nonce (64 bits)
     if let Some(new_nonce) = nonce_change {
-        let new_nonce = new_nonce.to_u64().expect("nonce too big");
+        let new_nonce = new_nonce
+            .to_u64()
+            .ok_or_else(|| JobError::Other(OtherError(eyre!("Nonce value {} exceeds u64 maximum", new_nonce))))?;
         da_word |= BigUint::from(new_nonce) << 188;
     }
 
@@ -309,7 +323,7 @@ fn encode_da_word_v0_13_3_plus(class_flag: bool, nonce_change: Option<Felt>, num
     // Class flag
     da_word |= if class_flag { BigUint::one() << 122 } else { BigUint::zero() };
 
-    da_word
+    Ok(da_word)
 }
 
 /// Creates a DA word with information about a contract
@@ -332,9 +346,9 @@ pub fn da_word(
     let is_gte_v0_13_3 = version >= StarknetVersion::V0_13_3;
 
     let da_word: BigUint = if is_gte_v0_13_3 {
-        encode_da_word_v0_13_3_plus(class_flag, nonce_change, num_changes)
+        encode_da_word_v0_13_3_plus(class_flag, nonce_change, num_changes)?
     } else {
-        encode_da_word_pre_v0_13_3(class_flag, nonce_change, num_changes)
+        encode_da_word_pre_v0_13_3(class_flag, nonce_change, num_changes)?
     };
 
     Ok(Felt::from(da_word))
