@@ -33,6 +33,11 @@ pub(crate) struct BlockWatch {
     last_block_on_l1: tokio::sync::watch::Sender<Option<u64>>,
 }
 
+pub(crate) struct PendingBlockTransport {
+    block: mp_block::PendingFullBlock,
+    contracts: crate::contract_db::ContractDbBlockUpdatePending,
+}
+
 impl BlockWatch {
     pub fn new() -> Self {
         Self {

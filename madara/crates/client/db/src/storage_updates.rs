@@ -1,4 +1,5 @@
 use crate::contract_db::ContractDbBlockUpdate;
+use crate::contract_db::ContractDbBlockUpdatePending;
 use crate::db_block_id::DbBlockId;
 use crate::events_bloom_filter::EventBloomWriter;
 use crate::Column;
@@ -161,7 +162,7 @@ impl MadaraBackend {
         store_events_to_receipts(&mut inner.receipts, block.events)?;
 
         self.block_db_store_pending(&MadaraPendingBlock { info: info.clone(), inner }, &block.state_diff)?;
-        self.contract_db_store_pending(ContractDbBlockUpdate::from_state_diff(block.state_diff))?;
+        self.contract_db_store_pending(&ContractDbBlockUpdatePending::from_state_diff(block.state_diff))?;
 
         self.watch_blocks.update_pending(info.into());
         Ok(())
@@ -303,13 +304,9 @@ impl MadaraBackend {
             }
         };
 
-        let task_contract_db = || {
-            let update = ContractDbBlockUpdate::from_state_diff(state_diff);
-
-            match block_n {
-                None => self.contract_db_store_pending(update),
-                Some(block_n) => self.contract_db_store_block(block_n, update),
-            }
+        let task_contract_db = || match block_n {
+            None => self.contract_db_store_pending(&ContractDbBlockUpdatePending::from_state_diff(state_diff)),
+            Some(block_n) => self.contract_db_store_block(block_n, ContractDbBlockUpdate::from_state_diff(state_diff)),
         };
 
         let task_class_db = || match block_n {
