@@ -4,8 +4,7 @@
 
 use super::util::{LocalstackConfig, LocalstackError};
 use crate::servers::server::{Server, ServerConfig};
-use std::process::Command;
-
+use tokio::process::Command;
 use crate::servers::docker::{DockerError, DockerServer};
 
 pub struct LocalstackService {

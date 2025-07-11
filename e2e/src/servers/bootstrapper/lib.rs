@@ -3,11 +3,8 @@
 // =============================================================================
 use super::{BootstrapperConfig, BootstrapperError, BootstrapperMode};
 use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_BINARY;
-use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
 use std::path::PathBuf;
-use std::process::Command;
 use std::process::ExitStatus;
-use std::process::Stdio;
 
 pub struct BootstrapperService {
     config: BootstrapperConfig,

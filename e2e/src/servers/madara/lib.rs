@@ -11,6 +11,7 @@ use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::time::Duration;
 
+
 pub struct MadaraService {
     server: Server,
     config: MadaraConfig,

@@ -6,7 +6,7 @@ use super::util::{MongoConfig, MongoError};
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
-use std::process::Command;
+use tokio::process::Command;
 
 pub struct MongoService {
     server: Server,

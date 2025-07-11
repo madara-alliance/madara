@@ -4,7 +4,7 @@
 
 use super::util::{AnvilConfig, AnvilError};
 use crate::servers::server::{Server, ServerConfig};
-use std::process::Command;
+use tokio::process::Command;
 
 // Anvil service that uses the generic Server
 pub struct AnvilService {
@@ -16,7 +16,7 @@ impl AnvilService {
     /// Start a new Anvil service with the given configuration
     pub async fn start(config: AnvilConfig) -> Result<Self, AnvilError> {
         // Validate that anvil is present in the system
-        if !Self::check_anvil_installed() {
+        if !Self::check_anvil_installed().await {
             return Err(AnvilError::NotInstalled);
         }
 
@@ -56,8 +56,8 @@ impl AnvilService {
     }
 
     /// Check if Anvil is installed on the system
-    fn check_anvil_installed() -> bool {
-        Command::new("anvil").arg("--version").output().is_ok()
+    async fn check_anvil_installed() -> bool {
+        Command::new("anvil").arg("--version").output().await.is_ok()
     }
 
     pub fn server(&self) -> &Server {

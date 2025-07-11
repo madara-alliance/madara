@@ -8,7 +8,7 @@ use super::util::{PathfinderConfig, PathfinderError};
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
-use std::process::Command;
+use tokio::process::Command;
 
 pub struct PathfinderService {
     server: Server,
@@ -129,11 +129,11 @@ impl PathfinderService {
     }
 
     /// Validate that all required dependencies are available
-    pub fn validate_dependencies(&self) -> Result<(), PathfinderError> {
+    pub async fn validate_dependencies(&self) -> Result<(), PathfinderError> {
         let dependencies = self.dependencies();
 
         for dep in dependencies {
-            let result = Command::new(&dep).arg("--version").output();
+            let result = Command::new(&dep).arg("--version").output().await;
 
             if result.is_err() {
                 return Err(PathfinderError::MissingConfig(format!("Required dependency '{}' not found", dep)));

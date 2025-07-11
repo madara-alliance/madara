@@ -17,7 +17,9 @@ use super::util::{Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode
 use crate::servers::server::ServerError;
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
-use std::process::{Command, Stdio};
+use std::process::Stdio;
+use tokio::process::Command;
+
 
 pub struct OrchestratorService {
     server: Option<Server>, // None for setup mode
@@ -54,7 +56,7 @@ impl OrchestratorService {
         let mut child = command.spawn().map_err(|e| OrchestratorError::Server(ServerError::StartupFailed(e)))?;
 
         // Wait for the process to complete
-        let status = child.wait().map_err(|e| OrchestratorError::Server(ServerError::Io(e)))?;
+        let status = child.wait().await.map_err(|e| OrchestratorError::Server(ServerError::Io(e)))?;
 
         if status.success() {
             println!("Orchestrator cloud setup completed ✅");
@@ -249,14 +251,14 @@ impl OrchestratorService {
 
     /// Validate that all required dependencies are available and running
     /// TODO: might move this to a a fn in setup
-    pub fn validate_dependencies(&self) -> Result<(), OrchestratorError> {
+    pub async fn validate_dependencies(&self) -> Result<(), OrchestratorError> {
         // TODO: complete this!
         let dependencies = self.dependencies();
 
         for dep in dependencies {
             // For now, just check if the command exists
             // You might want to implement more sophisticated checking
-            let result = Command::new(&dep).arg("--version").output();
+            let result = Command::new(&dep).arg("--version").output().await;
 
             if result.is_err() {
                 return Err(OrchestratorError::MissingDependency(dep));

@@ -2,6 +2,8 @@
 use crate::servers::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
+use tokio::process::Command;
+
 
 const DEFAULT_MADARA_RPC_PORT: u16 = 9944;
 const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
@@ -69,7 +71,7 @@ impl Default for MadaraConfig {
         Self {
             binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
             name: DEFAULT_MADARA_NAME.to_string(),
-            database_path: PathBuf::from("../madara-db"),
+            database_path: PathBuf::from("./data/madara-db"),
             rpc_port: DEFAULT_MADARA_RPC_PORT,
             rpc_cors: "*".to_string(),
             rpc_external: true,
@@ -122,7 +124,7 @@ impl MadaraCMDBuilder {
         Self {
             binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
             name: DEFAULT_MADARA_NAME.to_string(),
-            database_path: PathBuf::from("../madara-db"),
+            database_path: PathBuf::from("./data/madara-db"),
             rpc_port: DEFAULT_MADARA_RPC_PORT,
             rpc_cors: "*".to_string(),
             rpc_external: true,
@@ -279,12 +281,12 @@ impl MadaraCMDBuilder {
 
 
 impl MadaraConfig {
-    pub fn to_command(&self) -> std::process::Command {
+    pub fn to_command(&self) -> Command {
         let binary_path = self.binary_path.as_ref()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_else(|| DEFAULT_MADARA_BINARY_PATH.to_string());
 
-        let mut cmd = std::process::Command::new(binary_path);
+        let mut cmd = Command::new(binary_path);
 
         // Core arguments
         cmd.arg("--name").arg(&self.name);

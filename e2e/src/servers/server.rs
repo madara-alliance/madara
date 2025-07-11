@@ -1,8 +1,11 @@
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{ ExitStatus, Stdio};
 use std::time::Duration;
 use tokio::net::TcpStream;
 use url::Url;
-use std::path::PathBuf;
+
+use tokio::io::{AsyncBufReadExt, BufReader};
+use tokio::process::{Command, Child};
+use tokio::task;
 
 // Custom error type
 #[derive(Debug, thiserror::Error)]
@@ -38,6 +41,8 @@ impl Default for ServerConfig {
 pub struct Server {
     process: Option<Child>,
     config: ServerConfig,
+    stdout_task: Option<task::JoinHandle<()>>,
+    stderr_task: Option<task::JoinHandle<()>>,
 }
 
 impl Server {
@@ -47,10 +52,43 @@ impl Server {
         command.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         // Start the process
-        let process = command.spawn().map_err(ServerError::StartupFailed)?;
+        let mut process = command.spawn().map_err(ServerError::StartupFailed)?;
 
         println!("Starting container with command : {:?}", command);
-        let mut server = Self { process: Some(process), config };
+
+        // Extract stdout and stderr for log monitoring
+        let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(
+            std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stdout")
+        ))?;
+        let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(
+            std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stderr")
+        ))?;
+
+        // Spawn tasks to monitor stdout and stderr
+        let stdout_task = task::spawn(async move {
+            let reader = BufReader::new(stdout);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                println!("[STDOUT] {}", line);
+            }
+        });
+
+        let stderr_task = task::spawn(async move {
+            let reader = BufReader::new(stderr);
+            let mut lines = reader.lines();
+
+            while let Ok(Some(line)) = lines.next_line().await {
+                println!("[STDERR] {}", line);
+            }
+        });
+
+        let mut server = Self {
+            process: Some(process),
+            config,
+            stdout_task: Some(stdout_task),
+            stderr_task: Some(stderr_task),
+        };
 
         // Wait for the server to be ready
         server.wait_till_started().await?;
@@ -76,7 +114,7 @@ impl Server {
 
     /// Get the process ID if the process is still running
     pub fn pid(&self) -> Option<u32> {
-        self.process.as_ref().map(|p| p.id())
+        self.process.as_ref().and_then(|p| p.id())
     }
 
     /// Check if the process has exited
@@ -135,7 +173,7 @@ impl Server {
         if let Some(mut process) = self.process.take() {
             // Try to terminate gracefully first
             let pid = process.id();
-            let kill_result = Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn();
+            let kill_result = Command::new("kill").args(["-s", "TERM", &pid.unwrap().to_string()]).spawn();
 
             match kill_result {
                 Ok(mut kill_process) => {
@@ -153,21 +191,21 @@ impl Server {
         Ok(())
     }
 
-    /// Send a signal to the process
-    pub fn send_signal(&self, signal: &str) -> Result<(), ServerError> {
-        if let Some(ref process) = self.process {
-            let pid = process.id();
-            Command::new("kill")
-                .args(["-s", signal, &pid.to_string()])
-                .spawn()
-                .map_err(ServerError::Io)?
-                .wait()
-                .map_err(ServerError::Io)?;
-            Ok(())
-        } else {
-            Err(ServerError::ProcessNotRunning)
-        }
-    }
+    // /// Send a signal to the process
+    // pub fn send_signal(&self, signal: &str) -> Result<(), ServerError> {
+    //     if let Some(ref process) = self.process {
+    //         let pid = process.id();
+    //         Command::new("kill")
+    //             .args(["-s", signal, &pid.to_string()])
+    //             .spawn()
+    //             .map_err(ServerError::Io)?
+    //             .wait()
+    //             .map_err(ServerError::Io)?;
+    //         Ok(())
+    //     } else {
+    //         Err(ServerError::ProcessNotRunning)
+    //     }
+    // }
 }
 
 impl Drop for Server {

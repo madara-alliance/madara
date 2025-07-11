@@ -456,6 +456,7 @@ impl Setup {
             .with_mode(BootstrapperMode::SetupL1)
             .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
             .add_env_var("ETH_RPC", "http://localhost:8545")
+            .add_env_var("RUST_LOG", "info")
             .build();
 
         let bootstrapper = BootstrapperService::new(bootstrapper_l1_config)?;
@@ -506,6 +507,7 @@ impl Setup {
             .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
             .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
             .add_env_var("ETH_RPC", "http://localhost:8545")
+            .add_env_var("RUST_LOG", "info")
             .build();
 
         let bootstrapper = BootstrapperService::new(bootstrapper_l2_config)?;
