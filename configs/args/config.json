@@ -46,7 +46,7 @@
     "backup_every_n_blocks": null
   },
   "l1_sync_params": {
-    "l1_sync_disabled": false,
+    "l1_sync_disabled": true,
     "l1_endpoint": null,
     "gas_price": null,
     "blob_gas_price": null,
@@ -66,7 +66,12 @@
   },
   "telemetry_params": {
     "telemetry": false,
-    "telemetry_endpoints": [["wss://starknodes.com/submit", 0]]
+    "telemetry_endpoints": [
+      [
+        "wss://starknodes.com/submit",
+        0
+      ]
+    ]
   },
   "gateway_params": {
     "feeder_gateway_enable": false,
