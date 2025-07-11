@@ -4,7 +4,7 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
 // Import all the services we've created
-use crate::servers::anvil::{AnvilCMDBuilder, AnvilConfig, AnvilError, AnvilService};
+use crate::servers::anvil::{AnvilConfigBuilder, AnvilConfig, AnvilError, AnvilService};
 use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
@@ -429,7 +429,7 @@ impl Setup {
         // Anvil db path :
         let anvil_db_path = format!("{}/anvil.json", self.config.db_dir_path.clone());
 
-        let anvil_config = AnvilCMDBuilder::new().port(self.config.anvil_port.clone()).dump_state(anvil_db_path).build();
+        let anvil_config = AnvilConfigBuilder::new().port(self.config.anvil_port.clone()).dump_state(anvil_db_path).build();
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
