@@ -19,22 +19,77 @@ const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 
-/// squash_state_updates merge all the StateUpdate into a single StateUpdate
-pub async fn squash_state_updates(
-    state_updates: Vec<StateUpdate>,
-    pre_range_block: Option<u64>,
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-) -> Result<StateUpdate, JobError> {
-    if state_updates.is_empty() {
-        return Err(JobError::Other(OtherError(eyre!("Cannot merge empty state updates"))));
+struct StateDiffMap {
+    storage_diffs: HashMap<Felt, HashMap<Felt, Felt>>,
+    deployed_contracts: HashMap<Felt, Felt>,
+    declared_classes: HashMap<Felt, Felt>,
+    deprecated_declared_classes: HashSet<Felt>,
+    nonces: HashMap<Felt, Felt>,
+    replaced_classes: HashMap<Felt, Felt>,
+}
+
+fn get_state_diff_map(state_updates: &Vec<StateUpdate>) -> StateDiffMap {
+    // Maps to efficiently track the latest state
+    let mut storage_diffs: HashMap<Felt, HashMap<Felt, Felt>> = HashMap::new();
+    let mut deployed_contracts: HashMap<Felt, Felt> = HashMap::new();
+    let mut declared_classes: HashMap<Felt, Felt> = HashMap::new();
+    let mut nonces: HashMap<Felt, Felt> = HashMap::new();
+    let mut replaced_classes: HashMap<Felt, Felt> = HashMap::new();
+    let mut deprecated_declared_classes: HashSet<Felt> = HashSet::new();
+
+    // Process each update in order
+    for update in state_updates {
+        // Process storage diffs
+        for contract_diff in update.state_diff.storage_diffs {
+            let contract_addr = contract_diff.address;
+            let contract_storage = storage_diffs.entry(contract_addr).or_default();
+
+            for entry in contract_diff.storage_entries {
+                contract_storage.insert(entry.key, entry.value);
+            }
+        }
+
+        // Process deployed contracts
+        for item in update.state_diff.deployed_contracts {
+            deployed_contracts.insert(item.address, item.class_hash);
+        }
+
+        // Process declared classes
+        for item in update.state_diff.declared_classes {
+            declared_classes.insert(item.class_hash, item.compiled_class_hash);
+        }
+
+        // Process nonces
+        for item in update.state_diff.nonces {
+            nonces.insert(item.contract_address, item.nonce);
+        }
+
+        // Process replaced classes
+        for item in update.state_diff.replaced_classes {
+            replaced_classes.insert(item.contract_address, item.class_hash);
+        }
+
+        // Process deprecated classes
+        for class_hash in update.state_diff.deprecated_declared_classes {
+            deprecated_declared_classes.insert(class_hash);
+        }
     }
 
-    // Take the last block hash and number from the last update as our "latest"
-    let last_update = state_updates.last().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?;
-    let block_hash = last_update.block_hash;
-    let new_root = last_update.new_root;
-    let old_root = state_updates.first().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?.old_root;
+    StateDiffMap {
+        storage_diffs,
+        deployed_contracts,
+        declared_classes,
+        deprecated_declared_classes,
+        nonces,
+        replaced_classes,
+    }
+}
 
+async fn get_state_diff_from_state_diff_map(
+    mut state_diff_map: StateDiffMap,
+    pre_range_block: Option<u64>,
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+) -> Result<StateDiff, JobError> {
     // Create a new StateDiff to hold the merged state
     let mut state_diff = StateDiff {
         storage_diffs: Vec::new(),
@@ -45,58 +100,12 @@ pub async fn squash_state_updates(
         replaced_classes: Vec::new(),
     };
 
-    // Maps to efficiently track the latest state
-    let mut storage_diffs_map: HashMap<Felt, HashMap<Felt, Felt>> = HashMap::new();
-    let mut deployed_contracts_map: HashMap<Felt, Felt> = HashMap::new();
-    let mut declared_classes_map: HashMap<Felt, Felt> = HashMap::new();
-    let mut nonces_map: HashMap<Felt, Felt> = HashMap::new();
-    let mut replaced_classes_map: HashMap<Felt, Felt> = HashMap::new();
-    let mut deprecated_classes_set: HashSet<Felt> = HashSet::new();
-
-    // Process each update in order
-    for update in state_updates {
-        // Process storage diffs
-        for contract_diff in update.state_diff.storage_diffs {
-            let contract_addr = contract_diff.address;
-            let contract_storage_map = storage_diffs_map.entry(contract_addr).or_default();
-
-            for entry in contract_diff.storage_entries {
-                contract_storage_map.insert(entry.key, entry.value);
-            }
-        }
-
-        // Process deployed contracts
-        for item in update.state_diff.deployed_contracts {
-            deployed_contracts_map.insert(item.address, item.class_hash);
-        }
-
-        // Process declared classes
-        for item in update.state_diff.declared_classes {
-            declared_classes_map.insert(item.class_hash, item.compiled_class_hash);
-        }
-
-        // Process nonces
-        for item in update.state_diff.nonces {
-            nonces_map.insert(item.contract_address, item.nonce);
-        }
-
-        // Process replaced classes
-        for item in update.state_diff.replaced_classes {
-            replaced_classes_map.insert(item.contract_address, item.class_hash);
-        }
-
-        // Process deprecated classes
-        for class_hash in update.state_diff.deprecated_declared_classes {
-            deprecated_classes_set.insert(class_hash);
-        }
-    }
-
     // Processing all contracts in parallel.
     // The idea is that it might be the case that for a contract, a particular storage slot is
     // changed twice to finally have the original value, in which case the new final value is not
     // different from the value in the previous batch and hence it shouldn't be in the storage diff
     // The result is the storage diff of all the contracts
-    let results: Vec<_> = stream::iter(storage_diffs_map)
+    let results: Vec<_> = stream::iter(state_diff_map.storage_diffs)
         .map(|(contract_addr, storage_map)| async move {
             process_single_contract(contract_addr, storage_map, provider, pre_range_block).await
         })
@@ -123,26 +132,52 @@ pub async fn squash_state_updates(
     let (replaced_class_items, deployed_contract_items) = process_deployed_contracts_and_replaced_classes(
         provider,
         pre_range_block,
-        deployed_contracts_map,
-        replaced_classes_map,
+        state_diff_map.deployed_contracts,
+        state_diff_map.replaced_classes,
     )
     .await?;
-
     state_diff.replaced_classes = replaced_class_items;
     state_diff.deployed_contracts = deployed_contract_items;
 
     // Declared classes
-    state_diff.declared_classes = declared_classes_map
+    state_diff.declared_classes = state_diff_map
+        .declared_classes
         .into_iter()
         .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
         .collect();
 
     // Nonces
-    state_diff.nonces =
-        nonces_map.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect();
+    state_diff.nonces = state_diff_map
+        .nonces
+        .into_iter()
+        .map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce })
+        .collect();
 
     // Deprecated classes
-    state_diff.deprecated_declared_classes = deprecated_classes_set.into_iter().collect();
+    state_diff.deprecated_declared_classes = state_diff_map.deprecated_declared_classes.into_iter().collect();
+
+    Ok(state_diff)
+}
+
+/// squash_state_updates merge all the StateUpdate into a single StateUpdate
+pub async fn squash_state_updates(
+    state_updates: Vec<StateUpdate>,
+    pre_range_block: Option<u64>,
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+) -> Result<StateUpdate, JobError> {
+    if state_updates.is_empty() {
+        return Err(JobError::Other(OtherError(eyre!("Cannot merge empty state updates"))));
+    }
+
+    // Take the last block hash and number from the last update as our "latest"
+    let last_update = state_updates.last().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?;
+    let block_hash = last_update.block_hash;
+    let new_root = last_update.new_root;
+    let old_root = state_updates.first().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?.old_root;
+
+    // Collecting a simplified squashed state diff map
+    let mut state_diff_map = get_state_diff_map(&state_updates);
+    let state_diff = get_state_diff_from_state_diff_map(state_diff_map, pre_range_block, provider).await?;
 
     // Create the merged StateUpdate
     let merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
