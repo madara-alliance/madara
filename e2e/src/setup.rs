@@ -4,12 +4,13 @@ use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
 // Import all the services we've created
-use crate::servers::anvil::{AnvilConfig, AnvilError, AnvilService};
-use crate::servers::bootstrapper::{BootstrapperConfig, BootstrapperError, BootstrapperService};
+use crate::servers::anvil::{AnvilCMDBuilder, AnvilConfig, AnvilError, AnvilService};
+use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService};
-use crate::servers::madara::{MadaraCMD, MadaraConfig, MadaraError, MadaraService};
+use crate::servers::madara::{MadaraCMDBuilder, MadaraConfig, MadaraError, MadaraService};
 use crate::servers::mongo::{MongoConfig, MongoError, MongoService};
+use crate::constants::{DEFAULT_DATA_DIR};
 use crate::servers::orchestrator::{
     Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService,
 };
@@ -31,9 +32,7 @@ pub enum SetupError {
     #[error("Madara service error: {0}")]
     Madara(#[from] MadaraError),
     #[error("Bootstrapper service error: {0}")]
-    Bootstrapper(String),
-    #[error("Sequencer service error: {0}")]
-    Sequencer(String),
+    Bootstrapper(#[from] BootstrapperError),
     #[error("Setup timeout: {0}")]
     Timeout(String),
     #[error("Dependency validation failed: {0}")]
@@ -59,6 +58,7 @@ pub struct SetupConfig {
     pub setup_timeout: Duration,
     pub wait_for_sync: bool,
     pub skip_existing_dbs: bool,
+    pub db_dir_path: String
 }
 
 impl Default for SetupConfig {
@@ -77,6 +77,7 @@ impl Default for SetupConfig {
             setup_timeout: Duration::from_secs(300), // 5 minutes
             wait_for_sync: true,
             skip_existing_dbs: false,
+            db_dir_path: DEFAULT_DATA_DIR.to_string()
         }
     }
 }
@@ -125,7 +126,7 @@ pub struct Setup {
     pub madara: Option<MadaraService>,
     pub bootstrapper: Option<BootstrapperService>,
     pub context: Arc<Context>,
-    config: SetupConfig,
+    pub config: SetupConfig,
 }
 
 enum Services {
@@ -153,33 +154,37 @@ impl Setup {
         })
     }
 
-    /// Complete setup for L2 configuration
-    pub async fn l2_setup(mut config: SetupConfig) -> Result<Self, SetupError> {
-        config.layer = Layer::L2;
-        let mut setup = Self::new(config)?;
-        setup.run_complete_setup().await?;
-        println!("fd");
-        Ok(setup)
-    }
-
-    /// Complete setup for L3 configuration
-    pub async fn l3_setup(mut config: SetupConfig) -> Result<Self, SetupError> {
-        config.layer = Layer::L3;
-        let mut setup = Self::new(config)?;
-        setup.run_complete_setup().await?;
-
-        // TODO: bootstrapp L1
-        Ok(setup)
-    }
-
     /// Run the complete setup process
-    async fn run_complete_setup(&mut self) -> Result<(), SetupError> {
+    pub async fn setup(&mut self) -> Result<(), SetupError> {
         println!("🚀 Starting Madara Setup for {:?} layer...", self.config.layer);
+
+        // Step 1 : Validate dependencies within timeout
+        // Anvil should be installed
+        // Docker should be present and running
+        timeout(self.config.setup_timeout, async {
+            self.validate_dependencies().await?;
+            Ok::<(), SetupError>(())
+        }).await
+        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+
+
+        // Step 2 : Check for existing chain state
+        // Decision : if state exists, skip setting up new chain and start servers with existing state
+        // else : if state does not exist, setup new chain and start servers with new state
+        let state_exists = self.check_existing_chain_state().await?;
+
+        if state_exists {
+            println!("Chain state exists, starting servers...");
+            // self.start_existing_chain().await?;
+        } else {
+            println!("Chain state does not exist, setting up new chain...");
+            self.setup_new_chain().await?;
+        }
 
         // Wrap the entire setup in a timeout
         timeout(self.config.setup_timeout, async {
             self.validate_dependencies().await?;
-            self.check_existing_databases().await?;
+            // self.check_existing_databases().await?;
             // self.start_infrastructure_services().await?;
             // self.wait_for_services_ready().await?;
             // self.run_setup_validation().await?;
@@ -222,7 +227,6 @@ impl Setup {
         join_set.spawn(async {
             if !DockerServer::is_docker_running() {
                 println!("Docker is NOT running");
-
                 return Err(SetupError::DependencyFailed("Docker not running".to_string()));
             }
             println!("Docker is running");
@@ -249,7 +253,7 @@ impl Setup {
     }
 
     /// Check if existing databases need to be preserved or cleared
-    async fn check_existing_databases(&self) -> Result<(), SetupError> {
+    async fn check_existing_chain_state(&self) -> Result<bool, SetupError> {
         println!("🗄️  Checking existing databases...");
 
         if !self.config.skip_existing_dbs {
@@ -263,8 +267,59 @@ impl Setup {
             println!("⏭️  Skipping database initialization (existing DBs will be used)");
         }
 
-        Ok(())
+        Ok(true)
     }
+
+
+    /// Starts afresh chain
+    async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
+
+        // Step 1: Setup L1
+        // Spin up Anvil
+        // Use bootstrapper to setup L1
+        // Timeout this for 5 mins
+
+        // TODO: take these timeouts from config
+        timeout(Duration::from_secs(300), async {
+            self.start_l1_setup().await?;
+            // self.wait_for_services_ready().await?;
+            // self.run_setup_validation().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+
+        // Step 2: Setup L2
+        // Spin up Anvil
+        // Use bootstrapper to setup L2
+
+        // TODO: take these timeouts from config
+        timeout(Duration::from_secs(1800), async {
+            self.start_l2_setup().await?;
+            // self.wait_for_services_ready().await?;
+            // self.run_setup_validation().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+
+
+
+
+
+        Ok(())
+
+
+    }
+
+
+
+
+
+
+
+
+
 
     /// Start infrastructure services (Anvil, Localstack, MongoDB)
     async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
@@ -367,88 +422,97 @@ impl Setup {
     async fn start_l1_setup(&mut self) -> Result<(), SetupError> {
         println!("🎯 Starting L1 setup...");
 
-        // 🔑 KEY: Capture values first to avoid borrowing issues
-        let anvil_port = self.config.anvil_port;
+        // No need to do load state on setup!
+        // Only dump state on shutdown!
+
+        // Anvil db path :
+        let anvil_db_path = format!("{}/anvil.json", self.config.db_dir_path.clone());
+
+        let anvil_config = AnvilCMDBuilder::new().port(self.config.anvil_port.clone()).dump_state(anvil_db_path).build();
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
-            let anvil_config = AnvilConfig {
-                port: anvil_port,
-                dump_state: Some("./data/anvil.json".to_string()),
-                ..Default::default()
-            };
-
             let service = AnvilService::start(anvil_config).await?;
             println!("✅ Anvil started on {}", service.server().endpoint());
             Ok::<AnvilService, SetupError>(service)
         };
+        let anvil_service = start_anvil.await?;
 
-        // 🚀 These run in PARALLEL!
-        let (anvil_service,) = tokio::try_join!(start_anvil)?;
 
         // Assign the services
         self.anvil = Some(anvil_service);
 
         println!("Anvil has started");
 
-        let mut maap = HashMap::new();
-        maap.insert(
-            "ETH_PRIVATE_KEY".to_string(),
-            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
-        );
-        maap.insert("ETH_RPC".to_string(), "http://localhost:8545".to_string());
+        println!("Starting bootstrapper L1");
 
-        let bootstrapper_config = BootstrapperConfig { environment_vars: maap, ..Default::default() };
-        let bootstrapper_l1 = BootstrapperService::run(bootstrapper_config)
+        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // Ideally we would want to ask anvil each time for these values.
+
+        // TODO: I need to know the port from anvil before sending it to bootstrapper!
+
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .with_mode(BootstrapperMode::SetupL1)
+            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .add_env_var("ETH_RPC", "http://localhost:8545")
+            .build();
+
+        let bootstrapper = BootstrapperService::new(bootstrapper_l1_config)?;
+
+        let bootstrapper_l1_setup = bootstrapper.run()
             .await
-            .map_err(|err| SetupError::Bootstrapper(err.to_string()))?;
+            .map_err(|err| SetupError::Bootstrapper(err))?;
 
-        println!("✅ Core services started");
+        println!("L1 Setup completed");
+
         Ok(())
     }
 
-    /// Start L1 setup (Anvil, Bootstrapper)
+    /// Start L2 setup (Madara, Bootstrapper)
     async fn start_l2_setup(&mut self) -> Result<(), SetupError> {
-        println!("🎯 Starting L1 setup...");
+        println!("🎯 Starting L2 setup...");
 
-        // 🔑 KEY: Capture values first to avoid borrowing issues
+        // Capture values first to avoid borrowing issues
         let madara_port = self.config.madara_port;
+
+        // TODO: Should be validating that dependencies are met (Anvil is running)
+        // TODO: Should be taking l1 endpoint from anvil!
+        let madara_config = MadaraCMDBuilder::new().with_rpc_port(madara_port).build();
 
         // Start Madara
         let start_madara = async move {
-            let mut madara_config = MadaraConfig::default();
-            madara_config.rpc_port = madara_port;
-
             let service = MadaraService::start(madara_config).await?;
             println!("✅ Madara started on {}", service.endpoint());
             Ok::<MadaraService, SetupError>(service)
         };
 
-        // 🚀 These run in PARALLEL!
-        let (madara_service,) = tokio::try_join!(start_madara)?;
+        let madara_service = start_madara.await?;
 
         // Assign the services
         self.madara = Some(madara_service);
 
         println!("Madara has started");
 
-        let mut maap = HashMap::new();
-        maap.insert(
-            "ETH_PRIVATE_KEY".to_string(),
-            "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string(),
-        );
-        maap.insert("ETH_RPC".to_string(), "http://localhost:8545".to_string());
+        println!("Starting bootstrapper L2");
 
-        let bootstrapper_config = BootstrapperConfig {
-            environment_vars: maap,
-            mode: crate::servers::bootstrapper::BootstrapperMode::SetupL2,
-            ..Default::default()
-        };
-        let bootstrapper_l2 = BootstrapperService::run(bootstrapper_config)
+        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // Ideally we would want to ask anvil each time for these values.
+
+        // TODO: I need to know the port from anvil before sending it to bootstrapper!
+
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .with_mode(BootstrapperMode::SetupL2)
+            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .add_env_var("ETH_RPC", "http://localhost:8545")
+            .build();
+
+        let bootstrapper = BootstrapperService::new(bootstrapper_l2_config)?;
+
+        let bootstrapper_l2_setup = bootstrapper.run()
             .await
-            .map_err(|err| SetupError::Bootstrapper(err.to_string()))?;
+            .map_err(|err| SetupError::Bootstrapper(err))?;
 
-        println!("✅ Core services started");
+        println!("L2 Setup completed");
         Ok(())
     }
 
@@ -635,42 +699,42 @@ impl Setup {
 //     }
 // }
 
-// Helper functions for creating common setups
-impl Setup {
-    /// Create a quick L2 development setup
-    pub async fn quick_l2_dev(ethereum_api_key: String) -> Result<Self, SetupError> {
-        let config = SetupConfig {
-            layer: Layer::L2,
-            ethereum_api_key,
-            wait_for_sync: false,                    // Skip sync for faster dev setup
-            setup_timeout: Duration::from_secs(180), // 3 minutes
-            ..Default::default()
-        };
-        Self::l2_setup(config).await
-    }
+// // Helper functions for creating common setups
+// impl Setup {
+//     /// Create a quick L2 development setup
+//     pub async fn quick_l2_dev(ethereum_api_key: String) -> Result<Self, SetupError> {
+//         let config = SetupConfig {
+//             layer: Layer::L2,
+//             ethereum_api_key,
+//             wait_for_sync: false,                    // Skip sync for faster dev setup
+//             setup_timeout: Duration::from_secs(180), // 3 minutes
+//             ..Default::default()
+//         };
+//         Self::l2_setup(config).await
+//     }
 
-    /// Create a full L2 production setup
-    pub async fn full_l2_production(ethereum_api_key: String, data_dir: String) -> Result<Self, SetupError> {
-        let config = SetupConfig {
-            layer: Layer::L2,
-            ethereum_api_key,
-            data_directory: data_dir,
-            wait_for_sync: true,
-            setup_timeout: Duration::from_secs(600), // 10 minutes
-            ..Default::default()
-        };
-        Self::l2_setup(config).await
-    }
+//     /// Create a full L2 production setup
+//     pub async fn full_l2_production(ethereum_api_key: String, data_dir: String) -> Result<Self, SetupError> {
+//         let config = SetupConfig {
+//             layer: Layer::L2,
+//             ethereum_api_key,
+//             data_directory: data_dir,
+//             wait_for_sync: true,
+//             setup_timeout: Duration::from_secs(600), // 10 minutes
+//             ..Default::default()
+//         };
+//         Self::l2_setup(config).await
+//     }
 
-    /// Create a quick L3 development setup
-    pub async fn quick_l3_dev(ethereum_api_key: String) -> Result<Self, SetupError> {
-        let config = SetupConfig {
-            layer: Layer::L3,
-            ethereum_api_key,
-            wait_for_sync: false,
-            setup_timeout: Duration::from_secs(180),
-            ..Default::default()
-        };
-        Self::l3_setup(config).await
-    }
-}
+//     /// Create a quick L3 development setup
+//     pub async fn quick_l3_dev(ethereum_api_key: String) -> Result<Self, SetupError> {
+//         let config = SetupConfig {
+//             layer: Layer::L3,
+//             ethereum_api_key,
+//             wait_for_sync: false,
+//             setup_timeout: Duration::from_secs(180),
+//             ..Default::default()
+//         };
+//         Self::l3_setup(config).await
+//     }
+// }

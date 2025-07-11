@@ -42,95 +42,111 @@ pub enum BootstrapperError {
 #[derive(Debug, Clone)]
 pub struct BootstrapperConfig {
     pub mode: BootstrapperMode,
+    pub timeout: Duration,
     pub config_path: PathBuf,
     pub binary_path: Option<PathBuf>,
-    pub use_cargo: bool,
-    pub release_mode: bool,
     pub environment_vars: HashMap<String, String>,
     pub additional_args: Vec<String>,
-    pub timeout: Duration,
 }
 
 impl Default for BootstrapperConfig {
     fn default() -> Self {
         Self {
             mode: BootstrapperMode::SetupL1,
+            timeout: Duration::from_secs(60),
             config_path: PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG),
             binary_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY)),
-            use_cargo: false,
-            release_mode: true,
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
-            timeout: Duration::from_secs(300), // 5 minutes
         }
     }
 }
 
-pub struct BootstrapperCMDBuilder {
-    args: Vec<String>,
-    env: HashMap<String, String>,
+pub struct BootstrapperConfigBuilder {
+    mode: BootstrapperMode,
+    timeout: Duration,
+    config_path: Option<PathBuf>,
+    binary_path: Option<PathBuf>,
+    environment_vars: HashMap<String, String>,
+    additional_args: Vec<String>,
 }
 
-impl BootstrapperCMDBuilder {
+impl BootstrapperConfigBuilder {
     pub fn new() -> Self {
-        Self { args: Vec::new(), env: HashMap::new() }
+        Self {
+            mode: BootstrapperMode::SetupL1,
+            timeout: Duration::from_secs(60),
+            config_path: None,
+            binary_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY)),
+            environment_vars: HashMap::new(),
+            additional_args: Vec::new(),
+        }
     }
 
-    pub fn with_config(config: &BootstrapperConfig) -> Self {
-        let mut builder = Self::new();
-        builder.build_from_config(config);
-        builder
+    pub fn with_mode(mut self, mode: BootstrapperMode) -> Self {
+        self.mode = mode;
+        self
     }
 
-    fn build_from_config(&mut self, config: &BootstrapperConfig) {
+    pub fn with_config_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.config_path = Some(path.into());
+        self
+    }
+
+    pub fn with_binary_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
+        self.binary_path = path.map(|p| p.into());
+        self
+    }
+
+    pub fn add_env_var(mut self, key: &str, value: &str) -> Self {
+        self.environment_vars.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    pub fn add_arg(mut self, arg: &str) -> Self {
+        self.additional_args.push(arg.to_string());
+        self
+    }
+
+    pub fn with_timeout(mut self, timeout: Duration) -> Self {
+        self.timeout = timeout;
+        self
+    }
+
+    pub fn build(self) -> BootstrapperConfig {
+        BootstrapperConfig {
+            mode: self.mode,
+            timeout: self.timeout,
+            config_path: self.config_path.unwrap_or_else(|| PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG)),
+            binary_path: self.binary_path,
+            environment_vars: self.environment_vars,
+            additional_args: self.additional_args,
+        }
+    }
+}
+
+impl BootstrapperConfig {
+    pub fn to_command(&self) -> std::process::Command {
+        let binary_path = self.binary_path.as_ref()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|| DEFAULT_BOOTSTRAPPER_BINARY.to_string());
+
+        let mut cmd = std::process::Command::new(binary_path);
+
         // Core arguments
-        self.add_arg("--mode", &config.mode.to_string());
-        self.add_arg("--config", config.config_path.to_string_lossy().as_ref());
+        cmd.arg("--mode").arg(self.mode.to_string());
+        cmd.arg("--config").arg(&self.config_path);
 
         // Additional arguments
-        for arg in &config.additional_args {
-            self.args.push(arg.clone());
+        for arg in &self.additional_args {
+            cmd.arg(arg);
         }
 
         // Environment variables
-        for (key, value) in &config.environment_vars {
-            self.env.insert(key.clone(), value.clone());
+        for (key, value) in &self.environment_vars {
+            cmd.env(key, value);
         }
-    }
 
-    pub fn add_arg(&mut self, key: &str, value: &str) -> &mut Self {
-        self.args.push(key.to_string());
-        self.args.push(value.to_string());
-        self
-    }
-
-    pub fn add_flag(&mut self, flag: &str) -> &mut Self {
-        self.args.push(flag.to_string());
-        self
-    }
-
-    pub fn add_env(&mut self, key: &str, value: &str) -> &mut Self {
-        self.env.insert(key.to_string(), value.to_string());
-        self
-    }
-
-    pub fn build(&self) -> BootstrapperCMD {
-        BootstrapperCMD { args: self.args.clone(), env: self.env.clone() }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct BootstrapperCMD {
-    pub args: Vec<String>,
-    pub env: HashMap<String, String>,
-}
-
-impl BootstrapperCMD {
-    pub fn new(args: Vec<String>, env: HashMap<String, String>) -> Self {
-        Self { args, env }
-    }
-
-    pub fn from_config(config: &BootstrapperConfig) -> Self {
-        BootstrapperCMDBuilder::with_config(config).build()
+        cmd
     }
 }

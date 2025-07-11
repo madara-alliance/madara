@@ -19,7 +19,9 @@ async fn e2e_test_setup() {
     println!("Running setup");
 
     // This will panic with the actual error message if it fails
-    let _setup = Setup::l2_setup(setup_config).await.unwrap();
+    let mut setup_struct = Setup::new(setup_config).unwrap();
+
+    let x = setup_struct.setup().await;
 
     println!("Setup completed successfully!");
 
