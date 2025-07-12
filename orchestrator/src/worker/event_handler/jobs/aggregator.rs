@@ -1,32 +1,22 @@
-use crate::core::client::storage::StorageError;
 use crate::core::config::Config;
 use crate::error::job::snos::SnosError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::BatchStatus;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata};
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
-use crate::utils::COMPILED_OS;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::get_fact_info;
 use async_trait::async_trait;
-use bytes::Bytes;
-use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use cairo_vm::Felt252;
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;
 use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus, TaskType};
-use prove_block::prove_block;
 use starknet_core::types::Felt;
-use starknet_os::io::output::StarknetOsOutput;
-use std::fs::metadata;
-use std::io::Read;
 use std::sync::Arc;
-use tempfile::NamedTempFile;
 
 pub struct AggregatorJobHandler;
 
@@ -52,16 +42,16 @@ impl JobHandlerTrait for AggregatorJobHandler {
         Ok(job_item)
     }
 
+    /// Note: We confirm before creating an Aggregator job that
+    /// 1. All its child jobs are completed (i.e., ProofCreation jobs for all the blocks in the batch have status as Completed)
+    /// 2. Batch status is Closed (i.e., no new blocks will be added in the batch now)
+    ///
+    /// So all the Aggregator jobs have the above conditions satisfied.
+    /// Now, we follow the following logic:
+    /// 1. Calculate the fact for the batch and save it in job metadata
+    /// 2. Call close batch for the bucket
     #[tracing::instrument(fields(category = "aggregator"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        /// Note: We confirm before creating an Aggregator job that
-        /// 1. All its child jobs are completed (i.e., ProofCreation jobs for all the blocks in the batch have status as Completed)
-        /// 2. Batch status is Closed (i.e., no new blocks will be added in the batch now)
-        ///
-        /// So all the Aggregator jobs have the above conditions satisfied.
-        /// Now, we follow the following logic:
-        /// 1. Calculate the fact for the batch and save it in job metadata
-        /// 2. Call close batch for the bucket
         let internal_id = job.internal_id.clone();
         tracing::info!(
             log_type = "starting",

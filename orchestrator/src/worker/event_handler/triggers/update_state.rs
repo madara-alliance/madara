@@ -1,4 +1,3 @@
-use std::default;
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -7,7 +6,7 @@ use opentelemetry::KeyValue;
 
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
-    AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata, StateUpdateMetadata,
+    AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;

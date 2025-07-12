@@ -4,19 +4,13 @@ use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR,
     STORAGE_BLOB_DIR,
 };
-use crate::types::jobs::metadata::{
-    AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata,
-    SnosMetadata,
-};
+use crate::types::jobs::metadata::{AggregatorMetadata, CommonMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
-use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
-use alloy::consensus::EnvKzgSettings::Default;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
-use starknet_os::hints::block_context::block_number;
 use std::sync::Arc;
 
 pub struct AggregatorJobTrigger;

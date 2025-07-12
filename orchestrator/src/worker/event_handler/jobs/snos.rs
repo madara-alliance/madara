@@ -13,7 +13,6 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::get_fact_info;
 use async_trait::async_trait;
 use bytes::Bytes;
-use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;

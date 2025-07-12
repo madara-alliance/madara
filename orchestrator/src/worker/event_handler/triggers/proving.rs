@@ -6,10 +6,8 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
-use alloy::consensus::EnvKzgSettings::Default;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
-use starknet_os::hints::block_context::block_number;
 use std::sync::Arc;
 
 pub struct ProvingJobTrigger;
