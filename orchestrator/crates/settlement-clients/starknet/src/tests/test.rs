@@ -27,7 +27,7 @@ pub async fn spin_up_madara() -> MadaraCmd {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
     tracing::debug!("Spinning up Madara");
     let mut node = MadaraCmdBuilder::new()
-        .args(["--devnet", "--no-l1-sync", "--chain-config-path=./src/tests/devnet.yaml", "--rpc-cors", "all"])
+        .args(["--devnet", "--no-l1-sync", "--chain-config-path=/Users/mohit/Desktop/karnot/madara/configs/presets/devnet.yaml", "--rpc-cors", "all"])
         .run();
     node.wait_for_ready().await;
     node
@@ -73,7 +73,7 @@ async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddlew
     let madara_process = spin_up_madara.await;
 
     let starknet_settlement_params: StarknetSettlementValidatedArgs = StarknetSettlementValidatedArgs {
-        starknet_rpc_url: Url::parse(madara_process.rpc_url.as_ref()).unwrap(),
+        starknet_rpc_url: Url::parse("http://localhost:9944").unwrap(),
         starknet_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_PRIVATE_KEY"),
         starknet_account_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_ACCOUNT_ADDRESS"),
         starknet_cairo_core_contract_address: get_env_var_or_panic(
@@ -124,6 +124,8 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
         .unwrap(),
     };
 
+    println!("starknet_settlement_params: {:?}", starknet_settlement_params);
+
     let project_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(3).unwrap();
     let contract_path = project_root.join("../build-artifacts/orchestrator_tests");
     let sierra_class: SierraClass = serde_json::from_reader(
@@ -142,14 +144,20 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     let compiled_class_hash = compiled_class.class_hash().unwrap();
 
     let DeclareTransactionResult { transaction_hash: declare_tx_hash, class_hash: _ } =
-        account.declare_v3(Arc::new(flattened_class.clone()), compiled_class_hash).send().await.unwrap();
+        account.declare_v3(Arc::new(flattened_class.clone()), compiled_class_hash).l1_gas_price(0x0)
+            .l1_gas(0x0).l2_gas_price(0x0)
+            .l2_gas(0x0).l1_data_gas_price(0x0)
+            .l1_data_gas(0x0).send().await.unwrap();
     tracing::debug!("declare tx hash {:?}", declare_tx_hash);
 
     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
     assert!(is_success, "Declare transaction failed");
 
     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
-    let deploy_v1 = contract_factory.deploy_v3(vec![], felt!("1122"), false);
+    let deploy_v1 = contract_factory.deploy_v3(vec![], felt!("1122"), false).l1_gas_price(0x0)
+            .l1_gas(0x0).l2_gas_price(0x0)
+            .l2_gas(0x0).l1_data_gas_price(0x0)
+            .l1_data_gas(0x0);
     let deployed_address = deploy_v1.deployed_address();
 
     // env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());

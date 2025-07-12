@@ -103,6 +103,7 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
             Transaction::DeployAccount(tx) => Some(tx.calculate_contract_address()),
             _ => None,
         };
+        // println!(">>>>> 1. txn inside the into_starknet_api is: {:?}", transaction);
         let transaction = match transaction {
             Transaction::Declare(tx) => ApiAccountTransaction::Declare(ApiDeclareTransaction {
                 tx: tx.try_into()?,
@@ -127,6 +128,7 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
                 unreachable!("BroadcastedTxn can't be L1Handler or Deploy")
             }
         };
+        // println!(">>>>> 2. txn inside the into_starknet_api is: {:?}", transaction);
 
         Ok((transaction, converted_class))
     }

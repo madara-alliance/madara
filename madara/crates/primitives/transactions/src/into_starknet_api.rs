@@ -464,7 +464,7 @@ impl From<DataAvailabilityMode> for starknet_api::data_availability::DataAvailab
 
 impl From<starknet_api::transaction::fields::ValidResourceBounds> for ResourceBoundsMapping {
     fn from(value: starknet_api::transaction::fields::ValidResourceBounds) -> Self {
-        ResourceBoundsMapping { l1_gas: value.get_l1_bounds().into(), l2_gas: value.get_l2_bounds().into() }
+        ResourceBoundsMapping { l1_gas: value.get_l1_bounds().into(), l2_gas: value.get_l2_bounds().into(), l1_data_gas: value.get_l1_bounds().into() }
     }
 }
 

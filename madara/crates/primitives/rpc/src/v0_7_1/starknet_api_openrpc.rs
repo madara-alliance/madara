@@ -843,6 +843,7 @@ pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     /// The max amount and max price per unit of L2 gas used in this tx
     pub l2_gas: ResourceBounds,
+    pub l1_data_gas: ResourceBounds,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]

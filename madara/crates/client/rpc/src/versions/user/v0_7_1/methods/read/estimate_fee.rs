@@ -29,6 +29,7 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
+    // println!(">>>>> txn inside the estimate_fee is: {:?}", request);
     let block_info = starknet.get_block_info(&block_id)?;
     let starknet_version = *block_info.protocol_version();
 
@@ -49,8 +50,10 @@ pub async fn estimate_fee(
         })
         .collect::<Result<Vec<_>, ToBlockifierError>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
+    // println!(">>>>>>> transactions: {:?}", transactions);
 
     let execution_results = exec_context.re_execute_transactions([], transactions)?;
+    // println!(">>>>>>> execution_results: {:?}", execution_results);
 
     let fee_estimates = execution_results.iter().enumerate().try_fold(
         Vec::with_capacity(execution_results.len()),
@@ -65,6 +68,6 @@ pub async fn estimate_fee(
             Ok(acc)
         },
     )?;
-
+    println!("the fee estimates are: {:?}", fee_estimates);
     Ok(fee_estimates)
 }

@@ -8,6 +8,7 @@ pub fn tx_api_to_blockifier(
     tx: ApiAccountTransaction,
     execution_flags: ExecutionFlags,
 ) -> TransactionExecutionResult<BTransaction> {
+    // println!(">>>>> 1. txn inside the tx_api_to_blockifier is: {:?}", tx);
     let tx_hash = tx.tx_hash();
 
     let class_info = match &tx {
@@ -25,13 +26,15 @@ pub fn tx_api_to_blockifier(
         ApiAccountTransaction::DeployAccount(deploy_account_tx) => ApiTransaction::DeployAccount(deploy_account_tx.tx),
         ApiAccountTransaction::Invoke(invoke_tx) => ApiTransaction::Invoke(invoke_tx.tx),
     };
-
-    BTransaction::from_api(
+    // println!(">>>>> 2. txn inside the tx_api_to_blockifier is: {:?}", tx);
+    let txn_result = BTransaction::from_api(
         tx,
         tx_hash,
         class_info,
         /* paid_fee_on_l1 */ None,
         deployed_contract_address,
         execution_flags,
-    )
+    );
+    // println!(">>>>> 3. the result is: {:?}", txn_result);
+    txn_result
 }

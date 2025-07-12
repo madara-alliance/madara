@@ -702,6 +702,7 @@ impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     pub l2_gas: ResourceBounds,
+    pub l1_data_gas: ResourceBounds
 }
 
 #[serde_as]
@@ -715,13 +716,13 @@ pub struct ResourceBounds {
 
 impl From<ResourceBoundsMapping> for mp_rpc::ResourceBoundsMapping {
     fn from(resource: ResourceBoundsMapping) -> Self {
-        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
+        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into(), l1_data_gas: resource.l1_data_gas.into() }
     }
 }
 
 impl From<mp_rpc::ResourceBoundsMapping> for ResourceBoundsMapping {
     fn from(resource: mp_rpc::ResourceBoundsMapping) -> Self {
-        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
+        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into(), l1_data_gas: resource.l1_data_gas.into() }
     }
 }
 

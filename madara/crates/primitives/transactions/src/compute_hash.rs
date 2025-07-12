@@ -487,12 +487,27 @@ fn compute_gas_hash(tip: u64, resource_bounds: &ResourceBoundsMapping) -> Felt {
         Felt::from(tip),
         prepare_resource_bound_value(resource_bounds, DataAvailabilityMode::L1),
         prepare_resource_bound_value(resource_bounds, DataAvailabilityMode::L2),
+        prepare_resource_bound_value_l1_data_gas(resource_bounds, DataAvailabilityMode::L1),
     ];
     Poseidon::hash_array(gas_as_felt)
 }
 
 // Use a mapping from execution resources to get corresponding fee bounds
 // Encodes this information into 32-byte buffer then converts it into Felt
+fn prepare_resource_bound_value_l1_data_gas(
+    resource_bounds_mapping: &ResourceBoundsMapping,
+    da_mode: DataAvailabilityMode,
+) -> Felt {
+    let mut buffer = [0u8; 32];
+
+    buffer[1..8].copy_from_slice(b"L1_DATA");
+    let resource_bounds = resource_bounds_mapping.l1_data_gas.clone();
+    buffer[8..16].copy_from_slice(&resource_bounds.max_amount.to_be_bytes());
+    buffer[16..].copy_from_slice(&resource_bounds.max_price_per_unit.to_be_bytes());
+
+    Felt::from_bytes_be(&buffer)
+}
+
 fn prepare_resource_bound_value(
     resource_bounds_mapping: &ResourceBoundsMapping,
     da_mode: DataAvailabilityMode,
