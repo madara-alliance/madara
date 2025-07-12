@@ -31,7 +31,7 @@ jobs:
 
       - name: Run cli pointing to a file
         run: |
-          CARGO_TARGET_DIR=target cargo run --manifest-path madara/Cargo.toml --bin madara --release -- --no-l1-sync --devnet -- --config-file ./configs/args/config.json &
+          CARGO_TARGET_DIR=target cargo run --manifest-path madara/Cargo.toml --bin madara --release -- --no-l1-sync --devnet --config-file ./configs/args/config.json &
           MADARA_PID=$!
           while ! echo exit | nc localhost 9944; do sleep 1; done
           kill $MADARA_PID
