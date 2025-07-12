@@ -30,12 +30,14 @@ impl ValueMapping {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| ValueMapping::skip(diff.address)).for_each(|diff| {
-            keys.insert(diff.address);
-            diff.storage_entries.iter().for_each(|entry| {
-                keys.insert(entry.key);
-            });
-        });
+        state_update.state_diff.storage_diffs.iter().filter(|diff| !ValueMapping::skip(diff.address)).for_each(
+            |diff| {
+                keys.insert(diff.address);
+                diff.storage_entries.iter().for_each(|entry| {
+                    keys.insert(entry.key);
+                });
+            },
+        );
         state_update.state_diff.deployed_contracts.iter().for_each(|contract| {
             keys.insert(contract.address);
         });

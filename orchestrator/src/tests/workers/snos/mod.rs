@@ -161,8 +161,10 @@ async fn test_snos_worker(
     let latest_state_transition_job = latest_state_transition_completed.map(|max_block| {
         let mut job_item = get_job_item_mock_by_id("state_transition".to_string(), Uuid::new_v4());
         let blocks_to_settle: Vec<u64> = (0..=max_block).collect();
-        job_item.metadata.specific =
-            JobSpecificMetadata::StateUpdate(StateUpdateMetadata { blocks_to_settle, ..Default::default() });
+        job_item.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            batches_to_settle: blocks_to_settle,
+            ..Default::default()
+        });
         job_item.status = JobStatus::Completed;
         job_item
     });

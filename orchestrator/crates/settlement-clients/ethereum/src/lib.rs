@@ -409,7 +409,7 @@ impl EthereumSettlementClient {
                     bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET]),
                     bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET]),
                 )
-                    .to_be_bytes(),
+                .to_be_bytes(),
             ));
         }
 
