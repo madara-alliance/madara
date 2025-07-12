@@ -66,12 +66,7 @@
   },
   "telemetry_params": {
     "telemetry": false,
-    "telemetry_endpoints": [
-      [
-        "wss://starknodes.com/submit",
-        0
-      ]
-    ]
+    "telemetry_endpoints": [["wss://starknodes.com/submit", 0]]
   },
   "gateway_params": {
     "feeder_gateway_enable": false,
