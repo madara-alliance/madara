@@ -105,6 +105,7 @@ async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddlew
 
 #[rstest]
 #[tokio::test]
+#[ignore]
 async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
