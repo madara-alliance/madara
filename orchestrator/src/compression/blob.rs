@@ -1,47 +1,39 @@
-use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR, ONE};
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::BLOB_LEN;
 use crate::worker::event_handler::jobs::da::DAJobHandler;
+use color_eyre::eyre::eyre;
 use num_bigint::BigUint;
-use num_traits::{Num, Zero};
-use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateUpdate};
+use num_traits::{One, ToPrimitive, Zero};
+use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateDiff, StateUpdate};
 use std::collections::{HashMap, HashSet};
 
-/// Converts a StateUpdate to a vector of Felt values for blob creation
-///
-/// # Arguments
-/// * `state_update` - The StateUpdate to convert
-/// * `version` - Version of the starknet to be used
-///
-/// # Returns
-/// A vector of Felt values representing the state update in a format suitable for blob creation
-pub async fn state_update_to_blob_data(
-    state_update: StateUpdate,
-    version: StarknetVersion,
-) -> Result<Vec<Felt>, JobError> {
-    let mut state_diff = state_update.state_diff;
-
-    // Create a vector to hold the blob data
-    // Initialize with placeholder for total contract count (will update later)
-    let mut blob_data: Vec<Felt> = vec![Felt::ZERO];
-
-    // Create maps for an easier lookup
-    let mut deployed_contracts: HashMap<Felt, Felt> =
-        state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
-    let mut replaced_classes: HashMap<Felt, Felt> =
-        state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
-    let mut nonces: HashMap<Felt, Felt> =
-        state_diff.nonces.into_iter().map(|item| (item.contract_address, item.nonce)).collect();
-
-    // Keep track of processed addresses
-    let mut processed_addresses = HashSet::new();
-
+/// Prepares and sorts the state diff for deterministic output
+fn prepare_state_diff(mut state_diff: StateDiff) -> StateDiff {
     // Sort storage diffs by address for deterministic output
     state_diff.storage_diffs.sort_by_key(|diff| diff.address);
+    // For each storage diff, sort storage entries by key for deterministic output
+    for diff in &mut state_diff.storage_diffs {
+        diff.storage_entries.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+    // Sort declared classes by class_hash for deterministic output
+    state_diff.declared_classes.sort_by_key(|class| class.class_hash);
+    state_diff
+}
 
-    // Process each storage diff
-    for ContractStorageDiffItem { address, mut storage_entries } in state_diff.storage_diffs.clone().into_iter() {
+/// Processes storage diffs and updates blob_data, processed_addresses, and contract maps
+fn process_storage_diffs(
+    storage_diffs: Vec<ContractStorageDiffItem>,
+    version: StarknetVersion,
+    blob_data: &mut Vec<Felt>,
+    processed_addresses: &mut HashSet<Felt>,
+    deployed_contracts: &mut HashMap<Felt, Felt>,
+    replaced_classes: &mut HashMap<Felt, Felt>,
+    nonces: &mut HashMap<Felt, Felt>,
+) -> Result<(), JobError> {
+    for ContractStorageDiffItem { address, storage_entries } in storage_diffs.into_iter() {
+        tracing::debug!("Processing storage diffs for address {}", address);
         // Mark this address as processed
         processed_addresses.insert(address);
 
@@ -62,7 +54,7 @@ pub async fn state_update_to_blob_data(
         // Get nonce if it exists and remove from the map since we're processing this address
         let nonce = nonces.remove(&address);
 
-        // Create the DA word - class_flag is true if class_hash is Some
+        // Create the DA word - class_flag is true if class_hash is Some (i.e., the class is replaced)
         let da_word = da_word(class_hash.is_some(), nonce, storage_entries.len() as u64, version)?;
 
         // Add address and DA word to blob data
@@ -72,11 +64,7 @@ pub async fn state_update_to_blob_data(
         // If there's a class hash, add it to blob data
         if let Some(hash) = class_hash {
             blob_data.push(hash);
-            tracing::debug!("Adding class hash {} for address {}", hash, address);
         }
-
-        // Sort storage entries by key for deterministic output
-        storage_entries.sort_by_key(|entry| entry.key);
 
         // Add storage entries to blob data
         for entry in storage_entries {
@@ -84,85 +72,258 @@ pub async fn state_update_to_blob_data(
             blob_data.push(entry.value);
         }
     }
+    Ok(())
+}
 
-    // Process leftover nonces (contracts that have nonce updates but no storage updates)
+/// Collects leftover addresses (nonce/class updates without storage) and returns a sorted vector
+fn collect_leftover_addresses(
+    processed_addresses: &HashSet<Felt>,
+    deployed_contracts: &mut HashMap<Felt, Felt>,
+    replaced_classes: &mut HashMap<Felt, Felt>,
+    nonces: &mut HashMap<Felt, Felt>,
+) -> Vec<(Felt, Option<Felt>, Option<Felt>)> {
     let mut leftover_addresses = Vec::new();
-
-    // Check for any addresses with deployed contracts that weren't processed
-    for (address, class_hash) in deployed_contracts.iter() {
-        if !processed_addresses.contains(address) {
-            leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
-            tracing::debug!("Found leftover deployed contract: address={}, class_hash={}", address, class_hash);
-        }
-    }
-
-    // Check for any addresses with replaced classes that weren't processed
-    for (address, class_hash) in replaced_classes.iter() {
-        if !processed_addresses.contains(address) {
-            leftover_addresses.push((*address, Some(*class_hash), nonces.remove(address)));
-            tracing::debug!("Found leftover replaced class: address={}, class_hash={}", address, class_hash);
-        }
-    }
-
-    // Check for any addresses with only nonce updates that weren't processed
-    for (address, nonce) in nonces.iter() {
-        if !processed_addresses.contains(address) {
-            leftover_addresses.push((*address, None, Some(*nonce)));
-            tracing::debug!("Found leftover nonce: address={}, nonce={}", address, nonce);
-        }
-    }
-
-    // Sort leftover addresses for deterministic output
+    leftover_addresses.extend(
+        deployed_contracts
+            .drain()
+            .filter(|(address, _)| !processed_addresses.contains(address))
+            .map(|(address, class_hash)| (address, Some(class_hash), nonces.remove(&address))),
+    );
+    leftover_addresses.extend(
+        replaced_classes
+            .drain()
+            .filter(|(address, _)| !processed_addresses.contains(address))
+            .map(|(address, class_hash)| (address, Some(class_hash), nonces.remove(&address))),
+    );
+    leftover_addresses.extend(
+        nonces
+            .drain()
+            .filter(|(address, _)| !processed_addresses.contains(address))
+            .map(|(address, nonce)| (address, None, Some(nonce))),
+    );
     leftover_addresses.sort_by_key(|(address, _, _)| *address);
+    leftover_addresses
+}
 
+/// Appends a single leftover address to blob_data
+fn append_leftover_address_to_blob(
+    address: Felt,
+    class_hash: Option<Felt>,
+    nonce: Option<Felt>,
+    version: StarknetVersion,
+    blob_data: &mut Vec<Felt>,
+) -> Result<(), JobError> {
+    let da_word = da_word(class_hash.is_some(), nonce, 0, version)?;
+    tracing::debug!(
+        "Processing leftover address {}: class_hash={:?}, nonce={:?}",
+        address,
+        class_hash.map(|h| h.to_string()),
+        nonce.map(|n| n.to_string())
+    );
+    blob_data.push(address);
+    blob_data.push(da_word);
+    if let Some(hash) = class_hash {
+        blob_data.push(hash);
+    }
+    Ok(())
+}
+
+/// Processes leftover addresses (nonce/class updates without storage) and updates blob_data
+fn process_leftover_addresses(
+    processed_addresses: &HashSet<Felt>,
+    deployed_contracts: &mut HashMap<Felt, Felt>,
+    replaced_classes: &mut HashMap<Felt, Felt>,
+    nonces: &mut HashMap<Felt, Felt>,
+    version: StarknetVersion,
+    blob_data: &mut Vec<Felt>,
+) -> Result<usize, JobError> {
+    let leftover_addresses =
+        collect_leftover_addresses(processed_addresses, deployed_contracts, replaced_classes, nonces);
     tracing::debug!(
         "Processing {} leftover addresses with nonce or class updates but no storage updates",
         leftover_addresses.len()
     );
-
-    // Process each leftover address
-    for (address, class_hash, nonce) in leftover_addresses.clone() {
-        // Create DA word with zero storage entries
-        let da_word = da_word(class_hash.is_some(), nonce, 0, version)?;
-
-        tracing::debug!(
-            "Processing leftover address {}: class_hash={:?}, nonce={:?}",
-            address,
-            class_hash.map(|h| h.to_string()),
-            nonce.map(|n| n.to_string())
-        );
-
-        // Add address and DA word to blob data
-        blob_data.push(address);
-        blob_data.push(da_word);
-
-        // If there's a class hash, add it to blob data
-        if let Some(hash) = class_hash {
-            blob_data.push(hash);
-            tracing::debug!("Adding class hash {} for leftover address {}", hash, address);
-        }
+    for (address, class_hash, nonce) in leftover_addresses.iter() {
+        append_leftover_address_to_blob(*address, *class_hash, *nonce, version, blob_data)?;
     }
+    Ok(leftover_addresses.len())
+}
 
-    // Update the first element with the total number of contracts (original storage diffs and leftover addresses)
-    let total_contracts = state_diff.storage_diffs.len() + leftover_addresses.len();
-    blob_data[0] = Felt::from(total_contracts);
-    tracing::debug!("Total contract updates in blob: {}", total_contracts);
-
-    // Add declared classes count
-    blob_data.push(Felt::from(state_diff.declared_classes.len()));
-
-    // Sort declared classes by class_hash for deterministic output
-    state_diff.declared_classes.sort_by_key(|class| class.class_hash);
-
-    // Process each declared class
-    for DeclaredClassItem { class_hash, compiled_class_hash } in state_diff.declared_classes.into_iter() {
+/// Appends declared classes count and their data to blob_data
+fn append_declared_classes(declared_classes: Vec<DeclaredClassItem>, blob_data: &mut Vec<Felt>) {
+    blob_data.push(Felt::from(declared_classes.len()));
+    for DeclaredClassItem { class_hash, compiled_class_hash } in declared_classes.into_iter() {
         blob_data.push(class_hash);
         blob_data.push(compiled_class_hash);
     }
+}
+
+/// Converts a StateUpdate to a vector of Felt values for blob creation
+///
+/// # Arguments
+/// * `state_update` - The StateUpdate to convert
+/// * `version` - Version of the starknet to be used
+///
+/// # Returns
+/// A vector of Felt values representing the state update in a format suitable for blob creation
+pub async fn state_update_to_blob_data(
+    state_update: StateUpdate,
+    version: StarknetVersion,
+) -> Result<Vec<Felt>, JobError> {
+    // Create a state_diff copy
+    let state_diff = prepare_state_diff(state_update.state_diff);
+
+    // Create a vector to hold the blob data
+    // Initialize with placeholder for total contract count (will update later)
+    let mut blob_data: Vec<Felt> = vec![Felt::ZERO];
+
+    // Create maps for an easier lookup
+    let mut deployed_contracts: HashMap<Felt, Felt> =
+        state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
+    let mut replaced_classes: HashMap<Felt, Felt> =
+        state_diff.replaced_classes.into_iter().map(|item| (item.contract_address, item.class_hash)).collect();
+    let mut nonces: HashMap<Felt, Felt> =
+        state_diff.nonces.into_iter().map(|item| (item.contract_address, item.nonce)).collect();
+
+    // Keep track of processed addresses
+    let mut processed_addresses = HashSet::new();
+
+    let len_storage_diffs = state_diff.storage_diffs.len();
+
+    // Process each storage diff
+    process_storage_diffs(
+        state_diff.storage_diffs,
+        version,
+        &mut blob_data,
+        &mut processed_addresses,
+        &mut deployed_contracts,
+        &mut replaced_classes,
+        &mut nonces,
+    )?;
+
+    // Process leftover nonces (contracts that have nonce updates but no storage updates)
+    let leftover_count = process_leftover_addresses(
+        &processed_addresses,
+        &mut deployed_contracts,
+        &mut replaced_classes,
+        &mut nonces,
+        version,
+        &mut blob_data,
+    )?;
+
+    // Update the first element with the total number of contracts (original storage diffs and leftover addresses)
+    let total_contracts = len_storage_diffs + leftover_count;
+    blob_data[0] = Felt::from(total_contracts);
+    tracing::debug!("Total contract updates in blob: {}", total_contracts);
+
+    // Add declared classes count and data
+    append_declared_classes(state_diff.declared_classes, &mut blob_data);
 
     tracing::debug!("Created blob data with {} elements", blob_data.len());
 
     Ok(blob_data)
+}
+
+/// Old format (pre-0.13.3)
+///
+/// Binary encoding layout (252 bits total):
+///
+/// Bit positions:
+/// 251                                                                                   0
+/// |                                                                                     |
+/// v                                                                                     v
+/// ┌───────────────────────────────────────────────────────┬─────┬─────────┬─────────────┐
+/// │                 Zero Padding                          │cls  │  nonce  │ num_changes │
+/// │                  (123 bits)                           │flg  │(64 bits)│ (64 bits)   │
+/// │                  [251:129]                            │[128]│[127:64] │  [63:0]     │
+/// └───────────────────────────────────────────────────────┴─────┴─────────┴─────────────┘
+///
+/// Field breakdown:
+/// - Zero Padding (123 bits)  : [251:129] - Padded with zeros
+/// - class_flag (1 bit)       : [128]     - Class type flag
+/// - nonce (64 bits)          : [127:64]  - Nonce value
+/// - num_changes (64 bits)    : [63:0]    - Number of changes
+///
+/// Total used bits: 123 + 1 + 64 + 64 = 252 bits (exactly)
+///
+fn encode_da_word_pre_v0_13_3(
+    class_flag: bool,
+    nonce_change: Option<Felt>,
+    num_changes: u64,
+) -> Result<BigUint, JobError> {
+    let mut da_word = BigUint::zero();
+
+    // Class flag
+    da_word |= if class_flag { BigUint::one() << 128 } else { BigUint::zero() };
+
+    // Nonce
+    if let Some(new_nonce) = nonce_change {
+        let new_nonce = new_nonce
+            .to_u64()
+            .ok_or_else(|| JobError::Other(OtherError(eyre!("Nonce value {} exceeds u64 maximum", new_nonce))))?;
+        da_word |= BigUint::from(new_nonce) << 64;
+    }
+
+    // Number of changes
+    da_word |= BigUint::from(num_changes);
+
+    Ok(da_word)
+}
+
+/// v0.13.3+ format:
+///
+/// Binary encoding layout (252 bits total):
+///
+/// Bit positions:
+/// 251                                                                     0
+/// |                                                                       |
+/// v                                                                       v
+/// ┌───────────────┬─────────────────────────────────────┬───┬───┬─────────┐
+/// │   new_nonce   │           n_updates                 │n_u│cls│  Zeros  │
+/// │   (64 bits)   │        (8 or 64 bits)               │len│flg│ Padding │
+/// │   [251:188]   │     [187:124] or [187:180]          │[1]│[0]│         │
+/// └───────────────┴─────────────────────────────────────┴───┴───┴─────────┘
+///
+/// Field breakdown:
+/// - new_nonce (64 bits)     : [251:188] - Nonce value
+/// - n_updates (variable)    : [187:124] (64-bit) or [187:180] (8-bit, then padded by 0s) - Number of updates
+/// - n_updates_len (1 bit)   : [1] - Length indicator (1=8-bit, 0=64-bit n_updates)
+/// - class_flag (1 bit)      : [0] - Class changed or not
+///
+/// Total used bits: 64 + (8|64) + 1 + 1 = 74 or 130 bits
+/// Remaining bits: 252 - (74|130) = 178 or 122 bits (reserved/padding)
+///
+fn encode_da_word_v0_13_3_plus(
+    class_flag: bool,
+    nonce_change: Option<Felt>,
+    num_changes: u64,
+) -> Result<BigUint, JobError> {
+    let mut da_word = BigUint::zero();
+
+    // Add new_nonce (64 bits)
+    if let Some(new_nonce) = nonce_change {
+        let new_nonce = new_nonce
+            .to_u64()
+            .ok_or_else(|| JobError::Other(OtherError(eyre!("Nonce value {} exceeds u64 maximum", new_nonce))))?;
+        da_word |= BigUint::from(new_nonce) << 188;
+    }
+
+    // Determine if we need 8 or 64 bits for num_changes
+    let needs_large_updates = num_changes >= 256;
+
+    if needs_large_updates {
+        // Use 64 bits for updates
+        da_word |= BigUint::from(num_changes) << 124;
+    } else {
+        // Use 8 bits for updates
+        da_word |= BigUint::from(num_changes) << 180;
+        da_word |= BigUint::one() << 123;
+    }
+
+    // Class flag
+    da_word |= if class_flag { BigUint::one() << 122 } else { BigUint::zero() };
+
+    Ok(da_word)
 }
 
 /// Creates a DA word with information about a contract
@@ -183,86 +344,14 @@ pub fn da_word(
 ) -> Result<Felt, JobError> {
     // Parse version to determine format
     let is_gte_v0_13_3 = version >= StarknetVersion::V0_13_3;
-    let mut binary_string = String::new();
-    if is_gte_v0_13_3 {
-        // v0.13.3+ format:
-        // - new_nonce (64 bits)
-        // - n_updates (8 or 64 bits depending on size)
-        // - n_updates_len (1 bit)
-        // - class_flag (1 bit)
 
-        // Add new_nonce (64 bits)
-        if let Some(new_nonce) = nonce_change {
-            let bytes: [u8; 32] = new_nonce.to_bytes_be();
-            let big_uint_value = BigUint::from_bytes_be(&bytes);
-            let nonce_binary = format!("{:b}", big_uint_value);
-            binary_string += &format!("{:0>64}", nonce_binary);
-        } else {
-            // If nonce unchanged, use 64 zeros
-            binary_string += &"0".repeat(64);
-        }
-
-        // Determine if we need 8 or 64 bits for num_changes
-        let needs_large_updates = num_changes >= 256;
-
-        if needs_large_updates {
-            // Use 64 bits for updates
-            let updates_binary = format!("{:b}", num_changes);
-            binary_string += &format!("{:0>64}", updates_binary);
-            // Add remaining padding to reach 254 bits
-            binary_string = format!("{:0>254}", binary_string);
-            // Add n_updates_len (1) and class_flag
-            binary_string.push('0'); // n_updates_len = 1 for large updates
-        } else {
-            // Use 8 bits for updates
-            let updates_binary = format!("{:b}", num_changes);
-            binary_string += &format!("{:0>8}", updates_binary);
-            // Add remaining padding to reach 254 bits
-            binary_string = format!("{:0>254}", binary_string);
-            // Add n_updates_len (0) and class_flag
-            binary_string.push('1'); // n_updates_len = 0 for small updates
-        }
-
-        // Add class_flag as LSB
-        binary_string.push(if class_flag { '1' } else { '0' });
+    let da_word: BigUint = if is_gte_v0_13_3 {
+        encode_da_word_v0_13_3_plus(class_flag, nonce_change, num_changes)?
     } else {
-        // Old format (pre-0.13.3)
-        // padding of 127 bits
-        binary_string = "0".repeat(127);
+        encode_da_word_pre_v0_13_3(class_flag, nonce_change, num_changes)?
+    };
 
-        // class flag of one bit
-        if class_flag {
-            binary_string += "1"
-        } else {
-            binary_string += "0"
-        }
-
-        // checking for nonce here
-        if let Some(new_nonce) = nonce_change {
-            let bytes: [u8; 32] = new_nonce.to_bytes_be();
-            let binary_string_local = format!("{:b}", BigUint::from_bytes_be(&bytes));
-            let padded_binary_string = format!("{:0>64}", binary_string_local);
-            binary_string += &padded_binary_string;
-        } else {
-            let binary_string_local = "0".repeat(64);
-            binary_string += &binary_string_local;
-        }
-
-        let binary_representation = format!("{:b}", num_changes);
-        let padded_binary_string = format!("{:0>64}", binary_representation);
-        binary_string += &padded_binary_string;
-    }
-
-    // Convert binary string to decimal string
-    let decimal_string = BigUint::from_str_radix(binary_string.as_str(), 2)
-        .map_err(|e| {
-            JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert binary string to BigUint: {e}")))
-        })?
-        .to_str_radix(10);
-
-    Felt::from_dec_str(&decimal_string).map_err(|e| {
-        JobError::Other(OtherError(color_eyre::eyre::eyre!("Failed to convert decimal string to FieldElement: {}", e)))
-    })
+    Ok(Felt::from(da_word))
 }
 
 /// Converts a vector of felt into a vector of bigUint

@@ -49,7 +49,8 @@ impl JobTrigger for BatchingTrigger {
         let latest_block_in_db = latest_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Calculating the first block number to for which a batch needs to be assigned
-        let first_block_to_assign_batch = max(config.service_config().min_block_to_process, (latest_block_in_db + 1) as u64);
+        let first_block_to_assign_batch =
+            max(config.service_config().min_block_to_process, (latest_block_in_db + 1) as u64);
 
         if first_block_to_assign_batch <= last_block_to_assign_batch {
             self.assign_batch_to_blocks(first_block_to_assign_batch, last_block_to_assign_batch, config.clone())
@@ -281,8 +282,11 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        let compressed_vec_felts =
-            if madara_version >= StarknetVersion::V0_13_3 { stateless_compress(&vec_felts) } else { vec_felts };
+        let compressed_vec_felts = if madara_version >= StarknetVersion::V0_13_3 {
+            stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))?
+        } else {
+            vec_felts
+        };
         Ok(compressed_vec_felts)
     }
 
