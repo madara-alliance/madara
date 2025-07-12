@@ -24,7 +24,8 @@ pub struct AtlanticBucketResponse {
 
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct AtlanticQueryBucket {
+#[allow(dead_code)]
+pub struct AtlanticQueryBucket {
     pub id: String,
     pub external_id: Option<String>,
     pub transaction_id: Option<String>,

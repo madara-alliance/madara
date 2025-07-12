@@ -12,7 +12,7 @@ use crate::types::{
     AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticBucketType, AtlanticCairoVersion, AtlanticCairoVm,
     AtlanticCreateBucketRequest, AtlanticGetBucketResponse, AtlanticGetStatusResponse, AtlanticQueryStep,
 };
-use crate::{error, AtlanticValidatedArgs};
+use crate::AtlanticValidatedArgs;
 
 #[derive(Debug, strum_macros::EnumString)]
 enum ProverType {

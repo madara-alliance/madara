@@ -4,7 +4,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::BatchStatus;
 use crate::types::jobs::job_item::JobItem;
-use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, JobSpecificMetadata};
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
