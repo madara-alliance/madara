@@ -220,7 +220,7 @@ impl SettlementClientTrait for StarknetClient {
                 }
             }
 
-            sleep(Duration::from_millis(POLL_INTERVAL)).await;
+            sleep(POLL_INTERVAL).await;
         }
         Ok(())
     }
