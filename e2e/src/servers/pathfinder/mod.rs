@@ -105,9 +105,8 @@ impl PathfinderService {
         command.arg(config.image());
 
         // Add pathfinder binary command and arguments
-        command.arg("pathfinder");
         command.arg("--ethereum.url").arg(config.ethereum_url());
-        command.arg("--data-directory").arg(config.data_directory());
+        // command.arg("--data-directory").arg(config.data_directory());
         command.arg("--http-rpc").arg(format!("0.0.0.0:{}", config.port()));
         command.arg("--rpc.root-version").arg(config.rpc_root_version());
         command.arg("--monitor-address").arg(format!("0.0.0.0:{}", config.monitor_port()));
@@ -115,10 +114,12 @@ impl PathfinderService {
         command.arg("--chain-id").arg(config.chain_id());
 
         if let Some(gateway_url) = config.gateway_url() {
+            // command.arg("--add-host");
             command.arg("--gateway-url").arg(gateway_url);
         }
 
         if let Some(feeder_gateway_url) = config.feeder_gateway_url() {
+            // command.arg("--add-host");
             command.arg("--feeder-gateway-url").arg(feeder_gateway_url);
         }
 
@@ -214,23 +215,16 @@ impl PathfinderService {
     // TODO: volume attachment !
 
 
+
     // TODO:  Might we want to implement a RPC trait ?
     // So that both madara and pathfinder can implement same things ?
 
-    /// # Note: You can specify Starknet version in the URL path
-    /// # Example: /rpc/v0_8 for version 0.8, /rpc/v0_6 for version 0.6
-    /// curl --location 'madara_url' \
-    /// --header 'accept: application/json' \
-    /// --header 'content-type: application/json' \
-    /// --data '{
-    ///     "id": 1,
-    ///     "jsonrpc": "2.0",
-    ///     "method": "starknet_blockHashAndNumber",
-    ///     "params": []
-    /// }'
+
     pub async fn get_latest_block_number(&self) -> Result<u64, PathfinderError> {
         let url = self.endpoint();
-        let mut client = reqwest::Client::new();
+        println!("Calling madara at {:?}", url.to_string());
+
+        let client = reqwest::Client::new();
         let response = client.post(url)
             .header("accept", "application/json")
             .header("content-type", "application/json")
@@ -241,10 +235,44 @@ impl PathfinderService {
                 "params": []
             }))
             .send()
-            .await.map_err(|_| PathfinderError::InvalidResponse)?;
+            .await
+            .map_err(|_| PathfinderError::InvalidResponse)?;
 
-        let json = response.json::<serde_json::Value>().await.map_err(|_| PathfinderError::InvalidResponse)?;
-        Ok(json["result"].as_u64().ok_or(PathfinderError::InvalidResponse)?)
+        println!("Calling madara response {:?}", response);
+
+        let json = response.json::<serde_json::Value>().await
+            .map_err(|_| PathfinderError::InvalidResponse)?;
+
+        println!("Calling madara response #2 {:?}", json);
+
+        // Check if there's an error in the JSON-RPC response
+        if let Some(error) = json.get("error") {
+            println!("RPC Error: {:?}", error);
+            return Err(PathfinderError::InvalidResponse);
+        }
+
+        // Extract block_number from the result object
+        let result = json.get("result").ok_or(PathfinderError::InvalidResponse)?;
+        let block_number = result.get("block_number").ok_or(PathfinderError::InvalidResponse)?;
+
+
+        // Handle both string and number representations of block_number
+        let block_num = match block_number {
+            serde_json::Value::Number(n) => n.as_u64().ok_or(PathfinderError::InvalidResponse)?,
+            serde_json::Value::String(s) => {
+                // Handle hex string (common in blockchain APIs)
+                if s.starts_with("0x") {
+                    u64::from_str_radix(&s[2..], 16).map_err(|_| PathfinderError::InvalidResponse)?
+                } else {
+                    s.parse::<u64>().map_err(|_| PathfinderError::InvalidResponse)?
+                }
+            }
+            _ => return Err(PathfinderError::InvalidResponse),
+        };
+
+        println!("Block number PATHDINDER {:?}", block_num);
+
+        Ok(block_num)
     }
 
 

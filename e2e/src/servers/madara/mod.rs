@@ -238,6 +238,7 @@ impl MadaraService {
         let result = json.get("result").ok_or(MadaraError::InvalidResponse)?;
         let block_number = result.get("block_number").ok_or(MadaraError::InvalidResponse)?;
 
+
         // Handle both string and number representations of block_number
         let block_num = match block_number {
             serde_json::Value::Number(n) => n.as_u64().ok_or(MadaraError::InvalidResponse)?,
@@ -252,6 +253,8 @@ impl MadaraService {
             _ => return Err(MadaraError::InvalidResponse),
         };
 
+        println!("Block number MADARA {:?}", block_num);
+        
         Ok(block_num)
     }
 
