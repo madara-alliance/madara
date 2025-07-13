@@ -24,6 +24,8 @@ pub enum MadaraError {
     ConnectionFailed(String),
     #[error("File system error: {0}")]
     FileSystem(#[from] std::io::Error),
+    #[error("Invalid response from Madara")]
+    InvalidResponse,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -110,7 +112,8 @@ impl Default for MadaraConfigBuilder {
             gateway_external: true,
             gateway_port: DEFAULT_MADARA_GATEWAY_PORT,
             charge_fee: false,
-            l1_endpoint: Some("http://127.0.0.1:8545".to_string()),
+            // l1_endpoint: Some("http://127.0.0.1:8545".to_string()),
+            l1_endpoint: None,
             strk_gas_price: 0,
             strk_blob_gas_price: 0,
             gas_price: 0,

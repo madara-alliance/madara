@@ -1,6 +1,8 @@
 use crate::setup::{Setup, SetupConfig};
 use rstest::rstest;
 
+use tokio::time::sleep;
+use tokio::time::Duration;
 // #[rstest::fixture]
 // pub(crate) async fn setup() -> SomeSetupType {
 //     // based on some config :
@@ -22,6 +24,8 @@ async fn e2e_test_setup() {
     let mut setup_struct = Setup::new(setup_config).unwrap();
 
     let x = setup_struct.setup().await;
+
+    sleep(Duration::from_secs(500)).await;
 
     println!("Setup completed successfully!");
 

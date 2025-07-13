@@ -17,6 +17,7 @@ pub struct AnvilConfigBuilder {
     fork_url: Option<String>,
     load_state: Option<String>,
     dump_state: Option<String>,
+    block_time: Option<f64>,
 }
 
 // Final immutable configuration
@@ -27,6 +28,7 @@ pub struct AnvilConfig {
     fork_url: Option<String>,
     load_state: Option<String>,
     dump_state: Option<String>,
+    block_time: Option<f64>,
 }
 
 impl Default for AnvilConfigBuilder {
@@ -36,7 +38,8 @@ impl Default for AnvilConfigBuilder {
             host: "127.0.0.1".to_string(),
             fork_url: None,
             load_state: None,
-            dump_state: None
+            dump_state: None,
+            block_time: None,
         }
     }
 }
@@ -77,6 +80,14 @@ impl AnvilConfigBuilder {
         self
     }
 
+    /// Set the block time in seconds (must be non-negative, can be decimal)
+    pub fn block_time(mut self, seconds: f64) -> Self {
+        if seconds >= 0.0 {
+            self.block_time = Some(seconds);
+        }
+        self
+    }
+
     /// Build the final immutable configuration
     pub fn build(self) -> AnvilConfig {
         AnvilConfig {
@@ -85,6 +96,7 @@ impl AnvilConfigBuilder {
             fork_url: self.fork_url,
             load_state: self.load_state,
             dump_state: self.dump_state,
+            block_time: self.block_time,
         }
     }
 }
@@ -115,9 +127,13 @@ impl AnvilConfig {
         self.dump_state.as_deref()
     }
 
+    /// Get the block time in seconds
+    pub fn block_time(&self) -> Option<f64> {
+        self.block_time
+    }
+
     /// Build the final immutable configuration
     pub fn to_command(&self) -> Command {
-
         let mut command = Command::new("anvil");
         command.arg("--port").arg(self.port().to_string());
         command.arg("--host").arg(self.host());
@@ -132,6 +148,10 @@ impl AnvilConfig {
 
         if let Some(dump_state) = self.dump_state() {
             command.arg("--dump-state").arg(dump_state);
+        }
+
+        if let Some(block_time) = self.block_time() {
+            command.arg("--block-time").arg(block_time.to_string());
         }
 
         command

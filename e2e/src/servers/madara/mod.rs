@@ -12,6 +12,7 @@ use reqwest::Url;
 use std::path::PathBuf;
 use std::process::ExitStatus;
 use std::time::Duration;
+use serde_json::json;
 
 pub struct MadaraService {
     server: Server,
@@ -119,9 +120,9 @@ impl MadaraService {
     }
 
     /// Check if the process has exited
-    pub fn has_exited(&mut self) -> Option<ExitStatus> {
-        self.server.has_exited()
-    }
+    // pub fn has_exited(&mut self) -> Option<ExitStatus> {
+    //     self.server.has_exited().unwrap()
+    // }
 
     /// Check if the service is running
     pub fn is_running(&mut self) -> bool {
@@ -129,40 +130,40 @@ impl MadaraService {
     }
 
     /// Stop the Madara service
-    pub fn stop(&mut self) -> Result<(), MadaraError> {
-        self.server.stop().map_err(MadaraError::Server)
-    }
+    // pub async fn stop(&mut self) -> Result<(), MadaraError> {
+    //     self.server.stop().await.map_err(MadaraError::Server)
+    // }
 
     /// Restart the Madara service (useful after bootstrapper setup)
-    pub async fn restart(&mut self) -> Result<(), MadaraError> {
-        println!("🔄 Restarting Madara service...");
+    // pub async fn restart(&mut self) -> Result<(), MadaraError> {
+    //     println!("🔄 Restarting Madara service...");
 
-        // Stop current instance
-        self.stop()?;
+    //     // Stop current instance
+    //     self.stop().await?;
 
-        // Wait a moment for clean shutdown
-        tokio::time::sleep(Duration::from_secs(10)).await;
+    //     // Wait a moment for clean shutdown
+    //     tokio::time::sleep(Duration::from_secs(10)).await;
 
-        // Build new command
-        let command = self.config.to_command();
+    //     // Build new command
+    //     let command = self.config.to_command();
 
-        // Create server config
-        let server_config = ServerConfig {
-            port: self.config.rpc_port(),
-            host: "127.0.0.1".to_string(),
-            connection_attempts: 60,
-            connection_delay_ms: 2000,
-            ..Default::default()
-        };
+    //     // Create server config
+    //     let server_config = ServerConfig {
+    //         port: self.config.rpc_port(),
+    //         host: "127.0.0.1".to_string(),
+    //         connection_attempts: 60,
+    //         connection_delay_ms: 2000,
+    //         ..Default::default()
+    //     };
 
-        // Start new instance
-        self.server = Server::start_process(command, server_config)
-            .await
-            .map_err(MadaraError::Server)?;
+    //     // Start new instance
+    //     self.server = Server::start_process(command, server_config)
+    //         .await
+    //         .map_err(MadaraError::Server)?;
 
-        println!("✅ Madara service restarted");
-        Ok(())
-    }
+    //     println!("✅ Madara service restarted");
+    //     Ok(())
+    // }
 
     /// Create database directory if it doesn't exist
     pub async fn ensure_database_directory(&self) -> Result<(), MadaraError> {
@@ -196,4 +197,62 @@ impl MadaraService {
 
         Ok(size)
     }
+
+
+    // TODO:  Might we want to implement a RPC trait ?
+    // So that both madara and pathfinder can implement same things ?
+
+
+    pub async fn get_latest_block_number(&self) -> Result<u64, MadaraError> {
+        let url = self.endpoint();
+        println!("Calling madara at {:?}", url.to_string());
+
+        let client = reqwest::Client::new();
+        let response = client.post(url)
+            .header("accept", "application/json")
+            .header("content-type", "application/json")
+            .json(&json!({
+                "id": 1,
+                "jsonrpc": "2.0",
+                "method": "starknet_blockHashAndNumber",
+                "params": []
+            }))
+            .send()
+            .await
+            .map_err(|_| MadaraError::InvalidResponse)?;
+
+        println!("Calling madara response {:?}", response);
+
+        let json = response.json::<serde_json::Value>().await
+            .map_err(|_| MadaraError::InvalidResponse)?;
+
+        println!("Calling madara response #2 {:?}", json);
+
+        // Check if there's an error in the JSON-RPC response
+        if let Some(error) = json.get("error") {
+            println!("RPC Error: {:?}", error);
+            return Err(MadaraError::InvalidResponse);
+        }
+
+        // Extract block_number from the result object
+        let result = json.get("result").ok_or(MadaraError::InvalidResponse)?;
+        let block_number = result.get("block_number").ok_or(MadaraError::InvalidResponse)?;
+
+        // Handle both string and number representations of block_number
+        let block_num = match block_number {
+            serde_json::Value::Number(n) => n.as_u64().ok_or(MadaraError::InvalidResponse)?,
+            serde_json::Value::String(s) => {
+                // Handle hex string (common in blockchain APIs)
+                if s.starts_with("0x") {
+                    u64::from_str_radix(&s[2..], 16).map_err(|_| MadaraError::InvalidResponse)?
+                } else {
+                    s.parse::<u64>().map_err(|_| MadaraError::InvalidResponse)?
+                }
+            }
+            _ => return Err(MadaraError::InvalidResponse),
+        };
+
+        Ok(block_num)
+    }
+
 }

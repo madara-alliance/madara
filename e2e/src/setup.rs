@@ -1,5 +1,6 @@
 use std::sync::Arc;
 use std::time::Duration;
+use std::u64::MAX;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
@@ -15,7 +16,7 @@ use crate::constants::{DEFAULT_DATA_DIR};
 use crate::servers::orchestrator::{
     Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService,
 };
-use crate::servers::pathfinder::{PathfinderConfig, PathfinderError, PathfinderService};
+use crate::servers::pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError, PathfinderService};
 use std::collections::HashMap;
 
 #[derive(Debug, thiserror::Error)]
@@ -82,6 +83,11 @@ impl Default for SetupConfig {
         }
     }
 }
+
+
+// Setup can be sub-divided into to parts :
+// 1. Setup a new chain
+// 2. Pick up from a pre-existing chain
 
 #[derive(Debug, Clone)]
 pub struct Context {
@@ -172,49 +178,16 @@ impl Setup {
         // Step 2 : Check for existing chain state
         // Decision : if state exists, skip setting up new chain and start servers with existing state
         // else : if state does not exist, setup new chain and start servers with new state
-        let state_exists = self.check_existing_chain_state().await?;
+        // let state_exists = self.check_existing_chain_state().await?;
 
-        if state_exists {
-            println!("Chain state exists, starting servers...");
-            // self.start_existing_chain().await?;
-        } else {
+        // if state_exists {
+        //     println!("Chain state exists, starting servers...");
+        //     // self.start_existing_chain().await?;
+        // } else {
             println!("Chain state does not exist, setting up new chain...");
             self.setup_new_chain().await?;
-        }
+        // }
 
-        // Wrap the entire setup in a timeout
-        timeout(self.config.setup_timeout, async {
-            self.validate_dependencies().await?;
-            // self.check_existing_databases().await?;
-            // self.start_infrastructure_services().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
-
-        // Timeout this for 5 mins
-        timeout(Duration::from_secs(300), async {
-            self.start_l1_setup().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
-
-        // Timeout this for 30 mins
-        timeout(Duration::from_secs(1800), async {
-            self.start_l2_setup().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
-
-        println!("✅ Setup completed successfully in {:?}", self.context.elapsed());
         Ok(())
     }
 
@@ -271,16 +244,21 @@ impl Setup {
         Ok(true)
     }
 
-
     /// Starts afresh chain
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
+        // Wrap the entire setup in a timeout
+        timeout(self.config.setup_timeout, async {
+            self.validate_dependencies().await?;
+            // self.check_existing_databases().await?;
+            // self.start_infrastructure_services().await?;
+            // self.wait_for_services_ready().await?;
+            // self.run_setup_validation().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // Step 1: Setup L1
-        // Spin up Anvil
-        // Use bootstrapper to setup L1
         // Timeout this for 5 mins
-
-        // TODO: take these timeouts from config
         timeout(Duration::from_secs(300), async {
             self.start_l1_setup().await?;
             // self.wait_for_services_ready().await?;
@@ -290,11 +268,7 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-        // Step 2: Setup L2
-        // Spin up Anvil
-        // Use bootstrapper to setup L2
-
-        // TODO: take these timeouts from config
+        // Timeout this for 30 mins
         timeout(Duration::from_secs(1800), async {
             self.start_l2_setup().await?;
             // self.wait_for_services_ready().await?;
@@ -302,113 +276,32 @@ impl Setup {
             Ok::<(), SetupError>(())
         })
         .await
-        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+
+        sleep(Duration::from_secs(20)).await;
+        println!("Starting pathfinder service");
+        // Start Pathfinder Service, wait for it to complete sync
+        timeout(Duration::from_secs(300), async {
+            println!("Starting pathfinder service #2");
+
+            self.start_full_node_syncing().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
+
+
+        // Need to sync a pathfinder
+        // Need to run orchestrator!
+
+
+        println!("✅ Setup completed successfully in {:?}", self.context.elapsed());
 
         Ok(())
 
-
     }
 
-    /// Start infrastructure services (Anvil, Localstack, MongoDB)
-    async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
-        println!("🏗️  Starting infrastructure services...");
 
-        // 🔑 KEY: Capture values first to avoid borrowing issues
-        let localstack_port = self.config.localstack_port;
-        let layer = self.config.layer.clone();
-        let mongo_port = self.config.mongo_port;
-
-        // Create async closures that DON'T borrow self
-        let start_localstack = async move {
-            let localstack_config = LocalstackConfigBuilder::new()
-                .port(localstack_port)
-                .build();
-
-            let service = LocalstackService::start(localstack_config).await?;
-            println!("✅ Localstack started on {}", service.server().endpoint());
-            Ok::<LocalstackService, SetupError>(service)
-        };
-
-        let start_mongo = async move {
-
-            let mongo_config = MongoConfigBuilder::new()
-                .port(mongo_port)
-                .build();
-
-            let service = MongoService::start(mongo_config).await?;
-            println!("✅ MongoDB started on port {}", service.server().port());
-            Ok::<MongoService, SetupError>(service)
-        };
-
-        // TODO: Atlantic get's added here later!
-
-        // 🚀 These run in PARALLEL!
-        let (localstack_service, mongo_service) = tokio::try_join!(start_localstack, start_mongo)?;
-
-        // Assign the services
-        self.localstack = Some(localstack_service);
-        self.mongo = Some(mongo_service);
-
-        println!("✅ Infrastructure services started");
-        Ok(())
-    }
-
-    /// Start core services (Pathfinder, Orchestrator, Sequencer, Bootstrapper)
-    async fn start_core_services(&mut self) -> Result<(), SetupError> {
-        println!("🎯 Starting core services...");
-
-        // 🔑 KEY: Capture values first to avoid borrowing issues
-        let anvil_port = self.config.anvil_port;
-        let pathfinder_port = self.config.pathfinder_port;
-        let data_directory = self.config.data_directory.clone();
-        let madara_port = self.config.madara_port;
-
-        // Create async closures that DON'T borrow self
-        let start_anvil = async move {
-            let anvil_config = AnvilConfigBuilder::new()
-                .port(anvil_port)
-                .build();
-
-            let service = AnvilService::start(anvil_config).await?;
-            println!("✅ Anvil started on {}", service.server().endpoint());
-            Ok::<AnvilService, SetupError>(service)
-        };
-
-        // Start Madara
-        let start_madara = async move {
-            let madara_config = MadaraConfigBuilder::new()
-                .with_rpc_port(madara_port)
-                .build();
-
-            let service = MadaraService::start(madara_config).await?;
-            println!("✅ Madara started on {}", service.endpoint());
-            Ok::<MadaraService, SetupError>(service)
-        };
-
-        // // Pathfinder should start only after madara is ready!
-        // let start_pathfinder = async move {
-        //     let mut pathfinder_config = PathfinderConfig::default();
-        //     pathfinder_config.port = pathfinder_port;
-        //     pathfinder_config.data_volume = Some(format!("{}/pathfinder", data_directory));
-
-        //     let service = PathfinderService::start(pathfinder_config).await?;
-        //     println!("✅ Pathfinder started on {}", service.endpoint());
-        //     Ok::<PathfinderService, SetupError>(service)
-        // };
-
-        // 🚀 These run in PARALLEL!
-        let (anvil_service, madara_service) = tokio::try_join!(start_anvil, start_madara)?;
-
-        // Assign the services
-        self.anvil = Some(anvil_service);
-        self.madara = Some(madara_service);
-        // self.pathfinder = Some(pathfinder_service);
-
-        sleep(Duration::from_secs(100)).await;
-
-        println!("✅ Core services started");
-        Ok(())
-    }
 
     /// Start L1 setup (Anvil, Bootstrapper)
     async fn start_l1_setup(&mut self) -> Result<(), SetupError> {
@@ -420,7 +313,10 @@ impl Setup {
         // Anvil db path :
         let anvil_db_path = format!("{}/anvil.json", self.config.db_dir_path.clone());
 
-        let anvil_config = AnvilConfigBuilder::new().port(self.config.anvil_port.clone()).dump_state(anvil_db_path).build();
+        let anvil_config = AnvilConfigBuilder::new()
+            .port(self.config.anvil_port.clone())
+            .block_time(1_f64)
+            .dump_state(anvil_db_path).build();
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
@@ -429,7 +325,6 @@ impl Setup {
             Ok::<AnvilService, SetupError>(service)
         };
         let anvil_service = start_anvil.await?;
-
 
         // Assign the services
         self.anvil = Some(anvil_service);
@@ -443,18 +338,15 @@ impl Setup {
 
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-            .with_mode(BootstrapperMode::SetupL1)
-            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .add_env_var("ETH_RPC", "http://localhost:8545")
-            .add_env_var("RUST_LOG", "info")
-            .build();
+        // let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+        //     .with_mode(BootstrapperMode::SetupL1)
+        //     .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+        //     .add_env_var("ETH_RPC", "http://localhost:8545")
+        //     .add_env_var("RUST_LOG", "info")
+        //     .build();
 
-        let bootstrapper = BootstrapperService::new(bootstrapper_l1_config)?;
-
-        let bootstrapper_l1_setup = bootstrapper.run()
-            .await
-            .map_err(|err| SetupError::Bootstrapper(err))?;
+        // let status = BootstrapperService::run(bootstrapper_l1_config).await?;
+        // println!("Bootstrapper L1 finished with {}", status);
 
         println!("L1 Setup completed");
 
@@ -469,6 +361,7 @@ impl Setup {
         let madara_port = self.config.madara_port;
 
         // TODO: Should be validating that dependencies are met (Anvil is running)
+        // And is bootstrapped
         // TODO: Should be taking l1 endpoint from anvil!
         let madara_config = MadaraConfigBuilder::new().with_rpc_port(madara_port).build();
 
@@ -493,21 +386,92 @@ impl Setup {
 
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-            .with_mode(BootstrapperMode::SetupL2)
-            .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .add_env_var("ETH_RPC", "http://localhost:8545")
-            .add_env_var("RUST_LOG", "info")
-            .build();
+        // let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+        //     .with_mode(BootstrapperMode::SetupL2)
+        //     .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+        //     .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+        //     .add_env_var("ETH_RPC", "http://localhost:8545")
+        //     .add_env_var("RUST_LOG", "info")
+        //     .build();
 
-        let bootstrapper = BootstrapperService::new(bootstrapper_l2_config)?;
-
-        let bootstrapper_l2_setup = bootstrapper.run()
-            .await
-            .map_err(|err| SetupError::Bootstrapper(err))?;
+        // let status = BootstrapperService::run(bootstrapper_l2_config).await?;
+        // println!("Bootstrapper L2 finished with {}", status);
 
         println!("L2 Setup completed");
+        Ok(())
+    }
+
+
+    /// Start pathfinder and orchestrator service for bootstrapped madara
+    async fn start_full_node_syncing(&mut self) ->  Result<(), SetupError> {
+        // Need to fetch core contract from bootstrapper
+        // Need to fetch block number from madara
+        // Need to check when pathfinder has been synced till the provided block number
+        // Then only orchestrator should start!
+
+
+        println!("Pathfinder @11`1");
+
+        let mut sync_ready_at_block : u64 = u64::MAX;
+
+        if let Some(madara) = &self.madara {
+            sync_ready_at_block = madara.get_latest_block_number().await?;
+        }
+
+        println!("Syncing ready at block {}", sync_ready_at_block);
+
+        let pathfinder_config = PathfinderConfigBuilder::new()
+            .build();
+
+        // Start Pathfinder
+        let start_pathfinder = async move {
+            let service = PathfinderService::start(pathfinder_config).await?;
+            println!("✅ Pathfinder started on {}", service.endpoint());
+            Ok::<PathfinderService, SetupError>(service)
+        };
+
+        let pathfinder = start_pathfinder.await?;
+
+        // Assign the services
+        self.pathfinder = Some(pathfinder);
+
+        println!("Pathfinder has started");
+
+        // A blocking looped logic that checks it pathfinder is ready
+
+        let mut pathfinder_ready = false;
+
+        println!("Waiting for Pathfinder to be ready");
+
+        if let Some(pathfinder_service) = &self.pathfinder {
+            while !pathfinder_ready {
+                println!("Checking Pathfinder status...");
+
+                let blk_number = pathfinder_service.get_latest_block_number().await?;
+                if blk_number >= sync_ready_at_block {
+                    println!("Pathfinder is ready");
+                    pathfinder_ready = true;
+                }
+
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+            }
+        }
+
+        // let pathfinder = PathfinderService::run(pathfinder_config).await?;
+
+        println!("Pathfinder started");
+        Ok(())
+    }
+
+
+
+    async fn close_services(&mut self) -> Result<(), SetupError> {
+        // Anvil should close after L1 setup is completed
+        println!("Closing Anvil");
+        if let Some(anvil) = self.anvil.take() {
+            let _ = anvil.stop();
+        }
+
         Ok(())
     }
 
@@ -732,4 +696,106 @@ impl Setup {
 //         };
 //         Self::l3_setup(config).await
 //     }
+//
+//  /// Start core services (Pathfinder, Orchestrator, Sequencer, Bootstrapper)
+// async fn start_core_services(&mut self) -> Result<(), SetupError> {
+//     println!("🎯 Starting core services...");
+
+//     // 🔑 KEY: Capture values first to avoid borrowing issues
+//     let anvil_port = self.config.anvil_port;
+//     let pathfinder_port = self.config.pathfinder_port;
+//     let data_directory = self.config.data_directory.clone();
+//     let madara_port = self.config.madara_port;
+
+//     // Create async closures that DON'T borrow self
+//     let start_anvil = async move {
+//         let anvil_config = AnvilConfigBuilder::new()
+//             .port(anvil_port)
+//             .build();
+
+//         let service = AnvilService::start(anvil_config).await?;
+//         println!("✅ Anvil started on {}", service.server().endpoint());
+//         Ok::<AnvilService, SetupError>(service)
+//     };
+
+//     // Start Madara
+//     let start_madara = async move {
+//         let madara_config = MadaraConfigBuilder::new()
+//             .with_rpc_port(madara_port)
+//             .build();
+
+//         let service = MadaraService::start(madara_config).await?;
+//         println!("✅ Madara started on {}", service.endpoint());
+//         Ok::<MadaraService, SetupError>(service)
+//     };
+
+//     // // Pathfinder should start only after madara is ready!
+//     // let start_pathfinder = async move {
+//     //     let mut pathfinder_config = PathfinderConfig::default();
+//     //     pathfinder_config.port = pathfinder_port;
+//     //     pathfinder_config.data_volume = Some(format!("{}/pathfinder", data_directory));
+
+//     //     let service = PathfinderService::start(pathfinder_config).await?;
+//     //     println!("✅ Pathfinder started on {}", service.endpoint());
+//     //     Ok::<PathfinderService, SetupError>(service)
+//     // };
+
+//     // 🚀 These run in PARALLEL!
+//     let (anvil_service, madara_service) = tokio::try_join!(start_anvil, start_madara)?;
+
+//     // Assign the services
+//     self.anvil = Some(anvil_service);
+//     self.madara = Some(madara_service);
+//     // self.pathfinder = Some(pathfinder_service);
+
+//     sleep(Duration::from_secs(100)).await;
+
+//     println!("✅ Core services started");
+//     Ok(())
+// }
+
+
+// /// Start infrastructure services (Anvil, Localstack, MongoDB)
+// async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
+//     println!("🏗️  Starting infrastructure services...");
+
+//     // 🔑 KEY: Capture values first to avoid borrowing issues
+//     let localstack_port = self.config.localstack_port;
+//     let layer = self.config.layer.clone();
+//     let mongo_port = self.config.mongo_port;
+
+//     // Create async closures that DON'T borrow self
+//     let start_localstack = async move {
+//         let localstack_config = LocalstackConfigBuilder::new()
+//             .port(localstack_port)
+//             .build();
+
+//         let service = LocalstackService::start(localstack_config).await?;
+//         println!("✅ Localstack started on {}", service.server().endpoint());
+//         Ok::<LocalstackService, SetupError>(service)
+//     };
+
+//     let start_mongo = async move {
+
+//         let mongo_config = MongoConfigBuilder::new()
+//             .port(mongo_port)
+//             .build();
+
+//         let service = MongoService::start(mongo_config).await?;
+//         println!("✅ MongoDB started on port {}", service.server().port());
+//         Ok::<MongoService, SetupError>(service)
+//     };
+
+//     // TODO: Atlantic get's added here later!
+
+//     // 🚀 These run in PARALLEL!
+//     let (localstack_service, mongo_service) = tokio::try_join!(start_localstack, start_mongo)?;
+
+//     // Assign the services
+//     self.localstack = Some(localstack_service);
+//     self.mongo = Some(mongo_service);
+
+//     println!("✅ Infrastructure services started");
+//     Ok(())
+// }
 // }

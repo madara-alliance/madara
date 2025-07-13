@@ -59,4 +59,10 @@ impl AnvilService {
     pub fn dependencies(&self) -> Option<Vec<String>> {
         Some(vec![])
     }
+
+    pub fn stop(mut self) -> Result<(), AnvilError> {
+        println!("Stopping service");
+        self.server.stop().map_err(|err| AnvilError::Server(err))
+    }
+
 }
