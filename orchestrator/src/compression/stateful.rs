@@ -30,12 +30,14 @@ impl ValueMapping {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| ValueMapping::skip(diff.address)).for_each(|diff| {
-            keys.insert(diff.address);
-            diff.storage_entries.iter().for_each(|entry| {
-                keys.insert(entry.key);
-            });
-        });
+        state_update.state_diff.storage_diffs.iter().filter(|diff| !ValueMapping::skip(diff.address)).for_each(
+            |diff| {
+                keys.insert(diff.address);
+                diff.storage_entries.iter().for_each(|entry| {
+                    keys.insert(entry.key);
+                });
+            },
+        );
         state_update.state_diff.deployed_contracts.iter().for_each(|contract| {
             keys.insert(contract.address);
         });
@@ -223,5 +225,23 @@ pub async fn compress(
     // Deprecated declared classes remain as it is as it only contains class hashes
     // block_hash, new_root and old_root remain as it is
 
+    // Sort the compressed StateUpdate
+    sort_state_diff(&mut state_update);
+
     Ok(state_update)
+}
+
+pub fn sort_state_diff(state_diff: &mut StateUpdate) {
+    // Sort storage diffs
+    state_diff.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+    for diff in &mut state_diff.state_diff.storage_diffs {
+        diff.storage_entries.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+
+    // Sort the rest
+    state_diff.state_diff.deprecated_declared_classes.sort_by(|a, b| a.cmp(&b));
+    state_diff.state_diff.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
+    state_diff.state_diff.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
+    state_diff.state_diff.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+    state_diff.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
 }

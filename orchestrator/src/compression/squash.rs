@@ -1,3 +1,4 @@
+use crate::compression::stateful::sort_state_diff;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use color_eyre::eyre::eyre;
@@ -178,7 +179,10 @@ pub async fn squash_state_updates(
     let state_diff = get_state_diff_from_state_diff_map(state_diff_map, pre_range_block, provider).await?;
 
     // Create the merged StateUpdate
-    let merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
+    let mut merged_update = StateUpdate { block_hash, new_root, old_root, state_diff };
+
+    // Sort the merged StateUpdate
+    sort_state_diff(&mut merged_update);
 
     Ok(merged_update)
 }
