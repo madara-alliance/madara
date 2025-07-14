@@ -309,12 +309,8 @@ impl EventWorker {
                         error!("Error receiving message: {:?}", e);
                     }
                 }
-            } else {
-                if let Some(result) = tasks.join_next().await {
-                    if let Err(e) = result {
-                        error!("Task failed: {:?}", e);
-                    }
-                }
+            } else if let Some(Err(e)) = tasks.join_next().await {
+                error!("Task failed: {:?}", e);
             }
         }
     }

@@ -15,11 +15,6 @@ pub struct DlqConfig {
 pub struct QueueControlConfig {
     // Max message count is the maximum number of messages to receive from the queue.
     pub max_message_count: usize,
-    // TODO: Add these fields back when we have a retry mechanism from the queue
-    // // Retry count is the number of times to retry the job if it fails.
-    // pub retry_count: usize,
-    // // Retry delay is the delay between retries in seconds.
-    // pub retry_delay: u32,
 }
 impl QueueControlConfig {
     pub fn default_with_message_count(max_message_count: usize) -> Self {
