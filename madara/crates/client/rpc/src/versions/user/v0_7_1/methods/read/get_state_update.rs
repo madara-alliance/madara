@@ -1,12 +1,11 @@
-use mp_block::{BlockId, BlockTag};
-use mp_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
-use starknet_types_core::felt::Felt;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::OptionExt;
 use crate::utils::ResultExt;
 use crate::Starknet;
 use mc_db::db_block_id::DbBlockId;
+use mp_block::{BlockId, BlockTag};
+use mp_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
+use starknet_types_core::felt::Felt;
 
 /// Get the information about the result of executing the requested block.
 ///

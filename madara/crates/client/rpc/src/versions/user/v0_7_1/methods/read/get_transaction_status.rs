@@ -1,11 +1,10 @@
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::utils::ResultExt;
+use crate::Starknet;
 use mp_block::MadaraMaybePendingBlockInfo;
 use mp_receipt::ExecutionResult;
 use mp_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 use starknet_types_core::felt::Felt;
-
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
-use crate::Starknet;
 
 /// Gets the status of a transaction. ([specs])
 ///

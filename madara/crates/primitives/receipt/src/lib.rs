@@ -54,13 +54,13 @@ impl From<DeployAccountTransactionReceipt> for TransactionReceipt {
 }
 
 impl TransactionReceipt {
-    pub fn transaction_hash(&self) -> Felt {
+    pub fn transaction_hash(&self) -> &Felt {
         match self {
-            TransactionReceipt::Invoke(receipt) => receipt.transaction_hash,
-            TransactionReceipt::L1Handler(receipt) => receipt.transaction_hash,
-            TransactionReceipt::Declare(receipt) => receipt.transaction_hash,
-            TransactionReceipt::Deploy(receipt) => receipt.transaction_hash,
-            TransactionReceipt::DeployAccount(receipt) => receipt.transaction_hash,
+            TransactionReceipt::Invoke(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::L1Handler(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::Declare(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::Deploy(receipt) => &receipt.transaction_hash,
+            TransactionReceipt::DeployAccount(receipt) => &receipt.transaction_hash,
         }
     }
 
@@ -164,7 +164,7 @@ impl TransactionReceipt {
 
     pub fn compute_hash(&self) -> Felt {
         Poseidon::hash_array(&[
-            self.transaction_hash(),
+            *self.transaction_hash(),
             self.actual_fee().amount,
             compute_messages_sent_hash(self.messages_sent()),
             self.execution_result().compute_hash(),

@@ -6,6 +6,13 @@ use std::collections::HashMap;
 
 mod into_starknet_types;
 
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TransactionStateUpdate {
+    pub nonces: HashMap<Felt, Felt>,
+    pub class_hashes: HashMap<Felt, Felt>,
+    pub storage: HashMap<(Felt, Felt), Felt>,
+}
+
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateUpdate {
     pub block_hash: Felt,

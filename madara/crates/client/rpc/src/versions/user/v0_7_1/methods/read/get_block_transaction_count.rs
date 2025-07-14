@@ -1,6 +1,5 @@
+use crate::{errors::StarknetRpcResult, Starknet, StarknetRpcApiError};
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-
-use crate::{errors::StarknetRpcResult, Starknet};
 
 /// Get the Number of Transactions in a Given Block
 ///
@@ -18,14 +17,9 @@ use crate::{errors::StarknetRpcResult, Starknet};
 /// This function may return a `BLOCK_NOT_FOUND` error if the specified block does not exist in
 /// the blockchain.
 pub fn get_block_transaction_count(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<u128> {
-    let block = starknet.get_block_info(&block_id)?;
-
-    let tx_count = match block {
-        MadaraMaybePendingBlockInfo::Pending(block) => block.tx_hashes.len(),
-        MadaraMaybePendingBlockInfo::NotPending(block) => block.header.transaction_count as _,
-    };
-
-    Ok(tx_count as _)
+    let view = starknet.backend.view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = view.into_block_view().ok_or(StarknetRpcApiError::NoBlocks)?;
+    Ok(view.get_block_info()?.tx_hashes().len() as _)
 }
 
 #[cfg(test)]

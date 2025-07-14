@@ -35,6 +35,7 @@ mp-utils = { workspace = true }
 bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
+blockifier = { workspace = true }
 
 # Other
 anyhow.workspace = true
@@ -54,6 +55,8 @@ tokio = { workspace = true, features = [
   "test-util",
   "signal",
 ] }
+smallvec = { version = "1.15.0", features = ["write"] }
+itertools = "0.14.0"
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

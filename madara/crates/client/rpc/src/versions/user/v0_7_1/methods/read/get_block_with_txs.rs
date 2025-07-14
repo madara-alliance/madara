@@ -1,11 +1,10 @@
+use crate::Starknet;
 use jsonrpsee::core::RpcResult;
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockHeader, PendingBlockWithTxs,
     TxnWithHash,
 };
-
-use crate::Starknet;
 
 /// Get block information with full transactions given the block id.
 ///
@@ -26,13 +25,19 @@ use crate::Starknet;
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
 pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-    let block = starknet.get_block(&block_id)?;
+    let view = starknet.backend.view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = view.into_block_view().ok_or(StarknetRpcApiError::NoBlocks)?;
 
-    let transactions_with_hash = Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes())
-        .map(|(transaction, hash)| TxnWithHash { transaction: transaction.into(), transaction_hash: *hash })
+    let block_info = view.get_block_info()?;
+    let txs = view.get_block_transactions(..)?;
+    let is_on_l1 = view.is_on_l1();
+
+    let transactions_with_hash = txs
+        .into_iter()
+        .map(|tx| TxnWithHash { transaction: tx.transaction.into(), transaction_hash: *tx.receipt.transaction_hash() })
         .collect();
 
-    match block.info {
+    match block_info {
         MadaraMaybePendingBlockInfo::Pending(block) => Ok(MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
             transactions: transactions_with_hash,
             pending_block_header: PendingBlockHeader {
@@ -46,11 +51,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
             },
         })),
         MadaraMaybePendingBlockInfo::NotPending(block) => {
-            let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
-                BlockStatus::AcceptedOnL1
-            } else {
-                BlockStatus::AcceptedOnL2
-            };
+            let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxs::Block(BlockWithTxs {
                 transactions: transactions_with_hash,
                 status,

@@ -1,36 +1,32 @@
+use crate::errors::StarknetRpcResult;
+use crate::{Starknet, StarknetRpcApiError};
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
     StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
 };
 
-use crate::errors::StarknetRpcResult;
-use crate::Starknet;
-
 pub fn get_block_with_receipts(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
     tracing::debug!("get_block_with_receipts called with {:?}", block_id);
-    let block = starknet.get_block(&block_id)?;
 
-    let transactions = block.inner.transactions.into_iter().map(|tx| tx.into());
+    let view = starknet.backend.view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = view.into_block_view().ok_or(StarknetRpcApiError::NoBlocks)?;
 
-    let is_on_l1 = if let Some(block_n) = block.info.block_n() {
-        block_n <= starknet.get_l1_last_confirmed_block()?
-    } else {
-        false
-    };
+    let block_info = view.get_block_info()?;
+    let txs = view.get_block_transactions(..)?;
 
+    let is_on_l1 = view.is_on_l1();
     let finality_status = if is_on_l1 { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
 
-    let receipts = block.inner.receipts.into_iter().map(|receipt| receipt.to_starknet_types(finality_status.clone()));
-
-    let transactions_with_receipts = Iterator::zip(transactions, receipts)
-        .map(|(transaction, receipt)| TransactionAndReceipt { receipt, transaction })
+    let transactions_with_receipts = txs
+        .into_iter()
+        .map(|tx| TransactionAndReceipt { receipt: tx.receipt.into(), transaction: tx.transaction.into() })
         .collect();
 
-    match block.info {
+    match block_info {
         MadaraMaybePendingBlockInfo::Pending(block) => {
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,

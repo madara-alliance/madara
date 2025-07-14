@@ -299,6 +299,7 @@ impl MadaraBackend {
                         block_number: Some(block_number),
                         transaction_hash,
                         event_index_in_block: event_index,
+                        in_preconfirmed: false
                     }) {
                         tracing::debug!("Failed to send event to subscribers: {e}");
                     }

@@ -68,7 +68,10 @@ mod events_bloom_filter;
 mod rocksdb_options;
 mod rocksdb_snapshot;
 mod snapshots;
+mod view;
 mod watch;
+mod db;
+mod rocksdb;
 
 pub mod block_db;
 pub mod bonsai_db;
@@ -92,6 +95,9 @@ pub use rocksdb_options::{RocksDBConfig, StatsLevel};
 pub use watch::{ClosedBlocksReceiver, LastBlockOnL1Receiver, PendingBlockReceiver, PendingTxsReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
+
+use crate::db::DBBackend;
+use crate::rocksdb::RocksDBBackend;
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
@@ -356,9 +362,9 @@ impl SyncStatusCell {
 }
 
 /// Madara client database backend singleton.
-pub struct MadaraBackend {
+pub struct MadaraBackend<DB: DBBackend = RocksDBBackend> {
     backup_handle: Option<mpsc::Sender<BackupRequest>>,
-    db: Arc<DB>,
+    pub(crate) db: DB,
     chain_config: Arc<ChainConfig>,
     db_metrics: DbMetrics,
     snapshots: Arc<Snapshots>,
@@ -373,6 +379,7 @@ pub struct MadaraBackend {
     _temp_dir: Option<tempfile::TempDir>,
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
+    preconfirmed: std::sync::RwLock<crate::view::PreconfirmedStatus>,
 }
 
 impl fmt::Debug for MadaraBackend {

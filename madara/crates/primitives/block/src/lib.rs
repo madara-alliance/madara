@@ -23,7 +23,7 @@ pub type BlockId = mp_rpc::BlockId;
 pub type BlockTag = mp_rpc::BlockTag;
 
 // TODO: where should we put that?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TransactionWithReceipt {
     pub transaction: Transaction,
     pub receipt: TransactionReceipt,

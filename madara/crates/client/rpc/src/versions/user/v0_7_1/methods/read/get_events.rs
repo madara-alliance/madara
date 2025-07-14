@@ -1,11 +1,10 @@
-use mp_block::{BlockId, BlockTag, EventWithInfo};
-use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
-
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
 use crate::utils::ResultExt;
 use crate::Starknet;
+use mp_block::{BlockId, BlockTag, EventWithInfo};
+use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 /// Returns all events matching the given filter.
 ///
