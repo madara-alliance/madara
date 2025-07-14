@@ -14,7 +14,8 @@ use crate::servers::madara::{MadaraConfig, MadaraError, MadaraService, MadaraCon
 use crate::servers::mongo::{MongoConfig, MongoConfigBuilder, MongoError, MongoService};
 use crate::constants::{DEFAULT_DATA_DIR};
 use crate::servers::orchestrator::{
-    Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService,
+
+    Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService, OrchestratorConfigBuilder
 };
 use crate::servers::pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError, PathfinderService};
 use std::collections::HashMap;
@@ -250,7 +251,7 @@ impl Setup {
         timeout(self.config.setup_timeout, async {
             self.validate_dependencies().await?;
             // self.check_existing_databases().await?;
-            // self.start_infrastructure_services().await?;
+            self.start_infrastructure_services().await?;
             // self.wait_for_services_ready().await?;
             // self.run_setup_validation().await?;
             Ok::<(), SetupError>(())
@@ -258,33 +259,56 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // Timeout this for 5 mins
-        timeout(Duration::from_secs(300), async {
-            self.start_l1_setup().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-        // Timeout this for 30 mins
-        timeout(Duration::from_secs(1800), async {
-            self.start_l2_setup().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+        // // Timeout for 6 mins
+        // timeout(Duration::from_secs(360), async {
+        //     self.setup_localstack().await?;
+        //     // self.wait_for_services_ready().await?;
+        //     // self.run_setup_validation().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        sleep(Duration::from_secs(20)).await;
-        println!("Starting pathfinder service");
+        // // Timeout this for 5 mins
+        // timeout(Duration::from_secs(300), async {
+        //     self.start_l1_setup().await?;
+        //     // self.wait_for_services_ready().await?;
+        //     // self.run_setup_validation().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+
+        // // Timeout this for 30 mins
+        // timeout(Duration::from_secs(1800), async {
+        //     self.start_l2_setup().await?;
+        //     // self.wait_for_services_ready().await?;
+        //     // self.run_setup_validation().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+
+        // sleep(Duration::from_secs(500)).await;
+        // println!("Starting pathfinder service");
+        // // Start Pathfinder Service, wait for it to complete sync
+        // timeout(Duration::from_secs(300), async {
+        //     println!("Starting pathfinder service #2");
+
+        //     self.start_full_node_syncing().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
+
+
+        println!("Starting Orchestrator service");
         // Start Pathfinder Service, wait for it to complete sync
         timeout(Duration::from_secs(300), async {
             println!("Starting pathfinder service #2");
 
-            self.start_full_node_syncing().await?;
+            self.start_orchestration().await?;
             Ok::<(), SetupError>(())
         })
         .await
@@ -338,15 +362,15 @@ impl Setup {
 
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        // let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-        //     .with_mode(BootstrapperMode::SetupL1)
-        //     .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-        //     .add_env_var("ETH_RPC", "http://localhost:8545")
-        //     .add_env_var("RUST_LOG", "info")
-        //     .build();
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .with_mode(BootstrapperMode::SetupL1)
+            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .add_env_var("ETH_RPC", "http://localhost:8545")
+            .add_env_var("RUST_LOG", "info")
+            .build();
 
-        // let status = BootstrapperService::run(bootstrapper_l1_config).await?;
-        // println!("Bootstrapper L1 finished with {}", status);
+        let status = BootstrapperService::run(bootstrapper_l1_config).await?;
+        println!("Bootstrapper L1 finished with {}", status);
 
         println!("L1 Setup completed");
 
@@ -463,6 +487,80 @@ impl Setup {
         Ok(())
     }
 
+    /// Start infrastructure services (Anvil, Localstack, MongoDB)
+    async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
+        println!("🏗️  Starting infrastructure services...");
+
+        // // 🔑 KEY: Capture values first to avoid borrowing issues
+        let localstack_port = self.config.localstack_port;
+        let layer = self.config.layer.clone();
+        let mongo_port = self.config.mongo_port;
+
+        // Create async closures that DON'T borrow self
+        let start_localstack = async move {
+            let localstack_config = LocalstackConfigBuilder::new()
+                .port(localstack_port)
+                .build();
+
+            let service = LocalstackService::start(localstack_config).await?;
+            println!("✅ Localstack started on {}", service.server().endpoint());
+            Ok::<LocalstackService, SetupError>(service)
+        };
+
+
+        let start_mongo = async move {
+
+            let mongo_config = MongoConfigBuilder::new()
+                .port(mongo_port)
+                .build();
+
+            let service = MongoService::start(mongo_config).await?;
+            println!("✅ MongoDB started on port {}", service.server().port());
+            Ok::<MongoService, SetupError>(service)
+        };
+
+        // TODO : need to handle the error from this async move
+
+        // TODO: Atlantic get's added here later!
+
+        // 🚀 These run in PARALLEL!
+        let (localstack_service, mongo_service) = tokio::try_join!(start_localstack, start_mongo)?;
+        // let mongo_service = start_mongo.await?;
+
+        // Assign the services
+        self.localstack = Some(localstack_service);
+        self.mongo = Some(mongo_service);
+
+        println!("✅ Infrastructure services started");
+        Ok(())
+    }
+
+
+    async fn setup_localstack(&mut self) -> Result<(), SetupError> {
+        // run orchestrator setup mode
+
+        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // Ideally we would want to ask anvil each time for these values.
+
+        // TODO: I need to know the port from anvil before sending it to bootstrapper!
+
+        println!("Statting Orchestrator ");
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
+            .mode(OrchestratorMode::Setup)
+            .add_env_var("AWS_ENDPOINT_URL", "http://localhost.localstack.cloud:4566")
+            .add_env_var("AWS_REGION", "us-east-1")
+            .add_env_var("AWS_PREFIX", "local")
+            .add_env_var("RUST_LOG", "info")
+            .build();
+
+        let _ = OrchestratorService::setup(orchestrator_setup_config).await?;
+
+        Ok(())
+
+
+    }
+
 
 
     async fn close_services(&mut self) -> Result<(), SetupError> {
@@ -471,6 +569,24 @@ impl Setup {
         if let Some(anvil) = self.anvil.take() {
             let _ = anvil.stop();
         }
+
+        Ok(())
+    }
+
+
+    async fn start_orchestration(&mut self) -> Result<(), SetupError> {
+        // Start Orchestrator Service, wait for it to complete sync
+        println!("Statting Orchestrator ");
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
+            .mode(OrchestratorMode::Run)
+            .add_env_var("AWS_ENDPOINT_URL", "http://localhost.localstack.cloud:4566")
+            .add_env_var("AWS_REGION", "us-east-1")
+            .add_env_var("AWS_PREFIX", "local")
+            .add_env_var("RUST_LOG", "info")
+            .build();
+
+        let _ = OrchestratorService::start(orchestrator_setup_config).await?;
 
         Ok(())
     }
@@ -755,47 +871,4 @@ impl Setup {
 // }
 
 
-// /// Start infrastructure services (Anvil, Localstack, MongoDB)
-// async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
-//     println!("🏗️  Starting infrastructure services...");
-
-//     // 🔑 KEY: Capture values first to avoid borrowing issues
-//     let localstack_port = self.config.localstack_port;
-//     let layer = self.config.layer.clone();
-//     let mongo_port = self.config.mongo_port;
-
-//     // Create async closures that DON'T borrow self
-//     let start_localstack = async move {
-//         let localstack_config = LocalstackConfigBuilder::new()
-//             .port(localstack_port)
-//             .build();
-
-//         let service = LocalstackService::start(localstack_config).await?;
-//         println!("✅ Localstack started on {}", service.server().endpoint());
-//         Ok::<LocalstackService, SetupError>(service)
-//     };
-
-//     let start_mongo = async move {
-
-//         let mongo_config = MongoConfigBuilder::new()
-//             .port(mongo_port)
-//             .build();
-
-//         let service = MongoService::start(mongo_config).await?;
-//         println!("✅ MongoDB started on port {}", service.server().port());
-//         Ok::<MongoService, SetupError>(service)
-//     };
-
-//     // TODO: Atlantic get's added here later!
-
-//     // 🚀 These run in PARALLEL!
-//     let (localstack_service, mongo_service) = tokio::try_join!(start_localstack, start_mongo)?;
-
-//     // Assign the services
-//     self.localstack = Some(localstack_service);
-//     self.mongo = Some(mongo_service);
-
-//     println!("✅ Infrastructure services started");
-//     Ok(())
-// }
 // }

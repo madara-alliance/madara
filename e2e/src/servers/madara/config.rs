@@ -12,7 +12,7 @@ pub const DEFAULT_MADARA_BINARY_PATH: &str = "../target/release/madara";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MadaraError {
-    #[error("Madara binary not found: {0}")]
+    #[error("Binary not found: {0}")]
     BinaryNotFound(String),
     #[error("Server error: {0}")]
     Server(#[from] ServerError),

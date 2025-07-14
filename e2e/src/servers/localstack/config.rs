@@ -42,7 +42,7 @@ impl Default for LocalstackConfigBuilder {
             container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
             environment_vars: vec![
                 ("DEBUG".to_string(), "1".to_string()),
-                ("SERVICES".to_string(), "s3,eventbridge,sqs,sns".to_string()),
+                ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
             ],
         }
     }

@@ -165,38 +165,38 @@ impl MadaraService {
     //     Ok(())
     // }
 
-    /// Create database directory if it doesn't exist
-    pub async fn ensure_database_directory(&self) -> Result<(), MadaraError> {
-        if !self.config.database_path().exists() {
-            tokio::fs::create_dir_all(self.config.database_path()).await?;
-            println!("📁 Created database directory: {}", self.config.database_path().display());
-        }
-        Ok(())
-    }
+    // /// Create database directory if it doesn't exist
+    // pub async fn ensure_database_directory(&self) -> Result<(), MadaraError> {
+    //     if !self.config.database_path().exists() {
+    //         tokio::fs::create_dir_all(self.config.database_path()).await?;
+    //         println!("📁 Created database directory: {}", self.config.database_path().display());
+    //     }
+    //     Ok(())
+    // }
 
-    /// Check if database has been initialized
-    pub fn is_database_initialized(&self) -> bool {
-        self.config.database_path().exists() && self.config.database_path().join("db").exists()
-    }
+    // /// Check if database has been initialized
+    // pub fn is_database_initialized(&self) -> bool {
+    //     self.config.database_path().exists() && self.config.database_path().join("db").exists()
+    // }
 
-    /// Get database size in bytes
-    pub async fn get_database_size(&self) -> Result<u64, MadaraError> {
-        if !self.config.database_path().exists() {
-            return Ok(0);
-        }
+    // /// Get database size in bytes
+    // pub async fn get_database_size(&self) -> Result<u64, MadaraError> {
+    //     if !self.config.database_path().exists() {
+    //         return Ok(0);
+    //     }
 
-        let mut size = 0u64;
-        let mut entries = tokio::fs::read_dir(self.config.database_path()).await?;
+    //     let mut size = 0u64;
+    //     let mut entries = tokio::fs::read_dir(self.config.database_path()).await?;
 
-        while let Some(entry) = entries.next_entry().await? {
-            let metadata = entry.metadata().await?;
-            if metadata.is_file() {
-                size += metadata.len();
-            }
-        }
+    //     while let Some(entry) = entries.next_entry().await? {
+    //         let metadata = entry.metadata().await?;
+    //         if metadata.is_file() {
+    //             size += metadata.len();
+    //         }
+    //     }
 
-        Ok(size)
-    }
+    //     Ok(size)
+    // }
 
 
     // TODO:  Might we want to implement a RPC trait ?
@@ -253,8 +253,6 @@ impl MadaraService {
             _ => return Err(MadaraError::InvalidResponse),
         };
 
-        println!("Block number MADARA {:?}", block_num);
-        
         Ok(block_num)
     }
 

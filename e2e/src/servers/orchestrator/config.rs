@@ -1,10 +1,8 @@
-// Originally implemented with just a struct with public fields. We've refactored
-// to use a builder pattern that ensures immutability after building while providing
-// a clean, fluent API for configuration.
-
 use crate::servers::server::ServerError;
 use std::path::PathBuf;
 use strum_macros::Display;
+
+pub const DEFAULT_ORCHESTRATOR_BINARY: &str = "../target/release/orchestrator";
 
 #[derive(Display, Debug, Clone, PartialEq, Eq)]
 pub enum OrchestratorMode {
@@ -41,15 +39,19 @@ pub enum OrchestratorError {
     SetupFailed(i32),
     #[error("Missing required dependency: {0}")]
     MissingDependency(String),
+    #[error("Orchestrator execution failed: {0}")]
+    ExecutionFailed(String),
 }
 
 // Builder type that allows configuration
 #[derive(Debug, Clone)]
 pub struct OrchestratorConfigBuilder {
+
+    binary_path: PathBuf,
+
     mode: OrchestratorMode,
     layer: Layer,
     port: Option<u16>,
-    repository_root: Option<PathBuf>,
     environment_vars: Vec<(String, String)>,
 
     // AWS Configuration
@@ -73,10 +75,10 @@ pub struct OrchestratorConfigBuilder {
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct OrchestratorConfig {
+    binary_path: PathBuf,
     mode: OrchestratorMode,
     layer: Layer,
     port: Option<u16>,
-    repository_root: Option<PathBuf>,
     environment_vars: Vec<(String, String)>,
 
     // AWS Configuration
@@ -100,17 +102,17 @@ pub struct OrchestratorConfig {
 impl Default for OrchestratorConfigBuilder {
     fn default() -> Self {
         Self {
+            binary_path: PathBuf::from(DEFAULT_ORCHESTRATOR_BINARY),
             mode: OrchestratorMode::Run,
             layer: Layer::L2,
-            port: None,
-            repository_root: None,
+            port: Some(3000),
             environment_vars: vec![],
             aws: true,
             aws_s3: true,
             aws_sqs: true,
             aws_sns: true,
-            aws_event_bridge: false,
-            event_bridge_type: None,
+            aws_event_bridge: true,
+            event_bridge_type: Some("rule".to_string()),
             settle_on_ethereum: true,
             settle_on_starknet: false,
             da_on_ethereum: true,
@@ -143,12 +145,6 @@ impl OrchestratorConfigBuilder {
     /// Set the port
     pub fn port(mut self, port: Option<u16>) -> Self {
         self.port = port;
-        self
-    }
-
-    /// Set the repository root
-    pub fn repository_root<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
-        self.repository_root = path.map(|p| p.into());
         self
     }
 
@@ -273,10 +269,10 @@ impl OrchestratorConfigBuilder {
     /// Build the final immutable configuration
     pub fn build(self) -> OrchestratorConfig {
         OrchestratorConfig {
+            binary_path: self.binary_path,
             mode: self.mode,
             layer: self.layer,
             port: self.port,
-            repository_root: self.repository_root,
             environment_vars: self.environment_vars,
             aws: self.aws,
             aws_s3: self.aws_s3,
@@ -309,11 +305,6 @@ impl OrchestratorConfig {
     /// Get the port
     pub fn port(&self) -> Option<u16> {
         self.port
-    }
-
-    /// Get the repository root
-    pub fn repository_root(&self) -> Option<&PathBuf> {
-        self.repository_root.as_ref()
     }
 
     /// Get the environment variables
@@ -384,5 +375,9 @@ impl OrchestratorConfig {
     /// Check if Atlantic is enabled
     pub fn atlantic(&self) -> bool {
         self.atlantic
+    }
+
+    pub fn binary_path(&self) -> &PathBuf {
+        &self.binary_path
     }
 }
