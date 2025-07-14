@@ -1,4 +1,4 @@
-FROM rust:1.85 AS builder
+FROM ghcr.io/rust-lang/rust:1.85 AS builder
 WORKDIR /contracts
 
 RUN apt-get -y update && apt-get install -y \
@@ -15,7 +15,7 @@ RUN apt-get -y update && apt-get install -y \
 # =========================================================================== #
 
 # TODO: arm64 support (macos)
-FROM --platform=linux/amd64 rust:1.85 AS starkgate-latest
+FROM --platform=linux/amd64 ghcr.io/rust-lang/rust:1.85 AS starkgate-latest
 WORKDIR /contracts
 RUN apt-get -y update && apt-get install -y \
   python3-full \
