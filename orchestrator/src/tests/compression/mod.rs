@@ -3,9 +3,10 @@ use crate::compression::squash::squash_state_updates;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::StarknetVersion;
-use crate::tests::config::TestConfigBuilderReturns;
+use crate::tests::jobs::batching_job::convert_biguints_to_felts;
 use crate::tests::utils::{
-    build_test_config_with_real_provider, read_state_update_from_file, read_state_updates_vec_from_file,
+    build_test_config_with_real_provider, read_biguint_from_file, read_state_update_from_file,
+    read_state_updates_vec_from_file,
 };
 use color_eyre::eyre::Result;
 use rstest::*;
@@ -13,9 +14,9 @@ use std::io::Read;
 
 #[rstest]
 #[tokio::test]
-async fn test_squash_state_updates(
-    #[from(build_test_config_with_real_provider)] services: TestConfigBuilderReturns,
-) -> Result<()> {
+async fn test_squash_state_updates() -> Result<()> {
+    let services = build_test_config_with_real_provider().await?;
+
     let state_updates_vector = read_state_updates_vec_from_file(&format!(
         "{}/src/tests/artifacts/state_update_789878_789900.json",
         env!("CARGO_MANIFEST_DIR")
@@ -36,9 +37,9 @@ async fn test_squash_state_updates(
 
 #[rstest]
 #[tokio::test]
-async fn test_stateful_compression(
-    #[from(build_test_config_with_real_provider)] services: TestConfigBuilderReturns,
-) -> Result<()> {
+async fn test_stateful_compression() -> Result<()> {
+    let services = build_test_config_with_real_provider().await?;
+
     let uncompressed_state_update = read_state_update_from_file(&format!(
         "{}/src/tests/artifacts/squashed_state_update_789878_789900.json",
         env!("CARGO_MANIFEST_DIR")
@@ -66,17 +67,17 @@ async fn test_stateless_compression(#[case] version: &str) -> Result<()> {
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
-    let expected_compressed_state_update = read_state_update_from_file(&format!(
+    let expected_compressed_state_update = convert_biguints_to_felts(&read_biguint_from_file(&format!(
         "{}/src/tests/artifacts/stateless_compressed_state_update_789878_789900.json",
         env!("CARGO_MANIFEST_DIR")
-    ))?;
+    ))?)?;
 
     // Get a vector of felts from the compressed state update
     // TODO: use the version sent using the case above
     let vec_felts = state_update_to_blob_data(uncompressed_state_update, StarknetVersion::V0_13_5).await?;
 
     // Perform stateless compression
-    let compressed_state_update = stateless_compress(&vec_felts).await?;
+    let compressed_state_update = stateless_compress(&vec_felts)?;
 
     assert_eq!(compressed_state_update, expected_compressed_state_update);
 

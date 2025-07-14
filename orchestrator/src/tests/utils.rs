@@ -17,7 +17,7 @@ use crate::types::jobs::metadata::{
 use crate::types::jobs::types::{JobStatus, JobType};
 use color_eyre::Result;
 use num_bigint::BigUint;
-use num_traits::Zero;
+use num_traits::{Num, Zero};
 use starknet_core::types::StateUpdate;
 use std::fs::File;
 use std::hash::Hash;
@@ -101,7 +101,6 @@ pub fn build_batch(
     }
 }
 
-#[fixture]
 pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderReturns> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
@@ -111,6 +110,20 @@ pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderR
     };
 
     Ok(TestConfigBuilder::new().configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url))).build().await)
+}
+
+pub fn read_biguint_from_file(file_path: &str) -> Result<Vec<BigUint>> {
+    let hex_vec: Vec<String> = serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse BigUint vector file: {}", e))?;
+
+    let mut result = Vec::new();
+    for hex in hex_vec {
+        result.push(
+            BigUint::from_str_radix(&hex.replace("0x", ""), 16).expect("Failed to parse BigUint from hex string"),
+        );
+    }
+
+    Ok(result)
 }
 
 pub fn read_state_updates_vec_from_file(file_path: &str) -> Result<Vec<StateUpdate>> {
