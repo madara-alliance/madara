@@ -181,16 +181,15 @@ impl JobHandlerService {
                     .build(),
             )
             .await
-            .map_err(|e| {
+            .inspect_err(|e| {
                 tracing::error!(job_id = ?id, error = ?e, "Failed to update job status");
-                e
             })?;
 
         tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
         let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
         {
             Ok(Ok(external_id)) => {
-                tracing::debug!(job_id = ?id, "Successfully processed job");
+                tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Successfully processed job with external ID: {:?}", external_id);
                 // Add the time of processing to the metadata.
                 job.metadata.common.process_completed_at = Some(Utc::now());
 

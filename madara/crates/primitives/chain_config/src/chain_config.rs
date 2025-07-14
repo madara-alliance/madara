@@ -7,15 +7,16 @@
 use crate::{L1DataAvailabilityMode, StarknetVersion};
 use anyhow::{bail, Context, Result};
 use blockifier::blockifier::config::ConcurrencyConfig;
-use blockifier::bouncer::{BouncerWeights, BuiltinCount};
+use blockifier::blockifier_versioned_constants::{RawVersionedConstants, VersionedConstants};
+use blockifier::bouncer::{BouncerConfig, BouncerWeights};
 use blockifier::context::{ChainInfo, FeeTokenAddresses};
-use blockifier::{bouncer::BouncerConfig, versioned_constants::VersionedConstants};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
 use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
+use starknet_api::execution_resources::GasAmount;
 use starknet_types_core::felt::Felt;
 use std::fmt;
 use std::str::FromStr;
@@ -44,23 +45,6 @@ pub mod public_key {
     pub const MAINNET: &str = "0x48253ff2c3bed7af18bde0b611b083b39445959102d4947c51c4db6aa4f4e58";
     pub const SEPOLIA_TESTNET: &str = "0x1252b6bce1351844c677869c6327e80eae1535755b611c66b8f46e595b40eea";
     pub const SEPOLIA_INTEGRATION: &str = "0x4e4856eb36dbd5f4a7dca29f7bb5232974ef1fb7eb5b597c58077174c294da1";
-}
-
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0: &[u8] = include_bytes!("../resources/versioned_constants_13_0.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1: &[u8] = include_bytes!("../resources/versioned_constants_13_1.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1: &[u8] =
-    include_bytes!("../resources/versioned_constants_13_1_1.json");
-const BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2: &[u8] = include_bytes!("../resources/versioned_constants_13_2.json");
-
-lazy_static::lazy_static! {
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_2).unwrap();
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1_1).unwrap();
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_1).unwrap();
-    pub static ref BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0: VersionedConstants =
-        serde_json::from_slice(BLOCKIFIER_VERSIONED_CONSTANTS_JSON_0_13_0).unwrap();
 }
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -149,7 +133,6 @@ pub struct ChainConfig {
 
     /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
-    #[serde(deserialize_with = "deserialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
 
     /// Only used for block production.
@@ -233,7 +216,7 @@ impl ChainConfig {
             chain_id: ChainId::Mainnet,
             // Since L1 here is Ethereum, that supports Blob.
             l1_da_mode: L1DataAvailabilityMode::Blob,
-            feeder_gateway_url: Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
             native_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
@@ -261,23 +244,12 @@ impl ChainConfig {
 
             bouncer_config: BouncerConfig {
                 block_max_capacity: BouncerWeights {
-                    builtin_count: BuiltinCount {
-                        add_mod: usize::MAX,
-                        bitwise: usize::MAX,
-                        ecdsa: usize::MAX,
-                        ec_op: usize::MAX,
-                        keccak: usize::MAX,
-                        mul_mod: usize::MAX,
-                        pedersen: usize::MAX,
-                        poseidon: usize::MAX,
-                        range_check: usize::MAX,
-                        range_check96: usize::MAX,
-                    },
-                    gas: 5_000_000,
-                    n_steps: 40_000_000,
+                    l1_gas: 5_000_000,
                     message_segment_length: usize::MAX,
                     n_events: usize::MAX,
                     state_diff_size: 131072,
+                    sierra_gas: GasAmount(10_000_000_000),
+                    n_txs: usize::MAX,
                 },
             },
             // We are not producing blocks for these chains.
@@ -302,7 +274,7 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
-            feeder_gateway_url: Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://alpha-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
@@ -316,7 +288,7 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
-            feeder_gateway_url: Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://integration-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
                 .parse()
@@ -403,8 +375,8 @@ impl<'de> Deserialize<'de> for ChainVersionedConstants {
                 M: MapAccess<'de>,
             {
                 let mut map = BTreeMap::new();
-                while let Some((key, value)) = access.next_entry::<String, VersionedConstants>()? {
-                    map.insert(key.parse().map_err(serde::de::Error::custom)?, value);
+                while let Some((key, value)) = access.next_entry::<String, RawVersionedConstants>()? {
+                    map.insert(key.parse().map_err(serde::de::Error::custom)?, value.into());
                 }
                 Ok(ChainVersionedConstants(map))
             }
@@ -422,11 +394,17 @@ impl<const N: usize> From<[(StarknetVersion, VersionedConstants); N]> for ChainV
 
 impl Default for ChainVersionedConstants {
     fn default() -> Self {
+        use blockifier::blockifier_versioned_constants::*;
         [
-            (StarknetVersion::V0_13_0, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_0.deref().clone()),
-            (StarknetVersion::V0_13_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1.deref().clone()),
-            (StarknetVersion::V0_13_1_1, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_1_1.deref().clone()),
-            (StarknetVersion::V0_13_2, BLOCKIFIER_VERSIONED_CONSTANTS_0_13_2.deref().clone()),
+            (StarknetVersion::V0_13_0, VERSIONED_CONSTANTS_V0_13_0.deref().clone()),
+            (StarknetVersion::V0_13_1, VERSIONED_CONSTANTS_V0_13_1.deref().clone()),
+            (StarknetVersion::V0_13_1_1, VERSIONED_CONSTANTS_V0_13_1_1.deref().clone()),
+            (StarknetVersion::V0_13_2, VERSIONED_CONSTANTS_V0_13_2.deref().clone()),
+            (StarknetVersion::V0_13_2_1, VERSIONED_CONSTANTS_V0_13_2_1.deref().clone()),
+            (StarknetVersion::V0_13_3, VERSIONED_CONSTANTS_V0_13_3.deref().clone()),
+            (StarknetVersion::V0_13_4, VERSIONED_CONSTANTS_V0_13_4.deref().clone()),
+            (StarknetVersion::V0_13_5, VERSIONED_CONSTANTS_V0_13_5.deref().clone()),
+            (StarknetVersion::V0_14_0, VERSIONED_CONSTANTS_V0_14_0.deref().clone()),
         ]
         .into()
     }
@@ -451,13 +429,13 @@ impl ChainVersionedConstants {
             let mut contents = String::new();
             file.read_to_string(&mut contents).with_context(|| format!("Failed to read contents of file: {}", path))?;
 
-            let constants: VersionedConstants =
+            let constants: RawVersionedConstants =
                 serde_json::from_str(&contents).with_context(|| format!("Failed to parse JSON in file: {}", path))?;
 
             let parsed_version =
                 version.parse().with_context(|| format!("Failed to parse version string: {}", version))?;
 
-            result.insert(parsed_version, constants);
+            result.insert(parsed_version, constants.into());
         }
 
         Ok(ChainVersionedConstants(result))
@@ -479,40 +457,14 @@ where
     version.to_string().serialize(serializer)
 }
 
-// TODO: this is workaround because BouncerConfig doesn't derive Deserialize in blockifier
-pub fn deserialize_bouncer_config<'de, D>(deserializer: D) -> Result<BouncerConfig, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    #[derive(Deserialize)]
-    struct BouncerConfigHelper {
-        block_max_capacity: BouncerWeights,
-    }
-
-    let helper = BouncerConfigHelper::deserialize(deserializer)?;
-    Ok(BouncerConfig { block_max_capacity: helper.block_max_capacity })
-}
-
-pub fn serialize_bouncer_config<S>(config: &BouncerConfig, serializer: S) -> Result<S::Ok, S::Error>
-where
-    S: serde::Serializer,
-{
-    #[derive(Serialize)]
-    struct BouncerConfigHelper<'a> {
-        block_max_capacity: &'a BouncerWeights,
-    }
-
-    BouncerConfigHelper { block_max_capacity: &config.block_max_capacity }.serialize(serializer)
-}
-
 #[cfg(test)]
 mod tests {
-    use blockifier::{transaction::transaction_types::TransactionType, versioned_constants::ResourceCost};
+    use super::*;
+
+    use blockifier::blockifier_versioned_constants::ResourceCost;
     use rstest::*;
     use serde_json::Value;
     use starknet_types_core::felt::Felt;
-
-    use super::*;
 
     #[rstest]
     fn test_mainnet_from_yaml() {
@@ -548,54 +500,14 @@ mod tests {
         assert_eq!(constants.segment_arena_cells, json["segment_arena_cells"].as_bool().unwrap());
 
         // Check L2ResourceGasCosts
-        let l2_costs = &constants.l2_resource_gas_costs;
+        let l2_costs = &constants.deprecated_l2_resource_gas_costs;
         assert_eq!(l2_costs.gas_per_data_felt, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.event_key_factor, ResourceCost::from_integer(0));
         assert_eq!(l2_costs.gas_per_code_byte, ResourceCost::from_integer(0));
 
-        // Check OsConstants
-        let os_constants = &constants.os_constants;
-        assert_eq!(os_constants.gas_costs.step_gas_cost, json["os_constants"]["step_gas_cost"].as_u64().unwrap());
-        assert_eq!(
-            os_constants.gas_costs.range_check_gas_cost,
-            json["os_constants"]["range_check_gas_cost"].as_u64().unwrap()
-        );
-        // Add more checks for other gas costs...
-
-        // Check ValidateRoundingConsts
-        assert_eq!(os_constants.validate_rounding_consts.validate_block_number_rounding, 1);
-        assert_eq!(os_constants.validate_rounding_consts.validate_timestamp_rounding, 1);
-
-        // Check OsResources
-        let declare_tx_resources = constants.os_resources_for_tx_type(&TransactionType::Declare, 0);
-        assert!(declare_tx_resources.n_steps > 0);
-
-        let invoke_tx_resources = constants.os_resources_for_tx_type(&TransactionType::InvokeFunction, 0);
-        assert!(invoke_tx_resources.n_steps > 0);
-        // Add more checks for other syscalls and their resources...
-
-        // Check vm_resource_fee_cost using the public method
-        let vm_costs = constants.vm_resource_fee_cost();
-
-        // Verify specific resource costs
-        assert_eq!(vm_costs.get("n_steps").unwrap(), &ResourceCost::new(5, 1000));
-        assert_eq!(vm_costs.get("pedersen_builtin").unwrap(), &ResourceCost::new(16, 100));
-        assert_eq!(vm_costs.get("range_check_builtin").unwrap(), &ResourceCost::new(8, 100));
-        assert_eq!(vm_costs.get("ecdsa_builtin").unwrap(), &ResourceCost::new(1024, 100));
-        assert_eq!(vm_costs.get("bitwise_builtin").unwrap(), &ResourceCost::new(32, 100));
-        assert_eq!(vm_costs.get("poseidon_builtin").unwrap(), &ResourceCost::new(16, 100));
-        assert_eq!(vm_costs.get("ec_op_builtin").unwrap(), &ResourceCost::new(512, 100));
-        assert_eq!(vm_costs.get("keccak_builtin").unwrap(), &ResourceCost::new(1024, 100));
-
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
         assert_eq!(chain_config.pending_block_update_time, Some(Duration::from_secs(2)));
-
-        // Check bouncer config
-        assert_eq!(chain_config.bouncer_config.block_max_capacity.gas, 5000000);
-        assert_eq!(chain_config.bouncer_config.block_max_capacity.n_steps, 40000000);
-        assert_eq!(chain_config.bouncer_config.block_max_capacity.state_diff_size, 4000);
-        assert_eq!(chain_config.bouncer_config.block_max_capacity.builtin_count.add_mod, 18446744073709551615);
 
         assert_eq!(
             chain_config.sequencer_address,

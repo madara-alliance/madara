@@ -1,8 +1,8 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::cli::Layer;
 use crate::types::queue::QueueType;
+use crate::types::Layer;
 
 #[derive(Clone)]
 pub struct DlqConfig {

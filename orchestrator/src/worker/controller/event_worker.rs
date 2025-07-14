@@ -1,6 +1,9 @@
 use crate::core::config::Config;
 use crate::error::other::OtherError;
-use crate::error::{event::EventSystemResult, ConsumptionError};
+use crate::error::{
+    event::{EventSystemError, EventSystemResult},
+    ConsumptionError,
+};
 use crate::types::queue::{JobState, QueueType};
 use crate::types::queue_control::{QueueControlConfig, QUEUES};
 use crate::worker::event_handler::service::JobHandlerService;

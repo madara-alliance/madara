@@ -7,15 +7,14 @@ use blockifier::{
     blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
     state::errors::StateError,
     transaction::{
-        account_transaction::AccountTransaction,
+        account_transaction::{AccountTransaction, ExecutionFlags},
         errors::{TransactionExecutionError, TransactionPreValidationError},
-        transaction_execution::Transaction as BTransaction,
     },
 };
 use mc_db::MadaraBackend;
-use mc_exec::{execution::TxInfo, MadaraBackendExecutionExt};
+use mc_exec::MadaraBackendExecutionExt;
 use mp_class::ConvertedClass;
-use mp_convert::{Felt, ToFelt};
+use mp_convert::ToFelt;
 use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
@@ -24,6 +23,11 @@ use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
     BroadcastedTransactionExt, ToBlockifierError,
 };
+use starknet_api::{
+    executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
+    transaction::TransactionVersion,
+};
+use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
@@ -79,6 +83,7 @@ impl From<TransactionExecutorError> for SubmitTransactionError {
             E::BlockFull => rejected(ValidateFailure, format!("{err:#}")),
             E::StateError(err) => err.into(),
             E::TransactionExecutionError(err) => err.into(),
+            E::CompressionError(err) => rejected(ValidateFailure, format!("{err:#}")),
         }
     }
 }
@@ -93,7 +98,8 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             err @ E::DeclareTransactionError { .. } => rejected(ClassAlreadyDeclared, format!("{err:#}")),
             err @ (E::ExecutionError { .. }
             | E::ValidateTransactionError { .. }
-            | E::ContractConstructorExecutionFailed { .. }) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::ContractConstructorExecutionFailed { .. }
+            | E::PanicInValidate { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ (E::FeeCheckError(_)
             | E::FromStr(_)
             | E::InvalidValidateReturnData { .. }
@@ -101,9 +107,11 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::TransactionFeeError(_)
             | E::TransactionPreValidationError(_)
             | E::TryFromIntError(_)
-            | E::TransactionTooLarge) => rejected(ValidateFailure, format!("{err:#}")),
+            | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
-            err @ E::InvalidSegmentStructure(_, _) => rejected(InvalidProgram, format!("{err:#}")),
+            err @ (E::InvalidSegmentStructure(_, _) | E::ProgramError { .. }) => {
+                rejected(InvalidProgram, format!("{err:#}"))
+            }
             E::StateError(err) => err.into(),
         }
     }
@@ -132,7 +140,7 @@ impl From<ToBlockifierError> for SubmitTransactionError {
             }
             err @ E::CompiledClassHashMismatch { .. } => rejected(InvalidCompiledClassHash, format!("{err:#}")),
             err @ E::Base64ToCairoError(_) => rejected(InvalidContractClass, format!("{err:#}")),
-            E::ConvertContractClassError(error) => rejected(InvalidContractClass, format!("{error:#}")),
+            E::ConvertClassToApiError(error) => rejected(InvalidContractClass, format!("{error:#}")),
             E::MissingClass => rejected(InvalidContractClass, "Missing class"),
         }
     }
@@ -159,7 +167,9 @@ impl From<mc_exec::Error> for SubmitTransactionError {
 #[derive(Debug, Default)]
 pub struct TransactionValidatorConfig {
     pub disable_validation: bool,
+    pub disable_fee: bool,
 }
+
 impl TransactionValidatorConfig {
     pub fn with_disable_validation(mut self, disable_validation: bool) -> Self {
         self.disable_validation = disable_validation;
@@ -185,38 +195,35 @@ impl TransactionValidator {
     #[tracing::instrument(skip(self, tx, converted_class), fields(module = "TxValidation"))]
     async fn accept_tx(
         &self,
-        tx: BTransaction,
+        tx: ApiAccountTransaction,
         converted_class: Option<ConvertedClass>,
         arrived_at: TxTimestamp,
     ) -> Result<(), SubmitTransactionError> {
-        if tx.is_only_query() {
-            return Err(RejectedTransactionError::new(
-                RejectedTransactionErrorKind::InvalidTransactionVersion,
-                "Cannot submit query-only transactions",
-            )
-            .into());
-        }
+        let tx_hash = tx.tx_hash().to_felt();
 
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
-        let deploy_account_skip_validation =
-            matches!(tx, BTransaction::AccountTransaction(AccountTransaction::Invoke(_)))
-                && tx.nonce().to_felt() == Felt::ONE;
+        let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);
 
-        let tx_hash = tx.tx_hash().to_felt();
+        // No charge_fee for Admin DeclareV0
+        let charge_fee = !((tx.tx_type() == TransactionType::Declare
+            && tx.version() == TransactionVersion(Felt::ZERO))
+            || self.config.disable_fee);
+
+        let account_tx = AccountTransaction {
+            tx,
+            execution_flags: ExecutionFlags { only_query: false, charge_fee, validate, strict_nonce_check: false },
+        };
 
         if !self.config.disable_validation {
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
-
             // Perform validations
-            if let BTransaction::AccountTransaction(account_tx) = tx.clone_blockifier_transaction() {
-                let mut validator = self.backend.new_transaction_validator()?;
-                validator.perform_validations(account_tx, deploy_account_skip_validation)?
-            }
+            let mut validator = self.backend.new_transaction_validator()?;
+            validator.perform_validations(account_tx.clone())?
         }
 
         // Forward the validated tx.
-        let tx = ValidatedMempoolTx::from_blockifier(tx, arrived_at, converted_class);
+        let tx = ValidatedMempoolTx::from_starknet_api(account_tx.tx, arrived_at, converted_class);
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())
@@ -229,17 +236,30 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeclareTxnV0,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        if tx.is_query() {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
-        let (btx, class) = tx.into_blockifier(
+
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = ClassAndTxnHash {
-            transaction_hash: btx.tx_hash().to_felt(),
-            class_hash: btx.declared_class_hash().expect("Created transaction should be Declare").to_felt(),
+        // Destructure to get class hash only if it's a Declare tx
+        let class_hash = match &api_tx {
+            ApiAccountTransaction::Declare(declare_tx) => declare_tx.class_hash().to_felt(),
+            _ => unreachable!("Created transaction should be Declare"),
         };
-        self.accept_tx(btx, class, arrived_at).await?;
+
+        let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
+
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 
@@ -247,18 +267,30 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeclareTxn,
     ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
+        if tx.is_query() {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
-        let tx = BroadcastedTxn::Declare(tx);
-        let (btx, class) = tx.into_blockifier(
+        let tx: BroadcastedTxn = BroadcastedTxn::Declare(tx);
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = ClassAndTxnHash {
-            transaction_hash: btx.tx_hash().to_felt(),
-            class_hash: btx.declared_class_hash().expect("Created transaction should be Declare").to_felt(),
+        // Destructure to get class hash only if it's a Declare tx
+        let class_hash = match &api_tx {
+            ApiAccountTransaction::Declare(declare_tx) => declare_tx.class_hash().to_felt(),
+            _ => unreachable!("Created transaction should be Declare"),
         };
-        self.accept_tx(btx, class, arrived_at).await?;
+
+        let res = ClassAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), class_hash };
+
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 
@@ -266,21 +298,30 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedDeployAccountTxn,
     ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
+        if tx.is_query() {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::DeployAccount(tx);
-        let (btx, class) = tx.into_blockifier(
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = ContractAndTxnHash {
-            transaction_hash: btx.tx_hash().to_felt(),
-            contract_address: btx
-                .deployed_contract_address()
-                .expect("Created transaction should be DeployAccount")
-                .to_felt(),
+        // Destructure to get class hash only if it's a DeployAccount tx
+        let contract_address = match &api_tx {
+            ApiAccountTransaction::DeployAccount(deploy_account_tx) => deploy_account_tx.contract_address().to_felt(),
+            _ => unreachable!("Created transaction should be DeployAccount"),
         };
-        self.accept_tx(btx, class, arrived_at).await?;
+
+        let res = ContractAndTxnHash { transaction_hash: api_tx.tx_hash().to_felt(), contract_address };
+
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
     }
 
@@ -288,15 +329,31 @@ impl SubmitTransaction for TransactionValidator {
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
+        if tx.is_query() {
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::InvalidTransactionVersion,
+                "Cannot submit query-only transactions",
+            )
+            .into());
+        }
+
         let arrived_at = TxTimestamp::now();
         let tx = BroadcastedTxn::Invoke(tx);
-        let (btx, class) = tx.into_blockifier(
+        let (api_tx, class) = tx.into_starknet_api(
             self.backend.chain_config().chain_id.to_felt(),
             self.backend.chain_config().latest_protocol_version,
         )?;
 
-        let res = AddInvokeTransactionResult { transaction_hash: btx.tx_hash().to_felt() };
-        self.accept_tx(btx, class, arrived_at).await?;
+        let res = AddInvokeTransactionResult { transaction_hash: api_tx.tx_hash().to_felt() };
+        self.accept_tx(api_tx, class, arrived_at).await?;
         Ok(res)
+    }
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        self.inner.received_transaction(hash).await
+    }
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        self.inner.subscribe_new_transactions().await
     }
 }
