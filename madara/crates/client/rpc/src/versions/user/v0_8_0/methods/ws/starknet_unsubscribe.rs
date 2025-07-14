@@ -19,7 +19,7 @@ mod test {
     fn starknet() -> crate::Starknet {
         let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
         let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
-        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true };
+        let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: true };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
             mc_mempool::MempoolConfig::for_testing(),
@@ -31,7 +31,7 @@ mod test {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        crate::Starknet::new(backend, mempool_validator, Default::default(), context)
+        crate::Starknet::new(backend, mempool_validator, Default::default(), None, context)
     }
 
     #[tokio::test]

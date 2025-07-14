@@ -143,27 +143,19 @@ pub(crate) struct WsSubscribeHandles {
     ///
     /// ## Preventing Leaks
     ///
-    /// Since connections can be ended abruptly and the jsonrpsee api does not allow use to retrieve
-    /// the subscription id in those cases, we periodically remove any dangling handles. This is
-    /// done upon call to [`subscription_register`].
-    ///
     /// ## Thread Safety
     ///
-    /// We do not use a DashMap here as its `iter` method "May deadlock if called when holding a
-    /// mutable reference into the map."
     ///
     /// [`subscription_register`]: Self::add_new_handle
-    handles: tokio::sync::RwLock<std::collections::HashMap<u64, WsSubscribeContext>>,
+    handles: dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>,
 }
 
 impl WsSubscribeHandles {
     pub fn new() -> Self {
-        Self { handles: tokio::sync::RwLock::new(std::collections::HashMap::new()) }
+        Self { handles: dashmap::DashMap::new() }
     }
 
-    pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscribeContext {
-        let handle = WsSubscribeContext(std::sync::Arc::new(tokio::sync::Notify::new()));
-
+    pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
         let id = match id {
             jsonrpsee::types::SubscriptionId::Num(id) => id,
             jsonrpsee::types::SubscriptionId::Str(_) => {
@@ -171,16 +163,18 @@ impl WsSubscribeHandles {
             }
         };
 
-        let mut lock = self.handles.write().await;
-        lock.retain(|_, handle| std::sync::Arc::strong_count(&handle.0) != 1);
-        lock.insert(id, handle.clone());
+        let handle = std::sync::Arc::new(tokio::sync::Notify::new());
+        let entry = match self.handles.entry(id) {
+            dashmap::Entry::Occupied(_) => unreachable!("Ws susbcription collision"),
+            dashmap::Entry::Vacant(entry) => Some(entry.insert_entry(handle)),
+        };
 
-        handle
+        WsSubscriptionGuard { entry }
     }
 
     pub async fn subscription_close(&self, id: u64) -> bool {
-        if let Some(handle) = self.handles.write().await.remove(&id) {
-            handle.0.notify_one();
+        if let Some((_, handle)) = self.handles.remove(&id) {
+            handle.notify_one();
             true
         } else {
             false
@@ -188,11 +182,22 @@ impl WsSubscribeHandles {
     }
 }
 
-#[derive(Clone)]
-pub(crate) struct WsSubscribeContext(std::sync::Arc<tokio::sync::Notify>);
+pub(crate) struct WsSubscriptionGuard<'a> {
+    entry: Option<dashmap::OccupiedEntry<'a, u64, std::sync::Arc<tokio::sync::Notify>>>,
+}
 
-impl WsSubscribeContext {
+impl WsSubscriptionGuard<'_> {
     pub async fn cancelled(&self) {
-        self.0.notified().await
+        if let Some(ref entry) = self.entry {
+            entry.get().notified().await
+        }
+    }
+}
+
+impl Drop for WsSubscriptionGuard<'_> {
+    fn drop(&mut self) {
+        if let Some(entry) = self.entry.take() {
+            entry.remove();
+        }
     }
 }
