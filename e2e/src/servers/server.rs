@@ -651,7 +651,7 @@ pub struct ServerConfig {
 
 impl Default for ServerConfig {
     fn default() -> Self {
-        Self { port: 8545, host: "127.0.0.1".to_string(), skip_wait_for_ready: false, connection_attempts: 30, connection_delay_ms: 1000 }
+        Self { port: 0, host: "127.0.0.1".to_string(), skip_wait_for_ready: false, connection_attempts: 30, connection_delay_ms: 1000 }
     }
 }
 
