@@ -143,10 +143,27 @@ pub(crate) struct WsSubscribeHandles {
     ///
     /// ## Preventing Leaks
     ///
+    /// Stale handles are removed each time a subscription is dropped to keep the backing map from
+    /// growing to an unbounded size. Note that there is no hard upper limit on the size of the map,
+    /// other than those set in the RPC middleware, but at least this way we clean up connections on
+    /// close.
+    ///
     /// ## Thread Safety
     ///
+    /// From the [DashMap] docs:
     ///
-    /// [`subscription_register`]: Self::add_new_handle
+    /// > Documentation mentioning locking behaviour acts in the reference frame of the calling
+    /// > thread. This means that it is safe to ignore it across multiple threads.
+    ///
+    /// And from [DashMap::entry]:
+    ///
+    /// > Locking behaviour: May deadlock if called when holding any sort of reference into the map.
+    ///
+    /// This is fine in our case as we do not maintain references to a map in the same thread while
+    /// mutating it and instead operate directly on-value.
+    ///
+    /// [DashMap]: dashmap::DashMap
+    /// [DashMap::entry]: dashmap::DashMap::entry
     handles: dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>,
 }
 
