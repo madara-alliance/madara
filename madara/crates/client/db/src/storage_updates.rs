@@ -127,6 +127,11 @@ impl MadaraBackend {
     }
 
     pub fn store_pending_block(&self, block: PendingFullBlock) -> Result<(), MadaraStorageError> {
+        // Save l1 core contract nonce to tx mapping.
+        self.l1_db_save_transactions(
+            block.transactions.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
+        )?;
+
         let info = MadaraPendingBlockInfo {
             header: block.header,
             tx_hashes: block.transactions.iter().map(|tx| tx.receipt.transaction_hash()).collect(),
@@ -169,6 +174,11 @@ impl MadaraBackend {
         block_n: u64,
         value: Vec<TransactionWithReceipt>,
     ) -> Result<(), MadaraStorageError> {
+        // Save l1 core contract nonce to tx mapping.
+        self.l1_db_save_transactions(
+            value.iter().filter_map(|v| v.transaction.as_l1_handler().zip(v.receipt.as_l1_handler())),
+        )?;
+
         let mut tx = WriteBatchWithTransaction::default();
 
         let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
@@ -271,6 +281,16 @@ impl MadaraBackend {
 
         let task_block_db = || match block.info {
             MadaraMaybePendingBlockInfo::Pending(info) => {
+                // Save l1 core contract nonce to tx mapping.
+                self.l1_db_save_transactions(
+                    block
+                        .inner
+                        .transactions
+                        .iter()
+                        .zip(&block.inner.receipts)
+                        .filter_map(|(txn, r)| txn.as_l1_handler().zip(r.as_l1_handler())),
+                )?;
+
                 self.block_db_store_pending(
                     &MadaraPendingBlock { info: info.clone(), inner: block.inner },
                     &state_diff_cpy,
