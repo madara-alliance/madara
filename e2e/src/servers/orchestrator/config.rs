@@ -51,7 +51,7 @@ pub struct OrchestratorConfig {
     mode: OrchestratorMode,
     layer: Layer,
     port: Option<u16>,
-    host: String,
+    host: Option<String>,
 
     // External Service
     // Database
@@ -59,10 +59,6 @@ pub struct OrchestratorConfig {
 
     // AWS Configuration
     aws: bool,
-    aws_s3: bool,
-    aws_sqs: bool,
-    aws_sns: bool,
-    aws_event_bridge: bool,
     event_bridge_type: AWSEventBridgeType,
 
     // Layer-specific options
@@ -89,16 +85,12 @@ impl Default for OrchestratorConfig {
             binary_path: PathBuf::from(DEFAULT_ORCHESTRATOR_BINARY),
             mode: OrchestratorMode::Run,
             layer: Layer::L2,
-            port: Some(3000),
-            host: "localhost".to_string(),
+            port: None,
+            host: None,
             additional_args: vec![],
             environment_vars: vec![],
             mongodb: true,
             aws: true,
-            aws_s3: true,
-            aws_sqs: true,
-            aws_sns: true,
-            aws_event_bridge: true,
             event_bridge_type: AWSEventBridgeType::Rule,
 
             settle_on_ethereum: false,
@@ -123,10 +115,12 @@ impl OrchestratorConfig {
     }
 
     // Convenience factory methods for common configurations
-    pub fn run_l2() -> Self {
+    pub fn run_l2(port : u16, host: String) -> Self {
         Self::builder()
             .layer(Layer::L2)
             .mode(OrchestratorMode::Run)
+            .port(port)
+            .host(host)
             .atlantic(true)
             .event_bridge_type(AWSEventBridgeType::Rule)
             .settle_on_ethereum(true)
@@ -177,8 +171,8 @@ impl OrchestratorConfig {
     }
 
     /// Get the host
-    pub fn host(&self) -> &str {
-        &self.host
+    pub fn host(&self) -> Option<&str> {
+        self.host.as_deref()
     }
 
     /// Get the environment variables
@@ -194,26 +188,6 @@ impl OrchestratorConfig {
     /// Check if AWS is enabled
     pub fn is_aws_enabled(&self) -> bool {
         self.aws
-    }
-
-    /// Check if AWS S3 is enabled
-    pub fn is_aws_s3_enabled(&self) -> bool {
-        self.aws_s3
-    }
-
-    /// Check if AWS SQS is enabled
-    pub fn is_aws_sqs_enabled(&self) -> bool {
-        self.aws_sqs
-    }
-
-    /// Check if AWS SNS is enabled
-    pub fn is_aws_sns_enabled(&self) -> bool {
-        self.aws_sns
-    }
-
-    /// Check if AWS EventBridge is enabled
-    pub fn is_aws_event_bridge_enabled(&self) -> bool {
-        self.aws_event_bridge
     }
 
     /// Get the EventBridge type
@@ -266,35 +240,43 @@ impl OrchestratorConfig {
         command.arg(self.mode.to_string());
         command.arg("--layer").arg(self.layer.to_string());
 
+        // Add AWS flags (Needed in both)
+        if self.aws {
+            command.arg("--aws");
+            command.arg("--aws-s3");
+            command.arg("--aws-sqs");
+            command.arg("--aws-sns");
+        }
+
+        if *self.mode() == OrchestratorMode::Run {
+            command = self.to_command_run(command);
+        } else {
+            command = self.to_command_setup(command);
+        }
+
+        command
+    }
+
+    pub fn to_command_setup(&self, mut command: Command) -> Command {
+        command.arg("--aws-event-bridge");
+        command.arg("--event-bridge-type").arg(self.event_bridge_type.to_string());
+
+        command
+    }
+
+    pub fn to_command_run(&self, mut command: Command) -> Command {
         if let Some(port) = self.port {
             command.arg("--port").arg(port.to_string());
         }
 
-        command.arg("--host").arg(&self.host);
+        if let Some(host) = &self.host {
+            command.arg("--host").arg(host);
+        }
 
-        // Add database flags
+        // TODO: might wanna remove it ?
         if self.mongodb {
             command.arg("--mongodb");
         }
-
-        // Add AWS flags
-        if self.aws {
-            command.arg("--aws");
-        }
-        if self.aws_s3 {
-            command.arg("--aws-s3");
-        }
-        if self.aws_sqs {
-            command.arg("--aws-sqs");
-        }
-        if self.aws_sns {
-            command.arg("--aws-sns");
-        }
-        if self.aws_event_bridge {
-            command.arg("--aws-event-bridge");
-        }
-
-        command.arg("--aws-event-bridge-type").arg(self.event_bridge_type.to_string());
 
         // Add settlement flags
         if self.settle_on_ethereum {
@@ -332,6 +314,7 @@ impl OrchestratorConfig {
 
         command
     }
+
 }
 
 /// Builder for OrchestratorConfig
@@ -372,14 +355,14 @@ impl OrchestratorConfigBuilder {
     }
 
     /// Set the port
-    pub fn port(mut self, port: Option<u16>) -> Self {
-        self.config.port = port;
+    pub fn port(mut self, port: u16) -> Self {
+        self.config.port = Some(port);
         self
     }
 
     /// Set the host
-    pub fn host<S: Into<String>>(mut self, host: S) -> Self {
-        self.config.host = host.into();
+    pub fn host(mut self, host: String) -> Self {
+        self.config.host = Some(host);
         self
     }
 
@@ -416,30 +399,6 @@ impl OrchestratorConfigBuilder {
     /// Enable/disable AWS integration
     pub fn aws(mut self, enabled: bool) -> Self {
         self.config.aws = enabled;
-        self
-    }
-
-    /// Enable/disable AWS S3
-    pub fn aws_s3(mut self, enabled: bool) -> Self {
-        self.config.aws_s3 = enabled;
-        self
-    }
-
-    /// Enable/disable AWS SQS
-    pub fn aws_sqs(mut self, enabled: bool) -> Self {
-        self.config.aws_sqs = enabled;
-        self
-    }
-
-    /// Enable/disable AWS SNS
-    pub fn aws_sns(mut self, enabled: bool) -> Self {
-        self.config.aws_sns = enabled;
-        self
-    }
-
-    /// Enable/disable AWS EventBridge
-    pub fn aws_event_bridge(mut self, enabled: bool) -> Self {
-        self.config.aws_event_bridge = enabled;
         self
     }
 
@@ -485,43 +444,7 @@ impl OrchestratorConfigBuilder {
         self
     }
 
-    /// Configure for L2 settlement (Ethereum settlement + DA)
-    pub fn l2_ethereum_settlement(mut self) -> Self {
-        self.config.settle_on_ethereum = true;
-        self.config.da_on_ethereum = true;
-        self.config.settle_on_starknet = false;
-        self.config.da_on_starknet = false;
-        self
-    }
 
-    /// Configure for L3 settlement (Starknet settlement + DA)
-    pub fn l3_starknet_settlement(mut self) -> Self {
-        self.config.settle_on_ethereum = false;
-        self.config.da_on_ethereum = false;
-        self.config.settle_on_starknet = true;
-        self.config.da_on_starknet = true;
-        self
-    }
-
-    /// Enable all AWS services
-    pub fn enable_all_aws(mut self) -> Self {
-        self.config.aws = true;
-        self.config.aws_s3 = true;
-        self.config.aws_sqs = true;
-        self.config.aws_sns = true;
-        self.config.aws_event_bridge = true;
-        self
-    }
-
-    /// Disable all AWS services
-    pub fn disable_all_aws(mut self) -> Self {
-        self.config.aws = false;
-        self.config.aws_s3 = false;
-        self.config.aws_sqs = false;
-        self.config.aws_sns = false;
-        self.config.aws_event_bridge = false;
-        self
-    }
 }
 
 impl Default for OrchestratorConfigBuilder {

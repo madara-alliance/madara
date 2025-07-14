@@ -27,8 +27,6 @@ impl MadaraService {
         // Build the command using the immutable config
         let command = config.to_command();
 
-        println!("Starting Madara service with command: {:?}", command);
-
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
             port: config.rpc_port(),

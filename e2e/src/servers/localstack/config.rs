@@ -12,7 +12,7 @@ pub enum LocalstackError {
 }
 
 const DEFAULT_LOCALSTACK_PORT: u16 = 4566;
-const DEFAULT_LOCALSTACK_IMAGE: &str =
+pub const DEFAULT_LOCALSTACK_IMAGE: &str =
     "localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314";
 const DEFAULT_LOCALSTACK_CONTAINER_NAME: &str = "localstack-service";
 

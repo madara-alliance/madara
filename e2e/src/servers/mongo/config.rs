@@ -1,8 +1,10 @@
 use crate::servers::docker::DockerError;
 
 const DEFAULT_MONGO_PORT: u16 = 27017;
-const DEFAULT_MONGO_IMAGE: &str = "mongo:latest";
+pub const DEFAULT_MONGO_IMAGE: &str = "mongo:latest";
 const DEFAULT_MONGO_CONTAINER_NAME: &str = "mongodb-service";
+pub const MONGO_DEFAULT_DATABASE_PATH: &str = "mongodb_dump.json";
+
 
 #[derive(Debug, thiserror::Error)]
 pub enum MongoError {

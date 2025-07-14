@@ -672,7 +672,6 @@ impl Server {
         // Start the process
         let mut process = command.spawn().map_err(ServerError::StartupFailed)?;
 
-        println!("Starting container with command : {:?}", command);
 
         // Extract stdout and stderr for log monitoring
         let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(
@@ -713,11 +712,11 @@ impl Server {
         };
 
         // Wait for the server to be ready
-        println!("Waiting for server to be ready");
+        println!("🔔 Waiting for server to be ready");
         if !flag {
             server.wait_till_started().await?;
         }
-        println!("Server is ready for server to be ready");
+        println!("😁 Server is ready for server to be ready");
 
 
         Ok(server)
@@ -797,12 +796,11 @@ impl Server {
 
     /// Stop the server gracefully
     pub fn stop(&mut self) -> Result<(), ServerError> {
-        println!("Server was asked to stop !");
-
         if self.config.skip_wait_for_ready {
-            println!("Skipping stop, service already stopped");
             return Ok(());
         }
+        println!("‼️ Server was asked to stop !");
+
         if let Some(mut process) = self.process.take() {
             // Try to terminate gracefully first
             let pid = process.id();
@@ -843,8 +841,6 @@ impl Server {
 
 impl Drop for Server {
     fn drop(&mut self) {
-        println!("Server was asked to stop #1 !");
-
         let _ = self.stop();
     }
 }

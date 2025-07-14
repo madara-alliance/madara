@@ -57,7 +57,7 @@ impl OrchestratorService {
 
     /// Wait for the bootstrapper to complete execution
     pub async fn wait_for_completion(&mut self) -> Result<ExitStatus, OrchestratorError> {
-        println!("🚀 Running bootstrapper in {} mode...", self.config.mode());
+        println!("🚀 Running orchestrator in {} mode...", self.config.mode());
 
         // Use timeout to prevent hanging
         let result = tokio::time::timeout(Duration::from_secs(360), async {

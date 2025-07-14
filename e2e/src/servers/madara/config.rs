@@ -8,6 +8,7 @@ use tokio::process::Command;
 const DEFAULT_MADARA_RPC_PORT: u16 = 9944;
 const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
 const DEFAULT_MADARA_NAME: &str = "madara";
+pub const MADARA_DEFAULT_DATABASE_NAME: &str = "madara-db";
 pub const DEFAULT_MADARA_BINARY_PATH: &str = "../target/release/madara";
 
 #[derive(Debug, thiserror::Error)]
@@ -442,8 +443,6 @@ impl MadaraConfig {
         for (key, value) in &self.environment_vars {
             cmd.env(key, value);
         }
-
-        println!("Starting Madara service with command: {:?}", cmd);
 
         cmd
     }

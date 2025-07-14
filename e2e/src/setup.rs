@@ -4,21 +4,32 @@ use std::u64::MAX;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
+use::std::path::Path;
 // Import all the services we've created
 use crate::servers::anvil::{AnvilConfigBuilder, AnvilConfig, AnvilError, AnvilService};
 use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
+use crate::servers::mongo::MONGO_DEFAULT_DATABASE_PATH;
 use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
+use crate::servers::bootstrapper::BOOTSTRAPPER_DEFAULT_ADDRESS_PATH;
+use crate::servers::anvil::ANVIL_DEFAULT_DATABASE_NAME;
+use crate::servers::madara::MADARA_DEFAULT_DATABASE_NAME;
+use crate::servers::mongo::DEFAULT_MONGO_IMAGE;
+use crate::servers::localstack::DEFAULT_LOCALSTACK_IMAGE;
 use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService, LocalstackConfigBuilder};
 use crate::servers::madara::{MadaraConfig, MadaraError, MadaraService, MadaraConfigBuilder};
 use crate::servers::mongo::{MongoConfig, MongoConfigBuilder, MongoError, MongoService};
-use crate::constants::{DEFAULT_DATA_DIR};
 use crate::servers::orchestrator::{
 
     Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService, OrchestratorConfigBuilder
 };
 use crate::servers::pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError, PathfinderService};
 use std::collections::HashMap;
+
+
+// TODO: Implemented this to always be from the root, and not relative
+const DEFAULT_BINARY_DIR: &str = "../target/release";
+const DEFAULT_DATA_DIR: &str = "./data";
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
@@ -166,6 +177,7 @@ impl Setup {
     pub async fn setup(&mut self) -> Result<(), SetupError> {
         println!("🚀 Starting Madara Setup for {:?} layer...", self.config.layer);
 
+        // BLOCKING PROCESS
         // Step 1 : Validate dependencies within timeout
         // Anvil should be installed
         // Docker should be present and running
@@ -179,15 +191,16 @@ impl Setup {
         // Step 2 : Check for existing chain state
         // Decision : if state exists, skip setting up new chain and start servers with existing state
         // else : if state does not exist, setup new chain and start servers with new state
-        // let state_exists = self.check_existing_chain_state().await?;
 
-        // if state_exists {
-        //     println!("Chain state exists, starting servers...");
-        //     // self.start_existing_chain().await?;
-        // } else {
-            println!("Chain state does not exist, setting up new chain...");
+        let state_exists = self.check_existing_chain_state().await?;
+
+        if state_exists {
+            println!("✅ Chain state exists, starting servers...");
+            // self.start_existing_chain().await?;
+        } else {
+            println!("❌ Chain state does not exist, setting up new chain...");
             self.setup_new_chain().await?;
-        // }
+        }
 
         Ok(())
     }
@@ -198,27 +211,92 @@ impl Setup {
 
         let mut join_set = JoinSet::new();
 
-        // Validate Docker
-        join_set.spawn(async {
-            if !DockerServer::is_docker_running() {
-                println!("Docker is NOT running");
-                return Err(SetupError::DependencyFailed("Docker not running".to_string()));
-            }
-            println!("Docker is running");
-            Ok(())
-        });
-
-        // Validate Anvil
+        // First, validate basic dependencies that don't depend on Docker
         join_set.spawn(async {
             let result = std::process::Command::new("anvil").arg("--version").output();
             if result.is_err() {
-                return Err(SetupError::DependencyFailed("Anvil not found".to_string()));
+                return Err(SetupError::DependencyFailed("❌ Anvil not found".to_string()));
             }
-            println!("Anvil is available");
+            println!("✅ Anvil is available");
             Ok(())
         });
 
-        // Wait for all validations
+        // Validate Docker availability
+        join_set.spawn(async {
+            if !DockerServer::is_docker_running() {
+                println!("❌ Docker is NOT running");
+                return Err(SetupError::DependencyFailed("Docker not running".to_string()));
+            }
+            println!("✅ Docker is running");
+            Ok(())
+        });
+
+        // Wait for basic validations to complete
+        while let Some(result) = join_set.join_next().await {
+            result.map_err(|e| SetupError::DependencyFailed(e.to_string()))??;
+        }
+
+        // Now that we know Docker is available, pull required images concurrently
+        println!("📦 Pulling required Docker images...");
+
+        // Pull mongo:latest
+        join_set.spawn(async {
+            println!("📦 Pulling mongo:latest...");
+            let mongo_result = tokio::process::Command::new("docker")
+                .args(["pull", DEFAULT_MONGO_IMAGE])
+                .output()
+                .await;
+
+            match mongo_result {
+                Ok(output) if output.status.success() => {
+                    println!("✅ Successfully pulled mongo:latest");
+                    Ok(())
+                }
+                Ok(output) => {
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    Err(SetupError::DependencyFailed(
+                        format!("Failed to pull mongo:latest: {}", error_msg)
+                    ))
+                }
+                Err(e) => {
+                    Err(SetupError::DependencyFailed(
+                        format!("Failed to execute docker pull mongo:latest: {}", e)
+                    ))
+                }
+            }
+        });
+
+        // Pull localstack image
+        join_set.spawn(async {
+            println!("📦 Pulling localstack/localstack...");
+            let localstack_result = tokio::process::Command::new("docker")
+                .args([
+                    "pull",
+                    DEFAULT_LOCALSTACK_IMAGE
+                ])
+                .output()
+                .await;
+
+            match localstack_result {
+                Ok(output) if output.status.success() => {
+                    println!("✅ Successfully pulled localstack/localstack");
+                    Ok(())
+                }
+                Ok(output) => {
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    Err(SetupError::DependencyFailed(
+                        format!("Failed to pull localstack/localstack: {}", error_msg)
+                    ))
+                }
+                Err(e) => {
+                    Err(SetupError::DependencyFailed(
+                        format!("Failed to execute docker pull localstack/localstack: {}", e)
+                    ))
+                }
+            }
+        });
+
+        // Wait for image pulls to complete
         while let Some(result) = join_set.join_next().await {
             result.map_err(|e| SetupError::DependencyFailed(e.to_string()))??;
         }
@@ -227,68 +305,66 @@ impl Setup {
         Ok(())
     }
 
-    /// Check if existing databases need to be preserved or cleared
+    /// Check if database is exisitng or not in the Default Data Directory
     async fn check_existing_chain_state(&self) -> Result<bool, SetupError> {
         println!("🗄️  Checking existing databases...");
 
-        if !self.config.skip_existing_dbs {
-            // Create data directory if it doesn't exist
-            tokio::fs::create_dir_all(&self.config.data_directory)
-                .await
-                .map_err(|e| SetupError::ContextFailed(format!("Failed to create data directory: {}", e)))?;
+        let data_dir = Path::new(DEFAULT_DATA_DIR);
 
-            println!("📁 Data directory prepared: {}", self.config.data_directory);
-        } else {
-            println!("⏭️  Skipping database initialization (existing DBs will be used)");
-        }
+        // Check for required files/directories
+        let mongodb_dump_exists = data_dir.join(MONGO_DEFAULT_DATABASE_PATH).exists();
+        let anvil_json_exists = data_dir.join(ANVIL_DEFAULT_DATABASE_NAME).exists();
+        let madara_db_exists = data_dir.join(MADARA_DEFAULT_DATABASE_NAME).exists();
+        let address_json_exists = data_dir.join(BOOTSTRAPPER_DEFAULT_ADDRESS_PATH).exists();
 
-        Ok(true)
+        let all_exist = mongodb_dump_exists && anvil_json_exists && madara_db_exists && address_json_exists;
+
+        // Do we wanna implement half state ?
+        // i.e if addresses.json and anvil.json exists then we are done with l1 setup
+
+        // TODO: what if some exit ?
+        // Clean and move on!
+
+        Ok(all_exist)
     }
 
     /// Starts afresh chain
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
-        // Wrap the entire setup in a timeout
-        timeout(self.config.setup_timeout, async {
-            self.validate_dependencies().await?;
-            // self.check_existing_databases().await?;
-            self.start_infrastructure_services().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
-
 
         // // Timeout for 6 mins
         // timeout(Duration::from_secs(360), async {
-        //     self.setup_localstack().await?;
-        //     // self.wait_for_services_ready().await?;
-        //     // self.run_setup_validation().await?;
+        //     self.start_infrastructure_services().await?;
         //     Ok::<(), SetupError>(())
         // })
         // .await
         // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // // Timeout this for 5 mins
-        // timeout(Duration::from_secs(300), async {
-        //     self.start_l1_setup().await?;
-        //     // self.wait_for_services_ready().await?;
-        //     // self.run_setup_validation().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-        // // Timeout this for 30 mins
-        // timeout(Duration::from_secs(1800), async {
-        //     self.start_l2_setup().await?;
-        //     // self.wait_for_services_ready().await?;
-        //     // self.run_setup_validation().await?;
+        // Timeout for 6 mins
+        // timeout(Duration::from_secs(360), async {
+        //     self.setup_localstack().await?;
         //     Ok::<(), SetupError>(())
         // })
         // .await
-        // .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+
+        // Timeout this for 1.10 mins
+        timeout(Duration::from_secs(70), async {
+            self.start_l1_setup().await?;
+            // self.wait_for_services_ready().await?;
+            // self.run_setup_validation().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+
+        // Timeout this for 30 mins
+        timeout(Duration::from_secs(1800), async {
+            self.start_l2_setup().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
 
         // sleep(Duration::from_secs(500)).await;
         // println!("Starting pathfinder service");
@@ -303,16 +379,15 @@ impl Setup {
         // .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
 
 
-        println!("Starting Orchestrator service");
         // Start Pathfinder Service, wait for it to complete sync
-        timeout(Duration::from_secs(300), async {
-            println!("Starting pathfinder service #2");
+        // timeout(Duration::from_secs(300), async {
+        //     println!("Starting pathfinder service #2");
 
-            self.start_orchestration().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
+        //     self.start_orchestration().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
 
 
         // Need to sync a pathfinder
@@ -353,9 +428,7 @@ impl Setup {
         // Assign the services
         self.anvil = Some(anvil_service);
 
-        println!("Anvil has started");
-
-        println!("Starting bootstrapper L1");
+        println!("🧑‍💻 Starting bootstrapper L1");
 
         // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
         // Ideally we would want to ask anvil each time for these values.
@@ -370,9 +443,9 @@ impl Setup {
             .build();
 
         let status = BootstrapperService::run(bootstrapper_l1_config).await?;
-        println!("Bootstrapper L1 finished with {}", status);
+        println!("🥳 Bootstrapper L1 finished with {}", status);
 
-        println!("L1 Setup completed");
+        println!("✅ L1 Setup completed");
 
         Ok(())
     }
@@ -401,27 +474,26 @@ impl Setup {
         // Assign the services
         self.madara = Some(madara_service);
 
-        println!("Madara has started");
-
-        println!("Starting bootstrapper L2");
+        println!("🧑‍💻 Starting bootstrapper L2");
 
         // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
         // Ideally we would want to ask anvil each time for these values.
 
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        // let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-        //     .with_mode(BootstrapperMode::SetupL2)
-        //     .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-        //     .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-        //     .add_env_var("ETH_RPC", "http://localhost:8545")
-        //     .add_env_var("RUST_LOG", "info")
-        //     .build();
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .with_mode(BootstrapperMode::SetupL2)
+            .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .add_env_var("ETH_RPC", "http://localhost:8545")
+            .add_env_var("RUST_LOG", "info")
+            .build();
 
-        // let status = BootstrapperService::run(bootstrapper_l2_config).await?;
-        // println!("Bootstrapper L2 finished with {}", status);
+        let status = BootstrapperService::run(bootstrapper_l2_config).await?;
+        println!("🥳 Bootstrapper L2 finished with {}", status);
 
-        println!("L2 Setup completed");
+        println!("✅ L2 Setup completed");
+
         Ok(())
     }
 
@@ -489,11 +561,10 @@ impl Setup {
 
     /// Start infrastructure services (Anvil, Localstack, MongoDB)
     async fn start_infrastructure_services(&mut self) -> Result<(), SetupError> {
-        println!("🏗️  Starting infrastructure services...");
+        println!("🏗️ Starting infrastructure services...");
 
         // // 🔑 KEY: Capture values first to avoid borrowing issues
         let localstack_port = self.config.localstack_port;
-        let layer = self.config.layer.clone();
         let mongo_port = self.config.mongo_port;
 
         // Create async closures that DON'T borrow self
@@ -521,7 +592,7 @@ impl Setup {
 
         // TODO : need to handle the error from this async move
 
-        // TODO: Atlantic get's added here later!
+        // TODO: Atlantic service to be added here later!
 
         // 🚀 These run in PARALLEL!
         let (localstack_service, mongo_service) = tokio::try_join!(start_localstack, start_mongo)?;
@@ -537,28 +608,16 @@ impl Setup {
 
 
     async fn setup_localstack(&mut self) -> Result<(), SetupError> {
-        // run orchestrator setup mode
-
-        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
-        // Ideally we would want to ask anvil each time for these values.
-
-        // TODO: I need to know the port from anvil before sending it to bootstrapper!
-
-        println!("Statting Orchestrator ");
+        println!("🏗️ Starting localstack setup ...");
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::new()
             .mode(OrchestratorMode::Setup)
-            .add_env_var("AWS_ENDPOINT_URL", "http://localhost.localstack.cloud:4566")
-            .add_env_var("AWS_REGION", "us-east-1")
-            .add_env_var("AWS_PREFIX", "local")
-            .add_env_var("RUST_LOG", "info")
+            .env_var("RUST_LOG", "info")
             .build();
 
         let _ = OrchestratorService::setup(orchestrator_setup_config).await?;
 
         Ok(())
-
-
     }
 
 
