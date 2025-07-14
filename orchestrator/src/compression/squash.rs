@@ -286,7 +286,12 @@ async fn process_single_contract(
         }
         Some(pre_range_block) => {
             // Check if contract existed at pre-range block
-            let contract_existed = check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await?;
+
+            let contract_existed = if contract_addr == Felt::ONE || contract_addr == Felt::TWO {
+                false
+            } else {
+                check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await?
+            };
 
             if contract_existed {
                 // Process storage entries only for an existing contract
@@ -356,7 +361,7 @@ pub async fn get_class_hash_at(
         match provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await {
             Ok(class_hash) => return Ok((true, class_hash)),
             Err(e) => {
-                if let ProviderError::StarknetError(StarknetError::ClassHashNotFound { .. }) = e {
+                if let ProviderError::StarknetError(StarknetError::ContractNotFound { .. }) = e {
                     return Ok((false, Felt::ZERO));
                 }
                 error = Some(e.to_string());
