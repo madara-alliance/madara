@@ -120,6 +120,7 @@ pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(Pen
 
 #[derive(Debug)]
 pub(crate) struct CurrentPendingState {
+    backend: Arc<MadaraBackend>,
     pub block: PendingBlockState,
     pub block_n: u64,
     // These are reset every pending tick.
@@ -128,8 +129,8 @@ pub(crate) struct CurrentPendingState {
 }
 
 impl CurrentPendingState {
-    pub fn new(block: PendingBlockState, block_n: u64) -> Self {
-        Self { block, block_n, tx_executed_for_tick: Default::default(), stats_for_tick: Default::default() }
+    pub fn new(backend: Arc<MadaraBackend>, block: PendingBlockState, block_n: u64) -> Self {
+        Self { backend, block, block_n, tx_executed_for_tick: Default::default(), stats_for_tick: Default::default() }
     }
     /// Process the execution result, merging it with the current pending state
     pub fn append_batch(&mut self, batch: BatchExecutionResult) {
@@ -146,7 +147,7 @@ impl CurrentPendingState {
                 }
 
                 let receipt = from_blockifier_execution_info(&execution_info, &blockifier_tx);
-                let converted_tx = TransactionWithHash::from(blockifier_tx.clone_blockifier_transaction());
+                let converted_tx = TransactionWithHash::from(blockifier_tx.clone());
 
                 self.block.events.extend(
                     receipt
@@ -156,7 +157,9 @@ impl CurrentPendingState {
                         .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
                 );
                 self.block.state.extend(&state_diff);
-                self.block.transactions.push(TransactionWithReceipt { transaction: converted_tx.transaction, receipt });
+                let tx = TransactionWithReceipt { transaction: converted_tx.transaction, receipt };
+                self.block.transactions.push(tx);
+                self.backend.on_new_pending_tx(tx)
             }
         }
         self.stats_for_tick += batch.stats;
@@ -337,6 +340,7 @@ impl BlockProductionTask {
 
                 self.current_state = Some(TaskState::Executing(
                     CurrentPendingState::new(
+                        Arc::clone(&self.backend),
                         PendingBlockState::new_from_execution_context(
                             exec_ctx,
                             latest_block_hash,
@@ -525,7 +529,6 @@ pub(crate) mod tests {
     };
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
     use mc_devnet::{Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector};
-    use mc_exec::execution::TxInfo;
     use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
     use mp_block::header::GasPrices;
@@ -562,7 +565,7 @@ pub(crate) mod tests {
         // that when loaded, the block will close after one transaction
         // is added to it, to test the pending tick closing the block
         BouncerWeights {
-            gas: 1000000,
+            l1_gas: 1000000,
             message_segment_length: 10000,
             n_events: 10000,
             state_diff_size: 10000,
@@ -746,7 +749,7 @@ pub(crate) mod tests {
             sender_address: contract.address,
             compiled_class_hash: compiled_contract_class_hash,
             // this field will be filled below
-            signature: vec![],
+            signature: vec![].into(),
             nonce,
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
@@ -760,10 +763,13 @@ pub(crate) mod tests {
             fee_data_availability_mode: DaMode::L1,
         });
 
-        let (blockifier_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+        let (api_tx, _class) = BroadcastedTxn::Declare(declare_txn.clone())
+            .into_starknet_api(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+            )
             .unwrap();
-        let signature = contract.secret.sign(&blockifier_tx.tx_hash().0).unwrap();
+        let signature = contract.secret.sign(&api_tx.tx_hash().0).unwrap();
 
         let tx_signature = match &mut declare_txn {
             BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -771,7 +777,7 @@ pub(crate) mod tests {
             BroadcastedDeclareTxn::V3(tx) => &mut tx.signature,
             _ => unreachable!("the declare tx is not query only"),
         };
-        *tx_signature = vec![signature.r, signature.s];
+        *tx_signature = vec![signature.r, signature.s].into();
 
         validator.submit_declare_transaction(declare_txn).await.expect("Should accept the transaction");
     }
@@ -799,9 +805,10 @@ pub(crate) mod tests {
                     ],
                 })
                 .flatten()
-                .collect(),
+                .collect::<Vec<Felt>>()
+                .into(),
             // this field will be filled below
-            signature: vec![],
+            signature: vec![].into(),
             nonce,
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
@@ -814,10 +821,13 @@ pub(crate) mod tests {
             fee_data_availability_mode: DaMode::L1,
         });
 
-        let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
-            .into_blockifier(backend.chain_config().chain_id.to_felt(), backend.chain_config().latest_protocol_version)
+        let (api_tx, _classes) = BroadcastedTxn::Invoke(invoke_txn.clone())
+            .into_starknet_api(
+                backend.chain_config().chain_id.to_felt(),
+                backend.chain_config().latest_protocol_version,
+            )
             .unwrap();
-        let signature = contract_sender.secret.sign(&blockifier_tx.tx_hash()).unwrap();
+        let signature = contract_sender.secret.sign(&api_tx.tx_hash()).unwrap();
 
         let tx_signature = match &mut invoke_txn {
             BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
@@ -825,7 +835,7 @@ pub(crate) mod tests {
             BroadcastedInvokeTxn::V3(tx) => &mut tx.signature,
             _ => unreachable!("the invoke tx is not query only"),
         };
-        *tx_signature = vec![signature.r, signature.s];
+        *tx_signature = vec![signature.r, signature.s].into();
 
         validator.submit_invoke_transaction(invoke_txn).await.expect("Should accept the transaction");
     }

@@ -1,5 +1,5 @@
 use super::super::cloud::CloudProvider;
-use crate::cli::Layer;
+use crate::types::Layer;
 use crate::OrchestratorResult;
 use async_trait::async_trait;
 use std::sync::Arc;
@@ -42,8 +42,7 @@ pub trait Resource: Send + Sync {
     /// * `args` - The arguments to check the resource with
     /// # Returns
     /// * `OrchestratorResult<bool>` - A Result indicating whether the resource exists or not
-    async fn check_if_exists(&self, args: Self::CheckArgs) -> OrchestratorResult<bool>;
-
+    async fn check_if_exists(&self, args: &Self::CheckArgs) -> OrchestratorResult<bool>;
     /// ready - Check if all the resource is created and ready to use
     /// # Arguments
     /// * `args` - The arguments to check the resource with

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
 
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
@@ -97,7 +98,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                 }
             }
             None => {
-                let min_block_to_process = config.service_config().min_block_to_process.unwrap_or(0);
+                let min_block_to_process = config.service_config().min_block_to_process;
                 if blocks_to_process[0] != min_block_to_process {
                     tracing::warn!("DA job for the first block is not yet completed. Returning safely...");
                     return Ok(());
@@ -106,8 +107,14 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         let mut blocks_to_process = find_successive_blocks_in_vector(blocks_to_process);
-        if blocks_to_process.len() > 10 {
-            blocks_to_process = blocks_to_process.into_iter().take(10).collect();
+
+        // TODO: Remove this once we have a proper way to handle L3 blocks with use of receipt
+        let max_blocks = match config.layer() {
+            Layer::L2 => 10,
+            Layer::L3 => 1,
+        };
+        if blocks_to_process.len() >= max_blocks {
+            blocks_to_process = blocks_to_process.into_iter().take(max_blocks).collect();
         }
 
         // Prepare state transition metadata

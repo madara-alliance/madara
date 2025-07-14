@@ -47,6 +47,7 @@ pub trait DatabaseClient: Send + Sync {
         job_type: JobType,
         job_status: JobStatus,
     ) -> Result<Option<JobItem>, DatabaseError>;
+
     /// get_jobs_after_internal_id_by_job_type - Get jobs after a specific internal id by job type
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
@@ -54,16 +55,37 @@ pub trait DatabaseClient: Send + Sync {
         job_status: JobStatus,
         internal_id: String,
     ) -> Result<Vec<JobItem>, DatabaseError>;
-    /// get_jobs_by_statuses - Get jobs by their statuses
-    async fn get_jobs_by_statuses(
+
+    /// get_jobs_by_statuses -  Get all the jobs by types and status
+    async fn get_jobs_by_types_and_statuses(
         &self,
+        job_type: Vec<JobType>,
         status: Vec<JobStatus>,
         limit: Option<i64>,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+
+    /// get_missing_jobs_by_type_and_caps - Get all the missed jobs by type and block number limits
+    async fn get_missing_block_numbers_by_type_and_caps(
+        &self,
+        job_type: JobType,
+        lower_cap: u64,
+        upper_cap: u64,
+        limit: Option<i64>,
+    ) -> Result<Vec<u64>, DatabaseError>;
+
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
     /// update_batch - Update the bath
     async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError>;
     /// create_batch - Create a new batch
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
+    /// get_jobs_by_type_and_statuses - Get jobs by their type and statuses
+    /// This method is used to get jobs by their type and statuses.
+    async fn get_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_jobs_by_block_number - Get all jobs for a specific block number
+    async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError>;
 }

@@ -18,7 +18,8 @@ use crate::types::params::prover::ProverConfig;
 use crate::types::params::service::{ServerParams, ServiceParams};
 use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
-use crate::types::params::{AlertArgs, OTELConfig, QueueArgs, StorageArgs};
+use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
+use crate::types::Layer;
 use crate::utils::helpers::ProcessingLocks;
 use alloy::primitives::Address;
 use axum::Router;
@@ -30,7 +31,9 @@ use orchestrator_ethereum_settlement_client::EthereumSettlementValidatedArgs;
 use orchestrator_prover_client_interface::{MockProverClient, ProverClient};
 use orchestrator_settlement_client_interface::{MockSettlementClient, SettlementClient};
 use orchestrator_sharp_service::SharpValidatedArgs;
-use orchestrator_utils::env_utils::{get_env_var_optional, get_env_var_or_panic};
+use orchestrator_utils::env_utils::{
+    get_env_var_optional, get_env_var_optional_or_panic, get_env_var_or_default, get_env_var_or_panic,
+};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
@@ -243,6 +246,7 @@ impl TestConfigBuilder {
         let processing_locks = ProcessingLocks::default();
 
         let config = Arc::new(Config::new(
+            Layer::L2,
             params.orchestrator_params,
             starknet_client,
             database,
@@ -298,7 +302,6 @@ pub mod implement_client {
     use starknet::providers::{JsonRpcClient, Url};
 
     use super::{ConfigType, EnvParams, MockType};
-    use crate::cli::Layer;
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
     use crate::core::client::queue::MockQueueClient;
@@ -313,6 +316,7 @@ pub mod implement_client {
     use crate::types::params::database::DatabaseArgs;
     use crate::types::params::settlement::SettlementConfig;
     use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
+    use crate::types::Layer;
 
     macro_rules! implement_mock_client_conversion {
         ($client_type:ident, $mock_variant:ident) => {
@@ -360,7 +364,7 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params, &params.orchestrator_params),
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -480,34 +484,37 @@ pub struct EnvParams {
 }
 
 pub(crate) fn get_env_params() -> EnvParams {
-    let prefix = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX");
     let db_params = DatabaseArgs {
         connection_uri: get_env_var_or_panic("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL"),
         database_name: get_env_var_or_panic("MADARA_ORCHESTRATOR_DATABASE_NAME"),
     };
 
     let storage_params = StorageArgs {
-        bucket_name: format!(
+        bucket_identifier: AWSResourceIdentifier::Name(format!(
             "{}-{}",
             get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX"),
-            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_NAME")
-        ),
-        bucket_location_constraint: None,
+            get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_S3_BUCKET_IDENTIFIER")
+        )),
     };
 
-    let queue_params =
-        QueueArgs { prefix: prefix.clone(), suffix: get_env_var_or_panic("MADARA_ORCHESTRATOR_SQS_SUFFIX") };
+    let queue_params = QueueArgs {
+        queue_template_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_AWS_SQS_QUEUE_IDENTIFIER",
+        )),
+    };
 
-    let aws_params = AWSCredentials { region: get_env_var_or_panic("AWS_REGION") };
+    let aws_params = AWSCredentials { prefix: get_env_var_optional_or_panic("MADARA_ORCHESTRATOR_AWS_PREFIX") };
 
     let da_params = DAConfig::Ethereum(EthereumDaValidatedArgs {
         ethereum_da_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
     });
 
-    let alert_topic_name = get_env_var_or_panic("MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_NAME");
-
-    let alert_params = AlertArgs { alert_topic_name };
+    let alert_params = AlertArgs {
+        alert_identifier: AWSResourceIdentifier::Name(get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_AWS_SNS_TOPIC_IDENTIFIER",
+        )),
+    };
 
     let settlement_params = SettlementConfig::Ethereum(EthereumSettlementValidatedArgs {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))
@@ -526,13 +533,14 @@ pub(crate) fn get_env_params() -> EnvParams {
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
+        snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
     };
 
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS").expect("Couldn't get max block");
-    let max_block: Option<u64> = env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<u64>().unwrap()) });
+    let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
+    let max_block: Option<u64> = Some(env.parse::<u64>().unwrap());
 
-    let env = get_env_var_optional("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS").expect("Couldn't get min block");
-    let min_block: Option<u64> = env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<u64>().unwrap()) });
+    let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MIN_BLOCK_NO_TO_PROCESS");
+    let min_block: u64 = env.parse::<u64>().unwrap();
 
     let env = get_env_var_optional("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS")
         .expect("Couldn't get max concurrent snos jobs");
@@ -544,9 +552,14 @@ pub(crate) fn get_env_params() -> EnvParams {
     let max_concurrent_proving_jobs: Option<usize> =
         env.and_then(|s| if s.is_empty() { None } else { Some(s.parse::<usize>().unwrap()) });
 
+    let env_value: String = get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_CREATED_SNOS_JOBS", "200");
+    let max_concurrent_created_snos_jobs: u64 =
+        env_value.parse::<u64>().expect("Invalid number format for max concurrent SNOS jobs");
+
     let service_config = ServiceParams {
         max_block_to_process: max_block,
         min_block_to_process: min_block,
+        max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
     };
@@ -586,6 +599,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     });
 
     EnvParams {

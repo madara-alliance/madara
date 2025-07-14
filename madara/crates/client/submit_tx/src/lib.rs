@@ -39,6 +39,10 @@ pub trait SubmitTransaction: Send + Sync {
         &self,
         tx: BroadcastedInvokeTxn,
     ) -> Result<AddInvokeTransactionResult, SubmitTransactionError>;
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
 }
 
 /// Submit an L1HandlerTransaction.
@@ -56,4 +60,8 @@ pub trait SubmitL1HandlerTransaction: Send + Sync {
 #[async_trait]
 pub trait SubmitValidatedTransaction: Send + Sync {
     async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError>;
+
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
+
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
 }
