@@ -1,287 +1,158 @@
-//! Starknet event streaming implementation.
-//!
-//! This module provides functionality to stream Starknet events, particularly focused on
-//! L1-to-L2 messaging events. It implements a Stream that continuously polls for new events
-//! from a Starknet provider and processes them to extract L1-to-L2 messaging data.
-//!
-//! The main component is the [`StarknetEventStream`] which:
-//! - Connects to a Starknet node via JSON-RPC
-//! - Periodically polls for new events matching a specified filter
-//! - Processes and deduplicates events based on their nonce
-//! - Converts Starknet events into a more usable [`L1toL2MessagingEventData`] structure
-//!
-//! This is primarily used for cross-chain messaging between Starknet (L2) and Madara-Appchain (L3),
-//! allowing the client to track messages sent from L2 that need to be processed on L3.
-//!
-//! PS: the naming might be a bit confusing because even though the events are coming from L2 and yet
-//! we are using the term "L1-to-L2 messaging" in the name. This is temporary and will be changed
-//! in the future.
-
 use crate::error::SettlementClientError;
-use crate::messaging::L1toL2MessagingEventData;
+use crate::messaging::MessageToL2WithMetadata;
 use crate::starknet::error::StarknetClientError;
-use futures::Stream;
-use starknet_core::types::{BlockId, EmittedEvent, EventFilter, EventsPage};
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::{JsonRpcClient, Provider};
+use bigdecimal::ToPrimitive;
+use futures::{stream, Stream, StreamExt, TryStreamExt};
+use mp_convert::FeltExt;
+use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
+use starknet_core::types::{BlockId, EmittedEvent, EventFilter};
+use starknet_providers::{Provider, ProviderError};
 use starknet_types_core::felt::Felt;
-use std::collections::HashSet;
-use std::future::Future;
-use std::pin::Pin;
+use std::iter;
 use std::sync::Arc;
-use std::task::{Context, Poll};
 use std::time::Duration;
-use tokio::time::sleep;
 
-/// Type alias for the future returned by the event fetching function.
-type FutureType = Pin<Box<dyn Future<Output = anyhow::Result<(Option<EmittedEvent>, EventFilter)>> + Send>>;
+// Starknet event conversion
+impl TryFrom<EmittedEvent> for MessageToL2WithMetadata {
+    type Error = SettlementClientError;
 
-/// Stream implementation for retrieving Starknet events.
-///
-/// `StarknetEventStream` connects to a Starknet node and continuously polls for new events
-/// matching the provided filter. It keeps track of processed events to avoid duplication
-/// and implements the `Stream` trait to provide an asynchronous stream of events.
-///
-/// The stream will:
-/// 1. Fetch events from the Starknet node based on the provided filter
-/// 2. Process each event and check if it has already been processed (using the nonce)
-/// 3. Convert valid events to [`L1toL2MessagingEventData`]
-/// 4. Update the filter to look for newer blocks in subsequent requests
-///
-/// PS: As of now the event stream is for L1-to-L2 messaging events.
-pub struct StarknetEventStream {
-    /// The Starknet JSON-RPC client used to fetch events.
-    provider: Arc<JsonRpcClient<HttpTransport>>,
+    fn try_from(event: EmittedEvent) -> Result<Self, Self::Error> {
+        // https://github.com/keep-starknet-strange/piltover/blob/a7dc4141fd21300f6d7c23b87d496004a739f430/src/messaging/component.cairo#L86-L96
+        // keys: ['MessageSent', message_hash, from_address, to_address]
+        // data: [selector, nonce, payload_len, payload[]...]
 
-    /// The filter used to specify which events to retrieve.
-    filter: EventFilter,
+        let block_number = event.block_number.ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Unable to get block number from event".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
 
-    /// Set of event nonces that have already been processed, used for deduplication.
-    processed_events: HashSet<Felt>,
+        let selector = event.data.first().ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing selector in event data".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
 
-    /// The current future being polled (if any).
-    future: Option<FutureType>,
+        let nonce = event.data.get(1).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing nonce in event data".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
 
-    /// Time interval between consecutive polling attempts.
+        let from = event.keys.get(2).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing from_address in event keys".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        let to = event.keys.get(3).ok_or_else(|| {
+            SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                message: "Missing to_address in event keys".to_string(),
+                event_id: "MessageSent".to_string(),
+            })
+        })?;
+
+        Ok(Self {
+            l1_transaction_hash: event.transaction_hash.to_u256(),
+            l1_block_number: block_number,
+            message: L1HandlerTransactionWithFee::new(
+                L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce: nonce.to_u64().ok_or_else(|| {
+                        SettlementClientError::Starknet(StarknetClientError::EventProcessing {
+                            message: "Nonce overflows u64".to_string(),
+                            event_id: "MessageSent".to_string(),
+                        })
+                    })?,
+                    contract_address: *to,
+                    entry_point_selector: *selector,
+                    calldata: iter::once(*from).chain(event.data.iter().skip(3).copied()).collect::<Vec<_>>().into(),
+                },
+                /* paid_fee_on_l1 */ 1, // TODO: we need the paid fee here.
+            ),
+        })
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct WatchBlockNEvent {
+    pub new: u64,
+    pub previous: Option<u64>,
+}
+
+/// Watch the latest block_n. Everytime a change is detected, a `WatchBlockNEvent` is emitted with the previous and new block_n value.
+pub fn watch_latest_block_n(
+    provider: Arc<impl Provider + 'static>,
+    from_block_n: Option<u64>,
     polling_interval: Duration,
+) -> impl Stream<Item = Result<WatchBlockNEvent, ProviderError>> {
+    let mut interval = tokio::time::interval(polling_interval);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    stream::try_unfold((provider, interval, from_block_n), |(provider, mut interval, previous)| async move {
+        interval.tick().await; // first tick is immediate
+
+        let new = provider.block_number().await?;
+        Ok(Some((WatchBlockNEvent {
+            new,
+            previous,
+        }, (provider, interval, Some(new)))))
+    })
+    // only return events where the block_n changed
+    .try_filter(|&ev| async move {
+        ev.previous != Some(ev.new)
+    })
 }
 
-impl StarknetEventStream {
-    /// Creates a new `StarknetEventStream` with the specified provider, filter, and polling interval.
-    ///
-    /// # Arguments
-    ///
-    /// * `provider` - Arc-wrapped Starknet JSON-RPC client to use for fetching events
-    /// * `filter` - Event filter that specifies starting block and ending block, event keys are fixed (Because we are fetching L1-to-L2 messaging events only)
-    /// * `polling_interval` - Time interval between consecutive polling attempts
-    ///
-    /// # Returns
-    ///
-    /// A new `StarknetEventStream` instance configured with the provided parameters.
-    pub fn new(provider: Arc<JsonRpcClient<HttpTransport>>, filter: EventFilter, polling_interval: Duration) -> Self {
-        Self { provider, filter, processed_events: HashSet::new(), future: None, polling_interval }
-    }
-
-    async fn fetch_events_with_retry(
-        provider: &Arc<JsonRpcClient<HttpTransport>>,
-        filter: EventFilter,
-        continuation_token: Option<String>,
-    ) -> anyhow::Result<EventsPage> {
-        const MAX_RETRIES: u8 = 3;
-        const RETRY_TIMEOUT: u64 = 5;
-        let mut retries = 0;
-        loop {
-            match provider
-                .get_events(
-                    EventFilter {
-                        from_block: filter.from_block,
-                        to_block: filter.to_block,
-                        address: filter.address,
-                        keys: filter.keys.clone(),
-                    },
-                    continuation_token.clone(),
-                    1000,
-                )
-                .await
-            {
-                Ok(res) => {
-                    return Ok(res);
-                }
-                Err(e) => {
-                    if retries < MAX_RETRIES {
-                        retries += 1;
-                        tracing::warn!("Error in fetch_events, retrying: {:?}", e);
-                        sleep(Duration::from_secs(RETRY_TIMEOUT)).await;
-                        continue;
-                    } else {
-                        tracing::error!("Error in fetch_events, {:?}", e);
-                        return Err(anyhow::anyhow!("Starknet error: {}", e));
-                    }
-                }
-            }
+/// Get all of the events matching a given filter.
+pub fn get_events(
+    provider: Arc<impl Provider + 'static>,
+    filter: EventFilter,
+    chunk_size: u64,
+) -> impl Stream<Item = Result<EmittedEvent, ProviderError>> {
+    stream::try_unfold((provider, filter, chunk_size,  None, false), |(provider, filter, chunk_size, continuation_token, stop)| async move {
+        if stop {
+            return Ok(None);
         }
-    }
+        let res = provider.get_events(filter.clone(), continuation_token, chunk_size).await?;
 
-    /// Fetches events from the Starknet provider based on the provided filter.
-    ///
-    /// This method implements a stateful polling mechanism that:
-    /// 1. Sleeps for the configured polling interval to avoid overwhelming the Starknet node
-    /// 2. Fetches events from the Starknet provider using pagination (up to 1000 events per request)
-    /// 3. Processes events to find unprocessed ones (based on nonce)
-    /// 4. Updates the filter to implement a sliding window approach for continuous monitoring
-    ///
-    /// ## Detailed Logic
-    ///
-    /// The function follows these steps:
-    /// - Introduces a delay based on the polling interval to avoid overwhelming the Starknet node
-    /// - Retrieves all events matching the filter using pagination (handling the continuation token)
-    /// - Fetches the latest block number from the Starknet node
-    /// - Iterates through the retrieved events looking for ones with unprocessed nonces
-    /// - For the first unprocessed event found, marks its nonce as processed and returns it
-    /// - If no unprocessed events are found, updates the filter window to move forward
-    ///   (from_block becomes the previous to_block, to_block becomes the latest block)
-    ///
-    /// This sliding window approach ensures we continuously monitor new blocks while avoiding
-    /// reprocessing old events, even if the function is called repeatedly.
-    ///
-    /// ## Deduplication Strategy
-    ///
-    /// Events are deduplicated based on their nonce (second element in the event data).
-    /// The function keeps track of processed nonces in a HashSet to ensure each message
-    /// is processed exactly once, which is critical for cross-chain messaging systems.
-    ///
-    /// # Arguments
-    ///
-    /// * `provider` - Arc-wrapped Starknet JSON-RPC client
-    /// * `filter` - Event filter specifying the block range to query
-    /// * `processed_events` - Set of already processed event nonces for deduplication
-    /// * `polling_interval` - Time interval between consecutive polling attempts
-    ///
-    /// # Returns
-    ///
-    /// A tuple containing:
-    /// - An `Option<EmittedEvent>` with the first unprocessed event (if any)
-    /// - The updated `EventFilter` for the next polling attempt, with an adjusted block range
-    ///   that slides forward to capture new blocks
-    async fn fetch_l1_to_l2_messaging_events(
-        provider: Arc<JsonRpcClient<HttpTransport>>,
-        mut filter: EventFilter,
-        mut processed_events: HashSet<Felt>,
-        polling_interval: Duration,
-    ) -> anyhow::Result<(Option<EmittedEvent>, EventFilter)> {
-        // Adding sleep to introduce delay
-        sleep(polling_interval).await;
-
-        let mut page_indicator = false;
-        let mut continuation_token: Option<String> = None;
-
-        while !page_indicator {
-            let events = Self::fetch_events_with_retry(&provider, filter.clone(), continuation_token.clone()).await?;
-
-            // Process this page of events immediately
-            for event in &events.events {
-                if let Some(nonce) = event.data.get(1) {
-                    if !processed_events.contains(nonce) {
-                        processed_events.insert(*nonce);
-                        return Ok((Some(event.clone()), filter));
-                    }
-                }
-            }
-
-            // Continue pagination logic
-            if let Some(token) = events.continuation_token {
-                continuation_token = Some(token);
-            } else {
-                page_indicator = true;
-            }
-        }
-
-        // If we get here, we didn't find any unprocessed events
-        // So we update the filter and return None
-        let latest_block = provider.block_number().await?;
-        filter.from_block = filter.to_block;
-        filter.to_block = Some(BlockId::Number(latest_block));
-
-        Ok((None, filter))
-    }
+        let stop = res.continuation_token.is_none(); // stop just after this chunk when no continuation token.
+        Ok::<_, ProviderError>(Some((stream::iter(res.events).map(Ok), (provider, filter, chunk_size, res.continuation_token, stop))))
+    })
+    // flatten: convert stream of `Vec<EmittedEvent>` chunks into individual `EmittedEvent`s.
+    .try_flatten()
 }
 
-/// Implementation of the `Stream` trait for `StarknetEventStream`.
-///
-/// This implementation allows `StarknetEventStream` to be used as an asynchronous
-/// stream of events. It handles polling for new events, processing them, and
-/// converting them to `L1toL2MessagingEventData`.
-///
-/// The stream yields `Result<L1toL2MessagingEventData, SettlementClientError>` items,
-/// where:
-/// - `Ok(data)` represents a successfully processed event
-/// - `Err(error)` represents an error that occurred during event fetching or processing
-impl Stream for StarknetEventStream {
-    type Item = Result<L1toL2MessagingEventData, SettlementClientError>;
-
-    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-        if self.future.is_none() {
-            let provider = self.provider.clone();
-            let filter = self.filter.clone();
-            let processed_events = self.processed_events.clone();
-            let polling_interval = self.polling_interval;
-
-            let future = async move {
-                Self::fetch_l1_to_l2_messaging_events(provider, filter, processed_events, polling_interval).await
-            };
-
-            self.future = Some(Box::pin(future));
-        }
-
-        match self.future.as_mut() {
-            Some(fut) => match fut.as_mut().poll(cx) {
-                Poll::Ready(result) => {
-                    self.future = None;
-                    match result {
-                        Ok((Some(event), updated_filter)) => {
-                            self.filter = updated_filter;
-                            let nonce = match event.data.get(1) {
-                                Some(nonce) => *nonce,
-                                None => {
-                                    return Poll::Ready(Some(Err(SettlementClientError::Starknet(
-                                        StarknetClientError::EventProcessing {
-                                            message: "Missing nonce in event data".to_string(),
-                                            event_id: "MessageSent".to_string(),
-                                        },
-                                    ))))
-                                }
-                            };
-                            self.processed_events.insert(nonce);
-
-                            match L1toL2MessagingEventData::try_from(event) {
-                                Ok(data) => Poll::Ready(Some(Ok(data))),
-                                Err(e) => Poll::Ready(Some(Err(e))),
-                            }
-                        }
-                        Ok((None, updated_filter)) => {
-                            // Update the filter even when no events are found
-                            self.filter = updated_filter;
-                            Poll::Ready(None)
-                        }
-                        Err(e) => Poll::Ready(Some(Err(SettlementClientError::Starknet(
-                            StarknetClientError::Provider(e.to_string()),
-                        )))),
-                    }
-                }
-                Poll::Pending => Poll::Pending,
-            },
-            None => {
-                // If the code comes here then this is an unexpected behaviour.
-                // Following scenarios can lead to this:
-                // - Not able to call the RPC and fetch events.
-                // - Connection Issues.
-                tracing::error!(
-                    "Starknet Event Stream : Unable to fetch events from starknet stream. Restart Sequencer."
-                );
-                Poll::Ready(None)
-            }
-        }
-    }
+pub struct WatchEventFilter {
+    pub address: Option<Felt>,
+    pub keys: Option<Vec<Vec<Felt>>>,
+}
+pub fn watch_events(
+    provider: Arc<impl Provider + 'static>,
+    from_block_n: Option<u64>,
+    filter: WatchEventFilter,
+    polling_interval: Duration,
+    chunk_size: u64,
+) -> impl Stream<Item = Result<EmittedEvent, ProviderError>> {
+    // Watch the latest block_n, and everytime it changes, get all the events in the change range.
+    watch_latest_block_n(provider.clone(), from_block_n, polling_interval)
+        .map_ok(move |ev| {
+            get_events(
+                provider.clone(),
+                EventFilter {
+                    // add 1 to the previous block_n to start returning events from the block we don't know about. (EventFilter range is inclusive)
+                    from_block: Some(BlockId::Number(ev.previous.map(|n| n.saturating_add(1)).unwrap_or(0))),
+                    to_block: Some(BlockId::Number(ev.new)),
+                    address: filter.address,
+                    keys: filter.keys.clone(),
+                },
+                chunk_size,
+            )
+        })
+        .try_flatten()
 }
 
 #[cfg(test)]
@@ -293,7 +164,10 @@ mod starknet_event_stream_tests {
     use httpmock::Mock;
     use rstest::*;
     use serde_json::json;
+    use starknet_providers::jsonrpc::HttpTransport;
+    use starknet_providers::JsonRpcClient;
     use std::str::FromStr;
+    use tokio_util::time::FutureExt as _;
     use url::Url;
 
     struct MockStarknetServer {
@@ -314,6 +188,7 @@ mod starknet_event_stream_tests {
                 when.method(POST).path("/").header("Content-Type", "application/json").matches(|req| {
                     let body = req.body.clone().unwrap();
                     let body_str = std::str::from_utf8(body.as_slice()).unwrap_or_default();
+                    tracing::error!("{}", body_str);
                     body_str.contains("starknet_getEvents")
                 });
 
@@ -388,41 +263,86 @@ mod starknet_event_stream_tests {
         }
     }
 
-    fn create_stream(mock_server: &MockStarknetServer) -> StarknetEventStream {
+    fn create_stream(
+        mock_server: &MockStarknetServer,
+    ) -> impl Stream<Item = Result<MessageToL2WithMetadata, SettlementClientError>> + 'static {
         let provider =
             JsonRpcClient::new(HttpTransport::new(Url::from_str(&mock_server.url()).expect("Failed to parse URL")));
 
-        StarknetEventStream::new(
+        watch_events(
             Arc::new(provider),
-            EventFilter {
-                from_block: Some(BlockId::Number(0)),
-                to_block: Some(BlockId::Number(100)),
-                address: Some(Felt::from_hex("0x1").unwrap()),
-                keys: Some(vec![]),
-            },
-            Duration::from_secs(1),
+            Some(0),
+            WatchEventFilter { address: Some(Felt::from_hex("0x1").unwrap()), keys: Some(vec![]) },
+            Duration::from_millis(100),
+            /* chunk size */ 5,
         )
+        .map_err(|e| SettlementClientError::from(StarknetClientError::Provider(format!("Provider error: {e:#}"))))
+        .map(|r| r.and_then(MessageToL2WithMetadata::try_from))
+        .boxed()
     }
 
     #[tokio::test]
     #[rstest]
     async fn test_single_event(mock_server: MockStarknetServer, test_event: EmittedEvent) {
         let events_mock = mock_server.mock_get_events(vec![test_event.clone()], None);
-        let block_mock = mock_server.mock_block_number(101);
+        mock_server.mock_block_number(101);
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
         if let Some(Ok(event_data)) = stream.next().await {
-            assert_eq!(event_data.block_number, 100);
-            assert!(event_data.message_hash.is_some());
-            assert_eq!(event_data.payload.len(), 2);
+            assert_eq!(event_data.l1_block_number, 100);
+            assert_eq!(event_data.message.tx.calldata.len(), 3);
         } else {
             panic!("Expected successful event");
         }
-        assert_matches!(stream.next().await, None, "Expected None for empty events");
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
 
-        events_mock.assert_hits(2);
-        block_mock.assert_hits(1);
+        events_mock.assert_hits(1);
+    }
+
+    #[tokio::test]
+    #[rstest]
+    async fn test_multiple_pages(mock_server: MockStarknetServer) {
+        let mut events_mock = mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
+        let mut block_n_mock = mock_server.mock_block_number(101);
+
+        let mut stream = Box::pin(create_stream(&mock_server));
+
+        for _ in 0..100 {
+            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
+                assert_eq!(event_data.l1_block_number, 150);
+                assert_eq!(event_data.message.tx.calldata.len(), 3);
+            })
+        }
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
+
+        events_mock.delete();
+        block_n_mock.delete();
+        mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
+        mock_server.mock_block_number(254);
+
+        for _ in 0..100 {
+            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
+                assert_eq!(event_data.l1_block_number, 150);
+                assert_eq!(event_data.message.tx.calldata.len(), 3);
+            })
+        }
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
     }
 
     #[tokio::test]
@@ -431,33 +351,35 @@ mod starknet_event_stream_tests {
         let event1 = test_event(1, 100);
         let event2 = test_event(2, 100);
 
-        let events_mock = mock_server.mock_get_events(vec![event1.clone(), event2.clone()], None);
-        let block_mock = mock_server.mock_block_number(101);
+        mock_server.mock_get_events(vec![event1.clone(), event2.clone()], None);
+        mock_server.mock_block_number(101);
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
         if let Some(Ok(event_data1)) = stream.next().await {
-            assert_eq!(event_data1.block_number, 100);
-            assert_eq!(event_data1.nonce, Felt::from_hex("0x1").unwrap());
-            assert_eq!(event_data1.payload.len(), 2);
-            assert_eq!(event_data1.transaction_hash, event1.transaction_hash);
+            assert_eq!(event_data1.l1_block_number, 100);
+            assert_eq!(event_data1.message.tx.nonce, 1);
+            assert_eq!(event_data1.message.tx.calldata.len(), 3);
+            assert_eq!(event_data1.l1_transaction_hash, event1.transaction_hash.to_u256());
         } else {
             panic!("Expected first event");
         }
 
         if let Some(Ok(event_data2)) = stream.next().await {
-            assert_eq!(event_data2.block_number, 100);
-            assert_eq!(event_data2.nonce, Felt::from_hex("0x2").unwrap());
-            assert_eq!(event_data2.payload.len(), 2);
-            assert_eq!(event_data2.transaction_hash, event2.transaction_hash);
+            assert_eq!(event_data2.l1_block_number, 100);
+            assert_eq!(event_data2.message.tx.nonce, 2);
+            assert_eq!(event_data2.message.tx.calldata.len(), 3);
+            assert_eq!(event_data2.l1_transaction_hash, event2.transaction_hash.to_u256());
         } else {
             panic!("Expected second event");
         }
 
-        assert_matches!(stream.next().await, None, "Expected None after processing all events");
-
-        events_mock.assert_hits(3);
-        block_mock.assert_hits(1);
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
     }
 
     #[tokio::test]
@@ -477,14 +399,55 @@ mod starknet_event_stream_tests {
     #[tokio::test]
     #[rstest]
     async fn test_empty_events(mock_server: MockStarknetServer) {
-        let events_mock = mock_server.mock_get_events(vec![], None);
-        let block_mock = mock_server.mock_block_number(100);
+        mock_server.mock_get_events(vec![], None);
+        mock_server.mock_block_number(100);
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
-        assert_matches!(stream.next().await, None, "Expected None for empty events");
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
+    }
 
-        events_mock.assert();
-        block_mock.assert();
+    #[tokio::test]
+    #[rstest]
+    async fn test_follows_chain(mock_server: MockStarknetServer) {
+        let mut events_mock = mock_server.mock_get_events(vec![test_event(1, 100); 5], None);
+        let mut block_n_mock = mock_server.mock_block_number(101);
+
+        let mut stream = Box::pin(create_stream(&mock_server));
+        for _ in 0..5 {
+            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
+                assert_eq!(event_data.l1_block_number, 100);
+                assert_eq!(event_data.message.tx.calldata.len(), 3);
+            })
+        }
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
+
+        block_n_mock.delete();
+        events_mock.delete();
+        mock_server.mock_block_number(254);
+        mock_server.mock_get_events(vec![test_event(1, 150); 100], None);
+
+        for _ in 0..100 {
+            assert_matches!(stream.next().await, Some(Ok(event_data)) => {
+                assert_eq!(event_data.l1_block_number, 150);
+                assert_eq!(event_data.message.tx.calldata.len(), 3);
+            })
+        }
+        // should not find any more events
+        assert_matches!(
+            stream.next().timeout(Duration::from_secs(3)).await,
+            Err(_),
+            "Expected waiting after processing all events"
+        );
     }
 }
