@@ -8,8 +8,8 @@ use serde_yaml::Value;
 use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_chain_config::{
-    deserialize_bouncer_config, deserialize_starknet_version, serialize_bouncer_config, serialize_starknet_version,
-    BlockProductionConfig, ChainConfig, L1DataAvailabilityMode, StarknetVersion,
+    deserialize_starknet_version, serialize_starknet_version, BlockProductionConfig, ChainConfig,
+    L1DataAvailabilityMode, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -95,7 +95,6 @@ pub struct ChainConfigOverridesInner {
     pub block_time: Duration,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
     pub pending_block_update_time: Option<Duration>,
-    #[serde(deserialize_with = "deserialize_bouncer_config", serialize_with = "serialize_bouncer_config")]
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: String,
@@ -106,6 +105,8 @@ pub struct ChainConfigOverridesInner {
     pub mempool_tx_max_age: Option<Duration>,
     pub no_empty_blocks: bool,
     pub block_production_concurrency: BlockProductionConfig,
+    #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
+    pub l1_messages_replay_max_duration: Duration,
 }
 
 impl ChainConfigOverrideParams {
@@ -132,6 +133,7 @@ impl ChainConfigOverrideParams {
             gateway_url: chain_config.gateway_url,
             no_empty_blocks: chain_config.no_empty_blocks,
             block_production_concurrency: chain_config.block_production_concurrency,
+            l1_messages_replay_max_duration: chain_config.l1_messages_replay_max_duration,
         })
         .context("Failed to convert ChainConfig to Value")?;
 
@@ -186,6 +188,7 @@ impl ChainConfigOverrideParams {
             mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,
+            l1_messages_replay_max_duration: chain_config_overrides.l1_messages_replay_max_duration,
         })
     }
 }

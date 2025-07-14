@@ -75,7 +75,7 @@ impl From<TestTx> for ValidatedMempoolTx {
                 })
             },
             paid_fee_on_l1: None,
-            contract_address: value.contract_address.try_into().unwrap(),
+            contract_address: value.contract_address,
             arrived_at: TxTimestamp(value.arrived_at),
             converted_class: None,
             tx_hash: value.tx_hash,

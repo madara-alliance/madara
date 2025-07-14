@@ -1,27 +1,30 @@
-use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdaptor};
+use std::sync::Arc;
+
 use blockifier::{
     blockifier::{
-        block::BlockInfo, config::TransactionExecutorConfig, stateful_validator::StatefulValidator,
-        transaction_executor::TransactionExecutor,
+        config::TransactionExecutorConfig,
+        stateful_validator::StatefulValidator,
+        transaction_executor::{TransactionExecutor, DEFAULT_STACK_SIZE},
     },
     context::BlockContext,
     state::cached_state::CachedState,
 };
+use starknet_api::block::{BlockInfo, BlockNumber, BlockTimestamp};
+
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::MadaraMaybePendingBlockInfo;
-
 use mp_chain_config::L1DataAvailabilityMode;
-use starknet_api::block::{BlockNumber, BlockTimestamp};
-use std::sync::Arc;
+
+use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdapter};
 
 /// Extension trait that provides execution capabilities on the madara backend.
 pub trait MadaraBackendExecutionExt {
     /// Executor used for producing blocks.
     fn new_executor_for_block_production(
         self: &Arc<Self>,
-        state_adaptor: LayeredStateAdaptor,
+        state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
-    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error>;
+    ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error>;
     /// Executor used for validating transactions on top of the pending block.
     fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error>;
 }
@@ -29,11 +32,11 @@ pub trait MadaraBackendExecutionExt {
 impl MadaraBackendExecutionExt for MadaraBackend {
     fn new_executor_for_block_production(
         self: &Arc<Self>,
-        state_adaptor: LayeredStateAdaptor,
+        state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
-    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error> {
+    ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error> {
         Ok(TransactionExecutor::new(
-            state_adaptor.into(),
+            CachedState::new(state_adaptor),
             BlockContext::new(
                 block_info,
                 self.chain_config().blockifier_chain_info(),
@@ -42,6 +45,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
             ),
             TransactionExecutorConfig {
                 concurrency_config: self.chain_config().block_production_concurrency.blockifier_config(),
+                stack_size: DEFAULT_STACK_SIZE,
             },
         ))
     }
@@ -74,7 +78,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
 // TODO: deprecate this struct (only used for reexecution, which IMO should also go into MadaraBackendExecutionExt)
 pub struct ExecutionContext {
     pub(crate) backend: Arc<MadaraBackend>,
-    pub(crate) block_context: BlockContext,
+    pub(crate) block_context: Arc<BlockContext>,
     /// None means we are executing the genesis block. (no latest block)
     pub(crate) latest_visible_block: Option<DbBlockId>,
 }
@@ -83,13 +87,13 @@ impl ExecutionContext {
     pub fn executor_for_block_production(&self) -> TransactionExecutor<BlockifierStateAdapter> {
         TransactionExecutor::new(
             self.init_cached_state(),
-            self.block_context.clone(),
-            TransactionExecutorConfig { concurrency_config: Default::default() },
+            self.block_context.as_ref().clone(),
+            TransactionExecutorConfig { concurrency_config: Default::default(), stack_size: DEFAULT_STACK_SIZE },
         )
     }
 
     pub fn tx_validator(&self) -> StatefulValidator<BlockifierStateAdapter> {
-        StatefulValidator::create(self.init_cached_state(), self.block_context.clone())
+        StatefulValidator::create(self.init_cached_state(), self.block_context.as_ref().clone())
     }
 
     pub fn init_cached_state(&self) -> CachedState<BlockifierStateAdapter> {
@@ -197,7 +201,8 @@ impl ExecutionContext {
                 chain_info,
                 versioned_constants,
                 backend.chain_config().bouncer_config.clone(),
-            ),
+            )
+            .into(),
             latest_visible_block,
             backend,
         })

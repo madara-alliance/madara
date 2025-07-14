@@ -1,5 +1,4 @@
 use anyhow::Context;
-use blockifier::abi::abi_utils::get_storage_var_address;
 use mc_db::MadaraBackend;
 use mp_block::{
     header::{GasPrices, PendingHeader},
@@ -9,6 +8,7 @@ use mp_chain_config::ChainConfig;
 use mp_class::ClassInfoWithHash;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use starknet_api::abi::abi_utils::get_storage_var_address;
 use starknet_api::{core::ContractAddress, state::StorageKey};
 use starknet_signers::SigningKey;
 use starknet_types_core::{
@@ -58,7 +58,7 @@ impl StorageDiffs {
 /// Universal Deployer Contract.
 const UDC_CLASS_DEFINITION: &[u8] =
     include_bytes!("../../../../../build-artifacts/cairo_artifacts/madara_contracts_UDC.json");
-const UDC_CONTRACT_ADDRESS: Felt =
+pub const UDC_CONTRACT_ADDRESS: Felt =
     Felt::from_hex_unchecked("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf");
 
 const ERC20_CLASS_DEFINITION: &[u8] =
@@ -211,11 +211,9 @@ impl ChainGenesisDescription {
 mod tests {
     use super::*;
     use assert_matches::assert_matches;
-
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
     use mc_db::MadaraBackend;
-    use mc_exec::execution::TxInfo;
     use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MockL1DataProvider};
     use mc_submit_tx::{
         RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
@@ -230,7 +228,8 @@ mod tests {
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
     use mp_transactions::compute_hash::calculate_contract_address;
-    use mp_transactions::BroadcastedTransactionExt;
+    use mp_transactions::validated::TxTimestamp;
+    use mp_transactions::IntoStarknetApiExt;
     use mp_utils::service::ServiceContext;
     use mp_utils::AbortOnDrop;
     use rstest::rstest;
@@ -251,13 +250,14 @@ mod tests {
             mut tx: BroadcastedInvokeTxn,
             contract: &DevnetPredeployedContract,
         ) -> Result<AddInvokeTransactionResult, SubmitTransactionError> {
-            let (blockifier_tx, _classes) = BroadcastedTxn::Invoke(tx.clone())
-                .into_blockifier(
+            let api_tx = BroadcastedTxn::Invoke(tx.clone())
+                .into_validated_tx(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    TxTimestamp::now(),
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
+            let signature = contract.secret.sign(&api_tx.tx_hash).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
@@ -265,7 +265,7 @@ mod tests {
                 BroadcastedInvokeTxn::V3(tx) => &mut tx.signature,
                 _ => unreachable!("the invoke tx is not query only"),
             };
-            *tx_signature = vec![signature.r, signature.s];
+            *tx_signature = vec![signature.r, signature.s].into();
 
             tracing::debug!("tx: {:?}", tx);
 
@@ -277,13 +277,14 @@ mod tests {
             mut tx: BroadcastedDeclareTxn,
             contract: &DevnetPredeployedContract,
         ) -> Result<ClassAndTxnHash, SubmitTransactionError> {
-            let (blockifier_tx, _classes) = BroadcastedTxn::Declare(tx.clone())
-                .into_blockifier(
+            let api_tx = BroadcastedTxn::Declare(tx.clone())
+                .into_validated_tx(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    TxTimestamp::now(),
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
+            let signature = contract.secret.sign(&api_tx.tx_hash).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -291,7 +292,7 @@ mod tests {
                 BroadcastedDeclareTxn::V3(tx) => &mut tx.signature,
                 _ => unreachable!("the declare tx is not query only"),
             };
-            *tx_signature = vec![signature.r, signature.s];
+            *tx_signature = vec![signature.r, signature.s].into();
 
             self.tx_validator.submit_declare_transaction(tx).await
         }
@@ -301,20 +302,21 @@ mod tests {
             mut tx: BroadcastedDeployAccountTxn,
             contract: &DevnetPredeployedContract,
         ) -> Result<ContractAndTxnHash, SubmitTransactionError> {
-            let (blockifier_tx, _classes) = BroadcastedTxn::DeployAccount(tx.clone())
-                .into_blockifier(
+            let api_tx = BroadcastedTxn::DeployAccount(tx.clone())
+                .into_validated_tx(
                     self.backend.chain_config().chain_id.to_felt(),
                     self.backend.chain_config().latest_protocol_version,
+                    TxTimestamp::now(),
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&blockifier_tx.tx_hash().to_felt()).unwrap();
+            let signature = contract.secret.sign(&api_tx.tx_hash).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeployAccountTxn::V1(tx) => &mut tx.signature,
                 BroadcastedDeployAccountTxn::V3(tx) => &mut tx.signature,
                 _ => unreachable!("the deploy account tx is not query only"),
             };
-            *tx_signature = vec![signature.r, signature.s];
+            *tx_signature = vec![signature.r, signature.s].into();
 
             self.tx_validator.submit_deploy_account_transaction(tx).await
         }
@@ -366,6 +368,7 @@ mod tests {
             Arc::clone(&mempool),
             Arc::new(metrics),
             Arc::clone(&l1_data_provider),
+            Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
         );
 
         let tx_validator = Arc::new(TransactionValidator::new(
@@ -389,18 +392,16 @@ mod tests {
         let sierra_class: SierraClass = serde_json::from_slice(contract).unwrap();
         let flattened_class: FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 
-        // starkli class-hash target/dev/madara_contracts_TestContract.compiled_contract_class.json
-        let compiled_contract_class_hash =
-            Felt::from_hex("0x0138105ded3d2e4ea1939a0bc106fb80fd8774c9eb89c1890d4aeac88e6a1b27").unwrap();
+        let (compiled_contract_class_hash, _compiled_class) = flattened_class.compile_to_casm().unwrap();
 
         let declare_txn: BroadcastedDeclareTxn = BroadcastedDeclareTxn::V3(BroadcastedDeclareTxnV3 {
             sender_address: sender_address.address,
             compiled_class_hash: compiled_contract_class_hash,
-            signature: vec![],
+            signature: vec![].into(),
             nonce: Felt::ZERO,
             contract_class: flattened_class.into(),
             resource_bounds: ResourceBoundsMapping {
-                l1_gas: ResourceBounds { max_amount: 210000, max_price_per_unit: 10000 },
+                l1_gas: ResourceBounds { max_amount: 220000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
             },
             tip: 0,
@@ -456,6 +457,7 @@ mod tests {
         Duration::from_secs(500000),
         true
     )]
+    #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
     // FIXME: flaky
     // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
     #[ignore = "should_work_across_block_boundary"]
@@ -502,8 +504,9 @@ mod tests {
                                 calldata: vec![calculated_address, (9_999u128 * STRK_FRI_DECIMALS).into(), Felt::ZERO],
                             })
                             .flatten()
-                            .collect(),
-                        signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                            .collect::<Vec<_>>()
+                            .into(),
+                        signature: vec![].into(), // Signature is filled in by `sign_and_add_invoke_tx`.
                         nonce: Felt::ZERO,
                         resource_bounds: ResourceBoundsMapping {
                             l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
@@ -553,7 +556,7 @@ mod tests {
         };
 
         let deploy_account_txn = BroadcastedDeployAccountTxn::V3(DeployAccountTxnV3 {
-            signature: vec![],
+            signature: vec![].into(),
             nonce: Felt::ZERO,
             contract_address_salt: Felt::ZERO,
             constructor_calldata: vec![pubkey.scalar()],
@@ -639,8 +642,9 @@ mod tests {
                             calldata: vec![contract_1.address, transfer_amount.into(), Felt::ZERO],
                         })
                         .flatten()
-                        .collect(),
-                    signature: vec![], // Signature is filled in by `sign_and_add_invoke_tx`.
+                        .collect::<Vec<_>>()
+                        .into(),
+                    signature: vec![].into(), // Signature is filled in by `sign_and_add_invoke_tx`.
                     nonce: Felt::ZERO,
                     resource_bounds: ResourceBoundsMapping {
                         l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },

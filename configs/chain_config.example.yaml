@@ -3,10 +3,6 @@ chain_name: "Starknet Mainnet"
 
 chain_id: "SN_MAIN"
 
-# The DA mode used by L1.
-# "Calldata" or "Blob"
-l1_da_mode: "Calldata"
-
 # The URL of the gateway and Feeder Gateway your nodes should sync from.
 feeder_gateway_url: "http://localhost:8080/feeder_gateway/"
 gateway_url: "http://localhost:8080/gateway/"
@@ -16,13 +12,6 @@ native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201
 
 # For starknet, this is the ETH ERC-20 contract on starknet.
 parent_fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7"
-
-# Paths to JSON files containing blockifier's constants for different versions
-versioned_constants_path:
-  "0.13.0": "crates/primitives/chain_config/resources/versioned_constants_13_0.json"
-  "0.13.1": "crates/primitives/chain_config/resources/versioned_constants_13_1.json"
-  "0.13.1.1": "crates/primitives/chain_config/resources/versioned_constants_13_1_1.json"
-  "0.13.2": "crates/primitives/chain_config/resources/versioned_constants_13_2.json"
 
 # The Starknet core contract address for the L1 watcher.
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
@@ -48,27 +37,18 @@ execution_batch_size: 16
 # The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
 bouncer_config:
   block_max_capacity:
-    builtin_count:
-      add_mod: 18446744073709551615
-      bitwise: 18446744073709551615
-      ecdsa: 18446744073709551615
-      ec_op: 18446744073709551615
-      keccak: 18446744073709551615
-      mul_mod: 18446744073709551615
-      pedersen: 18446744073709551615
-      poseidon: 18446744073709551615
-      range_check: 18446744073709551615
-      range_check96: 18446744073709551615
     # Maximum gas limit per block
-    gas: 5000000
-    # Maximum number of steps per block
-    n_steps: 40000000
+    sierra_gas: 500000000
     # Maximum length of message segments
     message_segment_length: 3700
     # Maximum number of events per block
     n_events: 5000
     # Maximum size of state differences per block
     state_diff_size: 4000
+    # Maximum L1 gas
+    l1_gas: 18446744073709551615
+    # Maximum number of transactions per block
+    n_txs: 18446744073709551615
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).

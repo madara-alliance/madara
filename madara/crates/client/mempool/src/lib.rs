@@ -159,17 +159,6 @@ impl SubmitValidatedTransaction for Mempool {
     }
 }
 
-#[async_trait]
-impl mc_submit_tx::SubmitL1HandlerTransaction for Mempool {
-    async fn submit_l1_handler_transaction(
-        &self,
-        _tx: mp_transactions::L1HandlerTransaction,
-        _paid_fees_on_l1: u128,
-    ) -> Result<mp_transactions::L1HandlerTransactionResult, SubmitTransactionError> {
-        unimplemented!()
-    }
-}
-
 impl Mempool {
     pub fn new(backend: Arc<MadaraBackend>, config: MempoolConfig) -> Self {
         Mempool {
@@ -254,11 +243,6 @@ impl Mempool {
         // TODO: tell self.tx_sender about the removal
     }
 
-    /// Update secondary state when a new transaction has been consumed for block production.
-    fn on_tx_consumed(&self, _removed: &ValidatedMempoolTx) {
-        // nothing here yet.
-    }
-
     /// Temporary: this will move to the backend. Called by block production & locally when txs are added to the chain.
     fn remove_from_received(&self, txs: &[Felt]) {
         if !self.config.no_saving {
@@ -269,7 +253,7 @@ impl Mempool {
         }
         let mut lock = self.received_txs.write().expect("Poisoned lock");
         for tx in txs {
-            lock.remove(&tx);
+            lock.remove(tx);
         }
     }
 
@@ -340,8 +324,8 @@ impl Mempool {
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
     /// This holds the lock to the inner mempool - use with care.
-    pub async fn get_consumer(&self) -> MempoolConsumer<'_> {
-        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await, mempool: self }
+    pub async fn get_consumer(&self) -> MempoolConsumer {
+        MempoolConsumer { lock: self.inner.get_write_access_wait_for_ready().await }
     }
 }
 
@@ -351,14 +335,13 @@ impl Mempool {
 /// This struct implements [`Iterator`] by popping the next transaction to execute from the mempool.
 ///
 /// This holds the lock to the inner mempool - use with care.
-pub struct MempoolConsumer<'a> {
-    lock: MempoolWriteAccess<'a>,
-    mempool: &'a Mempool,
+pub struct MempoolConsumer {
+    lock: MempoolWriteAccess,
 }
-impl Iterator for MempoolConsumer<'_> {
+impl Iterator for MempoolConsumer {
     type Item = ValidatedMempoolTx;
     fn next(&mut self) -> Option<Self::Item> {
-        self.lock.pop_next_ready().inspect(|tx| self.mempool.on_tx_consumed(tx))
+        self.lock.pop_next_ready()
     }
     fn size_hint(&self) -> (usize, Option<usize>) {
         let n_ready = self.lock.ready_transactions();
@@ -369,7 +352,7 @@ impl Iterator for MempoolConsumer<'_> {
 #[cfg(test)]
 pub(crate) mod tests {
     use super::*;
-    use starknet_api::core::ContractAddress;
+    use starknet_api::{core::ContractAddress, transaction::TransactionHash};
     use std::time::Duration;
 
     #[rstest::fixture]
@@ -385,82 +368,29 @@ pub(crate) mod tests {
         Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
 
     #[rstest::fixture]
-    pub fn tx_account_v0_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        static HASH: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    pub fn tx_account(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+        use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
+        static HASH: AtomicU64 = AtomicU64::new(0);
+        let tx_hash = TransactionHash(HASH.fetch_add(1, Relaxed).into());
 
-        let ordering = std::sync::atomic::Ordering::AcqRel;
-        let tx_hash = starknet_api::transaction::TransactionHash(HASH.fetch_add(1, ordering).into());
-
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V0(
-                            starknet_api::transaction::InvokeTransactionV0 {
-                                contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                                ..Default::default()
-                            },
-                        ),
-                        tx_hash,
-                        only_query: false,
-                    },
-                ),
-            ),
-            TxTimestamp::now(),
-            None,
-        )
-    }
-
-    #[rstest::fixture]
-    pub fn tx_account_v1_invalid() -> ValidatedMempoolTx {
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::Invoke(
-                    blockifier::transaction::transactions::InvokeTransaction {
-                        tx: starknet_api::transaction::InvokeTransaction::V1(
-                            starknet_api::transaction::InvokeTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        only_query: true,
-                    },
-                ),
-            ),
-            TxTimestamp::now(),
-            None,
-        )
-    }
-
-    #[rstest::fixture]
-    pub fn tx_deploy_v1_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::AccountTransaction(
-                blockifier::transaction::account_transaction::AccountTransaction::DeployAccount(
-                    blockifier::transaction::transactions::DeployAccountTransaction {
-                        tx: starknet_api::transaction::DeployAccountTransaction::V1(
-                            starknet_api::transaction::DeployAccountTransactionV1::default(),
-                        ),
-                        tx_hash: starknet_api::transaction::TransactionHash::default(),
-                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                        only_query: false,
-                    },
-                ),
-            ),
-            TxTimestamp::now(),
-            None,
-        )
-    }
-
-    #[rstest::fixture]
-    fn tx_l1_handler_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        ValidatedMempoolTx::from_blockifier(
-            blockifier::transaction::transaction_execution::Transaction::L1HandlerTransaction(
-                blockifier::transaction::transactions::L1HandlerTransaction {
-                    tx: starknet_api::transaction::L1HandlerTransaction {
-                        contract_address: ContractAddress::try_from(contract_address).unwrap(),
-                        ..Default::default()
-                    },
-                    tx_hash: starknet_api::transaction::TransactionHash::default(),
-                    paid_fee_on_l1: starknet_api::transaction::Fee::default(),
+        ValidatedMempoolTx::from_starknet_api(
+            starknet_api::executable_transaction::AccountTransaction::Invoke(
+                starknet_api::executable_transaction::InvokeTransaction {
+                    tx: starknet_api::transaction::InvokeTransaction::V3(
+                        starknet_api::transaction::InvokeTransactionV3 {
+                            sender_address: ContractAddress::try_from(contract_address).unwrap(),
+                            resource_bounds: Default::default(),
+                            tip: Default::default(),
+                            signature: Default::default(),
+                            nonce: Default::default(),
+                            calldata: Default::default(),
+                            nonce_data_availability_mode: Default::default(),
+                            fee_data_availability_mode: Default::default(),
+                            paymaster_data: Default::default(),
+                            account_deployment_data: Default::default(),
+                        },
+                    ),
+                    tx_hash,
                 },
             ),
             TxTimestamp::now(),
@@ -471,13 +401,10 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_accept_tx_pass(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_account_v0_valid: ValidatedMempoolTx,
-    ) {
+    async fn mempool_accept_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, tx_account: ValidatedMempoolTx) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
-        let result = mempool.accept_tx(tx_account_v0_valid).await;
+        let result = mempool.accept_tx(tx_account).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         mempool.inner.read().await.check_invariants();
@@ -488,15 +415,12 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_take_tx_pass(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        mut tx_account_v0_valid: ValidatedMempoolTx,
-    ) {
+    async fn mempool_take_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, mut tx_account: ValidatedMempoolTx) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::for_testing());
         let timestamp = TxTimestamp::now();
-        tx_account_v0_valid.arrived_at = timestamp;
-        let result = mempool.accept_tx(tx_account_v0_valid).await;
+        tx_account.arrived_at = timestamp;
+        let result = mempool.accept_tx(tx_account).await;
         assert_matches::assert_matches!(result, Ok(()));
 
         let mempool_tx = mempool.get_consumer().await.next().expect("Mempool should contain a transaction");

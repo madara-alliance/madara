@@ -124,7 +124,7 @@ pub struct TxEntryForInsertion<'a> {
     update_data: AccountUpdateData,
 }
 
-impl<'a> TxEntryForInsertion<'a> {
+impl TxEntryForInsertion<'_> {
     /// Returns the replaced transaction if inserting this new entry will replace a transaction.
     pub fn replaced_tx(&self) -> Option<&MempoolTransaction> {
         match &self.inner {

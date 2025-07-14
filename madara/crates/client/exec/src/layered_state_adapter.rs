@@ -1,27 +1,33 @@
-use crate::BlockifierStateAdapter;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+};
+
 use blockifier::{
-    execution::contract_class::ContractClass,
+    execution::contract_class::RunnableCompiledClass,
     state::{
         cached_state::StateMaps,
+        errors::StateError,
         state_api::{StateReader, StateResult},
     },
 };
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_convert::Felt;
 use starknet_api::{
+    contract_class::ContractClass as ApiContractClass,
     core::{ClassHash, CompiledClassHash, ContractAddress, Nonce},
     state::StorageKey,
 };
-use std::{
-    collections::{HashMap, VecDeque},
-    sync::Arc,
-};
+
+use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mp_convert::Felt;
+
+use crate::BlockifierStateAdapter;
 
 #[derive(Debug)]
 struct CacheByBlock {
     block_n: u64,
     state_diff: StateMaps,
-    classes: HashMap<ClassHash, ContractClass>,
+    classes: HashMap<ClassHash, ApiContractClass>,
+    l1_to_l2_messages: HashSet<u64>,
 }
 
 /// Special cache that allows us to execute blocks past what the db currently has saved. Only used for
@@ -29,12 +35,12 @@ struct CacheByBlock {
 /// We need this because when a block is produced, saving it do the database is done asynchronously by another task. This means
 /// that we need to keep the state of the previous block around to execute the next one. We can only remove the cached state of the
 /// previous blocks once we know they are imported into the database.
-pub struct LayeredStateAdaptor {
+pub struct LayeredStateAdapter {
     inner: BlockifierStateAdapter,
     cached_states_by_block_n: VecDeque<CacheByBlock>,
     backend: Arc<MadaraBackend>,
 }
-impl LayeredStateAdaptor {
+impl LayeredStateAdapter {
     pub fn new(backend: Arc<MadaraBackend>) -> Result<Self, crate::Error> {
         let on_top_of_block_n = backend.get_latest_block_n()?;
         let block_number = on_top_of_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
@@ -66,10 +72,13 @@ impl LayeredStateAdaptor {
     }
 
     /// This will set the current executing block_n to the next block_n.
+    /// l1_to_l2_messages: list of consumed core contract nonces. We need to keep track of those to be absolutely sure we
+    /// don't duplicate a transaction.
     pub fn finish_block(
         &mut self,
         state_diff: StateMaps,
-        classes: HashMap<ClassHash, ContractClass>,
+        classes: HashMap<ClassHash, ApiContractClass>,
+        l1_to_l2_messages: HashSet<u64>,
     ) -> Result<(), crate::Error> {
         let latest_db_block = self.backend.get_latest_block_n()?;
         // Remove outdated cache entries
@@ -78,7 +87,7 @@ impl LayeredStateAdaptor {
         // Push the current state to cache
         let block_n = self.block_n();
         tracing::debug!("Push to cache {block_n}");
-        self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes });
+        self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes, l1_to_l2_messages });
 
         // Update the inner state adaptor to update its block_n to the next one.
         self.inner = BlockifierStateAdapter::new(
@@ -89,46 +98,51 @@ impl LayeredStateAdaptor {
 
         Ok(())
     }
+
+    pub fn is_l1_to_l2_message_nonce_consumed(&self, nonce: u64) -> StateResult<bool> {
+        if self.cached_states_by_block_n.iter().any(|s| s.l1_to_l2_messages.contains(&nonce)) {
+            return Ok(true);
+        }
+        self.inner.is_l1_to_l2_message_nonce_consumed(nonce)
+    }
 }
 
-impl StateReader for LayeredStateAdaptor {
+impl StateReader for LayeredStateAdapter {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.storage.get(&(contract_address, key)) {
-                return Ok(*el);
-            }
+        if let Some(el) =
+            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.storage.get(&(contract_address, key)))
+        {
+            return Ok(*el);
         }
         self.inner.get_storage_at(contract_address, key)
     }
     fn get_nonce_at(&self, contract_address: ContractAddress) -> StateResult<Nonce> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.nonces.get(&contract_address) {
-                return Ok(*el);
-            }
+        if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.nonces.get(&contract_address))
+        {
+            return Ok(*el);
         }
         self.inner.get_nonce_at(contract_address)
     }
     fn get_class_hash_at(&self, contract_address: ContractAddress) -> StateResult<ClassHash> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.class_hashes.get(&contract_address) {
-                return Ok(*el);
-            }
+        if let Some(el) =
+            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.class_hashes.get(&contract_address))
+        {
+            return Ok(*el);
         }
         self.inner.get_class_hash_at(contract_address)
     }
-    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.classes.get(&class_hash) {
-                return Ok(el.clone());
-            }
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
+        if let Some(el) = self.cached_states_by_block_n.iter().find_map(|s| s.classes.get(&class_hash)) {
+            return <ApiContractClass as TryInto<RunnableCompiledClass>>::try_into(el.clone())
+                .map_err(StateError::ProgramError);
         }
-        self.inner.get_compiled_contract_class(class_hash)
+        self.inner.get_compiled_class(class_hash)
     }
     fn get_compiled_class_hash(&self, class_hash: ClassHash) -> StateResult<CompiledClassHash> {
-        for s in &self.cached_states_by_block_n {
-            if let Some(el) = s.state_diff.compiled_class_hashes.get(&class_hash) {
-                return Ok(*el);
-            }
+        if let Some(el) =
+            self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.compiled_class_hashes.get(&class_hash))
+        {
+            return Ok(*el);
         }
         self.inner.get_compiled_class_hash(class_hash)
     }
@@ -136,7 +150,7 @@ impl StateReader for LayeredStateAdaptor {
 
 #[cfg(test)]
 mod tests {
-    use super::LayeredStateAdaptor;
+    use super::LayeredStateAdapter;
     use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use mc_db::MadaraBackend;
     use mp_block::{
@@ -148,9 +162,9 @@ mod tests {
     use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
 
     #[tokio::test]
-    async fn test_layered_state_adaptor() {
+    async fn test_layered_state_adapter() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
-        let mut adaptor = LayeredStateAdaptor::new(backend.clone()).unwrap();
+        let mut adaptor = LayeredStateAdapter::new(backend.clone()).unwrap();
 
         // initial state (no genesis block)
 
@@ -175,7 +189,7 @@ mod tests {
 
         let mut state_maps = StateMaps::default();
         state_maps.storage.insert((Felt::ONE.try_into().unwrap(), Felt::ONE.try_into().unwrap()), Felt::THREE);
-        adaptor.finish_block(state_maps, Default::default()).unwrap();
+        adaptor.finish_block(state_maps, Default::default(), Default::default()).unwrap();
 
         assert_eq!(adaptor.block_n(), 1);
         assert_eq!(adaptor.previous_block_n(), Some(0));
@@ -233,7 +247,7 @@ mod tests {
 
         let mut state_maps = StateMaps::default();
         state_maps.storage.insert((Felt::ONE.try_into().unwrap(), Felt::TWO.try_into().unwrap()), Felt::TWO);
-        adaptor.finish_block(state_maps, Default::default()).unwrap();
+        adaptor.finish_block(state_maps, Default::default(), Default::default()).unwrap();
 
         assert_eq!(adaptor.block_n(), 2);
         assert_eq!(adaptor.previous_block_n(), Some(1));

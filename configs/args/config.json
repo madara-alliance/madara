@@ -46,7 +46,7 @@
     "backup_every_n_blocks": null
   },
   "l1_sync_params": {
-    "l1_sync_disabled": false,
+    "l1_sync_disabled": true,
     "l1_endpoint": null,
     "gas_price": null,
     "blob_gas_price": null,
@@ -97,6 +97,7 @@
   "validator_params": {
     "validate_then_forward_txs_to": null,
     "no_transaction_validation": false,
+    "no_charge_fee": false,
     "no_mempool_saving": false
   },
   "block_production_params": {

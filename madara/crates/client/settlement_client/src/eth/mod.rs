@@ -1,11 +1,8 @@
-pub mod error;
-pub mod event;
-
-use crate::client::{ClientType, SettlementClientTrait};
+use crate::client::{ClientType, SettlementLayerProvider};
 use crate::error::SettlementClientError;
 use crate::eth::event::EthereumEventStream;
 use crate::eth::StarknetCoreContract::{LogMessageToL2, StarknetCoreContractInstance};
-use crate::messaging::L1toL2MessagingEventData;
+use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
@@ -18,14 +15,17 @@ use alloy::transports::http::{Client, Http};
 use async_trait::async_trait;
 use bitvec::macros::internal::funty::Fundamental;
 use error::EthereumClientError;
+use futures::stream::BoxStream;
 use futures::StreamExt;
-use mc_db::l1_db::LastSyncedEventBlock;
-use mp_convert::{felt_to_u256, ToFelt};
+use mp_convert::{FeltExt, ToFelt};
+use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
-use starknet_types_core::felt::Felt;
+use std::str::FromStr;
 use std::sync::Arc;
-use std::time::Duration;
 use url::Url;
+
+pub mod error;
+pub mod event;
 
 // abi taken from: https://etherscan.io/address/0x6e0acfdc3cf17a7f99ed34be56c3dfb93f464e24#code
 // The official starknet core contract ^
@@ -43,8 +43,8 @@ pub struct EthereumClient {
 
 #[derive(Clone)]
 pub struct EthereumClientConfig {
-    pub url: Url,
-    pub l1_core_address: Address,
+    pub rpc_url: Url,
+    pub core_contract_address: String,
 }
 
 impl Clone for EthereumClient {
@@ -55,15 +55,19 @@ impl Clone for EthereumClient {
 
 impl EthereumClient {
     pub async fn new(config: EthereumClientConfig) -> Result<Self, SettlementClientError> {
-        let provider = ProviderBuilder::new().on_http(config.url);
+        let provider = ProviderBuilder::new().on_http(config.rpc_url);
+        let core_contract_address =
+            Address::from_str(&config.core_contract_address).map_err(|e| -> SettlementClientError {
+                EthereumClientError::Conversion(format!("Invalid core contract address: {e}")).into()
+            })?;
         // Check if contract exists
         if !provider
-            .get_code_at(config.l1_core_address)
+            .get_code_at(core_contract_address)
             .await
             .map_err(|e| -> SettlementClientError { EthereumClientError::Rpc(e.to_string()).into() })?
             .is_empty()
         {
-            let contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
+            let contract = StarknetCoreContract::new(core_contract_address, provider.clone());
             Ok(Self { provider: Arc::new(provider), l1_core_contract: contract })
         } else {
             Err(SettlementClientError::Ethereum(EthereumClientError::Contract(
@@ -74,13 +78,9 @@ impl EthereumClient {
 }
 
 const HISTORY_SIZE: usize = 300; // Number of blocks to use for gas price calculation (approx. 1 hour at 12 sec block time)
-const POLL_INTERVAL: Duration = Duration::from_secs(5); // Interval between event polling attempts
-const EVENT_SEARCH_BLOCK_RANGE: u64 = 6000; // Number of blocks to search backwards for events (approx. 24h at 15 sec block time)
 
 #[async_trait]
-impl SettlementClientTrait for EthereumClient {
-    type Config = EthereumClientConfig;
-    type StreamType = EthereumEventStream;
+impl SettlementLayerProvider for EthereumClient {
     fn get_client_type(&self) -> ClientType {
         ClientType::Eth
     }
@@ -98,11 +98,7 @@ impl SettlementClientTrait for EthereumClient {
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError> {
         let latest_block = self.get_latest_block_number().await?;
 
-        // Assuming an avg Block time of 15sec we check for a LogStateUpdate occurence in the last ~24h
-        let filter = Filter::new()
-            .from_block(latest_block.saturating_sub(EVENT_SEARCH_BLOCK_RANGE))
-            .to_block(latest_block)
-            .address(*self.l1_core_contract.address());
+        let filter = Filter::new().to_block(latest_block).address(*self.l1_core_contract.address());
 
         let logs = self
             .provider
@@ -118,13 +114,10 @@ impl SettlementClientTrait for EthereumClient {
                 .block_number
                 .ok_or_else(|| -> SettlementClientError { EthereumClientError::MissingField("block_number").into() }),
             Some(Err(e)) => Err(SettlementClientError::Ethereum(EthereumClientError::Contract(e.to_string()))),
-            None => {
-                let from_block = latest_block.saturating_sub(EVENT_SEARCH_BLOCK_RANGE);
-                Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
-                    message: format!("no LogStateUpdate event found in block range [{}, {}]", from_block, latest_block),
-                    block_number: latest_block,
-                }))
-            }
+            None => Err(SettlementClientError::Ethereum(EthereumClientError::EventProcessing {
+                message: format!("no LogStateUpdate event found in block range [None, {}]", latest_block),
+                block_number: latest_block,
+            })),
         }
     }
 
@@ -190,17 +183,8 @@ impl SettlementClientTrait for EthereumClient {
             None => return Ok(()),
         };
 
-        // Create a ticker that fires at regular intervals
-        let mut interval = tokio::time::interval(POLL_INTERVAL);
-
         // Process events in a loop until the context is cancelled
-        while let Some(Some(event_result)) = ctx
-            .run_until_cancelled(async {
-                interval.tick().await; // Wait for the next interval tick
-                event_stream.next().await
-            })
-            .await
-        {
+        while let Some(Some(event_result)) = ctx.run_until_cancelled(event_stream.next()).await {
             let log = event_result.map_err(|e| -> SettlementClientError {
                 EthereumClientError::EventStream { message: format!("Failed to process event: {e:#}") }.into()
             })?;
@@ -251,31 +235,18 @@ impl SettlementClientTrait for EthereumClient {
         Ok((*eth_gas_price, avg_blob_base_fee))
     }
 
-    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError> {
-        let payload_vec = event.payload.iter().try_fold(Vec::with_capacity(event.payload.len()), |mut acc, felt| {
-            let u256 = felt_to_u256(*felt).map_err(|e| -> SettlementClientError {
-                EthereumClientError::Conversion(format!("Failed to convert payload element to U256: {}", e)).into()
-            })?;
-            acc.push(u256);
-            Ok::<_, SettlementClientError>(acc)
-        })?;
-
-        let from_address_start_index = event.from.to_bytes_be().as_slice().len().saturating_sub(20);
+    fn calculate_message_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError> {
+        let from = event.tx.calldata[0];
+        let from_address_start_index = from.to_bytes_be().as_slice().len().saturating_sub(20);
         // encoding used here is taken from: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#l1_l2_message_structure
         let data = (
             [0u8; 12],
-            Address::from_slice(&event.from.to_bytes_be().as_slice()[from_address_start_index..]),
-            felt_to_u256(event.to).map_err(|e| -> SettlementClientError {
-                EthereumClientError::Conversion(format!("Failed to convert 'to' address to U256: {}", e)).into()
-            })?,
-            felt_to_u256(event.nonce).map_err(|e| -> SettlementClientError {
-                EthereumClientError::Conversion(format!("Failed to convert nonce to U256: {}", e)).into()
-            })?,
-            felt_to_u256(event.selector).map_err(|e| -> SettlementClientError {
-                EthereumClientError::Conversion(format!("Failed to convert selector to U256: {}", e)).into()
-            })?,
-            U256::from(event.payload.len()),
-            payload_vec,
+            Address::from_slice(&from.to_bytes_be().as_slice()[from_address_start_index..]),
+            event.tx.contract_address.to_u256(),
+            U256::from(event.tx.nonce),
+            event.tx.entry_point_selector.to_u256(),
+            U256::from(event.tx.calldata.len() - 1),
+            event.tx.calldata[1..].iter().map(FeltExt::to_u256).collect::<Vec<_>>(),
         );
         Ok(keccak256(data.abi_encode_packed()).as_slice().to_vec())
     }
@@ -289,11 +260,9 @@ impl SettlementClientTrait for EthereumClient {
     ///
     /// # Return
     ///
-    /// - A felt representing a timestamp :
-    ///     - 0 if the message has not been cancelled
-    ///     - timestamp of the cancellation if it has been cancelled
+    /// - `true` if there is a cancellation request for this message to l2.
     /// - An Error if the call fail
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError> {
+    async fn message_to_l2_has_cancel_request(&self, msg_hash: &[u8]) -> Result<bool, SettlementClientError> {
         let cancellation_timestamp =
             self.l1_core_contract.l1ToL2MessageCancellations(B256::from_slice(msg_hash)).call().await.map_err(
                 |e| -> SettlementClientError {
@@ -304,28 +273,74 @@ impl SettlementClientTrait for EthereumClient {
                 },
             )?;
 
-        Ok(cancellation_timestamp._0.to_felt())
+        Ok(!cancellation_timestamp._0.is_zero())
     }
 
-    async fn get_messaging_stream(
-        &self,
-        last_synced_event_block: LastSyncedEventBlock,
-    ) -> Result<Self::StreamType, SettlementClientError> {
-        let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
-        let event_stream = filter
-            .from_block(last_synced_event_block.block_number)
-            .to_block(BlockNumberOrTag::Finalized)
-            .watch()
+    /// Get cancellation status of an L1 to L2 message
+    ///
+    /// This function query the core contract to know if a L1->L2 exists in the contract. This is useful
+    /// for processing old L1 to L2 messages, because when a message is fully cancelled we will find its old event
+    /// but no associated message or cancellation request.
+    ///
+    /// # Arguments
+    ///
+    /// - msg_hash : Hash of L1 to L2 message
+    ///
+    /// # Return
+    ///
+    /// - `true` if the message exists in the core contract
+    /// - An Error if the call fail
+    async fn message_to_l2_is_pending(&self, msg_hash: &[u8]) -> Result<bool, SettlementClientError> {
+        tracing::debug!("Calling l1ToL2Messages");
+        let cancellation_timestamp =
+            self.l1_core_contract.l1ToL2Messages(B256::from_slice(msg_hash)).call().await.map_err(
+                |e| -> SettlementClientError {
+                    EthereumClientError::L1ToL2Messaging {
+                        message: format!("Failed to check that message exists, status: {}", e),
+                    }
+                    .into()
+                },
+            )?;
+
+        tracing::debug!("Returned");
+        Ok(cancellation_timestamp._0 != U256::ZERO)
+    }
+
+    async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {
+        let block = self
+            .provider
+            .get_block(
+                BlockId::Number(BlockNumberOrTag::Number(l1_block_n)),
+                alloy::rpc::types::BlockTransactionsKind::Hashes,
+            )
             .await
             .map_err(|e| -> SettlementClientError {
-                EthereumClientError::ArchiveRequired(format!(
-                    "Could not fetch events, archive node may be required: {}",
-                    e
-                ))
-                .into()
+                EthereumClientError::ArchiveRequired(format!("Could not get block timestamp: {}", e)).into()
+            })?
+            .ok_or_else(|| -> SettlementClientError {
+                EthereumClientError::ArchiveRequired(format!("Cannot find block: {}", l1_block_n)).into()
             })?;
 
-        Ok(EthereumEventStream::new(event_stream))
+        Ok(block.header.timestamp)
+    }
+
+    async fn messages_to_l2_stream(
+        &self,
+        from_l1_block_n: u64,
+    ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError> {
+        let filter = self.l1_core_contract.event_filter::<LogMessageToL2>();
+        let event_stream =
+            filter.from_block(from_l1_block_n).to_block(BlockNumberOrTag::Finalized).watch().await.map_err(
+                |e| -> SettlementClientError {
+                    EthereumClientError::ArchiveRequired(format!(
+                        "Could not fetch events, archive node may be required: {}",
+                        e
+                    ))
+                    .into()
+                },
+            )?;
+
+        Ok(EthereumEventStream::new(event_stream).boxed())
     }
 }
 
@@ -374,7 +389,8 @@ pub mod eth_client_getter_test {
         let rpc_url: Url = get_anvil_url().parse().unwrap();
         let core_contract_address = Address::parse_checksummed(INVALID_CORE_CONTRACT_ADDRESS, None)
             .expect("Should parse valid Ethereum address in test");
-        let ethereum_client_config = EthereumClientConfig { url: rpc_url, l1_core_address: core_contract_address };
+        let ethereum_client_config =
+            EthereumClientConfig { rpc_url, core_contract_address: core_contract_address.to_string() };
         let new_client_result = EthereumClient::new(ethereum_client_config).await;
         assert!(new_client_result.is_err(), "EthereumClient::new should fail with an invalid core contract address");
     }
@@ -432,12 +448,14 @@ pub mod eth_client_getter_test {
 
         // Set up client with mock server
         let config = EthereumClientConfig {
-            url: server.url("/").parse().unwrap(),
-            l1_core_address: Address::parse_checksummed("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4", None).unwrap(),
+            rpc_url: server.url("/").parse().unwrap(),
+            core_contract_address: Address::parse_checksummed("0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4", None)
+                .unwrap()
+                .to_string(),
         };
 
-        let provider = ProviderBuilder::new().on_http(config.url);
-        let contract = StarknetCoreContract::new(config.l1_core_address, provider.clone());
+        let provider = ProviderBuilder::new().on_http(config.rpc_url);
+        let contract = StarknetCoreContract::new(config.core_contract_address.parse().unwrap(), provider.clone());
         let eth_client = EthereumClient { provider: Arc::new(provider), l1_core_contract: contract };
 
         // Call contract and verify we get -1 as int256
@@ -465,11 +483,10 @@ pub mod eth_client_getter_test {
 
 #[cfg(test)]
 mod l1_messaging_tests {
-
     use self::DummyContract::DummyContractInstance;
-    use crate::client::SettlementClientTrait;
+    use crate::client::SettlementLayerProvider;
     use crate::eth::{EthereumClient, StarknetCoreContract};
-    use crate::messaging::{sync, L1toL2MessagingEventData};
+    use crate::messaging::sync;
     use alloy::{
         hex::FromHex,
         node_bindings::{Anvil, AnvilInstance},
@@ -479,12 +496,11 @@ mod l1_messaging_tests {
         transports::http::{Client, Http},
     };
     use mc_db::DatabaseService;
-    use mc_mempool::Mempool;
-    use mc_mempool::MempoolConfig;
     use mp_chain_config::ChainConfig;
+    use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::ServiceContext;
     use rstest::*;
-    use starknet_api::core::Nonce;
+
     use starknet_types_core::felt::Felt;
     use std::{sync::Arc, time::Duration};
     use tracing_test::traced_test;
@@ -496,7 +512,6 @@ mod l1_messaging_tests {
         db_service: Arc<DatabaseService>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
         eth_client: EthereumClient,
-        mempool: Arc<Mempool>,
     }
 
     // LogMessageToL2 from https://etherscan.io/tx/0x21980d6674d33e50deee43c6c30ef3b439bd148249b4539ce37b7856ac46b843
@@ -511,7 +526,7 @@ mod l1_messaging_tests {
     // 5. Navigate to the "Compilation Details" section and copy the bytecode
     sol!(
         #[derive(Debug)]
-        #[sol(rpc, bytecode="6080604052348015600e575f80fd5b5061081b8061001c5f395ff3fe608060405234801561000f575f80fd5b506004361061004a575f3560e01c80634185df151461004e57806390985ef9146100585780639be446bf14610076578063af56443a146100a6575b5f80fd5b6100566100c2565b005b61006061013b565b60405161006d919061047e565b60405180910390f35b610090600480360381019061008b91906104c5565b6101ac565b60405161009d9190610508565b60405180910390f35b6100c060048036038101906100bb9190610556565b6101d8565b005b5f6100cb6101f3565b905080604001518160200151825f015173ffffffffffffffffffffffffffffffffffffffff167fdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b846060015185608001518660a0015160405161013093929190610638565b60405180910390a450565b5f806101456101f3565b9050805f015173ffffffffffffffffffffffffffffffffffffffff16816020015182608001518360400151846060015151856060015160405160200161019096959493929190610720565b6040516020818303038152906040528051906020012091505090565b5f805f9054906101000a900460ff166101c5575f6101cb565b6366b4f1055b63ffffffff169050919050565b805f806101000a81548160ff02191690831515021790555050565b6101fb61041f565b5f73ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff8111156102775761027661078b565b5b6040519080825280602002602001820160405280156102a55781602001602082028036833780820191505090505b5090506060815f815181106102bd576102bc6107b8565b5b60200260200101818152505062195091816001815181106102e1576102e06107b8565b5b60200260200101818152505065231594f0c7ea81600281518110610308576103076107b8565b5b60200260200101818152505060058160038151811061032a576103296107b8565b5b602002602001018181525050624554488160048151811061034e5761034d6107b8565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb81600581518110610383576103826107b8565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db888816006815181106103c3576103c26107b8565b5b6020026020010181815250505f806040518060c001604052808773ffffffffffffffffffffffffffffffffffffffff16815260200186815260200185815260200184815260200183815260200182815250965050505050505090565b6040518060c001604052805f73ffffffffffffffffffffffffffffffffffffffff1681526020015f81526020015f8152602001606081526020015f81526020015f81525090565b5f819050919050565b61047881610466565b82525050565b5f6020820190506104915f83018461046f565b92915050565b5f80fd5b6104a481610466565b81146104ae575f80fd5b50565b5f813590506104bf8161049b565b92915050565b5f602082840312156104da576104d9610497565b5b5f6104e7848285016104b1565b91505092915050565b5f819050919050565b610502816104f0565b82525050565b5f60208201905061051b5f8301846104f9565b92915050565b5f8115159050919050565b61053581610521565b811461053f575f80fd5b50565b5f813590506105508161052c565b92915050565b5f6020828403121561056b5761056a610497565b5b5f61057884828501610542565b91505092915050565b5f81519050919050565b5f82825260208201905092915050565b5f819050602082019050919050565b6105b3816104f0565b82525050565b5f6105c483836105aa565b60208301905092915050565b5f602082019050919050565b5f6105e682610581565b6105f0818561058b565b93506105fb8361059b565b805f5b8381101561062b57815161061288826105b9565b975061061d836105d0565b9250506001810190506105fe565b5085935050505092915050565b5f6060820190508181035f83015261065081866105dc565b905061065f60208301856104f9565b61066c60408301846104f9565b949350505050565b5f819050919050565b61068e610689826104f0565b610674565b82525050565b5f81905092915050565b6106a7816104f0565b82525050565b5f6106b8838361069e565b60208301905092915050565b5f6106ce82610581565b6106d88185610694565b93506106e38361059b565b805f5b838110156107135781516106fa88826106ad565b9750610705836105d0565b9250506001810190506106e6565b5085935050505092915050565b5f61072b828961067d565b60208201915061073b828861067d565b60208201915061074b828761067d565b60208201915061075b828661067d565b60208201915061076b828561067d565b60208201915061077b82846106c4565b9150819050979650505050505050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b7f4e487b71000000000000000000000000000000000000000000000000000000005f52603260045260245ffdfea264697066735822122086bad896bcbfb2835e470442a0eea534e7731e4e85f0b2bd724e41a094608a8264736f6c634300081a0033")]
+        #[sol(rpc, bytecode="6080604052348015600e575f5ffd5b506108e18061001c5f395ff3fe608060405234801561000f575f5ffd5b5060043610610055575f3560e01c80634185df151461005957806377c7d7a91461006357806390985ef9146100935780639be446bf146100b1578063af56443a146100e1575b5f5ffd5b6100616100fd565b005b61007d60048036038101906100789190610503565b610176565b60405161008a9190610546565b60405180910390f35b61009b61019b565b6040516100a8919061056e565b60405180910390f35b6100cb60048036038101906100c69190610503565b61020c565b6040516100d89190610546565b60405180910390f35b6100fb60048036038101906100f691906105bc565b610238565b005b5f610106610253565b905080604001518160200151825f015173ffffffffffffffffffffffffffffffffffffffff167fdb80dd488acf86d17c747445b0eabb5d57c541d3bd7b6b87af987858e5066b2b846060015185608001518660a0015160405161016b9392919061069e565b60405180910390a450565b5f5f610180610253565b905060018160a001516101939190610707565b915050919050565b5f5f6101a5610253565b9050805f015173ffffffffffffffffffffffffffffffffffffffff1681602001518260800151836040015184606001515185606001516040516020016101f0969594939291906107e6565b6040516020818303038152906040528051906020012091505090565b5f5f5f9054906101000a900460ff16610225575f61022b565b6366b4f1055b63ffffffff169050919050565b805f5f6101000a81548160ff02191690831515021790555050565b61025b610485565b5f73ae0ee0a63a2ce6baeeffe56e7714fb4efe48d41990505f7f073314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b8290505f7f01b64b1b3b690b43b9b514fb81377518f4039cd3e4f4914d8a6bdf01d679fb1990505f600767ffffffffffffffff8111156102d7576102d6610851565b5b6040519080825280602002602001820160405280156103055781602001602082028036833780820191505090505b5090506060815f8151811061031d5761031c61087e565b5b60200260200101818152505062195091816001815181106103415761034061087e565b5b60200260200101818152505065231594f0c7ea816002815181106103685761036761087e565b5b60200260200101818152505060058160038151811061038a5761038961087e565b5b60200260200101818152505062455448816004815181106103ae576103ad61087e565b5b60200260200101818152505073bdb193c166cfb7be2e51711c5648ebeef94063bb816005815181106103e3576103e261087e565b5b6020026020010181815250507e7d79cd86ba27a2508a9ca55c8b3474ca082bc5173d0467824f07a32e9db888816006815181106104235761042261087e565b5b6020026020010181815250505f5f90505f5f90506040518060c001604052808773ffffffffffffffffffffffffffffffffffffffff16815260200186815260200185815260200184815260200183815260200182815250965050505050505090565b6040518060c001604052805f73ffffffffffffffffffffffffffffffffffffffff1681526020015f81526020015f8152602001606081526020015f81526020015f81525090565b5f5ffd5b5f819050919050565b6104e2816104d0565b81146104ec575f5ffd5b50565b5f813590506104fd816104d9565b92915050565b5f60208284031215610518576105176104cc565b5b5f610525848285016104ef565b91505092915050565b5f819050919050565b6105408161052e565b82525050565b5f6020820190506105595f830184610537565b92915050565b610568816104d0565b82525050565b5f6020820190506105815f83018461055f565b92915050565b5f8115159050919050565b61059b81610587565b81146105a5575f5ffd5b50565b5f813590506105b681610592565b92915050565b5f602082840312156105d1576105d06104cc565b5b5f6105de848285016105a8565b91505092915050565b5f81519050919050565b5f82825260208201905092915050565b5f819050602082019050919050565b6106198161052e565b82525050565b5f61062a8383610610565b60208301905092915050565b5f602082019050919050565b5f61064c826105e7565b61065681856105f1565b935061066183610601565b805f5b83811015610691578151610678888261061f565b975061068383610636565b925050600181019050610664565b5085935050505092915050565b5f6060820190508181035f8301526106b68186610642565b90506106c56020830185610537565b6106d26040830184610537565b949350505050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52601160045260245ffd5b5f6107118261052e565b915061071c8361052e565b9250828201905080821115610734576107336106da565b5b92915050565b5f819050919050565b61075461074f8261052e565b61073a565b82525050565b5f81905092915050565b61076d8161052e565b82525050565b5f61077e8383610764565b60208301905092915050565b5f610794826105e7565b61079e818561075a565b93506107a983610601565b805f5b838110156107d95781516107c08882610773565b97506107cb83610636565b9250506001810190506107ac565b5085935050505092915050565b5f6107f18289610743565b6020820191506108018288610743565b6020820191506108118287610743565b6020820191506108218286610743565b6020820191506108318285610743565b602082019150610841828461078a565b9150819050979650505050505050565b7f4e487b71000000000000000000000000000000000000000000000000000000005f52604160045260245ffd5b7f4e487b71000000000000000000000000000000000000000000000000000000005f52603260045260245ffdfea26469706673582212205448eb5ef94491cb6d6cc96c3aaffcbbdfef4f000aa8dee8729c5adb0732bbaa64736f6c634300081e0033")]
         contract DummyContract {
             bool isCanceled;
             event LogMessageToL2(address indexed _fromAddress, uint256 indexed _toAddress, uint256 indexed _selector, uint256[] payload, uint256 nonce, uint256 fee);
@@ -552,6 +567,11 @@ mod l1_messaging_tests {
                 return isCanceled ? 1723134213 : 0;
             }
 
+            function l1ToL2Messages(bytes32 msgHash) external view returns (uint256) {
+                MessageData memory data = getMessageData();
+                return data.fee + 1;
+            }
+
             function setIsCanceled(bool value) public {
                 isCanceled = value;
             }
@@ -581,7 +601,7 @@ mod l1_messaging_tests {
     /// 4. Waits for event to be processed
     /// 5. Assert that the worker handle the event with correct data
     /// 6. Assert that the hash computed by the worker is correct
-    /// 7. Assert that the tx is succesfully submited to the mempool
+    /// 7. Assert that the tx is succesfully submited
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
     ///
@@ -596,8 +616,6 @@ mod l1_messaging_tests {
         // Initialize database service
         let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
 
-        let mempool = Arc::new(Mempool::new(Arc::clone(db.backend()), MempoolConfig::for_testing()));
-
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
         let provider = ProviderBuilder::new().on_http(rpc_url);
@@ -610,7 +628,7 @@ mod l1_messaging_tests {
         let eth_client =
             EthereumClient { provider: Arc::new(provider.clone()), l1_core_contract: core_contract.clone() };
 
-        TestRunner { anvil, db_service: db, dummy_contract: contract, eth_client, mempool }
+        TestRunner { anvil, db_service: db, dummy_contract: contract, eth_client }
     }
 
     /// Test the basic workflow of l1 -> l2 messaging
@@ -622,22 +640,26 @@ mod l1_messaging_tests {
     /// 4. Waits for event to be processed
     /// 5. Assert that the worker handle the event with correct data
     /// 6. Assert that the hash computed by the worker is correct
-    /// 7. TODO : Assert that the tx is succesfully submited to the mempool
+    /// 7. TODO : Assert that the tx is succesfully submited
     /// 8. Assert that the event is successfully pushed to the db
     /// 9. TODO : Assert that the tx was correctly executed
     #[rstest]
     #[traced_test]
     #[tokio::test]
     async fn e2e_test_basic_workflow(#[future] setup_test_env: TestRunner) {
-        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
-            setup_test_env.await;
+        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } = setup_test_env.await;
 
         // Start worker handle
         let _worker_handle = {
             let db = Arc::clone(&db);
-            let mempool = Arc::clone(&mempool);
             tokio::spawn(async move {
-                sync(Arc::new(eth_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing()).await
+                sync(
+                    Arc::new(eth_client),
+                    Arc::clone(db.backend()),
+                    Default::default(),
+                    ServiceContext::new_for_testing(),
+                )
+                .await
             })
         };
 
@@ -648,166 +670,44 @@ mod l1_messaging_tests {
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        let expected_nonce = Nonce(Felt::from_dec_str("0").expect("failed to parse nonce string"));
+        let handler_tx = db.backend().get_pending_message_to_l2(0).unwrap().unwrap();
 
-        let current_nonce = db.backend().get_l1_messaging_nonce_latest().unwrap().unwrap();
-        assert_eq!(current_nonce, expected_nonce);
+        assert_eq!(handler_tx.tx.nonce, 0);
+        assert_eq!(
+            handler_tx.tx.contract_address,
+            Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370").unwrap()
+        );
+        assert_eq!(
+            handler_tx.tx.entry_point_selector,
+            Felt::from_dec_str("774397379524139446221206168840917193112228400237242521560346153613428128537").unwrap()
+        );
+        assert_eq!(
+            handler_tx.tx.calldata[0],
+            Felt::from_dec_str("993696174272377493693496825928908586134624850969").unwrap()
+        );
 
-        // Check that the L1 message correctly trigger an L1 handler tx, which is accepted in Mempool
-        // As it has the first nonce (and no other L1 message was received before) we can take it from Mempool
-        // TODO: we can add a test case on which a message with Nonce = 1 is being received before this one
-        // and check we cant take it until the first on is processed
-        todo!();
+        // Assert the tx hash computed by the worker is correct
+        let event_hash = contract
+            .getL1ToL2MsgHash()
+            .call()
+            .await
+            .expect("Should successfully get the message hash from the contract")
+            ._0
+            .to_string();
+        assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
 
-        // assert_eq!(handler_tx.nonce, expected_nonce);
-        // assert_eq!(
-        //     handler_tx.contract_address,
-        //     ContractAddress::try_from(
-        //         Felt::from_dec_str("3256441166037631918262930812410838598500200462657642943867372734773841898370")
-        //             .unwrap()
-        //     )
-        //     .unwrap()
-        // );
-        // assert_eq!(
-        //     handler_tx.entry_point_selector,
-        //     EntryPointSelector(
-        //         Felt::from_dec_str("774397379524139446221206168840917193112228400237242521560346153613428128537")
-        //             .unwrap()
-        //     )
-        // );
-        // assert_eq!(
-        //     handler_tx.calldata.0[0],
-        //     Felt::from_dec_str("993696174272377493693496825928908586134624850969").unwrap()
-        // );
-
-        // // Assert that event was caught by the worker with correct data
-        // // TODO: Maybe add some more assert
-        // assert!(logs_contain("fromAddress: \"0xae0ee0a63a2ce6baeeffe56e7714fb4efe48d419\""));
-
-        // // Assert the tx hash computed by the worker is correct
-        // let event_hash = contract
-        //     .getL1ToL2MsgHash()
-        //     .call()
-        //     .await
-        //     .expect("Should successfully get the message hash from the contract")
-        //     ._0
-        //     .to_string();
-        // assert!(logs_contain(&format!("event hash: {:?}", event_hash)));
-
-        // // Assert that the event is well stored in db
-        // let last_block = db
-        //     .backend()
-        //     .messaging_last_synced_l1_block_with_event()
-        //     .expect("Should successfully retrieve the last synced L1 block with messaging event")
-        //     .unwrap();
-        // assert_ne!(last_block.block_number, 0);
-        // // TODO: Assert that the transaction has been executed successfully
-        // assert!(db.backend().has_l1_messaging_nonce(expected_nonce).unwrap());
+        // Assert that the event is well stored in db
+        let last_block = db
+            .backend()
+            .get_l1_messaging_sync_tip()
+            .expect("Should successfully retrieve the last synced L1 block with messaging event")
+            .unwrap();
+        assert_ne!(last_block, 0);
+        // TODO: Assert that the transaction has been executed successfully
+        assert!(db.backend().get_pending_message_to_l2(0).unwrap().is_some());
 
         // // Explicitly cancel the listen task, else it would be running in the background
         // worker_handle.abort();
-    }
-
-    /// Test the workflow of l1 -> l2 messaging with duplicate event
-    ///
-    /// This test performs the following steps:
-    /// 1. Sets up test environemment
-    /// 2. Starts worker
-    /// 3. Fires a Message event from the dummy contract
-    /// 4. Waits for event to be processed
-    /// 5. Assert that the event is well stored in db
-    /// 6. Fires a Message with the same event from the dummy contract
-    /// 7. Assert that the last event stored is the first one
-    #[rstest]
-    #[traced_test]
-    #[tokio::test]
-    async fn e2e_test_already_processed_event(#[future] setup_test_env: TestRunner) {
-        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
-            setup_test_env.await;
-
-        // Start worker handle
-        let worker_handle = {
-            let db = Arc::clone(&db);
-            tokio::spawn(async move {
-                sync(Arc::new(eth_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing()).await
-            })
-        };
-
-        // Set canceled status and fire first event
-        let _ = contract.setIsCanceled(false).send().await.expect("Should successfully set canceled status to false");
-        let _ = contract.fireEvent().send().await.expect("Should successfully fire first messaging event");
-
-        // Wait for event processing
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        let last_block = db
-            .backend()
-            .messaging_last_synced_l1_block_with_event()
-            .expect("Should successfully retrieve the last synced block after first event")
-            .unwrap();
-        assert_ne!(last_block.block_number, 0);
-        let expected_nonce = Nonce(Felt::from_dec_str("0").expect("failed to parse nonce string"));
-        assert!(db.backend().has_l1_messaging_nonce(expected_nonce).unwrap());
-
-        // Fire second event
-        let _ = contract.fireEvent().send().await.expect("Should successfully fire second messaging event");
-
-        // Wait for event processing
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        // Assert that the last event in db is still the same as it is already processed (same nonce)
-        assert_eq!(
-            last_block.block_number,
-            db.backend()
-                .messaging_last_synced_l1_block_with_event()
-                .expect("Should successfully retrieve the last synced block after second event")
-                .unwrap()
-                .block_number
-        );
-        assert!(logs_contain("Event already processed"));
-
-        worker_handle.abort();
-    }
-
-    /// Test the workflow of l1 -> l2 messaging with message cancelled
-    ///
-    /// This test performs the following steps:
-    /// 1. Sets up test environemment
-    /// 2. Starts worker
-    /// 3. Fires a Message event from the dummy contract
-    /// 4. Waits for event to be processed
-    /// 5. Assert that the event is not stored in db
-    #[rstest]
-    #[traced_test]
-    #[tokio::test]
-    async fn e2e_test_message_canceled(#[future] setup_test_env: TestRunner) {
-        let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil, mempool } =
-            setup_test_env.await;
-
-        // Start worker handle
-        let worker_handle = {
-            let db = Arc::clone(&db);
-            tokio::spawn(async move {
-                sync(Arc::new(eth_client), Arc::clone(db.backend()), mempool, ServiceContext::new_for_testing()).await
-            })
-        };
-
-        // Mock cancelled message
-        let _ = contract.setIsCanceled(true).send().await.expect("Should successfully set canceled status to true");
-        let _ = contract.fireEvent().send().await.expect("Should successfully fire messaging event");
-
-        // Wait for event processing
-        tokio::time::sleep(Duration::from_secs(5)).await;
-        let last_block = db
-            .backend()
-            .messaging_last_synced_l1_block_with_event()
-            .expect("Should successfully retrieve the last synced block after canceled event")
-            .unwrap();
-        assert_eq!(last_block.block_number, 0);
-        let nonce = Nonce(Felt::from_dec_str("0").expect("Should parse the known valid test nonce"));
-        // cancelled message nonce should be inserted to avoid reprocessing
-        assert!(db.backend().has_l1_messaging_nonce(nonce).unwrap());
-        assert!(logs_contain("Message was cancelled in block at timestamp: 0x66b4f105"));
-
-        worker_handle.abort();
     }
 
     /// Test taken from starknet.rs to ensure consistency
@@ -815,30 +715,40 @@ mod l1_messaging_tests {
     #[rstest]
     #[tokio::test]
     async fn test_msg_to_l2_hash() {
-        let TestRunner { db_service: _db, dummy_contract: _contract, eth_client, anvil: _anvil, mempool: _mempool } =
+        let TestRunner { db_service: _db, dummy_contract: _contract, eth_client, anvil: _anvil } =
             setup_test_env().await;
 
         let msg = eth_client
-            .get_messaging_hash(&L1toL2MessagingEventData {
-                from: Felt::from_bytes_be_slice(
-                    Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e").unwrap().0 .0.to_vec().as_slice(),
-                ),
-                to: Felt::from_hex("0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82")
+            .calculate_message_hash(&L1HandlerTransactionWithFee {
+                paid_fee_on_l1: u128::try_from(Felt::from_bytes_be_slice(U256::ZERO.to_be_bytes_vec().as_slice()))
+                    .unwrap(),
+                tx: L1HandlerTransaction {
+                    version: Felt::ZERO,
+                    nonce: 775628,
+                    contract_address: Felt::from_hex(
+                        "0x73314940630fd6dcda0d772d4c972c4e0a9946bef9dabf4ef84eda8ef542b82",
+                    )
                     .expect("Should parse valid destination address hex"),
-                selector: Felt::from_hex("0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5")
+                    entry_point_selector: Felt::from_hex(
+                        "0x2d757788a8d8d6f21d1cd40bce38a8222d70654214e96ff95d8086e684fbee5",
+                    )
                     .expect("Should parse valid selector hex"),
-                payload: vec![
-                    Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7")
-                        .expect("Should parse valid payload[0] hex"),
-                    Felt::from_hex("0x2c68af0bb140000").expect("Should parse valid payload[1] hex"),
-                    Felt::from_hex("0x0").expect("Should parse valid payload[2] hex"),
-                ],
-                nonce: Felt::from_bytes_be_slice(U256::from(775628).to_be_bytes_vec().as_slice()),
-                fee: Some(u128::try_from(Felt::from_bytes_be_slice(U256::ZERO.to_be_bytes_vec().as_slice())).unwrap()),
-                transaction_hash: Felt::ZERO,
-                message_hash: None,
-                block_number: 0,
-                event_index: None,
+                    calldata: vec![
+                        Felt::from_bytes_be_slice(
+                            Address::from_hex("c3511006C04EF1d78af4C8E0e74Ec18A6E64Ff9e")
+                                .unwrap()
+                                .0
+                                 .0
+                                .to_vec()
+                                .as_slice(),
+                        ),
+                        Felt::from_hex("0x689ead7d814e51ed93644bc145f0754839b8dcb340027ce0c30953f38f55d7")
+                            .expect("Should parse valid payload[0] hex"),
+                        Felt::from_hex("0x2c68af0bb140000").expect("Should parse valid payload[1] hex"),
+                        Felt::from_hex("0x0").expect("Should parse valid payload[2] hex"),
+                    ]
+                    .into(),
+                },
             })
             .expect("Should successfully compute L1 to L2 message hash");
 
@@ -852,8 +762,7 @@ mod l1_messaging_tests {
 #[cfg(test)]
 mod eth_client_event_subscription_test {
     use super::*;
-    use crate::eth::event::EthereumEventStream;
-    use crate::eth::{EthereumClient, EthereumClientConfig, StarknetCoreContract};
+    use crate::eth::{EthereumClient, StarknetCoreContract};
     use crate::gas_price::L1BlockMetrics;
     use crate::state_update::state_update_worker;
     use alloy::{node_bindings::Anvil, providers::ProviderBuilder, sol};
@@ -935,7 +844,7 @@ mod eth_client_event_subscription_test {
         let listen_handle = {
             let db = backend.clone();
             tokio::spawn(async move {
-                state_update_worker::<EthereumClientConfig, EthereumEventStream>(
+                state_update_worker(
                     db,
                     Arc::new(eth_client),
                     ServiceContext::new_for_testing(),

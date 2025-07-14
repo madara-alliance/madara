@@ -67,11 +67,6 @@ impl BatchToExecute {
         Self { txs: Vec::with_capacity(cap), additional_info: VecDeque::with_capacity(cap) }
     }
 
-    pub fn extend(&mut self, other: Self) {
-        self.txs.extend(other.txs);
-        self.additional_info.extend(other.additional_info);
-    }
-
     pub fn len(&self) -> usize {
         self.txs.len()
     }
@@ -93,7 +88,32 @@ impl BatchToExecute {
     }
 }
 
-#[derive(Debug)]
+impl Extend<(Transaction, AdditionalTxInfo)> for BatchToExecute {
+    fn extend<T: IntoIterator<Item = (Transaction, AdditionalTxInfo)>>(&mut self, iter: T) {
+        for (tx, additional_info) in iter {
+            self.push(tx, additional_info)
+        }
+    }
+}
+
+impl IntoIterator for BatchToExecute {
+    type Item = (Transaction, AdditionalTxInfo);
+    type IntoIter =
+        std::iter::Zip<std::vec::IntoIter<Transaction>, std::collections::vec_deque::IntoIter<AdditionalTxInfo>>;
+    fn into_iter(self) -> Self::IntoIter {
+        self.txs.into_iter().zip(self.additional_info)
+    }
+}
+
+impl FromIterator<(Transaction, AdditionalTxInfo)> for BatchToExecute {
+    fn from_iter<T: IntoIterator<Item = (Transaction, AdditionalTxInfo)>>(iter: T) -> Self {
+        let mut s = Self::default();
+        s.extend(iter);
+        s
+    }
+}
+
+#[derive(Debug, Default)]
 pub(crate) struct AdditionalTxInfo {
     pub declared_class: Option<ConvertedClass>,
 }
@@ -131,8 +151,8 @@ impl BlockExecutionContext {
         }
     }
 
-    pub fn to_blockifier(&self) -> Result<blockifier::blockifier::block::BlockInfo, StarknetApiError> {
-        Ok(blockifier::blockifier::block::BlockInfo {
+    pub fn to_blockifier(&self) -> Result<starknet_api::block::BlockInfo, StarknetApiError> {
+        Ok(starknet_api::block::BlockInfo {
             block_number: starknet_api::block::BlockNumber(self.block_n),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
             sequencer_address: self.sequencer_address.try_into()?,

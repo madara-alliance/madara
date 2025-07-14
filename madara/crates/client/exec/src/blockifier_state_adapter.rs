@@ -1,13 +1,15 @@
-use blockifier::execution::contract_class::ContractClass;
+use std::sync::Arc;
+
+use blockifier::execution::contract_class::RunnableCompiledClass;
 use blockifier::state::errors::StateError;
 use blockifier::state::state_api::{StateReader, StateResult};
-use mc_db::db_block_id::DbBlockId;
-use mc_db::MadaraBackend;
-use mp_convert::ToFelt;
 use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
 use starknet_api::state::StorageKey;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
+
+use mc_db::db_block_id::DbBlockId;
+use mc_db::MadaraBackend;
+use mp_convert::ToFelt;
 
 /// Adapter for the db queries made by blockifier.
 ///
@@ -23,6 +25,25 @@ pub struct BlockifierStateAdapter {
 impl BlockifierStateAdapter {
     pub fn new(backend: Arc<MadaraBackend>, block_number: u64, on_top_of_block_id: Option<DbBlockId>) -> Self {
         Self { backend, on_top_of_block_id, block_number }
+    }
+
+    pub fn is_l1_to_l2_message_nonce_consumed(&self, nonce: u64) -> StateResult<bool> {
+        let value = self
+            .backend
+            .get_l1_handler_txn_hash_by_nonce(nonce)
+            .map_err(|err| {
+                StateError::StateReadError(format!(
+                    "Failed to l1 handler txn hash by core contract nonce: on={:?}, nonce={nonce}: {err:#}",
+                    self.on_top_of_block_id
+                ))
+            })?
+            .is_some();
+
+        tracing::debug!(
+            "is_l1_to_l2_message_nonce_consumed: on={:?}, nonce={nonce} => {value}",
+            self.on_top_of_block_id,
+        );
+        Ok(value)
     }
 }
 
@@ -107,7 +128,7 @@ impl StateReader for BlockifierStateAdapter {
         Ok(ClassHash(value))
     }
 
-    fn get_compiled_contract_class(&self, class_hash: ClassHash) -> StateResult<ContractClass> {
+    fn get_compiled_class(&self, class_hash: ClassHash) -> StateResult<RunnableCompiledClass> {
         let value = match self.on_top_of_block_id {
             Some(on_top_of_block_id) => {
                 self.backend.get_converted_class(&on_top_of_block_id, &class_hash.to_felt()).map_err(|err| {
@@ -121,7 +142,7 @@ impl StateReader for BlockifierStateAdapter {
             None => None,
         };
 
-        let value = value.ok_or(StateError::UndeclaredClassHash(class_hash))?;
+        let converted_class = value.ok_or(StateError::UndeclaredClassHash(class_hash))?;
 
         tracing::debug!(
             "get_compiled_contract_class: on={:?}, class_hash={:#x}",
@@ -129,8 +150,9 @@ impl StateReader for BlockifierStateAdapter {
             class_hash.to_felt()
         );
 
-        value.to_blockifier_class().map_err(|err| {
-            StateError::StateReadError(format!("Failed to convert class {class_hash:#} to blockifier format: {err:#}"))
+        (&converted_class).try_into().map_err(|err| {
+            tracing::error!("Failed to convert class {class_hash:#} to blockifier format: {err:#}");
+            StateError::StateReadError(format!("Failed to convert class {class_hash:#}"))
         })
     }
 

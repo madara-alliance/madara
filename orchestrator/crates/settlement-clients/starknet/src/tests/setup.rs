@@ -153,7 +153,12 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let target_bin = env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH").expect("failed to get binary path");
+        let target_bin = env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH").unwrap_or_else(|_| {
+            // Use workspace-relative path as fallback
+            let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(4).unwrap();
+            workspace_root.join("madara/target/debug/madara").to_string_lossy().to_string()
+        });
+        println!("target_bin: {:?}", target_bin);
         let target_bin = PathBuf::from(target_bin);
 
         if !target_bin.exists() {

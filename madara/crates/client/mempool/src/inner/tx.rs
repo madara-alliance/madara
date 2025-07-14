@@ -161,32 +161,47 @@ impl TxInfo {
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
     use starknet_api::core::Nonce;
+    use std::cmp::Ordering;
 
     use crate::tx::{EvictionScore, Score};
 
     #[test]
     fn test_eviction_score_order() {
-        assert_eq!(std::cmp::Ord::cmp(
-            &EvictionScore { chain_nonce_len: Nonce((1).into()), score: Score(5) },
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
-        ), Ordering::Less);
-        assert_eq!(std::cmp::Ord::cmp(
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(10) },
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
-        ), Ordering::Less);
-        assert_eq!(std::cmp::Ord::cmp(
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
-        ), Ordering::Equal);
-        assert_eq!(std::cmp::Ord::cmp(
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
-            &EvictionScore { chain_nonce_len: Nonce((1).into()), score: Score(5) }
-        ), Ordering::Greater);
-        assert_eq!(std::cmp::Ord::cmp(
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
-            &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(10) }
-        ), Ordering::Greater);
+        assert_eq!(
+            std::cmp::Ord::cmp(
+                &EvictionScore { chain_nonce_len: Nonce((1).into()), score: Score(5) },
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
+            ),
+            Ordering::Less
+        );
+        assert_eq!(
+            std::cmp::Ord::cmp(
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(10) },
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
+            ),
+            Ordering::Less
+        );
+        assert_eq!(
+            std::cmp::Ord::cmp(
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) }
+            ),
+            Ordering::Equal
+        );
+        assert_eq!(
+            std::cmp::Ord::cmp(
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
+                &EvictionScore { chain_nonce_len: Nonce((1).into()), score: Score(5) }
+            ),
+            Ordering::Greater
+        );
+        assert_eq!(
+            std::cmp::Ord::cmp(
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(5) },
+                &EvictionScore { chain_nonce_len: Nonce((5).into()), score: Score(10) }
+            ),
+            Ordering::Greater
+        );
     }
 }
