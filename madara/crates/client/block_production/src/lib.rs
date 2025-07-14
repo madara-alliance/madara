@@ -158,7 +158,7 @@ impl CurrentPendingState {
                 );
                 self.block.state.extend(&state_diff);
                 let tx = TransactionWithReceipt { transaction: converted_tx.transaction, receipt };
-                self.block.transactions.push(tx);
+                self.block.transactions.push(tx.clone());
                 self.backend.on_new_pending_tx(tx)
             }
         }
