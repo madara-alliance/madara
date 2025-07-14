@@ -5,7 +5,7 @@
 use crate::servers::docker::DockerError;
 
 const DEFAULT_PATHFINDER_PORT: u16 = 9545;
-const DEFAULT_PATHFINDER_IMAGE: &str = "eqlabs/pathfinder:v0.17.0-beta.2";
+pub const DEFAULT_PATHFINDER_IMAGE: &str = "eqlabs/pathfinder:v0.17.0-beta.2";
 const DEFAULT_PATHFINDER_CONTAINER_NAME: &str = "pathfinder-service";
 const DEFAULT_PATHFINDER_MONITOR_PORT: u16 = 9090;
 

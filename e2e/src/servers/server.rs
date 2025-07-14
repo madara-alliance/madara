@@ -716,7 +716,7 @@ impl Server {
         if !flag {
             server.wait_till_started().await?;
         }
-        println!("😁 Server is ready for server to be ready");
+        println!("😁 Server is ready");
 
 
         Ok(server)
@@ -770,7 +770,6 @@ impl Server {
 
     /// Wait until the server is ready to accept connections
     async fn wait_till_started(&mut self) -> Result<(), ServerError> {
-        println!("Waiting for server to start...");
         let mut attempts = self.config.connection_attempts;
         let addr = format!("{}:{}", self.config.host, self.config.port);
 

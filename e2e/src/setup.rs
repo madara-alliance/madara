@@ -9,6 +9,7 @@ use::std::path::Path;
 use crate::servers::anvil::{AnvilConfigBuilder, AnvilConfig, AnvilError, AnvilService};
 use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::servers::docker::{DockerError, DockerServer};
+use crate::servers::pathfinder::DEFAULT_PATHFINDER_IMAGE;
 use crate::servers::mongo::MONGO_DEFAULT_DATABASE_PATH;
 use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
 use crate::servers::bootstrapper::BOOTSTRAPPER_DEFAULT_ADDRESS_PATH;
@@ -239,6 +240,10 @@ impl Setup {
         // Now that we know Docker is available, pull required images concurrently
         println!("📦 Pulling required Docker images...");
 
+
+        // TODO: I believe we can create an array of images and use that,
+        // it will reduce the error handling below to one time
+
         // Pull mongo:latest
         join_set.spawn(async {
             println!("📦 Pulling mongo:latest...");
@@ -296,6 +301,36 @@ impl Setup {
             }
         });
 
+        // Pull pathfinder image
+        join_set.spawn(async {
+            println!("📦 Pulling pathfinder image...");
+            let localstack_result = tokio::process::Command::new("docker")
+                .args([
+                    "pull",
+                    DEFAULT_PATHFINDER_IMAGE
+                ])
+                .output()
+                .await;
+
+            match localstack_result {
+                Ok(output) if output.status.success() => {
+                    println!("✅ Successfully pulled pathfinder image");
+                    Ok(())
+                }
+                Ok(output) => {
+                    let error_msg = String::from_utf8_lossy(&output.stderr);
+                    Err(SetupError::DependencyFailed(
+                        format!("Failed to pull pathfinder image: {}", error_msg)
+                    ))
+                }
+                Err(e) => {
+                    Err(SetupError::DependencyFailed(
+                        format!("Failed to execute docker pull pathfinder image: {}", e)
+                    ))
+                }
+            }
+        });
+
         // Wait for image pulls to complete
         while let Some(result) = join_set.join_next().await {
             result.map_err(|e| SetupError::DependencyFailed(e.to_string()))??;
@@ -331,24 +366,24 @@ impl Setup {
     /// Starts afresh chain
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
 
-        // // Timeout for 6 mins
-        // timeout(Duration::from_secs(360), async {
-        //     self.start_infrastructure_services().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        // Start infrastructure services
+        timeout(Duration::from_secs(360), async {
+            self.start_infrastructure_services().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
 
-        // Timeout for 6 mins
-        // timeout(Duration::from_secs(360), async {
-        //     self.setup_localstack().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        // Setup infrastructure services
+        timeout(Duration::from_secs(360), async {
+            self.setup_infrastructure_services().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // Timeout this for 1.10 mins
+        // Setup L1 Chain
         timeout(Duration::from_secs(70), async {
             self.start_l1_setup().await?;
             // self.wait_for_services_ready().await?;
@@ -358,7 +393,7 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-        // Timeout this for 30 mins
+        // Setup L2 Chain
         timeout(Duration::from_secs(1800), async {
             self.start_l2_setup().await?;
             Ok::<(), SetupError>(())
@@ -366,17 +401,13 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
 
-        // sleep(Duration::from_secs(500)).await;
-        // println!("Starting pathfinder service");
-        // // Start Pathfinder Service, wait for it to complete sync
-        // timeout(Duration::from_secs(300), async {
-        //     println!("Starting pathfinder service #2");
-
-        //     self.start_full_node_syncing().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
+        // Start Full Node Syncing
+        timeout(Duration::from_secs(300), async {
+            self.start_full_node_syncing().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
 
 
         // Start Pathfinder Service, wait for it to complete sync
@@ -500,21 +531,19 @@ impl Setup {
 
     /// Start pathfinder and orchestrator service for bootstrapped madara
     async fn start_full_node_syncing(&mut self) ->  Result<(), SetupError> {
-        // Need to fetch core contract from bootstrapper
+        println!("🎯 Starting Pathfinder...");
+
+        // Need to fetch core contract from bootstrapper for orchestrator
         // Need to fetch block number from madara
         // Need to check when pathfinder has been synced till the provided block number
         // Then only orchestrator should start!
-
-
-        println!("Pathfinder @11`1");
 
         let mut sync_ready_at_block : u64 = u64::MAX;
 
         if let Some(madara) = &self.madara {
             sync_ready_at_block = madara.get_latest_block_number().await?;
+            println!("Syncing ready till block number {}", sync_ready_at_block);
         }
-
-        println!("Syncing ready at block {}", sync_ready_at_block);
 
         let pathfinder_config = PathfinderConfigBuilder::new()
             .build();
@@ -545,7 +574,7 @@ impl Setup {
 
                 let blk_number = pathfinder_service.get_latest_block_number().await?;
                 if blk_number >= sync_ready_at_block {
-                    println!("Pathfinder is ready");
+                    println!("Pathfinder is synced till bootstrapped madara");
                     pathfinder_ready = true;
                 }
 
@@ -607,7 +636,7 @@ impl Setup {
     }
 
 
-    async fn setup_localstack(&mut self) -> Result<(), SetupError> {
+    async fn setup_infrastructure_services(&mut self) -> Result<(), SetupError> {
         println!("🏗️ Starting localstack setup ...");
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::new()
