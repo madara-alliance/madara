@@ -226,7 +226,7 @@ impl EventWorker {
         Ok(())
     }
 
-    /// run - Run the event worker, by closly monitoring the queue and processing messages
+    /// run - Run the event worker, by closely monitoring the queue and processing messages
     /// This function starts the event worker and processes messages from the queue
     /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
     /// # Errors

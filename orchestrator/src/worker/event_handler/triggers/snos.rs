@@ -6,7 +6,7 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use num_traits::ToPrimitive;
 use opentelemetry::KeyValue;
 use starknet::providers::Provider;
@@ -403,12 +403,25 @@ impl SnosJobTrigger {
     /// - If database returns StateTransition job with non-StateUpdate metadata
     async fn get_latest_completed_state_update_block(&self, config: &Arc<Config>) -> Result<Option<u64>> {
         let db = config.database();
-        match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
+        let latest_batch_num =
+            match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
+                None => None,
+                Some(job_item) => match job_item.metadata.specific {
+                    JobSpecificMetadata::StateUpdate(metadata) => metadata.batches_to_settle.iter().max().copied(),
+                    _ => panic!("Unexpected metadata type for StateUpdate job"),
+                },
+            };
+
+        match latest_batch_num {
+            Some(latest_batch_num) => {
+                let latest_batch = db.get_batches_by_indexes(vec![latest_batch_num]).await?;
+                if latest_batch.is_empty() {
+                    Err(eyre!("Failed to fetch latest batch {} from database", latest_batch_num))
+                } else {
+                    Ok(Some(latest_batch[0].end_block))
+                }
+            }
             None => Ok(None),
-            Some(job_item) => match job_item.metadata.specific {
-                JobSpecificMetadata::StateUpdate(metadata) => Ok(metadata.blocks_to_settle.iter().max().copied()),
-                _ => panic!("Unexpected metadata type for StateUpdate job"),
-            },
         }
     }
 
@@ -480,7 +493,7 @@ impl SnosJobTrigger {
 async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64>) -> Result<()> {
     // Create jobs for all identified blocks
     for block_num in block_numbers_to_pocesss {
-        let metadata = create_job_metadata(block_num);
+        let metadata = create_job_metadata(block_num, config.snos_config().full_output);
 
         match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
             Ok(_) => tracing::info!("Successfully created new Snos job: {}", block_num),
@@ -498,12 +511,12 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
 }
 
 // Helper function to create job metadata
-fn create_job_metadata(block_num: u64) -> JobMetadata {
+fn create_job_metadata(block_num: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
             block_number: block_num,
-            full_output: false,
+            full_output,
             cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),

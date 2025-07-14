@@ -30,12 +30,14 @@ impl ValueMapping {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| ValueMapping::skip(diff.address)).for_each(|diff| {
-            keys.insert(diff.address);
-            diff.storage_entries.iter().for_each(|entry| {
-                keys.insert(entry.key);
-            });
-        });
+        state_update.state_diff.storage_diffs.iter().filter(|diff| !ValueMapping::skip(diff.address)).for_each(
+            |diff| {
+                keys.insert(diff.address);
+                diff.storage_entries.iter().for_each(|entry| {
+                    keys.insert(entry.key);
+                });
+            },
+        );
         state_update.state_diff.deployed_contracts.iter().for_each(|contract| {
             keys.insert(contract.address);
         });
@@ -110,12 +112,12 @@ impl ValueMapping {
             return Ok(key.clone());
         }
         let mut attempts = 0;
-        let mut error = String::from("Dummy Error");
+        let mut error = None;
         while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
-            match provider.get_storage_at(MAPPING_START, key, BlockId::Number(pre_range_block)).await {
+            match provider.get_storage_at(SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await {
                 Ok(value) => return Ok(value),
                 Err(e) => {
-                    error = e.to_string();
+                    error = Some(e.to_string());
                     attempts += 1;
                     continue;
                 }
@@ -123,7 +125,10 @@ impl ValueMapping {
         }
         let err_message = format!(
             "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-            SPECIAL_ADDRESS, key, pre_range_block, error
+            SPECIAL_ADDRESS,
+            key,
+            pre_range_block,
+            error.unwrap_or_else(|| "Unknown error".to_string())
         );
         error!("{}", &err_message);
         Err(ProviderError::StarknetError(StarknetError::UnexpectedError(err_message)))
@@ -220,5 +225,23 @@ pub async fn compress(
     // Deprecated declared classes remain as it is as it only contains class hashes
     // block_hash, new_root and old_root remain as it is
 
+    // Sort the compressed StateUpdate
+    sort_state_diff(&mut state_update);
+
     Ok(state_update)
+}
+
+pub fn sort_state_diff(state_diff: &mut StateUpdate) {
+    // Sort storage diffs
+    state_diff.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
+    for diff in &mut state_diff.state_diff.storage_diffs {
+        diff.storage_entries.sort_by(|a, b| a.key.cmp(&b.key));
+    }
+
+    // Sort the rest
+    state_diff.state_diff.deprecated_declared_classes.sort_by(|a, b| a.cmp(&b));
+    state_diff.state_diff.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
+    state_diff.state_diff.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
+    state_diff.state_diff.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
+    state_diff.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
 }

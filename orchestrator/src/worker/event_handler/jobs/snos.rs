@@ -13,7 +13,6 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::get_fact_info;
 use async_trait::async_trait;
 use bytes::Bytes;
-use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
 use color_eyre::eyre::eyre;
@@ -72,7 +71,7 @@ impl JobHandlerTrait for SnosJobHandler {
         tracing::debug!(job_id = %job.internal_id, "Calling prove_block function");
 
         let (cairo_pie, snos_output) =
-            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, snos_metadata.full_output)
+            prove_block(COMPILED_OS, block_number, snos_url, config.params.snos_layout_name, snos_metadata.full_output)
                 .await
                 .map_err(|e| {
                     tracing::error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
@@ -200,7 +199,7 @@ impl SnosJobHandler {
     /// Converts the [CairoPie] input as a zip file and returns it as [Bytes].
     async fn cairo_pie_to_zip_bytes(&self, cairo_pie: CairoPie) -> Result<Bytes> {
         let mut cairo_pie_zipfile = NamedTempFile::new()?;
-        cairo_pie.write_zip_file(cairo_pie_zipfile.path())?;
+        cairo_pie.write_zip_file(cairo_pie_zipfile.path(), true)?;
         drop(cairo_pie); // Drop cairo_pie to release the memory
         let cairo_pie_zip_bytes = self.tempfile_to_bytes(&mut cairo_pie_zipfile)?;
         cairo_pie_zipfile.close()?;

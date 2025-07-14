@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::{eyre, WrapErr};
-use orchestrator_prover_client_interface::{Task, TaskStatus};
+use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus};
 use uuid::Uuid;
 
 use crate::core::config::Config;
@@ -81,7 +81,12 @@ impl JobHandlerTrait for ProvingJobHandler {
         tracing::debug!(job_id = %job.internal_id, "Submitting task to prover client");
         let external_id = config
             .prover_client()
-            .submit_task(Task::CairoPie(cairo_pie), proving_metadata.n_steps)
+            .submit_task(Task::CreateJob(
+                cairo_pie,
+                proving_metadata.bucked_id,
+                proving_metadata.bucket_job_index,
+                proving_metadata.n_steps,
+            ))
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
@@ -132,7 +137,7 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         let task_status = config
             .prover_client()
-            .get_task_status(&task_id, fact, cross_verify)
+            .get_task_status(AtlanticStatusType::Job, &task_id, fact, cross_verify)
             .await
             .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
@@ -195,7 +200,10 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        2
+        // we want this as 1 since we don't want to retry proof creation
+        // because once proof creation fails, the AR bucket will also fail
+        // hence, no point of retrying right now
+        1
     }
 
     fn max_verification_attempts(&self) -> u64 {
