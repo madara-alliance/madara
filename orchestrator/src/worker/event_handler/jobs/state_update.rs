@@ -1,24 +1,25 @@
-use std::sync::Arc;
-
 use crate::core::config::Config;
 use crate::error::job::state_update::StateUpdateError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::{ON_CHAIN_DATA_FILE_NAME, PROOF_FILE_NAME, PROOF_PART2_FILE_NAME};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
+use crate::worker::utils::fact_info::OnChainData;
 use crate::worker::utils::{fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block};
 use async_trait::async_trait;
 use cairo_vm::Felt252;
-use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
+use starknet_core::types::Felt;
 use starknet_os::io::output::StarknetOsOutput;
-use uuid::Uuid;
+use std::sync::Arc;
+use swiftness_proof_parser::{parse, StarkProof};
 
 pub struct StateUpdateJobHandler;
 #[async_trait]
@@ -44,19 +45,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             tracing::error!(job_id = %internal_id, "Missing required paths in metadata");
             return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
         }
-
-        // Create job with initialized metadata
-        let job_item = JobItem {
-            id: Uuid::new_v4(),
-            internal_id: internal_id.clone(),
-            job_type: JobType::StateTransition,
-            status: JobStatus::Created,
-            external_id: String::new().into(),
-            metadata: metadata.clone(),
-            version: 0,
-            created_at: Utc::now().round_subsecs(0),
-            updated_at: Utc::now().round_subsecs(0),
-        };
+        let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
 
         tracing::info!(
             log_type = "completed",
@@ -85,6 +74,8 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
         self.validate_block_numbers(config.clone(), &state_metadata.blocks_to_settle).await?;
+
+        tracing::debug!(job_id = %job.internal_id, blocks = ?state_metadata.blocks_to_settle, "Validated block numbers");
 
         // Filter block numbers if there was a previous failure
         let last_failed_block = state_metadata.last_failed_block_no.unwrap_or(0);
@@ -260,27 +251,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         match last_settled_block_number {
             Some(block_num) => {
                 let block_status = if block_num == *expected_last_block_number {
-                    tracing::info!(
-                        log_type = "completed",
-                        category = "state_update",
-                        function_type = "verify_job",
-                        job_id = %job.id,
-                        block_no = %internal_id,
-                        last_settled_block = %block_num,
-                        "Last settled block verified."
-                    );
+                    tracing::info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
                     SettlementVerificationStatus::Verified
                 } else {
-                    tracing::warn!(
-                        log_type = "failed/rejected",
-                        category = "state_update",
-                        function_type = "verify_job",
-                        job_id = %job.id,
-                        block_no = %internal_id,
-                        expected = %expected_last_block_number,
-                        actual = %block_num,
-                        "Last settled block mismatch."
-                    );
+                    tracing::warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
                     SettlementVerificationStatus::Rejected(format!(
                         "Last settle bock expected was {} but found {}",
                         expected_last_block_number, block_num
@@ -328,15 +302,24 @@ impl StateUpdateJobHandler {
         }
 
         // Check for gap between the last settled block and the first block to settle
-        let last_settled_block: Option<u64> =
+        let last_settled_block =
             config.settlement_client().get_last_settled_block().await.map_err(|e| JobError::Other(OtherError(e)))?;
-        let expected_first_block = last_settled_block.map_or(0, |num| num + 1);
 
+        let expected_first_block = last_settled_block.map_or(0, |block| block + 1);
         if block_numbers[0] != expected_first_block {
-            return Err(StateUpdateError::GapBetweenFirstAndLastBlock.into());
+            Err(StateUpdateError::GapBetweenFirstAndLastBlock)?;
         }
 
         Ok(())
+    }
+
+    /// Retrieves the OnChain data for the corresponding block.
+    async fn fetch_onchain_data_for_block(&self, block_number: u64, config: Arc<Config>) -> OnChainData {
+        let storage_client = config.storage();
+        let key = block_number.to_string() + "/" + ON_CHAIN_DATA_FILE_NAME;
+        let onchain_data_bytes = storage_client.get_data(&key).await.expect("Unable to fetch onchain data for block");
+        serde_json::from_slice(onchain_data_bytes.iter().as_slice())
+            .expect("Unable to convert the data into onchain data")
     }
 
     /// Update the state for the corresponding block using the settlement layer.
@@ -352,7 +335,49 @@ impl StateUpdateJobHandler {
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
         let last_tx_hash_executed = if snos.use_kzg_da == Felt252::ZERO {
-            unimplemented!("update_state_for_block not implemented as of now for calldata DA.")
+            let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
+            tracing::debug!(%proof_key, "Fetching snos proof file");
+
+            let proof_file = config.storage().get_data(&proof_key).await?;
+
+            let snos_proof = String::from_utf8(proof_file.to_vec()).map_err(|e| {
+                tracing::error!(error = %e, "Failed to parse proof file as UTF-8");
+                JobError::Other(OtherError(eyre!("{}", e)))
+            })?;
+
+            let parsed_snos_proof: StarkProof = parse(snos_proof.clone()).map_err(|e| {
+                tracing::error!(error = %e, "Failed to parse proof file as UTF-8");
+                JobError::Other(OtherError(eyre!("{}", e)))
+            })?;
+
+            let proof_key = format!("{block_no}/{PROOF_PART2_FILE_NAME}");
+            tracing::debug!(%proof_key, "Fetching 2nd proof file");
+
+            let proof_file = config.storage().get_data(&proof_key).await?;
+
+            let second_proof = String::from_utf8(proof_file.to_vec()).map_err(|e| {
+                tracing::error!(error = %e, "Failed to parse proof file as UTF-8");
+                JobError::Other(OtherError(eyre!("{}", e)))
+            })?;
+
+            let parsed_bridge_proof: StarkProof = parse(second_proof.clone()).map_err(|e| {
+                tracing::error!(error = %e, "Failed to parse proof file as UTF-8");
+                JobError::Other(OtherError(eyre!("{}", e)))
+            })?;
+
+            let snos_output = vec_felt_to_vec_bytes32(calculate_output(parsed_snos_proof));
+            let program_output = vec_felt_to_vec_bytes32(calculate_output(parsed_bridge_proof));
+
+            let onchain_data = self.fetch_onchain_data_for_block(block_no, config.clone()).await;
+            settlement_client
+                .update_state_calldata(
+                    snos_output,
+                    program_output,
+                    onchain_data.on_chain_data_hash.0,
+                    usize_to_bytes(onchain_data.on_chain_data_size),
+                )
+                .await
+                .map_err(|e| JobError::Other(OtherError(e)))?
         } else if snos.use_kzg_da == Felt252::ONE {
             settlement_client
                 .update_state_with_blobs(program_output, blob_data, nonce)
@@ -363,4 +388,35 @@ impl StateUpdateJobHandler {
         };
         Ok(last_tx_hash_executed)
     }
+}
+
+pub fn calculate_output(proof: StarkProof) -> Vec<Felt> {
+    let output_segment = proof.public_input.segments[2].clone();
+    let output_len = output_segment.stop_ptr - output_segment.begin_addr;
+    let start = proof.public_input.main_page.len() - output_len as usize;
+    let end = proof.public_input.main_page.len();
+    let program_output =
+        proof.public_input.main_page[start..end].iter().map(|cell| cell.value.clone()).collect::<Vec<_>>();
+    let mut felts = vec![];
+    for elem in &program_output {
+        felts.push(Felt::from_dec_str(&elem.to_string()).unwrap());
+    }
+    felts
+}
+
+pub fn vec_felt_to_vec_bytes32(felts: Vec<Felt>) -> Vec<[u8; 32]> {
+    felts
+        .into_iter()
+        .map(|felt| {
+            let mut bytes = [0u8; 32];
+            bytes.copy_from_slice(&felt.to_bytes_be());
+            bytes
+        })
+        .collect()
+}
+
+fn usize_to_bytes(n: usize) -> [u8; 32] {
+    let mut bytes = [0u8; 32];
+    bytes[..8].copy_from_slice(&n.to_le_bytes());
+    bytes
 }
