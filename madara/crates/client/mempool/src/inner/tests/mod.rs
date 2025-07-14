@@ -201,7 +201,7 @@ pub fn fcfs_mempool(
         score_function: ScoreFunction::Timestamp,
         max_transactions,
         max_declare_transactions,
-        ttl,
+        ttl: Some(ttl),
     })
 }
 
@@ -216,7 +216,7 @@ pub fn tip_mempool(
         score_function: ScoreFunction::Tip { min_tip_bump },
         max_transactions,
         max_declare_transactions,
-        ttl,
+        ttl: Some(ttl),
     })
 }
 

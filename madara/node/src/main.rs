@@ -187,7 +187,7 @@ async fn main() -> anyhow::Result<()> {
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
     let mempool = Mempool::new(
         Arc::clone(service_db.backend()),
-        MempoolConfig::new(&chain_config).with_no_saving(run_cmd.validator_params.no_mempool_saving),
+        MempoolConfig { no_saving: run_cmd.validator_params.no_mempool_saving },
     );
     mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);

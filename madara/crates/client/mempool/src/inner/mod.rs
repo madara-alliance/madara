@@ -51,7 +51,7 @@ pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
     pub max_transactions: usize,
     pub max_declare_transactions: Option<usize>,
-    pub ttl: Duration,
+    pub ttl: Option<Duration>,
 }
 
 // Implementation details:
@@ -177,8 +177,10 @@ impl InnerMempool {
         removed_txs: &mut impl Extend<ValidatedMempoolTx>,
     ) -> Result<(), TxInsertionError> {
         // Prechecks: TTL
-        if tx.arrived_at <= now.checked_sub(self.config.ttl).unwrap_or(TxTimestamp::UNIX_EPOCH) {
-            return Err(TxInsertionError::TooOld { ttl: self.config.ttl });
+        if let Some(ttl) = self.config.ttl {
+            if tx.arrived_at <= now.checked_sub(ttl).unwrap_or(TxTimestamp::UNIX_EPOCH) {
+                return Err(TxInsertionError::TooOld { ttl });
+            }
         }
         let mempool_tx = MempoolTransaction::new(tx, &self.config.score_function)?;
 
@@ -301,7 +303,8 @@ impl InnerMempool {
     /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping if necessary (remove from
     ///   db, send update notifications...)
     pub fn remove_all_ttl_exceeded_txs(&mut self, now: TxTimestamp, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
-        let limit_ts = now.checked_sub(self.config.ttl).unwrap_or(TxTimestamp::UNIX_EPOCH);
+        let Some(ttl) = self.config.ttl else { return };
+        let limit_ts = now.checked_sub(ttl).unwrap_or(TxTimestamp::UNIX_EPOCH);
         while let Some(tx_key) = self.timestamp_queue.first_older_than(limit_ts) {
             let account_update = self.accounts.remove_tx(tx_key);
             self.apply_update(account_update, removed_txs);

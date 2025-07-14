@@ -90,6 +90,13 @@ fn default_l1_messages_replay_max_duration() -> Duration {
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
 
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+pub enum MempoolMode {
+    #[default]
+    Timestamp,
+    Tip,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ChainConfig {
     /// Human readable chain name, for displaying to the console.
@@ -157,13 +164,17 @@ pub struct ChainConfig {
     #[serde(skip)]
     pub private_key: ZeroingPrivateKey,
 
+    #[serde(default)]
+    pub mempool_mode: MempoolMode,
+    #[serde(default)]
+    pub mempool_min_tip_bump: u128,
     /// Transaction limit in the mempool.
-    pub mempool_tx_limit: usize,
+    pub mempool_max_transactions: usize,
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
-    pub mempool_declare_tx_limit: usize,
+    pub mempool_max_declare_transactions: Option<usize>,
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
-    pub mempool_tx_max_age: Option<Duration>,
+    pub mempool_ttl: Option<Duration>,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -269,9 +280,11 @@ impl ChainConfig {
 
             private_key: ZeroingPrivateKey::default(),
 
-            mempool_tx_limit: 10_000,
-            mempool_declare_tx_limit: 20,
-            mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
+            mempool_mode: MempoolMode::Timestamp,
+            mempool_max_transactions: 10_000,
+            mempool_max_declare_transactions: Some(20),
+            mempool_ttl: Some(Duration::from_secs(60 * 60)), // an hour?
+            mempool_min_tip_bump: Default::default(),
 
             block_production_concurrency: BlockProductionConfig::default(),
 

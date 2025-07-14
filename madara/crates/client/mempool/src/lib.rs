@@ -6,7 +6,6 @@ use mc_submit_tx::{
     RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError, SubmitValidatedTransaction,
 };
 use metrics::MempoolMetrics;
-use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_state_update::NonceUpdate;
 use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx, ValidatedToBlockifierTxError};
@@ -29,8 +28,6 @@ pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolWriteAccess;
 
-use crate::tx::ScoreFunction;
-
 pub mod header;
 pub mod metrics;
 
@@ -48,38 +45,12 @@ pub enum MempoolError {
     InvalidNonce,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct MempoolConfig {
-    /// Mempool limits
-    pub score_function: ScoreFunction,
-    pub max_transactions: usize,
-    pub max_declare_transactions: Option<usize>,
-    pub ttl: Duration,
     pub no_saving: bool,
 }
 
 impl MempoolConfig {
-    pub fn new(chain_config: &ChainConfig) -> Self {
-        Self {
-            score_function: ScoreFunction::Timestamp,
-            max_declare_transactions: Some(chain_config.mempool_declare_tx_limit),
-            max_transactions: chain_config.mempool_tx_limit,
-            ttl: chain_config.mempool_tx_max_age.unwrap_or(Duration::MAX),
-            no_saving: false,
-        }
-    }
-
-    #[cfg(any(test, feature = "testing"))]
-    pub fn for_testing() -> Self {
-        Self {
-            score_function: ScoreFunction::Timestamp, // FCFS
-            max_transactions: 10000,
-            max_declare_transactions: None,
-            ttl: Duration::from_secs(60 * 30),
-            no_saving: false,
-        }
-    }
-
     pub fn with_no_saving(mut self, no_saving: bool) -> Self {
         self.no_saving = no_saving;
         self
@@ -162,8 +133,8 @@ impl SubmitValidatedTransaction for Mempool {
 impl Mempool {
     pub fn new(backend: Arc<MadaraBackend>, config: MempoolConfig) -> Self {
         Mempool {
+            inner: MempoolInnerWithNotify::new(backend.chain_config()),
             backend,
-            inner: MempoolInnerWithNotify::new(config.clone()),
             metrics: MempoolMetrics::register(),
             tx_sender: tokio::sync::broadcast::channel(100).0,
             config,
@@ -403,7 +374,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn mempool_accept_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, tx_account: ValidatedMempoolTx) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, MempoolConfig::for_testing());
+        let mempool = Mempool::new(backend, MempoolConfig::default());
         let result = mempool.accept_tx(tx_account).await;
         assert_matches::assert_matches!(result, Ok(()));
 
@@ -417,7 +388,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn mempool_take_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, mut tx_account: ValidatedMempoolTx) {
         let backend = backend.await;
-        let mempool = Mempool::new(backend, MempoolConfig::for_testing());
+        let mempool = Mempool::new(backend, MempoolConfig::default());
         let timestamp = TxTimestamp::now();
         tx_account.arrived_at = timestamp;
         let result = mempool.accept_tx(tx_account).await;

@@ -122,7 +122,7 @@ mod test {
         let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: true };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
-            mc_mempool::MempoolConfig::for_testing(),
+            mc_mempool::MempoolConfig::default(),
         ));
         let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
             mempool,

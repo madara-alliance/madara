@@ -643,7 +643,7 @@ pub(crate) mod tests {
         });
         let l1_data_provider = Arc::new(l1_data_provider);
 
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing()));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,
             Arc::clone(&backend),

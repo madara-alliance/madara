@@ -1,4 +1,5 @@
-use crate::{InnerMempool, MempoolConfig};
+use crate::{tx::ScoreFunction, InnerMempool};
+use mp_chain_config::{ChainConfig, MempoolMode};
 use std::{
     ops::{Deref, DerefMut},
     sync::Arc,
@@ -39,13 +40,16 @@ pub(crate) struct MempoolInnerWithNotify {
     notify: Arc<Notify>,
 }
 impl MempoolInnerWithNotify {
-    pub fn new(config: MempoolConfig) -> Self {
+    pub fn new(config: &ChainConfig) -> Self {
         Self {
             inner: RwLock::new(InnerMempool::new(crate::InnerMempoolConfig {
-                score_function: config.score_function,
-                max_transactions: config.max_transactions,
-                max_declare_transactions: config.max_declare_transactions,
-                ttl: config.ttl,
+                score_function: match config.mempool_mode {
+                    MempoolMode::Timestamp => ScoreFunction::Timestamp,
+                    MempoolMode::Tip => ScoreFunction::Tip { min_tip_bump: config.mempool_min_tip_bump },
+                },
+                max_transactions: config.mempool_max_transactions,
+                max_declare_transactions: config.mempool_max_declare_transactions,
+                ttl: config.mempool_ttl,
             }))
             .into(),
             notify: Default::default(),
@@ -94,6 +98,7 @@ mod tests {
     use super::*;
     use crate::tests::tx_account;
     use futures::FutureExt;
+    use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
     use mp_transactions::validated::ValidatedMempoolTx;
     use starknet_api::core::Nonce;
@@ -106,7 +111,7 @@ mod tests {
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
-        let mempool = Arc::new(MempoolInnerWithNotify::new(MempoolConfig::for_testing()));
+        let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::madara_test()));
 
         let mut fut = Box::pin(mempool.get_write_access_wait_for_ready());
 
@@ -135,7 +140,7 @@ mod tests {
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
-        let mempool = Arc::new(MempoolInnerWithNotify::new(MempoolConfig::for_testing()));
+        let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::starknet_mainnet()));
 
         mempool
             .write()
@@ -167,7 +172,7 @@ mod tests {
     /// This is unused as of yet in madara, but the mempool supports having multiple waiters on the notify.
     /// Tests that the second consumer is not woken up if there are no more txs in the mempool.
     async fn test_mempool_notify_multiple_listeners_not_woken(tx_account: ValidatedMempoolTx) {
-        let mempool = Arc::new(MempoolInnerWithNotify::new(MempoolConfig::for_testing()));
+        let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::madara_test()));
 
         mempool
             .write()
