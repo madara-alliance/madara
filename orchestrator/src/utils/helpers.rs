@@ -12,7 +12,8 @@ use crate::error::job::JobError;
 use crate::types::jobs::job_item::JobItem;
 use crate::worker::service::JobService;
 
-/// wait_until_ready - Wait until the provided function returns a result or the timeout is reached
+/// Wait until the provided function returns a result or the timeout is reached
+///
 /// This function will repeatedly call the provided function until it returns a result or the timeout is reached
 /// It will return the result of the function or an error if the timeout is reached
 /// # Arguments
@@ -24,7 +25,7 @@ use crate::worker::service::JobService;
 /// ```
 /// use std::time::Duration;
 /// use orchestrator::utils::helpers::wait_until_ready;
-///     
+///
 /// async fn wait_for_ready() -> Result<(), Box<dyn std::error::Error>> {
 ///     let result = wait_until_ready(|| async { Ok(()) }, 10).await;
 ///     assert!(result.is_ok());
@@ -56,6 +57,7 @@ pub struct ProcessingLocks {
 }
 
 /// JobProcessingState is a struct that holds the state of the job processing lock
+///
 /// It is used to limit a job been get dupplicated in multiple place
 /// It uses a semaphore to limit been getting
 /// It also uses a mutex to hold the set of active jobs
