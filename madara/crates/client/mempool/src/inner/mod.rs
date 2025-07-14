@@ -737,6 +737,7 @@ impl MempoolInner {
         #[cfg(any(test, feature = "testing"))]
         self.nonce_cache_inner.insert(tx_mempool.contract_address(), tx_mempool.nonce_next);
         self.limiter.mark_removed(&TransactionCheckedLimits::limits_for(&tx_mempool));
+        self.tx_received.remove(&tx_mempool.tx_hash());
 
         Some(tx_mempool)
     }

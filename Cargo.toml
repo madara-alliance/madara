@@ -99,6 +99,7 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
+mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
 cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
