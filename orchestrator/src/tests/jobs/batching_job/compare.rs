@@ -34,8 +34,8 @@ pub enum ComparisonError {
     #[error("contract update with address {0} has different storage updates")]
     ContractUpdateStorageMismatch(BigUint),
 
-    #[error("missing class declaration with hash {0}")]
-    MissingClassDeclaration(BigUint),
+    #[error("missing class declaration")]
+    MissingClassDeclaration,
 }
 
 pub fn compare_data_json(a: &DataJson, b: &DataJson) -> Result<(), ComparisonError> {
@@ -124,12 +124,12 @@ pub fn compare_data_json(a: &DataJson, b: &DataJson) -> Result<(), ComparisonErr
     let b_class_set: HashSet<&ClassDeclaration> = b.class_declaration.iter().collect();
 
     // Find missing class declarations
-    for class_decl in a_class_set.difference(&b_class_set) {
-        return Err(ComparisonError::MissingClassDeclaration(class_decl.class_hash.clone()));
+    if a_class_set.difference(&b_class_set).count() > 0 {
+        return Err(ComparisonError::MissingClassDeclaration);
     }
 
-    for class_decl in b_class_set.difference(&a_class_set) {
-        return Err(ComparisonError::MissingClassDeclaration(class_decl.class_hash.clone()));
+    if b_class_set.difference(&a_class_set).count() > 0 {
+        return Err(ComparisonError::MissingClassDeclaration);
     }
 
     // If we reach here, the two DataJson objects are considered equal
