@@ -62,6 +62,7 @@ pub struct Mempool {
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
     config: MempoolConfig,
+    ttl: Option<Duration>,
     /// Temporary: this will move to the backend. Used for getting tx statuses.
     tx_sender: tokio::sync::broadcast::Sender<Felt>,
     /// Temporary: this will move to the backend. Used for getting tx statuses.
@@ -134,10 +135,11 @@ impl Mempool {
     pub fn new(backend: Arc<MadaraBackend>, config: MempoolConfig) -> Self {
         Mempool {
             inner: MempoolInnerWithNotify::new(backend.chain_config()),
+            ttl: backend.chain_config().mempool_ttl,
             backend,
+            config,
             metrics: MempoolMetrics::register(),
             tx_sender: tokio::sync::broadcast::channel(100).0,
-            config,
             received_txs: Default::default(),
         }
     }
@@ -267,6 +269,13 @@ impl Mempool {
 
     pub async fn run_mempool_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
+
+        if self.ttl.is_none() {
+            // no need to do anything more
+            ctx.cancelled().await;
+            return Ok(());
+        }
+
         let mut interval = tokio::time::interval(Duration::from_secs(5));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         loop {
