@@ -131,14 +131,14 @@ impl OrchestratorService {
 
         // Add port to environment variables
         // Since config is immutable, we need to rebuild it with the port env var
-        let mut env_vars = config.environment_vars().to_vec();
-        env_vars.push(("MADARA_ORCHESTRATOR_PORT".to_string(), port.to_string()));
+        // let mut env_vars = config.environment_vars().to_vec();
+        // env_vars.push(("MADARA_ORCHESTRATOR_PORT".to_string(), port.to_string()));
 
         config = OrchestratorConfigBuilder::new()
             .mode(config.mode().clone())
             .layer(config.layer().clone())
             .port(config.port())
-            .environment_vars(env_vars)
+            // .environment_vars(env_vars)
             .aws(config.aws())
             .aws_s3(config.aws_s3())
             .aws_sqs(config.aws_sqs())
@@ -226,16 +226,20 @@ impl OrchestratorService {
 
     /// Build command for run mode
     fn build_run_command(config: &OrchestratorConfig) -> Command {
-        let mut command = Command::new("cargo");
-        command
-            .arg("run")
-            .arg("--release")
-            .arg("-p")
-            .arg("orchestrator")
-            .arg("--features")
-            .arg("testing")
-            .arg("run")
-            .arg(&format!("--layer={}", config.layer()));
+        let mut command = Command::new(config.binary_path());
+
+        if *config.mode() == OrchestratorMode::Setup {
+            command.arg("setup");
+        } else {
+            command.arg("run");
+        }
+
+        if *config.layer() == Layer::L2 {
+            command.arg("--layer").arg("l2");
+        } else {
+            command.arg("--layer").arg("l3");
+        }
+
 
         // Add AWS flags
         if config.aws() {
@@ -283,6 +287,7 @@ impl OrchestratorService {
         }
 
 
+        println!("Orchestrator run command : {:?}", command);
         command
     }
 

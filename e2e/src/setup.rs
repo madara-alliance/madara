@@ -580,10 +580,10 @@ impl Setup {
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::new()
             .mode(OrchestratorMode::Run)
-            .add_env_var("AWS_ENDPOINT_URL", "http://localhost.localstack.cloud:4566")
-            .add_env_var("AWS_REGION", "us-east-1")
-            .add_env_var("AWS_PREFIX", "local")
-            .add_env_var("RUST_LOG", "info")
+            // .add_env_var("AWS_ENDPOINT_URL", "http://localhost.localstack.cloud:4566")
+            // .add_env_var("AWS_REGION", "us-east-1")
+            // .add_env_var("AWS_PREFIX", "local")
+            //  .add_env_var("RUST_LOG", "info")
             .build();
 
         let _ = OrchestratorService::start(orchestrator_setup_config).await?;

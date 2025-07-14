@@ -46,7 +46,6 @@ pub enum OrchestratorError {
 // Builder type that allows configuration
 #[derive(Debug, Clone)]
 pub struct OrchestratorConfigBuilder {
-
     binary_path: PathBuf,
 
     mode: OrchestratorMode,
@@ -119,7 +118,7 @@ impl Default for OrchestratorConfigBuilder {
             da_on_starknet: false,
             sharp: false,
             mongodb: true,
-            atlantic: false,
+            atlantic: true,
         }
     }
 }
