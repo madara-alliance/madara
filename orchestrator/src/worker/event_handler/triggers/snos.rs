@@ -1,5 +1,7 @@
 use crate::core::config::Config;
-use crate::types::constant::{CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use crate::types::constant::{
+    CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
+};
 use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
@@ -12,6 +14,7 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
+use tracing::debug;
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -346,6 +349,7 @@ impl SnosJobTrigger {
     /// - Sequencer unavailability
     async fn fetch_latest_sequencer_block(&self, config: &Arc<Config>) -> Result<u64> {
         let provider = config.madara_client();
+        debug!("Fetching latest sequencer block");
         provider.block_number().await.wrap_err("Failed to fetch latest block number from sequencer")
     }
 
@@ -480,7 +484,7 @@ impl SnosJobTrigger {
 async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64>) -> Result<()> {
     // Create jobs for all identified blocks
     for block_num in block_numbers_to_pocesss {
-        let metadata = create_job_metadata(block_num);
+        let metadata = create_job_metadata(block_num, config.snos_config().snos_full_output);
 
         match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
             Ok(_) => tracing::info!("Successfully created new Snos job: {}", block_num),
@@ -497,16 +501,18 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
     Ok(())
 }
 
-// Helper function to create job metadata
-fn create_job_metadata(block_num: u64) -> JobMetadata {
+// create_job_metadata is a helper function to create job metadata for a given block number and layer
+// set full_output to true if layer is L3, false otherwise
+fn create_job_metadata(block_number: u64, full_output: bool) -> JobMetadata {
     JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number: block_num,
-            full_output: false,
-            cairo_pie_path: Some(format!("{}/{}", block_num, CAIRO_PIE_FILE_NAME)),
-            snos_output_path: Some(format!("{}/{}", block_num, SNOS_OUTPUT_FILE_NAME)),
-            program_output_path: Some(format!("{}/{}", block_num, PROGRAM_OUTPUT_FILE_NAME)),
+            block_number,
+            full_output,
+            cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
+            on_chain_data_path: Some(format!("{}/{}", block_number, ON_CHAIN_DATA_FILE_NAME)),
+            snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
+            program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
             ..Default::default()
         }),
     }

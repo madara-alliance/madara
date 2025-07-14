@@ -1,7 +1,7 @@
-use crate::cli::Layer;
 use crate::core::client::queue::sqs::InnerSQS;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::queue::QueueType;
+use crate::types::Layer;
 use crate::{
     core::cloud::CloudProvider, core::traits::resource::Resource, setup::queue::QUEUES, types::params::QueueArgs,
     OrchestratorError, OrchestratorResult,
