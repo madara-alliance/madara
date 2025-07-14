@@ -73,6 +73,7 @@ RUN apt-get -y update && \
     apt-get install -y openssl ca-certificates tini curl jq && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* && \
+
     echo "deb http://security.debian.org/debian-security bullseye-security main" > /etc/apt/sources.list.d/bullseye-security.list && \
     apt-get update && \
     apt-get install -y libssl1.1 && \
