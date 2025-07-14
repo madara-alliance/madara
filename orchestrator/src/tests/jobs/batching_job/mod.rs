@@ -5,7 +5,7 @@ use crate::compression::stateless::decompress;
 use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
-use crate::tests::utils::read_blob_from_file;
+use crate::tests::utils::read_file_to_string;
 use crate::types::batch::{ClassDeclaration, ContractUpdate, DataJson, StorageUpdate};
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -68,7 +68,7 @@ async fn get_blobs_from_s3_paths(s3_paths: Vec<&str>, storage: &dyn StorageClien
 fn get_blobs_from_files(file_paths: Vec<&str>) -> Result<Vec<String>> {
     let mut blob: Vec<String> = Vec::new();
     for path in file_paths {
-        blob.push(read_blob_from_file(path)?);
+        blob.push(read_file_to_string(path)?);
     }
     Ok(blob)
 }

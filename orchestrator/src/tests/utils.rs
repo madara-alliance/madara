@@ -3,6 +3,8 @@ use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
 
+use crate::tests::config::{ConfigType, MockType, TestConfigBuilder, TestConfigBuilderReturns};
+use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -16,10 +18,13 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use color_eyre::Result;
 use num_bigint::BigUint;
 use num_traits::Zero;
+use starknet_core::types::StateUpdate;
 use std::fs::File;
 use std::hash::Hash;
 use std::io::Read;
 use tracing::error;
+use tracing::log::warn;
+use url::Url;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
     let metadata = match job_type {
@@ -96,18 +101,37 @@ pub fn build_batch(
     }
 }
 
-pub fn read_blob_from_file(file_path: &str) -> Result<String> {
+#[fixture]
+pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderReturns> {
+    let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
+        Ok(url) => url.parse()?,
+        Err(_) => {
+            return Err(color_eyre::eyre::eyre!("{} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV));
+        }
+    };
+
+    Ok(TestConfigBuilder::new().configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url))).build().await)
+}
+
+pub fn read_state_updates_vec_from_file(file_path: &str) -> Result<Vec<StateUpdate>> {
+    Ok(serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update vector file: {}", e))?)
+}
+
+pub fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {
+    Ok(serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update file: {}", e))?)
+}
+
+pub fn read_file_to_string(file_path: &str) -> Result<String> {
+    let mut string = String::new();
     let mut file = File::open(file_path)?;
-    let mut blob = String::new();
-    file.read_to_string(&mut blob)?;
-    Ok(blob)
+    file.read_to_string(&mut string)?;
+    Ok(string)
 }
 
 pub fn read_data_json_from_file(file_path: &str) -> Result<DataJson> {
-    let mut file = File::open(file_path)?;
-    let mut data_json_str = String::new();
-    file.read_to_string(&mut data_json_str)?;
-    Ok(parse_json_to_data_json(&data_json_str)?)
+    Ok(parse_json_to_data_json(&read_file_to_string(file_path)?)?)
 }
 
 pub fn parse_json_to_data_json(json_str: &str) -> Result<DataJson> {
