@@ -60,6 +60,8 @@ impl fmt::Display for BlockTimestamp {
 pub struct PendingHeader {
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
+    /// The number of this block's parent
+    pub parent_block_number: Option<u64>,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
     /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.

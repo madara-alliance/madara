@@ -93,8 +93,7 @@ pub fn get_storage_proof(
         .or_internal_server_error("Resolving block number")?
         .ok_or(StarknetRpcApiError::NoBlocks)?;
 
-    let Some(latest) = starknet.backend.get_latest_block_n().or_internal_server_error("Getting latest block in db")?
-    else {
+    let Some(latest) = starknet.backend.get_block_n_latest() else {
         return Err(StarknetRpcApiError::BlockNotFound.into());
     };
 
@@ -211,7 +210,7 @@ mod tests {
     use std::collections::HashMap;
 
     use bitvec::{bits, vec::BitVec, view::AsBits};
-    use mc_db::tests::common::finalized_block_one;
+    use mc_db::tests::common::block;
     use mp_state_update::StateDiff;
     use starknet_types_core::hash::Pedersen;
 
@@ -283,6 +282,7 @@ mod tests {
     /// multiple contract storage MPTs to ensure that it provides proofs for each.
     async fn test_contract_storage_trie_proof(
         #[case] storage_items: Vec<ContractStorageTestInput>,
+        #[with(1)] block: mp_block::MadaraMaybePendingBlock,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
     ) -> Result<(), String> {
         let (_backend, starknet) = rpc_test_setup;
@@ -319,8 +319,7 @@ mod tests {
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let pending_block = finalized_block_one();
-        starknet.backend.store_block(pending_block, StateDiff::default(), vec![]).unwrap();
+        starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
 
         // convert contract_storage_keys to vec of ContractStorageKeyItems now that we have all keys
         let contract_storage_keys_items = contract_storage_keys
@@ -406,6 +405,7 @@ mod tests {
     /// class trie root.
     async fn test_class_trie_proof(
         #[case] class_items: Vec<(Felt, Felt)>,
+        #[with(1)] block: mp_block::MadaraMaybePendingBlock,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
     ) -> Result<(), String> {
         use starknet_types_core::hash::Poseidon;
@@ -426,7 +426,6 @@ mod tests {
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let block = finalized_block_one();
         starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
 
         let storage_proof_result =
@@ -463,6 +462,7 @@ mod tests {
     /// contract trie root.
     async fn test_contract_trie_proof(
         #[case] contract_items: Vec<(Felt, Felt)>,
+        #[with(1)] block: mp_block::MadaraMaybePendingBlock,
         rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet),
     ) -> Result<(), String> {
         let (_backend, starknet) = rpc_test_setup;
@@ -483,7 +483,6 @@ mod tests {
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let block = finalized_block_one();
         starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
 
         let storage_proof_result =

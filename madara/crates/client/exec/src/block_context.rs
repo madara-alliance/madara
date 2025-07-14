@@ -51,24 +51,25 @@ impl MadaraBackendExecutionExt for MadaraBackend {
     }
 
     fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error> {
-        let pending_block = self.latest_pending_block();
-        let block_n = self.get_latest_block_n()?.map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        let transport = self.pending_latest();
+        let block_n = self.get_block_n_latest().map(|n| n + 1).unwrap_or(/* genesis */ 0);
         Ok(StatefulValidator::create(
             CachedState::new(BlockifierStateAdapter::new(Arc::clone(self), block_n, Some(DbBlockId::Pending))),
             BlockContext::new(
                 BlockInfo {
                     block_number: BlockNumber(block_n),
-                    block_timestamp: BlockTimestamp(pending_block.header.block_timestamp.0),
-                    sequencer_address: pending_block
+                    block_timestamp: BlockTimestamp(transport.block.header.block_timestamp.0),
+                    sequencer_address: transport
+                        .block
                         .header
                         .sequencer_address
                         .try_into()
-                        .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
-                    gas_prices: (&pending_block.header.l1_gas_price).into(),
-                    use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
+                        .map_err(|_| Error::InvalidSequencerAddress(transport.block.header.sequencer_address))?,
+                    gas_prices: (&transport.block.header.l1_gas_price).into(),
+                    use_kzg_da: transport.block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
                 },
                 self.chain_config().blockifier_chain_info(),
-                self.chain_config().exec_constants_by_protocol_version(pending_block.header.protocol_version)?,
+                self.chain_config().exec_constants_by_protocol_version(transport.block.header.protocol_version)?,
                 self.chain_config().bouncer_config.clone(),
             ),
         ))
@@ -121,7 +122,7 @@ impl ExecutionContext {
     ) -> Result<Self, Error> {
         let (latest_visible_block, header_block_id) = match block_info {
             MadaraMaybePendingBlockInfo::Pending(_block) => {
-                let latest_block_n = backend.get_latest_block_n()?;
+                let latest_block_n = backend.get_block_n_latest();
                 (
                     latest_block_n.map(DbBlockId::Number),
                     // when the block is pending, we use the latest block n + 1 to make the block header
@@ -150,7 +151,7 @@ impl ExecutionContext {
     ) -> Result<Self, Error> {
         let (latest_visible_block, header_block_id) = match block_info {
             MadaraMaybePendingBlockInfo::Pending(_block) => {
-                let latest_block_n = backend.get_latest_block_n()?;
+                let latest_block_n = backend.get_block_n_latest();
                 (Some(DbBlockId::Pending), latest_block_n.map(|el| el + 1).unwrap_or(0))
             }
             MadaraMaybePendingBlockInfo::NotPending(block) => {

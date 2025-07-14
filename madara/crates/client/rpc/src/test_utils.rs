@@ -353,6 +353,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
+                            parent_block_number: Some(2),
                             protocol_version: StarknetVersion::V0_13_2,
                             l1_da_mode: L1DataAvailabilityMode::Blob,
                             ..Default::default()
@@ -614,6 +615,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
                         header: PendingHeader {
                             parent_block_hash: block_hashes[2],
+                            parent_block_number: Some(2),
                             protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()
                         },

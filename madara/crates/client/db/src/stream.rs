@@ -125,7 +125,7 @@ impl MadaraBackend {
                     for _ in 0..BUFFER_SIZE {
                         // End condition when moving forward is the latest full block in db.
                         if self.iteration.direction == Direction::Forward
-                            && self.backend.head_status().next_full_block() <= next_block_n
+                            && self.backend.get_block_n_next() <= next_block_n
                         {
                             break;
                         }
@@ -239,7 +239,7 @@ impl MadaraBackend {
                 let latest_plus_one = match self.latest_plus_one {
                     Some(n) => n,
                     None => {
-                        self.backend.get_latest_block_n()?.map(|n| n.saturating_add(1)).unwrap_or(/* genesis */ 0)
+                        self.backend.get_block_n_latest().map(|n| n.saturating_add(1)).unwrap_or(/* genesis */ 0)
                     }
                 };
                 self.latest_plus_one = Some(latest_plus_one);

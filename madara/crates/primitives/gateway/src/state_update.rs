@@ -209,7 +209,7 @@ pub struct ProviderStateUpdateWithBlockPending {
 }
 
 impl ProviderStateUpdateWithBlockPending {
-    pub fn into_full_block(self) -> Result<PendingFullBlock, FromGatewayError> {
-        self.block.into_full_block(self.state_update.state_diff.into())
+    pub fn into_full_block(self, parent_block_number: Option<u64>) -> Result<PendingFullBlock, FromGatewayError> {
+        self.block.into_full_block(self.state_update.state_diff.into(), parent_block_number)
     }
 }

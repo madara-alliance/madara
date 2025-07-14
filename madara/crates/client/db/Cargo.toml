@@ -40,14 +40,18 @@ starknet_api = { workspace = true }
 anyhow.workspace = true
 bincode = { workspace = true }
 bitvec = { workspace = true }
-futures = { workspace = true }
 librocksdb-sys = { workspace = true }
-rayon = { workspace = true }
 rocksdb.workspace = true
+rstest = { workspace = true, optional = true }
 serde = { workspace = true }
 siphasher.workspace = true
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
+indexmap = { workspace = true }
+
+# Async
+futures = { workspace = true }
+rayon = { workspace = true }
 tokio = { workspace = true, features = [
   "macros",
   "parking_lot",
@@ -75,7 +79,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 [dev-dependencies]
 proptest = { workspace = true }
 serde_json = { workspace = true }
-tempfile = "3.10"
+tempfile = { workspace = true }
 lazy_static = { workspace = true }
 mp-transactions = { workspace = true }
 rstest = { workspace = true }
@@ -83,4 +87,4 @@ rand = { workspace = true }
 
 [features]
 default = []
-testing = ["tempfile", "starknet_api/testing"]
+testing = ["tempfile", "rstest", "starknet_api/testing"]

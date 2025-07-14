@@ -82,7 +82,11 @@ mod tests {
             .store_block(
                 MadaraMaybePendingBlock {
                     info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
-                        header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
+                        header: PendingHeader {
+                            parent_block_hash: Felt::ZERO,
+                            parent_block_number: Some(1),
+                            ..Default::default()
+                        },
                         tx_hashes: vec![],
                     }),
                     inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },

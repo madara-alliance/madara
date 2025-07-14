@@ -11,6 +11,7 @@ use mp_block::{
     BlockId, MadaraBlock, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlock, MadaraPendingBlockInfo,
 };
+use mp_rpc::BlockTag;
 use mp_state_update::StateDiff;
 use rocksdb::{Direction, IteratorMode};
 use starknet_api::core::ChainId;
@@ -74,7 +75,7 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+        if self.get_block_n_latest().is_none_or(|n| n < block_n) {
             return Ok(None);
         }
         Ok(Some(block_n))
@@ -87,7 +88,7 @@ impl MadaraBackend {
         let Some(res) = res else { return Ok(None) };
         let block_n = bincode::deserialize(&res)?;
         // If the block_n is partial (past the latest_full_block_n), we not return it.
-        if self.head_status.latest_full_block_n().is_none_or(|n| n < block_n) {
+        if self.get_block_n_latest().is_none_or(|n| n < block_n) {
             return Ok(None);
         }
         Ok(Some(block_n))
@@ -120,11 +121,6 @@ impl MadaraBackend {
         Ok(Some(block))
     }
 
-    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
-    pub fn get_latest_block_n(&self) -> Result<Option<u64>> {
-        Ok(self.head_status().latest_full_block_n())
-    }
-
     // Pending block quirk: We should act as if there is always a pending block in db, to match
     //  juno and pathfinder's handling of pending blocks.
 
@@ -133,11 +129,12 @@ impl MadaraBackend {
         let Some(res) = self.db.get_cf(&col, ROW_PENDING_INFO)? else {
             // See pending block quirk
 
-            let Some(latest_block_id) = self.get_latest_block_n()? else {
+            let Some(latest_block_id) = self.get_block_n_latest_db()? else {
                 // Second quirk: if there is not even a genesis block in db, make up the gas prices and everything else
                 return Ok(MadaraPendingBlockInfo {
                     header: PendingHeader {
                         parent_block_hash: Felt::ZERO,
+                        parent_block_number: None,
                         // Sequencer address is ZERO for chains where we don't produce blocks. This means that trying to simulate/trace a transaction on Pending when
                         // genesis has not been loaded yet will return an error. That probably fine because the ERC20 fee contracts are not even deployed yet - it
                         // will error somewhere else anyway.
@@ -162,6 +159,7 @@ impl MadaraBackend {
             return Ok(MadaraPendingBlockInfo {
                 header: PendingHeader {
                     parent_block_hash: latest_block_info.block_hash,
+                    parent_block_number: Some(latest_block_info.header.block_number),
                     sequencer_address: latest_block_info.header.sequencer_address,
                     block_timestamp: latest_block_info.header.block_timestamp,
                     protocol_version: latest_block_info.header.protocol_version,
@@ -319,7 +317,7 @@ impl MadaraBackend {
     fn storage_to_info(&self, id: &RawDbBlockId) -> Result<Option<MadaraMaybePendingBlockInfo>> {
         match id {
             RawDbBlockId::Pending => {
-                Ok(Some(MadaraMaybePendingBlockInfo::Pending(Arc::unwrap_or_clone(self.latest_pending_block()))))
+                Ok(Some(MadaraMaybePendingBlockInfo::Pending(Arc::unwrap_or_clone(self.pending_latest()).block.info())))
             }
             RawDbBlockId::Number(block_n) => {
                 Ok(self.get_block_info_from_block_n(*block_n)?.map(MadaraMaybePendingBlockInfo::NotPending))
@@ -343,6 +341,49 @@ impl MadaraBackend {
             RawDbBlockId::Number(block_id) => Ok(Some(*block_id)),
             RawDbBlockId::Pending => Ok(None),
         }
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_n_latest(&self) -> Option<u64> {
+        self.watch_blocks.pending_latest().block.header.parent_block_number
+    }
+
+    /// This is necessary since other block_n methods will rely on the pending cache in ram to
+    /// retrieve the latest block number. Since we need the latest block_n to initialize the pending
+    /// cache, we use this to retrieve the block_n when the ram state has not yet been initialized.
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_n_latest_db(&self) -> Result<Option<u64>> {
+        let col = self.db.get_column(Column::BlockNToBlockInfo);
+        let iter_mode = IteratorMode::End;
+        let mut iter = self.db.iterator_cf(&col, iter_mode);
+
+        iter.next()
+            .map(|kvs| {
+                kvs.map_err(MadaraStorageError::from).map(|(key, _)| {
+                    let mut bytes = [0u8; 8];
+                    bytes.copy_from_slice(&key);
+                    u64::from_be_bytes(bytes)
+                })
+            })
+            .transpose()
+    }
+
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn get_block_n_next(&self) -> u64 {
+        self.watch_blocks.pending_latest().block.header.parent_block_number.map(|n| n.saturating_add(1)).unwrap_or(0)
+    }
+
+    /// This method is not atomic in respects to the rest of the block production and should only be
+    /// used in cases where you are sure this will not conflict with updates to the pending block!!!
+    #[tracing::instrument(skip(self), fields(module = "BlockDB"))]
+    pub fn set_block_n_unsafe(&self, n: Option<u64>) {
+        self.watch_blocks.pending_clear(
+            n.map(|block_number| MadaraBlockInfo {
+                header: mp_block::Header { block_number, ..Default::default() },
+                ..Default::default()
+            })
+            .as_ref(),
+        )
     }
 
     #[tracing::instrument(skip(self, id), fields(module = "BlockDB"))]
@@ -403,9 +444,12 @@ impl MadaraBackend {
                 Ok(Some((info.into(), TxIndex(tx_index as _))))
             }
             None => {
-                let info = Arc::unwrap_or_clone(self.latest_pending_block());
-                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
-                Ok(Some((info.into(), TxIndex(tx_index as _))))
+                let block = Arc::unwrap_or_clone(self.pending_latest()).block;
+                let Some(tx_index) = block.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash)
+                else {
+                    return Ok(None);
+                };
+                Ok(Some((block.info().into(), TxIndex(tx_index as _))))
             }
         }
     }
@@ -421,10 +465,13 @@ impl MadaraBackend {
                 Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
             }
             None => {
-                let info = Arc::unwrap_or_clone(self.latest_pending_block());
-                let Some(tx_index) = info.tx_hashes.iter().position(|a| a == tx_hash) else { return Ok(None) };
+                let block = Arc::unwrap_or_clone(self.pending_latest()).block;
+                let Some(tx_index) = block.transactions.iter().position(|tx| &tx.receipt.transaction_hash() == tx_hash)
+                else {
+                    return Ok(None);
+                };
                 let inner = self.get_pending_block_inner()?;
-                Ok(Some((MadaraMaybePendingBlock { info: info.into(), inner }, TxIndex(tx_index as _))))
+                Ok(Some((MadaraMaybePendingBlock { info: block.info().into(), inner }, TxIndex(tx_index as _))))
             }
         }
     }

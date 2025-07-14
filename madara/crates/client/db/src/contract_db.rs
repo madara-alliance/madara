@@ -20,6 +20,13 @@ pub(crate) struct ContractDbBlockUpdate {
     contract_kv_updates: Vec<((Felt, Felt), Felt)>,
 }
 
+#[derive(Clone, Debug, Default)]
+pub struct ContractDbBlockUpdatePending {
+    contract_class_updates: indexmap::IndexMap<Felt, Felt>,
+    contract_nonces_updates: indexmap::IndexMap<Felt, Felt>,
+    contract_kv_updates: indexmap::IndexMap<(Felt, Felt), Felt>,
+}
+
 impl ContractDbBlockUpdate {
     pub fn from_state_diff(state_diff: StateDiff) -> Self {
         let nonces_from_updates =
@@ -48,6 +55,36 @@ impl ContractDbBlockUpdate {
                 storage_entries.into_iter().map(move |StorageEntry { key, value }| ((address, key), value))
             })
             .collect::<Vec<_>>();
+
+        Self { contract_class_updates, contract_nonces_updates, contract_kv_updates }
+    }
+}
+
+impl ContractDbBlockUpdatePending {
+    pub fn from_state_diff(state_diff: StateDiff) -> Self {
+        let nonces_from_updates =
+            state_diff.nonces.into_iter().map(|NonceUpdate { contract_address, nonce }| (contract_address, nonce));
+
+        let contract_class_updates_replaced = state_diff
+            .replaced_classes
+            .into_iter()
+            .map(|ReplacedClassItem { contract_address, class_hash }| (contract_address, class_hash));
+
+        let contract_class_updates_deployed = state_diff
+            .deployed_contracts
+            .into_iter()
+            .map(|DeployedContractItem { address, class_hash }| (address, class_hash));
+
+        let contract_class_updates = contract_class_updates_replaced.chain(contract_class_updates_deployed).collect();
+        let contract_nonces_updates = nonces_from_updates.collect();
+
+        let contract_kv_updates = state_diff
+            .storage_diffs
+            .into_iter()
+            .flat_map(|ContractStorageDiffItem { address, storage_entries }| {
+                storage_entries.into_iter().map(move |StorageEntry { key, value }| ((address, key), value))
+            })
+            .collect();
 
         Self { contract_class_updates, contract_nonces_updates, contract_kv_updates }
     }
@@ -90,7 +127,7 @@ impl MadaraBackend {
                     return Ok(Some(bincode::deserialize(&res)?)); // found in pending
                 }
 
-                let Some(block_n) = self.get_latest_block_n()? else { return Ok(None) };
+                let Some(block_n) = self.get_block_n_latest() else { return Ok(None) };
                 block_n
             }
             RawDbBlockId::Number(block_n) => block_n,
@@ -253,40 +290,42 @@ impl MadaraBackend {
 
     /// NB: This functions needs to run on the rayon thread pool
     #[tracing::instrument(skip(self, value), fields(module = "ContractDB"))]
-    pub(crate) fn contract_db_store_pending(&self, value: ContractDbBlockUpdate) -> Result<(), MadaraStorageError> {
-        // Note: pending has keys in bincode, not bytes
-
-        fn write_chunk(
-            db: &DB,
-            writeopts: &WriteOptions,
-            col: &Arc<BoundColumnFamily>,
-            chunk: impl IntoIterator<Item = (impl Serialize, Felt)>,
-        ) -> Result<(), MadaraStorageError> {
-            let mut batch = WriteBatchWithTransaction::default();
-            for (key, value) in chunk {
-                // TODO: find a way to avoid this allocation
-                batch.put_cf(col, bincode::serialize(&key)?, bincode::serialize(&value)?);
-            }
-            db.write_opt(batch, writeopts)?;
-            Ok(())
-        }
-
-        value.contract_class_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(Column::PendingContractToClassHashes),
-            |col, chunk| write_chunk(&self.db, &self.writeopts_no_wal, col, chunk.iter().map(|(k, v)| (k, *v))),
-        )?;
-        value.contract_nonces_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(Column::PendingContractToNonces),
-            |col, chunk| write_chunk(&self.db, &self.writeopts_no_wal, col, chunk.iter().map(|(k, v)| (k, *v))),
-        )?;
-        value.contract_kv_updates.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
-            || self.db.get_column(Column::PendingContractStorage),
-            |col, chunk| {
-                write_chunk(&self.db, &self.writeopts_no_wal, col, chunk.iter().map(|((k1, k2), v)| ((k1, k2), *v)))
+    pub(crate) fn contract_db_store_pending(
+        &self,
+        value: ContractDbBlockUpdatePending,
+    ) -> Result<ContractDbBlockUpdatePending, MadaraStorageError> {
+        // NOTE: pending has keys in bincode, not bytes
+        let col = self.db.get_column(Column::PendingContractToClassHashes);
+        let batch = value.contract_class_updates.iter().try_fold(
+            WriteBatchWithTransaction::default(),
+            |mut batch, (key, value)| {
+                batch.put_cf(&col, bincode::serialize(key)?, bincode::serialize(value)?);
+                Result::<_, MadaraStorageError>::Ok(batch)
             },
         )?;
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
-        Ok(())
+        let col = self.db.get_column(Column::PendingContractToNonces);
+        let batch = value.contract_nonces_updates.iter().try_fold(
+            WriteBatchWithTransaction::default(),
+            |mut batch, (key, value)| {
+                batch.put_cf(&col, bincode::serialize(key)?, bincode::serialize(value)?);
+                Result::<_, MadaraStorageError>::Ok(batch)
+            },
+        )?;
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        let col = self.db.get_column(Column::PendingContractStorage);
+        let batch = value.contract_kv_updates.iter().try_fold(
+            WriteBatchWithTransaction::default(),
+            |mut batch, (key, value)| {
+                batch.put_cf(&col, bincode::serialize(key)?, bincode::serialize(value)?);
+                Result::<_, MadaraStorageError>::Ok(batch)
+            },
+        )?;
+        self.db.write_opt(batch, &self.writeopts_no_wal)?;
+
+        Ok(value)
     }
 
     #[tracing::instrument(fields(module = "ContractDB"))]

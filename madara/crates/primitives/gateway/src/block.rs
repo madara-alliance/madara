@@ -271,9 +271,10 @@ impl ProviderBlockPending {
         }
     }
 
-    pub fn header(&self) -> Result<PendingHeader, FromGatewayError> {
+    pub fn header(&self, parent_block_number: Option<u64>) -> Result<PendingHeader, FromGatewayError> {
         Ok(PendingHeader {
             parent_block_hash: self.parent_block_hash,
+            parent_block_number,
             sequencer_address: self.sequencer_address,
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
             protocol_version: protocol_version_pending(self.starknet_version.as_deref())?,
@@ -287,8 +288,12 @@ impl ProviderBlockPending {
         })
     }
 
-    pub fn into_full_block(self, state_diff: StateDiff) -> Result<PendingFullBlock, FromGatewayError> {
-        let header = self.header()?;
+    pub fn into_full_block(
+        self,
+        state_diff: StateDiff,
+        parent_block_number: Option<u64>,
+    ) -> Result<PendingFullBlock, FromGatewayError> {
+        let header = self.header(parent_block_number)?;
         let TransactionsReceiptsAndEvents { transactions, events } =
             convert_txs(self.transactions, self.transaction_receipts);
         Ok(PendingFullBlock { header, transactions, events, state_diff })
