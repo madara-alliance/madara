@@ -110,12 +110,12 @@ impl ValueMapping {
             return Ok(key.clone());
         }
         let mut attempts = 0;
-        let mut error = String::from("Dummy Error");
+        let mut error = None;
         while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
-            match provider.get_storage_at(MAPPING_START, key, BlockId::Number(pre_range_block)).await {
+            match provider.get_storage_at(SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await {
                 Ok(value) => return Ok(value),
                 Err(e) => {
-                    error = e.to_string();
+                    error = Some(e.to_string());
                     attempts += 1;
                     continue;
                 }
@@ -123,7 +123,10 @@ impl ValueMapping {
         }
         let err_message = format!(
             "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-            SPECIAL_ADDRESS, key, pre_range_block, error
+            SPECIAL_ADDRESS,
+            key,
+            pre_range_block,
+            error.unwrap_or_else(|| "Unknown error".to_string())
         );
         error!("{}", &err_message);
         Err(ProviderError::StarknetError(StarknetError::UnexpectedError(err_message)))
