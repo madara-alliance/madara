@@ -3,6 +3,7 @@ use crate::cli::SetupCmd;
 use crate::{cli::RunCmd, types::params::cloud_provider::AWSCredentials};
 use aws_config::SdkConfig;
 use futures::executor::block_on;
+use tracing::{debug, info};
 
 /// Cloud provider
 /// This enum represents the different cloud providers that the Orchestrator can interact with.
@@ -59,11 +60,13 @@ impl TryFrom<RunCmd> for CloudProvider {
 
     fn try_from(cmd: RunCmd) -> Result<Self, Self::Error> {
         if cmd.aws_config_args.aws {
+            debug!("Initializing AWS configuration from run command");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
             let config = block_on(aws_cred.get_aws_config());
+            info!("Successfully created AWS configuration");
             Ok(CloudProvider::AWS(Box::new(config)))
         } else {
-            Err(OrchestratorCoreError::InvalidProvider("AWS".to_string()))
+            Err(OrchestratorCoreError::InvalidProvider("AWS provider is not enabled".to_string()))
         }
     }
 }
@@ -85,11 +88,13 @@ impl TryFrom<SetupCmd> for CloudProvider {
 
     fn try_from(cmd: SetupCmd) -> Result<Self, Self::Error> {
         if cmd.aws_config_args.aws {
+            debug!("Initializing AWS configuration from setup command");
             let aws_cred = AWSCredentials::from(cmd.aws_config_args.clone());
             let config = block_on(aws_cred.get_aws_config());
+            info!("Successfully created AWS configuration");
             Ok(CloudProvider::AWS(Box::new(config)))
         } else {
-            Err(OrchestratorCoreError::InvalidProvider("AWS".to_string()))
+            Err(OrchestratorCoreError::InvalidProvider("AWS provider is not enabled".to_string()))
         }
     }
 }
@@ -99,7 +104,9 @@ impl TryFrom<AWSCredentials> for CloudProvider {
     type Error = OrchestratorCoreError;
 
     fn try_from(aws_cred: AWSCredentials) -> Result<Self, Self::Error> {
+        debug!("Initializing AWS configuration from credentials");
         let config = block_on(aws_cred.get_aws_config());
+        info!("Successfully created AWS configuration");
         Ok(CloudProvider::AWS(Box::new(config)))
     }
 }

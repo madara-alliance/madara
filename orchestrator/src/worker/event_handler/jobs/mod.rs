@@ -1,4 +1,5 @@
 pub mod da;
+pub mod proof_registration;
 pub mod proving;
 pub mod snos;
 pub mod state_update;

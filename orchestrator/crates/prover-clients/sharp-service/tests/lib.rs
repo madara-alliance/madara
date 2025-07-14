@@ -2,7 +2,6 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
-// ProverClient
 use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_prover_client_interface::{Task, TaskStatus};
 use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
@@ -30,10 +29,11 @@ async fn prover_client_submit_task_works() {
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     };
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params, &LayoutName::dynamic);
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).unwrap();
 
@@ -49,7 +49,7 @@ async fn prover_client_submit_task_works() {
     });
 
     let cairo_pie = Box::new(cairo_pie);
-    assert!(sharp_service.submit_task(Task::CairoPie(cairo_pie), None).await.is_ok());
+    assert!(sharp_service.submit_task(Task::CairoPie(cairo_pie), LayoutName::all_cairo, None).await.is_ok());
 
     sharp_add_job_call.assert();
 }
@@ -76,10 +76,11 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     };
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params, &LayoutName::dynamic);
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
     let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
 
     let sharp_add_job_call = server.mock(|when, then| {
