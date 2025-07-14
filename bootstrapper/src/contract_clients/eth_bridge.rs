@@ -13,8 +13,6 @@ use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 use starknet_proxy_client::interfaces::proxy::ProxySupport3_0_2Trait;
 use std::sync::Arc;
-use std::time::Duration;
-use tokio::time::sleep;
 use zaun_utils::{LocalWalletSignerMiddleware, StarknetContractClient};
 
 use crate::contract_clients::utils::{field_element_to_u256, RpcAccount};
@@ -62,15 +60,20 @@ impl StarknetLegacyEthBridge {
 
     pub async fn deploy_l2_contracts(
         rpc_provider_l2: &JsonRpcClient<HttpTransport>,
-        legacy_eth_bridge_class_hash: Felt,
+        _legacy_eth_bridge_class_hash: Felt,
         legacy_eth_bridge_proxy_address: Felt,
         account: &RpcAccount<'_>,
     ) -> Felt {
+        // This is a workaournd for the madara bug where it incorrectly calculates cairo 0 class hash
+        // Check function `get_real_class_hash_for_any_block` in `madara/crates/primitives/class/src/class_hash.rs` more details
+        // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support where one cant declare cairo 0 classes
+        let legacy_eth_bridge_class_hash_correct =
+            Felt::from_hex("0x78389bb177405c8f4f45e7397e15f2a86f94a1fe911a5efff9d481de596b364").unwrap();
         let deploy_tx = account
             .invoke_contract(
                 account.address(),
                 "deploy_contract",
-                vec![legacy_eth_bridge_class_hash, Felt::ZERO, Felt::ZERO, Felt::ZERO],
+                vec![legacy_eth_bridge_class_hash_correct, Felt::ZERO, Felt::ZERO, Felt::ZERO],
                 None,
             )
             .send()
@@ -205,16 +208,12 @@ impl StarknetLegacyEthBridge {
         is_dev: bool,
     ) {
         self.eth_bridge.set_max_total_balance(U256::from_dec_str(max_total_balance).unwrap()).await.unwrap();
-        sleep(Duration::from_secs(20)).await;
         self.eth_bridge.set_max_deposit(U256::from_dec_str(max_deposit).unwrap()).await.unwrap();
-        sleep(Duration::from_secs(20)).await;
         self.eth_bridge.set_l2_token_bridge(field_element_to_u256(l2_bridge)).await.unwrap();
-        sleep(Duration::from_secs(20)).await;
 
         if !is_dev {
             // Nominating a new governor as l1 multi sig address
             self.eth_bridge.proxy_nominate_new_governor(l1_multisig_address).await.unwrap();
-            sleep(Duration::from_secs(20)).await;
         }
     }
 
@@ -223,20 +222,9 @@ impl StarknetLegacyEthBridge {
         rpc_provider: &JsonRpcClient<HttpTransport>,
         l2_bridge_address: Felt,
         erc20_address: Felt,
-        l2_deployer_address: &str,
+        _l2_deployer_address: &str,
         account: &RpcAccount<'_>,
     ) {
-        let tx = invoke_contract(
-            l2_bridge_address,
-            "initialize",
-            vec![Felt::from_dec_str("1").unwrap(), Felt::from_hex(l2_deployer_address).unwrap()],
-            account,
-        )
-        .await;
-
-        log::info!("🎡 setup_l2_bridge : l2 bridge initialized //");
-        wait_for_transaction(rpc_provider, tx.transaction_hash, "setup_l2_bridge : initialize").await.unwrap();
-
         let tx = invoke_contract(l2_bridge_address, "set_l2_token", vec![erc20_address], account).await;
 
         log::info!("🎡 setup_l2_bridge : l2 token set //");

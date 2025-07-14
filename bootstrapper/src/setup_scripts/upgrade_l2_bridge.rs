@@ -1,13 +1,10 @@
-use std::time::Duration;
-
 use starknet::accounts::{Account, ConnectedAccount};
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 use starknet_types_core::felt::Felt;
-use tokio::time::sleep;
 
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
-use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
+use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, wait_at_least_block, AccountActions};
 use crate::utils::constants::{
     EIC_ETH_BRIDGE_CASM_PATH, EIC_ETH_BRIDGE_SIERRA_PATH, NEW_ETH_BRIDGE_CASM_PATH, NEW_ETH_BRIDGE_SIERRA_PATH,
 };
@@ -30,6 +27,15 @@ use crate::utils::wait_for_transaction;
 ///    - Upgrades to new implementation
 ///    - Registers governance and upgrade administrators
 ///    - Adds and replaces implementation class hash
+/// 4. SNOS currently has a bug where if you upgrade a cairo 0 class to cairo 1, and interact with it in the same block,
+///    the snos running for that block fails.
+///    The workaround currently is that upgrade of cairo 0 happens in a separate block.
+/// 5. For this sleeps are are added to ensure that the upgrade happens in a separate block.
+///    This sleep delay time has to be greater than ideally the block time of the network while running the boostrapper.
+///    The default block time is 10 seconds, so delays are added for 11 seconds.
+/// 6. After boostrapper run is complete block can be updated not affect any generality.
+///    This is a temporary fix and will be removed after boostrapper-v2 for starknet: v0.14.0
+///    where cairo 0 classes cannot be declared
 pub async fn upgrade_eth_bridge_to_cairo_1(
     account: &RpcAccount<'_>,
     rpc_provider_l2: &JsonRpcClient<HttpTransport>,
@@ -42,7 +48,6 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
         account.clone(),
     ))
     .await;
-    sleep(Duration::from_secs(15)).await;
     log::debug!("ETH Bridge EIC declared ✅, Class hash : {:?}", eth_bridge_eic_class_hash);
 
     let new_eth_bridge_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
@@ -51,7 +56,6 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
         account.clone(),
     ))
     .await;
-    sleep(Duration::from_secs(15)).await;
     log::debug!("New ETH Bridge declared ✅, Class hash : {:?}", new_eth_bridge_class_hash);
 
     let bridge_eic_deploy_tx = account
@@ -68,7 +72,6 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     let eth_bridge_eic_contract_address =
         get_contract_address_from_deploy_tx(account.provider(), &bridge_eic_deploy_tx).await.unwrap();
     log::debug!("✅ eth bridge eic contract address : {:?}", eth_bridge_eic_contract_address);
-    sleep(Duration::from_secs(15)).await;
 
     let new_bridge_eth_deploy_tx = account
         .invoke_contract(
@@ -84,7 +87,6 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     let new_eth_bridge_contract_address =
         get_contract_address_from_deploy_tx(account.provider(), &new_bridge_eth_deploy_tx).await.unwrap();
     log::debug!("✅ new eth bridge contract address : {:?}", new_eth_bridge_contract_address);
-    sleep(Duration::from_secs(15)).await;
 
     let eth_bridge_add_implementation_txn = account
         .invoke_contract(
@@ -106,6 +108,11 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_add_implementation_txn.transaction_hash, "Interact ETH bridge")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
+
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : add_implementation : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_add_implementation_txn.transaction_hash
@@ -131,6 +138,10 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_upgrade_to_txn.transaction_hash, "Interact ETH bridge")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : upgrade_to : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_upgrade_to_txn.transaction_hash
@@ -183,6 +194,10 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_add_new_implementation_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : add_new_implementation : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_add_new_implementation_txn.transaction_hash
@@ -201,6 +216,10 @@ pub async fn upgrade_eth_bridge_to_cairo_1(
     wait_for_transaction(rpc_provider_l2, eth_bridge_replace_to_txn.transaction_hash, "Interact ETH token")
         .await
         .unwrap();
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support
+    // where cairo 0 classes cannot be declared
+    // Refer the description in `upgrade_eth_bridge_to_cairo_1` for more details
+    wait_at_least_block(rpc_provider_l2, Some(1)).await;
     log::debug!(
         "upgrade_eth_bridge_to_cairo_1 : replace_to : eth bridge ✅, Txn hash : {:?}",
         eth_bridge_replace_to_txn.transaction_hash

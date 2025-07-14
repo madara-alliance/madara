@@ -1,9 +1,6 @@
-use std::time::Duration;
-
 use serde::Serialize;
 use starknet::accounts::ConnectedAccount;
 use starknet::core::types::Felt;
-use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
@@ -41,7 +38,6 @@ impl<'a> BraavosSetup<'a> {
         .await;
         log::info!("📣 Braavos Account class hash declared.");
         save_to_json("braavos_class_hash", &JsonValueType::StringType(braavos_class_hash.to_string())).unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let braavos_base_account_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
             String::from(BRAAVOS_BASE_ACCOUNT_SIERRA_PATH),
@@ -55,7 +51,6 @@ impl<'a> BraavosSetup<'a> {
             &JsonValueType::StringType(braavos_base_account_class_hash.to_string()),
         )
         .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let braavos_aggregator_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(BRAAVOS_AGGREGATOR_PATH),
@@ -69,7 +64,6 @@ impl<'a> BraavosSetup<'a> {
             &JsonValueType::StringType(braavos_aggregator_class_hash.to_string()),
         )
         .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let deploy_tx = self
             .account
