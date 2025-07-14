@@ -44,13 +44,13 @@ impl MempoolTransaction {
     ) -> Result<MempoolTransaction, TxInsertionError> {
         let _: ContractAddress =
             inner.contract_address.try_into().map_err(|_| TxInsertionError::InvalidContractAddress)?;
-        Ok(Self { score: score_function.get_score(&inner).ok_or(TxInsertionError::NoTip)?, inner })
+        Ok(Self { score: score_function.get_score(&inner).unwrap_or_default(), inner })
     }
     pub fn into_inner(self) -> ValidatedMempoolTx {
         self.inner
     }
-    pub fn info(&self) -> TxInfo {
-        TxInfo {
+    pub fn info(&self) -> TxSummary {
+        TxSummary {
             nonce: self.nonce(),
             contract_address: self.contract_address(),
             score: self.score(),
@@ -97,7 +97,7 @@ pub enum ScoreFunction {
 }
 
 /// Opaque score, defined by the score function. When comparing transactions, the higher score will always have priority.
-#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy)]
+#[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Default)]
 pub struct Score(pub u128);
 
 impl ScoreFunction {
@@ -141,7 +141,7 @@ pub struct AccountKey(pub ContractAddress);
 
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq))]
-pub struct TxInfo {
+pub struct TxSummary {
     pub nonce: Nonce,
     pub contract_address: ContractAddress,
     pub score: Score,
@@ -150,7 +150,7 @@ pub struct TxInfo {
     pub is_declare: bool,
 }
 
-impl TxInfo {
+impl TxSummary {
     pub fn account_key(&self) -> AccountKey {
         AccountKey(self.contract_address)
     }

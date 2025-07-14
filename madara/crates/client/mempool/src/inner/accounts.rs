@@ -3,7 +3,7 @@ use crate::{
         tx::{AccountKey, EvictionScore, MempoolTransaction, TxKey},
         TxInsertionError,
     },
-    tx::{Score, TxInfo},
+    tx::{Score, TxSummary},
 };
 use starknet_api::core::{ContractAddress, Nonce};
 use std::{
@@ -44,7 +44,7 @@ pub struct AccountUpdate {
     // SmallVec: this will only use the heap when there is more than 1 mempool tx here.
     pub removed_txs: smallvec::SmallVec<[MempoolTransaction; 1]>,
     /// Added transaction.
-    pub added_tx: Option<TxInfo>,
+    pub added_tx: Option<TxSummary>,
 
     /// Updated account data.
     pub account_data: AccountUpdateData,

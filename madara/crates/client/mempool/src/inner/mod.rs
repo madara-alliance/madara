@@ -61,7 +61,7 @@ pub struct InnerMempoolConfig {
 // - A ready queue, sorted by score (tip/timestamp), is needed for picking transactions for block building.
 // - A timestamp queue is needed for removing transactions that have exceeded their TTL (time-to-live).
 // - A mapping from transaction hash to transaction is required for getting the status of a transaction by hash.
-// - When inserting a transaction in a full mempool, we need to evict less desirable transaction to make space.
+// - When inserting a transaction in a full mempool, we need to evict less desirable transactions to make space.
 // - etc.
 //
 // This results in a lot of invariants to consider, as a single piece of data (status of an account or transaction) is deduplicated
@@ -81,7 +81,7 @@ pub struct InnerMempoolConfig {
 //   `AccountUpdate` struct.
 // By keeping this `AccountUpdate` generic, every invariant is local to its datastructure and this simplifies their handling.
 
-/// The in-memory datastructure containing all of the mempool transactions. Mutations to this datastructure is synchronous, via &mut referemces to ensure
+/// The in-memory datastructure containing all of the mempool transactions. Mutations to this datastructure are synchronous, via &mut references to ensure
 /// atomicity.
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq, Clone))]
@@ -100,7 +100,7 @@ pub struct InnerMempool {
     timestamp_queue: TimestampQueue,
     /// Index TxHash => TxKey.
     by_tx_hash: ByTxHashIndex,
-    /// Queue of all acounts sorted by eviction score of the the last queued tx of each account.
+    /// Queue of all acounts sorted by eviction score of the last queued tx of each account.
     eviction_queue: EvictionQueue,
 }
 
@@ -161,10 +161,10 @@ impl InnerMempool {
     /// ## Arguments
     ///
     /// * `now`: current time.
-    /// * `account_nonce`: the current nonce for the contract_address. Caller is responsible to get it from the backend. If the account already exists
-    ///   within the mempool, this argument will be ignored.
-    /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping if necessary (remove from
-    ///   db, send update notifications...)
+    /// * `account_nonce`: the current nonce for the contract_address. Caller is responsible for getting it from the backend.
+    ///   If the account already exists within the mempool, this argument will be ignored.
+    /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping
+    ///   if necessary (remove from db, send update notifications...)
     ///
     /// ## Returns
     ///
@@ -252,15 +252,15 @@ impl InnerMempool {
         true // we made room! :)
     }
 
-    /// Update an account nonce. This gets rid of all obselete transactions, and needs to be called everytime new state (statediff NonceUpdate)
-    /// should be applied.
+    /// Update an account nonce. This gets rid of all obselete transactions, and needs to be called everytime
+    /// new state (statediff NonceUpdate) should be applied.
     ///
     /// ## Arguments
     ///
     /// * `contract_address`: the contract address
     /// * `account_nonce`: the new account nonce
-    /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping if necessary (remove from
-    ///   db, send update notifications...)
+    /// * `removed_txs`: if any transaction is removed from the mempool during insertion.
+    ///   This helps the caller do bookkeeping if necessary (remove from db, send update notifications...)
     pub fn update_account_nonce(
         &mut self,
         contract_address: &ContractAddress,
@@ -272,7 +272,8 @@ impl InnerMempool {
     }
 
     /// Pop the next ready transaction for block building, or `None` if the mempool has no ready transaction.
-    /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until a `update_account_nonce` is issued.
+    /// This does not increment the nonce of the account, meaning the next transactions for the accounts will not be ready until an
+    /// `update_account_nonce` is issued.
     pub fn pop_next_ready(&mut self) -> Option<ValidatedMempoolTx> {
         // Get the next ready account,
         let account_key = self.ready_queue.get_next_ready()?;
@@ -300,8 +301,8 @@ impl InnerMempool {
     /// ## Arguments
     ///
     /// * `now`: current time.
-    /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps the caller do bookkeeping if necessary (remove from
-    ///   db, send update notifications...)
+    /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps
+    ///   the caller do bookkeeping if necessary (remove from db, send update notifications...)
     pub fn remove_all_ttl_exceeded_txs(&mut self, now: TxTimestamp, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
         let Some(ttl) = self.config.ttl else { return };
         let limit_ts = now.checked_sub(ttl).unwrap_or(TxTimestamp::UNIX_EPOCH);
