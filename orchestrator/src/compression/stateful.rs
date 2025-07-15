@@ -1,4 +1,5 @@
 use crate::compression::utils::sort_state_diff;
+use crate::utils::helpers::retry_async;
 use color_eyre::{eyre, Result};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
@@ -10,7 +11,7 @@ use starknet::providers::{JsonRpcClient, Provider, ProviderError};
 use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
-use tracing::log::error;
+use std::time::Duration;
 
 const SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
 const MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
@@ -151,27 +152,19 @@ impl ValueMapping {
         if Self::skip(*key) {
             return Ok(*key);
         }
-        let mut attempts = 0;
-        let mut error = None;
-        while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
-            match provider.get_storage_at(SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await {
-                Ok(value) => return Ok(value),
-                Err(e) => {
-                    error = Some(e.to_string());
-                    attempts += 1;
-                    continue;
-                }
-            }
-        }
-        let err_message = format!(
-            "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-            SPECIAL_ADDRESS,
-            key,
-            pre_range_block,
-            error.unwrap_or_else(|| "Unknown error".to_string())
-        );
-        error!("{}", &err_message);
-        Err(ProviderError::StarknetError(StarknetError::UnexpectedError(err_message)))
+
+        retry_async(
+            async || provider.get_storage_at(SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await,
+            MAX_GET_STORAGE_AT_CALL_RETRY,
+            Some(Duration::from_secs(5)),
+        )
+        .await
+        .map_err(|err| {
+            ProviderError::StarknetError(StarknetError::UnexpectedError(format!(
+                "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
+                SPECIAL_ADDRESS, key, pre_range_block, err
+            )))
+        })
     }
 
     fn get_value(&self, value: &Felt) -> Result<Felt> {

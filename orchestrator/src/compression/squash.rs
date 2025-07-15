@@ -1,6 +1,7 @@
 use crate::compression::utils::sort_state_diff;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::utils::helpers::retry_async;
 use color_eyre::eyre::eyre;
 use futures::stream;
 use futures::stream::StreamExt;
@@ -12,11 +13,13 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::log::error;
 
 const MAX_CONCURRENT_CONTRACTS_PROCESSING: usize = 40;
 const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 100;
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
+const MAX_GET_CLASS_HASH_AT_CALL_RETRY: u64 = 3;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 pub async fn squash(
@@ -334,70 +337,54 @@ pub async fn check_contract_existed_at_block(
 /// This function returns the class hash of a contract at a given block number
 /// If it exists, it returns the class hash along with `exists=true`
 /// If it doesn't exist, it returns the zero-class hash along with `exists=false`
-/// It retries up to `MAX_GET_STORAGE_AT_CALL_RETRY` times
+/// It retries up to [MAX_GET_STORAGE_AT_CALL_RETRY] times
 /// This function does not return error when the contract does not exist
 pub async fn get_class_hash_at(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     block_number: u64,
     contract_address: Felt,
 ) -> Result<Option<Felt>, JobError> {
-    const MAX_RETRY_ATTEMPTS: u64 = 3;
-    let mut attempts = 0;
-    let mut error: Option<String> = None;
-
-    while attempts < MAX_RETRY_ATTEMPTS {
-        match provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await {
-            Ok(class_hash) => return Ok(Some(class_hash)),
-            Err(e) => {
-                if let ProviderError::StarknetError(StarknetError::ContractNotFound) = e {
-                    return Ok(None);
-                }
-                error = Some(e.to_string());
-                attempts += 1;
-                continue;
+    match retry_async(
+        async || provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await,
+        MAX_GET_CLASS_HASH_AT_CALL_RETRY,
+        Some(Duration::from_secs(5)),
+    )
+    .await
+    {
+        Ok(class_hash) => Ok(Some(class_hash)),
+        Err(err) => {
+            if let ProviderError::StarknetError(StarknetError::ContractNotFound) = err {
+                Ok(None)
+            } else {
+                let err_message = format!(
+                    "Failed to get class hash for contract: {} at block {}: {}",
+                    contract_address, block_number, err
+                );
+                error!("{}", &err_message);
+                Err(JobError::ProviderError(err_message))
             }
         }
     }
-
-    let err_message = format!(
-        "Failed to get class hash for contract: {} at block {}: {}",
-        contract_address,
-        block_number,
-        error.unwrap_or_else(|| "Unknown error".to_string())
-    );
-    error!("{}", &err_message);
-    Err(JobError::ProviderError(err_message))
 }
 
 /// This function returns the storage value of a key at a given block number
-/// It retries up to `MAX_GET_STORAGE_AT_CALL_RETRY` times
+/// It retries up to [MAX_GET_STORAGE_AT_CALL_RETRY] times
 pub async fn check_pre_range_storage_value(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     contract_address: Felt,
     key: Felt,
     pre_range_block: u64,
 ) -> Result<Felt, JobError> {
-    let mut attempts = 0;
-    let mut error: Option<String> = None;
-
-    while attempts < MAX_GET_STORAGE_AT_CALL_RETRY {
-        match provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await {
-            Ok(value) => return Ok(value),
-            Err(e) => {
-                error = Some(e.to_string());
-                attempts += 1;
-                continue;
-            }
-        }
-    }
-
-    let err_message = format!(
-        "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-        contract_address,
-        key,
-        pre_range_block,
-        error.unwrap_or_else(|| "Unknown error".to_string())
-    );
-    error!("{}", &err_message);
-    Err(JobError::ProviderError(err_message))
+    retry_async(
+        async || provider.get_storage_at(contract_address, key, BlockId::Number(pre_range_block)).await,
+        MAX_GET_STORAGE_AT_CALL_RETRY,
+        Some(Duration::from_secs(5)),
+    )
+    .await
+    .map_err(|err| {
+        JobError::ProviderError(format!(
+            "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
+            contract_address, key, pre_range_block, err
+        ))
+    })
 }
