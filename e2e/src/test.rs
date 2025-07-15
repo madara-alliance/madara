@@ -25,7 +25,7 @@ async fn e2e_test_setup() {
 
     let x = setup_struct.setup().await;
 
-    sleep(Duration::from_secs(500)).await;
+    sleep(Duration::from_secs(1000)).await;
 
     println!("Setup completed successfully!");
 

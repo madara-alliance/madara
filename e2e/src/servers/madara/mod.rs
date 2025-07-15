@@ -10,9 +10,8 @@ pub use config::*;
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
 use std::path::PathBuf;
-use std::process::ExitStatus;
-use std::time::Duration;
-use serde_json::json;
+
+use super::server::NodeRpcMethods;
 
 pub struct MadaraService {
     server: Server,
@@ -127,12 +126,12 @@ impl MadaraService {
         self.server.is_running()
     }
 
-    /// Stop the Madara service
+    // Stop the Madara service
     // pub async fn stop(&mut self) -> Result<(), MadaraError> {
     //     self.server.stop().await.map_err(MadaraError::Server)
     // }
 
-    /// Restart the Madara service (useful after bootstrapper setup)
+    // Restart the Madara service (useful after bootstrapper setup)
     // pub async fn restart(&mut self) -> Result<(), MadaraError> {
     //     println!("🔄 Restarting Madara service...");
 
@@ -196,62 +195,11 @@ impl MadaraService {
     //     Ok(size)
     // }
 
-
-    // TODO:  Might we want to implement a RPC trait ?
-    // So that both madara and pathfinder can implement same things ?
+}
 
 
-    pub async fn get_latest_block_number(&self) -> Result<u64, MadaraError> {
-        let url = self.endpoint();
-        println!("Calling madara at {:?}", url.to_string());
-
-        let client = reqwest::Client::new();
-        let response = client.post(url)
-            .header("accept", "application/json")
-            .header("content-type", "application/json")
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "starknet_blockHashAndNumber",
-                "params": []
-            }))
-            .send()
-            .await
-            .map_err(|_| MadaraError::InvalidResponse)?;
-
-        println!("Calling madara response {:?}", response);
-
-        let json = response.json::<serde_json::Value>().await
-            .map_err(|_| MadaraError::InvalidResponse)?;
-
-        println!("Calling madara response #2 {:?}", json);
-
-        // Check if there's an error in the JSON-RPC response
-        if let Some(error) = json.get("error") {
-            println!("RPC Error: {:?}", error);
-            return Err(MadaraError::InvalidResponse);
-        }
-
-        // Extract block_number from the result object
-        let result = json.get("result").ok_or(MadaraError::InvalidResponse)?;
-        let block_number = result.get("block_number").ok_or(MadaraError::InvalidResponse)?;
-
-
-        // Handle both string and number representations of block_number
-        let block_num = match block_number {
-            serde_json::Value::Number(n) => n.as_u64().ok_or(MadaraError::InvalidResponse)?,
-            serde_json::Value::String(s) => {
-                // Handle hex string (common in blockchain APIs)
-                if s.starts_with("0x") {
-                    u64::from_str_radix(&s[2..], 16).map_err(|_| MadaraError::InvalidResponse)?
-                } else {
-                    s.parse::<u64>().map_err(|_| MadaraError::InvalidResponse)?
-                }
-            }
-            _ => return Err(MadaraError::InvalidResponse),
-        };
-
-        Ok(block_num)
+impl NodeRpcMethods for MadaraService {
+    fn get_endpoint(&self) -> Url {
+        self.endpoint().clone()
     }
-
 }

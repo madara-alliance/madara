@@ -4,7 +4,7 @@
 
 pub mod config;
 
-use serde_json::json;
+use crate::servers::server::NodeRpcMethods;
 // Re-export common utilities
 pub use config::*;
 
@@ -43,9 +43,6 @@ impl PathfinderService {
         if DockerServer::is_port_in_use(config.port()) {
             return Err(PathfinderError::PortInUse(config.port()));
         }
-        if DockerServer::is_port_in_use(config.monitor_port()) {
-            return Err(PathfinderError::PortInUse(config.monitor_port()));
-        }
 
         // Clean up any existing stopped container with the same name
         if DockerServer::does_container_exist(config.container_name())? {
@@ -53,7 +50,7 @@ impl PathfinderService {
         }
 
         // Build the docker command
-        let command = Self::build_docker_command(&config);
+        let command = config.to_command();
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
@@ -78,55 +75,6 @@ impl PathfinderService {
             return Err(PathfinderError::MissingConfig("ethereum_url must contain a valid API key".to_string()));
         }
         Ok(())
-    }
-
-    /// Build the Docker command for Pathfinder
-    fn build_docker_command(config: &PathfinderConfig) -> Command {
-        let mut command = Command::new("docker");
-        command.arg("run");
-        command.arg("--rm"); // Remove container when it stops
-        command.arg("--name").arg(config.container_name());
-
-        // Port mappings
-        command.arg("-p").arg(format!("{}:{}", config.port(), config.port()));
-        command.arg("-p").arg(format!("{}:{}", config.monitor_port(), config.monitor_port()));
-
-        // Add data volume if specified
-        if let Some(volume) = config.data_volume() {
-            command.arg("-v").arg(format!("{}:{}", volume, config.data_directory()));
-        }
-
-        // Add custom environment variables
-        for (key, value) in config.environment_vars() {
-            command.arg("-e").arg(format!("{}={}", key, value));
-        }
-
-        // Add the image
-        command.arg(config.image());
-
-        // Add pathfinder binary command and arguments
-        command.arg("--ethereum.url").arg(config.ethereum_url());
-        // command.arg("--data-directory").arg(config.data_directory());
-        command.arg("--http-rpc").arg(format!("0.0.0.0:{}", config.port()));
-        command.arg("--rpc.root-version").arg(config.rpc_root_version());
-        command.arg("--monitor-address").arg(format!("0.0.0.0:{}", config.monitor_port()));
-        command.arg("--network").arg(config.network());
-        command.arg("--chain-id").arg(config.chain_id());
-
-        if let Some(gateway_url) = config.gateway_url() {
-            // command.arg("--add-host");
-            command.arg("--gateway-url").arg(gateway_url);
-        }
-
-        if let Some(feeder_gateway_url) = config.feeder_gateway_url() {
-            // command.arg("--add-host");
-            command.arg("--feeder-gateway-url").arg(feeder_gateway_url);
-        }
-
-        command.arg("--storage.state-tries").arg(config.storage_state_tries());
-        command.arg("--gateway.request-timeout").arg(config.gateway_request_timeout().to_string());
-
-        command
     }
 
     /// Get the dependencies required by Pathfinder
@@ -171,20 +119,12 @@ impl PathfinderService {
         Url::parse(&format!("http://{}:{}", self.server.host(), self.server.port())).unwrap()
     }
 
-    /// Get the monitor endpoint URL
-    pub fn monitor_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.server.host(), self.config.monitor_port())).unwrap()
-    }
 
     /// Get the endpoint URL for the Pathfinder service (alias for rpc_endpoint)
     pub fn endpoint(&self) -> Url {
         self.rpc_endpoint()
     }
 
-    /// Get the monitor port number
-    pub fn monitor_port(&self) -> u16 {
-        self.config.monitor_port()
-    }
 
     /// Get the network name
     pub fn network(&self) -> &str {
@@ -214,67 +154,11 @@ impl PathfinderService {
     // TODO: dump and load from db fns!
     // TODO: volume attachment !
 
+}
 
 
-    // TODO:  Might we want to implement a RPC trait ?
-    // So that both madara and pathfinder can implement same things ?
-
-
-    pub async fn get_latest_block_number(&self) -> Result<u64, PathfinderError> {
-        let url = self.endpoint();
-        println!("Calling madara at {:?}", url.to_string());
-
-        let client = reqwest::Client::new();
-        let response = client.post(url)
-            .header("accept", "application/json")
-            .header("content-type", "application/json")
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "starknet_blockHashAndNumber",
-                "params": []
-            }))
-            .send()
-            .await
-            .map_err(|_| PathfinderError::InvalidResponse)?;
-
-        println!("Calling madara response {:?}", response);
-
-        let json = response.json::<serde_json::Value>().await
-            .map_err(|_| PathfinderError::InvalidResponse)?;
-
-        println!("Calling madara response #2 {:?}", json);
-
-        // Check if there's an error in the JSON-RPC response
-        if let Some(error) = json.get("error") {
-            println!("RPC Error: {:?}", error);
-            return Err(PathfinderError::InvalidResponse);
-        }
-
-        // Extract block_number from the result object
-        let result = json.get("result").ok_or(PathfinderError::InvalidResponse)?;
-        let block_number = result.get("block_number").ok_or(PathfinderError::InvalidResponse)?;
-
-
-        // Handle both string and number representations of block_number
-        let block_num = match block_number {
-            serde_json::Value::Number(n) => n.as_u64().ok_or(PathfinderError::InvalidResponse)?,
-            serde_json::Value::String(s) => {
-                // Handle hex string (common in blockchain APIs)
-                if s.starts_with("0x") {
-                    u64::from_str_radix(&s[2..], 16).map_err(|_| PathfinderError::InvalidResponse)?
-                } else {
-                    s.parse::<u64>().map_err(|_| PathfinderError::InvalidResponse)?
-                }
-            }
-            _ => return Err(PathfinderError::InvalidResponse),
-        };
-
-        println!("Block number PATHDINDER {:?}", block_num);
-
-        Ok(block_num)
+impl NodeRpcMethods for PathfinderService {
+    fn get_endpoint(&self) -> Url {
+        self.endpoint().clone()
     }
-
-
-
 }

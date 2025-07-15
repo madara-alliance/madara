@@ -10,7 +10,6 @@ pub use config::*;
 use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
-use tokio::process::Command;
 
 pub struct MongoService {
     server: Server,
@@ -46,7 +45,7 @@ impl MongoService {
         }
 
         // Build the docker command
-        let command = Self::build_docker_command(&config);
+        let command = config.to_command();
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
@@ -65,29 +64,6 @@ impl MongoService {
         Ok(Self { server, config })
     }
 
-    /// Build the Docker command for MongoDB
-    fn build_docker_command(config: &MongoConfig) -> Command {
-        let mut command = Command::new("docker");
-        command.arg("run");
-        command.arg("--rm"); // Remove container when it stops
-        command.arg("--name").arg(config.container_name());
-        command.arg("-p").arg(format!("{}:27017", config.port()));
-        command.arg(config.image());
-
-        command
-    }
-
-    /// Validate if MongoDB is ready and responsive
-    pub async fn validate_connection(&self) -> Result<bool, MongoError> {
-        // Basic validation - try to connect to MongoDB
-        // In a real implementation, you might want to use the MongoDB driver
-        // For now, we'll just check if the port is responding
-        let addr = format!("{}:{}", self.server.host(), self.server.port());
-        match tokio::net::TcpStream::connect(&addr).await {
-            Ok(_) => Ok(true),
-            Err(e) => Err(MongoError::ConnectionFailed(e.to_string())),
-        }
-    }
 
     /// Get the endpoint URL for the MongoDB service
     pub fn endpoint(&self) -> Url {

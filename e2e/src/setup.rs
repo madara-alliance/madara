@@ -4,6 +4,9 @@ use std::u64::MAX;
 use tokio::task::JoinSet;
 use tokio::time::{sleep, timeout};
 
+use crate::servers::server::NodeRpcMethods as _;
+
+
 use::std::path::Path;
 // Import all the services we've created
 use crate::servers::anvil::{AnvilConfigBuilder, AnvilConfig, AnvilError, AnvilService};
@@ -366,40 +369,40 @@ impl Setup {
     /// Starts afresh chain
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
 
-        // Start infrastructure services
-        timeout(Duration::from_secs(360), async {
-            self.start_infrastructure_services().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        // // Start infrastructure services
+        // timeout(Duration::from_secs(360), async {
+        //     self.start_infrastructure_services().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
 
         // Setup infrastructure services
-        timeout(Duration::from_secs(360), async {
-            self.setup_infrastructure_services().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        // timeout(Duration::from_secs(360), async {
+        //     self.setup_infrastructure_services().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
 
-        // Setup L1 Chain
-        timeout(Duration::from_secs(70), async {
-            self.start_l1_setup().await?;
-            // self.wait_for_services_ready().await?;
-            // self.run_setup_validation().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+        // // Setup L1 Chain
+        // timeout(Duration::from_secs(70), async {
+        //     self.start_l1_setup().await?;
+        //     // self.wait_for_services_ready().await?;
+        //     // self.run_setup_validation().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
 
-        // Setup L2 Chain
-        timeout(Duration::from_secs(1800), async {
-            self.start_l2_setup().await?;
-            Ok::<(), SetupError>(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+        // // Setup L2 Chain
+        // timeout(Duration::from_secs(1800), async {
+        //     self.start_l2_setup().await?;
+        //     Ok::<(), SetupError>(())
+        // })
+        // .await
+        // .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
 
         // Start Full Node Syncing
         timeout(Duration::from_secs(300), async {
@@ -410,9 +413,9 @@ impl Setup {
         .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
 
 
-        // Start Pathfinder Service, wait for it to complete sync
+        // // Start Pathfinder Service, wait for it to complete sync
         // timeout(Duration::from_secs(300), async {
-        //     println!("Starting pathfinder service #2");
+        //     println!("Starting orchestator service #2");
 
         //     self.start_orchestration().await?;
         //     Ok::<(), SetupError>(())
@@ -491,7 +494,7 @@ impl Setup {
         // TODO: Should be validating that dependencies are met (Anvil is running)
         // And is bootstrapped
         // TODO: Should be taking l1 endpoint from anvil!
-        let madara_config = MadaraConfigBuilder::new().with_rpc_port(madara_port).build();
+        let madara_config = MadaraConfigBuilder::new().rpc_port(madara_port).build();
 
         // Start Madara
         let start_madara = async move {
@@ -538,7 +541,8 @@ impl Setup {
         // Need to check when pathfinder has been synced till the provided block number
         // Then only orchestrator should start!
 
-        let mut sync_ready_at_block : u64 = u64::MAX;
+        // let mut sync_ready_at_block : u64 = u64::MAX;
+        let mut sync_ready_at_block : u64 = 70;
 
         if let Some(madara) = &self.madara {
             sync_ready_at_block = madara.get_latest_block_number().await?;
@@ -661,17 +665,20 @@ impl Setup {
         Ok(())
     }
 
+    // Ideally I need to restart madara before I start orchestration
+    // Madara -> from 10 sec to 6 hrs block time
+    // Anvil  -> from  1 sec to 6 hrs block time
+    // This is so that orchestrator can eventually catch up with madara
 
     async fn start_orchestration(&mut self) -> Result<(), SetupError> {
         // Start Orchestrator Service, wait for it to complete sync
         println!("Statting Orchestrator ");
 
-        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
-            .mode(OrchestratorMode::Run)
-            // .add_env_var("AWS_ENDPOINT_URL", "http://localhost.localstack.cloud:4566")
-            // .add_env_var("AWS_REGION", "us-east-1")
-            // .add_env_var("AWS_PREFIX", "local")
-            //  .add_env_var("RUST_LOG", "info")
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::run_l2()
+            .port(3000)
+            .host("127.0.0.1".to_string())
+            .env_var("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS", "70")
             .build();
 
         let _ = OrchestratorService::start(orchestrator_setup_config).await?;

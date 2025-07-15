@@ -5,6 +5,11 @@ use tokio::process::Command;
 
 pub const DEFAULT_ORCHESTRATOR_BINARY: &str = "../target/release/orchestrator";
 
+
+// TODO: options are currently limited to per-usages bases
+
+// TODO: might want to re-use these from orchestrator only and not re-write it here!
+// Will have to make orchestrator a dependency of e2e then, unsure, ask
 #[derive(Display, Debug, Clone, PartialEq, Eq)]
 #[strum(serialize_all = "lowercase")]
 pub enum OrchestratorMode {
@@ -112,45 +117,6 @@ impl OrchestratorConfig {
     /// Create a builder for OrchestratorConfig
     pub fn builder() -> OrchestratorConfigBuilder {
         OrchestratorConfigBuilder::new()
-    }
-
-    // Convenience factory methods for common configurations
-    pub fn run_l2(port : u16, host: String) -> Self {
-        Self::builder()
-            .layer(Layer::L2)
-            .mode(OrchestratorMode::Run)
-            .port(port)
-            .host(host)
-            .atlantic(true)
-            .event_bridge_type(AWSEventBridgeType::Rule)
-            .settle_on_ethereum(true)
-            .da_on_ethereum(true)
-            .build()
-    }
-
-    pub fn setup_l2() -> Self {
-        Self::builder()
-            .layer(Layer::L2)
-            .mode(OrchestratorMode::Setup)
-            .build()
-    }
-
-    pub fn run_l3() -> Self {
-        Self::builder()
-            .layer(Layer::L3)
-            .mode(OrchestratorMode::Run)
-            .atlantic(true)
-            .event_bridge_type(AWSEventBridgeType::Rule)
-            .settle_on_starknet(true)
-            .da_on_starknet(true)
-            .build()
-    }
-
-    pub fn setup_l3() -> Self {
-        Self::builder()
-            .layer(Layer::L3)
-            .mode(OrchestratorMode::Setup)
-            .build()
     }
 
     // Getter methods (immutable access)
@@ -314,7 +280,6 @@ impl OrchestratorConfig {
 
         command
     }
-
 }
 
 /// Builder for OrchestratorConfig
@@ -334,6 +299,39 @@ impl OrchestratorConfigBuilder {
     /// Build the final configuration
     pub fn build(self) -> OrchestratorConfig {
         self.config
+    }
+
+    // Convenience factory methods for common configurations - now return builder for chaining
+    pub fn run_l2() -> Self {
+        Self::new()
+            .layer(Layer::L2)
+            .mode(OrchestratorMode::Run)
+            .atlantic(true)
+            .event_bridge_type(AWSEventBridgeType::Rule)
+            .settle_on_ethereum(true)
+            .da_on_ethereum(true)
+    }
+
+    pub fn setup_l2() -> Self {
+        Self::new()
+            .layer(Layer::L2)
+            .mode(OrchestratorMode::Setup)
+    }
+
+    pub fn run_l3() -> Self {
+        Self::new()
+            .layer(Layer::L3)
+            .mode(OrchestratorMode::Run)
+            .atlantic(true)
+            .event_bridge_type(AWSEventBridgeType::Rule)
+            .settle_on_starknet(true)
+            .da_on_starknet(true)
+    }
+
+    pub fn setup_l3() -> Self {
+        Self::new()
+            .layer(Layer::L3)
+            .mode(OrchestratorMode::Setup)
     }
 
     /// Set the binary path
@@ -443,8 +441,6 @@ impl OrchestratorConfigBuilder {
         self.config.atlantic = enabled;
         self
     }
-
-
 }
 
 impl Default for OrchestratorConfigBuilder {

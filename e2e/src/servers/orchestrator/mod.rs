@@ -11,7 +11,6 @@ use crate::servers::server::{Server, ServerConfig};
 use std::process::ExitStatus;
 
 use std::time::Duration;
-use tokio::process::Command;
 
 pub struct OrchestratorService {
     server: Server, // None for setup mode
@@ -108,22 +107,11 @@ impl OrchestratorService {
             .await
             .map_err(OrchestratorError::Server)?;
 
-        // // For setup mode, we run the command directly and wait for completion
-        // let mut child = command.spawn().map_err(|e| OrchestratorError::Server(ServerError::StartupFailed(e)))?;
-
-        // // Wait for the process to complete
-        // let status = child.wait().await.map_err(|e| OrchestratorError::Server(ServerError::Io(e)))?;
-
-        // if status.success() {
-        //     println!("Orchestrator cloud setup completed ✅");
-        //     Ok(Self { server: None, config, address: None })
-        // } else {
-        //     let exit_code = status.code().unwrap_or(-1);
-        //     Err(OrchestratorError::SetupFailed(exit_code))
-        // }
         Ok(Self { server, config })
     }
 
+
+    // TODO: these dependencies should be typed and not a Vec<String>
 
     /// Get the dependencies required by the orchestrator
     pub fn dependencies(&self) -> Vec<String> {
@@ -143,35 +131,7 @@ impl OrchestratorService {
         ]
     }
 
-    /// Validate that all required dependencies are available and running
-    /// TODO: might move this to a fn in setup
-    pub async fn validate_dependencies(&self) -> Result<(), OrchestratorError> {
-        // TODO: complete this!
-        let dependencies = self.dependencies();
-
-        for dep in dependencies {
-            // For now, just check if the command exists
-            // You might want to implement more sophisticated checking
-            let result = Command::new(&dep).arg("--version").output().await;
-
-            if result.is_err() {
-                return Err(OrchestratorError::MissingDependency(dep));
-            }
-        }
-
-        Ok(())
-    }
-
-
-    /// Get the endpoint URL for the orchestrator service (run mode only)
-    // pub fn endpoint(&self) -> Option<Url> {
-    //     // TODO: validate run mode is being used
-    //     if let Some(ref address) = self. {
-    //         Url::parse(&format!("http://{}", address)).ok()
-    //     } else {
-    //         None
-    //     }
-    // }
+    // TODO: Will need a endpoint() fn here
 
     // TODO: A mongodb respective fn that dumps and loads the db
 
