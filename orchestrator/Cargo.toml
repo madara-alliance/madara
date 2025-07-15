@@ -113,11 +113,11 @@ tracing-subscriber = { workspace = true, features = [
 anyhow = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
 hyper = { version = "0.14", features = ["full"] }
-jemallocator = "0.5.4"
 indexmap = "2.6.0"
+jemallocator = "0.5.4"
 num-integer = "0.1.46"
-tracing-test = "0.2.5"
 rayon = "1.10.0"
+tracing-test = "0.2.5"
 
 [features]
 default = ["ethereum", "with_mongodb", "with_sqs", "starknet"]
