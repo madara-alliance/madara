@@ -2883,7 +2883,7 @@ dependencies = [
  "dotenvy",
  "serde",
  "serde_json",
- "starknet 0.12.0",
+ "starknet 0.14.0",
  "thiserror 2.0.3",
 ]
 
