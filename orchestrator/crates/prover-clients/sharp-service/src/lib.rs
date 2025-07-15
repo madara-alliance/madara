@@ -164,12 +164,7 @@ impl ProverClient for SharpProverService {
         }
     }
 
-    async fn get_task_artifacts(
-        &self,
-        task_id: &str,
-        task_type: TaskType,
-        file_name: &str,
-    ) -> Result<Vec<u8>, ProverClientError> {
+    async fn get_task_artifacts(&self, _: &str, _: TaskType, _: &str) -> Result<Vec<u8>, ProverClientError> {
         todo!()
     }
 }

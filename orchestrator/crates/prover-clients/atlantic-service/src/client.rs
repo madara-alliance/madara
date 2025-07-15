@@ -146,6 +146,7 @@ impl AtlanticClient {
         }
     }
 
+    #[allow(clippy::too_many_arguments)]
     /// Submits request to the prover client
     /// `bucket_id` and `bucket_job_id` are `None` for L3 (or L2 when AR is not needed)
     pub async fn add_job(
