@@ -80,7 +80,7 @@ WORKDIR build/Release/src
 #                                   CAIRO-LANG                                #
 # =========================================================================== #
 
-FROM builder as cairo-lang
+FROM builder AS cairo-lang
 ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
@@ -189,6 +189,8 @@ WORKDIR starkgate_latest
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
+# TODO: Change this to ./bootstrapper/contracts/ethereum/src post bootstrapper v2 is the default 
+ENV BASE_CHAIN_FACTORY_DIR="bootstrapper-v2/contracts/ethereum/src"
 
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra erc20.sierra.json
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm erc20.casm.json
@@ -212,7 +214,11 @@ COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/apps/starkgate/artifacts/cairo/to
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/std_contracts/upgradability_proxy/proxy.json proxy_starkgate.json
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/std_contracts/ERC20/ERC20.json ERC20.json
 
-WORKDIR ../cairo_lang
+WORKDIR /dependencies
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./$BASE_CHAIN_FACTORY_DIR/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./$BASE_CHAIN_FACTORY_DIR/third_party/
+
+WORKDIR /artifacts/cairo_lang
 
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
