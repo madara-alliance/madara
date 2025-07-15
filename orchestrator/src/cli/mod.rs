@@ -120,6 +120,9 @@ pub struct RunCmd {
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
 
     #[clap(flatten)]
+    pub starknet_da_args: da::starknet::StarknetDaCliArgs,
+
+    #[clap(flatten)]
     pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
 
     // Settlement Layer
@@ -223,8 +226,5 @@ pub struct SetupCmd {
     pub timeout: Option<u64>,
 
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_RESOURCE_POLL_INTERVAL", long, default_value = Some("5"))]
-    #[clap(flatten)]
-    pub starknet_da_args: da::starknet::StarknetDaCliArgs,
-
     pub poll_interval: Option<u64>,
 }
