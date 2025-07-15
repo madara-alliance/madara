@@ -113,6 +113,11 @@ pub struct TestConfigBuilder {
     storage_type: ConfigType,
     /// API Service
     api_server_type: ConfigType,
+
+    /// Minimum block to process
+    min_block_to_process: Option<u64>,
+    /// Maximum block to process
+    max_block_to_process: Option<Option<u64>>,
 }
 
 impl Default for TestConfigBuilder {
@@ -142,6 +147,8 @@ impl TestConfigBuilder {
             storage_type: ConfigType::default(),
             alerts_type: ConfigType::default(),
             api_server_type: ConfigType::default(),
+            min_block_to_process: None,
+            max_block_to_process: None,
         }
     }
 
@@ -194,10 +201,20 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_min_block_to_process(mut self, min_block_to_process: u64) -> TestConfigBuilder {
+        self.min_block_to_process = Some(min_block_to_process);
+        self
+    }
+
+    pub fn configure_max_block_to_process(mut self, max_block_to_process: Option<u64>) -> TestConfigBuilder {
+        self.max_block_to_process = Some(max_block_to_process);
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
-        let params = get_env_params();
+        let mut params = get_env_params();
 
         let provider_config =
             Arc::new(CloudProvider::try_from(params.aws_params.clone()).expect("Failed to create provider config"));
@@ -213,6 +230,8 @@ impl TestConfigBuilder {
             queue_type,
             storage_type,
             api_server_type,
+            min_block_to_process,
+            max_block_to_process,
         } = self;
 
         let (_starknet_rpc_url, starknet_client, starknet_server) =
@@ -243,6 +262,13 @@ impl TestConfigBuilder {
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
         let processing_locks = ProcessingLocks::default();
+
+        if let Some(min_block_to_process) = min_block_to_process {
+            params.orchestrator_params.service_config.min_block_to_process = min_block_to_process;
+        }
+        if let Some(max_block_to_process) = max_block_to_process {
+            params.orchestrator_params.service_config.max_block_to_process = max_block_to_process;
+        }
 
         let config = Arc::new(Config::new(
             params.orchestrator_params,

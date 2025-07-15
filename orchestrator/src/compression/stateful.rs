@@ -109,7 +109,7 @@ impl ValueMapping {
         pre_range_block: u64,
     ) -> Result<Felt, ProviderError> {
         if ValueMapping::skip(*key) {
-            return Ok(key.clone());
+            return Ok(*key);
         }
         let mut attempts = 0;
         let mut error = None;
@@ -239,7 +239,7 @@ pub fn sort_state_diff(state_diff: &mut StateUpdate) {
     }
 
     // Sort the rest
-    state_diff.state_diff.deprecated_declared_classes.sort_by(|a, b| a.cmp(&b));
+    state_diff.state_diff.deprecated_declared_classes.sort();
     state_diff.state_diff.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
     state_diff.state_diff.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
     state_diff.state_diff.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));

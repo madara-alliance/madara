@@ -35,7 +35,7 @@ pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> color_eyre::Result
         return Err(eyre!("Element bound {} too large to fit in Felt", elm_bound));
     }
 
-    Ok(elms.chunks(n_per_felt).map(|chunk| pack_usize_in_felt(chunk, elm_bound)).try_collect()?)
+    elms.chunks(n_per_felt).map(|chunk| pack_usize_in_felt(chunk, elm_bound)).try_collect()
 }
 
 /// Packs a slice of usize into a Felt

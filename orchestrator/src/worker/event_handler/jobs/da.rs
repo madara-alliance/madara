@@ -367,8 +367,6 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
-    use crate::compression::blob::da_word;
-    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -384,30 +382,6 @@ pub mod test {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::JsonRpcClient;
     use url::Url;
-
-    /// Tests `da_word` function with various inputs for class flag, new nonce, and number of
-    /// changes. Verifies that `da_word` produces the correct Felt based on the provided
-    /// parameters. Uses test cases with different combinations of inputs and expected output
-    /// strings. Asserts the function's correctness by comparing the computed and expected
-    /// Felts.
-    #[rstest]
-    #[case(false, 1, 1, "18446744073709551617")]
-    #[case(false, 1, 0, "18446744073709551616")]
-    #[case(false, 0, 6, "6")]
-    #[case(true, 1, 0, "340282366920938463481821351505477763072")]
-    fn test_da_word(
-        #[case] class_flag: bool,
-        #[case] new_nonce: u64,
-        #[case] num_changes: u64,
-        #[case] expected: String,
-    ) {
-        // TODO: add test for v0.13.3+ version
-        let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
-        let da_word =
-            da_word(class_flag, new_nonce, num_changes, StarknetVersion::V0_13_2).expect("Failed to create DA word");
-        let expected = Felt::from_dec_str(expected.as_str()).unwrap();
-        assert_eq!(da_word, expected);
-    }
 
     /// Tests `state_update_to_blob_data` conversion with different state update files and block
     /// numbers. Mocks DA client and storage client interactions for the test environment.

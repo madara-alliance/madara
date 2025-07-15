@@ -322,7 +322,7 @@ impl BatchingTrigger {
     async fn store_blob(
         &self,
         storage: &dyn StorageClient,
-        compressed_state_update: &Vec<Felt>,
+        compressed_state_update: &[Felt],
         batch: &Batch,
     ) -> Result<(), JobError> {
         let blobs = convert_felt_vec_to_blob_data(compressed_state_update)?;

@@ -201,7 +201,7 @@ async fn process_deployed_contracts_and_replaced_classes(
 
     // Loop through all replaced class hashes and check if they exist in the deployed contracts
     for (contract_address, class_hash) in &replaced_class_hashes {
-        if deployed_contracts.contains_key(&contract_address) {
+        if deployed_contracts.contains_key(contract_address) {
             // replace the class hash in deployed contracts
             deployed_contracts.insert(*contract_address, *class_hash);
             // mark the class hash for removal from replaced class hashes
@@ -216,31 +216,28 @@ async fn process_deployed_contracts_and_replaced_classes(
     let mut replaced_class_hash_items: Vec<ReplacedClassItem> = Vec::new();
     let mut deployed_contract_items: Vec<DeployedContractItem> = Vec::new();
 
-    match pre_range_block_option {
-        Some(pre_range_block) => {
-            let result: Vec<_> = stream::iter(replaced_class_hashes)
-                .map(|(contract_address, class_hash)| async move {
-                    process_class(provider, pre_range_block, contract_address, class_hash).await
-                })
-                .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
-                .collect()
-                .await;
-            for res in result {
-                match res {
-                    Ok((contract_address, class_hash)) => match class_hash {
-                        None => {}
-                        Some(class_hash) => {
-                            replaced_class_hash_items.push(ReplacedClassItem { contract_address, class_hash });
-                        }
-                    },
-                    Err(e) => {
-                        return Err(e);
+    if let Some(pre_range_block) = pre_range_block_option {
+        let result: Vec<_> = stream::iter(replaced_class_hashes)
+            .map(|(contract_address, class_hash)| async move {
+                process_class(provider, pre_range_block, contract_address, class_hash).await
+            })
+            .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
+            .collect()
+            .await;
+        for res in result {
+            match res {
+                Ok((contract_address, class_hash)) => match class_hash {
+                    None => {}
+                    Some(class_hash) => {
+                        replaced_class_hash_items.push(ReplacedClassItem { contract_address, class_hash });
                     }
+                },
+                Err(e) => {
+                    return Err(e);
                 }
             }
         }
-        None => {}
-    };
+    }
 
     for (contract_address, class_hash) in deployed_contracts {
         deployed_contract_items.push(DeployedContractItem { address: contract_address, class_hash });
@@ -290,7 +287,7 @@ async fn process_single_contract(
             let contract_existed = if contract_addr == Felt::ONE || contract_addr == Felt::TWO {
                 false
             } else {
-                check_contract_existed_at_block(&provider, contract_addr, pre_range_block).await?
+                check_contract_existed_at_block(provider, contract_addr, pre_range_block).await?
             };
 
             if contract_existed {
@@ -361,7 +358,7 @@ pub async fn get_class_hash_at(
         match provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await {
             Ok(class_hash) => return Ok((true, class_hash)),
             Err(e) => {
-                if let ProviderError::StarknetError(StarknetError::ContractNotFound { .. }) = e {
+                if let ProviderError::StarknetError(StarknetError::ContractNotFound) = e {
                     return Ok((false, Felt::ZERO));
                 }
                 error = Some(e.to_string());

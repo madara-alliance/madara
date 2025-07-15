@@ -4,6 +4,7 @@ use crate::error::other::OtherError;
 use crate::types::constant::BLOB_LEN;
 use crate::worker::event_handler::jobs::da::DAJobHandler;
 use color_eyre::eyre::eyre;
+use itertools::repeat_n;
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
 use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateDiff, StateUpdate};
@@ -275,14 +276,14 @@ fn encode_da_word_pre_v0_13_3(
 /// Binary encoding layout (252 bits total):
 ///
 /// Bit positions:
-/// 251                                                                     0
-/// |                                                                       |
-/// v                                                                       v
-/// ┌───────────────┬─────────────────────────────────────┬───┬───┬─────────┐
-/// │   new_nonce   │           n_updates                 │n_u│cls│  Zeros  │
-/// │   (64 bits)   │        (8 or 64 bits)               │len│flg│ Padding │
-/// │   [251:188]   │     [187:124] or [187:180]          │[1]│[0]│         │
-/// └───────────────┴─────────────────────────────────────┴───┴───┴─────────┘
+/// 251                                                                       0
+/// |                                                                         |
+/// v                                                                         v
+/// ┌─────────┬────────────────────────┬──────────────────────────────┬───┬───┐
+/// │  Zeros  │       new_nonce        │           n_updates          │n_u│cls│
+/// │ Padding │       (64 bits)        │        (8 or 64 bits)        │len│flg│
+/// │         │  [129:66] or [73:10]   │       [65:2] or [9:2]        │[1]│[0]│
+/// └─────────┴────────────────────────┴──────────────────────────────┴───┴───┘
 ///
 /// Field breakdown:
 /// - new_nonce (64 bits)     : [251:188] - Nonce value
@@ -298,30 +299,27 @@ fn encode_da_word_v0_13_3_plus(
     nonce_change: Option<Felt>,
     num_changes: u64,
 ) -> Result<BigUint, JobError> {
-    let mut da_word = BigUint::zero();
-
-    // Add new_nonce (64 bits)
-    if let Some(new_nonce) = nonce_change {
-        let new_nonce = new_nonce
-            .to_u64()
-            .ok_or_else(|| JobError::Other(OtherError(eyre!("Nonce value {} exceeds u64 maximum", new_nonce))))?;
-        da_word |= BigUint::from(new_nonce) << 188;
-    }
+    let mut da_word: BigUint;
 
     // Determine if we need 8 or 64 bits for num_changes
     let needs_large_updates = num_changes >= 256;
 
+    // Get nonce in 64 bits
+    let nonce_felt = nonce_change.unwrap_or(Felt::ZERO);
+    let new_nonce = nonce_felt
+        .to_u64()
+        .ok_or_else(|| JobError::Other(OtherError(eyre!("Nonce value {} exceeds u64 maximum", nonce_felt))))?;
+
     if needs_large_updates {
-        // Use 64 bits for updates
-        da_word |= BigUint::from(num_changes) << 124;
+        da_word = BigUint::from(new_nonce) << 66;
     } else {
-        // Use 8 bits for updates
-        da_word |= BigUint::from(num_changes) << 180;
-        da_word |= BigUint::one() << 123;
+        da_word = (BigUint::from(new_nonce) << 10) | BigUint::from(2u64);
     }
 
+    da_word |= BigUint::from(num_changes) << 2;
+
     // Class flag
-    da_word |= if class_flag { BigUint::one() << 122 } else { BigUint::zero() };
+    da_word |= if class_flag { BigUint::one() } else { BigUint::zero() };
 
     Ok(da_word)
 }
@@ -357,14 +355,14 @@ pub fn da_word(
 /// Converts a vector of felt into a vector of bigUint
 /// The output length depends on the input length (ceil(input_len / BLOB_LEN) * BLOB_LEN)
 pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
-    let num_blocks = (elements.len() + BLOB_LEN - 1) / BLOB_LEN;
+    let num_blocks = elements.len().div_ceil(BLOB_LEN);
     let output_len = num_blocks * BLOB_LEN;
     let pad_len = output_len - elements.len();
 
     elements
         .iter()
         .map(|e| BigUint::from_bytes_be(&e.to_bytes_be()))
-        .chain(std::iter::repeat(BigUint::zero()).take(pad_len))
+        .chain(repeat_n(BigUint::zero(), pad_len))
         .collect()
 }
 
@@ -373,7 +371,7 @@ pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
 /// A single blob has a fixed size of `BLOB_LEN=4096`
 pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> Result<Vec<Vec<BigUint>>, JobError> {
     let blob_data = convert_to_biguint(elements);
-    let num_blobs = (blob_data.len() + BLOB_LEN - 1) / BLOB_LEN; // ceil(len / BLOB_LEN)
+    let num_blobs = blob_data.len().div_ceil(BLOB_LEN);
     let mut transformed_data = Vec::new();
     for i in 0..num_blobs {
         transformed_data
