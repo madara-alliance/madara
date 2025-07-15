@@ -1,9 +1,6 @@
-use std::time::Duration;
-
 use serde::Serialize;
 use starknet::accounts::ConnectedAccount;
 use starknet::core::types::Felt;
-use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
@@ -44,7 +41,6 @@ impl<'a> UdcSetup<'a> {
         .await;
         log::info!("📣 UDC Class Hash Declared.");
         save_to_json("udc_class_hash", &JsonValueType::StringType(udc_class_hash.to_string())).unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let txn = self
             .account

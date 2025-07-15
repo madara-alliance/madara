@@ -1,6 +1,7 @@
 use self::server::rpc_api_build;
 use crate::{cli::RpcParams, submit_tx::MakeSubmitTransactionSwitch};
 use jsonrpsee::server::ServerHandle;
+use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
 use metrics::RpcMetrics;
@@ -24,6 +25,7 @@ pub struct RpcService {
     submit_tx_provider: MakeSubmitTransactionSwitch,
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
+    block_prod_handle: Option<BlockProductionHandle>,
 }
 
 impl RpcService {
@@ -32,15 +34,30 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
     ) -> Self {
-        Self { config, backend, submit_tx_provider, server_handle: None, rpc_type: RpcType::User }
+        Self {
+            config,
+            backend,
+            submit_tx_provider,
+            server_handle: None,
+            rpc_type: RpcType::User,
+            block_prod_handle: None,
+        }
     }
 
     pub fn admin(
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        block_prod_handle: BlockProductionHandle,
     ) -> Self {
-        Self { config, backend, submit_tx_provider, server_handle: None, rpc_type: RpcType::Admin }
+        Self {
+            config,
+            backend,
+            submit_tx_provider,
+            server_handle: None,
+            rpc_type: RpcType::Admin,
+            block_prod_handle: Some(block_prod_handle),
+        }
     }
 }
 
@@ -55,11 +72,18 @@ impl Service for RpcService {
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
 
         self.server_handle = Some(server_handle);
+        let block_prod_handle = self.block_prod_handle.clone();
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
 
-            let starknet = Starknet::new(backend.clone(), submit_tx, config.storage_proof_config(), ctx.clone());
+            let starknet = Starknet::new(
+                backend.clone(),
+                submit_tx,
+                config.storage_proof_config(),
+                block_prod_handle,
+                ctx.clone(),
+            );
             let metrics = RpcMetrics::register()?;
 
             let server_config = {

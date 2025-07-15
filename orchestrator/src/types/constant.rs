@@ -12,6 +12,14 @@ pub const BLOB_LEN: usize = 4096;
 pub const MAX_BLOBS: usize = 6;
 pub const MAX_BLOB_SIZE: usize = BLOB_LEN * MAX_BLOBS; // This represents the maximum size of data that you can use in a single transaction
 
+pub const ON_CHAIN_DATA_FILE_NAME: &str = "onchain_data.json";
+pub const PROOF_FILE_NAME: &str = "proof.json";
+pub const PROOF_PART2_FILE_NAME: &str = "proof_part2.json";
+pub const BOOT_LOADER_PROGRAM_CONTRACT: &str = "0x5ab580b04e3532b6b18f81cfa654a05e29dd8e2352d88df1e765a84072db07";
+
+/// Chunk size for reading files in bytes, when streaming data from the file
+pub const BYTE_CHUNK_SIZE: usize = 8192; // 8KB chunks
+
 lazy_static! {
     /// EIP-4844 BLS12-381 modulus.
     ///
@@ -30,3 +38,4 @@ lazy_static! {
     pub static ref TWO: BigUint = 2u32.to_biguint().unwrap();
     pub static ref ONE: BigUint = 1u32.to_biguint().unwrap();
 }
+
