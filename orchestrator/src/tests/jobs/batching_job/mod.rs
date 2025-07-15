@@ -2,6 +2,7 @@ mod compare;
 
 use crate::compression::blob::convert_to_biguint;
 use crate::compression::stateless::decompress;
+use crate::core::config::StarknetVersion;
 use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
@@ -24,9 +25,12 @@ use tracing::{error, warn};
 use url::Url;
 
 #[rstest]
-#[case("src/tests/jobs/batching_job/test_data/blob/8373665/", "0.13.5")]
+#[case("src/tests/artifacts/8373665/blobs/", StarknetVersion::V0_13_5)]
 #[tokio::test]
-async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String, #[case] version: &str) -> Result<()> {
+async fn test_assign_batch_to_block_new_batch(
+    #[case] blob_dir: String,
+    #[case] version: StarknetVersion,
+) -> Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
