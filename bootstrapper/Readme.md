@@ -227,4 +227,4 @@ Here are some contract descriptions on why they are used in our context.
 > For testing in Github CI we are using the madara binary build with `--disable-fee-flag`.
 > The source for madara code: [madara-ci-build][madara-source]
 
-[madara-source]: https://github.com/karnotxyz/madara/tree/madara-ci-build
+[madara-source]: https://github.com/madara-alliance/madara
