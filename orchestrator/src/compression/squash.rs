@@ -240,11 +240,15 @@ async fn process_class(
     contract_address: Felt,
     class_hash: Felt,
 ) -> Result<(Felt, Option<Felt>), JobError> {
-    let (exists, prev_class_hash) = get_class_hash_at(provider, pre_range_block, contract_address).await?;
-    if exists && prev_class_hash == class_hash {
-        Ok((contract_address, None))
-    } else {
-        Ok((contract_address, Some(class_hash)))
+    match get_class_hash_at(provider, pre_range_block, contract_address).await? {
+        Some(prev_class_hash) => {
+            if prev_class_hash == class_hash {
+                Ok((contract_address, None))
+            } else {
+                Ok((contract_address, Some(class_hash)))
+            }
+        }
+        None => Ok((contract_address, Some(class_hash))),
     }
 }
 
@@ -272,13 +276,8 @@ async fn process_single_contract(
             }
         }
         Some(pre_range_block) => {
-            // Check if contract existed at pre-range block
-
-            let contract_existed = if contract_addr == Felt::ONE || contract_addr == Felt::TWO {
-                false
-            } else {
-                check_contract_existed_at_block(provider, contract_addr, pre_range_block).await?
-            };
+            // Check if the contract existed at the pre-range block
+            let contract_existed = check_contract_existed_at_block(provider, contract_addr, pre_range_block).await?;
 
             if contract_existed {
                 // Process storage entries only for an existing contract
@@ -329,7 +328,7 @@ pub async fn check_contract_existed_at_block(
     contract_address: Felt,
     block_number: u64,
 ) -> Result<bool, JobError> {
-    Ok(get_class_hash_at(provider, block_number, contract_address).await?.0)
+    Ok(get_class_hash_at(provider, block_number, contract_address).await?.is_some())
 }
 
 /// This function returns the class hash of a contract at a given block number
@@ -341,17 +340,17 @@ pub async fn get_class_hash_at(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     block_number: u64,
     contract_address: Felt,
-) -> Result<(bool, Felt), JobError> {
+) -> Result<Option<Felt>, JobError> {
     const MAX_RETRY_ATTEMPTS: u64 = 3;
     let mut attempts = 0;
     let mut error: Option<String> = None;
 
     while attempts < MAX_RETRY_ATTEMPTS {
         match provider.get_class_hash_at(BlockId::Number(block_number), contract_address).await {
-            Ok(class_hash) => return Ok((true, class_hash)),
+            Ok(class_hash) => return Ok(Some(class_hash)),
             Err(e) => {
                 if let ProviderError::StarknetError(StarknetError::ContractNotFound) = e {
-                    return Ok((false, Felt::ZERO));
+                    return Ok(None);
                 }
                 error = Some(e.to_string());
                 attempts += 1;
