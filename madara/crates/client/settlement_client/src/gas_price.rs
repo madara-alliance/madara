@@ -38,6 +38,10 @@ impl GasPriceProviderConfig {
     pub fn all_is_fixed(&self) -> bool {
         self.fix_gas_price.is_some() && self.fix_data_gas_price.is_some() && self.fix_strk_per_eth.is_some()
     }
+
+    pub fn settlement_and_data_gas_fixed(&self) -> bool {
+        self.fix_gas_price.is_some() && self.fix_data_gas_price.is_some()
+    }
 }
 
 impl From<&GasPriceProviderConfig> for L1GasQuote {
@@ -119,8 +123,7 @@ impl GasPriceProviderConfigBuilder {
     pub fn build(self) -> anyhow::Result<GasPriceProviderConfig> {
         let needs_oracle = self.fix_strk_per_eth.is_none();
         if needs_oracle && self.oracle_provider.is_none() {
-            // This check is commented out because with the current design, we need to create an L1SyncService with gas price even if we didn't need.
-            // return Err(anyhow::anyhow!("Oracle provider must be set if no fix_strk_per_eth is provided"));
+            return Err(anyhow::anyhow!("Oracle provider must be set if no fix_strk_per_eth is provided"));
         }
 
         Ok(GasPriceProviderConfig {
@@ -223,9 +226,7 @@ where
 {
     let mut l1_gas_quote: L1GasQuote = gas_provider_config.into();
 
-    let need_gas_price_from_settlement =
-        gas_provider_config.fix_gas_price.is_none() || gas_provider_config.fix_data_gas_price.is_none();
-    if need_gas_price_from_settlement {
+    if !gas_provider_config.settlement_and_data_gas_fixed() {
         let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await.map_err(|e| {
             SettlementClientError::GasPrice(format!("Failed to get gas prices from settlement client: {}", e))
         })?;
@@ -237,19 +238,16 @@ where
         };
     }
 
-    let need_oracle = gas_provider_config.fix_strk_per_eth.is_none();
-    if need_oracle {
-        let (strk_eth_price, decimals) = gas_provider_config
-            .oracle_provider
-            .as_ref()
-            .expect("Oracle is needed if no fix_strk_per_eth is set")
-            .fetch_strk_per_eth()
-            .await
-            .map_err(|e| {
-                SettlementClientError::PriceOracle(format!("Failed to fetch STRK/ETH price from oracle: {}", e))
-            })?;
-        l1_gas_quote.strk_per_eth = (strk_eth_price, decimals);
-    }
+    let (strk_eth_price, decimals) = gas_provider_config
+        .oracle_provider
+        .as_ref()
+        .expect("Oracle is needed if no fix_strk_per_eth is set") // checked in config builder
+        .fetch_strk_per_eth()
+        .await
+        .map_err(|e| {
+            SettlementClientError::PriceOracle(format!("Failed to fetch STRK/ETH price from oracle: {}", e))
+        })?;
+    l1_gas_quote.strk_per_eth = (strk_eth_price, decimals);
 
     Ok(l1_gas_quote)
 }

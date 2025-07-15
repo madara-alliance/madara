@@ -4,6 +4,7 @@ use alloy::primitives::U256;
 use bigdecimal::ToPrimitive;
 use mp_block::header::GasPrices;
 use mp_block::L1GasQuote;
+use num_traits::Zero;
 use rocksdb::IteratorMode;
 use serde::{Deserialize, Serialize};
 use starknet_api::core::Nonce;
@@ -150,8 +151,16 @@ impl MadaraBackend {
         self.watch_gas_quote.borrow().clone()
     }
 
-    pub fn calculate_gas_prices(&self, previous_strk_l2_gas_price: u128, previous_l2_gas_used: u64) -> GasPrices {
-        let l1_gas_quote = self.get_last_l1_gas_quote().unwrap_or_default();
+    pub fn calculate_gas_prices(
+        &self,
+        previous_strk_l2_gas_price: u128,
+        previous_l2_gas_used: u64,
+    ) -> anyhow::Result<GasPrices> {
+        let l1_gas_quote = self.get_last_l1_gas_quote().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices."
+            )
+        })?;
         let eth_l1_gas_price = l1_gas_quote.l1_gas_price;
         let eth_l1_data_gas_price = l1_gas_quote.l1_data_gas_price;
         let strk_per_eth = {
@@ -160,10 +169,10 @@ impl MadaraBackend {
         };
         let strk_l1_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_gas_price) * &strk_per_eth)
             .to_u128()
-            .expect("Failed to convert STRK L1 gas price to u128");
+            .ok_or(anyhow::anyhow!("Failed to convert STRK L1 gas price to u128"))?;
         let strk_l1_data_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_data_gas_price) * &strk_per_eth)
             .to_u128()
-            .expect("Failed to convert STRK L1 data gas price to u128");
+            .ok_or(anyhow::anyhow!("Failed to convert STRK L1 data gas price to u128"))?;
 
         let l2_gas_target = self.chain_config().l2_gas_target;
         let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
@@ -174,18 +183,21 @@ impl MadaraBackend {
             max_change_denominator,
         )
         .max(self.chain_config().min_l2_gas_price);
+        if (&strk_per_eth).is_zero() {
+            return Err(anyhow::anyhow!("STRK per ETH is zero, cannot calculate gas prices"));
+        }
         let eth_l2_gas_price = (&bigdecimal::BigDecimal::from(strk_l2_gas_price) / &strk_per_eth)
             .to_u128()
-            .expect("Failed to convert ETH L2 gas price to u64");
+            .ok_or(anyhow::anyhow!("Failed to convert ETH L2 gas price to u128"))?;
 
-        GasPrices {
+        Ok(GasPrices {
             eth_l1_gas_price,
             strk_l1_gas_price,
             eth_l1_data_gas_price,
             strk_l1_data_gas_price,
             eth_l2_gas_price,
             strk_l2_gas_price,
-        }
+        })
     }
 }
 

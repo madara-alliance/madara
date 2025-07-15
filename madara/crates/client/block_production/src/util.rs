@@ -149,15 +149,15 @@ pub(crate) fn create_execution_context(
     block_n: u64,
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u64,
-) -> BlockExecutionContext {
-    BlockExecutionContext {
+) -> anyhow::Result<BlockExecutionContext> {
+    Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
         block_timestamp: SystemTime::now(),
         protocol_version: backend.chain_config().latest_protocol_version,
-        gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used),
+        gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?,
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_n,
-    }
+    })
 }
 
 pub(crate) fn state_map_to_state_diff(

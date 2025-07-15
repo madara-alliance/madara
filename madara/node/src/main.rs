@@ -105,6 +105,13 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // If the devnet is running, we set the gas prices to a default value.
+    if run_cmd.is_devnet() {
+        run_cmd.l1_sync_params.l1_gas_price.get_or_insert(5);
+        run_cmd.l1_sync_params.blob_gas_price.get_or_insert(5);
+        run_cmd.l1_sync_params.strk_per_eth.get_or_insert(1.0);
+    }
+
     // Check if the devnet is running with the correct chain id. This is purely
     // to avoid accidental setups which would allow for replay attacks. This is
     // possible if the devnet has the same chain id as another popular chain,

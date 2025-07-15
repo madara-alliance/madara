@@ -197,7 +197,7 @@ impl ExecutorThread {
             state.state_adaptor.block_n(),
             previous_l2_gas_price,
             previous_l2_gas_used,
-        );
+        )?;
 
         // Create the TransactionExecution, but reuse the layered_state_adaptor.
         let mut executor =

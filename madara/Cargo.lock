@@ -6448,6 +6448,7 @@ dependencies = [
  "mc-submit-tx",
  "mc-sync",
  "mc-telemetry",
+ "mp-block",
  "mp-chain-config",
  "mp-oracle",
  "mp-rpc",
@@ -6601,6 +6602,7 @@ dependencies = [
  "mp-state-update",
  "mp-transactions",
  "mp-utils",
+ "num-traits",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
@@ -6702,6 +6704,7 @@ dependencies = [
 name = "mc-exec"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "blockifier",
  "cairo-vm",
  "mc-db",

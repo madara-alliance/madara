@@ -33,12 +33,12 @@ pub struct L1SyncParams {
     pub l1_endpoint: Option<Url>,
 
     /// Fix the gas price. If the gas price is fixed it won't fetch the fee history from the ethereum.
-    #[clap(env = "MADARA_GAS_PRICE", long)]
-    pub gas_price: Option<u128>,
+    #[clap(env = "MADARA_L1_GAS_PRICE", long)]
+    pub l1_gas_price: Option<u64>,
 
     /// Fix the blob gas price. If the gas price is fixed it won't fetch the fee history from the ethereum.
     #[clap(env = "MADARA_DATA_GAS_PRICE", long)]
-    pub blob_gas_price: Option<u128>,
+    pub blob_gas_price: Option<u64>,
 
     /// Fix the eth <-> strk rate. If the strk rate is fixed it won't fetch eth <-> strk price from the oracle.
     #[clap(env = "MADARA_STRK_PER_ETH", long)]

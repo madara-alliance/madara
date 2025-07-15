@@ -64,9 +64,9 @@ impl LayeredStateAdaptor {
                 .iter()
                 .fold(0, |acc, receipt| acc + receipt.execution_resources().total_gas_consumed.l2_gas);
 
-            backend.calculate_gas_prices(latest_gas_prices.strk_l2_gas_price, latest_gas_used)
+            backend.calculate_gas_prices(latest_gas_prices.strk_l2_gas_price, latest_gas_used)?
         } else {
-            backend.calculate_gas_prices(0, 0)
+            backend.calculate_gas_prices(0, 0)?
         };
 
         Ok(Self {

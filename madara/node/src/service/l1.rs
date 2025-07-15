@@ -14,6 +14,7 @@ use mc_settlement_client::starknet::event::StarknetEventStream;
 use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
 use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
+use mp_block::L1GasQuote;
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use starknet_core::types::Felt;
@@ -104,14 +105,14 @@ where
         sync_config: L1SyncConfig<'_>,
         settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
     ) -> anyhow::Result<Self> {
-        let gas_price_needed = sync_config.authority && !sync_config.devnet;
+        let gas_price_needed = sync_config.authority;
         let gas_provider_config = if gas_price_needed {
             let mut gas_price_provider_builder = GasPriceProviderConfigBuilder::default();
-            if let Some(fix_gas) = config.gas_price {
-                gas_price_provider_builder.set_fix_gas_price(fix_gas);
+            if let Some(fix_gas) = config.l1_gas_price {
+                gas_price_provider_builder.set_fix_gas_price(fix_gas.into());
             }
             if let Some(fix_blob_gas) = config.blob_gas_price {
-                gas_price_provider_builder.set_fix_data_gas_price(fix_blob_gas);
+                gas_price_provider_builder.set_fix_data_gas_price(fix_blob_gas.into());
             }
             if let Some(strk_per_eth_fix) = config.strk_per_eth {
                 gas_price_provider_builder.set_fix_strk_per_eth(strk_per_eth_fix);
@@ -138,15 +139,24 @@ where
         };
 
         if let Some(config) = gas_provider_config.as_ref() {
-            if !config.all_is_fixed() {
+            let l1_gas_quote = if config.all_is_fixed() {
+                // safe to unwrap because we checked that all values are set
+                L1GasQuote {
+                    l1_gas_price: config.fix_gas_price.unwrap(),
+                    l1_data_gas_price: config.fix_data_gas_price.unwrap(),
+                    strk_per_eth: config.fix_strk_per_eth.unwrap(),
+                }
+            } else {
                 let settlement_client =
                     settlement_client.clone().context("L1 gas prices require the service to be enabled...")?;
                 tracing::info!("⏳ Getting initial L1 gas prices");
-                let l1_gas_quote = mc_settlement_client::gas_price::update_gas_price(settlement_client, config)
+                // Gas prices are needed before starting the block producer
+                mc_settlement_client::gas_price::update_gas_price(settlement_client, config)
                     .await
-                    .context("Getting initial gas prices")?;
-                sync_config.db.backend().set_last_l1_gas_quote(l1_gas_quote);
-            }
+                    .context("Getting initial gas prices")?
+            };
+
+            sync_config.db.backend().set_last_l1_gas_quote(l1_gas_quote);
         }
 
         Ok(Self {

@@ -33,7 +33,7 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-
+anyhow.workspace = true
 thiserror = { workspace = true }
 
 

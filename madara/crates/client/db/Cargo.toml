@@ -43,6 +43,7 @@ bincode = { workspace = true }
 bitvec = { workspace = true }
 futures = { workspace = true }
 librocksdb-sys = { workspace = true }
+num-traits = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }

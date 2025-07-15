@@ -56,6 +56,8 @@ pub enum Error {
     Storage(#[from] MadaraStorageError),
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
+    #[error("Unable to calculate gas prices: {0}")]
+    GasPriceCalculation(#[from] anyhow::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
