@@ -1,5 +1,5 @@
 // =============================================================================
-// BOOTSTRAPPER SERVICE - Setup utility for L1/L2 initializatio
+// BOOTSTRAPPER SERVICE - Setup utility for L1/L2 initialization
 // =============================================================================
 
 pub mod config;
@@ -29,11 +29,9 @@ impl BootstrapperService {
         // Create server config - bootstrapper doesn't need network port,
         // but we'll use a dummy port for the generic server interface
         let server_config = ServerConfig {
-            port: 0, // Dummy port - bootstrapper doesn't serve on a port
-            host: "127.0.0.1".to_string(),
-            skip_wait_for_ready: true,
             connection_attempts: 1, // No connection check needed
             connection_delay_ms: 100,
+            ..Default::default()
         };
 
         // Start the server using the generic Server::start_process

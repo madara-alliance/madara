@@ -9,6 +9,7 @@ pub use config::*;
 
 use crate::servers::server::{Server, ServerConfig};
 use crate::servers::docker::{DockerError, DockerServer};
+use crate::servers::server::ServiceAddress;
 
 pub struct LocalstackService {
     server: Server,
@@ -48,8 +49,10 @@ impl LocalstackService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            port: config.port(),
-            host: "127.0.0.1".to_string(), // Default host for Localstack
+            service_address : Some(ServiceAddress {
+                port: config.port(),
+                host: config.host().to_string(),
+            }),
             connection_attempts: 60, // Localstack takes longer to start
             connection_delay_ms: 2000,
             ..Default::default()
@@ -71,7 +74,7 @@ impl LocalstackService {
         // to check specific resources like S3 buckets, DynamoDB tables, etc.
 
         // Example: Check if we can connect to Localstack's health endpoint
-        let health_url = format!("http://{}:{}/health", self.server.host(), self.server.port());
+        let health_url = format!("{}/health", self.endpoint());
 
         match reqwest::get(&health_url).await {
             Ok(response) => {
@@ -95,6 +98,12 @@ impl LocalstackService {
     /// Get the configuration used
     pub fn config(&self) -> &LocalstackConfig {
         &self.config
+    }
+
+
+    /// Get the endpoint URL for the Localstack server
+    pub fn endpoint(&self) -> String {
+        format!("http://{}:{}", self.server.host(), self.server.port())
     }
 
     /// Get dependencies (Docker is required)

@@ -7,7 +7,7 @@ pub mod config;
 // Re-export common utilities
 pub use config::*;
 
-use crate::servers::server::{Server, ServerConfig};
+use crate::servers::server::{Server, ServerConfig, ServiceAddress};
 use std::process::ExitStatus;
 
 use std::time::Duration;
@@ -31,8 +31,10 @@ impl OrchestratorService {
 
         // Create server config
         let server_config = ServerConfig {
-            port,
-            host,
+            service_address: Some(ServiceAddress {
+                host,
+                port,
+            }),
             connection_attempts: 60, // Orchestrator might take time to start
             connection_delay_ms: 2000,
             ..Default::default()
@@ -98,7 +100,6 @@ impl OrchestratorService {
         println!("Running orchestrator in setup mode with command : {:?}", command);
 
         let server_config = ServerConfig {
-            skip_wait_for_ready: true,
             ..Default::default()
         };
 

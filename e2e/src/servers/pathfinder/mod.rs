@@ -4,7 +4,7 @@
 
 pub mod config;
 
-use crate::servers::server::NodeRpcMethods;
+use crate::servers::helpers::NodeRpcMethods;
 // Re-export common utilities
 pub use config::*;
 
@@ -12,6 +12,8 @@ use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
 use tokio::process::Command;
+
+use super::server::ServiceAddress;
 
 pub struct PathfinderService {
     server: Server,
@@ -54,8 +56,10 @@ impl PathfinderService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            port: config.port(),
-            host: "127.0.0.1".to_string(), // Default host for Pathfinder
+            service_address: Some(ServiceAddress {
+                host: "127.0.0.1".to_string(),
+                port: config.port(),
+            }),
             connection_attempts: 60, // Pathfinder takes time to sync
             connection_delay_ms: 2000,
             ..Default::default()
@@ -100,7 +104,7 @@ impl PathfinderService {
     /// Validate if Pathfinder is ready and responsive
     pub async fn validate_connection(&self) -> Result<bool, PathfinderError> {
         // Try to connect to the RPC endpoint
-        let rpc_addr = format!("{}:{}", self.server.host(), self.server.port());
+        let rpc_addr = self.endpoint().to_string();
         match tokio::net::TcpStream::connect(&rpc_addr).await {
             Ok(_) => Ok(true),
             Err(e) => Err(PathfinderError::ConnectionFailed(e.to_string())),
@@ -115,16 +119,9 @@ impl PathfinderService {
     }
 
     /// Get the RPC endpoint URL
-    pub fn rpc_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.server.host(), self.server.port())).unwrap()
-    }
-
-
-    /// Get the endpoint URL for the Pathfinder service (alias for rpc_endpoint)
     pub fn endpoint(&self) -> Url {
-        self.rpc_endpoint()
+        Url::parse(&format!("http://{}:{}", self.config().host(), self.config().port())).unwrap()
     }
-
 
     /// Get the network name
     pub fn network(&self) -> &str {

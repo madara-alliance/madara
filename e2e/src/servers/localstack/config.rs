@@ -20,6 +20,7 @@ const DEFAULT_LOCALSTACK_CONTAINER_NAME: &str = "localstack-service";
 #[derive(Debug, Clone)]
 pub struct LocalstackConfig {
     port: u16,
+    host: String,
     image: String,
     container_name: String,
     environment_vars: Vec<(String, String)>,
@@ -29,6 +30,7 @@ impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_LOCALSTACK_PORT,
+            host: "127.0.0.1".to_string(),
             image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
             container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
             environment_vars: vec![
@@ -53,6 +55,11 @@ impl LocalstackConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the host
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     /// Get the Docker image
@@ -111,6 +118,12 @@ impl LocalstackConfigBuilder {
     /// Set the port (default: 4566)
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = port;
+        self
+    }
+
+    /// Set the host (default: "127.0.0.1")
+    pub fn host<S: Into<String>>(mut self, host: S) -> Self {
+        self.config.host = host.into();
         self
     }
 

@@ -3,7 +3,7 @@
 // a clean, fluent API for configuration.
 
 use tokio::process::Command;
-use crate::servers::server::NodeRpcError;
+use crate::servers::helpers::NodeRpcError;
 
 use crate::servers::docker::DockerError;
 
@@ -33,6 +33,7 @@ pub enum PathfinderError {
 #[derive(Debug, Clone)]
 pub struct PathfinderConfig {
     port: u16,
+    host: String,
     image: String,
     container_name: String,
     ethereum_url: String,
@@ -52,6 +53,7 @@ impl Default for PathfinderConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_PATHFINDER_PORT,
+            host: "127.0.0.1".to_string(),
             image: DEFAULT_PATHFINDER_IMAGE.to_string(),
             container_name: DEFAULT_PATHFINDER_CONTAINER_NAME.to_string(),
             ethereum_url: "https://ethereum-sepolia-rpc.publicnode.com".to_string(),
@@ -83,6 +85,11 @@ impl PathfinderConfig {
     /// Get the RPC port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the host
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     /// Get the Docker image

@@ -22,6 +22,7 @@ pub enum MongoError {
 #[derive(Debug, Clone)]
 pub struct MongoConfig {
     port: u16,
+    host: String,
     image: String,
     container_name: String,
 }
@@ -30,6 +31,7 @@ impl Default for MongoConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_MONGO_PORT,
+            host: "127.0.0.1".to_string(),
             image: DEFAULT_MONGO_IMAGE.to_string(),
             container_name: DEFAULT_MONGO_CONTAINER_NAME.to_string(),
         }
@@ -50,6 +52,11 @@ impl MongoConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the host
+    pub fn host(&self) -> &str {
+        &self.host
     }
 
     /// Get the Docker image
@@ -96,6 +103,11 @@ impl MongoConfigBuilder {
     /// Set the port (default: 27017)
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = port;
+        self
+    }
+
+    pub fn host(mut self, host: String) -> Self {
+        self.config.host = host;
         self
     }
 

@@ -11,6 +11,8 @@ use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
 
+use super::server::ServiceAddress;
+
 pub struct MongoService {
     server: Server,
     config: MongoConfig,
@@ -49,8 +51,10 @@ impl MongoService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            port: config.port(),
-            host: "127.0.0.1".to_string(), // Default host for MongoDB
+            service_address : Some(ServiceAddress {
+                host: config.host().to_string(),
+                port: config.port(),
+            }),
             connection_attempts: 30, // MongoDB usually starts quickly
             connection_delay_ms: 1000,
             ..Default::default()

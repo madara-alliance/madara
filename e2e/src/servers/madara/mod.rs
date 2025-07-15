@@ -11,7 +11,9 @@ use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
 use std::path::PathBuf;
 
-use super::server::NodeRpcMethods;
+use crate::servers::helpers::NodeRpcMethods;
+
+use super::server::ServiceAddress;
 
 pub struct MadaraService {
     server: Server,
@@ -28,8 +30,10 @@ impl MadaraService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            port: config.rpc_port(),
-            host: "127.0.0.1".to_string(), // Default host for Madara
+            service_address: Some(ServiceAddress {
+                host: config.rpc_host().to_string(),
+                port: config.rpc_port()
+            }),
             connection_attempts: 60, // Madara might take time to start
             connection_delay_ms: 2000,
             ..Default::default()

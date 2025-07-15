@@ -4,7 +4,7 @@ use crate::servers::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
-use crate::servers::server::NodeRpcError;
+use crate::servers::helpers::NodeRpcError;
 
 const DEFAULT_MADARA_RPC_PORT: u16 = 9944;
 const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
@@ -52,6 +52,7 @@ pub struct MadaraConfig {
     name: String,
     database_path: PathBuf,
     rpc_port: u16,
+    host: String,
     rpc_cors: String,
     rpc_external: bool,
     rpc_admin: bool,
@@ -77,6 +78,7 @@ impl Default for MadaraConfig {
             binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
             name: DEFAULT_MADARA_NAME.to_string(),
             database_path: PathBuf::from("./data/madara-db"),
+            host: "127.0.0.1".to_string(),
             rpc_port: DEFAULT_MADARA_RPC_PORT,
             rpc_cors: "*".to_string(),
             rpc_external: true,
@@ -129,6 +131,11 @@ impl MadaraConfig {
     /// Get the RPC port
     pub fn rpc_port(&self) -> u16 {
         self.rpc_port
+    }
+
+    /// Get the RPC host
+    pub fn rpc_host(&self) -> &str {
+        &self.host
     }
 
     /// Get the RPC CORS
@@ -330,6 +337,11 @@ impl MadaraConfigBuilder {
 
     pub fn rpc_port(mut self, port: u16) -> Self {
         self.config.rpc_port = port;
+        self
+    }
+
+    pub fn rpc_host(mut self, host: &str) -> Self {
+        self.config.host = host.to_string();
         self
     }
 

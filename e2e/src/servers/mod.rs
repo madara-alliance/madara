@@ -8,3 +8,4 @@ pub mod mongo;
 pub mod orchestrator;
 pub mod pathfinder;
 pub mod server;
+pub mod helpers;

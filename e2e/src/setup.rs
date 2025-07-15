@@ -149,7 +149,7 @@ pub struct Setup {
 }
 
 // Dependencies that each task enlists that we validate!
-pub enum Tasks{
+pub enum Dependencies{
     AnvilIsRunning,
     DockerIsRunning,
     MongoIsRunning,
