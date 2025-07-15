@@ -16,15 +16,6 @@ pub const DEFAULT_LOCALSTACK_IMAGE: &str =
     "localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314";
 const DEFAULT_LOCALSTACK_CONTAINER_NAME: &str = "localstack-service";
 
-// Builder type that allows configuration
-#[derive(Debug, Clone)]
-pub struct LocalstackConfigBuilder {
-    port: u16,
-    image: String,
-    container_name: String,
-    environment_vars: Vec<(String, String)>,
-}
-
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct LocalstackConfig {
@@ -34,7 +25,7 @@ pub struct LocalstackConfig {
     environment_vars: Vec<(String, String)>,
 }
 
-impl Default for LocalstackConfigBuilder {
+impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_LOCALSTACK_PORT,
@@ -48,54 +39,17 @@ impl Default for LocalstackConfigBuilder {
     }
 }
 
-impl LocalstackConfigBuilder {
-    /// Create a new configuration builder with default values
+impl LocalstackConfig {
+    /// Create a new configuration with default values
     pub fn new() -> Self {
         Self::default()
     }
 
-    /// Set the port (default: 4566)
-    pub fn port(mut self, port: u16) -> Self {
-        self.port = port;
-        self
+    /// Create a builder for LocalstackConfig
+    pub fn builder() -> LocalstackConfigBuilder {
+        LocalstackConfigBuilder::new()
     }
 
-    /// Set the Docker image
-    pub fn image<S: Into<String>>(mut self, image: S) -> Self {
-        self.image = image.into();
-        self
-    }
-
-    /// Set the container name
-    pub fn container_name<S: Into<String>>(mut self, name: S) -> Self {
-        self.container_name = name.into();
-        self
-    }
-
-    /// Add an environment variable
-    pub fn add_env_var<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
-        self.environment_vars.push((key.into(), value.into()));
-        self
-    }
-
-    /// Set all environment variables (replaces existing ones)
-    pub fn environment_vars(mut self, vars: Vec<(String, String)>) -> Self {
-        self.environment_vars = vars;
-        self
-    }
-
-    /// Build the final immutable configuration
-    pub fn build(self) -> LocalstackConfig {
-        LocalstackConfig {
-            port: self.port,
-            image: self.image,
-            container_name: self.container_name,
-            environment_vars: self.environment_vars,
-        }
-    }
-}
-
-impl LocalstackConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
@@ -133,8 +87,60 @@ impl LocalstackConfig {
 
         command
     }
+}
 
+// Builder type that allows configuration
+#[derive(Debug, Clone)]
+pub struct LocalstackConfigBuilder {
+    config: LocalstackConfig,
+}
 
+impl LocalstackConfigBuilder {
+    /// Create a new configuration builder with default values
+    pub fn new() -> Self {
+        Self {
+            config: LocalstackConfig::default(),
+        }
+    }
 
+    /// Build the final immutable configuration
+    pub fn build(self) -> LocalstackConfig {
+        self.config
+    }
 
+    /// Set the port (default: 4566)
+    pub fn port(mut self, port: u16) -> Self {
+        self.config.port = port;
+        self
+    }
+
+    /// Set the Docker image
+    pub fn image<S: Into<String>>(mut self, image: S) -> Self {
+        self.config.image = image.into();
+        self
+    }
+
+    /// Set the container name
+    pub fn container_name<S: Into<String>>(mut self, name: S) -> Self {
+        self.config.container_name = name.into();
+        self
+    }
+
+    /// Add an environment variable
+    pub fn env_var<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
+        self.config.environment_vars.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set all environment variables (replaces existing ones)
+    pub fn environment_vars(mut self, vars: Vec<(String, String)>) -> Self {
+        self.config.environment_vars = vars;
+        self
+    }
+}
+
+impl Default for LocalstackConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
 }

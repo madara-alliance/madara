@@ -159,6 +159,11 @@ enum Services {
     Pathfinder(PathfinderService),
 }
 
+
+
+
+// TODO: need a validation on weather the binaries are available or not!
+
 impl Setup {
     /// Create a new setup instance
     pub fn new(config: SetupConfig) -> Result<Self, SetupError> {
