@@ -9,7 +9,7 @@ pub mod queue;
 
 pub mod alerts;
 pub mod common;
+pub mod compression;
 mod data_storage;
 pub mod utils;
 pub mod workers;
-pub mod compression;
