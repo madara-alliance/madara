@@ -13,7 +13,6 @@ use std::time::Duration;
 use tracing::warn;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
-use tracing_subscriber::util::SubscriberInitExt;
 use tracing_subscriber::EnvFilter;
 use url::Url;
 
@@ -46,10 +45,13 @@ impl OrchestratorInstrumentation {
                 let tracer = Self::instrument_tracer_provider(config, endpoint)?;
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
 
-                tracing_subscriber
+                let subscriber = tracing_subscriber
                     .with(OpenTelemetryLayer::new(tracer))
-                    .with(OpenTelemetryTracingBridge::new(&logger))
-                    .init();
+                    .with(OpenTelemetryTracingBridge::new(&logger));
+
+                // Force overwrite any existing global subscriber
+                let _ = tracing::subscriber::set_global_default(subscriber);
+                warn!("OpenTelemetry tracing subscriber initialized (existing subscriber overwritten if present)");
                 Ok(Self { otel_config: config.clone(), meter_provider: Some(meter_provider) })
             }
         }

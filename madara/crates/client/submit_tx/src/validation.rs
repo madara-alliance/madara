@@ -9,6 +9,7 @@ use blockifier::{
     transaction::{
         account_transaction::{AccountTransaction, ExecutionFlags},
         errors::{TransactionExecutionError, TransactionPreValidationError},
+        objects::HasRelatedFeeType,
     },
 };
 use mc_db::MadaraBackend;
@@ -21,14 +22,14 @@ use mp_rpc::{
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},
-    BroadcastedTransactionExt, ToBlockifierError,
+    IntoStarknetApiExt, ToBlockifierError,
 };
 use starknet_api::{
     executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
     transaction::TransactionVersion,
 };
 use starknet_types_core::felt::Felt;
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc};
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
@@ -183,6 +184,12 @@ pub struct TransactionValidator {
     config: TransactionValidatorConfig,
 }
 
+impl fmt::Debug for TransactionValidator {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "TransactionValidator {{ config: {:?} }}", self.config)
+    }
+}
+
 impl TransactionValidator {
     pub fn new(
         inner: Arc<dyn SubmitValidatedTransaction>,
@@ -201,6 +208,14 @@ impl TransactionValidator {
     ) -> Result<(), SubmitTransactionError> {
         let tx_hash = tx.tx_hash().to_felt();
 
+        if tx.tx_type() == TransactionType::L1Handler {
+            // L1HandlerTransactions don't have nonces.
+            return Err(RejectedTransactionError::new(
+                RejectedTransactionErrorKind::ValidateFailure,
+                "Cannot submit l1 handler transactions",
+            )
+            .into());
+        };
         // We have to skip part of the validation in the very specific case where you send an invoke tx directly after a deploy account:
         // the account is not deployed yet but the tx should be accepted.
         let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);
@@ -216,6 +231,15 @@ impl TransactionValidator {
         };
 
         if !self.config.disable_validation {
+            if account_tx.version() < TransactionVersion::ONE {
+                // Some v0 txs don't have a nonce. (declare)
+                return Err(RejectedTransactionError::new(
+                    RejectedTransactionErrorKind::InvalidTransactionVersion,
+                    "Cannot submit v0 transaction",
+                )
+                .into());
+            };
+
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
             let mut validator = self.backend.new_transaction_validator()?;

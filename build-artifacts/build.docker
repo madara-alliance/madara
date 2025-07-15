@@ -14,7 +14,17 @@ RUN apt-get -y update && apt-get install -y \
 #                              STARKGATE CONTRACTS                            #
 # =========================================================================== #
 
-FROM builder AS starkgate-latest
+# TODO: arm64 support (macos)
+FROM --platform=linux/amd64 rust:1.85 AS starkgate-latest
+WORKDIR /contracts
+RUN apt-get -y update && apt-get install -y \
+  python3-full \
+  python3-pip \
+  python3-venv \
+  npm \
+  wget \
+  curl \
+  git
 ENV STARKGATE_TAG="v2.0.1"
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV COMPILE_SIERRA=".downloads/cairo/bin/starknet-sierra-compile"
@@ -44,13 +54,12 @@ RUN scripts/build-cairo.sh                                                      
 #                          STARKGATE CONTRACTS (legacy)                       #
 # =========================================================================== #
 
-FROM ciimage/python:3.7 AS starkgate-legacy
+FROM python:3.7 AS starkgate-legacy
 ENV STARKGATE_REV="c08863a1f08226c09f1d0748124192e848d73db9"
 
 WORKDIR /contracts
 
 RUN apt-get update -y
-RUN apt -y -o Dpkg::Options::="--force-overwrite" install python3.7-dev
 RUN apt-get install -y \
   libgmp3-dev \
   make \
@@ -102,10 +111,16 @@ RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.jso
 # =========================================================================== #
 
 FROM builder AS braavos
+ARG TARGETOS
+ARG TARGETARCH
 ENV BRAAVOS_REV="12b82a87b93ba9bfdf2cbbde2566437df2e0c6c8"
 ENV SCARB_VERSION="2.8.4"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  fi
 
 # clone repository
 RUN git clone https://github.com/myBraavos/braavos-account-cairo.git
@@ -113,7 +128,7 @@ WORKDIR braavos-account-cairo
 RUN git checkout $BRAAVOS_REV
 
 # Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -123,10 +138,16 @@ RUN ./scarb/bin/scarb build
 # =========================================================================== #
 
 FROM builder AS argent
+ARG TARGETOS
+ARG TARGETARCH
 ENV ARGENT_REV="1352198956f36fb35fa544c4e46a3507a3ec20e3"
 ENV SCARB_VERSION="2.6.3"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  fi
 
 # clone repository
 RUN git clone https://github.com/argentlabs/argent-contracts-starknet.git
@@ -134,7 +155,7 @@ WORKDIR argent-contracts-starknet
 RUN git checkout $ARGENT_REV
 
 # Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -144,16 +165,22 @@ RUN ./scarb/bin/scarb build
 # =========================================================================== #
 
 FROM builder AS js-tests
+ARG TARGETOS
+ARG TARGETARCH
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  fi
 
 # Copy over contracts
 WORKDIR js-tests
 COPY cairo/js_tests .
 
 # Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -163,16 +190,22 @@ RUN ./scarb/bin/scarb build
 # =========================================================================== #
 
 FROM builder AS orchestrator-tests
+ARG TARGETOS
+ARG TARGETARCH
 ENV SCARB_VERSION="2.8.2"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
-ENV SCARB_URL="$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz"
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  fi
 
 # Copy over contracts
 WORKDIR orchestrator-tests
 COPY cairo/orchestrator_tests .
 
 # Setup scarb
-RUN mkdir scarb && wget -c $SCARB_URL -O - | tar -xz -C scarb --strip-components=1
+RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
 
 # Compile contracts
 RUN ./scarb/bin/scarb build

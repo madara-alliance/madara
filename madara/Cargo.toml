@@ -111,6 +111,7 @@ mc-submit-tx = { path = "crates/client/submit_tx" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "crates/cairo-test-contracts" }
+mc-e2e-tests = { path = "crates/tests" }
 
 # Build
 build-version = { path = "../build-artifacts" }

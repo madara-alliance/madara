@@ -4,16 +4,12 @@ use blockifier::transaction::transaction_execution::Transaction;
 use mc_db::mempool_db::{DbMempoolTxInfoDecoder, NonceInfo};
 use mc_db::{MadaraBackend, MadaraStorageError};
 use mc_submit_tx::{
-    RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransactionError,
-    SubmitValidatedTransaction,
+    RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError, SubmitValidatedTransaction,
 };
 use metrics::MempoolMetrics;
 use mp_block::{BlockId, BlockTag};
 use mp_class::ConvertedClass;
-use mp_convert::ToFelt;
 use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx, ValidatedToBlockifierTxError};
-use mp_transactions::L1HandlerTransaction;
-use mp_transactions::L1HandlerTransactionResult;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
 use starknet_api::transaction::TransactionVersion;
@@ -46,6 +42,8 @@ pub enum MempoolError {
     ValidatedToBlockifier(#[from] ValidatedToBlockifierTxError),
     #[error("Invalid nonce")]
     InvalidNonce,
+    #[error("Cannot add l1 handler transaction to mempool.")]
+    L1HandlerTransaction,
 }
 
 #[cfg(any(test, feature = "testing"))]
@@ -112,6 +110,7 @@ impl From<MempoolError> for SubmitTransactionError {
                 "A transaction with this nonce already exists in the transaction pool",
             ),
             E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
+            E::L1HandlerTransaction => rejected(ValidateFailure, "Cannot add L1HandlerTransactions to the mempool"),
         }
     }
 }
@@ -131,36 +130,6 @@ impl SubmitValidatedTransaction for Mempool {
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
         Some(self.tx_sender.subscribe())
-    }
-}
-
-#[async_trait]
-impl SubmitL1HandlerTransaction for Mempool {
-    async fn submit_l1_handler_transaction(
-        &self,
-        tx: L1HandlerTransaction,
-        paid_fees_on_l1: u128,
-    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
-        let arrived_at = TxTimestamp::now();
-
-        let tx_hash = tx.compute_hash(
-            self.backend.chain_config().chain_id.to_felt(),
-            /* offset_version */ false,
-            /* legacy */ false,
-        );
-
-        let tx = ValidatedMempoolTx {
-            contract_address: tx.contract_address,
-            tx_hash,
-            tx: tx.into(),
-            paid_fee_on_l1: Some(paid_fees_on_l1),
-            arrived_at,
-            converted_class: None,
-        };
-
-        let res = L1HandlerTransactionResult { transaction_hash: tx_hash };
-        self.accept_tx(tx).await?;
-        Ok(res)
     }
 }
 
@@ -216,10 +185,11 @@ impl Mempool {
     }
 
     async fn accept_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
+        if tx.tx.is_l1_handler() {
+            return Err(MempoolError::L1HandlerTransaction); // We don't accept l1handlertransactions.
+        }
         let nonce_info = if tx.tx.version() == TransactionVersion::ZERO {
             NonceInfo::default()
-        } else if let Some(tx) = tx.tx.as_l1_handler() {
-            self.resolve_nonce_info_l1_handler(tx.nonce.into())?
         } else {
             self.retrieve_nonce_info(tx.contract_address, tx.tx.nonce()).await?
         };
@@ -321,45 +291,16 @@ impl Mempool {
         }
     }
 
-    /// This function determines the Nonce status (NonceInfo) for incoming L1 transactions
-    /// based on the last processed nonce (current_nonce) in the system.
-    ///
-    /// L1 Handler nonces represent the ordering of L1 transactions sent by the
-    /// core L1 contract. In principle this is a bit strange, as there currently
-    /// is only 1 core L1 contract, so all transactions should be ordered by
-    /// default. Moreover, these transaction are infrequent, so the risk that
-    /// two transactions are emitted at very short intervals seems unlikely.
-    /// Still, who knows?
-    fn resolve_nonce_info_l1_handler(&self, nonce: Felt) -> Result<NonceInfo, MempoolError> {
-        let nonce = Nonce(nonce);
-        let nonce_next = nonce.try_increment().context("Nonce overflow").map_err(MempoolError::Internal)?;
-
-        // TODO: This would break if the txs are not ordered --> l1 nonce latest should be updated only after execution
-        // Currently is updated after inclusion in mempool
-        let current_nonce = self.backend.get_l1_messaging_nonce_latest()?;
-        // first l1 handler tx, where get_l1_messaging_nonce_latest returns None
-        let target_nonce = match current_nonce {
-            Some(nonce) => nonce.try_increment().context("Nonce overflow").map_err(MempoolError::Internal)?,
-            None => Nonce(Felt::ZERO),
-        };
-
-        match nonce.cmp(&target_nonce) {
-            std::cmp::Ordering::Less => Err(MempoolError::InvalidNonce),
-            std::cmp::Ordering::Equal => Ok(NonceInfo::ready(nonce, nonce_next)),
-            std::cmp::Ordering::Greater => Ok(NonceInfo::pending(nonce, nonce_next)),
-        }
-    }
-
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
     /// If the mempool has no mempool that can be consumed, this function will wait until there is at least 1 transaction to consume.
-    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView {
         self.inner.get_consumer_wait_for_ready_tx().await
     }
 
     #[tracing::instrument(skip(self), fields(module = "Mempool"))]
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
-    pub async fn get_consumer(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_consumer(&self) -> MempoolConsumerView {
         self.inner.get_consumer().await
     }
 }
@@ -440,20 +381,6 @@ pub(crate) mod tests {
             TxTimestamp::now(),
             None,
         )
-    }
-
-    #[rstest::fixture]
-    fn tx_l1_handler_valid(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
-        let tx = L1HandlerTransaction { contract_address, ..Default::default() };
-
-        ValidatedMempoolTx {
-            contract_address: tx.contract_address,
-            tx: tx.into(),
-            paid_fee_on_l1: Some(0),
-            arrived_at: TxTimestamp::now(),
-            converted_class: None,
-            tx_hash: Felt::ZERO,
-        }
     }
 
     #[rstest::rstest]
@@ -1154,50 +1081,6 @@ pub(crate) mod tests {
         mempool.inner.read().await.check_invariants();
     }
 
-    /// This test makes sure that adding an l1 handler to [MempoolInner] does
-    /// not cause an infinite loop when trying to remove age exceeded
-    /// transactions.
-    ///
-    /// This is important as age is not checked on l1 handlers, and so if they
-    /// are not handled properly they cam cause an infinite loop.
-    ///
-    /// > This bug was originally detected through proptesting.
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
-    #[tokio::test]
-    async fn mempool_remove_aged_tx_pass_l1_handler(
-        #[future] backend: Arc<mc_db::MadaraBackend>,
-        tx_l1_handler_valid: ValidatedMempoolTx,
-    ) {
-        let backend = backend.await;
-        let mempool = Mempool::new(backend, MempoolConfig::for_testing());
-
-        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
-        let mempool_tx = MempoolTransaction {
-            tx: tx_l1_handler_valid.into_blockifier_for_sequencing().unwrap().0,
-            arrived_at: TxTimestamp::now(),
-            converted_class: None,
-            nonce: nonce_info.nonce,
-            nonce_next: nonce_info.nonce_next,
-        };
-
-        let force = false;
-        let update_limits = true;
-        let result = mempool.inner.insert_tx(mempool_tx, force, update_limits, nonce_info).await;
-        assert_matches::assert_matches!(result, Ok(()));
-
-        let inner = mempool.inner.read().await;
-        assert!(inner.nonce_is_ready(CONTRACT_ADDRESS, Nonce(Felt::ZERO)));
-        inner.check_invariants();
-        drop(inner);
-
-        // This should not loop!
-        mempool.inner.write().await.remove_age_exceeded_txs();
-        let inner = mempool.inner.read().await;
-        assert!(inner.nonce_is_ready(CONTRACT_ADDRESS, Nonce(Felt::ZERO)));
-        inner.check_invariants();
-    }
-
     /// This tests makes sure that if a transaction is inserted as [pending],
     /// and the transaction before it is polled, then that transaction becomes
     /// [ready].
@@ -1523,60 +1406,6 @@ pub(crate) mod tests {
         // passing Felt::MAX is not allowed.
         assert_matches::assert_matches!(
             mempool.retrieve_nonce_info(Felt::ZERO, Felt::MAX).await,
-            Err(MempoolError::Internal(_))
-        );
-    }
-
-    /// This test makes sure that resolve_nonce_info_l1_handler has proper
-    /// error handling and returns correct values based on the state of the db.
-    #[rstest::rstest]
-    #[timeout(Duration::from_millis(1_000))]
-    #[tokio::test]
-    async fn mempool_resolve_nonce_info_l1_handler(#[future] backend: Arc<mc_db::MadaraBackend>) {
-        let backend = backend.await;
-        let mempool = Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing());
-
-        // First l1 handler tx (nonce == 0) is ready if there are nothing in db yet
-        assert_eq!(
-            mempool.resolve_nonce_info_l1_handler(Felt::ZERO).unwrap(),
-            NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE))
-        );
-
-        // Non-zero l1 handler txs is accepted in pending state if older ones are still not processed
-        assert_eq!(
-            mempool.resolve_nonce_info_l1_handler(Felt::ONE).unwrap(),
-            NonceInfo::pending(Nonce(Felt::ONE), Nonce(Felt::TWO))
-        );
-
-        // Updates the latest l1 nonce in db
-        backend.set_l1_messaging_nonce(Nonce(Felt::ZERO)).expect("Failed to update l1 messaging nonce in db");
-
-        // First l1 transaction has been stored in db. If we receive anything less than the next Nonce
-        // We get an error
-
-        assert_matches::assert_matches!(
-            mempool.resolve_nonce_info_l1_handler(Felt::ZERO),
-            Err(MempoolError::InvalidNonce)
-        );
-
-        // Following nonces should be marked as ready...
-
-        assert_eq!(
-            mempool.resolve_nonce_info_l1_handler(Felt::ONE).unwrap(),
-            NonceInfo::ready(Nonce(Felt::ONE), Nonce(Felt::TWO))
-        );
-
-        // ...otherwise they should be marked as pending
-
-        assert_eq!(
-            mempool.resolve_nonce_info_l1_handler(Felt::TWO).unwrap(),
-            NonceInfo::pending(Nonce(Felt::TWO), Nonce(Felt::THREE))
-        );
-
-        // We need to compute the next nonce inside retrieve nonce_info, so
-        // passing Felt::MAX is not allowed.
-        assert_matches::assert_matches!(
-            mempool.resolve_nonce_info_l1_handler(Felt::MAX),
             Err(MempoolError::Internal(_))
         );
     }

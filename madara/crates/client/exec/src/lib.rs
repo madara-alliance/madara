@@ -15,13 +15,13 @@ mod blockifier_state_adapter;
 mod call;
 pub mod execution;
 mod fee;
-mod layered_state_adaptor;
+mod layered_state_adapter;
 mod trace;
 pub mod transaction;
 
 pub use block_context::{ExecutionContext, MadaraBackendExecutionExt};
 pub use blockifier_state_adapter::BlockifierStateAdapter;
-pub use layered_state_adaptor::LayeredStateAdaptor;
+pub use layered_state_adapter::LayeredStateAdapter;
 pub use trace::execution_result_to_tx_trace;
 
 #[derive(Debug)]

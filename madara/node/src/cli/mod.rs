@@ -264,8 +264,8 @@ impl RunCmd {
 
     pub fn check_mode(&self) -> anyhow::Result<()> {
         if !self.sequencer && !self.full && !self.devnet {
-            let error_message = "One of the modes is required:\n- 'sequencer'\n- 'full'\n- 'devnet' ";
-            return Err(anyhow::anyhow!("{}", error_message));
+            tracing::error!("One of the modes is required:\n- 'sequencer'\n- 'full'\n- 'devnet' ");
+            std::process::exit(1);
         }
         Ok(())
     }

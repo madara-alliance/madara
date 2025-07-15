@@ -482,7 +482,7 @@ mod test {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        Starknet::new(backend, mempool_validator, Default::default(), context)
+        Starknet::new(backend, mempool_validator, Default::default(), None, context)
     }
 
     #[tokio::test]

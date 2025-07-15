@@ -376,6 +376,18 @@ impl InvokeTransactionV3 {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct L1HandlerTransactionWithFee {
+    pub tx: L1HandlerTransaction,
+    pub paid_fee_on_l1: u128,
+}
+
+impl L1HandlerTransactionWithFee {
+    pub fn new(tx: L1HandlerTransaction, paid_fee_on_l1: u128) -> Self {
+        Self { tx, paid_fee_on_l1 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransaction {
     pub version: Felt,
     pub nonce: u64,

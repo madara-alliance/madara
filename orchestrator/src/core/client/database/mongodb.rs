@@ -80,11 +80,11 @@ impl MongoDbClient {
         self.database.collection("batches")
     }
 
-    pub fn get_collection(&self, name: &str) -> Collection<JobItem> {
+    pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
     pub fn jobs_collection(&self) -> Collection<JobItem> {
-        self.get_collection("jobs")
+        self.get_collection::<JobItem>("jobs")
     }
 
     pub fn locks_collection(&self) -> Collection<JobItem> {
@@ -881,6 +881,38 @@ impl DatabaseClient for MongoDbClient {
                 )))
             }
         }
+    }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": {
+                "$in": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
+        };
+
+        let find_options = FindOptions::builder().sort(doc! { "internal_id": -1 }).build();
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            job_count = jobs.len(),
+            category = "db_call",
+            "Retrieved jobs by type and statuses"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_statuses")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]

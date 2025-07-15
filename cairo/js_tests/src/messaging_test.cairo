@@ -2,8 +2,8 @@ use starknet::ContractAddress;
 
 #[derive(Drop, Serde)]
 struct MessageData {
-    from_address: ContractAddress,
-    to_address: felt252,
+    from: ContractAddress,
+    to: felt252,
     selector: felt252,
     payload: Array<felt252>,
     nonce: felt252,
@@ -12,8 +12,8 @@ struct MessageData {
 // Separate storage struct to handle the array storage properly
 #[derive(Drop, Serde, starknet::Store)]
 struct StorageMessageData {
-    from_address: ContractAddress,
-    to_address: felt252,
+    from: ContractAddress,
+    to: felt252,
     selector: felt252,
     nonce: felt252,
 }
@@ -34,7 +34,7 @@ trait IMessagingContract<TContractState> {
     fn get_message_data(self: @TContractState) -> MessageData;
     fn fire_event(ref self: TContractState);
     fn sn_to_appchain_messages(self: @TContractState, msg_hash: felt252) -> MessageToAppchainStatus;
-    fn set_is_canceled(ref self: TContractState, value: bool);
+    fn cancel_event(ref self: TContractState);
     fn get_l1_to_l2_msg_hash(self: @TContractState) -> felt252;
 }
 
@@ -53,6 +53,7 @@ mod MessagingContract {
     #[derive(Drop, starknet::Event)]
     enum Event {
         MessageSent: MessageSent,
+        MessageCancellationStarted: MessageCancellationStarted,
     }
 
     #[derive(Drop, starknet::Event)]
@@ -60,12 +61,24 @@ mod MessagingContract {
         #[key]
         message_hash: felt252,
         #[key]
-        from_address: ContractAddress,
+        from: ContractAddress,
         #[key]
-        to_address: felt252,
+        to: felt252,
         selector: felt252,
         nonce: felt252,
         payload: Array<felt252>,
+    }
+    #[derive(Drop, starknet::Event)]
+    struct MessageCancellationStarted {
+        #[key]
+        message_hash: felt252,
+        #[key]
+        from: ContractAddress,
+        #[key]
+        to: felt252,
+        selector: felt252,
+        payload: Span<felt252>,
+        nonce: felt252,
     }
 
     #[storage]
@@ -79,8 +92,8 @@ mod MessagingContract {
         fn get_message_data(self: @ContractState) -> MessageData {
             let mut payload: Array<felt252> = ArrayTrait::new();
             // Transfer L2 ---> L3
-            // from_address : <madara devnet address #10>
-            // to_address : <ETH address>
+            // from : <madara devnet address #10>
+            // to : <ETH address>
             // selector : transfer
             // payload : [ <madara devnet address #9> , 30 ETH ]
             payload
@@ -97,10 +110,10 @@ mod MessagingContract {
             payload.append(18.into());
 
             MessageData {
-                from_address: 116928254081234419462378178529324579584489887065328772660517990334005757698
+                from: 116928254081234419462378178529324579584489887065328772660517990334005757698
                     .try_into()
                     .unwrap(),
-                to_address: 254321392966061410989098621660241596001676783615828345549730562518690224743
+                to: 254321392966061410989098621660241596001676783615828345549730562518690224743
                     .into(),
                 selector: 1737780302748468118210503507461757847859991634169290761669750067796330642876
                     .into(),
@@ -117,8 +130,8 @@ mod MessagingContract {
                     Event::MessageSent(
                         MessageSent {
                             message_hash: hash,
-                            from_address: data.from_address,
-                            to_address: data.to_address,
+                            from: data.from,
+                            to: data.to,
                             selector: data.selector,
                             payload: data.payload,
                             nonce: data.nonce,
@@ -147,15 +160,30 @@ mod MessagingContract {
             }
         }
 
-        fn set_is_canceled(ref self: ContractState, value: bool) {
-            self.is_canceled.write(value);
+        fn cancel_event(ref self: ContractState) {
+            self.is_canceled.write(true);
+            let data = self.get_message_data();
+            let hash = self.get_l1_to_l2_msg_hash();
+            self
+                .emit(
+                    Event::MessageCancellationStarted(
+                        MessageCancellationStarted {
+                            message_hash: hash,
+                            from: data.from,
+                            to: data.to,
+                            selector: data.selector,
+                            payload: data.payload.span(),
+                            nonce: data.nonce,
+                        }
+                    )
+                );
         }
 
         fn get_l1_to_l2_msg_hash(self: @ContractState) -> felt252 {
             let data = self.get_message_data();
             let mut hash_data: Array<felt252> = ArrayTrait::new();
-            hash_data.append(data.from_address.into());
-            hash_data.append(data.to_address);
+            hash_data.append(data.from.into());
+            hash_data.append(data.to);
             hash_data.append(data.nonce);
             hash_data.append(data.selector);
             let len: felt252 = data.payload.len().into();

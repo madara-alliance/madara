@@ -1,14 +1,3 @@
-use crate::cli::cron::event_bridge::EventBridgeType;
-use crate::cli::Layer;
-use crate::core::client::event_bus::error::EventBusError;
-use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
-use crate::core::client::queue::QueueError;
-use crate::core::cloud::CloudProvider;
-use crate::core::traits::resource::Resource;
-use crate::types::jobs::WorkerTriggerType;
-use crate::types::params::ARN;
-use crate::types::params::{AWSResourceIdentifier, CronArgs};
-use crate::{OrchestratorError, OrchestratorResult};
 use anyhow::Error;
 use async_trait::async_trait;
 use aws_sdk_eventbridge::types::{InputTransformer, RuleState, Target as EventBridgeTarget};
@@ -19,6 +8,18 @@ use rand::Rng;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::time::sleep;
+
+use crate::cli::cron::event_bridge::EventBridgeType;
+use crate::core::client::event_bus::error::EventBusError;
+use crate::core::client::event_bus::event_bridge::InnerAWSEventBridge;
+use crate::core::client::queue::QueueError;
+use crate::core::cloud::CloudProvider;
+use crate::core::traits::resource::Resource;
+use crate::types::jobs::WorkerTriggerType;
+use crate::types::params::ARN;
+use crate::types::params::{AWSResourceIdentifier, CronArgs};
+use crate::types::Layer;
+use crate::{OrchestratorError, OrchestratorResult};
 
 lazy_static! {
     pub static ref WORKER_TRIGGERS: Vec<WorkerTriggerType> = vec![

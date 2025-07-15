@@ -28,19 +28,24 @@ pub struct SharpValidatedArgs {
     pub sharp_server_crt: String,
     pub sharp_proof_layout: String,
     pub gps_verifier_contract_address: String,
+    pub sharp_settlement_layer: String,
 }
 
 /// SHARP (aka GPS) is a shared proving service hosted by Starkware.
 pub struct SharpProverService {
     sharp_client: SharpClient,
     fact_checker: FactChecker,
-    proof_layout: LayoutName,
 }
 
 #[async_trait]
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
-    async fn submit_task(&self, task: Task, _n_steps: Option<usize>) -> Result<String, ProverClientError> {
+    async fn submit_task(
+        &self,
+        task: Task,
+        proof_layout: LayoutName,
+        _n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -51,7 +56,7 @@ impl ProverClient for SharpProverService {
             Task::CairoPie(cairo_pie) => {
                 let encoded_pie =
                     starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
-                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
+                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",
@@ -153,23 +158,41 @@ impl ProverClient for SharpProverService {
             },
         }
     }
+
+    /// TODO: We need to implement this function for the prover client while adding the testcase
+    /// or while using the sharp prover client.
+    async fn get_proof(&self, _task_id: &str) -> Result<String, ProverClientError> {
+        todo!()
+    }
+
+    /// TODO: We need to implement this function for the prover client while adding the testcase
+    /// or while using the sharp prover client.
+    async fn submit_l2_query(
+        &self,
+        _task_id: &str,
+        _fact: &str,
+        _n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
+        todo!()
+    }
 }
 
 impl SharpProverService {
-    pub fn new(sharp_client: SharpClient, fact_checker: FactChecker, proof_layout: &LayoutName) -> Self {
-        Self { sharp_client, fact_checker, proof_layout: proof_layout.to_owned() }
+    pub fn new(sharp_client: SharpClient, fact_checker: FactChecker) -> Self {
+        Self { sharp_client, fact_checker }
     }
 
-    pub fn new_with_args(sharp_params: &SharpValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn new_with_args(sharp_params: &SharpValidatedArgs) -> Self {
         let sharp_client = SharpClient::new_with_args(sharp_params.sharp_url.clone(), sharp_params);
         let fact_checker = FactChecker::new(
             sharp_params.sharp_rpc_node_url.clone(),
             sharp_params.gps_verifier_contract_address.clone(),
+            sharp_params.sharp_settlement_layer.clone(),
         );
-        Self::new(sharp_client, fact_checker, proof_layout)
+        Self::new(sharp_client, fact_checker)
     }
 
-    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs, proof_layout: &LayoutName) -> Self {
+    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs) -> Self {
         let sharp_client = SharpClient::new_with_args(
             format!("http://127.0.0.1:{}", port).parse().expect("Failed to create sharp client with the given params"),
             sharp_params,
@@ -177,7 +200,8 @@ impl SharpProverService {
         let fact_checker = FactChecker::new(
             sharp_params.sharp_rpc_node_url.clone(),
             sharp_params.gps_verifier_contract_address.clone(),
+            sharp_params.sharp_settlement_layer.clone(),
         );
-        Self::new(sharp_client, fact_checker, proof_layout)
+        Self::new(sharp_client, fact_checker)
     }
 }

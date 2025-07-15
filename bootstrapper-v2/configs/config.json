@@ -1,0 +1,10 @@
+{
+  "base_layer": {
+    "layer": "ETHEREUM",
+    "rpc_url": "http://localhost:8545",
+    "implementation_addresses": {}
+  },
+  "madara": {
+    "rpc_url": "http://localhost:9944"
+  }
+}

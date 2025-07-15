@@ -19,6 +19,7 @@ targets = ["x86_64-unknown-linux-gnu"]
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 mc-mempool = { workspace = true, features = ["testing"] }
+mc-settlement-client = { workspace = true, features = ["testing"] }
 mc-devnet.workspace = true
 mc-submit-tx.workspace = true
 mp-rpc.workspace = true
@@ -35,7 +36,7 @@ serde_json.workspace = true
 m-cairo-test-contracts.workspace = true
 
 [features]
-testing = ["mc-db/testing", "mockall"]
+testing = ["mc-db/testing", "mockall", "mc-settlement-client/testing"]
 
 [dependencies]
 
@@ -44,11 +45,14 @@ mc-analytics.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
 mc-mempool.workspace = true
+mc-settlement-client.workspace = true
+mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
 mp-receipt.workspace = true
+mp-rpc.workspace = true
 mp-state-update.workspace = true
 mp-transactions.workspace = true
 mp-utils.workspace = true
@@ -61,6 +65,7 @@ starknet_api.workspace = true
 
 # Other
 anyhow.workspace = true
+async-trait.workspace = true
 futures = { workspace = true }
 mockall = { workspace = true, optional = true }
 thiserror.workspace = true

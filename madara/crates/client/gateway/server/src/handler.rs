@@ -246,7 +246,7 @@ pub async fn handle_get_block_traces(
     }
 
     let traces = v0_7_1_trace_block_transactions(
-        &Starknet::new(backend, add_transaction_provider, Default::default(), ctx),
+        &Starknet::new(backend, add_transaction_provider, Default::default(), None, ctx),
         block_id,
     )
     .await?;

@@ -111,13 +111,14 @@ impl ExecutionContext {
 pub trait TxInfo {
     fn contract_address(&self) -> ContractAddress;
     fn tx_hash(&self) -> TransactionHash;
-    fn nonce(&self) -> Nonce;
+    fn tx_nonce(&self) -> Option<Nonce>;
     fn tx_type(&self) -> TransactionType;
     fn fee_type(&self) -> FeeType;
     fn is_only_query(&self) -> bool;
     fn deployed_contract_address(&self) -> Option<ContractAddress>;
     fn declared_class_hash(&self) -> Option<ClassHash>;
     fn declared_contract_class(&self) -> Option<(ClassHash, ContractClass)>;
+    fn l1_handler_tx_nonce(&self) -> Option<Nonce>;
 }
 
 impl TxInfo for Transaction {
@@ -125,9 +126,12 @@ impl TxInfo for Transaction {
         Self::tx_hash(self)
     }
 
-    // FIXME: fix this, this is wrong for L1HandlerTxs.
-    fn nonce(&self) -> Nonce {
-        Self::nonce(self)
+    fn tx_nonce(&self) -> Option<Nonce> {
+        if self.tx_type() == TransactionType::L1Handler {
+            None
+        } else {
+            Some(Self::nonce(self))
+        }
     }
 
     fn contract_address(&self) -> ContractAddress {
@@ -176,6 +180,13 @@ impl TxInfo for Transaction {
             Self::Account(AccountTransaction { tx: ApiAccountTransaction::DeployAccount(tx), .. }) => {
                 Some(tx.contract_address)
             }
+            _ => None,
+        }
+    }
+
+    fn l1_handler_tx_nonce(&self) -> Option<Nonce> {
+        match self {
+            Self::L1Handler(tx) => Some(tx.tx.nonce),
             _ => None,
         }
     }

@@ -19,7 +19,7 @@ use crate::types::params::service::{ServerParams, ServiceParams};
 use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
-use crate::utils::helpers::ProcessingLocks;
+use crate::types::Layer;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -242,9 +242,8 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let processing_locks = ProcessingLocks::default();
-
         let config = Arc::new(Config::new(
+            Layer::L2,
             params.orchestrator_params,
             starknet_client,
             database,
@@ -253,7 +252,6 @@ impl TestConfigBuilder {
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         ));
 
@@ -300,7 +298,6 @@ pub mod implement_client {
     use starknet::providers::{JsonRpcClient, Url};
 
     use super::{ConfigType, EnvParams, MockType};
-    use crate::cli::Layer;
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
     use crate::core::client::queue::MockQueueClient;
@@ -315,6 +312,7 @@ pub mod implement_client {
     use crate::types::params::database::DatabaseArgs;
     use crate::types::params::settlement::SettlementConfig;
     use crate::types::params::{AlertArgs, QueueArgs, StorageArgs};
+    use crate::types::Layer;
 
     macro_rules! implement_mock_client_conversion {
         ($client_type:ident, $mock_variant:ident) => {
@@ -362,7 +360,7 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params, &params.orchestrator_params),
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -531,6 +529,7 @@ pub(crate) fn get_env_params() -> EnvParams {
     let snos_config = SNOSParams {
         rpc_for_snos: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_RPC_FOR_SNOS"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_RPC_FOR_SNOS"),
+        snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
@@ -596,6 +595,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         sharp_server_crt: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SERVER_CRT"),
         sharp_proof_layout: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_PROOF_LAYOUT"),
         gps_verifier_contract_address: get_env_var_or_panic("MADARA_ORCHESTRATOR_GPS_VERIFIER_CONTRACT_ADDRESS"),
+        sharp_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_SETTLEMENT_LAYER"),
     });
 
     EnvParams {
