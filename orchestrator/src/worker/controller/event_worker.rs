@@ -308,6 +308,12 @@ impl EventWorker {
         info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
 
         loop {
+            // Check if shutdown was requested at the start of each loop iteration
+            if self.is_shutdown.load(Ordering::SeqCst) {
+                info!("Shutdown requested, stopping message processing");
+                break;
+            }
+
             tokio::select! {
                 biased;
 
@@ -324,14 +330,14 @@ impl EventWorker {
 
                 // Handle shutdown signal
                 _ = self.shutdown_notify.notified() => {
-                    info!("Shutdown signal received");
-                    continue;
+                    info!("Shutdown signal received, breaking from main loop");
+                    break;
                 }
 
                 // Process new messages (with backpressure)
                 message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
                     match message_result {
-                        Ok(Some(message)) => {
+                        Ok(message) => {
                             if let Ok(parsed_message) = self.parse_message(&message) {
                                 let worker = self.clone();
                                 tasks.spawn(async move {
@@ -340,19 +346,21 @@ impl EventWorker {
                                 debug!("Spawned task, active: {}", tasks.len());
                             }
                         }
-                        Ok(None) => {
-                            sleep(Duration::from_millis(10)).await;
-                        }
                         Err(e) => {
                             error!("Error receiving message: {:?}", e);
                             sleep(Duration::from_secs(1)).await;
                         }
-                        // NOTE: Have another eye
-                        _ => {}
                     }
                 }
             }
         }
+
+        // Wait for remaining tasks to complete during shutdown
+        info!("Waiting for {} remaining tasks to complete", tasks.len());
+        while let Some(result) = tasks.join_next().await {
+            Self::handle_task_result(result);
+        }
+        info!("All tasks completed, worker shutdown complete");
 
         Ok(())
     }

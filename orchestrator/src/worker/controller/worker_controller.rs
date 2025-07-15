@@ -6,9 +6,9 @@ use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
 use anyhow::anyhow;
 
+use futures::future::try_join_all;
 use std::sync::Arc;
 use std::sync::Mutex;
-use futures::future::try_join_all;
 use tracing::{info, info_span};
 
 #[derive(Clone)]
@@ -29,14 +29,20 @@ impl WorkerController {
         Self { config, workers: Arc::new(Mutex::new(Vec::new())) }
     }
 
+    /// workers - Get the list of workers
+    /// This function returns the list of workers
+    /// # Returns
+    /// * `Vec<Arc<EventWorker>>` - A list of workers
+    /// # Errors
+    /// * `EventSystemError` - If there is an error during the operation
     pub fn workers(&self) -> EventSystemResult<Vec<Arc<EventWorker>>> {
         let workers = self.workers.lock().map_err(|e| EventSystemError::MutexPoisonError(e.to_string()))?;
         Ok(workers.clone())
     }
 
     /// run - Run the WorkerController
-    /// This function runs the WorkerController and handles events
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// This function starts the WorkerController and spawns workers for each queue type
+    /// It returns immediately after spawning all workers, making it non-blocking
     /// # Returns
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
@@ -63,9 +69,9 @@ impl WorkerController {
 
     /// create_event_handler - Create an event handler
     /// This function creates an event handler for the WorkerController
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// It returns a Result<Arc<EventWorker>, EventSystemError> indicating whether the operation was successful or not
     /// # Returns
-    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
+    /// * `Result<Arc<EventWorker>, EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
@@ -132,16 +138,24 @@ impl WorkerController {
     }
 
     /// shutdown - Trigger a graceful shutdown
-    /// This function triggers a graceful shutdown of the WorkerController
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// This function triggers a graceful shutdown of all workers
+    /// It waits for workers to complete their current tasks and exit cleanly
     /// # Returns
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     pub async fn shutdown(&self) -> EventSystemResult<()> {
+        info!("Initiating WorkerController graceful shutdown");
+
+        // Signal all workers to shutdown gracefully
         let workers = self.workers()?;
+        info!("Signaling {} workers to shutdown gracefully", workers.len());
+
         let futures: Vec<_> = workers.iter().map(|worker| worker.shutdown()).collect();
+        info!("All workers signaled to shutdown - they will complete current tasks and exit");
+
         try_join_all(futures).await?;
+        info!("WorkerController shutdown completed");
         Ok(())
     }
 }
