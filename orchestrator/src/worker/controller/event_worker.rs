@@ -365,13 +365,11 @@ impl EventWorker {
         Ok(())
     }
 
-    // handle_task_result - Handle the result of a task
+    /// Handle the result of a task
     /// This function handles the result of a task
     /// It logs the result of the task
     /// # Arguments
     /// * `result` - The result of the task
-    /// # Returns
-    /// * `Result<(), EventSystemError>` - A result indicating whether the operation was successful or not
     fn handle_task_result(result: Result<EventSystemResult<()>, tokio::task::JoinError>) {
         match result {
             Ok(Ok(_)) => {

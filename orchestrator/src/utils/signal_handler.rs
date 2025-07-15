@@ -1,5 +1,7 @@
-use anyhow::Result;
+use anyhow::{anyhow, Result};
+use std::sync::Arc;
 use tokio::signal;
+use tokio::sync::Notify;
 use tracing::{error, info, warn};
 
 #[cfg(unix)]
@@ -14,6 +16,8 @@ pub enum ShutdownSignal {
     Interrupt,
     /// SIGQUIT - Quit signal
     Quit,
+    /// Internal - Application-triggered shutdown (e.g., worker errors)
+    Internal,
 }
 
 impl std::fmt::Display for ShutdownSignal {
@@ -22,6 +26,7 @@ impl std::fmt::Display for ShutdownSignal {
             ShutdownSignal::Terminate => write!(f, "SIGTERM"),
             ShutdownSignal::Interrupt => write!(f, "SIGINT"),
             ShutdownSignal::Quit => write!(f, "SIGQUIT"),
+            ShutdownSignal::Internal => write!(f, "INTERNAL"),
         }
     }
 }
@@ -29,12 +34,18 @@ impl std::fmt::Display for ShutdownSignal {
 /// Signal handler for graceful shutdown
 pub struct SignalHandler {
     shutdown_signal: Option<ShutdownSignal>,
+    internal_shutdown_notify: Arc<Notify>,
 }
 
 impl SignalHandler {
     /// Create a new signal handler
     pub fn new() -> Self {
-        Self { shutdown_signal: None }
+        Self { shutdown_signal: None, internal_shutdown_notify: Arc::new(Notify::new()) }
+    }
+
+    /// Get a handle to trigger internal shutdown
+    pub fn get_shutdown_trigger(&self) -> Arc<Notify> {
+        self.internal_shutdown_notify.clone()
     }
 
     /// Wait for any shutdown signal and return which one was received
@@ -57,20 +68,24 @@ impl SignalHandler {
         let mut sigint = signal(SignalKind::interrupt()).expect("Failed to create SIGINT handler");
         let mut sigquit = signal(SignalKind::quit()).expect("Failed to create SIGQUIT handler");
 
-        info!("📡 Signal handler initialized, listening for SIGTERM, SIGINT, SIGQUIT");
+        info!("📡 Signal handler initialized, listening for SIGTERM, SIGINT, SIGQUIT, and internal shutdown requests");
 
         tokio::select! {
             _ = sigterm.recv() => {
-                info!("🔄 Docker/Kubernetes graceful shutdown initiated (SIGTERM)");
+                info!("Docker/Kubernetes graceful shutdown initiated (SIGTERM)");
                 ShutdownSignal::Terminate
             }
             _ = sigint.recv() => {
-                info!("⌨️  Interactive shutdown initiated (SIGINT/Ctrl+C)");
+                info!("Interactive shutdown initiated (SIGINT/Ctrl+C)");
                 ShutdownSignal::Interrupt
             }
             _ = sigquit.recv() => {
-                warn!("⚡ Force quit signal received (SIGQUIT)");
+                warn!("Force quit signal received (SIGQUIT)");
                 ShutdownSignal::Quit
+            }
+            _ = self.internal_shutdown_notify.notified() => {
+                warn!("Internal application shutdown requested (worker error or system inconsistency)");
+                ShutdownSignal::Internal
             }
         }
     }
@@ -78,10 +93,18 @@ impl SignalHandler {
     #[cfg(not(unix))]
     async fn wait_for_signal(&self) -> ShutdownSignal {
         // Note: Since we dont have the device to test this, This code might be blackbox for now
-        info!("📡 Signal handler initialized (Windows), listening for Ctrl+C");
-        signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
-        info!("⌨️  Interactive shutdown initiated (Ctrl+C)");
-        ShutdownSignal::Interrupt
+        info!("Signal handler initialized (Windows), listening for Ctrl+C and internal shutdown requests");
+
+        tokio::select! {
+            _ = signal::ctrl_c() => {
+                info!("Interactive shutdown initiated (Ctrl+C)");
+                ShutdownSignal::Interrupt
+            }
+            _ = self.internal_shutdown_notify.notified() => {
+                warn!("Internal application shutdown requested (worker error or system inconsistency)");
+                ShutdownSignal::Internal
+            }
+        }
     }
 
     /// Handle shutdown with timeout and fallback
@@ -92,8 +115,8 @@ impl SignalHandler {
     {
         let signal = self.shutdown_signal.unwrap_or(ShutdownSignal::Interrupt);
 
-        info!("🔄 Starting graceful shutdown (triggered by: {})", signal);
-        info!("⏱️  Shutdown timeout: {} seconds", timeout_secs);
+        info!("Starting graceful shutdown (triggered by: {})", signal);
+        info!("Shutdown timeout: {} seconds", timeout_secs);
 
         // Try graceful shutdown with timeout
         let shutdown_future = shutdown_fn();
@@ -119,7 +142,7 @@ impl SignalHandler {
                     }
                     _ => {
                         warn!("🔌 Shutdown timeout reached - this may leave some tasks incomplete");
-                        Err("Shutdown timeout exceeded".into())
+                        Err(anyhow!("Shutdown timeout exceeded"))
                     }
                 }
             }

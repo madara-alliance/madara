@@ -4,7 +4,6 @@ use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
 use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
-use anyhow::anyhow;
 
 use futures::future::try_join_all;
 use std::sync::Arc;
@@ -56,13 +55,13 @@ impl WorkerController {
         for queue_type in queues.into_iter() {
             let queue_type = queue_type.clone();
             let self_clone = self.clone();
-            worker_set.spawn(async move {
-                self_clone.create_span(&queue_type).await;
-            });
+            worker_set.spawn(async move { self_clone.create_span(&queue_type).await });
         }
         // since there is not support to join all in futures, we need to join each worker one by one
         while let Some(result) = worker_set.join_next().await {
-            result?;
+            // If any worker fails (initialization or infrastructure error), propagate the error
+            // This will trigger application shutdown
+            result??;
         }
         Ok(())
     }
@@ -76,7 +75,12 @@ impl WorkerController {
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
         let worker = Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())?);
-        self.workers()?.push(worker.clone());
+
+        // Fix: Properly store the worker by modifying the vector directly
+        let mut workers = self.workers.lock().map_err(|e| EventSystemError::MutexPoisonError(e.to_string()))?;
+        workers.push(worker.clone());
+        drop(workers); // Release the lock explicitly
+
         Ok(worker)
     }
 
@@ -121,20 +125,36 @@ impl WorkerController {
     }
 
     #[tracing::instrument(skip(self), fields(q = %q))]
-    async fn create_span(&self, q: &QueueType) {
+    async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
         let span = info_span!("worker", q = ?q);
         let _guard = span.enter();
         info!("Starting worker for queue type {:?}", q);
-        match self.create_event_handler(q).await {
-            Ok(handler) => match handler.run().await {
-                Ok(_) => info!("Worker for queue type {:?} is completed", q),
-                Err(e) => {
-                    let _ = anyhow!("🚨Failed to start worker: {:?}", e);
-                    tracing::error!("🚨Failed to start worker: {:?}", e)
-                }
-            },
-            Err(e) => tracing::error!("🚨Failed to create handler: {:?}", e),
+
+        // If worker creation fails, this is a critical initialization error
+        let handler = match self.create_event_handler(q).await {
+            Ok(handler) => handler,
+            Err(e) => {
+                tracing::error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
+                tracing::error!("This is a worker initialization error that requires system shutdown");
+                return Err(e);
+            }
         };
+
+        // Run the worker - job processing errors within the worker are handled internally
+        // Only infrastructure/initialization errors should propagate out
+        match handler.run().await {
+            Ok(_) => {
+                // Worker completed unexpectedly - this should not happen in normal operation
+                // since workers run infinite loops. This indicates a problem.
+                tracing::warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
+                tracing::error!("This indicates a serious system problem that requires shutdown");
+                Err(e)
+            }
+        }
     }
 
     /// shutdown - Trigger a graceful shutdown

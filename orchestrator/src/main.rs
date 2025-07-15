@@ -1,4 +1,3 @@
-use anyhow::Result;
 use clap::Parser as _;
 use dotenvy::dotenv;
 use orchestrator::cli::{Cli, Commands, RunCmd, SetupCmd};
@@ -73,14 +72,18 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     setup_server(config.clone()).await?;
 
     debug!("Application router initialized");
-    // Initialize workers and keep the controller for shutdown
-    let worker_controller = initialize_worker(config.clone()).await?;
 
     // Set up comprehensive signal handling for Docker/Kubernetes
+    info!("Setting up signal handler for graceful shutdown");
     let mut signal_handler = SignalHandler::new();
+    let shutdown_trigger = signal_handler.get_shutdown_trigger();
+
+    // Initialize workers and keep the controller for shutdown
+    let worker_controller = initialize_worker(config.clone(), shutdown_trigger).await?;
+
     let shutdown_signal = signal_handler.wait_for_shutdown().await;
 
-    info!("🔄 Initiating orchestrator shutdown sequence (triggered by: {})", shutdown_signal);
+    info!("Initiating orchestrator shutdown sequence (triggered by: {})", shutdown_signal);
 
     // Perform graceful shutdown with timeout
     let shutdown_result = signal_handler
@@ -92,7 +95,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
                 // Analytics Shutdown
                 instrumentation.shutdown()?;
 
-                info!("🎯 All components shutdown successfully");
+                info!("All components shutdown successfully");
                 Ok(())
             },
             300, // 300 seconds timeout - matches Docker's default graceful shutdown period
@@ -102,11 +105,11 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
 
     match shutdown_result {
         Ok(()) => {
-            info!("✅ Orchestrator service shutdown completed gracefully");
+            info!("Orchestrator service shutdown completed gracefully");
             Ok(())
         }
         Err(e) => {
-            error!("❌ Orchestrator service shutdown encountered errors: {}", e);
+            error!("Orchestrator service shutdown encountered errors: {}", e);
             // Still return Ok to avoid panic, as we tried our best
             Ok(())
         }
