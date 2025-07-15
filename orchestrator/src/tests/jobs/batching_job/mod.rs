@@ -13,9 +13,13 @@ use tracing::warn;
 use url::Url;
 
 #[rstest]
-#[case("src/tests/artifacts/8373665/blobs/")]
+#[case("src/tests/artifacts/8373665/blobs/", 789878, 790377)]
 #[tokio::test]
-async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String) -> Result<()> {
+async fn test_assign_batch_to_block_new_batch(
+    #[case] blob_dir: String,
+    #[case] min_block_to_process: u64,
+    #[case] max_block_to_process: u64,
+) -> Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
@@ -28,6 +32,8 @@ async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String) -> Resul
         .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url)))
         .configure_storage_client(ConfigType::Actual)
         .configure_database(ConfigType::Actual)
+        .configure_min_block_to_process(min_block_to_process)
+        .configure_max_block_to_process(Some(max_block_to_process))
         .build()
         .await;
 
