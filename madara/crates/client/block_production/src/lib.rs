@@ -28,7 +28,7 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
-use util::{state_map_to_state_diff, BlockExecutionContext, ExecutionStats};
+use util::{BlockExecutionContext, ExecutionStats};
 
 mod batcher;
 mod executor;
@@ -44,7 +44,8 @@ struct PendingBlockState {
     pub transactions: Vec<TransactionWithReceipt>,
     pub events: Vec<EventWithTransactionHash>,
     pub declared_classes: Vec<ConvertedClass>,
-    pub state_diff: StateMaps,
+    /// Unnormalized state diffs.
+    pub state: StateMaps,
     pub consumed_core_contract_nonces: HashSet<u64>,
 }
 
@@ -60,7 +61,7 @@ impl PendingBlockState {
     pub fn new(header: PendingHeader, initial_state_diffs_storage: HashMap<StorageEntry, Felt>) -> Self {
         Self {
             header,
-            state_diff: StateMaps { storage: initial_state_diffs_storage, ..Default::default() },
+            state: StateMaps { storage: initial_state_diffs_storage, ..Default::default() },
             transactions: vec![],
             events: vec![],
             declared_classes: vec![],
@@ -77,7 +78,7 @@ impl PendingBlockState {
         Ok((
             PendingFullBlock {
                 header: self.header,
-                state_diff: state_map_to_state_diff(backend, &on_top_of_block_id, self.state_diff)
+                state_diff: mc_exec::state_diff::create_normalized_state_diff(backend, &on_top_of_block_id, self.state)
                     .context("Converting state map to state diff")?,
                 transactions: self.transactions,
                 events: self.events,
@@ -171,8 +172,7 @@ impl CurrentPendingState {
                         .cloned()
                         .map(|event| EventWithTransactionHash { event, transaction_hash: converted_tx.hash }),
                 );
-                self.block.state_diff.extend(&state_diff);
-
+                self.block.state.extend(&state_diff);
                 let tx = TransactionWithReceipt { transaction: converted_tx.transaction, receipt };
                 self.block.transactions.push(tx.clone());
                 self.backend.on_new_pending_tx(tx)
@@ -512,7 +512,7 @@ impl BlockProductionTask {
 #[cfg(test)]
 pub(crate) mod tests {
     use crate::BlockProductionStateNotification;
-    use crate::{metrics::BlockProductionMetrics, util::state_map_to_state_diff, BlockProductionTask};
+    use crate::{metrics::BlockProductionMetrics, BlockProductionTask};
     use blockifier::{
         bouncer::{BouncerConfig, BouncerWeights},
         state::cached_state::StateMaps,
@@ -1045,7 +1045,8 @@ pub(crate) mod tests {
             replaced_classes,
         };
 
-        let mut actual = state_map_to_state_diff(&backend, &Option::<_>::None, state_map).unwrap();
+        let mut actual =
+            mc_exec::state_diff::create_normalized_state_diff(&backend, &Option::<_>::None, state_map).unwrap();
 
         actual.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
         actual.storage_diffs.iter_mut().for_each(|s| s.storage_entries.sort_by(|a, b| a.key.cmp(&b.key)));
