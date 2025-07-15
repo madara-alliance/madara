@@ -10,10 +10,54 @@ use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::log::error;
+use crate::compression::utils::sort_state_diff;
 
 const SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
 const MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
+
+/// Compresses a state update using stateful compression
+///
+/// This function:
+/// 1. Extracts mapping information from the special address (0x2) and provider
+/// 2. Use this mapping to transform other addresses and values
+/// 3. Preserves all the entries in special addresses (<128) as it is
+///
+/// # Arguments
+/// * `state_update` - StateUpdate to compress
+///
+/// # Returns
+/// A compressed StateUpdate with values mapped according to the special address mappings
+pub async fn compress(
+    state_update: &StateUpdate,
+    pre_range_block: u64,
+    provider: &Arc<JsonRpcClient<HttpTransport>>,
+) -> Result<StateUpdate> {
+    let mut state_update = state_update.clone();
+
+    let mapping = ValueMapping::from_state_update_or_provider(&state_update, pre_range_block, provider).await?;
+
+    // Process storage diffs
+    state_update.state_diff.storage_diffs = process_storage_diffs(&state_update, &mapping)?;
+
+    // Process deployed contracts
+    state_update.state_diff.deployed_contracts = process_deployed_contracts(&state_update, &mapping)?;
+
+    // Process nonces
+    state_update.state_diff.nonces = process_nonces(&state_update, &mapping)?;
+
+    // Process replaced classes
+    state_update.state_diff.replaced_classes = process_replaced_classes(&state_update, &mapping)?;
+
+    // Declared class remain as it is as it only contains class hashes
+    // Deprecated declared classes remain as it is as it only contains class hashes
+    // block_hash, new_root and old_root remain as it is
+
+    // Sort the compressed StateUpdate
+    sort_state_diff(&mut state_update);
+
+    Ok(state_update)
+}
 
 /// Represents a mapping from one value to another
 #[derive(Debug)]
@@ -30,7 +74,7 @@ impl ValueMapping {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| !ValueMapping::skip(diff.address)).for_each(
+        state_update.state_diff.storage_diffs.iter().filter(|diff| !Self::skip(diff.address)).for_each(
             |diff| {
                 keys.insert(diff.address);
                 diff.storage_entries.iter().for_each(|entry| {
@@ -49,7 +93,7 @@ impl ValueMapping {
         });
 
         // Fetch the values for the keys from the special address (0x2)
-        let special_address_mappings = ValueMapping::get_special_address_mappings(state_update)?;
+        let special_address_mappings = Self::get_special_address_mappings(state_update)?;
 
         // Fetch the value for the keys in the special address either from the current mapping or from the provider
         // Doing this in parallel
@@ -60,7 +104,7 @@ impl ValueMapping {
                     match special_address_mappings.get(&key).cloned() {
                         Some(value) => Ok((key, value)),
                         None => {
-                            Ok((key, ValueMapping::get_value_from_provider(provider, &key, pre_range_block).await?))
+                            Ok((key, Self::get_value_from_provider(provider, &key, pre_range_block).await?))
                         }
                     }
                 }
@@ -75,7 +119,7 @@ impl ValueMapping {
                 mappings.insert(*key, *value);
             });
 
-        Ok(ValueMapping(mappings))
+        Ok(Self(mappings))
     }
 
     /// get_special_address_mappings create a hashmap from the storage mappings at the special address
@@ -87,7 +131,7 @@ impl ValueMapping {
             let mut mappings: HashMap<Felt, Felt> = HashMap::new();
 
             // Add each key-value pair to our mapping, ignoring the global counter-slot
-            special_contract.storage_entries.iter().filter(|entry| !ValueMapping::skip(entry.key)).for_each(|entry| {
+            special_contract.storage_entries.iter().filter(|entry| !Self::skip(entry.key)).for_each(|entry| {
                 mappings.insert(entry.key, entry.value);
             });
 
@@ -108,7 +152,7 @@ impl ValueMapping {
         key: &Felt,
         pre_range_block: u64,
     ) -> Result<Felt, ProviderError> {
-        if ValueMapping::skip(*key) {
+        if Self::skip(*key) {
             return Ok(*key);
         }
         let mut attempts = 0;
@@ -186,62 +230,4 @@ fn process_replaced_classes(state_update: &StateUpdate, mapping: &ValueMapping) 
         });
     }
     Ok(new_replaced_classes)
-}
-
-/// Compresses a state update using stateful compression
-///
-/// This function:
-/// 1. Extracts mapping information from the special address (0x2) and provider
-/// 2. Use this mapping to transform other addresses and values
-/// 3. Preserves all the entries in special addresses (<128) as it is
-///
-/// # Arguments
-/// * `state_update` - StateUpdate to compress
-///
-/// # Returns
-/// A compressed StateUpdate with values mapped according to the special address mappings
-pub async fn compress(
-    state_update: &StateUpdate,
-    pre_range_block: u64,
-    provider: &Arc<JsonRpcClient<HttpTransport>>,
-) -> Result<StateUpdate> {
-    let mut state_update = state_update.clone();
-
-    let mapping = ValueMapping::from_state_update_or_provider(&state_update, pre_range_block, provider).await?;
-
-    // Process storage diffs
-    state_update.state_diff.storage_diffs = process_storage_diffs(&state_update, &mapping)?;
-
-    // Process deployed contracts
-    state_update.state_diff.deployed_contracts = process_deployed_contracts(&state_update, &mapping)?;
-
-    // Process nonces
-    state_update.state_diff.nonces = process_nonces(&state_update, &mapping)?;
-
-    // Process replaced classes
-    state_update.state_diff.replaced_classes = process_replaced_classes(&state_update, &mapping)?;
-
-    // Declared class remain as it is as it only contains class hashes
-    // Deprecated declared classes remain as it is as it only contains class hashes
-    // block_hash, new_root and old_root remain as it is
-
-    // Sort the compressed StateUpdate
-    sort_state_diff(&mut state_update);
-
-    Ok(state_update)
-}
-
-pub fn sort_state_diff(state_diff: &mut StateUpdate) {
-    // Sort storage diffs
-    state_diff.state_diff.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
-    for diff in &mut state_diff.state_diff.storage_diffs {
-        diff.storage_entries.sort_by(|a, b| a.key.cmp(&b.key));
-    }
-
-    // Sort the rest
-    state_diff.state_diff.deprecated_declared_classes.sort();
-    state_diff.state_diff.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
-    state_diff.state_diff.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
-    state_diff.state_diff.replaced_classes.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
-    state_diff.state_diff.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
 }

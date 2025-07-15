@@ -118,11 +118,6 @@ impl<SizedElement: BucketElementTrait + Clone + Eq + Hash> UniqueValueBucket<Siz
         let values = self.value_to_index.into_keys().collect::<Vec<_>>();
         SizedElement::pack_in_felts(&values)
     }
-
-    #[allow(dead_code)]
-    fn get_values(self) -> Vec<SizedElement> {
-        self.value_to_index.into_keys().collect()
-    }
 }
 
 // get_bucket_offsets needs slice input like original
@@ -229,23 +224,5 @@ impl Buckets {
         .rev()
         .flatten()
         .collect()
-    }
-
-    // Remove unpack_from_felts if not in an original concept
-
-    // Gets all unique values ordered from the largest bit bucket to the smallest.
-    // Keep this helper method as it's useful for decompression
-    #[allow(dead_code)]
-    fn get_all_unique_values(self) -> Vec<BucketElement> {
-        self.bucket252
-            .get_values()
-            .into_iter()
-            .map(BucketElement::BucketElement252)
-            .chain(self.bucket125.get_values().into_iter().map(BucketElement::BucketElement125))
-            .chain(self.bucket83.get_values().into_iter().map(BucketElement::BucketElement83))
-            .chain(self.bucket62.get_values().into_iter().map(BucketElement::BucketElement62))
-            .chain(self.bucket31.get_values().into_iter().map(BucketElement::BucketElement31))
-            .chain(self.bucket15.get_values().into_iter().map(BucketElement::BucketElement15))
-            .collect()
     }
 }

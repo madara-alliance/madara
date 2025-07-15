@@ -234,9 +234,9 @@ pub async fn state_update_to_blob_data(
 /// |                                                                                     |
 /// v                                                                                     v
 /// ┌───────────────────────────────────────────────────────┬─────┬─────────┬─────────────┐
-/// │                 Zero Padding                          │cls  │  nonce  │ num_changes │
-/// │                  (123 bits)                           │flg  │(64 bits)│ (64 bits)   │
-/// │                  [251:129]                            │[128]│[127:64] │  [63:0]     │
+/// │                 Zero Padding                          │ cls │  nonce  │ num_changes │
+/// │                  (123 bits)                           │ flg │(64 bits)│  (64 bits)  │
+/// │                  [251:129]                            │[128]│ [127:64]│   [63:0]    │
 /// └───────────────────────────────────────────────────────┴─────┴─────────┴─────────────┘
 ///
 /// Field breakdown:
@@ -276,14 +276,14 @@ fn encode_da_word_pre_v0_13_3(
 /// Binary encoding layout (252 bits total):
 ///
 /// Bit positions:
-/// 251                                                                       0
-/// |                                                                         |
-/// v                                                                         v
-/// ┌─────────┬────────────────────────┬──────────────────────────────┬───┬───┐
-/// │  Zeros  │       new_nonce        │           n_updates          │n_u│cls│
-/// │ Padding │       (64 bits)        │        (8 or 64 bits)        │len│flg│
-/// │         │  [129:66] or [73:10]   │       [65:2] or [9:2]        │[1]│[0]│
-/// └─────────┴────────────────────────┴──────────────────────────────┴───┴───┘
+/// 251                                                                                   0
+/// |                                                                                     |
+/// v                                                                                     v
+/// ┌─────────────────────┬────────────────────────┬──────────────────────────────┬───┬───┐
+/// │        Zeros        │       new_nonce        │           n_updates          │n_u│cls│
+/// │       Padding       │       (64 bits)        │        (8 or 64 bits)        │len│flg│
+/// │                     │  [129:66] or [73:10]   │       [65:2] or [9:2]        │[1]│[0]│
+/// └─────────────────────┴────────────────────────┴──────────────────────────────┴───┴───┘
 ///
 /// Field breakdown:
 /// - new_nonce (64 bits)     : [251:188] - Nonce value
@@ -340,10 +340,7 @@ pub fn da_word(
     num_changes: u64,
     version: StarknetVersion,
 ) -> Result<Felt, JobError> {
-    // Parse version to determine format
-    let is_gte_v0_13_3 = version >= StarknetVersion::V0_13_3;
-
-    let da_word: BigUint = if is_gte_v0_13_3 {
+    let da_word: BigUint = if version >= StarknetVersion::V0_13_3 {
         encode_da_word_v0_13_3_plus(class_flag, nonce_change, num_changes)?
     } else {
         encode_da_word_pre_v0_13_3(class_flag, nonce_change, num_changes)?
@@ -368,7 +365,7 @@ pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
 
 /// Converts a vector of felts into blob data (vec of big uint)
 /// Returns a vector of blobs
-/// A single blob has a fixed size of `BLOB_LEN=4096`
+/// A single blob has a fixed size of [BLOB_LEN]
 pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> Result<Vec<Vec<BigUint>>, JobError> {
     let blob_data = convert_to_biguint(elements);
     let num_blobs = blob_data.len().div_ceil(BLOB_LEN);

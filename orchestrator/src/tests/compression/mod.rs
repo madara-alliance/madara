@@ -1,5 +1,5 @@
 use crate::compression::blob::{convert_felt_vec_to_blob_data, da_word, state_update_to_blob_data};
-use crate::compression::squash::squash_state_updates;
+use crate::compression::squash::squash;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::StarknetVersion;
@@ -29,7 +29,7 @@ async fn test_squash_state_updates() -> Result<()> {
     ))?;
 
     let squashed_state_update =
-        squash_state_updates(state_updates_vector, Some(789877), services.config.madara_client()).await?;
+        squash(state_updates_vector, Some(789877), services.config.madara_client()).await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
 

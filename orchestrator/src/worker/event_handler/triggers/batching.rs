@@ -1,5 +1,5 @@
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
-use crate::compression::squash::squash_state_updates;
+use crate::compression::squash::squash;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::{Config, StarknetVersion};
@@ -130,7 +130,7 @@ impl BatchingTrigger {
             Update(state_update) => {
                 match prev_state_update {
                     Some(prev_state_update) => {
-                        let squashed_state_update = squash_state_updates(
+                        let squashed_state_update = squash(
                             vec![prev_state_update.clone(), state_update.clone()],
                             if current_batch.start_block == 0 { None } else { Some(current_batch.start_block - 1) },
                             provider,
