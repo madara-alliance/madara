@@ -363,6 +363,7 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
+    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -444,6 +445,7 @@ pub mod test {
         let services = TestConfigBuilder::new()
             .configure_starknet_client(provider.into())
             .configure_da_client(da_client.into())
+            .configure_madara_version(StarknetVersion::V0_13_2)
             .build()
             .await;
 
