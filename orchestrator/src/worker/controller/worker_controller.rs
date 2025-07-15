@@ -60,7 +60,7 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
-        Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())))
+        Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())?))
     }
 
     /// get_l2_queues - Get the list of queues for L2 network
@@ -108,10 +108,9 @@ impl WorkerController {
         let span = info_span!("worker", q = ?q);
         let _guard = span.enter();
         info!("Starting worker for queue type {:?}", q);
-
         match self.create_event_handler(q).await {
             Ok(handler) => match handler.run().await {
-                Ok(_) => info!("Worker for queue type {:?} started successfully", q),
+                Ok(_) => info!("Worker for queue type {:?} is completed", q),
                 Err(e) => {
                     let _ = anyhow!("🚨Failed to start worker: {:?}", e);
                     tracing::error!("🚨Failed to start worker: {:?}", e)
