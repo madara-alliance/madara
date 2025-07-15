@@ -2,7 +2,6 @@ mod compare;
 
 use crate::compression::blob::convert_to_biguint;
 use crate::compression::stateless::decompress;
-use crate::core::config::StarknetVersion;
 use crate::core::StorageClient;
 use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
@@ -15,8 +14,7 @@ use alloy::hex;
 use color_eyre::Result;
 use majin_blob_core::blob;
 use num_bigint::BigUint;
-use num_traits::{Num, ToPrimitive, Zero};
-use orchestrator_prover_client_interface::MockProverClient;
+use num_traits::{ToPrimitive, Zero};
 use rstest::*;
 use starknet_core::types::Felt;
 use std::collections::HashMap;
@@ -25,12 +23,9 @@ use tracing::{error, warn};
 use url::Url;
 
 #[rstest]
-#[case("src/tests/artifacts/8373665/blobs/", StarknetVersion::V0_13_5)]
+#[case("src/tests/artifacts/8373665/blobs/")]
 #[tokio::test]
-async fn test_assign_batch_to_block_new_batch(
-    #[case] blob_dir: String,
-    #[case] version: StarknetVersion,
-) -> Result<()> {
+async fn test_assign_batch_to_block_new_batch(#[case] blob_dir: String) -> Result<()> {
     let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
         Ok(url) => url.parse()?,
         Err(_) => {
@@ -77,8 +72,8 @@ fn get_blobs_from_files(file_paths: Vec<&str>) -> Result<Vec<String>> {
     Ok(blob)
 }
 
-fn get_data_json_from_vec_biguints(data: &Vec<BigUint>, version: &str) -> Result<DataJson> {
-    let vec_felts = convert_biguints_to_felts(&data)?;
+fn get_data_json_from_vec_biguints(data: &[BigUint], version: &str) -> Result<DataJson> {
+    let vec_felts = convert_biguints_to_felts(data)?;
     let decompressed = convert_to_biguint(&decompress(&vec_felts)?);
     Ok(parse_state_diffs(&decompressed, version))
 }

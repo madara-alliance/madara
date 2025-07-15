@@ -9,12 +9,14 @@ use num_bigint::BigUint;
 use num_traits::{ToPrimitive, Zero};
 use starknet_core::types::Felt;
 use std::cmp::{max, min};
+use std::iter::Copied;
+use std::slice::Iter;
 
 // Decompression Logic
 // Need unpack_chunk equivalent and match Python's reconstruction
 // Helper function similar to Python's unpack_chunk
 fn unpack_chunk(
-    compressed_iter: &mut std::vec::IntoIter<Felt>,
+    compressed_iter: &mut Copied<Iter<Felt>>,
     n_elms: usize,
     elm_bound: u32,
 ) -> color_eyre::Result<Vec<usize>> {
@@ -121,7 +123,7 @@ pub fn decompress(compressed_data: &[Felt]) -> color_eyre::Result<Vec<Felt>> {
         bail!("Invalid compressed data: single non-empty header felt provided.");
     }
 
-    let mut felt_iter = compressed_data.to_vec().into_iter(); // Consumable iterator
+    let mut felt_iter = compressed_data.iter().copied();
 
     // 1. Unpack Header (single felt)
     let packed_header_felt = felt_iter.next().ok_or_else(|| eyre!("Compressed data is too short, missing header."))?;

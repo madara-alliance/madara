@@ -1,11 +1,11 @@
 use crate::types::batch::{ClassDeclaration, ContractUpdate, DataJson, StorageUpdate};
 use color_eyre::Result;
 use num_bigint::BigUint;
-use num_traits::Zero;
 use std::collections::HashSet;
 use thiserror::Error;
 
 #[derive(Error, Debug)]
+#[allow(dead_code)]
 pub enum ComparisonError {
     #[error("state_update_size differs: {0} vs {1}")]
     StateUpdateSizeMismatch(u64, u64),

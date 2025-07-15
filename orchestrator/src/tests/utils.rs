@@ -20,10 +20,8 @@ use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use starknet_core::types::StateUpdate;
 use std::fs::File;
-use std::hash::Hash;
 use std::io::Read;
 use tracing::error;
-use tracing::log::warn;
 use url::Url;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
@@ -127,13 +125,13 @@ pub fn read_biguint_from_file(file_path: &str) -> Result<Vec<BigUint>> {
 }
 
 pub fn read_state_updates_vec_from_file(file_path: &str) -> Result<Vec<StateUpdate>> {
-    Ok(serde_json::from_str(&read_file_to_string(file_path)?)
-        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update vector file: {}", e))?)
+    serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update vector file: {}", e))
 }
 
 pub fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {
-    Ok(serde_json::from_str(&read_file_to_string(file_path)?)
-        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update file: {}", e))?)
+    serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update file: {}", e))
 }
 
 pub fn read_file_to_string(file_path: &str) -> Result<String> {
@@ -144,7 +142,7 @@ pub fn read_file_to_string(file_path: &str) -> Result<String> {
 }
 
 pub fn read_data_json_from_file(file_path: &str) -> Result<DataJson> {
-    Ok(parse_json_to_data_json(&read_file_to_string(file_path)?)?)
+    parse_json_to_data_json(&read_file_to_string(file_path)?)
 }
 
 pub fn parse_json_to_data_json(json_str: &str) -> Result<DataJson> {

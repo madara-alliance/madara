@@ -367,8 +367,6 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
-    use crate::compression::blob::da_word;
-    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;

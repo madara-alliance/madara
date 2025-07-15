@@ -213,7 +213,7 @@ impl BatchingTrigger {
         )?;
 
         // Update batch status in the database
-        database.update_or_create_batch(&batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready }).await?;
+        database.update_or_create_batch(batch, &BatchUpdates { end_block: batch.end_block, is_batch_ready }).await?;
 
         Ok(())
     }
@@ -249,7 +249,7 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        Ok(stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))?)
+        stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))
     }
 
     /// get_state_update_file_name returns the file path for storing the state update in storage
@@ -284,7 +284,7 @@ impl BatchingTrigger {
     async fn store_blob(
         &self,
         storage: &dyn StorageClient,
-        compressed_state_update: &Vec<Felt>,
+        compressed_state_update: &[Felt],
         batch: &Batch,
     ) -> Result<(), JobError> {
         let blobs = convert_felt_vec_to_blob_data(compressed_state_update)?;

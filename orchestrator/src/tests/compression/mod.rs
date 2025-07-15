@@ -12,7 +12,6 @@ use crate::worker::utils::biguint_vec_to_u8_vec;
 use color_eyre::eyre::Result;
 use rstest::*;
 use starknet_core::types::Felt;
-use std::io::Read;
 
 #[rstest]
 #[tokio::test]

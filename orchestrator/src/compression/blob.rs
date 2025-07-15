@@ -4,6 +4,7 @@ use crate::error::other::OtherError;
 use crate::types::constant::BLOB_LEN;
 use crate::worker::event_handler::jobs::da::DAJobHandler;
 use color_eyre::eyre::eyre;
+use itertools::repeat_n;
 use num_bigint::BigUint;
 use num_traits::{One, ToPrimitive, Zero};
 use starknet_core::types::{ContractStorageDiffItem, DeclaredClassItem, Felt, StateDiff, StateUpdate};
@@ -298,7 +299,7 @@ fn encode_da_word_v0_13_3_plus(
     nonce_change: Option<Felt>,
     num_changes: u64,
 ) -> Result<BigUint, JobError> {
-    let mut da_word = BigUint::zero();
+    let mut da_word: BigUint;
 
     // Determine if we need 8 or 64 bits for num_changes
     let needs_large_updates = num_changes >= 256;
@@ -354,14 +355,14 @@ pub fn da_word(
 /// Converts a vector of felt into a vector of bigUint
 /// The output length depends on the input length (ceil(input_len / BLOB_LEN) * BLOB_LEN)
 pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
-    let num_blocks = (elements.len() + BLOB_LEN - 1) / BLOB_LEN;
+    let num_blocks = elements.len().div_ceil(BLOB_LEN);
     let output_len = num_blocks * BLOB_LEN;
     let pad_len = output_len - elements.len();
 
     elements
         .iter()
         .map(|e| BigUint::from_bytes_be(&e.to_bytes_be()))
-        .chain(std::iter::repeat(BigUint::zero()).take(pad_len))
+        .chain(repeat_n(BigUint::zero(), pad_len))
         .collect()
 }
 
@@ -370,7 +371,7 @@ pub fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
 /// A single blob has a fixed size of `BLOB_LEN=4096`
 pub fn convert_felt_vec_to_blob_data(elements: &[Felt]) -> Result<Vec<Vec<BigUint>>, JobError> {
     let blob_data = convert_to_biguint(elements);
-    let num_blobs = (blob_data.len() + BLOB_LEN - 1) / BLOB_LEN; // ceil(len / BLOB_LEN)
+    let num_blobs = blob_data.len().div_ceil(BLOB_LEN);
     let mut transformed_data = Vec::new();
     for i in 0..num_blobs {
         transformed_data
