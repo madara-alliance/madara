@@ -47,6 +47,7 @@ pub struct Starknet {
     backend: Arc<MadaraBackend>,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
+    pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
 }
 
@@ -55,9 +56,10 @@ impl Starknet {
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn SubmitTransaction>,
         storage_proof_config: StorageProofConfig,
+        block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
         ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config, ctx }
+        Self { backend, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
