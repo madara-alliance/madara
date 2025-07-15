@@ -5,7 +5,6 @@ use tokio::time::timeout;
 
 use crate::servers::server::NodeRpcMethods as _;
 
-
 use::std::path::Path;
 // Import all the services we've created
 use crate::servers::anvil::{AnvilConfigBuilder, AnvilError, AnvilService};
@@ -149,15 +148,20 @@ pub struct Setup {
     pub config: SetupConfig,
 }
 
-enum Services {
-    Anvil(AnvilService),
-    Localstack(LocalstackService),
-    Mongo(MongoService),
-    Pathfinder(PathfinderService),
+// Dependencies that each task enlists that we validate!
+pub enum Tasks{
+    AnvilIsRunning,
+    DockerIsRunning,
+    MongoIsRunning,
+    LocalstackIsRunning,
+    LocalstackIsSetup,
+    BootstrapperL1Setup,
+    BootstrapperL2Setup,
+    MadaraIsRunning,
+    MadaraIsSetup,
+    PathfinderIsRunning,
+    OrchestratorIsRunning
 }
-
-
-
 
 // TODO: need a validation on weather the binaries are available or not!
 
@@ -443,7 +447,7 @@ impl Setup {
         let anvil_config = AnvilConfigBuilder::new()
             .port(self.config.anvil_port.clone())
             .block_time(1_f64)
-            .load_state(anvil_db_path).build();
+            .dump_state(anvil_db_path).build();
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
@@ -456,24 +460,24 @@ impl Setup {
         // Assign the services
         self.anvil = Some(anvil_service);
 
-        // println!("🧑‍💻 Starting bootstrapper L1");
+        println!("🧑‍💻 Starting bootstrapper L1");
 
-        // // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
-        // // Ideally we would want to ask anvil each time for these values.
+        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // Ideally we would want to ask anvil each time for these values.
 
-        // // TODO: I need to know the port from anvil before sending it to bootstrapper!
+        // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        // let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-        //     .mode(BootstrapperMode::SetupL1)
-        //     .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-        //     .env_var("ETH_RPC", "http://localhost:8545")
-        //     .env_var("RUST_LOG", "info")
-        //     .build();
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL1)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
+            .build();
 
-        // let status = BootstrapperService::run(bootstrapper_l1_config).await?;
-        // println!("🥳 Bootstrapper L1 finished with {}", status);
+        let status = BootstrapperService::run(bootstrapper_l1_config).await?;
+        println!("🥳 Bootstrapper L1 finished with {}", status);
 
-        // println!("✅ L1 Setup completed");
+        println!("✅ L1 Setup completed");
 
         Ok(())
     }
@@ -504,46 +508,46 @@ impl Setup {
 
         // // We don't do any transactions on block 0
 
-        // let mut is_block_0_mined = false;
+        let mut is_block_0_mined = false;
 
-        // println!("⏳ Waiting for Madara block 0 to be mined");
+        println!("⏳ Waiting for Madara block 0 to be mined");
 
-        // // TODO: ideally should be more informed by using madara block time!
-        // if let Some(madara) = &self.madara {
-        //     while !is_block_0_mined {
-        //         println!("Checking Madara block status...");
+        // TODO: ideally should be more informed by using madara block time!
+        if let Some(madara) = &self.madara {
+            while !is_block_0_mined {
+                println!("Checking Madara block status...");
 
-        //         let blk_number = madara.get_latest_block_number().await
-        //             // TODO: is this the best we can do ?
-        //             .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
-        //         if blk_number >= 0 {
-        //             println!("Madara block 0 is mined");
-        //             is_block_0_mined = true;
-        //         }
+                let blk_number = madara.get_latest_block_number().await
+                    // TODO: is this the best we can do ?
+                    .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
+                if blk_number >= 0 {
+                    println!("Madara block 0 is mined");
+                    is_block_0_mined = true;
+                }
 
-        //         tokio::time::sleep(Duration::from_millis(1000)).await;
-        //     }
-        // }
+                tokio::time::sleep(Duration::from_millis(1000)).await;
+            }
+        }
 
-        // println!("🧑‍💻 Starting bootstrapper L2");
+        println!("🧑‍💻 Starting bootstrapper L2");
 
-        // // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
-        // // Ideally we would want to ask anvil each time for these values.
+        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // Ideally we would want to ask anvil each time for these values.
 
-        // // TODO: I need to know the port from anvil before sending it to bootstrapper!
+        // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        // let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-        //     .mode(BootstrapperMode::SetupL2)
-        //     .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-        //     .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-        //     .env_var("ETH_RPC", "http://localhost:8545")
-        //     .env_var("RUST_LOG", "info")
-        //     .build();
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL2)
+            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
+            .build();
 
-        // let status = BootstrapperService::run(bootstrapper_l2_config).await?;
-        // println!("🥳 Bootstrapper L2 finished with {}", status);
+        let status = BootstrapperService::run(bootstrapper_l2_config).await?;
+        println!("🥳 Bootstrapper L2 finished with {}", status);
 
-        // println!("✅ L2 Setup completed");
+        println!("✅ L2 Setup completed");
 
         Ok(())
     }
