@@ -11,6 +11,8 @@ use crate::tests::utils::{
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use color_eyre::eyre::Result;
 use rstest::*;
+use starknet_core::types::Felt;
+use std::fs;
 use std::io::Read;
 
 #[rstest]
@@ -102,4 +104,36 @@ async fn test_felt_vec_to_blob_data() -> Result<()> {
     }
 
     Ok(())
+}
+
+/// Tests `da_word` function with various inputs for class flag, new nonce, and number of
+/// changes. Verifies that `da_word` produces the correct Felt based on the provided
+/// parameters. Uses test cases with different combinations of inputs and expected output
+/// strings. Asserts the function's correctness by comparing the computed and expected
+/// Felts.
+#[rstest]
+#[case(false, 1, 1, "18446744073709551617", StarknetVersion::V0_13_2)]
+#[case(false, 1, 0, "18446744073709551616", StarknetVersion::V0_13_2)]
+#[case(false, 0, 6, "6", StarknetVersion::V0_13_2)]
+#[case(true, 1, 0, "340282366920938463481821351505477763072", StarknetVersion::V0_13_2)]
+#[case(false, 0, 15, "62", StarknetVersion::V0_13_5)]
+#[case(false, 0, 1024, "4096", StarknetVersion::V0_13_5)]
+#[case(false, 10, 0, "10242", StarknetVersion::V0_13_5)]
+#[case(false, 15, 2025, "1106804644422573105060", StarknetVersion::V0_13_5)]
+#[case(true, 0, 10, "43", StarknetVersion::V0_13_5)]
+#[case(true, 0, 1000, "4001", StarknetVersion::V0_13_5)]
+#[case(true, 20, 255, "21503", StarknetVersion::V0_13_5)]
+#[case(true, 1000, 256, "73786976294838206465025", StarknetVersion::V0_13_5)]
+#[tokio::test]
+async fn test_da_word(
+    #[case] class_flag: bool,
+    #[case] new_nonce: u64,
+    #[case] num_changes: u64,
+    #[case] expected: String,
+    #[case] version: StarknetVersion,
+) {
+    let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
+    let da_word = da_word(class_flag, new_nonce, num_changes, version).expect("Failed to create DA word");
+    let expected = Felt::from_dec_str(expected.as_str()).unwrap();
+    assert_eq!(da_word, expected);
 }
