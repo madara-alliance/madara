@@ -3,6 +3,7 @@
 // a clean, fluent API for configuration.
 
 use tokio::process::Command;
+use crate::servers::server::NodeRpcError;
 
 use crate::servers::docker::DockerError;
 
@@ -24,6 +25,8 @@ pub enum PathfinderError {
     MissingConfig(String),
     #[error("Invalid response from Pathfinder")]
     InvalidResponse,
+    #[error("RPC error: {0}")]
+    RpcError(#[from] NodeRpcError),
 }
 
 // Final immutable configuration

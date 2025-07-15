@@ -1,21 +1,12 @@
-use crate::setup::{Setup, SetupConfig};
 use rstest::rstest;
 
-use tokio::time::sleep;
-use tokio::time::Duration;
-// #[rstest::fixture]
-// pub(crate) async fn setup() -> SomeSetupType {
-//     // based on some config :
-
-//     let setup_config = SetupConfig::default();
-
-//     let new_setup = Setup::new(setup_config).await;
-
-//     new_setup.l2_setup().await;
-// }
 #[rstest]
 #[tokio::test]
 async fn e2e_test_setup() {
+    use crate::setup::{Setup, SetupConfig};
+    use tokio::time::sleep;
+    use tokio::time::Duration;
+
     let setup_config = SetupConfig::default();
 
     println!("Running setup");

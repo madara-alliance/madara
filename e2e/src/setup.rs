@@ -1,17 +1,16 @@
 use std::sync::Arc;
 use std::time::Duration;
-use std::u64::MAX;
 use tokio::task::JoinSet;
-use tokio::time::{sleep, timeout};
+use tokio::time::timeout;
 
 use crate::servers::server::NodeRpcMethods as _;
 
 
 use::std::path::Path;
 // Import all the services we've created
-use crate::servers::anvil::{AnvilConfigBuilder, AnvilConfig, AnvilError, AnvilService};
-use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperConfig, BootstrapperError, BootstrapperMode, BootstrapperService};
-use crate::servers::docker::{DockerError, DockerServer};
+use crate::servers::anvil::{AnvilConfigBuilder, AnvilError, AnvilService};
+use crate::servers::bootstrapper::{BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode, BootstrapperService};
+use crate::servers::docker::DockerServer;
 use crate::servers::pathfinder::DEFAULT_PATHFINDER_IMAGE;
 use crate::servers::mongo::MONGO_DEFAULT_DATABASE_PATH;
 use crate::servers::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
@@ -20,15 +19,13 @@ use crate::servers::anvil::ANVIL_DEFAULT_DATABASE_NAME;
 use crate::servers::madara::MADARA_DEFAULT_DATABASE_NAME;
 use crate::servers::mongo::DEFAULT_MONGO_IMAGE;
 use crate::servers::localstack::DEFAULT_LOCALSTACK_IMAGE;
-use crate::servers::localstack::{LocalstackConfig, LocalstackError, LocalstackService, LocalstackConfigBuilder};
-use crate::servers::madara::{MadaraConfig, MadaraError, MadaraService, MadaraConfigBuilder};
-use crate::servers::mongo::{MongoConfig, MongoConfigBuilder, MongoError, MongoService};
+use crate::servers::localstack::{ LocalstackError, LocalstackService, LocalstackConfigBuilder};
+use crate::servers::madara::{ MadaraError, MadaraService, MadaraConfigBuilder};
+use crate::servers::mongo::{ MongoConfigBuilder, MongoError, MongoService};
 use crate::servers::orchestrator::{
-
-    Layer, OrchestratorConfig, OrchestratorError, OrchestratorMode, OrchestratorService, OrchestratorConfigBuilder
+    Layer, OrchestratorError, OrchestratorMode, OrchestratorService, OrchestratorConfigBuilder
 };
-use crate::servers::pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError, PathfinderService};
-use std::collections::HashMap;
+use crate::servers::pathfinder::{PathfinderConfigBuilder, PathfinderError, PathfinderService};
 
 
 // TODO: Implemented this to always be from the root, and not relative
@@ -374,40 +371,38 @@ impl Setup {
     /// Starts afresh chain
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
 
-        // // Start infrastructure services
-        // timeout(Duration::from_secs(360), async {
-        //     self.start_infrastructure_services().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        // Start infrastructure services
+        timeout(Duration::from_secs(360), async {
+            self.start_infrastructure_services().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Start infrastructure services timed out".to_string()))??;
 
 
         // Setup infrastructure services
-        // timeout(Duration::from_secs(360), async {
-        //     self.setup_infrastructure_services().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup process timed out".to_string()))??;
+        timeout(Duration::from_secs(360), async {
+            self.setup_infrastructure_services().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup infrastructure services timed out".to_string()))??;
 
-        // // Setup L1 Chain
-        // timeout(Duration::from_secs(70), async {
-        //     self.start_l1_setup().await?;
-        //     // self.wait_for_services_ready().await?;
-        //     // self.run_setup_validation().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup L1 process timed out".to_string()))??;
+        // Setup L1 Chain
+        timeout(Duration::from_secs(70), async {
+            self.start_l1_setup().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L2 Chain timed out".to_string()))??;
 
-        // // Setup L2 Chain
-        // timeout(Duration::from_secs(1800), async {
-        //     self.start_l2_setup().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup L2 process timed out".to_string()))??;
+        // Setup L2 Chain
+        timeout(Duration::from_secs(1800), async {
+            self.start_l2_setup().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Setup L2 Chain timed out".to_string()))??;
 
         // Start Full Node Syncing
         timeout(Duration::from_secs(300), async {
@@ -415,23 +410,15 @@ impl Setup {
             Ok::<(), SetupError>(())
         })
         .await
-        .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
+        .map_err(|_| SetupError::Timeout("Start Full Node Syncing timed out".to_string()))??;
 
-
-        // // Start Pathfinder Service, wait for it to complete sync
-        // timeout(Duration::from_secs(300), async {
-        //     println!("Starting orchestator service #2");
-
-        //     self.start_orchestration().await?;
-        //     Ok::<(), SetupError>(())
-        // })
-        // .await
-        // .map_err(|_| SetupError::Timeout("Setup Pathfinder process timed out".to_string()))??;
-
-
-        // Need to sync a pathfinder
-        // Need to run orchestrator!
-
+        // Start Orchestrator Service
+        timeout(Duration::from_secs(300), async {
+            self.start_orchestration().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Start Orchestrator Service timed out".to_string()))??;
 
         println!("✅ Setup completed successfully in {:?}", self.context.elapsed());
 
@@ -475,10 +462,10 @@ impl Setup {
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
         let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-            .with_mode(BootstrapperMode::SetupL1)
-            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .add_env_var("ETH_RPC", "http://localhost:8545")
-            .add_env_var("RUST_LOG", "info")
+            .mode(BootstrapperMode::SetupL1)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
             .build();
 
         let status = BootstrapperService::run(bootstrapper_l1_config).await?;
@@ -521,11 +508,11 @@ impl Setup {
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
         let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-            .with_mode(BootstrapperMode::SetupL2)
-            .with_config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-            .add_env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .add_env_var("ETH_RPC", "http://localhost:8545")
-            .add_env_var("RUST_LOG", "info")
+            .mode(BootstrapperMode::SetupL2)
+            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
             .build();
 
         let status = BootstrapperService::run(bootstrapper_l2_config).await?;
@@ -550,7 +537,9 @@ impl Setup {
         let mut sync_ready_at_block : u64 = 70;
 
         if let Some(madara) = &self.madara {
-            sync_ready_at_block = madara.get_latest_block_number().await?;
+            sync_ready_at_block = madara.get_latest_block_number().await
+                // TODO: is this the best we can do ?
+                .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
             println!("Syncing ready till block number {}", sync_ready_at_block);
         }
 
@@ -581,7 +570,9 @@ impl Setup {
             while !pathfinder_ready {
                 println!("Checking Pathfinder status...");
 
-                let blk_number = pathfinder_service.get_latest_block_number().await?;
+                let blk_number = pathfinder_service.get_latest_block_number().await
+                    // TODO: is this the best we can do ?
+                    .map_err(|err| SetupError::Pathfinder(PathfinderError::RpcError(err)))?;
                 if blk_number >= sync_ready_at_block {
                     println!("Pathfinder is synced till bootstrapped madara");
                     pathfinder_ready = true;
