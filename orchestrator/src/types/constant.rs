@@ -38,4 +38,3 @@ lazy_static! {
     pub static ref TWO: BigUint = 2u32.to_biguint().unwrap();
     pub static ref ONE: BigUint = 1u32.to_biguint().unwrap();
 }
-
