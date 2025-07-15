@@ -5,6 +5,7 @@ members = [
   "e2e-tests",
   "bootstrapper",
   "build-artifacts",
+  "bootstrapper-v2",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
