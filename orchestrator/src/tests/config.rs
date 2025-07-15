@@ -118,6 +118,8 @@ pub struct TestConfigBuilder {
     min_block_to_process: Option<u64>,
     /// Maximum block to process
     max_block_to_process: Option<Option<u64>>,
+    /// Madara version
+    madara_version: Option<StarknetVersion>,
 }
 
 impl Default for TestConfigBuilder {
@@ -149,6 +151,7 @@ impl TestConfigBuilder {
             api_server_type: ConfigType::default(),
             min_block_to_process: None,
             max_block_to_process: None,
+            madara_version: None,
         }
     }
 
@@ -211,6 +214,11 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_madara_version(mut self, madara_version: StarknetVersion) -> TestConfigBuilder {
+        self.madara_version = Some(madara_version);
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
@@ -232,6 +240,7 @@ impl TestConfigBuilder {
             api_server_type,
             min_block_to_process,
             max_block_to_process,
+            madara_version,
         } = self;
 
         let (_starknet_rpc_url, starknet_client, starknet_server) =
@@ -266,6 +275,9 @@ impl TestConfigBuilder {
         }
         if let Some(max_block_to_process) = max_block_to_process {
             params.orchestrator_params.service_config.max_block_to_process = max_block_to_process;
+        }
+        if let Some(madara_version) = madara_version {
+            params.orchestrator_params.madara_version = madara_version;
         }
 
         let config = Arc::new(Config::new(
