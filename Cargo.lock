@@ -4861,9 +4861,9 @@ dependencies = [
 
 [[package]]
 name = "enr"
-version = "0.9.1"
+version = "0.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fe81b5c06ecfdbc71dd845216f225f53b62a10cb8a16c946836a3467f701d05b"
+checksum = "2a3d8dc56e02f954cac8eb489772c552c473346fc34f67412bb6244fd647f7e4"
 dependencies = [
  "base64 0.21.7",
  "bytes",
@@ -4997,7 +4997,7 @@ dependencies = [
 [[package]]
 name = "ethereum-instance"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "dirs",
  "ethers",
@@ -5026,8 +5026,8 @@ dependencies = [
 
 [[package]]
 name = "ethers"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "ethers-addressbook",
  "ethers-contract",
@@ -5041,8 +5041,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-addressbook"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "ethers-core",
  "once_cell",
@@ -5052,8 +5052,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "const-hex",
  "ethers-contract-abigen",
@@ -5070,8 +5070,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract-abigen"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "Inflector",
  "const-hex",
@@ -5093,8 +5093,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-contract-derive"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "Inflector",
  "const-hex",
@@ -5108,8 +5108,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-core"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "arrayvec 0.7.6",
  "bytes",
@@ -5127,7 +5127,7 @@ dependencies = [
  "rlp",
  "serde",
  "serde_json",
- "strum 0.25.0",
+ "strum 0.26.3",
  "syn 2.0.89",
  "tempfile",
  "thiserror 1.0.65",
@@ -5137,8 +5137,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-etherscan"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "chrono",
  "ethers-core",
@@ -5152,8 +5152,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-middleware"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -5178,12 +5178,12 @@ dependencies = [
 
 [[package]]
 name = "ethers-providers"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "async-trait",
  "auto_impl",
- "base64 0.21.7",
+ "base64 0.22.1",
  "bytes",
  "const-hex",
  "enr",
@@ -5214,8 +5214,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-signers"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "async-trait",
  "coins-bip32",
@@ -5232,8 +5232,8 @@ dependencies = [
 
 [[package]]
 name = "ethers-solc"
-version = "2.0.11"
-source = "git+https://github.com/gakonst/ethers-rs?rev=f0e5b194f09c533feb10d1a686ddb9e5946ec107#f0e5b194f09c533feb10d1a686ddb9e5946ec107"
+version = "2.0.14"
+source = "git+https://github.com/gakonst/ethers-rs?rev=6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588#6e2ff0ef8af8c0ee3c21b7e1960f8c025bcd5588"
 dependencies = [
  "cfg-if",
  "const-hex",
@@ -10916,7 +10916,7 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 [[package]]
 name = "starkgate-manager-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethers",
@@ -10930,7 +10930,7 @@ dependencies = [
 [[package]]
 name = "starkgate-registry-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11138,7 +11138,7 @@ dependencies = [
 [[package]]
 name = "starknet-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11260,7 +11260,7 @@ dependencies = [
 [[package]]
 name = "starknet-erc20-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -11275,7 +11275,7 @@ dependencies = [
 [[package]]
 name = "starknet-eth-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11470,7 +11470,7 @@ dependencies = [
 [[package]]
 name = "starknet-proxy-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethereum-instance",
@@ -11536,7 +11536,7 @@ dependencies = [
 [[package]]
 name = "starknet-token-bridge-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethers",
@@ -11685,9 +11685,6 @@ name = "strum"
 version = "0.25.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "290d54ea6f91c969195bdbcd7442c8c2a2ba87da8bf60a7ee86a235d4bc1e125"
-dependencies = [
- "strum_macros 0.25.3",
-]
 
 [[package]]
 name = "strum"
@@ -12916,7 +12913,7 @@ checksum = "06abde3611657adf66d383f00b093d7faecc7fa57071cce2578660c9f1010821"
 [[package]]
 name = "utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?tag=v1.0.2#fb1586013b61ecfe10b03662e68c1fce9859f394"
+source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
 dependencies = [
  "async-trait",
  "ethers",

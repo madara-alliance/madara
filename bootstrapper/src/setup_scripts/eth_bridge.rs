@@ -1,5 +1,4 @@
 use std::str::FromStr;
-use std::time::Duration;
 
 use ethers::abi::Address;
 use serde::Serialize;
@@ -7,7 +6,6 @@ use starknet::accounts::{Account, ConnectedAccount};
 use starknet::core::types::Felt;
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
-use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::core_contract::CoreContract;
@@ -56,6 +54,7 @@ impl<'a> EthBridge<'a> {
     }
 
     pub async fn setup(&self) -> EthBridgeSetupOutput {
+        // Declare a proxy
         let legacy_proxy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(PROXY_LEGACY_PATH),
             self.arg_config.rollup_declare_v0_seq_url.clone(),
@@ -65,8 +64,8 @@ impl<'a> EthBridge<'a> {
         log::info!("🎡 Legacy proxy class hash declared.");
         save_to_json("legacy_proxy_class_hash", &JsonValueType::StringType(legacy_proxy_class_hash.to_string()))
             .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
+        // Starkgate proxy declaration
         let starkgate_proxy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(STARKGATE_PROXY_PATH),
             self.arg_config.rollup_declare_v0_seq_url.clone(),
@@ -76,8 +75,8 @@ impl<'a> EthBridge<'a> {
         log::info!("🎡 Starkgate proxy class hash declared.");
         save_to_json("starkgate_proxy_class_hash", &JsonValueType::StringType(starkgate_proxy_class_hash.to_string()))
             .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
+        // Erc20 legacy class declaration
         let erc20_legacy_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(ERC20_LEGACY_PATH),
             self.arg_config.rollup_declare_v0_seq_url.clone(),
@@ -87,7 +86,6 @@ impl<'a> EthBridge<'a> {
         log::info!("🎡 ERC20 legacy class hash declared.");
         save_to_json("erc20_legacy_class_hash", &JsonValueType::StringType(erc20_legacy_class_hash.to_string()))
             .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let legacy_eth_bridge_class_hash = declare_contract(DeclarationInput::LegacyDeclarationInputs(
             String::from(LEGACY_BRIDGE_PATH),
@@ -101,7 +99,6 @@ impl<'a> EthBridge<'a> {
             &JsonValueType::StringType(legacy_eth_bridge_class_hash.to_string()),
         )
         .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let eth_proxy_address = deploy_proxy_contract(
             &self.account,
@@ -114,7 +111,6 @@ impl<'a> EthBridge<'a> {
         .await;
         log::info!("✴️ ETH ERC20 proxy deployed [ETH : {:?}]", eth_proxy_address);
         save_to_json("l2_eth_address_proxy", &JsonValueType::StringType(eth_proxy_address.to_string())).unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         let eth_bridge_proxy_address = deploy_proxy_contract(
             &self.account,
@@ -127,10 +123,8 @@ impl<'a> EthBridge<'a> {
         log::info!("✴️ ETH Bridge proxy deployed [ETH Bridge : {:?}]", eth_bridge_proxy_address);
         save_to_json("ETH_l2_bridge_address_proxy", &JsonValueType::StringType(eth_bridge_proxy_address.to_string()))
             .unwrap();
-        sleep(Duration::from_secs(10)).await;
 
         init_governance_proxy(&self.account, eth_proxy_address, "eth_proxy_address : init_governance_proxy").await;
-        sleep(Duration::from_secs(10)).await;
 
         init_governance_proxy(
             &self.account,
@@ -138,7 +132,6 @@ impl<'a> EthBridge<'a> {
             "eth_bridge_proxy_address : init_governance_proxy",
         )
         .await;
-        sleep(Duration::from_secs(10)).await;
 
         let eth_bridge =
             StarknetLegacyEthBridge::deploy(self.core_contract.client().clone(), self.arg_config.dev).await;
@@ -165,6 +158,7 @@ impl<'a> EthBridge<'a> {
         log::info!("✴️ ETH Bridge L2 deployment completed [Eth Bridge Address (L2) : {:?}]", l2_bridge_address);
         save_to_json("ETH_l2_bridge_address", &JsonValueType::StringType(l2_bridge_address.to_string())).unwrap();
 
+        // Deploy a token on l2 that will become the ETH
         let eth_address = deploy_eth_token_on_l2(
             self.clients.provider_l2(),
             eth_proxy_address,
@@ -175,18 +169,15 @@ impl<'a> EthBridge<'a> {
         .await;
 
         log::info!("✴️ L2 ETH token deployment successful.");
-        // save_to_json("l2_eth_address", &JsonValueType::StringType(eth_address.to_string()))?;
+        save_to_json("l2_eth_address", &JsonValueType::StringType(eth_address.to_string())).unwrap();
         if self.arg_config.dev {
             eth_bridge.initialize(self.core_contract.address()).await;
         } else {
             eth_bridge.add_implementation_eth_bridge(self.core_contract.address()).await;
-            sleep(Duration::from_secs(20)).await;
+
             eth_bridge.upgrade_to_eth_bridge(self.core_contract.address()).await;
-            sleep(Duration::from_secs(20)).await;
         }
         log::info!("✴️ ETH Bridge initialization on L1 completed");
-
-        sleep(Duration::from_secs(self.arg_config.l1_wait_time.parse().unwrap())).await;
 
         eth_bridge
             .setup_l2_bridge(
@@ -208,7 +199,7 @@ impl<'a> EthBridge<'a> {
                 self.arg_config.dev,
             )
             .await;
-        log::info!("✴️ ETH Bridge setup on L1 completed");
+        log::info!("✴️ ETH Bridge setup completed");
 
         EthBridgeSetupOutput {
             l2_legacy_proxy_class_hash: legacy_proxy_class_hash,
@@ -226,15 +217,20 @@ impl<'a> EthBridge<'a> {
 pub async fn deploy_eth_token_on_l2(
     rpc_provider_l2: &JsonRpcClient<HttpTransport>,
     eth_proxy_address: Felt,
-    eth_erc20_class_hash: Felt,
+    _eth_erc20_class_hash: Felt,
     account: &RpcAccount<'_>,
     eth_legacy_bridge_address: Felt,
 ) -> Felt {
+    // This is a workaround for the Madara bug where it incorrectly calculates cairo 0 class hash
+    // Check function `get_real_class_hash_for_any_block` in `madara/crates/primitives/class/src/class_hash.rs` more details
+    // This is a temperary workaround which can be removed after starknet: v0.14.0 boostrapper support where one cant declare cairo 0 classes
+    let eth_erc20_class_hash_correct =
+        Felt::from_hex("0x2760f25d5a4fb2bdde5f561fd0b44a3dee78c28903577d37d669939d97036a0").unwrap();
     let deploy_tx = account
         .invoke_contract(
             account.address(),
             "deploy_contract",
-            vec![eth_erc20_class_hash, Felt::ZERO, Felt::ZERO, Felt::ZERO],
+            vec![eth_erc20_class_hash_correct, Felt::ZERO, Felt::ZERO, Felt::ZERO],
             None,
         )
         .send()
