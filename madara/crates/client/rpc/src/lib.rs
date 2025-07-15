@@ -160,16 +160,17 @@ pub(crate) struct WsSubscribeHandles {
     /// > Locking behaviour: May deadlock if called when holding any sort of reference into the map.
     ///
     /// This is fine in our case as we do not maintain references to a map in the same thread while
-    /// mutating it and instead operate directly on-value.
+    /// mutating it and instead operate directly on-value by sharing the map inside an [Arc].
     ///
     /// [DashMap]: dashmap::DashMap
     /// [DashMap::entry]: dashmap::DashMap::entry
-    handles: dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>,
+    /// [Arc]: std::sync::Arc
+    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
 }
 
 impl WsSubscribeHandles {
     pub fn new() -> Self {
-        Self { handles: dashmap::DashMap::new() }
+        Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
     }
 
     pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
@@ -181,12 +182,11 @@ impl WsSubscribeHandles {
         };
 
         let handle = std::sync::Arc::new(tokio::sync::Notify::new());
-        let entry = match self.handles.entry(id) {
-            dashmap::Entry::Occupied(_) => unreachable!("Ws susbcription collision"),
-            dashmap::Entry::Vacant(entry) => Some(entry.insert_entry(handle)),
-        };
+        let map = std::sync::Arc::clone(&self.handles);
 
-        WsSubscriptionGuard { entry }
+        self.handles.insert(id, std::sync::Arc::clone(&handle));
+
+        WsSubscriptionGuard { id, handle, map }
     }
 
     pub async fn subscription_close(&self, id: u64) -> bool {
@@ -199,22 +199,20 @@ impl WsSubscribeHandles {
     }
 }
 
-pub(crate) struct WsSubscriptionGuard<'a> {
-    entry: Option<dashmap::OccupiedEntry<'a, u64, std::sync::Arc<tokio::sync::Notify>>>,
+pub(crate) struct WsSubscriptionGuard {
+    id: u64,
+    handle: std::sync::Arc<tokio::sync::Notify>,
+    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
 }
 
-impl WsSubscriptionGuard<'_> {
+impl WsSubscriptionGuard {
     pub async fn cancelled(&self) {
-        if let Some(ref entry) = self.entry {
-            entry.get().notified().await
-        }
+        self.handle.notified().await
     }
 }
 
-impl Drop for WsSubscriptionGuard<'_> {
+impl Drop for WsSubscriptionGuard {
     fn drop(&mut self) {
-        if let Some(entry) = self.entry.take() {
-            entry.remove();
-        }
+        self.map.remove(&self.id);
     }
 }

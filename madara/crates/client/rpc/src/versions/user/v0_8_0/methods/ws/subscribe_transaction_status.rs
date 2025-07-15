@@ -69,7 +69,7 @@ impl<'a> SubscriptionState<'a> {
     async fn new(
         starknet: &'a crate::Starknet,
         sink: &'a jsonrpsee::core::server::SubscriptionSink,
-        ctx: &'a crate::WsSubscriptionGuard<'a>,
+        ctx: &'a crate::WsSubscriptionGuard,
         tx_hash: mp_convert::Felt,
     ) -> Result<Self, crate::errors::StarknetWsApiError> {
         let common = StateTransitionCommon { starknet, sink, ctx, tx_hash };
@@ -224,7 +224,7 @@ impl<'a> SubscriptionState<'a> {
 struct StateTransitionCommon<'a> {
     starknet: &'a crate::Starknet,
     sink: &'a jsonrpsee::core::server::SubscriptionSink,
-    ctx: &'a crate::WsSubscriptionGuard<'a>,
+    ctx: &'a crate::WsSubscriptionGuard,
     tx_hash: mp_convert::Felt,
 }
 struct StateTransitionReceived<'a> {
