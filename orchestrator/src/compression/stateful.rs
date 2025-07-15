@@ -1,3 +1,4 @@
+use crate::compression::utils::sort_state_diff;
 use color_eyre::{eyre, Result};
 use futures::{stream, StreamExt};
 use itertools::Itertools;
@@ -10,7 +11,6 @@ use starknet_core::types::{BlockId, StarknetError};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use tracing::log::error;
-use crate::compression::utils::sort_state_diff;
 
 const SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
 const MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
@@ -74,14 +74,12 @@ impl ValueMapping {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| !Self::skip(diff.address)).for_each(
-            |diff| {
-                keys.insert(diff.address);
-                diff.storage_entries.iter().for_each(|entry| {
-                    keys.insert(entry.key);
-                });
-            },
-        );
+        state_update.state_diff.storage_diffs.iter().filter(|diff| !Self::skip(diff.address)).for_each(|diff| {
+            keys.insert(diff.address);
+            diff.storage_entries.iter().for_each(|entry| {
+                keys.insert(entry.key);
+            });
+        });
         state_update.state_diff.deployed_contracts.iter().for_each(|contract| {
             keys.insert(contract.address);
         });
@@ -103,9 +101,7 @@ impl ValueMapping {
                 async move {
                     match special_address_mappings.get(&key).cloned() {
                         Some(value) => Ok((key, value)),
-                        None => {
-                            Ok((key, Self::get_value_from_provider(provider, &key, pre_range_block).await?))
-                        }
+                        None => Ok((key, Self::get_value_from_provider(provider, &key, pre_range_block).await?)),
                     }
                 }
             })
