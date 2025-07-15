@@ -180,7 +180,7 @@ where
 {
     let mut last_update_timestamp = SystemTime::now();
     let mut interval = tokio::time::interval(gas_provider_config.poll_interval);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
         let res = tokio::time::timeout(

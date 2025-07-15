@@ -23,7 +23,7 @@ impl ProviderStateUpdatePendingMaybe {
         }
     }
 
-    pub fn non_pending_ownded(self) -> Option<ProviderStateUpdate> {
+    pub fn non_pending_owned(self) -> Option<ProviderStateUpdate> {
         match self {
             Self::NonPending(non_pending) => Some(non_pending),
             Self::Pending(_) => None,

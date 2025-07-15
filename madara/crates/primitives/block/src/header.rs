@@ -126,7 +126,6 @@ impl From<&GasPrices> for starknet_api::block::GasPrices {
                     .unwrap_or_default(),
                 l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l1_data_gas_price.into())
                     .unwrap_or_default(),
-                // TODO: L2 gas price is not used in the current implementation, but it should be set to 1
                 l2_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l2_gas_price.into())
                     .unwrap_or_default(),
             },
@@ -159,7 +158,7 @@ impl GasPrices {
 
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self) -> Felt {
-        Pedersen::hash_array(&[
+        Poseidon::hash_array(&[
             Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0"),
             Felt::from(self.eth_l1_gas_price),
             Felt::from(self.strk_l1_gas_price),

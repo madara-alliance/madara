@@ -2,6 +2,7 @@
 #![cfg(test)]
 
 mod devnet;
+mod gateway;
 mod rpc;
 mod storage_proof;
 mod transaction_flow;
