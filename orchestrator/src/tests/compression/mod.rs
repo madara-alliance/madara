@@ -1,4 +1,4 @@
-use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
+use crate::compression::blob::{convert_felt_vec_to_blob_data, da_word, state_update_to_blob_data};
 use crate::compression::squash::squash_state_updates;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
@@ -12,7 +12,6 @@ use crate::worker::utils::biguint_vec_to_u8_vec;
 use color_eyre::eyre::Result;
 use rstest::*;
 use starknet_core::types::Felt;
-use std::fs;
 use std::io::Read;
 
 #[rstest]
@@ -21,12 +20,12 @@ async fn test_squash_state_updates() -> Result<()> {
     let services = build_test_config_with_real_provider().await?;
 
     let state_updates_vector = read_state_updates_vec_from_file(&format!(
-        "{}/src/tests/artifacts/state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/state_updates.json",
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
     let expected_squashed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/squashed_state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/squashed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
@@ -44,12 +43,12 @@ async fn test_stateful_compression() -> Result<()> {
     let services = build_test_config_with_real_provider().await?;
 
     let uncompressed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/squashed_state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/squashed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
     let expected_compressed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/stateful_compressed_state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/stateful_compressed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
@@ -62,22 +61,21 @@ async fn test_stateful_compression() -> Result<()> {
 }
 
 #[rstest]
-#[case("0.13.5")]
+#[case(StarknetVersion::V0_13_5)]
 #[tokio::test]
-async fn test_stateless_compression(#[case] version: &str) -> Result<()> {
+async fn test_stateless_compression(#[case] version: StarknetVersion) -> Result<()> {
     let uncompressed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/stateful_compressed_state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/stateful_compressed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
     let expected_compressed_state_update = convert_biguints_to_felts(&read_biguint_from_file(&format!(
-        "{}/src/tests/artifacts/stateless_compressed_state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/stateless_compressed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
     ))?)?;
 
     // Get a vector of felts from the compressed state update
-    // TODO: use the version sent using the case above
-    let vec_felts = state_update_to_blob_data(uncompressed_state_update, StarknetVersion::V0_13_5).await?;
+    let vec_felts = state_update_to_blob_data(uncompressed_state_update, version).await?;
 
     // Perform stateless compression
     let compressed_state_update = stateless_compress(&vec_felts)?;
@@ -91,7 +89,7 @@ async fn test_stateless_compression(#[case] version: &str) -> Result<()> {
 #[tokio::test]
 async fn test_felt_vec_to_blob_data() -> Result<()> {
     let vec_felts = convert_biguints_to_felts(&read_biguint_from_file(&format!(
-        "{}/src/tests/artifacts/stateless_compressed_state_update_789878_789900.json",
+        "{}/src/tests/artifacts/8373665/stateless_compressed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
     ))?)?;
 
@@ -99,7 +97,11 @@ async fn test_felt_vec_to_blob_data() -> Result<()> {
     for (index, blob) in blobs.iter().enumerate() {
         assert_eq!(
             hex::encode(biguint_vec_to_u8_vec(blob.as_slice())),
-            read_file_to_string(&format!("{}/src/tests/artifacts/blob/{}.txt", env!("CARGO_MANIFEST_DIR"), index + 1))?
+            read_file_to_string(&format!(
+                "{}/src/tests/artifacts/8373665/blobs/{}.txt",
+                env!("CARGO_MANIFEST_DIR"),
+                index + 1
+            ))?
         );
     }
 
