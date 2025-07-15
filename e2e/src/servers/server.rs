@@ -240,7 +240,16 @@ pub enum NodeRpcError{
 pub trait NodeRpcMethods {
     fn get_endpoint(&self) -> Url;
 
-    async fn get_latest_block_number(&self) -> Result<u64, NodeRpcError>{
+    /// Fetches the latest block number from the Starknet RPC endpoint.
+    ///
+    /// Returns:
+    /// - `Ok(-1)` when no blocks have been mined yet (RPC returns "Block not found" error with code 24)
+    /// - `Ok(block_number)` when blocks exist
+    /// - `Err(NodeRpcError::InvalidResponse)` for other RPC errors or parsing failures
+    ///
+    /// Note: The -1 return value indicates that the blockchain is in an initial state
+    /// with no blocks mined, which is common when first starting a node or testnet.
+    async fn get_latest_block_number(&self) -> Result<i64, NodeRpcError> {
         let url = self.get_endpoint();
         let client = reqwest::Client::new();
         let response = client.post(url)
@@ -249,7 +258,7 @@ pub trait NodeRpcMethods {
             .json(&json!({
                 "id": 1,
                 "jsonrpc": "2.0",
-                "method": "starknet_blockHashAndNumber",
+                "method": "starknet_blockNumber",
                 "params": []
             }))
             .send()
@@ -261,31 +270,29 @@ pub trait NodeRpcMethods {
 
         // Check if there's an error in the JSON-RPC response
         if let Some(error) = json.get("error") {
+            // Check for specific "Block not found" error (code 24)
+            if let (Some(code), Some(message)) = (error.get("code"), error.get("message")) {
+                if code.as_u64() == Some(24) &&
+                   message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false) {
+                    println!("No blocks mined yet, returning -1");
+                    return Ok(-1);
+                }
+            }
+
             println!("RPC Error: {:?}", error);
             return Err(NodeRpcError::InvalidResponse);
         }
 
-        // Extract block_number from the result object
-        let result = json.get("result").ok_or(NodeRpcError::InvalidResponse)?;
-        let block_number = result.get("block_number").ok_or(NodeRpcError::InvalidResponse)?;
+        // Extract block number directly from result (it's just an integer now)
+        let block_number = json.get("result")
+            .and_then(|v| v.as_u64())
+            .ok_or(NodeRpcError::InvalidResponse)?;
 
+        let block_num_i64 = block_number as i64;
 
-        // Handle both string and number representations of block_number
-        let block_num = match block_number {
-            serde_json::Value::Number(n) => n.as_u64().ok_or(NodeRpcError::InvalidResponse)?,
-            serde_json::Value::String(s) => {
-                // Handle hex string (common in blockchain APIs)
-                if s.starts_with("0x") {
-                    u64::from_str_radix(&s[2..], 16).map_err(|_| NodeRpcError::InvalidResponse)?
-                } else {
-                    s.parse::<u64>().map_err(|_| NodeRpcError::InvalidResponse)?
-                }
-            }
-            _ => return Err(NodeRpcError::InvalidResponse),
-        };
+        println!("Madara Block Number: {}", block_num_i64);
 
-        println!("Madara Block Number: {}", block_num);
-
-        Ok(block_num)
+        Ok(block_num_i64)
     }
+
 }

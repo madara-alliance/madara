@@ -388,6 +388,7 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup infrastructure services timed out".to_string()))??;
 
+
         // Setup L1 Chain
         timeout(Duration::from_secs(70), async {
             self.start_l1_setup().await?;
@@ -396,6 +397,7 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Setup L2 Chain timed out".to_string()))??;
 
+
         // Setup L2 Chain
         timeout(Duration::from_secs(1800), async {
             self.start_l2_setup().await?;
@@ -403,6 +405,7 @@ impl Setup {
         })
         .await
         .map_err(|_| SetupError::Timeout("Setup L2 Chain timed out".to_string()))??;
+
 
         // Start Full Node Syncing
         timeout(Duration::from_secs(300), async {
@@ -413,7 +416,7 @@ impl Setup {
         .map_err(|_| SetupError::Timeout("Start Full Node Syncing timed out".to_string()))??;
 
         // Start Orchestrator Service
-        timeout(Duration::from_secs(300), async {
+        timeout(Duration::from_secs(500), async {
             self.start_orchestration().await?;
             Ok::<(), SetupError>(())
         })
@@ -425,7 +428,6 @@ impl Setup {
         Ok(())
 
     }
-
 
 
     /// Start L1 setup (Anvil, Bootstrapper)
@@ -441,7 +443,7 @@ impl Setup {
         let anvil_config = AnvilConfigBuilder::new()
             .port(self.config.anvil_port.clone())
             .block_time(1_f64)
-            .dump_state(anvil_db_path).build();
+            .load_state(anvil_db_path).build();
 
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
@@ -454,24 +456,24 @@ impl Setup {
         // Assign the services
         self.anvil = Some(anvil_service);
 
-        println!("🧑‍💻 Starting bootstrapper L1");
+        // println!("🧑‍💻 Starting bootstrapper L1");
 
-        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
-        // Ideally we would want to ask anvil each time for these values.
+        // // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // // Ideally we would want to ask anvil each time for these values.
 
-        // TODO: I need to know the port from anvil before sending it to bootstrapper!
+        // // TODO: I need to know the port from anvil before sending it to bootstrapper!
 
-        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL1)
-            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .env_var("ETH_RPC", "http://localhost:8545")
-            .env_var("RUST_LOG", "info")
-            .build();
+        // let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+        //     .mode(BootstrapperMode::SetupL1)
+        //     .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+        //     .env_var("ETH_RPC", "http://localhost:8545")
+        //     .env_var("RUST_LOG", "info")
+        //     .build();
 
-        let status = BootstrapperService::run(bootstrapper_l1_config).await?;
-        println!("🥳 Bootstrapper L1 finished with {}", status);
+        // let status = BootstrapperService::run(bootstrapper_l1_config).await?;
+        // println!("🥳 Bootstrapper L1 finished with {}", status);
 
-        println!("✅ L1 Setup completed");
+        // println!("✅ L1 Setup completed");
 
         Ok(())
     }
@@ -500,25 +502,48 @@ impl Setup {
         // Assign the services
         self.madara = Some(madara_service);
 
-        println!("🧑‍💻 Starting bootstrapper L2");
+        // // We don't do any transactions on block 0
 
-        // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
-        // Ideally we would want to ask anvil each time for these values.
+        // let mut is_block_0_mined = false;
 
-        // TODO: I need to know the port from anvil before sending it to bootstrapper!
+        // println!("⏳ Waiting for Madara block 0 to be mined");
 
-        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL2)
-            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .env_var("ETH_RPC", "http://localhost:8545")
-            .env_var("RUST_LOG", "info")
-            .build();
+        // // TODO: ideally should be more informed by using madara block time!
+        // if let Some(madara) = &self.madara {
+        //     while !is_block_0_mined {
+        //         println!("Checking Madara block status...");
 
-        let status = BootstrapperService::run(bootstrapper_l2_config).await?;
-        println!("🥳 Bootstrapper L2 finished with {}", status);
+        //         let blk_number = madara.get_latest_block_number().await
+        //             // TODO: is this the best we can do ?
+        //             .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
+        //         if blk_number >= 0 {
+        //             println!("Madara block 0 is mined");
+        //             is_block_0_mined = true;
+        //         }
 
-        println!("✅ L2 Setup completed");
+        //         tokio::time::sleep(Duration::from_millis(1000)).await;
+        //     }
+        // }
+
+        // println!("🧑‍💻 Starting bootstrapper L2");
+
+        // // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
+        // // Ideally we would want to ask anvil each time for these values.
+
+        // // TODO: I need to know the port from anvil before sending it to bootstrapper!
+
+        // let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+        //     .mode(BootstrapperMode::SetupL2)
+        //     .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+        //     .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+        //     .env_var("ETH_RPC", "http://localhost:8545")
+        //     .env_var("RUST_LOG", "info")
+        //     .build();
+
+        // let status = BootstrapperService::run(bootstrapper_l2_config).await?;
+        // println!("🥳 Bootstrapper L2 finished with {}", status);
+
+        // println!("✅ L2 Setup completed");
 
         Ok(())
     }
@@ -534,7 +559,7 @@ impl Setup {
         // Then only orchestrator should start!
 
         // let mut sync_ready_at_block : u64 = u64::MAX;
-        let mut sync_ready_at_block : u64 = 70;
+        let mut sync_ready_at_block : i64 = 70;
 
         if let Some(madara) = &self.madara {
             sync_ready_at_block = madara.get_latest_block_number().await
@@ -649,8 +674,6 @@ impl Setup {
         Ok(())
     }
 
-
-
     async fn close_services(&mut self) -> Result<(), SetupError> {
         // Anvil should close after L1 setup is completed
         println!("Closing Anvil");
@@ -668,7 +691,7 @@ impl Setup {
 
     async fn start_orchestration(&mut self) -> Result<(), SetupError> {
         // Start Orchestrator Service, wait for it to complete sync
-        println!("Statting Orchestrator ");
+        println!("Starting Orchestrator ");
 
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::run_l2()
