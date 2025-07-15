@@ -3,7 +3,7 @@ use crate::compression::stateless::constants::{
     COMPRESSION_VERSION, HEADER_ELM_BOUND, N_UNIQUE_BUCKETS, TOTAL_N_BUCKETS,
 };
 use crate::compression::stateless::utils::{pack_usize_in_felt, pack_usize_in_felts};
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Result};
 use starknet_core::types::Felt;
 use std::cmp::max;
 
@@ -82,10 +82,10 @@ impl CompressionSet {
 
 // Compression Logic
 // Revert compress signature and logic (no Result, use expect/panic)
-pub fn compress(data: &[Felt]) -> color_eyre::Result<Vec<Felt>> {
-    let data_len_usize = data.len();
-    // Use assert! like Python version
-    assert!(data_len_usize < HEADER_ELM_BOUND as usize, "Data is too long: {} >= {}", data_len_usize, HEADER_ELM_BOUND);
+pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
+    if data.len() < HEADER_ELM_BOUND as usize {
+        return Err(eyre!("Data is too long: {} >= {}", data.len(), HEADER_ELM_BOUND));
+    }
 
     // Handle the empty case
     if data.is_empty() {
