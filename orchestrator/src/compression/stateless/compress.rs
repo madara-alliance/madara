@@ -83,7 +83,7 @@ impl CompressionSet {
 // Compression Logic
 // Revert compress signature and logic (no Result, use expect/panic)
 pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
-    if data.len() < HEADER_ELM_BOUND as usize {
+    if data.len() >= HEADER_ELM_BOUND as usize {
         return Err(eyre!("Data is too long: {} >= {}", data.len(), HEADER_ELM_BOUND));
     }
 

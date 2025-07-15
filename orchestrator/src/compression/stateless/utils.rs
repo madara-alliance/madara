@@ -27,7 +27,7 @@ pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> Result<Vec<Felt>> 
     // Check elements are within bound
     for elm in elms {
         let elm_u32 = u32::try_from(*elm).map_err(|err| eyre!("Cannot convert element to u32: {}", err))?;
-        if elm_u32 < elm_bound {
+        if elm_u32 >= elm_bound {
             return Err(eyre!("Element {} exceeds bound {}", elm, elm_bound));
         }
     }
