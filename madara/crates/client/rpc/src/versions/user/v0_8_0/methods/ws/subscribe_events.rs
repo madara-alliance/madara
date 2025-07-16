@@ -16,6 +16,7 @@ pub async fn subscribe_events(
     block_id: Option<BlockId>,
 ) -> Result<(), StarknetWsApiError> {
     let sink = subscription_sink.accept().await.or_internal_server_error("Failed to establish websocket connection")?;
+    let ctx = starknet.ws_handles.subscription_register(sink.subscription_id()).await;
 
     let mut rx = starknet.backend.subscribe_events(from_address);
 
@@ -44,28 +45,33 @@ pub async fn subscribe_events(
             for event in drain_block_events(block)
                 .filter(|event| event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()))
             {
-                let msg = jsonrpsee::SubscriptionMessage::from_json(&EmittedEvent::from(event))
-                    .or_internal_server_error("Failed to create response message")?;
-                sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
+                send_event(event, &sink).await?;
             }
         }
     }
 
     loop {
-        tokio::select! {
-            event = rx.recv() => {
-                let event = event.or_internal_server_error("Failed to retrieve event")?;
-                if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
-                    let msg = jsonrpsee::SubscriptionMessage::from_json(&EmittedEvent::from(event))
-                        .or_internal_server_error("Failed to create response message")?;
-                    sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
-                }
-            },
-            _ = sink.closed() => {
-                return Ok(())
-            }
+        let event = tokio::select! {
+            event = rx.recv() => event.or_internal_server_error("Failed to retrieve event")?,
+            _ = sink.closed() => return Ok(()),
+            _ = ctx.cancelled() => return Err(crate::errors::StarknetWsApiError::Internal)
+        };
+
+        if event_match_filter(&event.event, from_address.as_ref(), keys.as_deref()) {
+            send_event(event, &sink).await?;
         }
     }
+}
+
+async fn send_event(
+    event: mp_block::EventWithInfo,
+    sink: &jsonrpsee::server::SubscriptionSink,
+) -> Result<(), StarknetWsApiError> {
+    let event = EmittedEvent::from(event);
+    let item = super::SubscriptionItem::new(sink.subscription_id(), event);
+    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
+        .or_internal_server_error("Failed to create response message")?;
+    sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")
 }
 
 #[cfg(test)]
@@ -192,7 +198,7 @@ mod test {
             let events = generator.next().expect("Retrieving block");
             for event in events {
                 let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-                assert_eq!(received, event);
+                assert_eq!(received.result, event);
                 nb_events += 1;
             }
         }
@@ -224,7 +230,7 @@ mod test {
             for event in events {
                 if event.event.from_address == from_address {
                     let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-                    assert_eq!(received, event);
+                    assert_eq!(received.result, event);
                     nb_events += 1;
                 }
             }
@@ -287,7 +293,7 @@ mod test {
 
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received, event);
+            assert_eq!(received.result, event);
         }
     }
 
@@ -327,7 +333,35 @@ mod test {
 
         for event in expected_events {
             let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
-            assert_eq!(received, event);
+            assert_eq!(received.result, event);
         }
+    }
+
+    #[tokio::test]
+    #[rstest::rstest]
+    async fn subscribe_events_unsubscribe(rpc_test_setup: (std::sync::Arc<mc_db::MadaraBackend>, Starknet)) {
+        let (backend, starknet) = rpc_test_setup;
+        let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
+        let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
+
+        let mut generator = block_generator(&backend);
+
+        let mut sub = client.subscribe_events(None, None, None).await.expect("Subscribing to events");
+
+        let events = generator.next().expect("Retrieving block");
+        let subscription_id = sub.next().await.unwrap().unwrap().subscription_id;
+        client.starknet_unsubscribe(subscription_id).await.expect("Failed to close subscription");
+
+        let mut nb_events = 0;
+        for event in events.into_iter().skip(1) {
+            let received = sub.next().await.expect("Subscribing closed").expect("Failed to retrieve event");
+            assert_eq!(received.result, event);
+            nb_events += 1;
+        }
+        assert_eq!(nb_events, 2);
+
+        assert!(sub.next().await.is_none());
     }
 }

@@ -4,9 +4,6 @@ use mp_block::BlockId;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
-pub(crate) type NewHead = mp_rpc::BlockHeader;
-pub(crate) type EmittedEvent = mp_rpc::EmittedEvent;
-
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractStorageKeysItem {
     pub contract_address: Felt,
@@ -54,12 +51,27 @@ pub struct GetStorageProofResult {
     pub global_roots: GlobalRoots,
 }
 
+type SubscriptionItemPendingTxs = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
+type SubscriptionItemEvents = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::EmittedEvent>;
+type SubscriptionItemNewHeads = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::BlockHeader>;
+type SubscriptionItemTransactionStatus = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::TxnStatus>;
+
 #[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWsRpcApi {
-    #[subscription(name = "subscribeNewHeads", unsubscribe = "unsubscribeNewHeads", item = NewHead, param_kind = map)]
+    #[subscription(
+        name = "subscribeNewHeads",
+        unsubscribe = "unsubscribeNewHeads",
+        item = SubscriptionItemNewHeads,
+        param_kind = map
+    )]
     async fn subscribe_new_heads(&self, block: BlockId) -> jsonrpsee::core::SubscriptionResult;
 
-    #[subscription(name = "subscribeEvents", unsubscribe = "unsubscribeEvents", item = EmittedEvent, param_kind = map)]
+    #[subscription(
+        name = "subscribeEvents",
+        unsubscribe = "unsubscribeEvents",
+        item = SubscriptionItemEvents,
+        param_kind = map
+    )]
     async fn subscribe_events(
         &self,
         from_address: Option<Felt>,
@@ -70,7 +82,7 @@ pub trait StarknetWsRpcApi {
     #[subscription(
         name = "subscribeTransactionStatus",
         unsubscribe = "unsubscribeTransactionStatus",
-        item = mp_rpc::v0_8_1::TxnStatus,
+        item = SubscriptionItemTransactionStatus,
         param_kind = map
     )]
     async fn subscribe_transaction_status(&self, transaction_hash: Felt) -> jsonrpsee::core::SubscriptionResult;
@@ -78,7 +90,7 @@ pub trait StarknetWsRpcApi {
     #[subscription(
         name = "subscribePendingTransactions",
         unsubscribe = "unsubscribePendingTransactions",
-        item = mp_rpc::v0_8_1::PendingTxnInfo,
+        item = SubscriptionItemPendingTxs,
         param_kind = map
     )]
     async fn subscribe_pending_transactions(
@@ -86,6 +98,8 @@ pub trait StarknetWsRpcApi {
         transaction_details: bool,
         sender_address: Vec<starknet_types_core::felt::Felt>,
     ) -> jsonrpsee::core::SubscriptionResult;
+    #[method(name = "unsubscribe")]
+    async fn starknet_unsubscribe(&self, subscription_id: u64) -> RpcResult<bool>;
 }
 
 #[versioned_rpc("V0_8_0", "starknet")]
