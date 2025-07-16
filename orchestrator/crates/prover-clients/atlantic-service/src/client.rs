@@ -9,8 +9,9 @@ use url::Url;
 
 use crate::error::AtlanticError;
 use crate::types::{
-    AtlanticAddJobResponse, AtlanticBucketResponse, AtlanticBucketType, AtlanticCairoVersion, AtlanticCairoVm,
-    AtlanticCreateBucketRequest, AtlanticGetBucketResponse, AtlanticGetStatusResponse, AtlanticQueryStep,
+    AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
+    AtlanticCairoVersion, AtlanticCairoVm, AtlanticCreateBucketRequest, AtlanticGetBucketResponse,
+    AtlanticGetStatusResponse, AtlanticQueryStep,
 };
 use crate::AtlanticValidatedArgs;
 
@@ -109,7 +110,8 @@ impl AtlanticClient {
             .body(AtlanticCreateBucketRequest {
                 external_id: None,
                 node_width: None,
-                bucket_type: AtlanticBucketType::Snos,
+                aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
+                aggregator_params: AtlanticAggregatorParams { use_kzg_da: true, full_output: false },
             })
             .map_err(AtlanticError::CreateBucketFailure)?
             .send()

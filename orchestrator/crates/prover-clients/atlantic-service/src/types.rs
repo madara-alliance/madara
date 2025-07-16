@@ -66,7 +66,8 @@ pub struct AtlanticGetBucketResponse {
 pub struct AtlanticCreateBucketRequest {
     pub external_id: Option<String>,
     pub node_width: Option<String>,
-    pub bucket_type: AtlanticBucketType,
+    pub aggregator_version: AtlanticAggregatorVersion,
+    pub aggregator_params: AtlanticAggregatorParams,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
@@ -127,12 +128,27 @@ pub struct AtlanticClient {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub struct AtlanticAggregatorParams {
+    pub(crate) use_kzg_da: bool,
+    pub(crate) full_output: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum AtlanticBucketStatus {
     Open,
     InProgress,
     Done,
     Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum AtlanticAggregatorVersion {
+    #[serde(rename = "snos_aggregator_0.13.2")]
+    SnosAggregator0_13_2,
+    #[serde(rename = "snos_aggregator_0.13.3")]
+    SnosAggregator0_13_3,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
