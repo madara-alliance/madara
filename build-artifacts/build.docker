@@ -205,7 +205,11 @@ COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ERC20_070.casm.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_upgraded.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
 
-WORKDIR ../starkgate_legacy
+WORKDIR /dependencies
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./$BASE_CHAIN_FACTORY_DIR/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./$BASE_CHAIN_FACTORY_DIR/third_party/
+
+WORKDIR /artifacts/starkgate_legacy
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts/build/Release/src"
 ENV ARTIFACTS_LEGACY="$STARKGATE_DIR/starkware/starknet"
@@ -214,11 +218,7 @@ COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/apps/starkgate/artifacts/cairo/to
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/std_contracts/upgradability_proxy/proxy.json proxy_starkgate.json
 COPY --from=starkgate-legacy $ARTIFACTS_LEGACY/std_contracts/ERC20/ERC20.json ERC20.json
 
-WORKDIR /dependencies
-COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./$BASE_CHAIN_FACTORY_DIR/starkware/
-COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./$BASE_CHAIN_FACTORY_DIR/third_party/
-
-WORKDIR /artifacts/cairo_lang
+WORKDIR ../cairo_lang
 
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
