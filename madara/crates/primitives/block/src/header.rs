@@ -218,15 +218,6 @@ impl Header {
         }
     }
 
-    pub fn calculate_next_block_l2_gas_price(&self, l2_gas_price: u128, l2_gas_price_multiplier: f64) -> u128 {
-        let next_l2_gas_price = (l2_gas_price as f64 * l2_gas_price_multiplier) as u128;
-        if next_l2_gas_price == 0 {
-            1 // Ensure the gas price is never zero
-        } else {
-            next_l2_gas_price
-        }
-    }
-
     /// Compute the hash of the header.
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self, chain_id: Felt, pre_v0_13_2_override: bool) -> Felt {

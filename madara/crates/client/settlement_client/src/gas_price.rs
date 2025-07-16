@@ -8,7 +8,7 @@ use crate::SettlementLayerProvider;
 use mc_analytics::register_gauge_metric_instrument;
 use mc_db::MadaraBackend;
 use mp_block::L1GasQuote;
-use mp_convert::f64_to_u128_fixed;
+use mp_convert::FixedPoint;
 use mp_oracle::Oracle;
 use mp_utils::service::ServiceContext;
 use opentelemetry::global::Error as OtelError;
@@ -28,7 +28,7 @@ pub struct L1BlockMetrics {
 pub struct GasPriceProviderConfig {
     pub fix_gas_price: Option<u128>,
     pub fix_data_gas_price: Option<u128>,
-    pub fix_strk_per_eth: Option<(u128, u32)>,
+    pub fix_strk_per_eth: Option<FixedPoint>,
     pub oracle_provider: Option<Arc<dyn Oracle>>,
     pub poll_interval: Duration,
 }
@@ -48,7 +48,7 @@ impl From<&GasPriceProviderConfig> for L1GasQuote {
         Self {
             l1_gas_price: value.fix_gas_price.unwrap_or_default(),
             l1_data_gas_price: value.fix_data_gas_price.unwrap_or_default(),
-            strk_per_eth: value.fix_strk_per_eth.unwrap_or((1, 1)),
+            strk_per_eth: value.fix_strk_per_eth.unwrap_or(FixedPoint::one()),
         }
     }
 }
@@ -56,7 +56,7 @@ impl From<&GasPriceProviderConfig> for L1GasQuote {
 pub struct GasPriceProviderConfigBuilder {
     fix_gas_price: Option<u128>,
     fix_data_gas_price: Option<u128>,
-    fix_strk_per_eth: Option<(u128, u32)>,
+    fix_strk_per_eth: Option<FixedPoint>,
     oracle_provider: Option<Arc<dyn Oracle>>,
     poll_interval: Duration,
 }
@@ -93,12 +93,12 @@ impl GasPriceProviderConfigBuilder {
     }
 
     pub fn with_fix_strk_per_eth(mut self, value: f64) -> Self {
-        self.fix_strk_per_eth = Some(f64_to_u128_fixed(value));
+        self.fix_strk_per_eth = Some(value.into());
         self
     }
 
     pub fn set_fix_strk_per_eth(&mut self, value: f64) {
-        self.fix_strk_per_eth = Some(f64_to_u128_fixed(value));
+        self.fix_strk_per_eth = Some(value.into());
     }
 
     pub fn with_oracle_provider(mut self, provider: Arc<dyn Oracle>) -> Self {
@@ -233,7 +233,7 @@ where
         };
     }
 
-    let (strk_eth_price, decimals) = gas_provider_config
+    let strk_per_eth = gas_provider_config
         .oracle_provider
         .as_ref()
         .expect("Oracle is needed if no fix_strk_per_eth is set") // checked in config builder
@@ -242,7 +242,7 @@ where
         .map_err(|e| {
             SettlementClientError::PriceOracle(format!("Failed to fetch STRK/ETH price from oracle: {}", e))
         })?;
-    l1_gas_quote.strk_per_eth = (strk_eth_price, decimals);
+    l1_gas_quote.strk_per_eth = strk_per_eth;
 
     Ok(l1_gas_quote)
 }

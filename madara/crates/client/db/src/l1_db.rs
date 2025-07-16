@@ -141,8 +141,8 @@ impl MadaraBackend {
         let eth_l1_gas_price = l1_gas_quote.l1_gas_price;
         let eth_l1_data_gas_price = l1_gas_quote.l1_data_gas_price;
         let strk_per_eth = {
-            let (digits, scale) = l1_gas_quote.strk_per_eth;
-            bigdecimal::BigDecimal::new(digits.into(), scale.into())
+            let strk_per_eth = l1_gas_quote.strk_per_eth;
+            bigdecimal::BigDecimal::new(strk_per_eth.value().into(), strk_per_eth.decimals().into())
         };
         let strk_l1_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_gas_price) * &strk_per_eth)
             .to_u128()

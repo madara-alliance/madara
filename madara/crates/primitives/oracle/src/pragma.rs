@@ -2,6 +2,7 @@ use std::fmt;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use mp_convert::FixedPoint;
 use mp_utils::serde::{deserialize_url, serialize_url};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -55,9 +56,9 @@ impl Oracle for PragmaOracle {
     /// Methods to retrieve STRK/ETH price from Pragma Oracle
     ///
     /// Return values:
-    /// Ok((u128, u32)) : return the price tuple as (price, decimals)
+    /// Ok(FixedPoint) : return the price tuple as (price, decimals)
     /// Err(e) : return an error if anything went wrong in the fetching process or STRK/ETH price is 0
-    async fn fetch_strk_per_eth(&self) -> anyhow::Result<(u128, u32)> {
+    async fn fetch_strk_per_eth(&self) -> anyhow::Result<FixedPoint> {
         let response = reqwest::Client::new()
             .get(self.get_fetch_url(String::from("strk"), String::from("eth")))
             .header("x-api-key", self.api_key.clone())
@@ -74,7 +75,7 @@ impl Oracle for PragmaOracle {
         if !self.is_in_bounds(strk_eth_price) {
             bail!("STRK/ETH price outside of bounds");
         }
-        Ok((strk_eth_price, oracle_api_response.decimals))
+        Ok(FixedPoint::new(strk_eth_price, oracle_api_response.decimals))
     }
 }
 

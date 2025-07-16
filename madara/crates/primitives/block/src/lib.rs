@@ -6,6 +6,7 @@ use header::{BlockTimestamp, PendingHeader};
 use mp_chain_config::L1DataAvailabilityMode;
 
 use mp_chain_config::StarknetVersion;
+use mp_convert::FixedPoint;
 use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
 use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
@@ -405,11 +406,12 @@ impl PendingFullBlock {
 }
 
 /// Gas quote for calculating gas prices.
+/// It's represents an instantaneous quote of current L1 network fees.
 #[derive(Clone, Default)]
 pub struct L1GasQuote {
     pub l1_gas_price: u128,
     pub l1_data_gas_price: u128,
-    pub strk_per_eth: (u128, u32),
+    pub strk_per_eth: FixedPoint,
 }
 
 #[cfg(test)]

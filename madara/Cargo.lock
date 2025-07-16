@@ -7326,6 +7326,7 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "mp-convert",
  "mp-utils",
  "reqwest 0.12.19",
  "serde",
