@@ -6,7 +6,7 @@ pub struct AtlanticBucket {
     pub id: String,
     pub external_id: Option<String>,
     pub status: AtlanticBucketStatus,
-    pub bucket_type: AtlanticBucketType,
+    pub aggregator_version: AtlanticAggregatorVersion,
     pub node_width: Option<i64>,
     pub leaves: Option<i64>,
     pub chain: AtlanticChain,
