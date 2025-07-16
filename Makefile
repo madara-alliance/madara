@@ -191,6 +191,7 @@ artifacts:
 			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
 			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
 			[ -d "$(ARTIFACTS)/starkgate_legacy"   ] || \
+			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/out" ] || \
 			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/src/starkware"   ] || \
 			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/src/third_party" ]; \
 	then \
@@ -208,6 +209,7 @@ artifacts:
 	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
+	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/out"
 	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/src/starkware"
 	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/src/third_party"
 	@docker build --platform=linux/amd64 -f $(ARTIFACTS)/build.docker -t contracts .
