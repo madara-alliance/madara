@@ -26,7 +26,11 @@ pub struct FactInfo {
     pub fact: B256,
 }
 
-pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result<FactInfo, FactError> {
+pub fn get_fact_info(
+    cairo_pie: &CairoPie,
+    program_hash: Option<Felt>,
+    is_aggregator: bool,
+) -> Result<FactInfo, FactError> {
     tracing::debug!(
         log_type = "FactInfo",
         category = "fact_info",
@@ -40,7 +44,7 @@ pub fn get_fact_info(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> Result
         function_type = "get_fact_info",
         "Getting program output"
     );
-    let program_output = get_program_output(cairo_pie)?;
+    let program_output = get_program_output(cairo_pie, is_aggregator)?;
     tracing::debug!(
         log_type = "FactInfo",
         category = "fact_info",
@@ -136,7 +140,7 @@ pub fn filter_output_from_program_output(program_output: Vec<Felt252>) -> Result
     Ok(program_output[output_start..(message_end + 1)].to_vec())
 }
 
-pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactError> {
+pub fn get_program_output(cairo_pie: &CairoPie, is_aggregator: bool) -> Result<Vec<Felt252>, FactError> {
     let segment_info =
         cairo_pie.metadata.builtin_segments.get(&BuiltinName::output).ok_or(FactError::OutputBuiltinNoSegmentInfo)?;
 
@@ -162,7 +166,7 @@ pub fn get_program_output(cairo_pie: &CairoPie) -> Result<Vec<Felt252>, FactErro
         return Err(FactError::InvalidSegment);
     }
 
-    Ok(filter_output_from_program_output(output)?)
+    Ok(if is_aggregator { output } else { filter_output_from_program_output(output)? })
 }
 
 #[cfg(test)]
@@ -178,11 +182,12 @@ mod tests {
     #[case("fibonacci.zip", "0xca15503f02f8406b599cb220879e842394f5cf2cef753f3ee430647b5981b782")]
     #[case("238996-SN.zip", "0xec8fa9cdfe069ed59b8f17aeecfd95c6abd616379269d2fa16a80955b6e0f068")]
     async fn test_fact_info(#[case] cairo_pie_path: &str, #[case] expected_fact: &str) {
+        // TODO: Add a test for the aggregator program
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
         let cairo_pie_path: PathBuf =
             [env!("CARGO_MANIFEST_DIR"), "src", "tests", "artifacts", cairo_pie_path].iter().collect();
         let cairo_pie = CairoPie::read_zip_file(&cairo_pie_path).unwrap();
-        let fact_info = get_fact_info(&cairo_pie, None).unwrap();
+        let fact_info = get_fact_info(&cairo_pie, None, false).unwrap();
         assert_eq!(expected_fact, fact_info.fact.to_string());
     }
 }

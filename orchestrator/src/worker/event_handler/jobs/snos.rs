@@ -79,7 +79,7 @@ impl JobHandlerTrait for SnosJobHandler {
                 })?;
         tracing::debug!(job_id = %job.internal_id, "prove_block function completed successfully");
 
-        let fact_info = get_fact_info(&cairo_pie, None)?;
+        let fact_info = get_fact_info(&cairo_pie, None, false)?;
         let program_output = fact_info.program_output;
         tracing::debug!(job_id = %job.internal_id, "Fact info calculated successfully");
 

@@ -162,7 +162,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Calculate the program output from the cairo pie
                 let cairo_pie =
                     CairoPie::from_bytes(&cairo_pie_bytes).map_err(|e| JobError::Other(OtherError(eyre!(e))))?;
-                let fact_info = get_fact_info(&cairo_pie, None)?;
+                let fact_info = get_fact_info(&cairo_pie, None, true)?;
                 let program_output = fact_info.program_output;
 
                 // Store the program output in storage
