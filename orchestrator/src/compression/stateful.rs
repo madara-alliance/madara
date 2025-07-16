@@ -13,8 +13,9 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
-const SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
-const MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
+// https://community.starknet.io/t/starknet-v0-13-4-pre-release-notes/115257
+const STATEFUL_SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
+const STATEFUL_MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 
 /// Compresses a state update using stateful compression
@@ -123,7 +124,7 @@ impl ValueMapping {
     fn get_special_address_mappings(state_update: &StateUpdate) -> Result<HashMap<Felt, Felt>> {
         // Find the special address storage entries
         if let Some(special_contract) =
-            state_update.state_diff.storage_diffs.iter().find(|diff| diff.address == SPECIAL_ADDRESS)
+            state_update.state_diff.storage_diffs.iter().find(|diff| diff.address == STATEFUL_SPECIAL_ADDRESS)
         {
             let mut mappings: HashMap<Felt, Felt> = HashMap::new();
 
@@ -140,7 +141,7 @@ impl ValueMapping {
 
     /// skip determines if we can skip a contract or storage address from stateful compression mapping
     fn skip(address: Felt) -> bool {
-        address < MAPPING_START
+        address < STATEFUL_MAPPING_START
     }
 
     /// get_value_from_provider returns the mapping for a key after fetching it from the provider
@@ -154,7 +155,7 @@ impl ValueMapping {
         }
 
         retry_async(
-            async || provider.get_storage_at(SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await,
+            async || provider.get_storage_at(STATEFUL_SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await,
             MAX_GET_STORAGE_AT_CALL_RETRY,
             Some(Duration::from_secs(5)),
         )
@@ -162,7 +163,7 @@ impl ValueMapping {
         .map_err(|err| {
             ProviderError::StarknetError(StarknetError::UnexpectedError(format!(
                 "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-                SPECIAL_ADDRESS, key, pre_range_block, err
+                STATEFUL_SPECIAL_ADDRESS, key, pre_range_block, err
             )))
         })
     }
