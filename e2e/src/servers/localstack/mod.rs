@@ -103,7 +103,7 @@ impl LocalstackService {
 
     /// Get the endpoint URL for the Localstack server
     pub fn endpoint(&self) -> String {
-        format!("http://{}:{}", self.server.host(), self.server.port())
+        format!("http://{}:{}", self.config().host(), self.config().port())
     }
 
     /// Get dependencies (Docker is required)

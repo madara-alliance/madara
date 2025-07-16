@@ -72,7 +72,7 @@ impl MongoService {
     /// Get the endpoint URL for the MongoDB service
     pub fn endpoint(&self) -> Url {
         // MongoDB doesn't use HTTP, but we'll return the TCP endpoint
-        Url::parse(&format!("mongodb://{}:{}", self.server.host(), self.server.port())).unwrap()
+        Url::parse(&format!("mongodb://{}:{}", self.config().host(), self.config().port())).unwrap()
     }
 
     /// Get the underlying server

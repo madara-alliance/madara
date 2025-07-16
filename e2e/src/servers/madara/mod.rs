@@ -62,20 +62,20 @@ impl MadaraService {
 
     /// Get the RPC endpoint URL
     pub fn rpc_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.server.host(), self.server.port())).unwrap()
+        Url::parse(&format!("http://{}:{}", self.config().rpc_host(), self.config().rpc_port())).unwrap()
     }
 
     /// Get the Gateway endpoint URL
     pub fn gateway_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.server.host(), self.config.gateway_port())).unwrap()
+        Url::parse(&format!("http://{}:{}", self.config().rpc_host(), self.config().gateway_port())).unwrap()
     }
 
     /// Get the Feeder Gateway endpoint URL
     pub fn feeder_gateway_endpoint(&self) -> Url {
         Url::parse(&format!(
             "http://{}:{}/feeder_gateway",
-            self.server.host(),
-            self.config.gateway_port()
+            self.config().rpc_host(),
+            self.config().gateway_port()
         ))
         .unwrap()
     }
@@ -87,7 +87,7 @@ impl MadaraService {
 
     /// Get the RPC port number
     pub fn port(&self) -> u16 {
-        self.server.port()
+        self.config().rpc_port()
     }
 
     /// Get the Gateway port number

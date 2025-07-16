@@ -3,8 +3,10 @@
 // =============================================================================
 
 pub mod config;
+
 // Re-export common utilities
 pub use config::*;
+use url::Url;
 
 use crate::servers::server::{Server, ServerConfig};
 
@@ -13,6 +15,7 @@ use super::server::ServiceAddress;
 // Anvil service that uses the generic Server
 pub struct AnvilService {
     server: Server,
+    config: AnvilConfig,
 }
 
 impl AnvilService {
@@ -36,7 +39,7 @@ impl AnvilService {
             .await
             .map_err(AnvilError::Server)?;
 
-        Ok(Self { server })
+        Ok(Self { server, config })
     }
 
     pub fn server(&self) -> &Server {
@@ -46,6 +49,14 @@ impl AnvilService {
     pub fn stop(mut self) -> Result<(), AnvilError> {
         println!("☠️ Stopping Anvil");
         self.server.stop().map_err(|err| AnvilError::Server(err))
+    }
+
+    pub fn config(&self) -> &AnvilConfig {
+        &self.config
+    }
+
+    pub fn endpoint(&self) -> Url {
+        format!("http://{}:{}", self.config.host(), self.config.port()).parse().unwrap()
     }
 
 }

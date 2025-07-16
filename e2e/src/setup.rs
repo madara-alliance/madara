@@ -3,8 +3,6 @@ use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 
-use crate::servers::server::NodeRpcMethods as _;
-
 use::std::path::Path;
 // Import all the services we've created
 use crate::servers::anvil::{AnvilConfigBuilder, AnvilError, AnvilService};
@@ -25,6 +23,7 @@ use crate::servers::orchestrator::{
     Layer, OrchestratorError, OrchestratorMode, OrchestratorService, OrchestratorConfigBuilder
 };
 use crate::servers::pathfinder::{PathfinderConfigBuilder, PathfinderError, PathfinderService};
+use crate::servers::helpers::NodeRpcMethods;
 
 
 // TODO: Implemented this to always be from the root, and not relative
@@ -452,7 +451,7 @@ impl Setup {
         // Create async closures that DON'T borrow self
         let start_anvil = async move {
             let service = AnvilService::start(anvil_config).await?;
-            println!("✅ Anvil started on {}", service.server().endpoint());
+            println!("✅ Anvil started on {}", service.endpoint());
             Ok::<AnvilService, SetupError>(service)
         };
         let anvil_service = start_anvil.await?;
@@ -632,7 +631,7 @@ impl Setup {
                 .build();
 
             let service = LocalstackService::start(localstack_config).await?;
-            println!("✅ Localstack started on {}", service.server().endpoint());
+            println!("✅ Localstack started on {}", service.endpoint());
             Ok::<LocalstackService, SetupError>(service)
         };
 
@@ -644,7 +643,7 @@ impl Setup {
                 .build();
 
             let service = MongoService::start(mongo_config).await?;
-            println!("✅ MongoDB started on port {}", service.server().port());
+            println!("✅ MongoDB started on port {}", service.config().port());
             Ok::<MongoService, SetupError>(service)
         };
 
