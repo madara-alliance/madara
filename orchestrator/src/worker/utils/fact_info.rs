@@ -166,7 +166,7 @@ pub fn get_program_output(cairo_pie: &CairoPie, is_aggregator: bool) -> Result<V
         return Err(FactError::InvalidSegment);
     }
 
-    Ok(if is_aggregator { output } else { filter_output_from_program_output(output)? })
+    Ok(if is_aggregator { filter_output_from_program_output(output)? } else { output })
 }
 
 #[cfg(test)]
