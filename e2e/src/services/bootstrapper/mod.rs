@@ -6,7 +6,7 @@ pub mod config;
 // Re-export common utilities
 pub use config::*;
 
-use crate::servers::server::{Server, ServerConfig};
+use crate::services::server::{Server, ServerConfig};
 use std::process::ExitStatus;
 
 pub struct BootstrapperService {
