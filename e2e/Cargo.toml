@@ -6,7 +6,7 @@ authors = ["Heemank Verma <heemankv@gmail.com>"]
 
 [lib]
 name = "e2e"
-path = "src/lib.rs"
+path = "src/mod.rs"
 
 [dependencies]
 
