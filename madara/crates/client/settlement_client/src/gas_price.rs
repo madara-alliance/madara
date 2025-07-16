@@ -1,20 +1,19 @@
-use crate::client::SettlementClientTrait;
+use std::sync::Arc;
+use std::time::Duration;
+use std::time::SystemTime;
+
+use crate::error::SettlementClientError;
+use crate::SettlementLayerProvider;
+
+use mc_analytics::register_gauge_metric_instrument;
 use mc_db::MadaraBackend;
 use mp_block::L1GasQuote;
 use mp_convert::f64_to_u128_fixed;
 use mp_oracle::Oracle;
-use std::sync::Arc;
-use std::time::Duration;
-
-use crate::error::SettlementClientError;
-use crate::messaging::L1toL2MessagingEventData;
-use futures::Stream;
-use mc_analytics::register_gauge_metric_instrument;
 use mp_utils::service::ServiceContext;
 use opentelemetry::global::Error as OtelError;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
-use std::time::SystemTime;
 
 #[derive(Clone, Debug)]
 pub struct L1BlockMetrics {
@@ -171,16 +170,13 @@ impl L1BlockMetrics {
     }
 }
 
-pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
+pub async fn gas_price_worker(
+    settlement_client: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
     mut ctx: ServiceContext,
     gas_provider_config: GasPriceProviderConfig,
     _l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
+) -> Result<(), SettlementClientError> {
     let mut last_update_timestamp = SystemTime::now();
     let mut interval = tokio::time::interval(gas_provider_config.poll_interval);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -217,12 +213,11 @@ where
     Ok(())
 }
 
-pub async fn update_gas_price<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
+pub async fn update_gas_price(
+    settlement_client: Arc<dyn SettlementLayerProvider>,
     gas_provider_config: &GasPriceProviderConfig,
 ) -> Result<L1GasQuote, SettlementClientError>
 where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
     let mut l1_gas_quote: L1GasQuote = gas_provider_config.into();
 

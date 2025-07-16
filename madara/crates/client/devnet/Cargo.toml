@@ -22,6 +22,7 @@ mc-mempool = { workspace = true, features = ["testing"] }
 mc-submit-tx = { workspace = true }
 mc-exec = { workspace = true }
 mp-utils = { workspace = true, features = ["testing"] }
+mc-settlement-client = { workspace = true, features = ["testing"] }
 mc-block-production = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread", "test-util"] }
 proptest.workspace = true

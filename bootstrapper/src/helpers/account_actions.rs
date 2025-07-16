@@ -105,6 +105,17 @@ pub async fn get_transaction_receipt(
     rpc.get_transaction_receipt(transaction_hash).await
 }
 
+pub async fn wait_at_least_block(rpc: &JsonRpcClient<HttpTransport>, blocks_to_wait_for: Option<u64>) {
+    // If options is none, we wait for 1 block
+    let current_block = rpc.block_number().await.unwrap();
+    let target_block = match blocks_to_wait_for {
+        Some(blocks) => current_block + blocks,
+        None => current_block + 1,
+    };
+
+    assert_poll(|| async { rpc.block_number().await.unwrap() >= target_block }, 500, 3 * 7200).await;
+}
+
 pub async fn get_contract_address_from_deploy_tx(
     rpc: &JsonRpcClient<HttpTransport>,
     tx: &InvokeTransactionResult,

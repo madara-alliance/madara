@@ -21,6 +21,7 @@ futures.workspace = true
 m-cairo-test-contracts.workspace = true
 mc-gateway-client.workspace = true
 mp-block.workspace = true
+mp-class.workspace = true
 mp-convert.workspace = true
 rand.workspace = true
 reqwest.workspace = true

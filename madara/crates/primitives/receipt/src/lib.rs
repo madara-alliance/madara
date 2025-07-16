@@ -177,6 +177,13 @@ impl TransactionReceipt {
     pub fn l2_gas_used(&self) -> u64 {
         self.execution_resources().total_gas_consumed.l2_gas
     }
+
+    pub fn as_l1_handler(&self) -> Option<&L1HandlerTransactionReceipt> {
+        match self {
+            TransactionReceipt::L1Handler(r) => Some(r),
+            _ => None,
+        }
+    }
 }
 
 fn compute_messages_sent_hash(messages: &[MsgToL1]) -> Felt {

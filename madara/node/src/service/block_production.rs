@@ -1,16 +1,15 @@
 use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
-use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionTask};
+use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
-use mc_mempool::Mempool;
+use mc_settlement_client::SettlementClient;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::{io::Write, sync::Arc};
 
 pub struct BlockProductionService {
     backend: Arc<MadaraBackend>,
-    mempool: Arc<Mempool>,
-    metrics: Arc<BlockProductionMetrics>,
+    task: Option<BlockProductionTask>,
     n_devnet_contracts: u64,
     disabled: bool,
 }
@@ -21,13 +20,13 @@ impl BlockProductionService {
         config: &BlockProductionParams,
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
+        l1_client: Arc<dyn SettlementClient>,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
         Ok(Self {
             backend: Arc::clone(db_service.backend()),
-            mempool,
-            metrics,
+            task: Some(BlockProductionTask::new(db_service.backend().clone(), mempool, metrics, l1_client)),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })
@@ -38,12 +37,8 @@ impl BlockProductionService {
 impl Service for BlockProductionService {
     #[tracing::instrument(skip(self, runner), fields(module = "BlockProductionService"))]
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        let Self { backend, mempool, metrics, disabled, .. } = self;
-
-        let block_production_task =
-            BlockProductionTask::new(Arc::clone(backend), Arc::clone(mempool), Arc::clone(metrics));
-
-        if !*disabled {
+        let block_production_task = self.task.take().context("Service already started")?;
+        if !self.disabled {
             runner.service_loop(move |ctx| block_production_task.run(ctx));
         }
 
@@ -92,5 +87,9 @@ impl BlockProductionService {
         std::io::stdout().write(msg.as_bytes()).context("Writing devnet welcome message to stdout")?;
 
         anyhow::Ok(())
+    }
+
+    pub fn handle(&self) -> BlockProductionHandle {
+        self.task.as_ref().expect("Service started").handle()
     }
 }

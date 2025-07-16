@@ -1,109 +1,34 @@
 use crate::cli::l1::{L1SyncParams, MadaraSettlementLayer};
-use alloy::primitives::Address;
 use anyhow::{bail, Context};
-use futures::Stream;
-use mc_db::{DatabaseService, MadaraBackend};
-use mc_mempool::Mempool;
-use mc_settlement_client::client::SettlementClientTrait;
-use mc_settlement_client::error::SettlementClientError;
-use mc_settlement_client::eth::event::EthereumEventStream;
-use mc_settlement_client::eth::{EthereumClient, EthereumClientConfig};
-use mc_settlement_client::gas_price::{GasPriceProviderConfig, GasPriceProviderConfigBuilder, L1BlockMetrics};
-use mc_settlement_client::messaging::L1toL2MessagingEventData;
-use mc_settlement_client::starknet::event::StarknetEventStream;
-use mc_settlement_client::starknet::{StarknetClient, StarknetClientConfig};
+use mc_db::MadaraBackend;
+use mc_settlement_client::gas_price::GasPriceProviderConfigBuilder;
 use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
+use mc_settlement_client::{gas_price::L1BlockMetrics, SettlementClient};
+use mc_settlement_client::{L1ClientImpl, L1SyncDisabledClient};
 use mp_block::L1GasQuote;
 use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
-use starknet_core::types::Felt;
-use std::str::FromStr;
 use std::sync::Arc;
 
 // Configuration struct to group related parameters
-pub struct L1SyncConfig<'a> {
-    pub db: &'a DatabaseService,
+pub struct L1SyncConfig {
     pub l1_core_address: String,
     pub authority: bool,
-    pub devnet: bool,
-    pub mempool: Arc<Mempool>,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_snd: L1HeadSender,
 }
 
-pub struct L1SyncService<C: 'static, S: 'static>
-where
-    C: Clone,
-    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
-{
-    db_backend: Arc<MadaraBackend>,
-    l1_head_snd: Option<L1HeadSender>,
-    settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
-    gas_provider_config: Option<GasPriceProviderConfig>,
-    mempool: Arc<Mempool>,
-    l1_block_metrics: Arc<L1BlockMetrics>,
+pub struct L1SyncService {
+    sync_worker_config: Option<SyncWorkerConfig>,
+    client: Option<Arc<L1ClientImpl>>,
 }
 
-pub type EthereumSyncService = L1SyncService<EthereumClientConfig, EthereumEventStream>;
-pub type StarknetSyncService = L1SyncService<StarknetClientConfig, StarknetEventStream>;
-
-// Implementation for Ethereum
-impl EthereumSyncService {
-    pub async fn new(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Self> {
-        let settlement_client = {
-            if let Some(l1_rpc_url) = &config.l1_endpoint {
-                let core_address = Address::from_str(sync_config.l1_core_address.as_str())?;
-                let client = EthereumClient::new(EthereumClientConfig {
-                    url: l1_rpc_url.clone(),
-                    l1_core_address: core_address,
-                })
-                .await
-                .context("Creating ethereum client")?;
-
-                Some(into_trait_arc(client))
-            } else {
-                None
-            }
-        };
-
-        Self::create_service(config, sync_config, settlement_client).await
-    }
-}
-
-// Implementation for Starknet
-impl StarknetSyncService {
-    pub async fn new(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Self> {
-        let settlement_client = {
-            if let Some(l1_rpc_url) = &config.l1_endpoint {
-                let core_address = Felt::from_str(sync_config.l1_core_address.as_str())?;
-                let client = StarknetClient::new(StarknetClientConfig {
-                    url: l1_rpc_url.clone(),
-                    l2_contract_address: core_address,
-                })
-                .await
-                .context("Creating starknet client")?;
-
-                Some(into_trait_arc(client))
-            } else {
-                None
-            }
-        };
-
-        Self::create_service(config, sync_config, settlement_client).await
-    }
-}
-
-// Shared implementation for both services
-impl<C: Clone, S> L1SyncService<C, S>
-where
-    C: Clone + 'static,
-    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + 'static,
-{
-    async fn create_service(
+impl L1SyncService {
+    pub async fn new(
         config: &L1SyncParams,
-        sync_config: L1SyncConfig<'_>,
-        settlement_client: Option<Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>>,
+        backend: Arc<MadaraBackend>,
+        sync_config: L1SyncConfig,
     ) -> anyhow::Result<Self> {
         let gas_price_needed = sync_config.authority;
         let gas_provider_config = if gas_price_needed {
@@ -139,92 +64,83 @@ where
         };
 
         if let Some(config) = gas_provider_config.as_ref() {
-            let l1_gas_quote = if config.all_is_fixed() {
+            if config.all_is_fixed() {
                 // safe to unwrap because we checked that all values are set
-                L1GasQuote {
+                let l1_gas_quote = L1GasQuote {
                     l1_gas_price: config.fix_gas_price.unwrap(),
                     l1_data_gas_price: config.fix_data_gas_price.unwrap(),
                     strk_per_eth: config.fix_strk_per_eth.unwrap(),
-                }
-            } else {
-                let settlement_client =
-                    settlement_client.clone().context("L1 gas prices require the service to be enabled...")?;
+                };
+                backend.set_last_l1_gas_quote(l1_gas_quote);
+            }
+        }
+
+        if config.l1_sync_disabled {
+            return Ok(Self { sync_worker_config: None, client: None });
+        }
+        let Some(endpoint) = config.l1_endpoint.clone() else {
+            tracing::error!("Missing l1_endpoint CLI argument. Either disable L1 sync using `--no-l1-sync` or give an L1 RPC endpoint URL using `--l1-endpoint <url>`.");
+            std::process::exit(1);
+        };
+        let client = match config.settlement_layer {
+            MadaraSettlementLayer::Eth => {
+                L1ClientImpl::new_ethereum(backend.clone(), endpoint, sync_config.l1_core_address)
+                    .await
+                    .context("Starting ethereum core contract client")?
+            }
+            MadaraSettlementLayer::Starknet => {
+                L1ClientImpl::new_starknet(backend.clone(), endpoint, sync_config.l1_core_address)
+                    .await
+                    .context("Starting starknet core contract client")?
+            }
+        };
+
+        if let Some(config) = gas_provider_config.as_ref() {
+            if !config.all_is_fixed() {
                 tracing::info!("⏳ Getting initial L1 gas prices");
                 // Gas prices are needed before starting the block producer
-                mc_settlement_client::gas_price::update_gas_price(settlement_client, config)
+                let l1_gas_quote = mc_settlement_client::gas_price::update_gas_price(client.provider(), config)
                     .await
-                    .context("Getting initial gas prices")?
-            };
-
-            sync_config.db.backend().set_last_l1_gas_quote(l1_gas_quote);
+                    .context("Getting initial gas prices")?;
+                backend.set_last_l1_gas_quote(l1_gas_quote);
+            }
         }
 
         Ok(Self {
-            db_backend: Arc::clone(sync_config.db.backend()),
-            settlement_client,
-            mempool: sync_config.mempool,
-            gas_provider_config,
-            l1_block_metrics: sync_config.l1_block_metrics,
-            l1_head_snd: Some(sync_config.l1_head_snd),
+            client: Some(client.into()),
+            sync_worker_config: Some(SyncWorkerConfig {
+                gas_provider_config,
+                l1_head_sender: sync_config.l1_head_snd,
+                l1_block_metrics: sync_config.l1_block_metrics,
+            }),
         })
     }
 
-    // Factory method to create the appropriate service
-    pub async fn create(config: &L1SyncParams, sync_config: L1SyncConfig<'_>) -> anyhow::Result<Box<dyn Service>> {
-        match config.settlement_layer {
-            MadaraSettlementLayer::Eth => Ok(Box::new(EthereumSyncService::new(config, sync_config).await?)),
-            MadaraSettlementLayer::Starknet => Ok(Box::new(StarknetSyncService::new(config, sync_config).await?)),
+    pub fn client(&self) -> Arc<dyn SettlementClient> {
+        if let Some(client) = self.client.clone() {
+            client
+        } else {
+            Arc::new(L1SyncDisabledClient)
         }
     }
 }
 
 #[async_trait::async_trait]
-impl<C, S> Service for L1SyncService<C, S>
-where
-    C: Clone,
-    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
-{
+impl Service for L1SyncService {
     async fn start<'a>(&mut self, runner: ServiceRunner<'a>) -> anyhow::Result<()> {
-        if let Some(settlement_client) = &self.settlement_client {
-            let db_backend = Arc::clone(&self.db_backend);
-            let settlement_client = Arc::clone(settlement_client);
-            let gas_provider_config = self.gas_provider_config.clone();
-            let mempool = Arc::clone(&self.mempool);
-            let l1_block_metrics = self.l1_block_metrics.clone();
-            let l1_head_sender = self.l1_head_snd.take().expect("Service already starteds");
-            runner.service_loop(move |ctx| {
-                mc_settlement_client::sync::sync_worker(SyncWorkerConfig {
-                    backend: db_backend,
-                    settlement_client,
-                    gas_provider_config,
-                    mempool,
-                    l1_head_sender,
-                    ctx,
-                    l1_block_metrics,
-                })
-            });
+        if let Some((config, client)) = self.sync_worker_config.take().zip(self.client.clone()) {
+            runner.service_loop(move |ctx| client.run_sync_worker(ctx, config));
         } else {
-            tracing::error!("❗ Tried to start L1 Sync but no l1 endpoint was provided to the node on startup");
+            tracing::debug!("l1 sync is disabled");
         }
 
         Ok(())
     }
 }
 
-impl<C, S> ServiceId for L1SyncService<C, S>
-where
-    C: Clone,
-    S: Send + Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>>,
-{
+impl ServiceId for L1SyncService {
     #[inline(always)]
     fn svc_id(&self) -> PowerOfTwo {
         MadaraServiceId::L1Sync.svc_id()
     }
-}
-
-fn into_trait_arc<T, C, S>(client: T) -> Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>
-where
-    T: SettlementClientTrait<Config = C, StreamType = S> + 'static,
-{
-    Arc::new(client)
 }

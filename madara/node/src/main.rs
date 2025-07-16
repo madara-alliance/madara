@@ -6,7 +6,6 @@ mod service;
 mod submit_tx;
 mod util;
 
-use crate::cli::l1::MadaraSettlementLayer;
 use crate::service::L1SyncConfig;
 use anyhow::{bail, Context};
 use clap::Parser;
@@ -20,11 +19,7 @@ use mc_analytics::Analytics;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{Mempool, MempoolConfig, MempoolLimits};
-use mc_settlement_client::eth::event::EthereumEventStream;
-use mc_settlement_client::eth::EthereumClientConfig;
 use mc_settlement_client::gas_price::L1BlockMetrics;
-use mc_settlement_client::starknet::event::StarknetEventStream;
-use mc_settlement_client::starknet::StarknetClientConfig;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
 use mc_telemetry::{SysInfo, TelemetryService};
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
@@ -107,6 +102,7 @@ async fn main() -> anyhow::Result<()> {
 
     // If the devnet is running, we set the gas prices to a default value.
     if run_cmd.is_devnet() {
+        run_cmd.l1_sync_params.l1_sync_disabled = true;
         run_cmd.l1_sync_params.l1_gas_price.get_or_insert(5);
         run_cmd.l1_sync_params.blob_gas_price.get_or_insert(5);
         run_cmd.l1_sync_params.strk_per_eth.get_or_insert(1.0);
@@ -164,37 +160,18 @@ async fn main() -> anyhow::Result<()> {
     let mempool = Arc::new(mempool);
 
     let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);
-    let l1_block_metrics = L1BlockMetrics::register().context("Initializing L1 Block Metrics")?;
-    let service_l1_sync = match &run_cmd.l1_sync_params.settlement_layer {
-        MadaraSettlementLayer::Eth => L1SyncService::<EthereumClientConfig, EthereumEventStream>::create(
-            &run_cmd.l1_sync_params,
-            L1SyncConfig {
-                db: &service_db,
-                l1_core_address: chain_config.eth_core_contract_address.clone(),
-                authority: run_cmd.is_sequencer(),
-                devnet: run_cmd.is_devnet(),
-                mempool: Arc::clone(&mempool),
-                l1_block_metrics: Arc::new(l1_block_metrics),
-                l1_head_snd,
-            },
-        )
-        .await
-        .context("Initializing the l1 sync service")?,
-        MadaraSettlementLayer::Starknet => L1SyncService::<StarknetClientConfig, StarknetEventStream>::create(
-            &run_cmd.l1_sync_params,
-            L1SyncConfig {
-                db: &service_db,
-                l1_core_address: chain_config.eth_core_contract_address.clone(),
-                authority: run_cmd.is_sequencer(),
-                devnet: run_cmd.is_devnet(),
-                mempool: Arc::clone(&mempool),
-                l1_block_metrics: Arc::new(l1_block_metrics),
-                l1_head_snd,
-            },
-        )
-        .await
-        .context("Initializing the l1 sync service")?,
-    };
+    let service_l1_sync = L1SyncService::new(
+        &run_cmd.l1_sync_params,
+        service_db.backend().clone(),
+        L1SyncConfig {
+            l1_core_address: chain_config.eth_core_contract_address.clone(),
+            authority: run_cmd.is_sequencer(),
+            l1_block_metrics: L1BlockMetrics::register().context("Initializing L1 Block Metrics")?.into(),
+            l1_head_snd,
+        },
+    )
+    .await
+    .context("Initializing l1 sync service")?;
 
     // L2 Sync
 
@@ -256,8 +233,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Block production
 
-    let service_block_production =
-        BlockProductionService::new(&run_cmd.block_production_params, &service_db, Arc::clone(&mempool))?;
+    let service_block_production = BlockProductionService::new(
+        &run_cmd.block_production_params,
+        &service_db,
+        Arc::clone(&mempool),
+        service_l1_sync.client(),
+    )?;
 
     // Add transaction provider
 
@@ -290,8 +271,12 @@ async fn main() -> anyhow::Result<()> {
 
     // Admin-facing RPC (for node operators)
 
-    let service_rpc_admin =
-        RpcService::admin(run_cmd.rpc_params.clone(), Arc::clone(service_db.backend()), tx_submit.clone());
+    let service_rpc_admin = RpcService::admin(
+        run_cmd.rpc_params.clone(),
+        Arc::clone(service_db.backend()),
+        tx_submit.clone(),
+        service_block_production.handle(),
+    );
 
     // Feeder gateway
 

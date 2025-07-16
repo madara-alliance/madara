@@ -12,6 +12,7 @@ use tokio::sync::{
     oneshot,
 };
 
+mod tests;
 mod thread;
 
 /// Handle to used to talk with the executor thread.

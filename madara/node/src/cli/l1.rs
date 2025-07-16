@@ -7,7 +7,7 @@ use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};
 
-#[derive(Clone, Debug, FromStr, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, FromStr, Deserialize, Serialize)]
 pub enum MadaraSettlementLayer {
     Eth,
     Starknet,
