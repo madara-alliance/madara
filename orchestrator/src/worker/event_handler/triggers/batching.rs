@@ -22,6 +22,8 @@ use tokio::try_join;
 
 pub struct BatchingTrigger;
 
+// Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
+
 #[async_trait::async_trait]
 impl JobTrigger for BatchingTrigger {
     /// 1. Fetch the latest completed block from Starknet chain
@@ -71,9 +73,11 @@ impl BatchingTrigger {
         // Get the storage client
         let storage = config.storage();
 
+        // Get the latest batch from the database
         let (mut batch, mut state_update) = match database.get_latest_batch().await? {
             Some(batch) => {
                 if batch.is_batch_ready {
+                    // Previous batch is full, create a new batch
                     (
                         Batch::create(
                             batch.index + 1,
@@ -84,17 +88,20 @@ impl BatchingTrigger {
                         None,
                     )
                 } else {
+                    // Previous batch is not full, continue with the previous batch
                     let state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                     let state_update: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
                     (batch, Some(state_update))
                 }
             }
             None => (
+                // No batch found, create a new batch
                 Batch::create(1, start_block_number, self.get_state_update_file_path(1), self.get_blob_dir_path(1)),
                 None,
             ),
         };
 
+        // Assign batches to all the blocks
         for block_number in start_block_number..end_block_number + 1 {
             (state_update, batch) = self.assign_batch(block_number, state_update, batch, &config).await?;
         }
