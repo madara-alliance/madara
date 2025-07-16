@@ -184,7 +184,11 @@ impl CustomFormatter {
             return self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().blue());
         };
 
-        let status_style = if (400..=600).contains(&rpc_call_event.status) { Style::new().red() } else { Style::new().green() };
+        let status_style = if (400..=600).contains(&rpc_call_event.status) || rpc_call_event.status < 100 {
+            Style::new().red()
+        } else {
+            Style::new().green()
+        };
         let time_style = if rpc_call_event.response_time <= 5000 { Style::new() } else { Style::new().yellow() };
 
         if target == "gateway_calls" {
@@ -233,7 +237,9 @@ where
         let target = metadata.target();
 
         match (level, target) {
-            (&Level::INFO, "rpc_calls" | "gateway_calls") => self.format_http_call(&mut writer, event, target, &ts, level),
+            (&Level::INFO, "rpc_calls" | "gateway_calls") => {
+                self.format_http_call(&mut writer, event, target, &ts, level)
+            }
             (&Level::INFO, _) => self.format_without_target(&mut writer, event, &ts, level, &Style::new().green()),
             (&Level::WARN, _) => {
                 self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().yellow())
