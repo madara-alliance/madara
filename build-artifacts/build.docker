@@ -50,6 +50,9 @@ RUN scripts/build-cairo.sh                                                      
     $COMPILE_SIERRA cairo_contracts/RolesExternalInitializer.sierra cairo_contracts/RolesExternalInitializer.casm && \
     $COMPILE_SIERRA cairo_contracts/ERC20.sierra cairo_contracts/ERC20.casm
 
+RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"starkware/\"src\/starkware/' {} \; -exec rm {}.bak \;
+RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"third_party/\"src\/third_party/' {} \; -exec rm {}.bak \;
+
 # =========================================================================== #
 #                          STARKGATE CONTRACTS (legacy)                       #
 # =========================================================================== #
