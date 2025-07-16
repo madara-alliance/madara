@@ -58,8 +58,8 @@ impl Default for ServerConfig {
 pub struct Server {
     config: ServerConfig,
     process: Child,
-    stdout_task: task::JoinHandle<()>,
-    stderr_task: task::JoinHandle<()>,
+    stdout_task: Option<task::JoinHandle<()>>,
+    stderr_task: Option<task::JoinHandle<()>>,
 }
 
 impl Server {
@@ -71,39 +71,50 @@ impl Server {
         // Start the process
         let mut process = command.spawn().map_err(ServerError::StartupFailed)?;
 
+        let mut stdout_task = None;
+        let mut stderr_task = None;
+
         // Extract stdout and stderr for log monitoring
-        let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(
-            std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stdout")
-        ))?;
-        let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(
-            std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stderr")
-        ))?;
+        if config.enable_stdout {
+            let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(
+                std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stdout")
+            ))?;
 
-        let service_name = config.service_name.clone();
-        let stdout_task = task::spawn(async move {
-            // Keeping a large buffer capacity for stdout, to not have buffer overflow
-            let reader = BufReader::with_capacity(65536, stdout);
-            let mut lines = reader.lines();
+            let service_name = config.service_name.clone();
+            let stdout_task_inner = task::spawn(async move {
+                // Keeping a large buffer capacity for stdout, to not have buffer overflow
+                let reader = BufReader::with_capacity(65536, stdout);
+                let mut lines = reader.lines();
 
-            while let Ok(Some(line)) = lines.next_line().await {
-                println!("[STDOUT] [{}] {}", service_name, line);
+                while let Ok(Some(line)) = lines.next_line().await {
+                    println!("[STDOUT] [{}] {}", service_name, line);
 
-                // Flush immediately to prevent backing up
-                use std::io::Write;
-                let _ = std::io::stdout().flush();
-            }
-        });
+                    // Flush immediately to prevent backing up
+                    use std::io::Write;
+                    let _ = std::io::stdout().flush();
+                }
+            });
+            stdout_task = Some(stdout_task_inner);
+        }
 
-        let service_name = config.service_name.clone();
-        let stderr_task = task::spawn(async move {
-            let reader = BufReader::new(stderr);
-            let mut lines = reader.lines();
+        if config.enable_stderr {
+            let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(
+                std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stderr")
+            ))?;
 
-            while let Ok(Some(line)) = lines.next_line().await {
-                println!("[STDERR] [{}] {}", service_name, line);
-                // No need for flush, since we stop the service on errors
-            }
-        });
+            let service_name = config.service_name.clone();
+            let stderr_task_inner = task::spawn(async move {
+                let reader = BufReader::new(stderr);
+                let mut lines = reader.lines();
+
+                while let Ok(Some(line)) = lines.next_line().await {
+                    println!("[STDERR] [{}] {}", service_name, line);
+                    // No need for flush, since we stop the service on errors
+                }
+            });
+
+            stderr_task = Some(stderr_task_inner)
+        }
 
         let service_name = config.service_name.clone();
         let has_api_endpoint = config.service_address.is_some();
@@ -115,7 +126,6 @@ impl Server {
             stderr_task,
         };
 
-
         // We wait & validate only if the service has an API endpoint
         // e.g : Skips for Bootstrapper and Orchestrator setup
         if has_api_endpoint {
@@ -124,7 +134,6 @@ impl Server {
         }
 
         println!("😁 {} Server is ready", service_name);
-
 
         Ok(server)
     }
