@@ -7,7 +7,7 @@ use num_traits::cast::FromPrimitive;
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram},
-    KeyValue,
+    InstrumentationScope, KeyValue,
 };
 use std::time::{Duration, Instant};
 
@@ -37,72 +37,70 @@ pub struct SyncMetrics {
 
 impl SyncMetrics {
     pub fn register(starting_block: u64) -> Self {
-        let common_scope_attributes = vec![KeyValue::new("crate", "block")];
-        let block_meter = global::meter_with_version(
-            "crates.block.opentelemetry",
-            Some("0.17"),
-            Some("https://opentelemetry.io/schemas/1.2.0"),
-            Some(common_scope_attributes.clone()),
+        let meter = global::meter_with_scope(
+            InstrumentationScope::builder("crates.sync.opentelemetry")
+                .with_attributes([KeyValue::new("crate", "sync")])
+                .build(),
         );
 
         let l2_block_number = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l2_block_number".to_string(),
             "Gauge for madara L2 block number".to_string(),
             "".to_string(),
         );
 
         let l2_sync_time = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l2_sync_time".to_string(),
             "Gauge for madara L2 sync time".to_string(),
             "".to_string(),
         );
 
         let l2_avg_sync_time = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l2_avg_sync_time".to_string(),
             "Gauge for madara L2 average sync time".to_string(),
             "".to_string(),
         );
 
         let l2_latest_sync_time = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l2_latest_sync_time".to_string(),
             "Gauge for madara L2 latest sync time".to_string(),
             "".to_string(),
         );
 
         let l2_state_size = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l2_state_size".to_string(),
             "Gauge for madara L2 state size".to_string(),
             "".to_string(),
         );
 
         let transaction_count = register_counter_metric_instrument(
-            &block_meter,
+            &meter,
             "transaction_count".to_string(),
             "Gauge for madara transaction count".to_string(),
             "".to_string(),
         );
 
         let event_count = register_counter_metric_instrument(
-            &block_meter,
+            &meter,
             "event_count".to_string(),
             "Gauge for madara event count".to_string(),
             "".to_string(),
         );
 
         let l1_gas_price_wei = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l1_gas_price_wei".to_string(),
             "Gauge for madara L1 gas price in wei".to_string(),
             "".to_string(),
         );
 
         let l1_gas_price_strk = register_histogram_metric_instrument(
-            &block_meter,
+            &meter,
             "l1_gas_price_strk".to_string(),
             "Gauge for madara L1 gas price in strk".to_string(),
             "".to_string(),

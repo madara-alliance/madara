@@ -71,7 +71,7 @@ where
                 status = status,
                 res_len = res_len,
                 response_time = response_time,
-                "{method} {status} {res_len} - {response_time} micros",
+                "{method} {status} {res_len} - {response_time} micros"
             );
 
             metrics.on_response(&req, &rp, now);

@@ -1,1 +1,0 @@
-curl 'https://alpha-sepolia.starknet.io/gateway/get_block?headerOnly=true&blockNumber=pending'

@@ -15,13 +15,13 @@ use std::{convert::Infallible, sync::Arc};
 // Main router to redirect to the appropriate sub-router
 pub(crate) async fn main_router(
     req: Request<Incoming>,
+    path: &str,
     backend: Arc<MadaraBackend>,
     add_transaction_provider: Arc<dyn SubmitTransaction>,
     submit_validated: Option<Arc<dyn SubmitValidatedTransaction>>,
     ctx: ServiceContext,
     config: GatewayServerConfig,
 ) -> Result<Response<String>, Infallible> {
-    let path = req.uri().path().split('/').filter(|segment| !segment.is_empty()).collect::<Vec<_>>().join("/");
     match (path.as_ref(), config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
         (path, true, _) if path.starts_with("gateway/") => {

@@ -22,7 +22,7 @@ deny_unknown_fields = []
 
 [dependencies]
 
-# Deoxys
+# Madara
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true

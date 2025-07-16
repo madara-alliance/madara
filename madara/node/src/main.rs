@@ -16,7 +16,7 @@ use figment::{
     Figment,
 };
 use http::{HeaderName, HeaderValue};
-use mc_analytics::Analytics;
+use mc_analytics::AnalyticsService;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolConfig, MempoolLimits};
@@ -79,13 +79,9 @@ async fn main() -> anyhow::Result<()> {
     run_cmd.check_mode()?;
 
     // Setting up analytics
-
-    let mut analytics = Analytics::new(
-        run_cmd.analytics_params.analytics_service_name.clone(),
-        run_cmd.analytics_params.analytics_collection_endpoint.clone(),
-    )
-    .context("Initializing analytics service")?;
-    analytics.setup()?;
+    let mut service_analytics = AnalyticsService::new(run_cmd.analytics_params.as_analytics_config())
+        .context("Initializing analytics service")?;
+    service_analytics.setup().context("Setting-up analystics service")?;
 
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {
@@ -356,6 +352,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = ServiceMonitor::default()
+        .with(service_analytics)?
         .with(service_db)?
         .with(service_l1_sync)?
         .with(service_l2_sync)?
