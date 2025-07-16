@@ -75,7 +75,7 @@ impl CompressionSet {
     }
 
     // Return Vec<Felt> not Result
-    pub fn pack_unique_values(self) -> Vec<Felt> {
+    pub fn pack_unique_values(self) -> Result<Vec<Felt>> {
         self.unique_value_buckets.pack_in_felts()
     }
 }
@@ -118,7 +118,7 @@ pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
         &compression_set.bucket_index_per_elm,
         u32::try_from(TOTAL_N_BUCKETS).map_err(|err| eyre!("TOTAL_N_BUCKETS does not fit in u32: {}", err))?,
     )?;
-    let unique_values = compression_set.pack_unique_values(); // Now returns Vec<Felt>
+    let unique_values = compression_set.pack_unique_values()?; // Now returns Vec<Felt>
 
     Ok([vec![packed_header], unique_values, packed_repeating_value_pointers, packed_bucket_index_per_elm]
         .into_iter()

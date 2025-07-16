@@ -1,6 +1,8 @@
 use crate::compression::stateless::bitops::{BitLength, BitsArray};
 use crate::compression::stateless::constants::N_UNIQUE_BUCKETS;
 use crate::compression::stateless::utils::felt_from_bits_le;
+use color_eyre::eyre::eyre;
+use color_eyre::Result;
 use indexmap::IndexMap;
 use starknet_core::types::Felt;
 use std::hash::Hash;
@@ -16,23 +18,26 @@ pub(crate) type BucketElement252 = Felt;
 // BucketElementTrait
 // Modify trait to match an original structure (no bit_length, unpack_from_felts)
 pub(crate) trait BucketElementTrait: Sized + Clone {
-    fn pack_in_felts(elms: &[Self]) -> Vec<Felt>;
+    fn pack_in_felts(elms: &[Self]) -> Result<Vec<Felt>>;
 }
 
 macro_rules! impl_bucket_element_trait {
     ($bucket_element:ident, $bit_length_enum:ident) => {
         // Removed $len parameter
         impl BucketElementTrait for $bucket_element {
-            fn pack_in_felts(elms: &[Self]) -> Vec<Felt> {
+            fn pack_in_felts(elms: &[Self]) -> Result<Vec<Felt>> {
                 let bit_length = BitLength::$bit_length_enum;
                 elms.chunks(bit_length.n_elems_in_felt())
                     .map(|chunk| {
                         felt_from_bits_le(&(chunk.iter().flat_map(|elem| elem.0.as_ref()).copied().collect::<Vec<_>>()))
-                            .expect(&format!(
-                                "Chunks of size {}, each of bit length {}, fit in felts.",
-                                bit_length.n_elems_in_felt(),
-                                bit_length
-                            ))
+                            .map_err(|e| {
+                                eyre!(
+                                    "Chunks of size {}, each of bit length {}, fit in felts, {}",
+                                    bit_length.n_elems_in_felt(),
+                                    bit_length,
+                                    e
+                                )
+                            })
                     })
                     .collect()
             }
@@ -46,8 +51,8 @@ impl_bucket_element_trait!(BucketElement62, Bits62);
 impl_bucket_element_trait!(BucketElement83, Bits83);
 impl_bucket_element_trait!(BucketElement125, Bits125);
 impl BucketElementTrait for BucketElement252 {
-    fn pack_in_felts(elms: &[Self]) -> Vec<Felt> {
-        elms.to_vec()
+    fn pack_in_felts(elms: &[Self]) -> Result<Vec<Felt>> {
+        Ok(elms.to_vec())
     }
 }
 
@@ -114,7 +119,7 @@ impl<SizedElement: BucketElementTrait + Clone + Eq + Hash> UniqueValueBucket<Siz
         self.value_to_index.get(value)
     }
 
-    fn pack_in_felts(self) -> Vec<Felt> {
+    fn pack_in_felts(self) -> Result<Vec<Felt>> {
         let values = self.value_to_index.into_keys().collect::<Vec<_>>();
         SizedElement::pack_in_felts(&values)
     }
@@ -211,18 +216,18 @@ impl Buckets {
     }
 
     // Return Vec<Felt> not Result
-    pub(crate) fn pack_in_felts(self) -> Vec<Felt> {
-        [
-            self.bucket15.pack_in_felts(),
-            self.bucket31.pack_in_felts(),
-            self.bucket62.pack_in_felts(),
-            self.bucket83.pack_in_felts(),
-            self.bucket125.pack_in_felts(),
-            self.bucket252.pack_in_felts(),
+    pub(crate) fn pack_in_felts(self) -> Result<Vec<Felt>> {
+        Ok([
+            self.bucket15.pack_in_felts()?,
+            self.bucket31.pack_in_felts()?,
+            self.bucket62.pack_in_felts()?,
+            self.bucket83.pack_in_felts()?,
+            self.bucket125.pack_in_felts()?,
+            self.bucket252.pack_in_felts()?,
         ]
         .into_iter()
         .rev()
         .flatten()
-        .collect()
+        .collect::<Vec<Felt>>())
     }
 }
