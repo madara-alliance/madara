@@ -15,7 +15,6 @@ pub enum AnvilError {
 #[derive(Debug, Clone)]
 pub struct AnvilConfig {
     port: u16,
-    host: String,
     fork_url: Option<String>,
     load_state: Option<String>,
     dump_state: Option<String>,
@@ -26,7 +25,6 @@ impl Default for AnvilConfig {
     fn default() -> Self {
         Self {
             port: 8545,
-            host: "127.0.0.1".to_string(),
             fork_url: None,
             load_state: None,
             dump_state: None,
@@ -49,11 +47,6 @@ impl AnvilConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
-    }
-
-    /// Get the host
-    pub fn host(&self) -> &str {
-        &self.host
     }
 
     /// Get the fork URL
@@ -80,7 +73,6 @@ impl AnvilConfig {
     pub fn to_command(&self) -> Command {
         let mut command = Command::new("anvil");
         command.arg("--port").arg(self.port().to_string());
-        command.arg("--host").arg(self.host());
 
         if let Some(fork_url) = self.fork_url() {
             command.arg("--fork-url").arg(fork_url);
@@ -124,12 +116,6 @@ impl AnvilConfigBuilder {
     /// Set the port (default: 8545)
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = port;
-        self
-    }
-
-    /// Set the host (default: 127.0.0.1)
-    pub fn host(mut self, host: String) -> Self {
-        self.config.host = host;
         self
     }
 

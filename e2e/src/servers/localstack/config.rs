@@ -11,6 +11,8 @@ pub enum LocalstackError {
     PortInUse(u16),
 }
 
+use crate::servers::server::DEFAULT_SERVICE_HOST;
+
 const DEFAULT_LOCALSTACK_PORT: u16 = 4566;
 pub const DEFAULT_LOCALSTACK_IMAGE: &str =
     "localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314";
@@ -20,7 +22,6 @@ const DEFAULT_LOCALSTACK_CONTAINER_NAME: &str = "localstack-service";
 #[derive(Debug, Clone)]
 pub struct LocalstackConfig {
     port: u16,
-    host: String,
     image: String,
     container_name: String,
     environment_vars: Vec<(String, String)>,
@@ -30,7 +31,6 @@ impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_LOCALSTACK_PORT,
-            host: "localhost".to_string(),
             image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
             container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
             environment_vars: vec![
@@ -55,11 +55,6 @@ impl LocalstackConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
-    }
-
-    /// Get the host
-    pub fn host(&self) -> &str {
-        &self.host
     }
 
     /// Get the Docker image
@@ -118,12 +113,6 @@ impl LocalstackConfigBuilder {
     /// Set the port (default: 4566)
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = port;
-        self
-    }
-
-    /// Set the host (default: "127.0.0.1")
-    pub fn host<S: Into<String>>(mut self, host: S) -> Self {
-        self.config.host = host.into();
         self
     }
 

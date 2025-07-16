@@ -10,8 +10,6 @@ use url::Url;
 
 use crate::servers::server::{Server, ServerConfig};
 
-use super::server::ServiceAddress;
-
 // Anvil service that uses the generic Server
 pub struct AnvilService {
     server: Server,
@@ -27,10 +25,7 @@ impl AnvilService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            service_address : Some(ServiceAddress {
-                port: config.port(),
-                host: config.host().to_string(),
-            }),
+            rpc_port: Some(config.port()),
             service_name: "Anvil".to_string(),
             ..Default::default()
         };
@@ -57,7 +52,7 @@ impl AnvilService {
     }
 
     pub fn endpoint(&self) -> Url {
-        format!("http://{}:{}", self.config.host(), self.config.port()).parse().unwrap()
+        self.server().endpoint().expect("Anvil should have an endpoint")
     }
 
 }

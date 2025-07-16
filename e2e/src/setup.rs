@@ -637,7 +637,6 @@ impl Setup {
 
 
         let start_mongo = async move {
-
             let mongo_config = MongoConfigBuilder::new()
                 .port(mongo_port)
                 .build();
@@ -652,8 +651,7 @@ impl Setup {
         // TODO: Atlantic service to be added here later!
 
         // 🚀 These run in PARALLEL!
-        let (localstack_service, mongo_service) = tokio::try_join!(start_localstack, start_mongo)?;
-        // let mongo_service = start_mongo.await?;
+        let (mongo_service, localstack_service, ) = tokio::try_join!(start_mongo, start_localstack)?;
 
         // Assign the services
         self.localstack = Some(localstack_service);
@@ -694,13 +692,10 @@ impl Setup {
 
     async fn start_orchestration(&mut self) -> Result<(), SetupError> {
         // Start Orchestrator Service, wait for it to complete sync
-        println!("Starting Orchestrator ");
-
+        println!("🔔 Starting Orchestrator for bootstrapped Madara");
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::run_l2()
             .port(3000)
-            .host("127.0.0.1".to_string())
-            .env_var("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS", "70")
             .build();
 
         let _ = OrchestratorService::start(orchestrator_setup_config).await?;

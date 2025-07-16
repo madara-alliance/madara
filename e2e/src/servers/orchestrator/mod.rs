@@ -7,7 +7,7 @@ pub mod config;
 // Re-export common utilities
 pub use config::*;
 
-use crate::servers::server::{Server, ServerConfig, ServiceAddress};
+use crate::servers::server::{Server, ServerConfig};
 use std::process::ExitStatus;
 
 use std::time::Duration;
@@ -27,14 +27,10 @@ impl OrchestratorService {
         println!("Running orchestrator in run mode with command : {:?}", command);
 
         let port = config.port().unwrap();
-        let host = format!("127.0.0.1:{}", port);
 
         // Create server config
         let server_config = ServerConfig {
-            service_address: Some(ServiceAddress {
-                host,
-                port,
-            }),
+            rpc_port: Some(port),
             service_name: format!("Orchestrator-{}", config.mode().to_string()),
             connection_attempts: 60, // Orchestrator might take time to start
             connection_delay_ms: 2000,
@@ -78,7 +74,7 @@ impl OrchestratorService {
         match result {
             Ok(Ok(exit_status)) => {
                 if exit_status.success() {
-                    println!("✅ Bootstrapper {} completed successfully with {}", self.config.mode(), exit_status);
+                    println!("✅ Orchestrator {} completed successfully with {}", self.config.mode(), exit_status);
                     Ok(exit_status)
                 } else {
                     let exit_code = exit_status.code().unwrap_or(-1);

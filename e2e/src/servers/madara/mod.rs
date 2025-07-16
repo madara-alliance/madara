@@ -13,7 +13,7 @@ use std::path::PathBuf;
 
 use crate::servers::helpers::NodeRpcMethods;
 
-use super::server::ServiceAddress;
+use super::server::DEFAULT_SERVICE_HOST;
 
 pub struct MadaraService {
     server: Server,
@@ -30,10 +30,7 @@ impl MadaraService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            service_address: Some(ServiceAddress {
-                host: config.rpc_host().to_string(),
-                port: config.rpc_port()
-            }),
+            rpc_port: Some(config.rpc_port()),
             service_name: format!("Madara-{}", config.mode().to_string()),
             connection_attempts: 60, // Madara might take time to start
             connection_delay_ms: 2000,
@@ -63,19 +60,19 @@ impl MadaraService {
 
     /// Get the RPC endpoint URL
     pub fn rpc_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.config().rpc_host(), self.config().rpc_port())).unwrap()
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().rpc_port())).unwrap()
     }
 
     /// Get the Gateway endpoint URL
     pub fn gateway_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.config().rpc_host(), self.config().gateway_port())).unwrap()
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().gateway_port())).unwrap()
     }
 
     /// Get the Feeder Gateway endpoint URL
     pub fn feeder_gateway_endpoint(&self) -> Url {
         Url::parse(&format!(
             "http://{}:{}/feeder_gateway",
-            self.config().rpc_host(),
+            DEFAULT_SERVICE_HOST,
             self.config().gateway_port()
         ))
         .unwrap()

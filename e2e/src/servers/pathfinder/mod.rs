@@ -4,8 +4,6 @@
 
 pub mod config;
 
-use std::fmt::format;
-
 use crate::servers::helpers::NodeRpcMethods;
 // Re-export common utilities
 pub use config::*;
@@ -14,8 +12,6 @@ use crate::servers::docker::{DockerError, DockerServer};
 use crate::servers::server::{Server, ServerConfig};
 use reqwest::Url;
 use tokio::process::Command;
-
-use super::server::ServiceAddress;
 
 pub struct PathfinderService {
     server: Server,
@@ -58,10 +54,7 @@ impl PathfinderService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            service_address: Some(ServiceAddress {
-                host: "127.0.0.1".to_string(),
-                port: config.port(),
-            }),
+            rpc_port: Some(config.port()),
             service_name: format!("Pathfinder"),
             connection_attempts: 60, // Pathfinder takes time to sync
             connection_delay_ms: 2000,
@@ -123,7 +116,8 @@ impl PathfinderService {
 
     /// Get the RPC endpoint URL
     pub fn endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", self.config().host(), self.config().port())).unwrap()
+        self.server().endpoint()
+            .expect("Failed to get endpoint")
     }
 
     /// Get the network name

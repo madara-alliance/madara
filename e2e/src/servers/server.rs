@@ -7,6 +7,8 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Command, Child};
 use tokio::task;
 
+pub const DEFAULT_SERVICE_HOST: &str = "127.0.0.1";
+
 // Custom error type
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -24,16 +26,11 @@ pub enum ServerError {
     EndpointNotAvailable,
 }
 
-#[derive(Debug, Clone)]
-pub struct ServiceAddress {
-    pub host: String,
-    pub port: u16,
-}
 
 // Generic server configuration
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
-    pub service_address: Option<ServiceAddress>,
+    pub rpc_port: Option<u16>,
     pub connection_attempts: usize,
     pub connection_delay_ms: u64,
     pub service_name: String,
@@ -45,10 +42,10 @@ impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             service_name: String::from(""),
-            service_address: None,
+            rpc_port: None,
             connection_attempts: 30,
             connection_delay_ms: 1000,
-            enable_stdout: false,
+            enable_stdout: true,
             enable_stderr: true
         }
     }
@@ -65,8 +62,22 @@ pub struct Server {
 impl Server {
     /// Start a process with the given command and wait for it to be ready
     pub async fn start_process(mut command: Command, config: ServerConfig) -> Result<Self, ServerError> {
-        // Set up stdio for the process
-        command.stdout(Stdio::piped()).stderr(Stdio::piped());
+
+        println!("🔔 Starting {} service", config.service_name);
+
+        if config.enable_stderr {
+            command.stderr(Stdio::piped());
+        } else {
+            // Suppress stderr if disabled
+            command.stderr(Stdio::null());
+        }
+
+        if config.enable_stdout {
+            command.stdout(Stdio::piped());
+        } else {
+            // Suppress stdout if disabled
+            command.stdout(Stdio::null());
+        }
 
         // Start the process
         let mut process = command.spawn().map_err(ServerError::StartupFailed)?;
@@ -76,6 +87,8 @@ impl Server {
 
         // Extract stdout and stderr for log monitoring
         if config.enable_stdout {
+            command.stdout(Stdio::piped());
+
             let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(
                 std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stdout")
             ))?;
@@ -98,6 +111,8 @@ impl Server {
         }
 
         if config.enable_stderr {
+            command.stderr(Stdio::piped());
+
             let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(
                 std::io::Error::new(std::io::ErrorKind::Other, "Failed to capture stderr")
             ))?;
@@ -117,7 +132,7 @@ impl Server {
         }
 
         let service_name = config.service_name.clone();
-        let has_api_endpoint = config.service_address.is_some();
+        let has_rpc_endpoint = config.rpc_port.is_some();
 
         let mut server = Self {
             process,
@@ -126,12 +141,14 @@ impl Server {
             stderr_task,
         };
 
+
         // We wait & validate only if the service has an API endpoint
         // e.g : Skips for Bootstrapper and Orchestrator setup
-        if has_api_endpoint {
+        if has_rpc_endpoint {
             println!("🔔 Waiting for {} server to be ready", service_name);
             server.wait_till_started().await?;
         }
+
 
         println!("😁 {} Server is ready", service_name);
 
@@ -140,8 +157,8 @@ impl Server {
 
     /// Get the endpoint URL
     pub fn endpoint(&self) -> Option<Url> {
-        if let Some(service_address) = &self.config.service_address {
-            Url::parse(&format!("http://{}:{}", service_address.host, service_address.port)).ok()
+        if let Some(rpc_port) = &self.config.rpc_port {
+            Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, rpc_port)).ok()
         } else {
             None
         }
@@ -180,10 +197,19 @@ impl Server {
         let addr = self.endpoint();
 
         if let Some(addr) = addr {
+
+            // Extract just the socket address from the URL
+            let socket_addr = if let Some(host) = addr.host_str() {
+                let port = addr.port().unwrap_or(80); // Default to 80 if no port
+                format!("{}:{}", host, port)
+            } else {
+                return Err(ServerError::EndpointNotAvailable);
+            };
+
             loop {
-                match TcpStream::connect(&addr.to_string()).await {
+                match TcpStream::connect(&socket_addr).await {
                     Ok(_) => return Ok(()),
-                    Err(_) => {
+                    Err(e) => {
                         // Check if process has exited
                         if let Some(status) = self.has_exited() {
                             return Err(ServerError::ProcessExited(status));
@@ -203,10 +229,12 @@ impl Server {
             Err(ServerError::EndpointNotAvailable)
         }
     }
-
     /// Stop the server gracefully
     pub fn stop(&mut self) -> Result<(), ServerError> {
-        if self.config.service_address.is_some() {
+        if self.config.rpc_port.is_some() {
+            return Ok(());
+        }
+        if self.has_exited().is_some() {
             return Ok(());
         }
 

@@ -9,7 +9,7 @@ pub use config::*;
 
 use crate::servers::server::{Server, ServerConfig};
 use crate::servers::docker::{DockerError, DockerServer};
-use crate::servers::server::ServiceAddress;
+use url::Url;
 
 pub struct LocalstackService {
     server: Server,
@@ -49,10 +49,7 @@ impl LocalstackService {
 
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
-            service_address : Some(ServiceAddress {
-                port: config.port(),
-                host: config.host().to_string(),
-            }),
+            rpc_port: Some(config.port()),
             service_name: "Localstack".to_string(),
             connection_attempts: 60, // Localstack takes longer to start
             connection_delay_ms: 2000,
@@ -103,8 +100,8 @@ impl LocalstackService {
 
 
     /// Get the endpoint URL for the Localstack server
-    pub fn endpoint(&self) -> String {
-        format!("http://{}:{}", self.config().host(), self.config().port())
+    pub fn endpoint(&self) -> Url {
+        self.server().endpoint().expect("Localstack server endpoint not found!")
     }
 
     /// Get dependencies (Docker is required)

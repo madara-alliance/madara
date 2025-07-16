@@ -56,7 +56,6 @@ pub struct OrchestratorConfig {
     mode: OrchestratorMode,
     layer: Layer,
     port: Option<u16>,
-    host: Option<String>,
 
     // External Service
     // Database
@@ -91,7 +90,6 @@ impl Default for OrchestratorConfig {
             mode: OrchestratorMode::Run,
             layer: Layer::L2,
             port: None,
-            host: None,
             additional_args: vec![],
             environment_vars: vec![],
             mongodb: true,
@@ -134,11 +132,6 @@ impl OrchestratorConfig {
     /// Get the port
     pub fn port(&self) -> Option<u16> {
         self.port
-    }
-
-    /// Get the host
-    pub fn host(&self) -> Option<&str> {
-        self.host.as_deref()
     }
 
     /// Get the environment variables
@@ -233,10 +226,6 @@ impl OrchestratorConfig {
     pub fn to_command_run(&self, mut command: Command) -> Command {
         if let Some(port) = self.port {
             command.arg("--port").arg(port.to_string());
-        }
-
-        if let Some(host) = &self.host {
-            command.arg("--host").arg(host);
         }
 
         // TODO: might wanna remove it ?
@@ -355,12 +344,6 @@ impl OrchestratorConfigBuilder {
     /// Set the port
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = Some(port);
-        self
-    }
-
-    /// Set the host
-    pub fn host(mut self, host: String) -> Self {
-        self.config.host = Some(host);
         self
     }
 
