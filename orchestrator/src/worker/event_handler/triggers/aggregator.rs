@@ -118,7 +118,7 @@ impl AggregatorJobTrigger {
             .database()
             .get_jobs_between_internal_ids(JobType::ProofCreation, JobStatus::Completed, start_block, end_block)
             .await?;
-        Ok(jobs.len() > (end_block - start_block + 1) as usize)
+        Ok(jobs.len() == (end_block - start_block + 1) as usize)
     }
 
     /// Convert &str to u64
