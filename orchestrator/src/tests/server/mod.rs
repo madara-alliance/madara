@@ -41,7 +41,7 @@ async fn test_health_endpoint() {
 async fn test_init_consumer() {
     let services = TestConfigBuilder::new().configure_queue_client(ConfigType::Actual).build().await;
 
-    let result = initialize_worker(services.config).await;
+    let result = initialize_worker(services.config, Arc::new(Notify::new())).await;
 
     assert!(result.is_ok(), "Failed to initialize consumers: {:?}", result.err());
 }
