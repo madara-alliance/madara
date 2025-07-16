@@ -19,6 +19,7 @@ assert_matches.workspace = true
 flate2 = "1.0.30"
 futures.workspace = true
 m-cairo-test-contracts.workspace = true
+mp-class.workspace = true
 rand.workspace = true
 reqwest.workspace = true
 rstest.workspace = true

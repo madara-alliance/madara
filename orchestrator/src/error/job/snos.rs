@@ -35,4 +35,10 @@ pub enum SnosError {
 
     #[error("Other error: {0}")]
     Other(#[from] OtherError),
+    #[error("Could not serialize the On Chain Data (Snos job #{internal_id:?}): {message}")]
+    OnChainDataUnserializable { internal_id: String, message: String },
+    #[error("Could not store the On Chain Data (snos job #{internal_id:?}): {message}")]
+    OnChainDataUnstorable { internal_id: String, message: String },
+    #[error("Un-supported KZG flag")]
+    UnsupportedKZGFlag,
 }

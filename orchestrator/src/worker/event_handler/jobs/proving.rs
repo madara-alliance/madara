@@ -1,12 +1,3 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use chrono::{SubsecRound, Utc};
-use color_eyre::eyre::{eyre, WrapErr};
-use orchestrator_prover_client_interface::{Task, TaskStatus};
-use uuid::Uuid;
-
 use crate::core::config::Config;
 use crate::error::job::proving::ProvingError;
 use crate::error::job::JobError;
@@ -15,8 +6,12 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
+use async_trait::async_trait;
+use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use color_eyre::eyre::eyre;
+use orchestrator_prover_client_interface::{Task, TaskStatus};
+use std::sync::Arc;
 
 pub struct ProvingJobHandler;
 
@@ -25,37 +20,21 @@ impl JobHandlerTrait for ProvingJobHandler {
     #[tracing::instrument(fields(category = "proving"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         tracing::info!(log_type = "starting", category = "proving", function_type = "create_job",  block_no = %internal_id, "Proving job creation started.");
-        let job_item = JobItem {
-            id: Uuid::new_v4(),
-            internal_id: internal_id.clone(),
-            job_type: JobType::ProofCreation,
-            status: JobStatus::Created,
-            external_id: String::new().into(),
-            metadata,
-            version: 0,
-            created_at: Utc::now().round_subsecs(0),
-            updated_at: Utc::now().round_subsecs(0),
-        };
+        let job_item = JobItem::create(internal_id.clone(), JobType::ProofCreation, JobStatus::Created, metadata);
         tracing::info!(log_type = "completed", category = "proving", function_type = "create_job",  block_no = %internal_id, "Proving job created.");
         Ok(job_item)
     }
 
     #[tracing::instrument(fields(category = "proving"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        let internal_id = job.internal_id.clone();
-        tracing::info!(
-            log_type = "starting",
-            category = "proving",
-            function_type = "process_job",
-            job_id = ?job.id,
-            block_no = %internal_id,
-            "Proving job processing started."
-        );
+        tracing::info!("Proving job processing started");
 
         // Get proving metadata
-        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into()?;
+        let proving_metadata: ProvingMetadata = job.metadata.specific.clone().try_into().inspect_err(|e| {
+            tracing::error!(job_id = %job.internal_id, error = %e, "Failed to convert metadata to ProvingMetadata");
+        })?;
 
-        // Get input path from metadata
+        // Get an input path from metadata
         let input_path = match proving_metadata.input_path {
             Some(ProvingInputType::CairoPie(path)) => path,
             Some(ProvingInputType::Proof(_)) => {
@@ -79,14 +58,13 @@ impl JobHandlerTrait for ProvingJobHandler {
         })?);
 
         tracing::debug!(job_id = %job.internal_id, "Submitting task to prover client");
+
         let external_id = config
             .prover_client()
-            .submit_task(Task::CairoPie(cairo_pie), proving_metadata.n_steps)
+            .submit_task(Task::CairoPie(cairo_pie), *config.prover_layout_name(), proving_metadata.n_steps)
             .await
-            .wrap_err("Prover Client Error".to_string())
-            .map_err(|e| {
+            .inspect_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit task to prover client");
-                JobError::Other(OtherError(e))
             })?;
 
         Ok(external_id)
@@ -130,18 +108,13 @@ impl JobHandlerTrait for ProvingJobHandler {
             "Getting task status from prover client"
         );
 
-        let task_status = config
-            .prover_client()
-            .get_task_status(&task_id, fact, cross_verify)
-            .await
-            .wrap_err("Prover Client Error".to_string())
-            .map_err(|e| {
+        let task_status =
+            config.prover_client().get_task_status(&task_id, fact, cross_verify).await.inspect_err(|e| {
                 tracing::error!(
                     job_id = %job.internal_id,
                     error = %e,
                     "Failed to get task status from prover client"
                 );
-                JobError::Other(OtherError(e))
             })?;
 
         match task_status {
@@ -158,15 +131,21 @@ impl JobHandlerTrait for ProvingJobHandler {
             }
             TaskStatus::Succeeded => {
                 // If proof download path is specified, store the proof
-                if let Some(download_path) = proving_metadata.download_proof {
+                if let Some(download_path) = &proving_metadata.download_proof {
+                    let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
+                        tracing::error!(
+                            job_id = %job.internal_id,
+                            error = %e,
+                            "Failed to get task status from prover client"
+                        );
+                    })?;
                     tracing::debug!(
                         job_id = %job.internal_id,
                         "Downloading and storing proof to path: {}",
                         download_path
                     );
-                    // TODO: Implement proof download and storage
+                    config.storage().put_data(bytes::Bytes::from(fetched_proof.into_bytes()), download_path).await?;
                 }
-
                 tracing::info!(
                     log_type = "completed",
                     category = "proving",
@@ -204,9 +183,5 @@ impl JobHandlerTrait for ProvingJobHandler {
 
     fn verification_polling_delay_seconds(&self) -> u64 {
         30
-    }
-
-    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        None
     }
 }
