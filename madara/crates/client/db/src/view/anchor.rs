@@ -1,11 +1,9 @@
-use mp_block::EventWithInfo;
-
 use crate::{
     db::DBBackend,
     view::{PreconfirmedBlock, PreconfirmedBlockInnerView, PreconfirmedBlockTransaction},
     MadaraBackend, MadaraStorageError,
 };
-use std::{ops::Deref, sync::Arc};
+use std::sync::Arc;
 
 pub(crate) struct PreconfirmedBlockViewContent<'a> {
     block: &'a PreconfirmedBlock,
@@ -16,28 +14,6 @@ pub(crate) struct PreconfirmedBlockViewContent<'a> {
 impl<'a> PreconfirmedBlockViewContent<'a> {
     pub fn transactions(&self) -> &[PreconfirmedBlockTransaction] {
         &self.view.transactions()[..self.n_txs as usize]
-    }
-
-    pub fn events_with_info(&self) -> impl Iterator<Item = EventWithInfo> {
-        block
-            .inner
-            .receipts
-            .into_iter()
-            .enumerate()
-            .flat_map(|(transaction_index, receipt)| {
-                let transaction_hash = receipt.transaction_hash();
-                receipt.events().iter().map(move |events| (transaction_index, transaction_hash, events))
-            })
-            .enumerate()
-            .map(move |(event_index, (transaction_index, transaction_hash, event))| EventWithInfo {
-                event,
-                block_number: self.block.block_n,
-                event_index_in_block: event_index as _,
-                block_hash,
-                transaction_hash: None,
-                transaction_index: transaction_index as _,
-                in_preconfirmed: true
-            })
     }
 }
 
@@ -61,7 +37,6 @@ pub enum BlockAnchor {
 
 impl BlockAnchor {
     pub fn new_on_preconfirmed(block: Arc<PreconfirmedBlock>) -> Self {
-        let on_block_n = block.parent_block_n();
         let n_txs = block.n_txs();
         Self::Preconfirmed(PreconfirmedBlockView { block, n_txs })
     }
@@ -72,7 +47,7 @@ impl BlockAnchor {
     pub fn block_n(&self) -> u64 {
         match self {
             Self::Preconfirmed(preconfirmed_block_view) => preconfirmed_block_view.block.block_n,
-            Self::OnBlockN(block_n) => block_n,
+            Self::OnBlockN(block_n) => *block_n,
         }
     }
 
@@ -110,8 +85,8 @@ impl Anchor {
     }
     pub(crate) fn on_block_n(&self) -> Option<u64> {
         match self {
-            Self::Block(Self::Preconfirmed(b)) => b.block.block_n.checked_sub(1),
-            Self::Block(Self::OnBlockN(block_n)) => Some(block_n),
+            Self::Block(BlockAnchor::Preconfirmed(b)) => b.block.block_n.checked_sub(1),
+            Self::Block(BlockAnchor::OnBlockN(block_n)) => Some(*block_n),
             _ => None,
         }
     }
@@ -124,13 +99,13 @@ impl Anchor {
     }
 }
 
-pub trait IntoAnchor {
+pub trait IntoAnchor: Sized {
     fn into_anchor<DB: DBBackend>(self, backend: &MadaraBackend<DB>) -> Result<Option<Anchor>, MadaraStorageError>;
     fn into_block_anchor<DB: DBBackend>(
         self,
         backend: &MadaraBackend<DB>,
     ) -> Result<Option<BlockAnchor>, MadaraStorageError> {
-        self.into_anchor(backend)?.and_then(|anchor| anchor.into_block_anchor())
+        Ok(self.into_anchor(backend)?.and_then(|anchor| anchor.into_block_anchor()))
     }
 }
 

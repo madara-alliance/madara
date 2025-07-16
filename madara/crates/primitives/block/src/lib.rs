@@ -234,7 +234,7 @@ impl MadaraBlockInner {
             r.events()
                 .iter()
                 .cloned()
-                .map(|event| EventWithTransactionHash { transaction_hash: r.transaction_hash(), event })
+                .map(|event| EventWithTransactionHash { transaction_hash: *r.transaction_hash(), event })
         })
     }
 }

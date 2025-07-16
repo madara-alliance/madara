@@ -187,10 +187,10 @@ impl MadaraBackend {
 
         let block_n_encoded = bincode::serialize(&block_n)?;
 
-        for transction in &value {
+        for transaction in &value {
             tx.put_cf(
                 &tx_hash_to_block_n,
-                bincode::serialize(&transction.receipt.transaction_hash())?,
+                bincode::serialize(&transaction.receipt.transaction_hash())?,
                 &block_n_encoded,
             );
         }

@@ -129,7 +129,7 @@ impl ProviderBlock {
             .transactions
             .into_iter()
             .zip(block.inner.receipts.iter().map(|receipt| (receipt.transaction_hash(), receipt.contract_address())))
-            .map(|(transaction, (hash, contract_address))| {
+            .map(|(transaction, (&hash, contract_address))| {
                 let transaction_with_hash = mp_transactions::TransactionWithHash { transaction, hash };
                 Transaction::new(transaction_with_hash, contract_address)
             })
@@ -243,7 +243,7 @@ impl ProviderBlockPending {
             .transactions
             .into_iter()
             .zip(block.inner.receipts.iter().map(|receipt| (receipt.transaction_hash(), receipt.contract_address())))
-            .map(|(transaction, (hash, contract_address))| {
+            .map(|(transaction, (&hash, contract_address))| {
                 let transaction_with_hash = mp_transactions::TransactionWithHash { transaction, hash };
                 Transaction::new(transaction_with_hash, contract_address)
             })

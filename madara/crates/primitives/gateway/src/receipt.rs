@@ -35,7 +35,7 @@ impl ConfirmedReceipt {
         };
 
         Self {
-            transaction_hash: transaction_receipt.transaction_hash(),
+            transaction_hash: *transaction_receipt.transaction_hash(),
             transaction_index: index,
             actual_fee: transaction_receipt.actual_fee().amount,
             execution_resources: transaction_receipt.execution_resources().clone().into(),

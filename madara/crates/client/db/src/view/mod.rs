@@ -1,5 +1,5 @@
 use crate::{db::DBBackend, MadaraBackend, MadaraStorageError};
-use mp_block::{header::PendingHeader, EventWithInfo, MadaraBlockInfo};
+use mp_block::{header::PendingHeader, MadaraBlockInfo};
 use mp_class::ConvertedClass;
 use mp_receipt::TransactionReceipt;
 use mp_state_update::TransactionStateUpdate;
@@ -7,7 +7,7 @@ use mp_transactions::Transaction;
 use std::sync::{Arc, RwLock, RwLockReadGuard};
 
 mod anchor;
-mod state;
+mod query;
 
 pub use anchor::*;
 
@@ -34,7 +34,7 @@ pub struct PreconfirmedBlock {
 pub(crate) struct PreconfirmedBlockInnerView<'a>(RwLockReadGuard<'a, PreconfirmedBlockInner>);
 impl<'a> PreconfirmedBlockInnerView<'a> {
     pub fn transactions(&self) -> &[PreconfirmedBlockTransaction] {
-        &self.1.txs
+        &self.0.txs
     }
 }
 
@@ -70,13 +70,19 @@ impl PreconfirmedStatus {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct MadaraBackendBlockView<D: DBBackend> {
     pub(crate) backend: Arc<MadaraBackend<D>>,
     pub(crate) anchor: BlockAnchor,
 }
 
-#[derive(Clone, Debug)]
+impl<D: DBBackend> MadaraBackendBlockView<D> {
+    fn new(backend: Arc<MadaraBackend<D>>, anchor: BlockAnchor) -> Self {
+        Self { backend, anchor }
+    }
+}
+
+#[derive(Clone)]
 pub struct MadaraBackendView<D: DBBackend> {
     pub(crate) backend: Arc<MadaraBackend<D>>,
     pub(crate) anchor: Anchor,
@@ -87,7 +93,7 @@ impl<D: DBBackend> MadaraBackendView<D> {
         Self { backend, anchor }
     }
 
-    pub fn into_block_view_on(self, block_n: usize) -> Option<MadaraBackendBlockView<D>> {
+    pub fn into_block_view_on(self, block_n: u64) -> Option<MadaraBackendBlockView<D>> {
         self.anchor
             .into_block_anchor()
             .filter(|anchor| block_n <= anchor.block_n())
@@ -103,7 +109,7 @@ impl<D: DBBackend> MadaraBackend<D> {
     fn view_on_anchor(self: &Arc<Self>, anchor: Anchor) -> MadaraBackendView<D> {
         MadaraBackendView::new(self.clone(), anchor)
     }
-    fn block_view_on_anchor(self: &Arc<Self>, anchor: Anchor) -> MadaraBackendBlockView<D> {
+    fn block_view_on_anchor(self: &Arc<Self>, anchor: BlockAnchor) -> MadaraBackendBlockView<D> {
         MadaraBackendBlockView::new(self.clone(), anchor)
     }
 
@@ -124,7 +130,7 @@ impl<D: DBBackend> MadaraBackend<D> {
         self: &Arc<Self>,
         anchor: impl IntoAnchor,
     ) -> Result<Option<MadaraBackendBlockView<D>>, MadaraStorageError> {
-        Ok(anchor.into_anchor(self.as_ref())?.map(|anchor| self.block_view_on_anchor(anchor)))
+        Ok(anchor.into_block_anchor(self.as_ref())?.map(|anchor| self.block_view_on_anchor(anchor)))
     }
     pub fn block_view_on_latest(self: &Arc<Self>) -> Option<MadaraBackendBlockView<D>> {
         Some(self.block_view_on_anchor(BlockAnchor::new_on_block_n(self.get_latest_block_n_()?)))

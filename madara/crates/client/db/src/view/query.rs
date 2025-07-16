@@ -7,7 +7,6 @@ use mp_block::{EventWithInfo, MadaraMaybePendingBlockInfo, MadaraPendingBlockInf
 use mp_class::{ClassInfo, CompiledSierra};
 use mp_convert::Felt;
 use std::{
-    cmp,
     ops::{Bound, RangeBounds},
     sync::Arc,
 };

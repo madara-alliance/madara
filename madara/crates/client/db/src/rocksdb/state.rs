@@ -1,5 +1,6 @@
 use crate::{
-    events_bloom_filter::EventBloomSearcher, rocksdb::{iter_pinned::DBIterator, Column, RocksDBBackend}, MadaraStorageError
+    rocksdb::{iter_pinned::DBIterator, Column, RocksDBBackend},
+    MadaraStorageError,
 };
 use mp_convert::Felt;
 use rocksdb::{IteratorMode, ReadOptions};
@@ -100,7 +101,11 @@ impl RocksDBBackend {
     }
 
     #[tracing::instrument(skip(self), fields(module = "ContractDB"))]
-    pub(super) fn is_contract_deployed_at_impl(&self, block_n: u64, contract_address: &Felt) -> Result<bool, MadaraStorageError> {
+    pub(super) fn is_contract_deployed_at_impl(
+        &self,
+        block_n: u64,
+        contract_address: &Felt,
+    ) -> Result<bool, MadaraStorageError> {
         let prefix = make_contract_column_key(contract_address, block_n)?;
         self.db_history_kv_contains(&prefix, CONTRACT_CLASS_HASH_COLUMN)
     }

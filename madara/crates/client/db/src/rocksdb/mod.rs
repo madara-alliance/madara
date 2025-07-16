@@ -1,12 +1,12 @@
 use crate::{
-    db::{ClassInfoWithBlockN, CompiledSierraWithBlockN, DBBackend, TxIndex},
+    db::{ClassInfoWithBlockN, CompiledSierraWithBlockN, DBBackend, EventFilter, TxIndex},
     MadaraStorageError,
 };
-use mp_block::{MadaraBlockInfo, TransactionWithReceipt};
+use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, MultiThreaded, WriteOptions};
-use std::{ops::RangeBounds, path::Path, sync::Arc};
+use std::{path::Path, sync::Arc};
 
 mod blocks;
 mod classes;
@@ -22,14 +22,14 @@ pub use options::*;
 
 pub struct RocksDBBackend {
     pub(crate) db: DB,
-    pub(crate) write_opt_no_wal: WriteOptions,
+    pub(crate) writeopts_no_wal: WriteOptions,
 }
 
 impl RocksDBBackend {
     pub fn new(db: DB) -> Self {
         let mut write_opt_no_wal = WriteOptions::new();
         write_opt_no_wal.disable_wal(true);
-        Self { db, write_opt_no_wal }
+        Self { db, writeopts_no_wal: write_opt_no_wal }
     }
 
     pub fn open(path: &Path, config: &RocksDBConfig) -> anyhow::Result<Self> {
@@ -111,7 +111,13 @@ impl DBBackend for RocksDBBackend {
     ) -> Result<Option<CompiledSierraWithBlockN>, MadaraStorageError> {
         self.get_class_compiled_impl(compiled_class_hash)
     }
-    fn get_events(&self, filter: EventFilter) -> Result<Vec<EventWithInfo>> {
+    fn get_events(&self, filter: EventFilter) -> Result<Vec<EventWithInfo>, MadaraStorageError> {
         self.get_filtered_events_impl(filter)
     }
+}
+
+fn serialize_to_smallvec<A: smallvec::Array<Item = u8>>(value: &impl serde::Serialize) -> Result<smallvec::SmallVec<A>, bincode::Error> {
+    let mut v = Default::default();
+    bincode::serialize_into(&mut v, value)?;
+    Ok(v)
 }
