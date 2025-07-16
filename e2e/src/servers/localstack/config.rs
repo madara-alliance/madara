@@ -30,7 +30,7 @@ impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
             port: DEFAULT_LOCALSTACK_PORT,
-            host: "127.0.0.1".to_string(),
+            host: "localhost".to_string(),
             image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
             container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
             environment_vars: vec![

@@ -4,6 +4,8 @@
 
 pub mod config;
 
+use std::fmt::format;
+
 use crate::servers::helpers::NodeRpcMethods;
 // Re-export common utilities
 pub use config::*;
@@ -60,6 +62,7 @@ impl PathfinderService {
                 host: "127.0.0.1".to_string(),
                 port: config.port(),
             }),
+            service_name: format!("Pathfinder"),
             connection_attempts: 60, // Pathfinder takes time to sync
             connection_delay_ms: 2000,
             ..Default::default()

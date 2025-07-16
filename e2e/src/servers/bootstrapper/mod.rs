@@ -31,6 +31,7 @@ impl BootstrapperService {
         let server_config = ServerConfig {
             connection_attempts: 1, // No connection check needed
             connection_delay_ms: 100,
+            service_name: format!("Bootstrapper-{}", config.mode().to_string()),
             ..Default::default()
         };
 

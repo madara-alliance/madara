@@ -35,6 +35,7 @@ impl OrchestratorService {
                 host,
                 port,
             }),
+            service_name: format!("Orchestrator-{}", config.mode().to_string()),
             connection_attempts: 60, // Orchestrator might take time to start
             connection_delay_ms: 2000,
             ..Default::default()
@@ -100,7 +101,9 @@ impl OrchestratorService {
         println!("Running orchestrator in setup mode with command : {:?}", command);
 
         let server_config = ServerConfig {
+            service_name: format!("Orchestrator-{}", config.mode().to_string()),
             ..Default::default()
+
         };
 
         // Start the server using the generic Server::start_process

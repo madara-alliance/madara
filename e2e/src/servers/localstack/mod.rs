@@ -53,6 +53,7 @@ impl LocalstackService {
                 port: config.port(),
                 host: config.host().to_string(),
             }),
+            service_name: "Localstack".to_string(),
             connection_attempts: 60, // Localstack takes longer to start
             connection_delay_ms: 2000,
             ..Default::default()

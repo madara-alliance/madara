@@ -34,6 +34,7 @@ impl MadaraService {
                 host: config.rpc_host().to_string(),
                 port: config.rpc_port()
             }),
+            service_name: format!("Madara-{}", config.mode().to_string()),
             connection_attempts: 60, // Madara might take time to start
             connection_delay_ms: 2000,
             ..Default::default()

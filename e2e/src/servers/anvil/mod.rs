@@ -31,6 +31,7 @@ impl AnvilService {
                 port: config.port(),
                 host: config.host().to_string(),
             }),
+            service_name: "Anvil".to_string(),
             ..Default::default()
         };
 

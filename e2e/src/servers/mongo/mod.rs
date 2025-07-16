@@ -55,6 +55,7 @@ impl MongoService {
                 host: config.host().to_string(),
                 port: config.port(),
             }),
+            service_name: "MongoDB".to_string(),
             connection_attempts: 30, // MongoDB usually starts quickly
             connection_delay_ms: 1000,
             ..Default::default()
