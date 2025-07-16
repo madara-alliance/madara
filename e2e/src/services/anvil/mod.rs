@@ -8,7 +8,7 @@ pub mod config;
 pub use config::*;
 use url::Url;
 
-use crate::servers::server::{Server, ServerConfig};
+use crate::services::server::{Server, ServerConfig};
 
 // Anvil service that uses the generic Server
 pub struct AnvilService {
