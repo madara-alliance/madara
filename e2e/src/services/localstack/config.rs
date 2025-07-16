@@ -1,0 +1,148 @@
+use tokio::process::Command;
+
+#[derive(Debug, thiserror::Error)]
+pub enum LocalstackError {
+    #[error("Docker error: {0}")]
+    Docker(#[from] DockerError),
+    #[error("Localstack container already running on port {0}")]
+    AlreadyRunning(u16),
+    #[error("Port {0} is already in use")]
+    PortInUse(u16),
+}
+
+use crate::services::docker::DockerError;
+
+
+const DEFAULT_LOCALSTACK_PORT: u16 = 4566;
+pub const DEFAULT_LOCALSTACK_IMAGE: &str =
+    "localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314";
+const DEFAULT_LOCALSTACK_CONTAINER_NAME: &str = "localstack-service";
+
+// Final immutable configuration
+#[derive(Debug, Clone)]
+pub struct LocalstackConfig {
+    port: u16,
+    image: String,
+    container_name: String,
+    environment_vars: Vec<(String, String)>,
+}
+
+impl Default for LocalstackConfig {
+    fn default() -> Self {
+        Self {
+            port: DEFAULT_LOCALSTACK_PORT,
+            image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
+            container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
+            environment_vars: vec![
+                ("DEBUG".to_string(), "1".to_string()),
+                ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
+            ],
+        }
+    }
+}
+
+impl LocalstackConfig {
+    /// Create a new configuration with default values
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Create a builder for LocalstackConfig
+    pub fn builder() -> LocalstackConfigBuilder {
+        LocalstackConfigBuilder::new()
+    }
+
+    /// Get the port
+    pub fn port(&self) -> u16 {
+        self.port
+    }
+
+    /// Get the Docker image
+    pub fn image(&self) -> &str {
+        &self.image
+    }
+
+    /// Get the container name
+    pub fn container_name(&self) -> &str {
+        &self.container_name
+    }
+
+    /// Get the environment variables
+    pub fn environment_vars(&self) -> &[(String, String)] {
+        &self.environment_vars
+    }
+
+    /// Build the Docker command for Localstack
+    pub fn to_command(&self) -> Command {
+        let mut command = Command::new("docker");
+        command.arg("run");
+        command.arg("--rm"); // Remove container when it stops
+        command.arg("--name").arg(self.container_name());
+        command.arg("-p").arg(format!("{}:{}", self.port(), self.port()));
+
+        // Add environment variables
+        for (key, value) in self.environment_vars() {
+            command.arg("-e").arg(format!("{}={}", key, value));
+        }
+
+        command.arg(self.image());
+
+        command
+    }
+}
+
+// Builder type that allows configuration
+#[derive(Debug, Clone)]
+pub struct LocalstackConfigBuilder {
+    config: LocalstackConfig,
+}
+
+impl LocalstackConfigBuilder {
+    /// Create a new configuration builder with default values
+    pub fn new() -> Self {
+        Self {
+            config: LocalstackConfig::default(),
+        }
+    }
+
+    /// Build the final immutable configuration
+    pub fn build(self) -> LocalstackConfig {
+        self.config
+    }
+
+    /// Set the port (default: 4566)
+    pub fn port(mut self, port: u16) -> Self {
+        self.config.port = port;
+        self
+    }
+
+    /// Set the Docker image
+    pub fn image<S: Into<String>>(mut self, image: S) -> Self {
+        self.config.image = image.into();
+        self
+    }
+
+    /// Set the container name
+    pub fn container_name<S: Into<String>>(mut self, name: S) -> Self {
+        self.config.container_name = name.into();
+        self
+    }
+
+    /// Add an environment variable
+    pub fn env_var<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
+        self.config.environment_vars.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set all environment variables (replaces existing ones)
+    pub fn environment_vars(mut self, vars: Vec<(String, String)>) -> Self {
+        self.config.environment_vars = vars;
+        self
+    }
+}
+
+impl Default for LocalstackConfigBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
