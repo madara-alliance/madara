@@ -9,7 +9,7 @@ CARGO_TARGET_DIR=target cargo build --manifest-path madara/Cargo.toml  --bin mad
   --rpc-external           \
   --devnet                 \
   --preset devnet          \
-  --gas-price 0            \
+  --l1-gas-price 0            \
   --blob-gas-price 0       \
   --strk-gas-price 0       \
   --strk-blob-gas-price 0  \

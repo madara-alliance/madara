@@ -184,7 +184,7 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         .arg("--feeder-gateway-enable")
         .arg("--gateway-enable")
         .arg("--gateway-external")
-        .arg("--gas-price")
+        .arg("--l1-gas-price")
         .arg("0")
         .arg("--blob-gas-price")
         .arg("0")

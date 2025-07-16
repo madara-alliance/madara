@@ -58,7 +58,7 @@ jobs:
             --rpc-external \
             --devnet \
             --preset devnet \
-            --gas-price 0 \
+            --l1-gas-price 0 \
             --blob-gas-price 0 \
             --strk-gas-price 0 \
             --strk-blob-gas-price 0 \

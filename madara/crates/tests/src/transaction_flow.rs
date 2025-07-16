@@ -78,7 +78,7 @@ impl SetupBuilder {
         [
             "--devnet".into(),
             "--no-l1-sync".into(),
-            "--gas-price".into(),
+            "--l1-gas-price".into(),
             "0".into(),
             "--chain-config-path".into(),
             "test_devnet.yaml".into(),
@@ -120,7 +120,7 @@ impl SetupBuilder {
             .args([
                 "--full",
                 "--no-l1-sync",
-                "--gas-price",
+                "--l1-gas-price",
                 "0",
                 "--chain-config-path",
                 "test_devnet.yaml",
@@ -151,7 +151,7 @@ impl SetupBuilder {
             .args([
                 "--full",
                 "--no-l1-sync",
-                "--gas-price",
+                "--l1-gas-price",
                 "0",
                 "--chain-config-path",
                 "test_devnet.yaml",
