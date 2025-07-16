@@ -1,15 +1,13 @@
 use std::str::FromStr;
 use std::sync::Arc;
 
+use crate::utils::hexstring_to_address;
+use crate::ConfigFile;
 use ethereum_instance::Error;
 use ethers::prelude::{abigen, Bytes, SignerMiddleware};
 use ethers::providers::{Http, Provider};
 use ethers::signers::{LocalWallet, Signer};
 use ethers::types::{Address, U256};
-use tokio::time::{sleep, Duration};
-
-use crate::utils::hexstring_to_address;
-use crate::ConfigFile;
 
 abigen!(
     EthereumL1BridgeProxy,
@@ -71,31 +69,55 @@ pub async fn upgrade_l1_bridge(ethereum_bridge_address: Address, config_file: &C
     eth_bridge_proxy_client
         .add_implementation(new_eth_bridge_client.address(), call_data.clone(), false)
         .send()
-        .await?;
+        .await?
+        .confirmations(2)
+        .await
+        .unwrap();
+
     log::debug!("New ETH bridge add_implementation ✅");
-    sleep(Duration::from_secs(20)).await;
-    eth_bridge_proxy_client.upgrade_to(new_eth_bridge_client.address(), call_data, false).send().await?;
+    eth_bridge_proxy_client
+        .upgrade_to(new_eth_bridge_client.address(), call_data, false)
+        .send()
+        .await?
+        .confirmations(2)
+        .await
+        .unwrap();
+
     log::debug!("New ETH bridge upgrade_to ✅");
-    sleep(Duration::from_secs(20)).await;
     new_eth_bridge_client
         .register_app_role_admin(hexstring_to_address(&config_file.l1_deployer_address))
         .send()
-        .await?;
-    sleep(Duration::from_secs(20)).await;
+        .await?
+        .confirmations(2)
+        .await
+        .unwrap();
+
     new_eth_bridge_client
         .register_governance_admin(hexstring_to_address(&config_file.l1_deployer_address))
         .send()
-        .await?;
-    sleep(Duration::from_secs(20)).await;
-    new_eth_bridge_client.register_app_governor(hexstring_to_address(&config_file.l1_deployer_address)).send().await?;
-    sleep(Duration::from_secs(20)).await;
+        .await?
+        .confirmations(2)
+        .await
+        .unwrap();
+
+    new_eth_bridge_client
+        .register_app_governor(hexstring_to_address(&config_file.l1_deployer_address))
+        .send()
+        .await?
+        .confirmations(2)
+        .await
+        .unwrap();
+
     new_eth_bridge_client
         .set_max_total_balance(
             hexstring_to_address("0x0000000000000000000000000000000000455448"),
             U256::from_dec_str("10000000000000000000000000").unwrap(),
         )
         .send()
-        .await?;
+        .await?
+        .confirmations(2)
+        .await
+        .unwrap();
     log::debug!("New ETH bridge set_max_total_balance ✅");
 
     log::info!("Eth bridge L1 upgraded successfully ✅");
