@@ -128,6 +128,14 @@ impl MadaraBackend {
         self.watch_gas_quote.borrow().clone()
     }
 
+    #[cfg(feature = "testing")]
+    pub fn set_l1_gas_quote_for_testing(&self) {
+        use mp_convert::FixedPoint;
+
+        let l1_gas_quote = L1GasQuote { l1_gas_price: 128, l1_data_gas_price: 128, strk_per_eth: FixedPoint::one() };
+        self.set_last_l1_gas_quote(l1_gas_quote);
+    }
+
     pub fn calculate_gas_prices(
         &self,
         previous_strk_l2_gas_price: u128,

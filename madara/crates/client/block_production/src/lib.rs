@@ -610,6 +610,7 @@ pub(crate) mod tests {
         };
 
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
         genesis.build_and_store(&backend).await.unwrap();
 
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing()));
