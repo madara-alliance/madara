@@ -58,8 +58,13 @@ jobs:
             --exclude build.docker \
             --exclude cairo_artifacts \
             --exclude Cargo.toml \
-            --exclude src \
-            -czvf artifacts.tar.gz build-artifacts/
+            --exclude build-artifacts/src \
+            -czvf artifacts.tar.gz \
+            build-artifacts/ \
+            bootstrapper-v2/contracts/ethereum/out/ \
+            bootstrapper-v2/contracts/ethereum/src/starkware/ \
+            bootstrapper-v2/contracts/ethereum/src/third_party/
+
 
       - name: Tags
         id: tag
