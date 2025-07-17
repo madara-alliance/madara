@@ -8183,24 +8183,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "orchestrator-mock-atlantic-server"
-version = "0.8.0"
-dependencies = [
- "axum 0.7.7",
- "chrono",
- "rand",
- "reqwest 0.12.8",
- "serde",
- "serde_json",
- "tempfile",
- "thiserror 2.0.3",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "uuid 1.12.0",
-]
-
-[[package]]
 name = "orchestrator-prover-client-interface"
 version = "0.8.0"
 dependencies = [
@@ -12957,6 +12939,24 @@ dependencies = [
  "num-traits 0.2.19",
  "serde_json",
  "thiserror 1.0.65",
+]
+
+[[package]]
+name = "utils-mock-atlantic-server"
+version = "0.8.0"
+dependencies = [
+ "axum 0.7.7",
+ "chrono",
+ "rand",
+ "reqwest 0.12.8",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.3",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid 1.12.0",
 ]
 
 [[package]]
