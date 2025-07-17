@@ -65,7 +65,6 @@ jobs:
             bootstrapper-v2/contracts/ethereum/src/starkware/ \
             bootstrapper-v2/contracts/ethereum/src/third_party/
 
-
       - name: Tags
         id: tag
         run: |
