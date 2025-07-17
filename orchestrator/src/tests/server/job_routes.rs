@@ -14,6 +14,7 @@ use crate::core::config::Config;
 use crate::server::types::ApiResponse;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
+use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueNameForJobType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
@@ -203,4 +204,94 @@ async fn test_trigger_retry_job_not_allowed(
     // Verify no message was added to the queue
     let queue_result = config.queue().consume_message_from_queue(job_type.process_queue_name()).await;
     assert!(queue_result.is_err(), "Queue should be empty - no message should be added for non-Failed jobs");
+}
+
+#[tokio::test]
+#[rstest]
+async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
+    let (addr, config) = setup_trigger.await;
+    let block_number = 123;
+
+    // Create some jobs for the block
+    let snos_job = build_job_item(JobType::SnosRun, JobStatus::Completed, block_number);
+    let proving_job = build_job_item(JobType::ProofCreation, JobStatus::PendingVerification, block_number);
+    let data_submission_job = build_job_item(JobType::DataSubmission, JobStatus::Created, block_number);
+    let state_transition_job = build_job_item(JobType::StateTransition, JobStatus::Completed, 0); // internal_id is not block_number for ST
+    let mut state_transition_job_specific_metadata = state_transition_job.metadata.specific.clone();
+
+    if let JobSpecificMetadata::StateUpdate(ref mut x) = state_transition_job_specific_metadata {
+        x.blocks_to_settle = vec![block_number, block_number + 1];
+    } else {
+        panic!("Unexpected job type");
+    }
+    let mut state_transition_job_updated = state_transition_job.clone();
+    state_transition_job_updated.metadata.specific = state_transition_job_specific_metadata;
+
+    config.database().create_job(snos_job.clone()).await.unwrap();
+    config.database().create_job(proving_job.clone()).await.unwrap();
+    config.database().create_job(data_submission_job.clone()).await.unwrap();
+    config.database().create_job(state_transition_job_updated.clone()).await.unwrap();
+
+    // Create a job for a different block to ensure it's not returned
+    let other_block_job = build_job_item(JobType::SnosRun, JobStatus::Completed, block_number + 10);
+    config.database().create_job(other_block_job).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/jobs/block/{}/status", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200);
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<crate::server::types::BlockJobStatusResponse> =
+        serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(response_body.success);
+    assert_eq!(response_body.message, Some(format!("Successfully fetched job statuses for block {}", block_number)));
+    let jobs_response = response_body.data.unwrap().jobs;
+    assert_eq!(jobs_response.len(), 4);
+
+    // Check that the correct jobs are returned
+    assert!(jobs_response.iter().any(|j| j.id == snos_job.id && j.status == JobStatus::Completed));
+    assert!(jobs_response.iter().any(|j| j.id == proving_job.id && j.status == JobStatus::PendingVerification));
+    assert!(jobs_response.iter().any(|j| j.id == data_submission_job.id && j.status == JobStatus::Created));
+    assert!(jobs_response.iter().any(|j| j.id == state_transition_job_updated.id && j.status == JobStatus::Completed));
+}
+
+#[tokio::test]
+#[rstest]
+async fn test_get_job_status_by_block_number_not_found(#[future] setup_trigger: (SocketAddr, Arc<Config>)) {
+    let (addr, config) = setup_trigger.await;
+    let block_number = 404;
+
+    // Create a job for a different block to ensure db is not empty
+    let other_block_job = build_job_item(JobType::SnosRun, JobStatus::Completed, block_number + 10);
+    config.database().create_job(other_block_job).await.unwrap();
+
+    let client = hyper::Client::new();
+    let response = client
+        .request(
+            Request::builder()
+                .uri(format!("http://{}/jobs/block/{}/status", addr, block_number))
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+
+    assert_eq!(response.status(), 200); // Endpoint itself is found, just no data for this block
+    let body_bytes = hyper::body::to_bytes(response.into_body()).await.unwrap();
+    let response_body: ApiResponse<crate::server::types::BlockJobStatusResponse> =
+        serde_json::from_slice(&body_bytes).unwrap();
+
+    assert!(response_body.success);
+    assert_eq!(response_body.message, Some(format!("Successfully fetched job statuses for block {}", block_number)));
+    let jobs_response = response_body.data.unwrap().jobs;
+    assert_eq!(jobs_response.len(), 0);
 }

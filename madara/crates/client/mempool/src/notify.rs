@@ -2,8 +2,8 @@ use crate::{MempoolInner, MempoolLimits, MempoolTransaction, TxInsertionError};
 use mc_db::mempool_db::NonceInfo;
 use mp_convert::{Felt, ToFelt};
 use starknet_api::core::Nonce;
-use std::collections::BTreeMap;
-use tokio::sync::{Notify, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use std::{collections::BTreeMap, sync::Arc};
+use tokio::sync::{Notify, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
 /// A view into the mempool, intended for consuming transactions. This is expected to be used by block production to
 /// pop transactions from the mempool and execute them.
@@ -11,12 +11,12 @@ use tokio::sync::{Notify, RwLock, RwLockReadGuard, RwLockWriteGuard};
 /// This struct implements [`Iterator`] by popping the next transaction to execute from the mempool.
 ///
 /// This holds the lock to the inner mempool - use with care.
-pub struct MempoolConsumerView<'a> {
-    notify: &'a Notify,
-    inner: RwLockWriteGuard<'a, MempoolInner>,
-    nonce_cache: RwLockWriteGuard<'a, BTreeMap<Felt, Nonce>>,
+pub struct MempoolConsumerView {
+    notify: Arc<Notify>,
+    inner: OwnedRwLockWriteGuard<MempoolInner>,
+    nonce_cache: OwnedRwLockWriteGuard<BTreeMap<Felt, Nonce>>,
 }
-impl Iterator for MempoolConsumerView<'_> {
+impl Iterator for MempoolConsumerView {
     type Item = MempoolTransaction;
     fn next(&mut self) -> Option<Self::Item> {
         self.inner.pop_next().inspect(|tx| {
@@ -26,14 +26,14 @@ impl Iterator for MempoolConsumerView<'_> {
         })
     }
 }
-impl MempoolConsumerView<'_> {
+impl MempoolConsumerView {
     /// Total number of transactions in the mempool. This does not mean they all are currently executable.
     pub fn n_txs_total(&self) -> usize {
         self.inner.n_total()
     }
 }
 
-impl Drop for MempoolConsumerView<'_> {
+impl Drop for MempoolConsumerView {
     fn drop(&mut self) {
         // If there are still ready transactions in the mempool, notify the next waiter.
         if self.inner.has_ready_transactions() {
@@ -45,16 +45,16 @@ impl Drop for MempoolConsumerView<'_> {
 
 // Mutex Ordering (deadlocks): nonce_cache mutex should always be taken before inner mutex when the two are taken at the same time.
 pub(crate) struct MempoolInnerWithNotify {
-    inner: RwLock<MempoolInner>,
+    inner: Arc<RwLock<MempoolInner>>,
     // TODO: should this be in inner mempool? I don't understand why it's here.
-    nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
+    nonce_cache: Arc<RwLock<BTreeMap<Felt, Nonce>>>,
     // Notify listener when the mempool goes from !has_ready_transactions to has_ready_transactions.
-    notify: Notify,
+    notify: Arc<Notify>,
 }
 impl MempoolInnerWithNotify {
     pub fn new(limits: MempoolLimits) -> Self {
         Self {
-            inner: RwLock::new(MempoolInner::new(limits)),
+            inner: RwLock::new(MempoolInner::new(limits)).into(),
             nonce_cache: Default::default(),
             notify: Default::default(),
         }
@@ -91,28 +91,28 @@ impl MempoolInnerWithNotify {
     }
 
     #[cfg(test)]
-    pub async fn write(&self) -> RwLockWriteGuard<'_, MempoolInner> {
+    pub async fn write(&self) -> tokio::sync::RwLockWriteGuard<'_, MempoolInner> {
         self.inner.write().await
     }
     #[cfg(test)]
-    pub async fn nonce_cache_write(&self) -> RwLockWriteGuard<'_, BTreeMap<Felt, Nonce>> {
+    pub async fn nonce_cache_write(&self) -> tokio::sync::RwLockWriteGuard<'_, BTreeMap<Felt, Nonce>> {
         self.nonce_cache.write().await
     }
 
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
     /// If the mempool has no transaction that can be consumed, this function will wait until there is at least 1 transaction to consume.
-    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView {
         let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
         tokio::pin!(permit);
         loop {
             {
                 tracing::debug!("taking lock");
-                let nonce_cache = self.nonce_cache.write().await;
-                let inner = self.inner.write().await;
+                let nonce_cache = self.nonce_cache.clone().write_owned().await;
+                let inner = self.inner.clone().write_owned().await;
 
                 if inner.has_ready_transactions() {
                     tracing::debug!("consumer ready");
-                    return MempoolConsumerView { inner, nonce_cache, notify: &self.notify };
+                    return MempoolConsumerView { inner, nonce_cache, notify: self.notify.clone() };
                 }
                 // Note: we put ourselves in the notify list BEFORE giving back the lock.
                 // Otherwise, some transactions could be missed.
@@ -127,11 +127,11 @@ impl MempoolInnerWithNotify {
     }
 
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
-    pub async fn get_consumer(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_consumer(&self) -> MempoolConsumerView {
         MempoolConsumerView {
-            notify: &self.notify,
-            nonce_cache: self.nonce_cache.write().await,
-            inner: self.inner.write().await,
+            notify: self.notify.clone(),
+            nonce_cache: self.nonce_cache.clone().write_owned().await,
+            inner: self.inner.clone().write_owned().await,
         }
     }
 }
@@ -160,13 +160,13 @@ mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        mempool.insert_tx(mempool_tx.clone(), false, true, nonce_info).await.unwrap();
+        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
 
         // poll once
         let mut consumer = fut.as_mut().now_or_never().unwrap();
@@ -188,13 +188,13 @@ mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        mempool.insert_tx(mempool_tx.clone(), false, true, nonce_info).await.unwrap();
+        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
 
         let first_consumer = mempool.get_consumer_wait_for_ready_tx().await;
         // don't consume txs from first consumer
@@ -231,13 +231,13 @@ mod tests {
 
         let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
         let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier().unwrap().0,
+            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
             arrived_at: TxTimestamp::now(),
             converted_class: None,
             nonce: nonce_info.nonce,
             nonce_next: nonce_info.nonce_next,
         };
-        mempool.insert_tx(mempool_tx.clone(), false, true, nonce_info).await.unwrap();
+        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
 
         let mut first_consumer = mempool.get_consumer_wait_for_ready_tx().await;
         // consume!

@@ -1,12 +1,14 @@
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
+use crate::utils::tx_api_to_blockifier;
 use crate::utils::ResultExt;
 use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::Starknet;
+use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
 use mp_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
-use mp_transactions::BroadcastedTransactionExt;
+use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 use std::sync::Arc;
 
 /// Estimate the fee associated with transaction
@@ -34,16 +36,20 @@ pub async fn estimate_fee(
     }
 
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
+    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
 
     let transactions = request
         .into_iter()
-        .map(|tx| tx.into_blockifier(starknet.chain_id(), starknet_version).map(|(tx, _)| tx))
-        .collect::<Result<Vec<_>, _>>()
+        .map(|tx| {
+            let only_query = tx.is_query();
+            let (api_tx, _) = tx.into_starknet_api(starknet.chain_id(), starknet_version)?;
+            let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
+            Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
+        })
+        .collect::<Result<Vec<_>, ToBlockifierError>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let validate = !simulation_flags.contains(&SimulationFlagForEstimateFee::SkipValidate);
-
-    let execution_results = exec_context.re_execute_transactions([], transactions, true, validate)?;
+    let execution_results = exec_context.re_execute_transactions([], transactions)?;
 
     let fee_estimates = execution_results.iter().enumerate().try_fold(
         Vec::with_capacity(execution_results.len()),

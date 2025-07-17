@@ -84,7 +84,7 @@ impl GatewayProvider {
         Self::new(
             Url::parse("https://alpha-mainnet.starknet.io/gateway/")
                 .expect("Failed to parse Starknet Alpha Mainnet gateway url. This should not fail in prod."),
-            Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/")
+            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/")
                 .expect("Failed to parse Starknet Alpha Mainnet feeder gateway url. This should not fail in prod."),
         )
     }
@@ -93,7 +93,7 @@ impl GatewayProvider {
         Self::new(
             Url::parse("https://alpha-sepolia.starknet.io/gateway/")
                 .expect("Failed to parse Starknet Alpha Sepolia gateway url. This should not fail in prod."),
-            Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/")
+            Url::parse("https://feeder.alpha-sepolia.starknet.io/feeder_gateway/")
                 .expect("Failed to parse Starknet Alpha Sepolia feeder gateway url. This should not fail in prod."),
         )
     }
@@ -101,7 +101,7 @@ impl GatewayProvider {
         Self::new(
             Url::parse("https://integration-sepolia.starknet.io/gateway/")
                 .expect("Failed to parse Starknet Integration Sepolia gateway url. This should not fail in prod."),
-            Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").expect(
+            Url::parse("https://feeder.integration-sepolia.starknet.io/feeder_gateway/").expect(
                 "Failed to parse Starknet Integration Sepolia feeder gateway url. This should not fail in prod.",
             ),
         )

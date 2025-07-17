@@ -15,11 +15,9 @@ use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
 use starknet_core::types::contract::{CompiledClass, SierraClass};
 use starknet_core::types::BlockTag::Pending;
+use starknet_core::types::CompressedLegacyContractClass;
 use starknet_types_core::hash::{Pedersen, StarkHash};
 
-use crate::contract_clients::legacy_class::{
-    Address, CompressedLegacyContractClass, DeprecatedContractClass, Signature,
-};
 use crate::contract_clients::utils::DeclarationInput::{DeclarationInputs, LegacyDeclarationInputs};
 use crate::helpers::account_actions::{get_contract_address_from_deploy_tx, AccountActions};
 use crate::utils::{invoke_contract, save_to_json, wait_for_transaction, JsonValueType};
@@ -104,18 +102,6 @@ pub struct BroadcastedDeclareTransactionV0 {
     pub is_query: bool,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct BroadcastedDeclareTxnV0 {
-    /// The class to be declared
-    pub contract_class: DeprecatedContractClass,
-    /// The maximal fee that can be charged for including the transaction
-    pub max_fee: Felt,
-    /// The address of the account contract sending the declaration transaction
-    pub sender_address: Address,
-    pub signature: Signature,
-    pub is_query: bool,
-}
-
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq)]
 pub struct RpcResult<T> {
     jsonrpc: String,
@@ -157,12 +143,13 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
 
             let flattened_class = contract_artifact.flatten().unwrap();
 
-            account
+            let txn = account
                 .declare_v3(Arc::new(flattened_class), class_hash)
                 .gas(0)
                 .send()
                 .await
                 .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
+            wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.unwrap();
             sierra_class_hash
         }
         LegacyDeclarationInputs(artifact_path, url, provider) => {
@@ -178,10 +165,10 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
                 return class_hash;
             }
 
-            let contract_abi_artifact: DeprecatedContractClass =
+            let contract_abi_artifact =
                 contract_abi_artifact.clone().compress().expect("Error : Failed to compress the contract class").into();
 
-            let params: BroadcastedDeclareTxnV0 = BroadcastedDeclareTxnV0 {
+            let params = BroadcastedDeclareTransactionV0 {
                 sender_address: Felt::from_hex("0x1").unwrap(),
                 max_fee: Felt::ZERO,
                 signature: Vec::new(),
@@ -201,10 +188,9 @@ pub async fn declare_contract(input: DeclarationInput<'_>) -> Felt {
             let raw_txn_rpc = req_client.post(url).json(json_body).send().await;
             match raw_txn_rpc {
                 Ok(val) => {
-                    log::info!(
-                        "🚧 Txn Sent Successfully : {:?}",
-                        val.json::<RpcResult<DeclareTransactionResult>>().await.unwrap()
-                    );
+                    let result = val.json::<RpcResult<DeclareTransactionResult>>().await.unwrap().result;
+                    log::info!("🚧 Txn Sent Successfully : {:?}", result);
+                    wait_for_transaction(provider, result.transaction_hash, "declare_contract").await.unwrap();
                 }
                 Err(err) => {
                     log::error!("Error : Error sending the transaction using RPC: {:?}", err);
@@ -231,7 +217,7 @@ pub(crate) async fn deploy_account_using_priv_key(
 
     let deploy_txn = oz_account_factory.deploy_v1(Felt::ZERO).max_fee(Felt::ZERO);
     let account_address = deploy_txn.address();
-    log::debug!("OZ Account Deploy Address: {:?}", account_address);
+    log::debug!("OZ Account will be deployed at the address: {:?}", account_address);
     save_to_json("account_address", &JsonValueType::StringType(account_address.to_string())).unwrap();
 
     if provider.get_class_at(BlockId::Tag(Pending), account_address).await.is_ok() {
@@ -275,7 +261,7 @@ pub(crate) async fn deploy_proxy_contract(
     log::debug!("txn hash (proxy deployment) : {:?}", txn.transaction_hash);
 
     let deployed_address = get_contract_address_from_deploy_tx(account.provider(), &txn).await.unwrap();
-    log::debug!("[IMP] Event : {:?}", deployed_address);
+    log::debug!("[IMP] Proxy deployed at: {:?}", deployed_address);
 
     deployed_address
 }

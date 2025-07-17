@@ -24,6 +24,7 @@ async fn atlantic_client_submit_task_when_mock_works() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
     };
     // Start a mock server
     let mock_server = MockServer::start();
@@ -37,14 +38,14 @@ async fn atlantic_client_submit_task_when_mock_works() {
     });
 
     // Configure the service to use mock server
-    let atlantic_service =
-        AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params, &LayoutName::dynamic);
+    let atlantic_service = AtlanticProverService::with_test_params(mock_server.port(), &atlantic_params);
 
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
 
     // We don't need to send the steps because it's a mock fact hash.
-    let task_result = atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), None).await;
+    let task_result =
+        atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), LayoutName::dynamic, None).await;
 
     assert!(task_result.is_ok());
     submit_mock.assert();
@@ -65,8 +66,9 @@ async fn atlantic_client_get_task_status_works() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
     };
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params);
 
     let atlantic_query_id = "01JPMKV7WFP4JTC0TTQSEAM9GW";
     let task_result = atlantic_service.atlantic_client.get_job_status(atlantic_query_id).await;
@@ -90,10 +92,11 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
     };
 
     // Create the Atlantic service with actual configuration
-    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params);
 
     // Load the Cairo PIE from the test data
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
@@ -102,7 +105,7 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
         // We don't need to send the steps because it's a mock fact hash.
-        .submit_task(Task::CairoPie(Box::new(cairo_pie)), None)
+        .submit_task(Task::CairoPie(Box::new(cairo_pie)), LayoutName::dynamic, None)
         .await
         .expect("Failed to submit task to Atlantic service");
 

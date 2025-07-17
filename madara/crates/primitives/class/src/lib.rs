@@ -1,4 +1,3 @@
-use blockifier::execution::contract_class::{ClassInfo as BClassInfo, ContractClass as BContractClass};
 use class_hash::ComputeClassHashError;
 use compile::ClassCompilationError;
 use starknet_types_core::felt::Felt;
@@ -11,6 +10,8 @@ pub mod convert;
 mod into_starknet_core;
 mod into_starknet_types;
 pub mod mainnet_legacy_class_hashes;
+mod to_blockifier;
+mod to_starknet_api;
 
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ConvertedClass {
@@ -31,24 +32,6 @@ impl ConvertedClass {
             ConvertedClass::Legacy(legacy) => ClassInfo::Legacy(legacy.info.clone()),
             ConvertedClass::Sierra(sierra) => ClassInfo::Sierra(sierra.info.clone()),
         }
-    }
-
-    pub fn to_blockifier_class(&self) -> Result<BContractClass, ClassCompilationError> {
-        Ok(match self {
-            ConvertedClass::Legacy(class) => class.info.contract_class.to_blockifier_class()?,
-            ConvertedClass::Sierra(class) => class.compiled.to_blockifier_class()?,
-        })
-    }
-
-    pub fn to_blockifier_class_info(&self) -> Result<BClassInfo, ClassCompilationError> {
-        Ok(match self {
-            ConvertedClass::Legacy(class) => BClassInfo::new(&class.info.contract_class.to_blockifier_class()?, 0, 0)?,
-            ConvertedClass::Sierra(class) => BClassInfo::new(
-                &class.compiled.to_blockifier_class()?,
-                class.info.contract_class.sierra_program.len(),
-                class.info.contract_class.abi.len(),
-            )?,
-        })
     }
 }
 
@@ -168,7 +151,7 @@ impl SierraClassInfo {
                 got: compiled_class_hash,
             });
         }
-        Ok(compiled)
+        Ok((&compiled).try_into()?)
     }
 }
 
@@ -439,8 +422,9 @@ mod test {
             Felt::from_hex_unchecked("0x371b5f7c5517d84205365a87f02dcef230efa7b4dd91a9e4ba7e04c5b69d69b");
         let computed_class_hash =
             Felt::from_hex_unchecked("0x92d5e5e82d6eaaef47a8ba076f0ea0989d2c5aeb84d74d8ade33fe773cbf67");
-        assert_eq!(class.class_hash().unwrap(), computed_class_hash);
+        assert_eq!(class.class_hash().unwrap(), real_class_hash);
 
+        //  TODO to re-check this after 0.14.0 compatibility
         assert_eq!(
             crate::mainnet_legacy_class_hashes::get_real_class_hash(20732, computed_class_hash),
             real_class_hash

@@ -1,79 +1,44 @@
 //! Executor thread internal logic.
 
-use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::{
-    blockifier::transaction_executor::{TransactionExecutor, TransactionExecutorResult},
-    execution::contract_class::ContractClass,
-    state::{
-        cached_state::{StateMaps, StorageEntry},
-        state_api::State,
-    },
-    transaction::objects::TransactionExecutionInfo,
+    blockifier::transaction_executor::TransactionExecutor,
+    state::{cached_state::StorageEntry, state_api::State},
 };
 use futures::future::OptionFuture;
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_exec::{execution::TxInfo, LayeredStateAdaptor, MadaraBackendExecutionExt};
-use mc_mempool::L1DataProvider;
-use mp_convert::{Felt, ToFelt};
+use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
-use std::{collections::HashMap, mem, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    mem,
+    sync::Arc,
+};
 use tokio::{
     sync::{broadcast, mpsc},
     time::Instant,
 };
 
-// TODO(blockifier_update): When updating blockifier, remove the following lines! (TransactionExecutionOutput and blockifier_v0_8_0_fix_results).
-//
-// The reason is, in the new blockifier update, TransactionExecutor::execute_txs does not return `Vec<TransactionExecutorResult<TransactionExecutionInfo>>`
-// anymore. Instead, it returns `Vec<TransactionExecutorResult<TransactionExecutionOutput>>`, where they define `TransactionExecutionOutput` as the type alias
-// `type TransactionExecutionOutput = (TransactionExecutionInfo, StateMaps)`. This new StateMaps field is the state diff produced for the corresponding TransactionExecutionInfo.
-// This version of the crate was made to use this new `TransactionExecutionOutput`; but since we decided to split the blockifier update and the block production refactor into separate
-// PRs, we need this glue for the time being.
-//
-// This is completely temporary.
-pub type TransactionExecutionOutput = (TransactionExecutionInfo, StateMaps);
-fn blockifier_v0_8_0_fix_results(
-    state: &mut ExecutorStateExecuting,
-    results: Vec<TransactionExecutorResult<TransactionExecutionInfo>>,
-) -> anyhow::Result<Vec<TransactionExecutorResult<TransactionExecutionOutput>>> {
-    // HACK: We can't get the state diff for individual transactions, nor can we get the state diff for the current batch.
-    // We need to cheat by getting the state diff for the whole block, and we put that state diff as the state diff of the first transaction of the batch.
-    // This works because the upstream task will be merging the same state diff multiple times, which always results in the same state diff.
-    let state = state.executor.block_state.as_mut().expect("Block state taken");
+use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
+use mc_mempool::L1DataProvider;
+use mp_convert::{Felt, ToFelt};
 
-    let mut added = false;
-    // It is not an error if added remains false, it just means there was no tx added to the block in this batch.
-    // No need to output state diff in that case.
-    results
-        .into_iter()
-        .map(|r| match r {
-            TransactionExecutorResult::Ok(res) => anyhow::Ok(TransactionExecutorResult::Ok((
-                res,
-                if !added {
-                    added = true;
-                    state.to_state_diff().context("Converting to state diff")?
-                } else {
-                    StateMaps::default()
-                },
-            ))),
-            TransactionExecutorResult::Err(r) => anyhow::Ok(TransactionExecutorResult::Err(r)),
-        })
-        .collect()
-}
+use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
     /// Note: We have a special StateAdaptor here. This is because saving the block to the database can actually lag a
     /// bit behind our execution. As such, any change that we make will need to be cached in our state adaptor so that
     /// we can be sure the state of the last block is always visible to the new one.
-    executor: TransactionExecutor<LayeredStateAdaptor>,
+    executor: TransactionExecutor<LayeredStateAdapter>,
     declared_classes: HashMap<ClassHash, ContractClass>,
+    consumed_l1_to_l2_nonces: HashSet<u64>,
 }
 
 struct ExecutorStateNewBlock {
     /// Keep the cached adaptor around to keep the cache around.
-    state_adaptor: LayeredStateAdaptor,
+    state_adaptor: LayeredStateAdapter,
+    consumed_l1_to_l2_nonces: HashSet<u64>,
 }
 
 /// Note: The reason this exists is because we want to create the new block execution context (meaning, the block header) as late as possible, as to have
@@ -89,6 +54,24 @@ enum ExecutorThreadState {
     Executing(ExecutorStateExecuting),
     /// Intermediate state, we do not have initialized the execution yet.
     NewBlock(ExecutorStateNewBlock),
+}
+
+impl ExecutorThreadState {
+    fn consumed_l1_to_l2_nonces(&mut self) -> &mut HashSet<u64> {
+        match self {
+            ExecutorThreadState::Executing(s) => &mut s.consumed_l1_to_l2_nonces,
+            ExecutorThreadState::NewBlock(s) => &mut s.consumed_l1_to_l2_nonces,
+        }
+    }
+    /// Returns a mutable reference to the state adapter.
+    fn layered_state_adapter_mut(&mut self) -> &mut LayeredStateAdapter {
+        match self {
+            ExecutorThreadState::Executing(s) => {
+                &mut s.executor.block_state.as_mut().expect("State already taken").state
+            }
+            ExecutorThreadState::NewBlock(s) => &mut s.state_adaptor,
+        }
+    }
 }
 
 /// Executor runs on a separate thread, as to avoid having tx popping, block closing etc. take precious time away that could
@@ -151,7 +134,7 @@ impl ExecutorThread {
             return WaitTxBatchOutcome::Batch(Default::default());
         }
 
-        tracing::debug!("Waiting for batch. block_time_deadline={}", deadline.is_some());
+        tracing::debug!("Waiting for batch. until_block_time_deadline={}", deadline.is_some());
 
         // nb: tokio has blocking_recv, but no blocking_recv_timeout? this kinda sucks :(
         // especially because they do have it implemented in send_timeout and internally, they just have not exposed the
@@ -222,11 +205,18 @@ impl ExecutorThread {
     fn end_block(&mut self, state: &mut ExecutorStateExecuting) -> anyhow::Result<ExecutorThreadState> {
         let mut cached_state = state.executor.block_state.take().expect("Executor block state already taken");
 
-        let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?;
-        let mut cached_adaptor = cached_state.state;
-        cached_adaptor.finish_block(state_diff, mem::take(&mut state.declared_classes))?;
+        let state_diff = cached_state.to_state_diff().context("Cannot make state diff")?.state_maps;
+        let mut cached_adapter = cached_state.state;
+        cached_adapter.finish_block(
+            state_diff,
+            mem::take(&mut state.declared_classes),
+            mem::take(&mut state.consumed_l1_to_l2_nonces),
+        )?;
 
-        Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock { state_adaptor: cached_adaptor }))
+        Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
+            state_adaptor: cached_adapter,
+            consumed_l1_to_l2_nonces: HashSet::new(),
+        }))
     }
 
     /// Returns the initial state diff storage too. It is used to create the StartNewBlock message and transition to ExecutorState::Executing.
@@ -236,7 +226,7 @@ impl ExecutorThread {
     ) -> anyhow::Result<(ExecutorStateExecuting, HashMap<StorageEntry, Felt>)> {
         let exec_ctx = create_execution_context(&self.l1_data_provider, &self.backend, state.state_adaptor.block_n());
 
-        // Create the TransactionExecution, but reuse the layered_state_adaptor.
+        // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
             self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
 
@@ -260,12 +250,21 @@ impl ExecutorThread {
                 key.to_felt()
             );
         }
-        Ok((ExecutorStateExecuting { exec_ctx, executor, declared_classes: HashMap::new() }, state_maps_storages))
+        Ok((
+            ExecutorStateExecuting {
+                exec_ctx,
+                executor,
+                consumed_l1_to_l2_nonces: state.consumed_l1_to_l2_nonces,
+                declared_classes: HashMap::new(),
+            },
+            state_maps_storages,
+        ))
     }
 
     fn initial_state(&self) -> anyhow::Result<ExecutorThreadState> {
         Ok(ExecutorThreadState::NewBlock(ExecutorStateNewBlock {
-            state_adaptor: LayeredStateAdaptor::new(Arc::clone(&self.backend))?,
+            state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
+            consumed_l1_to_l2_nonces: HashSet::new(),
         }))
     }
 
@@ -311,7 +310,24 @@ impl ExecutorThread {
                     WaitTxBatchOutcome::Exit => return Ok(()),
                 };
 
-                to_exec.extend(taken);
+                for (tx, additional_info) in taken {
+                    // Remove duplicate l1handlertxs. We want to be absolutely sure we're not duplicating them.
+                    if let Some(nonce) = tx.l1_handler_tx_nonce() {
+                        let nonce: u64 = nonce.to_felt().try_into().context("Converting nonce from felt to u64")?;
+
+                        if state
+                            .layered_state_adapter_mut()
+                            .is_l1_to_l2_message_nonce_consumed(nonce)
+                            .context("Checking is l1 to l2 message nonce is already consumed")?
+                            || !state.consumed_l1_to_l2_nonces().insert(nonce)
+                        // insert: Returns true if it was already consumed in the current state.
+                        {
+                            tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
+                            continue;
+                        }
+                    }
+                    to_exec.push(tx, additional_info)
+                }
             }
 
             // Create a new execution state (new block) if it does not already exist.
@@ -347,11 +363,10 @@ impl ExecutorThread {
 
             let exec_start_time = Instant::now();
 
+            // TODO: we should use the execution deadline option
             // Execute the transactions.
-            let blockifier_results = execution_state.executor.execute_txs(&to_exec.txs);
-
-            // TODO(blockifier_update): Remove the following line when updating blockifier.
-            let blockifier_results = blockifier_v0_8_0_fix_results(execution_state, blockifier_results)?;
+            let blockifier_results =
+                execution_state.executor.execute_txs(&to_exec.txs, /* execution_deadline */ None);
 
             let exec_duration = exec_start_time.elapsed();
 
@@ -398,7 +413,10 @@ impl ExecutorThread {
 
             tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);
-            tracing::debug!("Weights: {:?}", execution_state.executor.bouncer.get_accumulated_weights());
+            tracing::debug!(
+                "Weights: {:?}",
+                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_accumulated_weights()
+            );
             tracing::debug!("Block now full: {:?}", block_full);
 
             let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };

@@ -1,5 +1,6 @@
 use mp_chain_config::StarknetVersion;
 use serde::{Deserialize, Serialize};
+use sha3::{Digest, Keccak256};
 use starknet_core::utils::starknet_keccak;
 use starknet_types_core::{
     felt::Felt,
@@ -10,7 +11,7 @@ pub mod from_blockifier;
 
 mod to_starknet_types;
 
-pub use from_blockifier::{from_blockifier_execution_info, MsgToL2};
+pub use from_blockifier::from_blockifier_execution_info;
 pub use starknet_core::types::Hash256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -172,6 +173,13 @@ impl TransactionReceipt {
             self.total_gas_consumed().l1_data_gas.into(),
         ])
     }
+
+    pub fn as_l1_handler(&self) -> Option<&L1HandlerTransactionReceipt> {
+        match self {
+            TransactionReceipt::L1Handler(r) => Some(r),
+            _ => None,
+        }
+    }
 }
 
 fn compute_messages_sent_hash(messages: &[MsgToL1]) -> Felt {
@@ -280,6 +288,38 @@ pub struct MsgToL1 {
     pub from_address: Felt,
     pub to_address: Felt,
     pub payload: Vec<Felt>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct MsgToL2 {
+    pub from_address: Felt,
+    pub to_address: Felt,
+    pub selector: Felt,
+    pub payload: Vec<Felt>,
+    pub nonce: Option<Felt>,
+}
+
+// Specification reference: https://docs.starknet.io/architecture-and-concepts/network-architecture/messaging-mechanism/#hashing_l1-l2
+// Example implementation in starknet-rs: https://github.com/xJonathanLEI/starknet-rs/blob/master/starknet-core/src/types/msg.rs#L28
+//
+// Key Differences:
+// - In starknet-rs, padding is applied to the `from_address` and `nonce` fields. This is necessary because the `from_address` is an Ethereum address (20 bytes) and the `nonce` is a u64 (8 bytes).
+// - In this implementation, padding for `from_address` and `nonce` is not required. Both fields are converted to `felt252`, which naturally fits the required size.
+// - Padding is only applied to the payload length, which is a u64 (8 bytes), to ensure proper alignment.
+impl MsgToL2 {
+    pub fn compute_hash(&self) -> Hash256 {
+        let mut hasher = Keccak256::new();
+        hasher.update(self.from_address.to_bytes_be());
+        hasher.update(self.to_address.to_bytes_be());
+        hasher.update(self.nonce.unwrap_or_default().to_bytes_be());
+        hasher.update(self.selector.to_bytes_be());
+        hasher.update([0u8; 24]); // Padding
+        hasher.update((self.payload.len() as u64).to_be_bytes());
+        self.payload.iter().for_each(|felt| hasher.update(felt.to_bytes_be()));
+        let bytes = hasher.finalize().as_slice().try_into().expect("Byte array length mismatch");
+        Hash256::from_bytes(bytes)
+    }
 }
 
 /// Event with transaction hash.

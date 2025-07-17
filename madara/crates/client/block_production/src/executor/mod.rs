@@ -1,6 +1,9 @@
 use crate::util::{BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::{blockifier::transaction_executor::TransactionExecutorResult, state::cached_state::StorageEntry};
+use blockifier::{
+    blockifier::transaction_executor::{TransactionExecutionOutput, TransactionExecutorResult},
+    state::cached_state::StorageEntry,
+};
 use mc_db::MadaraBackend;
 use mc_mempool::L1DataProvider;
 use mp_convert::Felt;
@@ -10,8 +13,8 @@ use tokio::sync::{
     oneshot,
 };
 
+mod tests;
 mod thread;
-pub use thread::TransactionExecutionOutput;
 
 /// Handle to used to talk with the executor thread.
 pub struct ExecutorThreadHandle {

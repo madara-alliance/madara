@@ -2,14 +2,12 @@ use core::fmt;
 
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
-    transaction::{
-        errors::TransactionExecutionError,
-        objects::{FeeType, GasVector, TransactionExecutionInfo},
-        transaction_types::TransactionType,
-    },
+    transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
 use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
+use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
+use starknet_api::{block::FeeType, executable_transaction::TransactionType};
 use starknet_types_core::felt::Felt;
 
 mod block_context;
@@ -17,13 +15,14 @@ mod blockifier_state_adapter;
 mod call;
 pub mod execution;
 mod fee;
-mod layered_state_adaptor;
+mod layered_state_adapter;
+pub mod state_diff;
 mod trace;
 pub mod transaction;
 
 pub use block_context::{ExecutionContext, MadaraBackendExecutionExt};
 pub use blockifier_state_adapter::BlockifierStateAdapter;
-pub use layered_state_adaptor::LayeredStateAdaptor;
+pub use layered_state_adapter::LayeredStateAdapter;
 pub use trace::execution_result_to_tx_trace;
 
 #[derive(Debug)]

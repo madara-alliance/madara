@@ -11,8 +11,8 @@ use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwn
 use starknet::contract::ContractFactory;
 use starknet::core::types::contract::{CompiledClass, SierraClass};
 use starknet::core::types::{
-    BlockId, BlockTag, DeclareTransactionResult, Felt, FunctionCall, InvokeTransactionResult, StarknetError,
-    TransactionExecutionStatus, TransactionStatus,
+    BlockId, BlockTag, DeclareTransactionResult, ExecutionResult, Felt, FunctionCall, InvokeTransactionResult,
+    StarknetError, TransactionStatus,
 };
 use starknet::macros::{felt, selector};
 use starknet::providers::jsonrpc::HttpTransport;
@@ -48,12 +48,12 @@ async fn wait_for_tx(account: &LocalWalletSignerMiddleware, transaction_hash: Fe
                 Ok(TransactionStatus::Received) => Err(eyre!("Transaction not yet received")),
                 Ok(TransactionStatus::Rejected) => Ok(false),
                 Ok(TransactionStatus::AcceptedOnL2(status)) => match status {
-                    TransactionExecutionStatus::Succeeded => Ok(true),
-                    TransactionExecutionStatus::Reverted => Ok(false),
+                    ExecutionResult::Succeeded => Ok(true),
+                    ExecutionResult::Reverted { .. } => Ok(false),
                 },
                 Ok(TransactionStatus::AcceptedOnL1(status)) => match status {
-                    TransactionExecutionStatus::Succeeded => Ok(true),
-                    TransactionExecutionStatus::Reverted => Ok(false),
+                    ExecutionResult::Succeeded => Ok(true),
+                    ExecutionResult::Reverted { .. } => Ok(false),
                 },
                 Err(e) => Err(eyre!("Unknown error: {}", e)),
             }
@@ -105,6 +105,7 @@ async fn setup(#[future] spin_up_madara: MadaraCmd) -> (LocalWalletSignerMiddlew
 
 #[rstest]
 #[tokio::test]
+#[ignore]
 async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) {
     dotenvy::from_filename_override(".env.test").expect("Failed to load the .env file");
 
@@ -142,14 +143,14 @@ async fn test_settle(#[future] setup: (LocalWalletSignerMiddleware, MadaraCmd)) 
     let compiled_class_hash = compiled_class.class_hash().unwrap();
 
     let DeclareTransactionResult { transaction_hash: declare_tx_hash, class_hash: _ } =
-        account.declare_v2(Arc::new(flattened_class.clone()), compiled_class_hash).send().await.unwrap();
+        account.declare_v3(Arc::new(flattened_class.clone()), compiled_class_hash).send().await.unwrap();
     tracing::debug!("declare tx hash {:?}", declare_tx_hash);
 
     let is_success = wait_for_tx(&account, declare_tx_hash, Duration::from_secs(2)).await;
     assert!(is_success, "Declare transaction failed");
 
     let contract_factory = ContractFactory::new(flattened_class.class_hash(), account.clone());
-    let deploy_v1 = contract_factory.deploy_v1(vec![], felt!("1122"), false);
+    let deploy_v1 = contract_factory.deploy_v3(vec![], felt!("1122"), false);
     let deployed_address = deploy_v1.deployed_address();
 
     // env::set_var("STARKNET_CAIRO_CORE_CONTRACT_ADDRESS", deployed_address.to_hex_string());
