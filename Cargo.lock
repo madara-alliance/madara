@@ -12049,6 +12049,24 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3369f5ac52d5eb6ab48c6b4ffdc8efbcad6b89c765749064ba298f2c68a16a76"
 
 [[package]]
+name = "test_utils"
+version = "0.8.0"
+dependencies = [
+ "axum 0.7.7",
+ "chrono",
+ "rand",
+ "reqwest 0.12.8",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.3",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid 1.12.0",
+]
+
+[[package]]
 name = "testcontainers"
 version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

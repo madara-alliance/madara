@@ -32,6 +32,7 @@ pub struct AddJobQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct ProofQuery {
+    #[allow(dead_code)]
     task_id: String,
 }
 
@@ -261,7 +262,7 @@ pub async fn add_job_handler(
         }
     };
 
-    debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, job_id: {}", 
+    debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, job_id: {}",
            layout, network, declared_job_size, cairo_version, cairo_vm, result_type, job_id);
 
     let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
