@@ -1,5 +1,5 @@
 [package]
-name = "orchestrator-mock-atlantic-server"
+name = "utils-mock-atlantic-server"
 version.workspace = true
 edition.workspace = true
 
@@ -22,4 +22,4 @@ tempfile.workspace = true
 rand.workspace = true
 
 [dev-dependencies]
-tokio.workspace = true 
+tokio.workspace = true

@@ -1,4 +1,4 @@
-use orchestrator_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
+use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 use std::env;
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     // Parse command line arguments
-    let port = if args.len() > 1 { args[1].parse::<u16>().unwrap_or(3001) } else { 3001 };
+    let port = if args.len() > 1 { args[1].parse::<u16>().unwrap_or(4001) } else { 4001 };
 
     let failure_rate = if args.len() > 2 { args[2].parse::<f32>().unwrap_or(0.0).clamp(0.0, 1.0) } else { 0.0 };
 
@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     if simulate_failures {
         println!("📊 Failure rate: {:.1}%", failure_rate * 100.0);
     }
-    println!("🔗 Health check: http://127.0.0.1:{}/health", port);
+    println!("🔗 Health check: http://127.0.0.1:{}/is-alive", port);
     println!();
 
     let server = MockAtlanticServer::new(addr, config);
