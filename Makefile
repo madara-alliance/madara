@@ -99,6 +99,7 @@ DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
+BOOTSTRAPPER_DIR := ./bootstrapper-v2/contracts
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -184,12 +185,15 @@ frestart: fclean
 .PHONY: artifacts
 artifacts:
 	@if [ -d "$(ARTIFACTS)/argent"             ] || \
-			[ -d "$(ARTIFACTS)/bravoos"            ] || \
+			[ -d "$(ARTIFACTS)/braavos"            ] || \
 			[ -d "$(ARTIFACTS)/cairo_lang"         ] || \
 			[ -d "$(ARTIFACTS)/js_tests"           ] || \
 			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
 			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
-			[ -d "$(ARTIFACTS)/starkgate_legacy"   ]; \
+			[ -d "$(ARTIFACTS)/starkgate_legacy"   ] || \
+			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/out" ] || \
+			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/src/starkware"   ] || \
+			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/src/third_party" ]; \
 	then \
 		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
 		read ans && \
@@ -199,14 +203,20 @@ artifacts:
 	esac \
 	fi
 	@rm -rf "$(ARTIFACTS)/argent"
-	@rm -rf "$(ARTIFACTS)/bravoos"
+	@rm -rf "$(ARTIFACTS)/braavos"
 	@rm -rf "$(ARTIFACTS)/cairo_lang"
 	@rm -rf "$(ARTIFACTS)/js_tests"
 	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@docker build -f $(ARTIFACTS)/build.docker -t contracts .
-	@ID=$$(docker create contracts do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
+	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/out"
+	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/src/starkware"
+	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/src/third_party"
+	@docker build --platform=linux/amd64 -f $(ARTIFACTS)/build.docker -t contracts .
+	@ID=$$(docker create contracts do-nothing) && \
+		docker cp $${ID}:/artifacts/. $(ARTIFACTS) && \
+		docker cp $${ID}:/dependencies/. . && \
+		docker rm $${ID} > /dev/null
 
 .PHONY: check
 check:
@@ -216,6 +226,10 @@ check:
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
+	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
+	@taplo fmt --config=./taplo/taplo.toml --check
+	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
+	@markdownlint -c .markdownlint.json -q -p .markdownlintignore -f .
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
 	@cargo clippy --workspace --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"

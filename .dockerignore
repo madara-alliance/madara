@@ -6,3 +6,9 @@ scripts
 target/
 *Dockerfile
 .npm-global
+
+# Bootstrapper
+bootstrapper-v2/contracts/ethereum/cache/
+bootstrapper-v2/contracts/ethereum/.vscode/
+bootstrapper-v2/contracts/ethereum/.github/
+bootstrapper-v2/contracts/ethereum/out/
