@@ -106,16 +106,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         }
 
-        let mut blocks_to_process = find_successive_blocks_in_vector(blocks_to_process);
-
-        // TODO: Remove this once we have a proper way to handle L3 blocks with use of receipt
-        let max_blocks = match config.layer() {
-            Layer::L2 => 10,
-            Layer::L3 => 1,
-        };
-        if blocks_to_process.len() >= max_blocks {
-            blocks_to_process = blocks_to_process.into_iter().take(max_blocks).collect();
-        }
+        let blocks_to_process = find_successive_blocks_in_vector(blocks_to_process, Some(10));
 
         // Prepare state transition metadata
         let mut state_metadata = StateUpdateMetadata {
@@ -194,11 +185,13 @@ impl JobTrigger for UpdateStateJobTrigger {
 /// Gets the successive list of blocks from all the blocks processed in previous jobs
 /// Eg : input_vec : [1,2,3,4,7,8,9,11]
 /// We will take the first 4 block numbers and send it for processing
-pub fn find_successive_blocks_in_vector(block_numbers: Vec<u64>) -> Vec<u64> {
+pub fn find_successive_blocks_in_vector(block_numbers: Vec<u64>, limit: Option<usize>) -> Vec<u64> {
     block_numbers
         .iter()
         .enumerate()
-        .take_while(|(index, block_number)| **block_number == (block_numbers[0] + *index as u64))
+        .take_while(|(index, block_number)| {
+            **block_number == (block_numbers[0] + *index as u64) && (limit.is_none() || *index <= limit.unwrap())
+        })
         .map(|(_, block_number)| *block_number)
         .collect()
 }
@@ -214,7 +207,7 @@ mod test_update_state_worker_utils {
     #[case(vec![1, 2, 3, 4, 7, 8, 9, 11], vec![1, 2, 3, 4])]
     #[case(vec![1, 3, 5, 7, 9], vec![1])]
     fn test_find_successive_blocks(#[case] input: Vec<u64>, #[case] expected: Vec<u64>) {
-        let result = super::find_successive_blocks_in_vector(input);
+        let result = super::find_successive_blocks_in_vector(input, None);
         assert_eq!(result, expected);
     }
 }
