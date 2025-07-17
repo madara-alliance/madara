@@ -61,6 +61,7 @@ impl JobTrigger for AggregatorJobTrigger {
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
                     bucket_id,
+                    num_blocks: batch.num_blocks,
                     download_proof: Some(format!(
                         "{}/batch/{}/{}",
                         STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME

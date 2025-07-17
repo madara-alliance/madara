@@ -44,7 +44,7 @@ pub struct AtlanticCliArgs {
     pub atlantic_verifier_cairo_vm: Option<AtlanticCairoVm>,
 
     /// The type of job atlantic should process
-    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_RESULT", long, default_value = "PROOF_GENERATION")]
+    #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_RESULT", long, default_value = "proof-generation")]
     pub atlantic_verifier_result: Option<AtlanticQueryStep>,
 
     /// Network being used for the prover.

@@ -28,6 +28,8 @@ pub trait ProverClient: Send + Sync {
         task_type: TaskType,
         file_name: &str,
     ) -> Result<Vec<u8>, ProverClientError>;
+    async fn get_aggregator_task_id(&self, bucket_id: &str, aggregator_index: u64)
+        -> Result<String, ProverClientError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -74,4 +76,6 @@ pub enum ProverClientError {
     FailedToCreateTempFile(String),
     #[error("Failed to write file: {0}")]
     FailedToWriteFile(String),
+    #[error("Failed to get aggregator id for bucket ID: {0}")]
+    FailedToGetAggregatorId(String),
 }

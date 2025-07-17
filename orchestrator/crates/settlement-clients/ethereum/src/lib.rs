@@ -18,7 +18,7 @@ use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
 use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::{bail, Ok};
+use color_eyre::eyre::{bail, eyre, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
@@ -416,8 +416,8 @@ impl EthereumSettlementClient {
         let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
             .wrap_err("Failed to get x_0 point params")?;
 
-        let kzg_proofs =
-            Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values).wrap_err("Failed to build KZG proofs")?;
+        let kzg_proofs = Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values)
+            .map_err(|e| eyre!("Failed to build KZG proofs: {}", e))?;
 
         // Convert Vec<KzgProof> to Vec<[u8; 48]>
         let kzg_proofs_bytes: Vec<[u8; 48]> =

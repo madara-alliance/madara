@@ -106,8 +106,8 @@ impl ProverClient for AtlanticProverService {
         &self,
         task: AtlanticStatusType,
         job_key: &str,
-        fact: Option<String>,
-        cross_verify: bool,
+        _: Option<String>,
+        _: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             AtlanticStatusType::Job => {
@@ -120,54 +120,36 @@ impl ProverClient for AtlanticProverService {
                     }
                 }
             }
-            AtlanticStatusType::Bucket => {
-                match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
-                    AtlanticBucketStatus::Open => Ok(TaskStatus::Processing),
-                    AtlanticBucketStatus::InProgress => Ok(TaskStatus::Processing),
-                    AtlanticBucketStatus::Done => {
-                        if !cross_verify {
-                            tracing::debug!("Skipping cross-verification as it's disabled");
-                            return Ok(TaskStatus::Succeeded);
-                        }
-                        match &self.fact_checker {
-                            None => {
-                                tracing::debug!("There is no Fact check registered");
-                                Ok(TaskStatus::Succeeded)
-                            }
-                            Some(fact_checker) => {
-                                tracing::debug!("Fact check registered");
-                                // Cross-verification is enabled
-                                let fact_str = match fact {
-                                    Some(f) => f,
-                                    None => {
-                                        return Ok(TaskStatus::Failed(
-                                            "Cross verification enabled but no fact provided".to_string(),
-                                        ));
-                                    }
-                                };
-
-                                let fact = B256::from_str(&fact_str)
-                                    .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
-
-                                tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
-
-                                if fact_checker.is_valid(&fact).await? {
-                                    Ok(TaskStatus::Succeeded)
-                                } else {
-                                    Ok(TaskStatus::Failed(format!(
-                                        "Fact {} is not valid or not registered",
-                                        hex::encode(fact)
-                                    )))
-                                }
-                            }
-                        }
-                    }
-                    AtlanticBucketStatus::Failed => {
-                        Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
-                    }
+            AtlanticStatusType::Bucket => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
+                AtlanticBucketStatus::Open => Ok(TaskStatus::Processing),
+                AtlanticBucketStatus::InProgress => Ok(TaskStatus::Processing),
+                AtlanticBucketStatus::Done => Ok(TaskStatus::Succeeded),
+                AtlanticBucketStatus::Failed => {
+                    Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
                 }
-            }
+            },
         }
+    }
+
+    async fn get_aggregator_task_id(
+        &self,
+        bucket_id: &str,
+        aggregator_index: u64,
+    ) -> Result<String, ProverClientError> {
+        let bucket = self.atlantic_client.get_bucket(bucket_id).await?;
+
+        Ok(bucket
+            .queries
+            .iter()
+            .find(|query| {
+                return match query.bucket_job_index {
+                    Some(index) => index == aggregator_index,
+                    None => false,
+                };
+            })
+            .ok_or(ProverClientError::FailedToGetAggregatorId(bucket_id.to_string()))?
+            .id
+            .clone())
     }
 
     async fn get_task_artifacts(
@@ -183,7 +165,7 @@ impl ProverClient for AtlanticProverService {
                 .await?),
             TaskType::Bucket => Ok(self
                 .atlantic_client
-                .get_artifacts(format!("{}/buckets/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
+                .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
                 .await?),
         }
     }

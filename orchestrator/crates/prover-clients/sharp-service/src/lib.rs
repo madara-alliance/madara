@@ -167,6 +167,10 @@ impl ProverClient for SharpProverService {
     async fn get_task_artifacts(&self, _: &str, _: TaskType, _: &str) -> Result<Vec<u8>, ProverClientError> {
         todo!()
     }
+
+    async fn get_aggregator_task_id(&self, _: &str, _: u64) -> Result<String, ProverClientError> {
+        todo!()
+    }
 }
 
 impl SharpProverService {

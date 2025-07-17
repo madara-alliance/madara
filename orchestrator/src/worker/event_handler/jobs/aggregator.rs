@@ -72,10 +72,9 @@ impl JobHandlerTrait for AggregatorJobHandler {
             .prover_client()
             .submit_task(Task::CloseBucket(metadata.bucket_id))
             .await
-            .wrap_err("Prover Client Error".to_string())
             .map_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit close bucket task to prover client");
-                JobError::Other(OtherError(e)) // TODO: Add a new error type to be used for prover client error
+                JobError::Other(OtherError(eyre!("Prover Client Error: {}", e))) // TODO: Add a new error type to be used for prover client error
             })?;
 
         config
@@ -109,29 +108,17 @@ impl JobHandlerTrait for AggregatorJobHandler {
             "Getting bucket status from prover client"
         );
 
-        let task_status = config
-            .prover_client()
-            .get_task_status(AtlanticStatusType::Bucket, &bucket_id, None, false)
-            .await
-            .wrap_err("Prover Client Error".to_string())
-            .map_err(|e| {
-                tracing::error!(
-                    job_id = %job.internal_id,
-                    error = %e,
-                    "Failed to get bucket status from prover client"
-                );
-                JobError::Other(OtherError(e))
-            })?;
-
-        // Get task ID from external_id
-        let task_id: String = job
-            .external_id
-            .unwrap_string()
-            .map_err(|e| {
-                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to unwrap external_id");
-                JobError::Other(OtherError(e))
-            })?
-            .into();
+        let task_status =
+            config.prover_client().get_task_status(AtlanticStatusType::Bucket, &bucket_id, None, false).await.map_err(
+                |e| {
+                    tracing::error!(
+                        job_id = %job.internal_id,
+                        error = %e,
+                        "Failed to get bucket status from prover client"
+                    );
+                    JobError::Other(OtherError(eyre!("Prover Client Error: {}", e)))
+                },
+            )?;
 
         match task_status {
             TaskStatus::Processing => {
@@ -146,10 +133,25 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
+                // Get the aggregator query ID
+                let aggregator_query_id =
+                    config.prover_client().get_aggregator_task_id(&bucket_id, metadata.num_blocks + 1).await.map_err(
+                        |e| {
+                            tracing::error!(
+                                job_id = %job.internal_id,
+                                error = %e,
+                                "Failed to get aggregator query ID from prover client"
+                            );
+                            JobError::Other(OtherError(eyre!(e)))
+                        },
+                    )?;
+
+                // TODO: Update the aggregator job metadata with the above query ID
+
                 // Fetch aggregator cairo pie and store it in storage
                 let cairo_pie_bytes = AggregatorJobHandler::fetch_and_store_artifact(
                     &config,
-                    &task_id,
+                    &aggregator_query_id,
                     "pie.cairo0.zip",
                     &metadata.cairo_pie_path,
                 )
@@ -157,7 +159,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
                 // Fetch aggregator snos output and store it in storage
                 // TODO: Check if Atlantic provide this or if we need this
-                // AggregatorJobHandler::fetch_and_store_artifact(config, &task_id, "snos_output.json", &metadata.snos_output_path).await?;
+                // AggregatorJobHandler::fetch_and_store_artifact(config, &aggregator_id, "snos_output.json", &metadata.snos_output_path).await?;
 
                 // Calculate the program output from the cairo pie
                 let cairo_pie =
@@ -178,8 +180,13 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
                 // Download the proof if the path is specified
                 if let Some(download_path) = metadata.download_proof {
-                    AggregatorJobHandler::fetch_and_store_artifact(&config, &task_id, "proof.json", &download_path)
-                        .await?;
+                    AggregatorJobHandler::fetch_and_store_artifact(
+                        &config,
+                        &aggregator_query_id,
+                        "proof.json",
+                        &download_path,
+                    )
+                    .await?;
                 }
 
                 // Update the batch status to ReadyForStateUpdate
@@ -222,7 +229,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        2
+        1
     }
 
     fn max_verification_attempts(&self) -> u64 {

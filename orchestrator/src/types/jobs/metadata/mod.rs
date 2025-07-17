@@ -74,6 +74,9 @@ pub struct AggregatorMetadata {
     pub batch_num: u64,
     /// Bucker ID received from the prover client
     pub bucket_id: String,
+    /// Number of blocks in the aggregator job
+    pub num_blocks: u64,
+
     /// Aggregator fact to check for on-chain registration during verification.
     /// If `None`, no on-chain check is performed.
     /// If `Some(value)`, it checks for `value` on the chain.
@@ -93,6 +96,9 @@ pub struct AggregatorMetadata {
     pub snos_output_path: String,
     /// Path to the program output file
     pub program_output_path: String,
+    /// Aggregator query ID
+    /// This is the query ID of the job created by the prover client itself
+    pub aggregator_query_id: Option<String>,
 }
 
 /// Metadata specific to proving jobs.
