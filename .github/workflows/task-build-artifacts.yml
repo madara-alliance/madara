@@ -61,7 +61,7 @@ jobs:
             --exclude build-artifacts/src \
             -czvf artifacts.tar.gz \
             build-artifacts/ \
-            bootstrapper-v2/contracts/ethereum/out/ \
+            bootstrapper-v2/contracts/ethereum/out/ \                     # TODO: to change to bootstrapper/ post v2 release of bootstrapper
             bootstrapper-v2/contracts/ethereum/src/starkware/ \
             bootstrapper-v2/contracts/ethereum/src/third_party/
 
