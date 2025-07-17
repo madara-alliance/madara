@@ -1,0 +1,787 @@
+{
+    "openapi": "3.0.3",
+    "info": {
+        "title": "Atlantic API",
+        "version": "0.1.0"
+    },
+    "components": {
+        "securitySchemes": {
+            "ApiKeyAuth": {
+                "type": "apiKey",
+                "in": "query",
+                "name": "apiKey"
+            }
+        },
+        "schemas": {}
+    },
+    "paths": {
+        "/is-alive": {
+            "get": {
+                "summary": "Be alive or not be alive",
+                "tags": ["Health check"],
+                "description": "Is alive",
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "alive": {
+                                            "type": "boolean"
+                                        }
+                                    },
+                                    "required": ["alive"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {}
+                                    },
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {}
+                                    },
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/atlantic-query/{atlanticQueryId}": {
+            "get": {
+                "summary": "Get Atlantic Query",
+                "tags": ["Atlantic Query"],
+                "description": "Get the details of a Atlantic Query",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "path",
+                        "name": "atlanticQueryId",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "atlanticQuery": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "externalId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "transactionId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "RECEIVED",
+                                                        "DONE",
+                                                        "FAILED",
+                                                        "IN_PROGRESS"
+                                                    ]
+                                                },
+                                                "step": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "programHash": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "integrityFactHash": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "sharpFactHash": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "layout": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "isFactMocked": {
+                                                    "type": "boolean",
+                                                    "nullable": true
+                                                },
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "L1",
+                                                        "L2",
+                                                        "APE_CHAIN",
+                                                        "OFFCHAIN"
+                                                    ],
+                                                    "nullable": true
+                                                },
+                                                "jobSize": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "XS",
+                                                        "S",
+                                                        "M",
+                                                        "L"
+                                                    ],
+                                                    "nullable": true
+                                                },
+                                                "declaredJobSize": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "XS",
+                                                        "S",
+                                                        "M",
+                                                        "L"
+                                                    ],
+                                                    "nullable": true
+                                                },
+                                                "cairoVm": {
+                                                    "type": "string",
+                                                    "enum": ["rust", "python"]
+                                                },
+                                                "cairoVersion": {
+                                                    "type": "string",
+                                                    "enum": ["cairo0", "cairo1"]
+                                                },
+                                                "steps": {
+                                                    "type": "array",
+                                                    "items": {
+                                                        "type": "string"
+                                                    }
+                                                },
+                                                "result": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "TRACE_GENERATION",
+                                                        "PROOF_GENERATION",
+                                                        "PROOF_VERIFICATION_ON_L1",
+                                                        "PROOF_VERIFICATION_ON_L2",
+                                                        "PROOF_VERIFICATION_ON_APE_CHAIN"
+                                                    ],
+                                                    "nullable": true
+                                                },
+                                                "network": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "MAINNET",
+                                                        "TESTNET"
+                                                    ],
+                                                    "nullable": true
+                                                },
+                                                "hints": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "herodotus_evm_grower",
+                                                        "herodotus_sn_grower"
+                                                    ],
+                                                    "nullable": true
+                                                },
+                                                "errorReason": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "submittedByClient": {
+                                                    "type": "string"
+                                                },
+                                                "projectId": {
+                                                    "type": "string"
+                                                },
+                                                "bucketId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "bucketJobIndex": {
+                                                    "type": "integer",
+                                                    "minimum": -2147483648,
+                                                    "maximum": 2147483647,
+                                                    "nullable": true
+                                                },
+                                                "customerName": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "createdAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                },
+                                                "completedAt": {
+                                                    "type": "string",
+                                                    "format": "date-time",
+                                                    "nullable": true
+                                                },
+                                                "client": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "clientId": {
+                                                            "type": "string"
+                                                        },
+                                                        "name": {
+                                                            "type": "string"
+                                                        },
+                                                        "email": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        },
+                                                        "isEmailVerified": {
+                                                            "type": "boolean"
+                                                        },
+                                                        "image": {
+                                                            "type": "string",
+                                                            "nullable": true
+                                                        }
+                                                    },
+                                                    "required": [
+                                                        "clientId",
+                                                        "name",
+                                                        "isEmailVerified"
+                                                    ],
+                                                    "additionalProperties": false
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "externalId",
+                                                "transactionId",
+                                                "status",
+                                                "step",
+                                                "programHash",
+                                                "integrityFactHash",
+                                                "sharpFactHash",
+                                                "layout",
+                                                "isFactMocked",
+                                                "chain",
+                                                "jobSize",
+                                                "declaredJobSize",
+                                                "cairoVm",
+                                                "cairoVersion",
+                                                "steps",
+                                                "result",
+                                                "network",
+                                                "hints",
+                                                "errorReason",
+                                                "submittedByClient",
+                                                "projectId",
+                                                "bucketId",
+                                                "bucketJobIndex",
+                                                "customerName",
+                                                "createdAt",
+                                                "completedAt",
+                                                "client"
+                                            ],
+                                            "additionalProperties": false
+                                        },
+                                        "metadataUrls": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        }
+                                    },
+                                    "required": [
+                                        "atlanticQuery",
+                                        "metadataUrls"
+                                    ],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "enum": ["ATLANTIC_QUERY_NOT_FOUND"]
+                                        }
+                                    },
+                                    "required": ["message"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "error": {
+                                            "type": "string",
+                                            "enum": [
+                                                "INTERNAL_SERVER_ERROR",
+                                                "ZOD_PARSING_ERROR"
+                                            ]
+                                        }
+                                    },
+                                    "required": ["error"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/atlantic-queries": {
+            "get": {
+                "summary": "Get the list of Atlantic queries you have submitted.",
+                "tags": ["Atlantic Query"],
+                "description": "Provide your API key to get list of Atlantic queries you have submitted.",
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "number"
+                        },
+                        "in": "query",
+                        "name": "limit",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "number"
+                        },
+                        "in": "query",
+                        "name": "offset",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "query",
+                        "name": "search",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "query",
+                        "name": "clientId",
+                        "required": false
+                    },
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "query",
+                        "name": "network",
+                        "required": false
+                    }
+                ],
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "atlanticQueries": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/AtlanticQuery"
+                                            }
+                                        },
+                                        "total": {
+                                            "type": "number"
+                                        }
+                                    },
+                                    "required": ["atlanticQueries", "total"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/atlantic-query": {
+            "post": {
+                "summary": "Submit a Atlantic query",
+                "tags": ["Atlantic Query"],
+                "description": "Submit a Atlantic query. You can choose to just generate a proof or generate and verify a proof. You can also choose to use a program file + input file (we will compute trace generation for you) or a pie file.",
+                "requestBody": {
+                    "content": {
+                        "multipart/form-data": {
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "externalId": {
+                                        "type": "string",
+                                        "description": "The external id of the query, you can use it to track the query",
+                                        "default": ""
+                                    },
+                                    "layout": {
+                                        "type": "string",
+                                        "enum": [
+                                            "auto",
+                                            "plain",
+                                            "recursive",
+                                            "recursive_with_poseidon",
+                                            "recursive_large_output",
+                                            "all_solidity",
+                                            "all_cairo",
+                                            "dynamic",
+                                            "small",
+                                            "dex",
+                                            "starknet",
+                                            "starknet_with_keccak"
+                                        ],
+                                        "default": "auto"
+                                    },
+                                    "cairoVm": {
+                                        "type": "string",
+                                        "enum": ["rust", "python"],
+                                        "default": "rust"
+                                    },
+                                    "cairoVersion": {
+                                        "type": "string",
+                                        "enum": ["cairo0", "cairo1"],
+                                        "default": "cairo0"
+                                    },
+                                    "result": {
+                                        "type": "string",
+                                        "enum": [
+                                            "TRACE_GENERATION",
+                                            "PROOF_GENERATION",
+                                            "PROOF_VERIFICATION_ON_L1",
+                                            "PROOF_VERIFICATION_ON_L2",
+                                            "PROOF_VERIFICATION_ON_APE_CHAIN"
+                                        ],
+                                        "description": "Describe what you want to achieve",
+                                        "default": "PROOF_GENERATION"
+                                    },
+                                    "mockFactHash": {
+                                        "type": "string",
+                                        "enum": ["false", "true"],
+                                        "description": "Used for proof verification, if true, a fact hash will be mocked",
+                                        "default": "false"
+                                    },
+                                    "network": {
+                                        "type": "string",
+                                        "enum": ["MAINNET", "TESTNET"],
+                                        "default": "TESTNET"
+                                    },
+                                    "hints": {
+                                        "anyOf": [
+                                            {
+                                                "type": "string",
+                                                "enum": [
+                                                    "herodotus_evm_grower",
+                                                    "herodotus_sn_grower"
+                                                ]
+                                            },
+                                            {
+                                                "type": "string",
+                                                "enum": [""]
+                                            }
+                                        ]
+                                    },
+                                    "declaredJobSize": {
+                                        "type": "string",
+                                        "enum": ["XS", "S", "M", "L"],
+                                        "description": "Smaller jobs are cheaper, however your job might fail if you choose a job size that is too small."
+                                    },
+                                    "programHash": {
+                                        "type": "string",
+                                        "description": "To use the program you are interested in, you must first register it. Registration occurs when you upload the program file for the first time.",
+                                        "default": ""
+                                    },
+                                    "programFile": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    },
+                                    "inputFile": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    },
+                                    "pieFile": {
+                                        "type": "string",
+                                        "format": "binary"
+                                    },
+                                    "bucketId": {
+                                        "type": "string",
+                                        "nullable": true,
+                                        "description": "(Applicative Recursion) The id of the bucket you want to submit the query to",
+                                        "default": ""
+                                    },
+                                    "bucketJobIndex": {
+                                        "type": "number",
+                                        "nullable": true,
+                                        "description": "(Applicative Recursion) The index of the job inside the bucket",
+                                        "default": null
+                                    }
+                                },
+                                "required": ["declaredJobSize"],
+                                "additionalProperties": false
+                            }
+                        }
+                    },
+                    "required": true
+                },
+                "security": [
+                    {
+                        "ApiKeyAuth": []
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "atlanticQueryId": {
+                                            "type": "string"
+                                        }
+                                    },
+                                    "required": ["atlanticQueryId"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "400": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "enum": [
+                                                "EMAIL_NOT_VERIFIED",
+                                                "PROGRAM_FILE_SHOULD_BE_JSON",
+                                                "INPUT_FILE_FOR_CAIRO0_SHOULD_BE_JSON",
+                                                "INPUT_FILE_FOR_CAIRO1_SHOULD_BE_TXT",
+                                                "INPUT_FILE_SHOULD_BE_JSON_OR_TXT",
+                                                "PIE_FILE_SHOULD_BE_ZIP",
+                                                "INVALID_FILE_MIME_TYPE",
+                                                "ZOD_INVALID_BODY_STRING",
+                                                "CHAIN_IS_REQUIRED_FOR_PROOF_VERIFICATION",
+                                                "PROGRAM_FILE_OR_PIE_FILE_OR_PROGRAM_HASH_IS_REQUIRED",
+                                                "PROGRAM_NOT_FOUND",
+                                                "CAIRO1_IS_NOT_SUPPORTED_FOR_PYTHON",
+                                                "INPUT_FILE_IS_NOT_SUPPORTED_FOR_CAIRO0_AND_RUST_VM",
+                                                "INVALID_LAYOUT_FOR_PROOF_VERIFICATION_ON_INTEGRITY_L2"
+                                            ]
+                                        }
+                                    },
+                                    "required": ["message"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "401": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "enum": ["INVALID_API_KEY"]
+                                        }
+                                    },
+                                    "required": ["message"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    },
+                    "500": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": {
+                                            "type": "string",
+                                            "enum": [
+                                                "INTERNAL_SERVER_ERROR",
+                                                "ZOD_PARSING_ERROR"
+                                            ]
+                                        }
+                                    },
+                                    "required": ["message"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/buckets/{bucketId}": {
+            "get": {
+                "summary": "Get the details of a bucket.",
+                "tags": ["Applicative Recursion"],
+                "parameters": [
+                    {
+                        "schema": {
+                            "type": "string"
+                        },
+                        "in": "path",
+                        "name": "bucketId",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Default Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "bucket": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {
+                                                    "type": "string"
+                                                },
+                                                "externalId": {
+                                                    "type": "string",
+                                                    "nullable": true
+                                                },
+                                                "status": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "OPEN",
+                                                        "IN_PROGRESS",
+                                                        "DONE",
+                                                        "FAILED"
+                                                    ]
+                                                },
+                                                "bucketType": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "SNOS",
+                                                        "HERODOTUS_AR"
+                                                    ]
+                                                },
+                                                "nodeWidth": {
+                                                    "type": "integer",
+                                                    "minimum": -2147483648,
+                                                    "maximum": 2147483647,
+                                                    "nullable": true
+                                                },
+                                                "leaves": {
+                                                    "type": "integer",
+                                                    "minimum": -2147483648,
+                                                    "maximum": 2147483647,
+                                                    "nullable": true
+                                                },
+                                                "chain": {
+                                                    "type": "string",
+                                                    "enum": [
+                                                        "L1",
+                                                        "L2",
+                                                        "APE_CHAIN",
+                                                        "OFFCHAIN"
+                                                    ]
+                                                },
+                                                "projectId": {
+                                                    "type": "string"
+                                                },
+                                                "createdByClient": {
+                                                    "type": "string"
+                                                },
+                                                "createdAt": {
+                                                    "type": "string",
+                                                    "format": "date-time"
+                                                }
+                                            },
+                                            "required": [
+                                                "id",
+                                                "externalId",
+                                                "status",
+                                                "bucketType",
+                                                "nodeWidth",
+                                                "leaves",
+                                                "chain",
+                                                "projectId",
+                                                "createdByClient",
+                                                "createdAt"
+                                            ],
+                                            "additionalProperties": false
+                                        },
+                                        "queries": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/components/schemas/AtlanticQuery"
+                                            }
+                                        }
+                                    },
+                                    "required": ["bucket", "queries"],
+                                    "additionalProperties": false
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "servers": [
+        {
+            "url": "https://staging.atlantic.api.herodotus.cloud",
+            "description": "Prod"
+        },
+        {
+            "url": "https://stg.atlantic.api.herodotus.cloud",
+            "description": "Staging"
+        }
+    ]
+}

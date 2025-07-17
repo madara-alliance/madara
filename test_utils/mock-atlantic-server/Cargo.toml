@@ -1,0 +1,25 @@
+[package]
+name = "orchestrator-mock-atlantic-server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mock-atlantic-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = { workspace = true, features = ["multipart"] }
+tokio = { workspace = true, features = ["full"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid.workspace = true
+thiserror.workspace = true
+chrono = { workspace = true, features = ["serde"] }
+reqwest = { workspace = true, features = ["json", "multipart"] }
+tempfile.workspace = true
+rand.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true 
