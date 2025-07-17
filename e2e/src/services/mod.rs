@@ -7,3 +7,4 @@ pub mod localstack;
 pub mod mongodb;
 pub mod madara;
 pub mod pathfinder;
+pub mod orchestrator;
