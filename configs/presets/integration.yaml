@@ -22,3 +22,6 @@ eth_gps_statement_verifier: "0x2046B966994Adcb88D83f467a41b75d64C2a619F"
 mempool_tx_limit: 10000
 mempool_declare_tx_limit: 20
 mempool_tx_max_age: null
+l2_gas_target: 2000000000
+min_l2_gas_price: 100000
+l2_gas_price_max_change_denominator: 48

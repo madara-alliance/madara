@@ -61,3 +61,6 @@ mempool_declare_tx_limit: 20
 # Max age of a transaction in the mempool. Null for no age limit.
 # mempool_tx_max_age: "5h"
 mempool_tx_max_age: null
+l2_gas_target: 2000000000
+min_l2_gas_price: 100000
+l2_gas_price_max_change_denominator: 48

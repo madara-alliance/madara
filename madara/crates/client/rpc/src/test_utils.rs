@@ -218,11 +218,13 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             state_diff_commitment: Some(Felt::from_hex_unchecked("0xb1")),
                             receipt_commitment: Some(Felt::from_hex_unchecked("0xb4")),
                             protocol_version: StarknetVersion::V0_13_1_1,
-                            l1_gas_price: GasPrices {
+                            gas_prices: GasPrices {
                                 eth_l1_gas_price: 123,
                                 strk_l1_gas_price: 12,
                                 eth_l1_data_gas_price: 44,
                                 strk_l1_data_gas_price: 52,
+                                eth_l2_gas_price: 0,
+                                strk_l2_gas_price: 0,
                             },
                             l1_da_mode: L1DataAvailabilityMode::Blob,
                         },

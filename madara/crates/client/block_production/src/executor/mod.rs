@@ -5,7 +5,6 @@ use blockifier::{
     state::cached_state::StorageEntry,
 };
 use mc_db::MadaraBackend;
-use mc_mempool::L1DataProvider;
 use mp_convert::Felt;
 use std::{any::Any, collections::HashMap, panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{
@@ -73,7 +72,6 @@ impl StopErrorReceiver {
 /// Create the executor thread and returns a handle to it.
 pub fn start_executor_thread(
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     commands: UnboundedReceiver<ExecutorCommand>,
 ) -> anyhow::Result<ExecutorThreadHandle> {
     // buffer is 1.
@@ -81,7 +79,7 @@ pub fn start_executor_thread(
     let (replies_sender, replies_recv) = mpsc::channel(100);
     let (stop_sender, stop_recv) = oneshot::channel();
 
-    let executor = thread::ExecutorThread::new(backend, l1_data_provider, incoming_batches, replies_sender, commands)?;
+    let executor = thread::ExecutorThread::new(backend, incoming_batches, replies_sender, commands)?;
     std::thread::Builder::new()
         .name("executor".into())
         .spawn(move || stop_sender.send(std::panic::catch_unwind(AssertUnwindSafe(move || executor.run()))))

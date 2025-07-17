@@ -357,7 +357,7 @@ mod tests {
             .expect("Getting state update and block at block number 0");
         let (state_update_0, block_0) = let_binding.as_update_and_block();
         let state_update_0 =
-            state_update_0.non_pending_ownded().expect("State update at block number 0 should not be pending");
+            state_update_0.non_pending_owned().expect("State update at block number 0 should not be pending");
         let block_0 = block_0.non_pending_owned().expect("Block at block number 0 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_0_reference, block: block_0_reference } =
             load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_0.gz");
@@ -371,7 +371,7 @@ mod tests {
             .expect("Getting state update and block at block number 1");
         let (state_update_1, block_1) = let_binding.as_update_and_block();
         let state_update_1 =
-            state_update_1.non_pending_ownded().expect("State update at block number 1 should not be pending");
+            state_update_1.non_pending_owned().expect("State update at block number 1 should not be pending");
         let block_1 = block_1.non_pending_owned().expect("Block at block number 1 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_1_reference, block: block_1_reference } =
             load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_1.gz");
@@ -385,7 +385,7 @@ mod tests {
             .expect("Getting state update and block at block number 2");
         let (state_update_2, block_2) = let_binding.as_update_and_block();
         let state_update_2 =
-            state_update_2.non_pending_ownded().expect("State update at block number 0 should not be pending");
+            state_update_2.non_pending_owned().expect("State update at block number 0 should not be pending");
         let block_2 = block_2.non_pending_owned().expect("Block at block number 0 should not be pending");
         let ProviderStateUpdateWithBlock { state_update: state_update_2_reference, block: block_2_reference } =
             load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_2.gz");

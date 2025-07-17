@@ -1,7 +1,12 @@
 use crate::{Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction};
+use alloy::primitives::U256;
+use bigdecimal::ToPrimitive;
+use mp_block::header::GasPrices;
+use mp_block::L1GasQuote;
 use mp_convert::Felt;
 use mp_receipt::L1HandlerTransactionReceipt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
+use num_traits::Zero;
 
 pub const LAST_SYNCED_L1_EVENT_BLOCK: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK";
 
@@ -113,5 +118,92 @@ impl MadaraBackend {
                 .try_into()
                 .map_err(|_| MadaraStorageError::InconsistentStorage("Malformated saved l1_block_n".into()))?,
         )))
+    }
+
+    pub fn set_last_l1_gas_quote(&self, l1_gas_quote: L1GasQuote) {
+        self.watch_gas_quote.send_replace(Some(l1_gas_quote));
+    }
+
+    pub fn get_last_l1_gas_quote(&self) -> Option<L1GasQuote> {
+        self.watch_gas_quote.borrow().clone()
+    }
+
+    #[cfg(feature = "testing")]
+    pub fn set_l1_gas_quote_for_testing(&self) {
+        use mp_convert::FixedPoint;
+
+        let l1_gas_quote = L1GasQuote { l1_gas_price: 128, l1_data_gas_price: 128, strk_per_eth: FixedPoint::one() };
+        self.set_last_l1_gas_quote(l1_gas_quote);
+    }
+
+    pub fn calculate_gas_prices(
+        &self,
+        previous_strk_l2_gas_price: u128,
+        previous_l2_gas_used: u64,
+    ) -> anyhow::Result<GasPrices> {
+        let l1_gas_quote = self.get_last_l1_gas_quote().ok_or_else(|| {
+            anyhow::anyhow!(
+                "No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices."
+            )
+        })?;
+        let eth_l1_gas_price = l1_gas_quote.l1_gas_price;
+        let eth_l1_data_gas_price = l1_gas_quote.l1_data_gas_price;
+        let strk_per_eth = {
+            let strk_per_eth = l1_gas_quote.strk_per_eth;
+            bigdecimal::BigDecimal::new(strk_per_eth.value().into(), strk_per_eth.decimals().into())
+        };
+        let strk_l1_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_gas_price) * &strk_per_eth)
+            .to_u128()
+            .ok_or(anyhow::anyhow!("Failed to convert STRK L1 gas price to u128"))?;
+        let strk_l1_data_gas_price = (&bigdecimal::BigDecimal::from(eth_l1_data_gas_price) * &strk_per_eth)
+            .to_u128()
+            .ok_or(anyhow::anyhow!("Failed to convert STRK L1 data gas price to u128"))?;
+
+        let l2_gas_target = self.chain_config().l2_gas_target;
+        let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
+        let strk_l2_gas_price = calculate_gas_price(
+            previous_strk_l2_gas_price,
+            previous_l2_gas_used,
+            l2_gas_target,
+            max_change_denominator,
+        )
+        .max(self.chain_config().min_l2_gas_price);
+        if strk_per_eth.is_zero() {
+            return Err(anyhow::anyhow!("STRK per ETH is zero, cannot calculate gas prices"));
+        }
+        let eth_l2_gas_price = (&bigdecimal::BigDecimal::from(strk_l2_gas_price) / &strk_per_eth)
+            .to_u128()
+            .ok_or(anyhow::anyhow!("Failed to convert ETH L2 gas price to u128"))?;
+
+        Ok(GasPrices {
+            eth_l1_gas_price,
+            strk_l1_gas_price,
+            eth_l1_data_gas_price,
+            strk_l1_data_gas_price,
+            eth_l2_gas_price,
+            strk_l2_gas_price,
+        })
+    }
+}
+
+fn calculate_gas_price(
+    previous_gas_price: u128,
+    previous_gas_used: u64,
+    target_gas_used: u64,
+    max_change_denominator: u64,
+) -> u128 {
+    assert!(max_change_denominator > 0, "max_change_denominator must be greater than 0");
+    assert!(target_gas_used > 0, "target_gas_used must be greater than 0");
+    let delta = previous_gas_used.abs_diff(target_gas_used);
+    let price_change = ((U256::from(previous_gas_price)).saturating_mul(U256::from(delta)))
+        .checked_div(U256::from((target_gas_used as u128).saturating_mul(max_change_denominator as u128)))
+        .expect("Failed to calculate price change")
+        .try_into()
+        .expect("Failed to convert price change to u128");
+
+    if previous_gas_used > target_gas_used {
+        previous_gas_price.saturating_add(price_change)
+    } else {
+        previous_gas_price.saturating_sub(price_change)
     }
 }

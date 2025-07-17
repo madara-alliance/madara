@@ -1,20 +1,20 @@
 use crate::cli::l1::{L1SyncParams, MadaraSettlementLayer};
-use anyhow::Context;
+use anyhow::{bail, Context};
 use mc_db::MadaraBackend;
-use mc_mempool::GasPriceProvider;
+use mc_settlement_client::gas_price::GasPriceProviderConfigBuilder;
 use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
 use mc_settlement_client::{gas_price::L1BlockMetrics, SettlementClient};
 use mc_settlement_client::{L1ClientImpl, L1SyncDisabledClient};
+use mp_block::L1GasQuote;
+use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::sync::Arc;
 
 // Configuration struct to group related parameters
 pub struct L1SyncConfig {
-    pub l1_gas_provider: GasPriceProvider,
     pub l1_core_address: String,
     pub authority: bool,
-    pub devnet: bool,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_snd: L1HeadSender,
 }
@@ -30,6 +30,51 @@ impl L1SyncService {
         backend: Arc<MadaraBackend>,
         sync_config: L1SyncConfig,
     ) -> anyhow::Result<Self> {
+        let gas_price_needed = sync_config.authority;
+        let gas_provider_config = if gas_price_needed {
+            let mut gas_price_provider_builder = GasPriceProviderConfigBuilder::default();
+            if let Some(fix_gas) = config.l1_gas_price {
+                gas_price_provider_builder.set_fix_gas_price(fix_gas.into());
+            }
+            if let Some(fix_blob_gas) = config.blob_gas_price {
+                gas_price_provider_builder.set_fix_data_gas_price(fix_blob_gas.into());
+            }
+            if let Some(strk_per_eth_fix) = config.strk_per_eth {
+                gas_price_provider_builder.set_fix_strk_per_eth(strk_per_eth_fix);
+            }
+            if let Some(ref oracle_url) = config.oracle_url {
+                if let Some(ref oracle_api_key) = config.oracle_api_key {
+                    let oracle = PragmaOracleBuilder::new()
+                        .with_api_url(oracle_url.clone())
+                        .with_api_key(oracle_api_key.clone())
+                        .build();
+                    gas_price_provider_builder.set_oracle_provider(Arc::new(oracle));
+                } else {
+                    bail!("Only Pragma oracle is supported, please provide the oracle API key");
+                }
+            }
+            Some(
+                gas_price_provider_builder
+                    .with_poll_interval(config.gas_price_poll)
+                    .build()
+                    .context("Building gas price provider config")?,
+            )
+        } else {
+            None
+        };
+
+        if let Some(config) = gas_provider_config.as_ref() {
+            if config.all_is_fixed() {
+                // safe to unwrap because we checked that all values are set
+                let l1_gas_quote = L1GasQuote {
+                    l1_gas_price: config.fix_gas_price.unwrap(),
+                    l1_data_gas_price: config.fix_data_gas_price.unwrap(),
+                    strk_per_eth: config.fix_strk_per_eth.unwrap(),
+                };
+                backend.set_last_l1_gas_quote(l1_gas_quote);
+            }
+        }
+
         if config.l1_sync_disabled {
             return Ok(Self { sync_worker_config: None, client: None });
         }
@@ -38,39 +83,33 @@ impl L1SyncService {
             std::process::exit(1);
         };
         let client = match config.settlement_layer {
-            MadaraSettlementLayer::Eth => L1ClientImpl::new_ethereum(backend, endpoint, sync_config.l1_core_address)
-                .await
-                .context("Starting ethereum core contract client")?,
+            MadaraSettlementLayer::Eth => {
+                L1ClientImpl::new_ethereum(backend.clone(), endpoint, sync_config.l1_core_address)
+                    .await
+                    .context("Starting ethereum core contract client")?
+            }
             MadaraSettlementLayer::Starknet => {
-                L1ClientImpl::new_starknet(backend, endpoint, sync_config.l1_core_address)
+                L1ClientImpl::new_starknet(backend.clone(), endpoint, sync_config.l1_core_address)
                     .await
                     .context("Starting starknet core contract client")?
             }
         };
 
-        let gas_price_sync_enabled = sync_config.authority
-            && !sync_config.devnet
-            && (config.gas_price.is_none() || config.blob_gas_price.is_none());
-        let gas_price_poll = config.gas_price_poll;
-
-        if gas_price_sync_enabled {
-            tracing::info!("⏳ Getting initial L1 gas prices");
-            client
-                .gas_price_worker_once(
-                    &sync_config.l1_gas_provider,
-                    gas_price_poll,
-                    sync_config.l1_block_metrics.clone(),
-                )
-                .await
-                .context("Getting initial gas prices")?;
+        if let Some(config) = gas_provider_config.as_ref() {
+            if !config.all_is_fixed() {
+                tracing::info!("⏳ Getting initial L1 gas prices");
+                // Gas prices are needed before starting the block producer
+                let l1_gas_quote = mc_settlement_client::gas_price::update_gas_price(client.provider(), config)
+                    .await
+                    .context("Getting initial gas prices")?;
+                backend.set_last_l1_gas_quote(l1_gas_quote);
+            }
         }
 
         Ok(Self {
             client: Some(client.into()),
             sync_worker_config: Some(SyncWorkerConfig {
-                l1_gas_provider: sync_config.l1_gas_provider,
-                gas_price_sync_disabled: !gas_price_sync_enabled,
-                gas_price_poll,
+                gas_provider_config,
                 l1_head_sender: sync_config.l1_head_snd,
                 l1_block_metrics: sync_config.l1_block_metrics,
             }),
