@@ -6846,6 +6846,7 @@ dependencies = [
  "assert_matches",
  "bitvec",
  "blockifier",
+ "dashmap",
  "futures",
  "jsonrpsee",
  "m-proc-macros",
