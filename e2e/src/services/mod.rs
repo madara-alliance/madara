@@ -8,3 +8,5 @@ pub mod mongodb;
 pub mod madara;
 pub mod pathfinder;
 pub mod orchestrator;
+pub mod mock_verifier;
+pub mod mock_prover;
