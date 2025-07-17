@@ -1,7 +1,7 @@
 use crate::compression::stateless::bitops::{BitLength, BitsArray};
 use crate::compression::stateless::constants::N_UNIQUE_BUCKETS;
 use crate::compression::stateless::utils::felt_from_bits_le;
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Report};
 use color_eyre::Result;
 use indexmap::IndexMap;
 use starknet_core::types::Felt;
@@ -70,23 +70,24 @@ pub(crate) enum BucketElement {
 // Revert From<Felt> to original logic (using expect)
 // Note: This loses the nice Result propagation but matches the provided code
 // If Result is preferred, keep the TryFrom implementation instead.
-impl From<Felt> for BucketElement {
-    fn from(felt: Felt) -> Self {
-        match BitLength::min_bit_length(felt.bits()).expect("felt is up to 252 bits") {
-            BitLength::Bits15 => BucketElement::BucketElement15(felt.try_into().expect("Up to 15 bits")),
-            BitLength::Bits31 => BucketElement::BucketElement31(felt.try_into().expect("Up to 31 bits")),
-            BitLength::Bits62 => BucketElement::BucketElement62(felt.try_into().expect("Up to 62 bits")),
-            BitLength::Bits83 => BucketElement::BucketElement83(felt.try_into().expect("Up to 83 bits")),
-            BitLength::Bits125 => BucketElement::BucketElement125(felt.try_into().expect("Up to 125 bits")),
-            BitLength::Bits252 => BucketElement::BucketElement252(felt),
+impl TryFrom<Felt> for BucketElement {
+    type Error = Report;
+    fn try_from(felt: Felt) -> Result<Self> {
+        match BitLength::min_bit_length(felt.bits())? {
+            BitLength::Bits15 => Ok(BucketElement::BucketElement15(felt.try_into()?)),
+            BitLength::Bits31 => Ok(BucketElement::BucketElement31(felt.try_into()?)),
+            BitLength::Bits62 => Ok(BucketElement::BucketElement62(felt.try_into()?)),
+            BitLength::Bits83 => Ok(BucketElement::BucketElement83(felt.try_into()?)),
+            BitLength::Bits125 => Ok(BucketElement::BucketElement125(felt.try_into()?)),
+            BitLength::Bits252 => Ok(BucketElement::BucketElement252(felt)),
         }
     }
 }
 
 // Keep TryFrom<BucketElement> for Felt for decompression
 impl TryFrom<BucketElement> for Felt {
-    type Error = color_eyre::Report;
-    fn try_from(bucket_element: BucketElement) -> color_eyre::Result<Self, Self::Error> {
+    type Error = Report;
+    fn try_from(bucket_element: BucketElement) -> Result<Self, Self::Error> {
         match bucket_element {
             BucketElement::BucketElement15(be) => Felt::try_from(be),
             BucketElement::BucketElement31(be) => Felt::try_from(be),

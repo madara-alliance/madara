@@ -17,7 +17,7 @@ pub(crate) struct CompressionSet {
 }
 impl CompressionSet {
     // Revert new signature and logic to match the original (no Result, use expect)
-    pub fn new(values: &[Felt]) -> Self {
+    pub fn new(values: &[Felt]) -> Result<Self> {
         // Initialize Self with fields
         let mut obj = Self {
             unique_value_buckets: Buckets::new(),
@@ -28,7 +28,7 @@ impl CompressionSet {
 
         for value in values {
             // Use From trait (requires reverting BucketElement::From)
-            let bucket_element = BucketElement::from(*value);
+            let bucket_element = BucketElement::try_from(*value)?;
             let (bucket_index, inverse_bucket_index) = obj.unique_value_buckets.bucket_indices(&bucket_element);
 
             if let Some(element_index) = obj.unique_value_buckets.get_element_index(&bucket_element) {
@@ -39,7 +39,7 @@ impl CompressionSet {
                 obj.bucket_index_per_elm.push(inverse_bucket_index);
             }
         }
-        obj // Return Self directly
+        Ok(obj)
     }
 
     // ... get_unique_value_bucket_lengths, n_repeating_values ...
@@ -94,7 +94,7 @@ pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
         return Ok(vec![pack_usize_in_felt(&header, HEADER_ELM_BOUND)?]);
     }
 
-    let compression_set = CompressionSet::new(data); // Uses new which now returns Self
+    let compression_set = CompressionSet::new(data)?;
 
     let unique_value_bucket_lengths = compression_set.get_unique_value_bucket_lengths();
     let n_unique_values: usize = unique_value_bucket_lengths.iter().sum();
