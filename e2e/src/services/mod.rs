@@ -5,3 +5,4 @@ pub mod bootstrapper;
 pub mod docker;
 pub mod localstack;
 pub mod mongodb;
+pub mod madara;
