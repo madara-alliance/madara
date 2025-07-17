@@ -351,6 +351,7 @@ mod tests {
 
         let chain_config = Arc::new(chain_config);
         let backend = MadaraBackend::open_for_testing(chain_config.clone());
+        backend.set_l1_gas_quote_for_testing();
         g.build_and_store(&backend).await.unwrap();
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
@@ -456,7 +457,7 @@ mod tests {
     #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
     // FIXME: flaky
     // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
-    #[ignore = "should_work_across_block_boundary"]
+    // #[ignore = "should_work_across_block_boundary"]
     #[tokio::test]
     async fn test_account_deploy(
         #[case] transfer_fees: bool,

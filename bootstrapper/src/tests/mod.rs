@@ -188,6 +188,8 @@ async fn wait_for_madara() -> color_eyre::Result<()> {
         .arg("0")
         .arg("--blob-gas-price")
         .arg("0")
+        .arg("--strk-per-eth")
+        .arg("1")
         .arg("--no-charge-fee")
         .arg("--rpc-admin")
         .arg("--rpc-admin-port")

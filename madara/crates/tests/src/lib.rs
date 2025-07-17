@@ -444,8 +444,16 @@ async fn madara_can_sync_and_restart() {
 
     node.stop(); // stop the node (gracefully).
 
-    let cmd_builder =
-        cmd_builder.args(["--full", "--network", "sepolia", "--sync-stop-at", "7", "--no-l1-sync", "--l1-gas-price", "0"]);
+    let cmd_builder = cmd_builder.args([
+        "--full",
+        "--network",
+        "sepolia",
+        "--sync-stop-at",
+        "7",
+        "--no-l1-sync",
+        "--l1-gas-price",
+        "0",
+    ]);
 
     let mut node = cmd_builder.clone().run();
     node.wait_for_ready().await;

@@ -60,8 +60,7 @@ jobs:
             --preset devnet \
             --l1-gas-price 0 \
             --blob-gas-price 0 \
-            --strk-gas-price 0 \
-            --strk-blob-gas-price 0 \
+            --strk-per-eth 1 \
             --no-l1-sync &
 
           MADARA_PID=$!
