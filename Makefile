@@ -227,7 +227,7 @@ check:
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
 	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
-	@taplo fmt --check
+	@taplo fmt --config=./taplo/taplo.toml --check
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
 	@cargo clippy --workspace --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
