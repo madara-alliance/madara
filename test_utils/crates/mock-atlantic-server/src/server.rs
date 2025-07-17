@@ -329,9 +329,7 @@ pub async fn get_proof_handler(
 
 pub async fn health_check() -> Result<Json<serde_json::Value>, StatusCode> {
     Ok(Json(serde_json::json!({
-        "status": "healthy",
-        "service": "mock-atlantic-server",
-        "timestamp": Utc::now().to_rfc3339()
+      "alive": true
     })))
 }
 
@@ -340,6 +338,6 @@ pub fn create_router(state: MockAtlanticState) -> Router {
         .route("/atlantic-query", post(add_job_handler))
         .route("/atlantic-query/:job_id", get(get_job_status_handler))
         .route("/queries/:task_id/proof.json", get(get_proof_handler))
-        .route("/health", get(health_check))
+        .route("/is-alive", get(health_check))
         .with_state(state)
 }

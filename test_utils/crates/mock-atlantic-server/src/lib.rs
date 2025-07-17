@@ -38,7 +38,7 @@ impl MockAtlanticServer {
         info!("  POST   /atlantic-query        - Submit new job");
         info!("  GET    /atlantic-query/{{id}}  - Get job status");
         info!("  GET    /queries/{{id}}/proof.json - Get proof data");
-        info!("  GET    /health                - Health check");
+        info!("  GET    /is-alive                - Is alive check");
 
         if let Err(e) = axum::serve(listener, self.router).await {
             error!("Server error: {}", e);
