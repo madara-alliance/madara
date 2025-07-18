@@ -1,13 +1,13 @@
 pub mod job_routes;
-use std::io::Read;
-
+use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::worker::initialize_worker;
 use axum::http::StatusCode;
 use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
-
-use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::worker::initialize_worker;
+use std::io::Read;
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 #[rstest]
 #[tokio::test]
