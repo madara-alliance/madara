@@ -89,5 +89,5 @@ pub trait DatabaseClient: Send + Sync {
     /// get_jobs_by_block_number - Get all jobs for a specific block number
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError>;
     /// get_orphaned_jobs - Get jobs stuck in LockedForProcessing status beyond timeout for specific job type
-    async fn get_orphaned_jobs(&self, job_type: JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>;
+    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>;
 }

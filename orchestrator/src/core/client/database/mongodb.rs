@@ -965,7 +965,7 @@ impl DatabaseClient for MongoDbClient {
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
-    async fn get_orphaned_jobs(&self, job_type: JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
+    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
         // Calculate the cutoff time (current time - timeout)
@@ -973,7 +973,7 @@ impl DatabaseClient for MongoDbClient {
 
         // Query for jobs of specific type in LockedForProcessing status with process_started_at older than cutoff
         let filter = doc! {
-            "job_type": mongodb::bson::to_bson(&job_type)?,
+            "job_type": mongodb::bson::to_bson(job_type)?,
             "status": mongodb::bson::to_bson(&JobStatus::LockedForProcessing)?,
             "metadata.common.process_started_at": {
                 "$lt": cutoff_time.timestamp()

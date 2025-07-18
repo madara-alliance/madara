@@ -62,11 +62,9 @@ pub trait JobTrigger: Send + Sync {
     /// - Resets job status from `LockedForProcessing` to `Created`
     /// - Clears the `process_started_at` timestamp to allow fresh processing
     /// - Logs recovery actions for monitoring and debugging
-    async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> color_eyre::Result<u32> {
+    async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> anyhow::Result<u32> {
         let timeout_seconds = config.service_config().job_processing_timeout_seconds;
-
-        // Find orphaned jobs for this job type
-        let orphaned_jobs = config.database().get_orphaned_jobs(job_type.clone(), timeout_seconds).await?;
+        let orphaned_jobs = config.database().get_orphaned_jobs(&job_type, timeout_seconds).await?;
 
         if orphaned_jobs.is_empty() {
             return Ok(0);
@@ -82,7 +80,6 @@ pub trait JobTrigger: Send + Sync {
         let mut healed_count = 0;
 
         for mut job in orphaned_jobs {
-            // Reset the job to Created status and clear process_started_at
             job.metadata.common.process_started_at = None;
 
             let update_result = config
