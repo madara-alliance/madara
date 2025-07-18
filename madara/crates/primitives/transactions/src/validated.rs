@@ -37,8 +37,14 @@ impl TxTimestamp {
     pub fn checked_sub(self, duration: Duration) -> Option<Self> {
         self.0.checked_sub(duration.as_millis().try_into().ok()?).map(Self)
     }
+    pub fn saturating_sub(self, duration: Duration) -> Self {
+        Self(self.0.saturating_sub(duration.as_millis().try_into().unwrap_or(u64::MAX)))
+    }
     pub fn checked_add(self, duration: Duration) -> Option<Self> {
         self.0.checked_add(duration.as_millis().try_into().ok()?).map(Self)
+    }
+    pub fn saturating_add(self, duration: Duration) -> Self {
+        Self(self.0.saturating_add(duration.as_millis().try_into().unwrap_or(u64::MAX)))
     }
 }
 

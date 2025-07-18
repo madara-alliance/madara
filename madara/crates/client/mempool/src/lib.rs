@@ -107,9 +107,6 @@ impl From<MempoolError> for SubmitTransactionError {
                 InvalidTransactionNonce,
                 format!("Nonce needs to be greater than the account nonce {:#x}", account_nonce.to_felt()),
             ),
-            E::InnerMempool(TxInsertionError::NoTip) => {
-                rejected(InvalidTransactionVersion, "Invalid transaction version")
-            }
             E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
         }
     }

@@ -39,9 +39,6 @@ pub enum TxInsertionError {
     PendingDeclare,
     #[error("Invalid contract address")]
     InvalidContractAddress,
-    /// Transactions without tips are not supported when using the mempool in tip mode.
-    #[error("Cannot add a transaction without a tip into the mempool")]
-    NoTip,
     #[error(transparent)]
     Limit(#[from] MempoolLimitReached),
 }
@@ -178,7 +175,7 @@ impl InnerMempool {
     ) -> Result<(), TxInsertionError> {
         // Prechecks: TTL
         if let Some(ttl) = self.config.ttl {
-            if tx.arrived_at <= now.checked_sub(ttl).unwrap_or(TxTimestamp::UNIX_EPOCH) {
+            if tx.arrived_at <= now.saturating_sub(ttl) {
                 return Err(TxInsertionError::TooOld { ttl });
             }
         }
@@ -304,7 +301,7 @@ impl InnerMempool {
     ///   the caller do bookkeeping if necessary (remove from db, send update notifications...)
     pub fn remove_all_ttl_exceeded_txs(&mut self, now: TxTimestamp, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
         let Some(ttl) = self.config.ttl else { return };
-        let limit_ts = now.checked_sub(ttl).unwrap_or(TxTimestamp::UNIX_EPOCH);
+        let limit_ts = now.saturating_sub(ttl);
         while let Some(tx_key) = self.timestamp_queue.first_older_than(limit_ts) {
             let account_update = self.accounts.remove_tx(tx_key);
             self.apply_update(account_update, removed_txs);
