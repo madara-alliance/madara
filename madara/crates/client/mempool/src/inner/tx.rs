@@ -22,6 +22,9 @@ pub struct EvictionScore {
 
 impl Ord for EvictionScore {
     fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+        // For two accounts with differing chain nonce len, higher eviction score means the one with the biggest chain_nonce_len
+        // For two accounts with same chain nonce len, the one with the lowest score has higher eviction score (we want to get rid of low score txs first in this case)
+        // See tests::test_eviction_score_order in this same file.
         self.chain_nonce_len.cmp(&other.chain_nonce_len).then(self.score.cmp(&other.score).reverse())
     }
 }

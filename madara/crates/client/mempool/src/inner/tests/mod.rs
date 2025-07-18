@@ -4,6 +4,7 @@ use crate::{limits::MempoolLimitReached, tx::ScoreFunction, InnerMempool, InnerM
 use assert_matches::assert_matches;
 use mp_convert::{Felt, ToFelt};
 use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
+use proptest::strategy::Strategy;
 use rstest::{fixture, rstest};
 use starknet_api::{core::Nonce, felt, transaction::TransactionHash};
 use std::{

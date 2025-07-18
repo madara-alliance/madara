@@ -45,14 +45,20 @@ pub enum MempoolError {
     InvalidNonce,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct MempoolConfig {
-    pub no_saving: bool,
+    pub save_to_db: bool,
+}
+
+impl Default for MempoolConfig {
+    fn default() -> Self {
+        Self { save_to_db: true }
+    }
 }
 
 impl MempoolConfig {
-    pub fn with_no_saving(mut self, no_saving: bool) -> Self {
-        self.no_saving = no_saving;
+    pub fn with_save_to_db(mut self, save_to_db: bool) -> Self {
+        self.save_to_db = save_to_db;
         self
     }
 }
@@ -98,7 +104,7 @@ impl From<MempoolError> for SubmitTransactionError {
             }
             E::InnerMempool(TxInsertionError::MinTipBump { min_tip_bump }) => rejected(
                 ValidateFailure,
-                format!("Replacing a transaction requires at least a tip bump of at least {min_tip_bump} units"),
+                format!("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 10.0),
             ),
             E::InnerMempool(TxInsertionError::InvalidContractAddress) => {
                 rejected(ValidateFailure, "Invalid contract address")
@@ -142,7 +148,7 @@ impl Mempool {
     }
 
     pub async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
-        if self.config.no_saving {
+        if !self.config.save_to_db {
             // If saving is disabled, we don't want to read from db. Otherwise, if there are txs in the database, they will be re-inserted
             // everytime we restart the node, but will never be removed from db once they're consumed.
             return Ok(());
@@ -183,12 +189,12 @@ impl Mempool {
     }
 
     /// Update secondary state when a new transaction has been successfully added to the mempool.
-    /// Use `is_new_tx: true` when loading transactions from db, so that we skip saving in db and updating metrics.
+    /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
     fn on_tx_added(&self, tx: &ValidatedMempoolTx, is_new_tx: bool) {
         tracing::debug!("Accepted transaction tx_hash={:#x}", tx.tx_hash);
         if is_new_tx {
             self.metrics.accepted_transaction_counter.add(1, &[]);
-            if !self.config.no_saving {
+            if self.config.save_to_db {
                 if let Err(err) = self.backend.save_mempool_transaction(tx) {
                     tracing::error!("Could not add mempool transaction to database: {err:#}");
                 }
@@ -200,7 +206,7 @@ impl Mempool {
 
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
     fn on_txs_removed(&self, removed: &[ValidatedMempoolTx]) {
-        if !self.config.no_saving {
+        if self.config.save_to_db {
             if let Err(err) = self.backend.remove_mempool_transactions(removed.iter().map(|tx| tx.tx_hash)) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
@@ -215,7 +221,7 @@ impl Mempool {
 
     /// Temporary: this will move to the backend. Called by block production & locally when txs are added to the chain.
     fn remove_from_received(&self, txs: &[Felt]) {
-        if !self.config.no_saving {
+        if self.config.save_to_db {
             if let Err(err) = self.backend.remove_mempool_transactions(txs.iter().copied()) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }

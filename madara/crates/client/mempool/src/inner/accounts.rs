@@ -172,7 +172,7 @@ pub struct Accounts {
     accounts: HashMap<ContractAddress, AccountState>,
 }
 
-#[cfg(any(any(test, feature = "testing"), feature = "testing"))]
+#[cfg(any(test, feature = "testing"))]
 #[allow(unused)]
 impl Accounts {
     pub fn check_invariants(&self) {

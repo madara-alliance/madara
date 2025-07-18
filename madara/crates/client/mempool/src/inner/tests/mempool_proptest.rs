@@ -4,11 +4,11 @@ use starknet_types_core::hash::{Pedersen, StarkHash};
 
 fn arb_tx() -> impl Strategy<Value = TestTx> {
     (
-        (0u64..=5).prop_map(|n| felt!(n)), // nonce: 0-5
-        (0u64..=3).prop_map(|n| felt!(n)), // contract_address: 0-3
-        (0u64..=5000),                     // arrived_at: 0-5000
-        prop::option::of(10u64..=100),     // tip: Some(10-100) or None
-        any::<bool>(),                     // is_declare
+        (0u64..=5).prop_map(Felt::from), // nonce: 0-5
+        (0u64..=3).prop_map(Felt::from), // contract_address: 0-3
+        (0u64..=5000),                   // arrived_at: 0-5000
+        prop::option::of(10u64..=100),   // tip: Some(10-100) or None
+        any::<bool>(),                   // is_declare
     )
         .prop_map(|(nonce, contract_address, arrived_at, tip, is_declare)| TestTx {
             nonce,
@@ -97,7 +97,7 @@ proptest! {
         max_transactions in 1usize..=10,
         max_declare_transactions in prop::option::of(1usize..=5),
         ttl_millis in 0u64..=5000,
-        ops in prop::collection::vec(arb_mempool_op(), 0..50)
+        ops in prop::collection::vec(arb_mempool_op(), 0..50),
     ) {
         let mut mempool = fcfs_mempool(
             max_transactions,
