@@ -14,23 +14,31 @@ use std::time::{Duration, SystemTime};
 /// Timestamp, in millis.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
-pub struct TxTimestamp(pub u128);
+pub struct TxTimestamp(pub u64);
 impl TxTimestamp {
+    /// 1970-01-01 00:00:00 UTC
     pub const UNIX_EPOCH: Self = Self(0);
 
     pub fn now() -> Self {
-        Self(SystemTime::now().duration_since(SystemTime::UNIX_EPOCH).unwrap_or_default().as_millis())
+        Self(
+            SystemTime::now()
+                .duration_since(SystemTime::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_millis()
+                .try_into()
+                .expect("Current time in millis overflows u64"),
+        )
     }
 
     pub fn duration_since(self, other: TxTimestamp) -> Option<Duration> {
-        self.0.checked_sub(other.0).map(|d| d.try_into().map(Duration::from_millis).unwrap_or(Duration::MAX))
+        self.0.checked_sub(other.0).map(Duration::from_millis)
     }
 
     pub fn checked_sub(self, duration: Duration) -> Option<Self> {
-        self.0.checked_sub(duration.as_millis()).map(Self)
+        self.0.checked_sub(duration.as_millis().try_into().ok()?).map(Self)
     }
     pub fn checked_add(self, duration: Duration) -> Option<Self> {
-        self.0.checked_add(duration.as_millis()).map(Self)
+        self.0.checked_add(duration.as_millis().try_into().ok()?).map(Self)
     }
 }
 

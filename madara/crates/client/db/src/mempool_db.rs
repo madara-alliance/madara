@@ -39,11 +39,9 @@ impl MadaraBackend {
         // Note: WAL is used here
         // This is because we want it to be saved even if the node crashes before the next flush
 
-        let hash = tx.tx_hash;
         let col = self.db.get_column(Column::MempoolTransactions);
-        let tx_with_class = tx;
-        self.db.put_cf(&col, bincode::serialize(&hash)?, bincode::serialize(&tx_with_class)?)?;
-        tracing::debug!("save_mempool_tx {:?}", hash);
+        self.db.put_cf(&col, bincode::serialize(&tx.tx_hash)?, bincode::serialize(&tx)?)?;
+        tracing::debug!("save_mempool_tx {:?}", tx.tx_hash);
         Ok(())
     }
 }

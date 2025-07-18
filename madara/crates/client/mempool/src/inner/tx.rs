@@ -44,7 +44,7 @@ impl MempoolTransaction {
     ) -> Result<MempoolTransaction, TxInsertionError> {
         let _: ContractAddress =
             inner.contract_address.try_into().map_err(|_| TxInsertionError::InvalidContractAddress)?;
-        Ok(Self { score: score_function.get_score(&inner).unwrap_or_default(), inner })
+        Ok(Self { score: score_function.get_score(&inner), inner })
     }
     pub fn into_inner(self) -> ValidatedMempoolTx {
         self.inner
@@ -85,27 +85,27 @@ impl MempoolTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum ScoreFunction {
     /// FCFS mode. Transaction that have arrived earlier will be prioritised.
     Timestamp,
     /// Tip mode. Transactions with higher tip will be prioritised.
     Tip {
-        /// Min tip bump to replace a transaction.
-        min_tip_bump: u128,
+        /// Min tip bump to replace a transaction, as ratio.
+        min_tip_bump: f64,
     },
 }
 
 /// Opaque score, defined by the score function. When comparing transactions, the higher score will always have priority.
 #[derive(PartialEq, Eq, PartialOrd, Ord, Debug, Clone, Copy, Default)]
-pub struct Score(pub u128);
+pub struct Score(pub u64);
 
 impl ScoreFunction {
-    pub fn get_score(&self, tx: &ValidatedMempoolTx) -> Option<Score> {
+    pub fn get_score(&self, tx: &ValidatedMempoolTx) -> Score {
         match self {
             // Reverse the order, so that higher score means priority.
-            Self::Timestamp => Some(Score(u128::MAX - tx.arrived_at.0)),
-            Self::Tip { .. } => Some(Score(tx.tx.tip()?.into())),
+            Self::Timestamp => Score(u64::MAX - tx.arrived_at.0),
+            Self::Tip { .. } => Score(tx.tx.tip().unwrap_or(0)),
         }
     }
 
@@ -123,7 +123,9 @@ impl ScoreFunction {
                 }
             }
             Self::Tip { min_tip_bump } => {
-                if new_tx.score().0.saturating_sub(previous_tx.score().0) < *min_tip_bump {
+                // `as` keyword: conversion to f64 is lossy but infaillible. We intentionally avoid the opposite conversion here.
+                let min_tip = previous_tx.score().0 as f64 * (1.0 + *min_tip_bump);
+                if (new_tx.score.0 as f64) < min_tip {
                     return Err(TxInsertionError::MinTipBump { min_tip_bump: *min_tip_bump });
                 }
             }

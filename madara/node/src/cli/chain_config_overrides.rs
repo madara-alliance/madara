@@ -102,7 +102,7 @@ pub struct ChainConfigOverridesInner {
     #[serde(default)]
     pub mempool_mode: MempoolMode,
     #[serde(default)]
-    pub mempool_min_tip_bump: u128,
+    pub mempool_min_tip_bump: f64,
     pub mempool_max_transactions: usize,
     pub mempool_max_declare_transactions: Option<usize>,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]

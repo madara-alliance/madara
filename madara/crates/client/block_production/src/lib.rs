@@ -358,29 +358,13 @@ impl BlockProductionTask {
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 tracing::debug!(
-                    "Received ExecutorMessage::BatchExecuted executed_txs={}",
-                    batch_execution_result.executed_txs.len()
+                    "Received ExecutorMessage::BatchExecuted executed_txs={:?}",
+                    batch_execution_result.executed_txs
                 );
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
-
-                self.mempool
-                    .on_tx_batch_executed(
-                        batch_execution_result
-                            .blockifier_results
-                            .iter()
-                            .filter_map(|r| r.as_ref().ok())
-                            .flat_map(|r| r.1.nonces.iter())
-                            .map(|(contract_address, nonce)| NonceUpdate {
-                                contract_address: contract_address.to_felt(),
-                                nonce: nonce.to_felt(),
-                            }),
-                        batch_execution_result.executed_txs.txs.iter().map(|tx| tx.tx_hash().to_felt()),
-                    )
-                    .await
-                    .context("Updating mempool state")?;
                 state.append_batch(batch_execution_result);
             }
             ExecutorMessage::EndBlock => {
@@ -389,6 +373,17 @@ impl BlockProductionTask {
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
+
+                self.mempool
+                    .on_tx_batch_executed(
+                        state.block.state.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                            contract_address: contract_address.to_felt(),
+                            nonce: nonce.to_felt(),
+                        }),
+                        state.tx_executed_for_tick.iter().cloned(),
+                    )
+                    .await
+                    .context("Updating mempool state")?;
 
                 let (block, classes) = state.block.into_full_block_with_classes(&self.backend, state.block_n)?;
                 let block_hash = self
@@ -406,7 +401,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    fn store_pending_block(&mut self) -> anyhow::Result<()> {
+    async fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let TaskState::Executing(state) = self.current_state.as_mut().context("No current state")? {
             for l1_nonce in &state.block.consumed_core_contract_nonces {
                 // This ensures we remove the nonces for rejected L1 to L2 message transactions. This avoids us from reprocessing them on restart.
@@ -421,6 +416,17 @@ impl BlockProductionTask {
                 .into_full_block_with_classes(&self.backend, state.block_n)
                 .context("Converting to full pending block")?;
             self.backend.store_pending_block_with_classes(block, &classes)?;
+
+            self.mempool
+                .on_tx_batch_executed(
+                    state.block.state.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                        contract_address: contract_address.to_felt(),
+                        nonce: nonce.to_felt(),
+                    }),
+                    state.tx_executed_for_tick.iter().cloned(),
+                )
+                .await
+                .context("Updating mempool state")?;
 
             let stats = mem::take(&mut state.stats_for_tick);
             if stats.n_added_to_block > 0 {
@@ -513,7 +519,7 @@ impl BlockProductionTask {
 
                 // Update the pending block in db periodically.
                 Some(_) = OptionFuture::from(interval_pending_block_update.as_mut().map(|int| int.tick())) => {
-                    self.store_pending_block().context("Storing pending block")?;
+                    self.store_pending_block().await.context("Storing pending block")?;
                 }
 
                 // Bubble up errors from the executor thread, or graceful shutdown.

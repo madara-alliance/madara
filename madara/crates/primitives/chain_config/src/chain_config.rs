@@ -85,6 +85,9 @@ fn default_block_time() -> Duration {
 fn default_l1_messages_replay_max_duration() -> Duration {
     Duration::from_secs(3 * 24 * 60 * 60)
 }
+fn default_mempool_min_tip_bump() -> f64 {
+    0.1
+}
 
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
@@ -166,8 +169,12 @@ pub struct ChainConfig {
 
     #[serde(default)]
     pub mempool_mode: MempoolMode,
-    #[serde(default)]
-    pub mempool_min_tip_bump: u128,
+    /// Minimum tip increase when replacing a transaction with the same (contract_address, nonce) pair in the mempool, as a ratio.
+    /// Tip bumping allows users to increase the priority of their transaction in the mempool, so that they are included in a block sooner.
+    /// This has no effect on FCFS (First-come-first-serve) mode mempools.
+    /// Default is 0.1 which means you have to increase the tip by at least 10%.
+    #[serde(default = "default_mempool_min_tip_bump")]
+    pub mempool_min_tip_bump: f64,
     /// Transaction limit in the mempool.
     pub mempool_max_transactions: usize,
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
@@ -284,7 +291,7 @@ impl ChainConfig {
             mempool_max_transactions: 10_000,
             mempool_max_declare_transactions: Some(20),
             mempool_ttl: Some(Duration::from_secs(60 * 60)), // an hour?
-            mempool_min_tip_bump: Default::default(),
+            mempool_min_tip_bump: 0.1,
 
             block_production_concurrency: BlockProductionConfig::default(),
 

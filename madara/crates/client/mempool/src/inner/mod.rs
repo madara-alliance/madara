@@ -31,8 +31,8 @@ pub enum TxInsertionError {
     NonceConflict,
     #[error("A transaction with this hash already exists in the mempool")]
     DuplicateTxn,
-    #[error("Replacing a transaction requires at least a tip bump of at least {min_tip_bump} units")]
-    MinTipBump { min_tip_bump: u128 },
+    #[error("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 10.0)]
+    MinTipBump { min_tip_bump: f64 },
     #[error("Transaction is too old; max age is {ttl:?}")]
     TooOld { ttl: Duration },
     #[error("Cannot add a declare transaction with a future nonce")]
@@ -46,7 +46,7 @@ pub enum TxInsertionError {
     Limit(#[from] MempoolLimitReached),
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct InnerMempoolConfig {
     pub score_function: ScoreFunction,
     pub max_transactions: usize,
@@ -84,7 +84,7 @@ pub struct InnerMempoolConfig {
 /// The in-memory datastructure containing all of the mempool transactions. Mutations to this datastructure are synchronous, via &mut references to ensure
 /// atomicity.
 #[derive(Debug)]
-#[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq, Clone))]
+#[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Clone))]
 pub struct InnerMempool {
     config: InnerMempoolConfig,
 
@@ -147,7 +147,7 @@ impl InnerMempool {
 
     /// Update indices based on an account update, and extend `removed_txs` with the removed txs.
     fn apply_update(&mut self, account_update: AccountUpdate, removed_txs: &mut impl Extend<ValidatedMempoolTx>) {
-        tracing::debug!("Apply update {account_update:?}");
+        tracing::debug!("Apply update {account_update:#?}");
         self.ready_queue.apply_account_update(&account_update);
         self.timestamp_queue.apply_account_update(&account_update);
         self.by_tx_hash.apply_account_update(&account_update);
@@ -242,6 +242,7 @@ impl InnerMempool {
     /// Applies the [EvictionScore] policy: we remove the least desirable transaction in the mempool if it is less desirable than this
     /// new one.
     fn try_make_room_for(&mut self, new_tx: &EvictionScore, removed_txs: &mut impl Extend<ValidatedMempoolTx>) -> bool {
+        tracing::debug!("Try make room for {new_tx:?}");
         let Some(account_key) = self.eviction_queue.get_next_if_less_desirable_than(new_tx) else {
             return false;
         };
@@ -267,6 +268,7 @@ impl InnerMempool {
         account_nonce: &Nonce,
         removed_txs: &mut impl Extend<ValidatedMempoolTx>,
     ) {
+        tracing::debug!("Update account nonce {contract_address:?} {account_nonce:?}");
         let Some(account_update) = self.accounts.update_account_nonce(contract_address, account_nonce) else { return };
         self.apply_update(account_update, removed_txs);
     }
@@ -282,17 +284,14 @@ impl InnerMempool {
         let mut account_update = self.accounts.remove_ready_tx(account_key);
 
         // Update indices.
-        self.limiter.apply_account_update(&account_update);
+        tracing::debug!("Pop next ready apply update {account_update:#?}");
         self.ready_queue.apply_account_update(&account_update);
         self.timestamp_queue.apply_account_update(&account_update);
         self.by_tx_hash.apply_account_update(&account_update);
         self.eviction_queue.apply_account_update(&account_update);
+        self.limiter.apply_account_update(&account_update);
 
-        assert_eq!(
-            account_update.removed_txs.len(),
-            1,
-            "remove_ready_tx should remove exactly one tx from the mempool"
-        );
+        assert_eq!(account_update.removed_txs.len(), 1, "pop_next_ready should remove exactly one tx from the mempool");
         account_update.removed_txs.pop().map(|tx| tx.into_inner())
     }
 

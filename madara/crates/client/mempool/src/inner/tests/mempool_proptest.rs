@@ -6,7 +6,7 @@ fn arb_tx() -> impl Strategy<Value = TestTx> {
     (
         (0u64..=5).prop_map(|n| felt!(n)), // nonce: 0-5
         (0u64..=3).prop_map(|n| felt!(n)), // contract_address: 0-3
-        (0u128..=5000),                    // arrived_at: 0-5000
+        (0u64..=5000),                     // arrived_at: 0-5000
         prop::option::of(10u64..=100),     // tip: Some(10-100) or None
         any::<bool>(),                     // is_declare
     )
@@ -32,7 +32,7 @@ enum MempoolOp {
     UpdateAccountNonce(Felt, Felt),
     PopNextReady,
     RemoveTtlExceeded,
-    SetCurrentTime(u128),
+    SetCurrentTime(u64),
 }
 
 fn arb_mempool_op() -> impl Strategy<Value = MempoolOp> {
@@ -42,7 +42,7 @@ fn arb_mempool_op() -> impl Strategy<Value = MempoolOp> {
             .prop_map(|(addr, nonce)| MempoolOp::UpdateAccountNonce(addr, nonce)),
         Just(MempoolOp::PopNextReady),
         Just(MempoolOp::RemoveTtlExceeded),
-        (0u128..=10000).prop_map(MempoolOp::SetCurrentTime),
+        (0u64..=10000).prop_map(MempoolOp::SetCurrentTime),
     ]
 }
 
@@ -51,7 +51,7 @@ proptest! {
     #[test]
     fn prop_tip_invariants_always_hold(
         max_transactions in 1usize..=10,
-        min_tip_bump in 0u128..=10,
+        min_tip_bump in 0.0..=1.0,
         max_declare_transactions in prop::option::of(1usize..=5),
         ttl_millis in 0u64..=5000,
         ops in prop::collection::vec(arb_mempool_op(), 0..50)

@@ -650,7 +650,7 @@ mod l1_messaging_tests {
         let TestRunner { db_service: db, dummy_contract: contract, eth_client, anvil: _anvil } = setup_test_env.await;
 
         // Start worker handle
-        let _worker_handle = {
+        let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
                 sync(
@@ -706,8 +706,8 @@ mod l1_messaging_tests {
         // TODO: Assert that the transaction has been executed successfully
         assert!(db.backend().get_pending_message_to_l2(0).unwrap().is_some());
 
-        // // Explicitly cancel the listen task, else it would be running in the background
-        // worker_handle.abort();
+        // Explicitly cancel the listen task, else it would be running in the background
+        worker_handle.abort();
     }
 
     /// Test taken from starknet.rs to ensure consistency

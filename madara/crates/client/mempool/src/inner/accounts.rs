@@ -138,6 +138,7 @@ impl TxEntryForInsertion<'_> {
         &self.update_data
     }
 
+    /// Panic: the caller must ensure it is giving the same transaction as the one used when creating this TxEntryForInsertion.
     pub fn insert(self, tx: MempoolTransaction) -> AccountUpdate {
         let info = tx.info();
         assert_eq!(self.tx_key, tx.tx_key());
