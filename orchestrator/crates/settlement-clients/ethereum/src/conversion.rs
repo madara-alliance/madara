@@ -62,7 +62,7 @@ pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proofs: Ve
 
     // adding offsets for kzg_proofs
     for i in 0..kzg_proofs.len() {
-        input_data += &format!("{:0>64x}", 64 + i * 96);
+        input_data += &format!("{:0>64x}", 32 * kzg_proofs.len() + i * 96);
     }
 
     // adding kzg_proofs with length

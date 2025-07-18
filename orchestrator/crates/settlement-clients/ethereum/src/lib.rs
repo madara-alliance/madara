@@ -414,7 +414,7 @@ impl EthereumSettlementClient {
         }
 
         let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
-            .wrap_err("Failed to get x_0 point params")?;
+            .map_err(|e| eyre!("Failed to get x_0 point params: {}", e))?;
 
         let kzg_proofs = Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values)
             .map_err(|e| eyre!("Failed to build KZG proofs: {}", e))?;
