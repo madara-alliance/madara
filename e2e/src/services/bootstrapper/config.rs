@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub const DEFAULT_BOOTSTRAPPER_BINARY: &str = "../target/release/bootstrapper";
-pub const DEFAULT_BOOTSTRAPPER_CONFIG: &str = "../bootstrapper/src/configs/devnet.json";
+pub const DEFAULT_BOOTSTRAPPER_CONFIG: &str = "./config/bootstrapper.json";
 pub const BOOTSTRAPPER_DEFAULT_ADDRESS_PATH: &str = "addresses.json";
 
 #[derive(Debug, Clone, PartialEq)]

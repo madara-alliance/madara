@@ -8,6 +8,7 @@ use::std::path::Path;
 use crate::services::anvil::{AnvilConfigBuilder, AnvilError, AnvilService};
 use crate::services::bootstrapper::{BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode, BootstrapperService};
 use crate::services::docker::DockerServer;
+use crate::services::mock_verifier::{MockVerifierDeployerConfigBuilder, MockVerifierDeployerError, MockVerifierDeployerService};
 use crate::services::pathfinder::DEFAULT_PATHFINDER_IMAGE;
 use crate::services::mongodb::MONGO_DEFAULT_DATABASE_PATH;
 use crate::services::bootstrapper::DEFAULT_BOOTSTRAPPER_CONFIG;
@@ -22,9 +23,14 @@ use crate::services::mongodb::{ MongoConfigBuilder, MongoError, MongoService};
 use crate::services::orchestrator::{
     Layer, OrchestratorError, OrchestratorMode, OrchestratorService, OrchestratorConfigBuilder
 };
+use crate::services::mock_prover::{MockProverConfigBuilder, MockProverService, MockProverError};
 use crate::services::pathfinder::{PathfinderConfigBuilder, PathfinderError, PathfinderService};
 use crate::services::helpers::NodeRpcMethods;
 
+// TODO:
+// Ensure to have all the binaries built
+// Ensure to build the mock-verifier as well
+// CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml  --bin mock-atlantic-server --release
 
 // TODO: Implemented this to always be from the root, and not relative
 const DEFAULT_BINARY_DIR: &str = "../target/release";
@@ -46,6 +52,10 @@ pub enum SetupError {
     Madara(#[from] MadaraError),
     #[error("Bootstrapper service error: {0}")]
     Bootstrapper(#[from] BootstrapperError),
+    #[error("Mock Verifier Deployer service error: {0}")]
+    MockVerifierDeployer(#[from] MockVerifierDeployerError),
+    #[error("Mock Prover service error: {0}")]
+    MockProver(#[from] MockProverError),
     #[error("Setup timeout: {0}")]
     Timeout(String),
     #[error("Dependency validation failed: {0}")]
@@ -54,6 +64,8 @@ pub enum SetupError {
     StartupFailed(String),
     #[error("Context initialization failed: {0}")]
     ContextFailed(String),
+    #[error("Other Error : {0}")]
+    OtherError(String),
 }
 
 #[derive(Debug, Clone)]
@@ -221,12 +233,23 @@ impl Setup {
         let mut join_set = JoinSet::new();
 
         // First, validate basic dependencies that don't depend on Docker
+        // Anvil
         join_set.spawn(async {
             let result = std::process::Command::new("anvil").arg("--version").output();
             if result.is_err() {
                 return Err(SetupError::DependencyFailed("❌ Anvil not found".to_string()));
             }
             println!("✅ Anvil is available");
+            Ok(())
+        });
+
+        // Forge
+        join_set.spawn(async {
+            let result = std::process::Command::new("forge").arg("--version").output();
+            if result.is_err() {
+                return Err(SetupError::DependencyFailed("❌ Forge not found".to_string()));
+            }
+            println!("✅ Forge is available");
             Ok(())
         });
 
@@ -418,6 +441,14 @@ impl Setup {
         .await
         .map_err(|_| SetupError::Timeout("Start Full Node Syncing timed out".to_string()))??;
 
+        // Start Mock Proving Service
+        timeout(Duration::from_secs(500), async {
+            self.start_mock_prover().await?;
+            Ok::<(), SetupError>(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Start Mock Proving Service timed out".to_string()))??;
+
         // Start Orchestrator Service
         timeout(Duration::from_secs(500), async {
             self.start_orchestration().await?;
@@ -459,12 +490,48 @@ impl Setup {
         // Assign the services
         self.anvil = Some(anvil_service);
 
-        println!("🧑‍💻 Starting bootstrapper L1");
+
+        println!("🧑‍💻 Starting mock verifier deployer");
+
+        // Deploying verifier contract
+
+        let mock_verifier_config = MockVerifierDeployerConfigBuilder::new().build();
+        let status_1 = MockVerifierDeployerService::run(mock_verifier_config).await?;
+        println!("🥳 Mock verifier deployer finished with {}", status_1);
+
+        // Read from ./data/verifier_address.txt
+        let verifier_address = std::fs::read_to_string("./data/verifier_address.txt")
+            .map_err(|e| SetupError::OtherError(format!("Failed to read verifier address file: {}", e)))?
+            .trim()
+            .to_string();
+
+        // Put it to ./config/bootstrapper.json's verifier_address's key
+
+        // Read the existing bootstrapper config
+        let bootstrapper_config_path = "./config/bootstrapper.json";
+        let mut config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(bootstrapper_config_path)
+                .map_err(|e| SetupError::OtherError(format!("Failed to read bootstrapper config: {}", e)))?
+        ).map_err(|e| SetupError::OtherError(format!("Failed to parse bootstrapper config JSON: {}", e)))?;
+
+        // Update the verifier_address field
+        config["verifier_address"] = serde_json::Value::String(verifier_address.clone());
+
+        // Write the updated config back to file
+        std::fs::write(
+            bootstrapper_config_path,
+            serde_json::to_string_pretty(&config)
+                .map_err(|e| SetupError::OtherError(format!("Failed to serialize config: {}", e)))?
+        ).map_err(|e| SetupError::OtherError(format!("Failed to write bootstrapper config: {}", e)))?;
+
+        println!("✅ Updated bootstrapper config with verifier address: {}", verifier_address);
 
         // TODO: We know this value because anvil creates the same account + pvt key pair on each startup
         // Ideally we would want to ask anvil each time for these values.
 
         // TODO: I need to know the port from anvil before sending it to bootstrapper!
+
+        println!("🧑‍💻 Starting bootstrapper L1");
 
         let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
             .mode(BootstrapperMode::SetupL1)
@@ -685,12 +752,26 @@ impl Setup {
         Ok(())
     }
 
+    async fn start_mock_prover(&mut self) -> Result<(), SetupError> {
+        println!("🔔 Starting Mock Prover Service");
+
+        // Or using the builder:
+        let mock_prover_config = MockProverConfigBuilder::new()
+            .port(5555)
+            .build()?;
+
+        let _mock_prover_service = MockProverService::start(mock_prover_config).await?;
+
+        Ok(())
+    }
+
     // Ideally I need to restart madara before I start orchestration
     // Madara -> from 10 sec to 6 hrs block time
     // Anvil  -> from  1 sec to 6 hrs block time
     // This is so that orchestrator can eventually catch up with madara
 
     async fn start_orchestration(&mut self) -> Result<(), SetupError> {
+
         // Start Orchestrator Service, wait for it to complete sync
         println!("🔔 Starting Orchestrator for bootstrapped Madara");
 
