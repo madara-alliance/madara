@@ -36,8 +36,8 @@ pub enum BootstrapperError {
     ExecutionFailed(String),
     #[error("Setup failed with exit code: {0}")]
     SetupFailed(i32),
-    #[error("File system error: {0}")]
-    FileSystem(#[from] std::io::Error),
+    #[error("Other Error : {0}")]
+    OtherError(String),
 }
 
 // Final immutable configuration

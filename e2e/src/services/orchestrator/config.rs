@@ -79,6 +79,10 @@ pub struct OrchestratorConfig {
     sharp: bool,
     atlantic: bool,
 
+    // Block Processing
+    max_block_to_process: Option<u64>,
+    min_block_to_process: Option<u64>,
+
     environment_vars: Vec<(String, String)>,
     additional_args: Vec<String>,
 }
@@ -102,6 +106,9 @@ impl Default for OrchestratorConfig {
             da_on_starknet: false,
             sharp: false,
             atlantic: false,
+
+            max_block_to_process: None,
+            min_block_to_process: None,
         }
     }
 }
@@ -112,9 +119,11 @@ impl OrchestratorConfig {
         Self::default()
     }
 
-    /// Create a builder for OrchestratorConfig
-    pub fn builder() -> OrchestratorConfigBuilder {
-        OrchestratorConfigBuilder::new()
+    /// Create a builder for OrchestratorConfig from the current state
+    pub fn builder(self) -> OrchestratorConfigBuilder {
+        OrchestratorConfigBuilder {
+            config: self,
+        }
     }
 
     // Getter methods (immutable access)
@@ -257,6 +266,14 @@ impl OrchestratorConfig {
             command.arg("--atlantic");
         }
 
+        if let Some(max_block) = self.max_block_to_process {
+            command.arg("--max-block-to-process").arg(max_block.to_string());
+        }
+        if let Some(min_block) = self.min_block_to_process {
+            command.arg("--min-block-to-process").arg(min_block.to_string());
+        }
+
+
         // Add environment variables
         for (key, value) in &self.environment_vars {
             command.env(key, value);
@@ -344,6 +361,16 @@ impl OrchestratorConfigBuilder {
     /// Set the port
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = Some(port);
+        self
+    }
+
+    pub fn max_block_to_process(mut self, block_number: u64) -> Self {
+        self.config.max_block_to_process = Some(block_number);
+        self
+    }
+
+    pub fn min_block_to_process(mut self, block_number: u64) -> Self {
+        self.config.min_block_to_process = Some(block_number);
         self
     }
 

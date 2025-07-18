@@ -1,5 +1,5 @@
 // =============================================================================
-// MOCK VERIFIER DEPLOYER SERVICE - Deployment utility for mock GPS verifier contract
+// L2 : MOCK VERIFIER DEPLOYER SERVICE - Deployment utility for mock GPS verifier contract
 // =============================================================================
 
 pub mod config;
@@ -9,14 +9,19 @@ pub use config::*;
 use crate::services::server::{Server, ServerConfig};
 use std::process::ExitStatus;
 
+// TODO: make this use address and not string
+type VerifierAddress = String;
+
 pub struct MockVerifierDeployerService {
     server: Server,
     config: MockVerifierDeployerConfig,
 }
 
+// I don't need to return the ExitStatus on completion, I can also return the verifier address
+
 impl MockVerifierDeployerService {
     /// Run the mock verifier deployment and wait for completion (convenience method)
-    pub async fn run(config: MockVerifierDeployerConfig) -> Result<ExitStatus, MockVerifierDeployerError> {
+    pub async fn run(config: MockVerifierDeployerConfig) -> Result<VerifierAddress, MockVerifierDeployerError> {
         let mut service = Self::start(config).await?;
         service.wait_for_completion().await
     }
@@ -31,7 +36,7 @@ impl MockVerifierDeployerService {
         let server_config = ServerConfig {
             connection_attempts: 1, // No connection check needed
             connection_delay_ms: 100,
-            service_name: "MockVerifierDeployerDeployer".to_string(),
+            service_name: "MockVerifierDeployer".to_string(),
             ..Default::default()
         };
 
@@ -44,7 +49,7 @@ impl MockVerifierDeployerService {
     }
 
     /// Wait for the mock verifier deployment to complete execution
-    pub async fn wait_for_completion(&mut self) -> Result<ExitStatus, MockVerifierDeployerError> {
+    pub async fn wait_for_completion(&mut self) -> Result<VerifierAddress, MockVerifierDeployerError> {
         println!("🚀 Deploying mock verifier contract...");
 
         // Use timeout to prevent hanging
@@ -65,13 +70,7 @@ impl MockVerifierDeployerService {
             Ok(Ok(exit_status)) => {
                 if exit_status.success() {
                     println!("✅ Mock verifier deployed successfully with {}", exit_status);
-
-                    // Try to read the deployed address from the output file
-                    if let Ok(address) = std::fs::read_to_string(&self.config.verifier_file_name()) {
-                        println!("📦 Verifier contract deployed at: {}", address.trim());
-                    }
-
-                    Ok(exit_status)
+                    Ok(self.get_verifier_address_from_output_file()?)
                 } else {
                     let exit_code = exit_status.code().unwrap_or(-1);
                     Err(MockVerifierDeployerError::DeploymentFailed(exit_code))
@@ -96,7 +95,7 @@ impl MockVerifierDeployerService {
     }
 
     /// Get the deployed verifier address from the output file
-    pub fn get_verifier_address(&self) -> Result<String, MockVerifierDeployerError> {
+    pub fn get_verifier_address_from_output_file(&self) -> Result<String, MockVerifierDeployerError> {
         std::fs::read_to_string(&self.config.verifier_file_name())
             .map(|s| s.trim().to_string())
             .map_err(|e| MockVerifierDeployerError::FileSystem(e))
