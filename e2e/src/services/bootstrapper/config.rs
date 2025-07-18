@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub const DEFAULT_BOOTSTRAPPER_BINARY: &str = "../target/release/bootstrapper";
-pub const DEFAULT_BOOTSTRAPPER_CONFIG: &str = "../bootstrapper/src/configs/devnet.json";
+pub const DEFAULT_BOOTSTRAPPER_CONFIG: &str = "./config/bootstrapper.json";
 pub const BOOTSTRAPPER_DEFAULT_ADDRESS_PATH: &str = "addresses.json";
 
 #[derive(Debug, Clone, PartialEq)]
@@ -36,8 +36,8 @@ pub enum BootstrapperError {
     ExecutionFailed(String),
     #[error("Setup failed with exit code: {0}")]
     SetupFailed(i32),
-    #[error("File system error: {0}")]
-    FileSystem(#[from] std::io::Error),
+    #[error("Other Error : {0}")]
+    OtherError(String),
 }
 
 // Final immutable configuration

@@ -116,4 +116,26 @@ impl BootstrapperService {
             )))
         }
     }
+
+    // update values in the config file
+    pub fn update_config_file(key: &str, value: &str) -> Result<(), BootstrapperError> {
+        // Update bootstrapper config
+        let mut config: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(DEFAULT_BOOTSTRAPPER_CONFIG)
+                .map_err(|e| BootstrapperError::OtherError(format!("Failed to read bootstrapper config: {}", e)))?
+        ).map_err(|e| BootstrapperError::OtherError(format!("Failed to parse bootstrapper config JSON: {}", e)))?;
+
+        config[key] = serde_json::Value::String(value.to_string());
+
+        std::fs::write(
+            DEFAULT_BOOTSTRAPPER_CONFIG,
+            serde_json::to_string_pretty(&config)
+                .map_err(|e| BootstrapperError::OtherError(format!("Failed to serialize config: {}", e)))?
+        ).map_err(|e| BootstrapperError::OtherError(format!("Failed to write bootstrapper config: {}", e)))?;
+
+        println!("✅ Updated bootstrapper config with {} value: {}", key, value);
+        Ok(())
+    }
+
+
 }

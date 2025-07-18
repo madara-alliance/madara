@@ -11,6 +11,10 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
+use std::fs;
+use std::path::Path as stdPath;
+use tokio::fs::File;
+use tokio::io::AsyncWriteExt;
 
 use crate::types::{
     AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticChain, AtlanticClient,
@@ -210,46 +214,83 @@ pub async fn add_job_handler(
 ) -> Result<Json<AtlanticAddJobResponse>, StatusCode> {
     info!("Received add_job request with API key: {:?}", query.api_key);
 
-    let mut layout = None;
-    let mut network = None;
-    let mut declared_job_size = None;
-    let mut cairo_version = None;
-    let mut cairo_vm = None;
-    let mut result_type = None;
+    let mut layout = Some("dynamic".to_string());
+    let mut network = Some("TESTNET".to_string());
+    // let mut declared_job_size = None;
+    // let mut cairo_version = None;
+    // let mut cairo_vm = None;
+    // let mut result_type = None;
 
-    while let Some(field) = multipart.next_field().await.map_err(|_| StatusCode::BAD_REQUEST)? {
-        match field.name() {
-            Some("layout") => {
-                layout = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?);
-            }
-            Some("network") => {
-                network = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?);
-            }
-            Some("declaredJobSize") => {
-                declared_job_size = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?);
-            }
-            Some("cairoVersion") => {
-                cairo_version = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?);
-            }
-            Some("cairoVm") => {
-                cairo_vm = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?);
-            }
-            Some("result") => {
-                result_type = Some(field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?);
-            }
-            Some("pieFile") | Some("inputFile") | Some("programFile") => {
-                let data = field.bytes().await.map_err(|_| StatusCode::BAD_REQUEST)?;
-                debug!("Received file data of {} bytes", data.len());
-            }
-            _ => {
-                let name = field.name().map(|s| s.to_string());
-                let value = field.text().await.map_err(|_| StatusCode::BAD_REQUEST)?;
-                if let Some(name) = name {
-                    debug!("Received form field: {} = {}", name, value);
-                }
-            }
-        }
-    }
+    // while let Some(field) = multipart.next_field().await.map_err(|e| {
+    //     info!("Other #2 : {}", e);
+    //     StatusCode::BAD_REQUEST
+    // })? {
+    //     match field.name() {
+    //         Some("layout") => {
+    //             layout = Some(field.text().await.map_err(|_| {
+    //                 info!("Layout");
+    //                 StatusCode::BAD_REQUEST
+    //             })?);
+    //         }
+    //         Some("network") => {
+    //             network = Some(field.text().await.map_err(|_| {
+    //                 info!("Network");
+    //                 StatusCode::BAD_REQUEST
+    //             }
+    //             )?);
+    //         }
+    //         // Some("declaredJobSize") => {
+    //         //     declared_job_size = Some(field.text().await.map_err(|_| {
+    //         //         info!("declaredJobSize");
+    //         //         StatusCode::BAD_REQUEST
+    //         //     })?);
+    //         // }
+    //         // Some("cairoVersion") => {
+    //         //     cairo_version = Some(field.text().await.map_err(|_| {
+    //         //         info!("cairoVersion");
+    //         //         StatusCode::BAD_REQUEST
+    //         //     })?);
+    //         // }
+    //         // Some("cairoVm") => {
+    //         //     cairo_vm = Some(field.text().await.map_err(|_| {
+    //         //         info!("cairoVm");
+    //         //         StatusCode::BAD_REQUEST
+    //         //     })?);
+    //         // }
+    //         // Some("result") => {
+    //         //     result_type = Some(field.text().await.map_err(|_| {
+    //         //         info!("result");
+    //         //         StatusCode::BAD_REQUEST
+    //         //     })?);
+    //         // }
+    //         // Some("pieFile") | Some("inputFile") | Some("programFile") => {
+    //         //     // let data = field.bytes().await.map_err(|_| {
+    //         //     //     StatusCode::BAD_REQUEST
+    //         //     // })?;
+    //         //     // let upload_dir = "./directory";
+    //         //     // if !stdPath::new(upload_dir).exists() {
+    //         //     //     fs::create_dir_all(upload_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    //         //     // }
+    //         //     // let file_name = "pie.zip";
+    //         //     // let file_path = format!("{}/{}", upload_dir, file_name);
+    //         //     // let mut file = File::create(&file_path).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    //         //     // file.write_all(&data).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+    //         //     // info!("Received file data of {} bytes", data.len());
+    //         // }
+    //         _ => {
+    //             let name = field.name().map(|s| s.to_string());
+    //             // let value = field.text().await.map_err(|_| {
+    //             //     info!("Other");
+    //             //     StatusCode::BAD_REQUEST
+    //             // })?;
+
+    //             if let Some(name) = name {
+    //                 info!("Name : {}", name);
+    //                 // debug!("Received form field: {} = {}", name, value);
+    //             }
+    //         }
+    //     }
+    // }
 
     // Determine job ID based on layout
     let job_id = match layout.as_deref() {
@@ -262,8 +303,8 @@ pub async fn add_job_handler(
         }
     };
 
-    debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, job_id: {}",
-           layout, network, declared_job_size, cairo_version, cairo_vm, result_type, job_id);
+    // debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, job_id: {}",
+    //        layout, network, cairo_version, cairo_vm, result_type, job_id);
 
     let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
     let job_layout = job_data.query.layout.clone();

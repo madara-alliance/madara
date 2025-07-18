@@ -7,7 +7,7 @@ pub mod config;
 use crate::services::helpers::NodeRpcMethods;
 // Re-export common utilities
 pub use config::*;
-
+use tokio::time::Duration;
 use crate::services::docker::{DockerError, DockerServer};
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
@@ -143,6 +143,19 @@ impl PathfinderService {
     /// Get the configuration used
     pub fn config(&self) -> &PathfinderConfig {
         &self.config
+    }
+
+    pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
+        println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
+
+        while self.get_latest_block_number().await
+            .map_err(|err| PathfinderError::RpcError(err))? < 0 {
+            println!("⏳ Checking Pathfinder block status...");
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
+        println!("🔔 Pathfinder block {} is synced", block_number);
+
+        Ok(())
     }
 
     // TODO: dump and load from db fns!

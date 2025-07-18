@@ -12,7 +12,7 @@ use reqwest::Url;
 use std::path::PathBuf;
 
 use crate::services::helpers::NodeRpcMethods;
-
+use tokio::time::Duration;
 use super::server::DEFAULT_SERVICE_HOST;
 
 pub struct MadaraService {
@@ -126,6 +126,19 @@ impl MadaraService {
     /// Check if the service is running
     pub fn is_running(&mut self) -> bool {
         self.server.is_running()
+    }
+
+    pub async fn wait_for_block_mined(&self, block_number: u64) -> Result<(), MadaraError> {
+        println!("⏳ Waiting for Madara block {} to be mined", block_number);
+
+        while self.get_latest_block_number().await
+            .map_err(|err| MadaraError::RpcError(err))? < 0 {
+            println!("⏳ Checking Madara block status...");
+            tokio::time::sleep(Duration::from_millis(1000)).await;
+        }
+        println!("🔔 Madara block {} is mined", block_number);
+
+        Ok(())
     }
 
     // Stop the Madara service
