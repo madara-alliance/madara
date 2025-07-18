@@ -95,7 +95,7 @@ pub fn build_batch(
         blob_path: String::from("path/to/file.json"),
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
-        bucket_id: Some(String::from("ABCD1234")),
+        bucket_id: String::from("ABCD1234"),
         status: BatchStatus::Open,
     }
 }

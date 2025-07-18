@@ -208,7 +208,7 @@ impl BatchingTrigger {
             start_block,
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
-            Some(bucket_id),
+            bucket_id,
         ))
     }
 

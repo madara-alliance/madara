@@ -64,7 +64,7 @@ pub struct Batch {
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub updated_at: DateTime<Utc>,
     /// Bucket ID for the batch, received from the prover client
-    pub bucket_id: Option<String>,
+    pub bucket_id: String,
     /// Status of the batch
     pub status: BatchStatus,
 }
@@ -75,7 +75,7 @@ impl Batch {
         start_block: u64,
         squashed_state_updates_path: String,
         blob_path: String,
-        bucket_id: Option<String>,
+        bucket_id: String,
     ) -> Self {
         Self {
             id: Uuid::new_v4(),

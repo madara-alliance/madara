@@ -57,7 +57,7 @@ impl JobTrigger for ProvingJobTrigger {
                             // Set SNOS fact for on-chain verification (not needed since we'll verify the aggregator proof)
                             ensure_on_chain_registration: None,
                             n_steps: snos_metadata.snos_n_steps,
-                            bucked_id: batch.bucket_id,
+                            bucked_id: Some(batch.bucket_id),
                             bucket_job_index: Some(snos_metadata.block_number - batch.start_block + 1),
                         }),
                     };

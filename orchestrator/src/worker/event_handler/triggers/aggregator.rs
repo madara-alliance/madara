@@ -46,21 +46,12 @@ impl JobTrigger for AggregatorJobTrigger {
                 }
             }
 
-            // Get the bucket_id from batch
-            let bucket_id = match batch.bucket_id {
-                Some(bucket_id) => bucket_id,
-                None => {
-                    tracing::error!(batch_id = %batch.id, batch_index = %batch.index, "Bucket ID not found for batch");
-                    continue;
-                }
-            };
-
             // Construct aggregator job metadata
             let metadata = JobMetadata {
                 common: CommonMetadata::default(),
                 specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
                     batch_num: batch.index,
-                    bucket_id,
+                    bucket_id: batch.bucket_id,
                     num_blocks: batch.num_blocks,
                     download_proof: Some(format!(
                         "{}/batch/{}/{}",
