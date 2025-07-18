@@ -3,6 +3,7 @@ use starknet_types_core::felt::Felt;
 
 use crate::versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server;
 
+use super::starknet_unsubscribe::*;
 use super::subscribe_events::*;
 use super::subscribe_new_heads::*;
 use super::subscribe_pending_transactions::*;
@@ -43,5 +44,9 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
         sender_address: Vec<starknet_types_core::felt::Felt>,
     ) -> jsonrpsee::core::SubscriptionResult {
         Ok(subscribe_pending_transactions(self, subscription_sink, transaction_details, sender_address).await?)
+    }
+
+    async fn starknet_unsubscribe(&self, subscription_id: u64) -> jsonrpsee::core::RpcResult<bool> {
+        Ok(starknet_unsubscribe(self, subscription_id).await?)
     }
 }
