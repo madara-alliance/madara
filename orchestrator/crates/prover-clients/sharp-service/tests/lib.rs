@@ -12,7 +12,7 @@ use serde_json::json;
 use starknet_os::sharp::CairoJobStatus;
 use url::Url;
 
-use crate::constants::TEST_FACT;
+use crate::constants::{TEST_FACT, TEST_JOB_ID};
 
 mod constants;
 
@@ -90,7 +90,7 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
     let task_status = sharp_service
         .get_task_status(
             AtlanticStatusType::Job,
-            "c31381bf-4739-4667-b5b8-b08af1c6b1c7",
+            TEST_JOB_ID,
             Some(TEST_FACT.to_string()),
             false,
         )

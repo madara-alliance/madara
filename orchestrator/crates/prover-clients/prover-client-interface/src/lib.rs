@@ -39,8 +39,18 @@ pub enum TaskType {
 }
 
 pub enum Task {
+    /// For creating a new job
+    /// Requires:
+    /// 1. CairoPie
+    /// 2. Bucket ID
+    /// 3. Bucket Job Index
+    /// 4. Num steps
     CreateJob(Box<CairoPie>, Option<String>, Option<u64>, Option<usize>),
+    /// For creating a new bucket
     CreateBucket,
+    /// For closing a bucket
+    /// Requires:
+    /// 1. Bucket ID
     CloseBucket(String),
 }
 

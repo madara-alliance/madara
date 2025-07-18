@@ -64,9 +64,6 @@ pub enum ProvingInputType {
 }
 
 /// Metadata specific to aggregator job
-///
-/// # Field Management
-/// TODO: update this
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorMetadata {
     // Worker populated field

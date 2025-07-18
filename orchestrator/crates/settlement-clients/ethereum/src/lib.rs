@@ -43,6 +43,9 @@ use tokio::time::sleep;
 
 use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 
+// For more details on state update, refer to the core contract logic
+// https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
+
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
 pub const N_BLOBS_OFFSET: usize = 11;
 pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)

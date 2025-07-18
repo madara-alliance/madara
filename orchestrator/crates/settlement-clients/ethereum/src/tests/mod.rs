@@ -376,7 +376,7 @@ mod settlement_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[case::basic(8373665)]
+    #[case::basic(8373665)] // Ethereum block for Starknet blocks 789878-790377, version 0.13.5, created on 21/05/2025
     async fn creating_input_data_works(#[case] fork_block_no: u64) {
         // get program output from the file
         let program_output = get_program_output_from_file(&format!(
