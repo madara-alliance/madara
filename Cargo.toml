@@ -101,7 +101,7 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = ["cairo-1-hints", "extensive_hints", "mod_builtin"] }
 starknet-accounts = "0.11.0"
 starknet-contract = "0.11.0"
 starknet-core = "0.12"
@@ -286,8 +286,8 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "fix/cairovm-version" }
-prove_block = { git = "https://github.com/karnotxyz/snos", branch = "fix/cairovm-version" }
+starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/0.13.2" }
+prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/0.13.2" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -313,4 +313,4 @@ starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "m
 ] }
 
 starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2" }
+cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = ["cairo-1-hints", "extensive_hints", "mod_builtin"] }
