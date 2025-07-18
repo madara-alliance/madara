@@ -11,7 +11,7 @@ use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::{fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block};
+use crate::worker::utils::{fetch_blob_data_for_batch, fetch_program_output_for_block, fetch_snos_for_block};
 use async_trait::async_trait;
 use cairo_vm::Felt252;
 use chrono::{SubsecRound, Utc};
@@ -121,9 +121,8 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             // Get the snos output, program output and blob data for the batch
             let snos_output = fetch_snos_for_block(internal_id.clone(), i, config.clone(), &snos_output_paths).await?;
             let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
-            let blob_data = fetch_blob_data_for_block(i, config.clone(), &blob_data_paths).await?;
+            let blob_data = fetch_blob_data_for_batch(i, config.clone(), &blob_data_paths).await?;
 
-            // TODO: Check if this will work
             // Perform state update
             let txn_hash = match self
                 .update_state_for_block(config.clone(), batch_no, snos_output, nonce, program_output, blob_data)
