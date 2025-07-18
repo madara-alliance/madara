@@ -191,6 +191,7 @@ tokio-util = "0.7.12"
 rayon = "1.10"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
+dashmap = "6.1.0"
 
 # Serialization
 derive_more = "2.0.1"
@@ -222,6 +223,7 @@ siphasher = "1.0"
 lazy_static = { version = "1.4", default-features = false }
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
+itertools = { version = "0.13.0" }
 
 # Error handling
 thiserror = "2.0"
