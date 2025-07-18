@@ -17,7 +17,7 @@ mod mempool_proptest;
 pub struct TestTx {
     pub nonce: Felt,
     pub contract_address: Felt,
-    pub arrived_at: u128,
+    pub arrived_at: u64,
     pub tip: Option<u64>,
     pub tx_hash: Felt,
     pub is_declare: bool,
@@ -99,7 +99,7 @@ impl From<ValidatedMempoolTx> for TestTx {
 pub struct MempoolTester {
     inner: InnerMempool,
     added_txs: HashSet<TestTx>,
-    current_time: u128,
+    current_time: u64,
 }
 
 impl MempoolTester {
@@ -118,7 +118,7 @@ impl MempoolTester {
         assert_eq!(expected, self.added_txs);
     }
 
-    pub fn set_current_time(&mut self, current_time: u128) {
+    pub fn set_current_time(&mut self, current_time: u64) {
         self.current_time = current_time;
     }
 
@@ -208,7 +208,7 @@ pub fn fcfs_mempool(
 #[fixture]
 pub fn tip_mempool(
     #[default(4)] max_transactions: usize,
-    #[default(4)] min_tip_bump: u128,
+    #[default(0.1)] min_tip_bump: f64,
     #[default(Some(2))] max_declare_transactions: Option<usize>,
     #[default(Duration::from_secs(20))] ttl: Duration,
 ) -> MempoolTester {
@@ -251,20 +251,6 @@ fn test_insert_expired_ttl_fails(mut fcfs_mempool: MempoolTester) {
     };
     assert_matches!(fcfs_mempool.insert_tx(expired_tx, felt!("0x1")), Err(TxInsertionError::TooOld { .. }));
     assert_eq!(fcfs_mempool.transactions(), [].into());
-}
-
-#[rstest]
-fn test_tip_mode_insert_without_tip_fails(mut tip_mempool: MempoolTester) {
-    let tx_without_tip = TestTx {
-        nonce: felt!("0x1"),
-        contract_address: felt!("0x123"),
-        arrived_at: 1000,
-        tip: None,
-        tx_hash: felt!("0xabc"),
-        is_declare: false,
-    };
-    assert_matches!(tip_mempool.insert_tx(tx_without_tip, felt!("0x1")), Err(TxInsertionError::NoTip));
-    assert_eq!(tip_mempool.transactions(), [].into());
 }
 
 #[rstest]
@@ -405,7 +391,7 @@ fn test_tip_mode_replace_with_sufficient_tip_bump_works(mut tip_mempool: Mempool
         nonce: felt!("0x1"),
         contract_address: felt!("0x123"),
         arrived_at: 2000,
-        tip: Some(105), // Tip bump of 5 > min_tip_bump of 4
+        tip: Some(115), // Tip bump of 15 = 15% > min_tip_bump of 10%
         tx_hash: felt!("0xdef"),
         is_declare: false,
     };
@@ -430,14 +416,14 @@ fn test_tip_mode_replace_with_insufficient_tip_bump_fails(mut tip_mempool: Mempo
         nonce: felt!("0x1"),
         contract_address: felt!("0x123"),
         arrived_at: 2000,
-        tip: Some(103), // Tip bump of 3 < min_tip_bump of 4
+        tip: Some(109), // Tip bump of 9 < min_tip_bump of 10%
         tx_hash: felt!("0xdef"),
         is_declare: false,
     };
 
     assert_matches!(tip_mempool.insert_tx(tx1.clone(), felt!("0x1")), Ok(()));
 
-    assert_matches!(tip_mempool.insert_tx(tx2, felt!("0x1")), Err(TxInsertionError::MinTipBump { min_tip_bump: 4 }));
+    assert_matches!(tip_mempool.insert_tx(tx2, felt!("0x1")), Err(TxInsertionError::MinTipBump { min_tip_bump: 0.1 }));
 
     assert_eq!(tip_mempool.transactions(), [tx1].into());
 }
