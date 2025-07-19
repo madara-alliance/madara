@@ -1,8 +1,21 @@
 # Madara docker ignore file
 .devcontainer
 .github
-.vscode
+
+# Ignore editor and IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Ignore scripts and target directory
 scripts
 target/
-*Dockerfile
+
+# Ignore dockerfiles
+*dockerfile
+
+# Ignore OS specific files
+.DS_Store
+Thumbs.db
 .npm-global
