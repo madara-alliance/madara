@@ -44,6 +44,8 @@ async fn test_proving_worker(#[case] incomplete_runs: bool) -> Result<(), Box<dy
     // Create mock SNOS jobs with snos_fact field set
     let mut snos_jobs = Vec::new();
 
+    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
+
     for i in 1..=num_jobs {
         // Skip job with ID 3 if incomplete_runs is true
         if incomplete_runs && i == random_incomplete_job_id {

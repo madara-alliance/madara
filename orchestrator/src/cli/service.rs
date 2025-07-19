@@ -21,4 +21,8 @@ pub struct ServiceCliArgs {
     /// The maximum number of proving jobs to process concurrently.
     #[arg(env = "MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", long)]
     pub max_concurrent_proving_jobs: Option<usize>,
+
+    /// Timeout in seconds for jobs stuck in LockedForProcessing status before self-healing recovery.
+    #[arg(env = "MADARA_ORCHESTRATOR_JOB_PROCESSING_TIMEOUT_SECONDS", long, default_value = "1800")]
+    pub job_processing_timeout_seconds: u64,
 }
