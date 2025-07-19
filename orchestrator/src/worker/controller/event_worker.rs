@@ -9,10 +9,13 @@ use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+use tokio::sync::Notify;
 use tokio::task::JoinSet;
-use tracing::{debug, error, info, info_span};
+use tokio::time::sleep;
+use tracing::{debug, error, info, info_span, warn};
 
 pub enum MessageType {
     Message(Delivery),
@@ -24,6 +27,8 @@ pub struct EventWorker {
     config: Arc<Config>,
     queue_type: QueueType,
     queue_control: QueueControlConfig,
+    shutdown_notify: Arc<Notify>,
+    is_shutdown: Arc<AtomicBool>,
 }
 
 impl EventWorker {
@@ -35,10 +40,23 @@ impl EventWorker {
     /// # Returns
     /// * `EventSystemResult<EventWorker>` - A Result indicating whether the operation was successful or not
     pub fn new(queue_type: QueueType, config: Arc<Config>) -> EventSystemResult<Self> {
-        info!("Kicking in the Worker to Monitor the Queue {:?}", queue_type);
+        info!("Kicking in the Worker to Queue {:?}", queue_type);
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
         let queue_control = queue_config.queue_control.clone();
-        Ok(Self { queue_type, config, queue_control })
+        Ok(Self {
+            queue_type,
+            config,
+            queue_control,
+            shutdown_notify: Arc::new(Notify::new()),
+            is_shutdown: Arc::new(AtomicBool::new(false)),
+        })
+    }
+
+    /// Triggers a graceful shutdown
+    pub async fn shutdown(&self) -> EventSystemResult<()> {
+        self.is_shutdown.store(true, Ordering::SeqCst);
+        self.shutdown_notify.notify_waiters();
+        Ok(())
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -287,27 +305,81 @@ impl EventWorker {
     pub async fn run(&self) -> EventSystemResult<()> {
         let mut tasks = JoinSet::new();
         let max_concurrent_tasks = self.queue_control.max_message_count;
-        info!("Starting worker with concurrency limit: {}", max_concurrent_tasks);
+        info!("Starting worker with thread pool size: {}", max_concurrent_tasks);
 
         loop {
-            if tasks.len() < max_concurrent_tasks {
-                // Get message - this now blocks until a message is available
-                match self.get_message().await {
-                    Ok(message) => match self.parse_message(&message) {
-                        Ok(parsed_message) => {
-                            let worker = self.clone();
-                            tasks.spawn(async move { worker.process_message(message, parsed_message).await });
-                        }
-                        Err(e) => {
-                            error!("Failed to parse message: {:?}", e);
-                        }
-                    },
-                    Err(e) => {
-                        error!("Error receiving message: {:?}", e);
+            // Check if shutdown was requested at the start of each loop iteration
+            if self.is_shutdown.load(Ordering::SeqCst) {
+                info!("Shutdown requested, stopping message processing");
+                break;
+            }
+
+            tokio::select! {
+                biased;
+
+                // Immediate cleanup when tasks complete
+                Some(result) = tasks.join_next(), if !tasks.is_empty() => {
+                    Self::handle_task_result(result);
+
+                    if tasks.len() >= max_concurrent_tasks - 1 {
+                        warn!("Backpressure activated - waiting for tasks to complete. Active: {}", tasks.len());
+                    } else {
+                        debug!("Task completed, active tasks: {}", tasks.len());
                     }
                 }
-            } else if let Some(Err(e)) = tasks.join_next().await {
-                error!("Task failed: {:?}", e);
+
+                // Handle shutdown signal
+                _ = self.shutdown_notify.notified() => {
+                    info!("Shutdown signal received, breaking from main loop");
+                    break;
+                }
+
+                // Process new messages (with backpressure)
+                message_result = self.get_message(), if tasks.len() < max_concurrent_tasks => {
+                    match message_result {
+                        Ok(message) => {
+                            if let Ok(parsed_message) = self.parse_message(&message) {
+                                let worker = self.clone();
+                                tasks.spawn(async move {
+                                    worker.process_message(message, parsed_message).await
+                                });
+                                debug!("Spawned task, active: {}", tasks.len());
+                            }
+                        }
+                        Err(e) => {
+                            error!("Error receiving message: {:?}", e);
+                            sleep(Duration::from_secs(1)).await;
+                        }
+                    }
+                }
+            }
+        }
+
+        // Wait for remaining tasks to complete during shutdown
+        info!("Waiting for {} remaining tasks to complete", tasks.len());
+        while let Some(result) = tasks.join_next().await {
+            Self::handle_task_result(result);
+        }
+        info!("All tasks completed, worker shutdown complete");
+
+        Ok(())
+    }
+
+    /// Handle the result of a task
+    /// This function handles the result of a task
+    /// It logs the result of the task
+    /// # Arguments
+    /// * `result` - The result of the task
+    fn handle_task_result(result: Result<EventSystemResult<()>, tokio::task::JoinError>) {
+        match result {
+            Ok(Ok(_)) => {
+                debug!("Task completed successfully");
+            }
+            Ok(Err(e)) => {
+                error!("Task failed with application error: {:?}", e);
+            }
+            Err(e) => {
+                error!("Task panicked or was cancelled: {:?}", e);
             }
         }
     }

@@ -7,6 +7,7 @@ use orchestrator::setup::setup;
 use orchestrator::types::params::OTELConfig;
 use orchestrator::utils::instrument::OrchestratorInstrumentation;
 use orchestrator::utils::logging::init_logging;
+use orchestrator::utils::signal_handler::SignalHandler;
 use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
 use std::sync::Arc;
@@ -71,14 +72,48 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     setup_server(config.clone()).await?;
 
     debug!("Application router initialized");
-    initialize_worker(config.clone()).await?;
 
-    tokio::signal::ctrl_c().await.expect("Failed to listen for ctrl+c");
+    // Set up comprehensive signal handling for Docker/Kubernetes
+    info!("Setting up signal handler for graceful shutdown");
+    let mut signal_handler = SignalHandler::new();
+    let shutdown_trigger = signal_handler.get_shutdown_trigger();
 
-    // Analytics Shutdown
-    instrumentation.shutdown()?;
-    info!("Orchestrator service shutting down");
-    Ok(())
+    // Initialize workers and keep the controller for shutdown
+    let worker_controller = initialize_worker(config.clone(), shutdown_trigger).await?;
+
+    let shutdown_signal = signal_handler.wait_for_shutdown().await;
+
+    info!("Initiating orchestrator shutdown sequence (triggered by: {})", shutdown_signal);
+
+    // Perform graceful shutdown with timeout
+    let shutdown_result = signal_handler
+        .handle_graceful_shutdown(
+            || async {
+                // Graceful shutdown for workers
+                worker_controller.shutdown().await?;
+
+                // Analytics Shutdown
+                instrumentation.shutdown()?;
+
+                info!("All components shutdown successfully");
+                Ok(())
+            },
+            300, // 300 seconds timeout - matches Docker's default graceful shutdown period
+                 // Note: This Timeout might be to much for this case might need to revisit after consuting with mohit
+        )
+        .await;
+
+    match shutdown_result {
+        Ok(()) => {
+            info!("Orchestrator service shutdown completed gracefully");
+            Ok(())
+        }
+        Err(e) => {
+            error!("Orchestrator service shutdown encountered errors: {}", e);
+            // Still return Ok to avoid panic, as we tried our best
+            Ok(())
+        }
+    }
 }
 
 /// setup_orchestrator - Initializes the orchestrator with the provided configuration
