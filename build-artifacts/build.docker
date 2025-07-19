@@ -50,6 +50,9 @@ RUN scripts/build-cairo.sh                                                      
     $COMPILE_SIERRA cairo_contracts/RolesExternalInitializer.sierra cairo_contracts/RolesExternalInitializer.casm && \
     $COMPILE_SIERRA cairo_contracts/ERC20.sierra cairo_contracts/ERC20.casm
 
+RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"starkware/\"src\/starkware/' {} \; -exec rm {}.bak \;
+RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"third_party/\"src\/third_party/' {} \; -exec rm {}.bak \;
+
 # =========================================================================== #
 #                          STARKGATE CONTRACTS (legacy)                       #
 # =========================================================================== #
@@ -89,7 +92,7 @@ WORKDIR build/Release/src
 #                                   CAIRO-LANG                                #
 # =========================================================================== #
 
-FROM builder as cairo-lang
+FROM builder AS cairo-lang
 ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
@@ -211,6 +214,20 @@ RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip
 RUN ./scarb/bin/scarb build
 
 # =========================================================================== #
+#                                  BOOTSTRAPPER                               #
+# =========================================================================== #
+
+FROM ghcr.io/foundry-rs/foundry AS bootstrapper
+WORKDIR /contracts
+
+ENV STARKGATE_DIR="/contracts/starkgate-contracts"
+
+COPY bootstrapper-v2/contracts/ethereum/ .
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware/ ./src/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party/ ./src/third_party/
+RUN forge install --no-git && forge build
+
+# =========================================================================== #
 #                                  ARTIFACTS                                  #
 # =========================================================================== #
 
@@ -222,6 +239,8 @@ WORKDIR starkgate_latest
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
+# TODO: Change this to ./bootstrapper/contracts/ethereum/src post bootstrapper v2 is the default 
+ENV BASE_CHAIN_FACTORY_DIR="bootstrapper-v2/contracts/ethereum"
 
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra erc20.sierra.json
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm erc20.casm.json
@@ -236,7 +255,12 @@ COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ERC20_070.casm.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_upgraded.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
 
-WORKDIR ../starkgate_legacy
+WORKDIR /dependencies
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./$BASE_CHAIN_FACTORY_DIR/src/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./$BASE_CHAIN_FACTORY_DIR/src/third_party/
+COPY --from=bootstrapper "/contracts/out" ./$BASE_CHAIN_FACTORY_DIR/out/
+
+WORKDIR /artifacts/starkgate_legacy
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts/build/Release/src"
 ENV ARTIFACTS_LEGACY="$STARKGATE_DIR/starkware/starknet"
