@@ -63,6 +63,29 @@ pub enum ProvingInputType {
     CairoPie(String),
 }
 
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub struct SettlementContextData {
+    // Worker initialized field
+    /// Batch/block numbers that need to be settled
+    pub to_settle: Vec<u64>,
+    // Job populated field
+    /// Last batch/block number that failed processing
+    pub last_failed: Option<u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "type")]
+pub enum SettlementContext {
+    Block(SettlementContextData),
+    Batch(SettlementContextData),
+}
+
+impl Default for SettlementContext {
+    fn default() -> Self {
+        Self::Batch(Default::default())
+    }
+}
+
 /// Metadata specific to aggregator job
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct AggregatorMetadata {
@@ -121,7 +144,7 @@ pub struct ProvingMetadata {
     pub n_steps: Option<usize>,
     /// Bucket ID received from the prover client.
     /// If None, it's assumed that the bucket ID is not needed (i.e., not using Applicative Recursion)
-    pub bucked_id: Option<String>,
+    pub bucket_id: Option<String>,
     /// Index of the block within the bucket.
     /// If None, it's assumed that we are not using Applicative Recursion
     pub bucket_job_index: Option<u64>,
@@ -163,10 +186,6 @@ pub struct SnosMetadata {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub struct StateUpdateMetadata {
     // Worker-initialized fields
-    /// Block numbers that need to be settled
-    // pub blocks_to_settle: Vec<u64>,
-    /// Batch numbers that need to be settled
-    pub batches_to_settle: Vec<u64>,
     /// Paths to SNOS output files for each block/batch
     pub snos_output_paths: Vec<String>,
     /// Paths to program output files for each block/batch
@@ -175,12 +194,10 @@ pub struct StateUpdateMetadata {
     pub blob_data_paths: Vec<String>,
 
     // Job-populated fields
-    /// Last block number that failed processing
-    // pub last_failed_block_no: Option<u64>,
-    /// Last batch number that failed processing
-    pub last_failed_batch_no: Option<u64>,
     /// Transaction hashes for processed blocks/batches
     pub tx_hashes: Vec<String>,
+
+    pub context: SettlementContext,
 }
 
 /// Enum containing all possible job-specific metadata types.

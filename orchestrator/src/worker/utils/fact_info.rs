@@ -76,7 +76,7 @@ pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_ey
         ),
     };
 
-    let program_output = get_program_output(cairo_pie)?;
+    let program_output = get_program_output(cairo_pie, false)?;
     let boot_loader_output: BootLoaderOutput = BootLoaderOutput {
         one_felt: Felt::ONE,
         program_output_len_add_2: Felt::from(program_output.len()).add(2),
@@ -98,7 +98,7 @@ pub fn get_fact_l2(cairo_pie: &CairoPie, program_hash: Option<Felt>) -> color_ey
 }
 
 pub fn build_on_chain_data(cairo_pie: &CairoPie) -> color_eyre::Result<OnChainData> {
-    let program_output = get_program_output(cairo_pie)?;
+    let program_output = get_program_output(cairo_pie, false)?;
     let fact_topology = get_fact_topology(cairo_pie, program_output.len())?;
     let fact_root = generate_merkle_root(&program_output, &fact_topology)?;
 

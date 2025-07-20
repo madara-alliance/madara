@@ -35,7 +35,6 @@ pub mod tests;
 pub mod types;
 use alloy::providers::RootProvider;
 use alloy::transports::http::Http;
-use color_eyre::eyre::WrapErr;
 use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;

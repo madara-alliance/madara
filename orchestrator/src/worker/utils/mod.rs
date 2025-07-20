@@ -51,13 +51,13 @@ pub fn biguint_to_32_bytes(num: &BigUint) -> [u8; 32] {
     result
 }
 
-/// fetch_blob_data_for_block - Fetches blob data for a specific block index.
-/// Fetching the blob data (stored in remote storage during DA job) for a particular block
+/// fetch_blob_data_for_batch - Fetches blob data for a specific batch
+/// Fetching the blob data (stored in remote storage during Batching) for a particular batch
 ///
 /// # Arguments
-/// * `block_index` - The index of the block.
-/// * `config` - The configuration object.
-/// * `blob_data_paths` - A slice of blob data directory paths.
+/// * `index` - The index of the batch
+/// * `config` - The configuration object
+/// * `blob_data_paths` - A slice of blob data directory paths
 ///
 /// # Returns
 /// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
@@ -99,6 +99,42 @@ pub async fn fetch_blob_data_for_batch(
 
     tracing::debug!("Successfully retrieved blob data for batch index {}", index);
     Ok(blobs)
+}
+
+/// fetch_blob_data_for_block - Fetches blob data for a specific block index.
+/// Fetching the blob data (stored in remote storage during DA job) for a particular block
+///
+/// # Arguments
+/// * `block_index` - The index of the block.
+/// * `config` - The configuration object.
+/// * `blob_data_paths` - A slice of blob data paths.
+///
+/// # Returns
+/// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
+///
+pub async fn fetch_blob_data_for_block(
+    block_index: usize,
+    config: Arc<Config>,
+    blob_data_paths: &[String],
+) -> Result<Vec<Vec<u8>>, JobError> {
+    tracing::debug!("Fetching blob data for block index {}", block_index);
+
+    let storage_client = config.storage();
+
+    // Get the path for this block
+    let path = blob_data_paths.get(block_index).ok_or_else(|| {
+        tracing::error!("Blob data path not found for index {}", block_index);
+        JobError::Other(OtherError(eyre!("Blob data path not found for index {}", block_index)))
+    })?;
+
+    tracing::debug!("Retrieving blob data from path: {}", path);
+    let blob_data = storage_client.get_data(path).await.map_err(|e| {
+        tracing::error!("Failed to retrieve blob data from path {}: {}", path, e);
+        JobError::Other(OtherError(eyre!("Failed to retrieve blob data from path {}: {}", path, e)))
+    })?;
+
+    tracing::debug!("Successfully retrieved blob data for block index {}", block_index);
+    Ok(vec![blob_data.to_vec()])
 }
 
 /// fetch_snos_for_block - Fetches the SNOS output for a specific block index.

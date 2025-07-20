@@ -1,5 +1,4 @@
 use async_trait::async_trait;
-use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use mockall::automock;
 use orchestrator_gps_fact_checker::FactCheckerError;
@@ -37,6 +36,7 @@ pub trait ProverClient: Send + Sync {
         fact: &str,
         n_steps: Option<usize>,
     ) -> Result<String, ProverClientError>;
+    async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

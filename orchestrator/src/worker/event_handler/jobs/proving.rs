@@ -1,11 +1,8 @@
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use chrono::{SubsecRound, Utc};
-use color_eyre::eyre::{eyre, WrapErr};
+use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus};
-use uuid::Uuid;
+use std::sync::Arc;
 
 use crate::core::config::Config;
 use crate::error::job::proving::ProvingError;
@@ -67,7 +64,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             .prover_client()
             .submit_task(Task::CreateJob(
                 cairo_pie,
-                proving_metadata.bucked_id,
+                proving_metadata.bucket_id,
                 proving_metadata.bucket_job_index,
                 proving_metadata.n_steps,
             ))
@@ -142,7 +139,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                // If proof download path is specified, store the proof
+                // If the proof download path is specified, store the proof
                 if let Some(download_path) = &proving_metadata.download_proof {
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
                         tracing::error!(

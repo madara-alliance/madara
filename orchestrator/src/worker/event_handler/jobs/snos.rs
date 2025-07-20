@@ -85,33 +85,28 @@ impl JobHandlerTrait for SnosJobHandler {
                 })?;
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
 
-        // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
-        // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
-        // calldata based DA.
-        // So in case of KZG flag == 0 :
-        //      we calculate the l2 fact
-        // And in case of KZG flag == 1 :
-        //      we calculate the fact info
-        let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
-            debug!(job_id = %job.internal_id, "Using calldata for settlement layer");
-            // Get the program output from CairoPie
-            let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
-                error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
-                JobError::FactError(FactError::L2FactCompute)
-            })?;
-            let program_output = get_program_output(&cairo_pie).map_err(|e| {
-                error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
-                JobError::FactError(FactError::ProgramOutputCompute)
-            })?;
-            (fact_hash, program_output)
-        } else if snos_output.use_kzg_da == Felt252::ONE {
-            debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
-            // Get the program output from CairoPie
-            let fact_info = get_fact_info(&cairo_pie, None)?;
-            (fact_info.fact, fact_info.program_output)
-        } else {
-            error!(job_id = %job.internal_id, "Invalid KZG flag");
-            return Err(JobError::from(SnosError::UnsupportedKZGFlag));
+        // We use Layer to determine if we use CallData or Blob for settlement
+        // On L1 settlement we have blob-based DA, while on L2 we have CallData based DA
+        let (fact_hash, program_output) = match config.layer() {
+            Layer::L2 => {
+                debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
+                // Get the program output from CairoPie
+                let fact_info = get_fact_info(&cairo_pie, None, false)?;
+                (fact_info.fact, fact_info.program_output)
+            }
+            Layer::L3 => {
+                debug!(job_id = %job.internal_id, "Using CallData for settlement layer");
+                // Get the program output from CairoPie
+                let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
+                    error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
+                    JobError::FactError(FactError::L2FactCompute)
+                })?;
+                let program_output = get_program_output(&cairo_pie, false).map_err(|e| {
+                    error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
+                    JobError::FactError(FactError::ProgramOutputCompute)
+                })?;
+                (fact_hash, program_output)
+            }
         };
 
         debug!(job_id = %job.internal_id, "Fact info calculated successfully");
@@ -123,21 +118,31 @@ impl JobHandlerTrait for SnosJobHandler {
         }
 
         debug!(job_id = %job.internal_id, "Storing SNOS outputs");
-        if config.layer() == &Layer::L3 {
-            // Store the on-chain data path
-            self.store_l2(
-                internal_id.clone(),
-                config.storage(),
-                &snos_metadata,
-                cairo_pie,
-                snos_output,
-                program_output,
-            )
-            .await?;
-        } else if config.layer() == &Layer::L2 {
-            // Store the Cairo Pie path
-            self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
+        match config.layer() {
+            Layer::L2 => {
+                // Store the Cairo Pie path
+                self.store(
+                    internal_id.clone(),
+                    config.storage(),
+                    &snos_metadata,
+                    cairo_pie,
+                    snos_output,
+                    program_output,
+                )
                 .await?;
+            }
+            Layer::L3 => {
+                // Store the on-chain data path
+                self.store_l2(
+                    internal_id.clone(),
+                    config.storage(),
+                    &snos_metadata,
+                    cairo_pie,
+                    snos_output,
+                    program_output,
+                )
+                .await?;
+            }
         }
 
         tracing::info!(

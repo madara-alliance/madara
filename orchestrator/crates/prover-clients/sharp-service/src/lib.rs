@@ -37,6 +37,7 @@ pub struct SharpValidatedArgs {
 pub struct SharpProverService {
     sharp_client: SharpClient,
     fact_checker: FactChecker,
+    proof_layout: LayoutName,
 }
 
 #[async_trait]

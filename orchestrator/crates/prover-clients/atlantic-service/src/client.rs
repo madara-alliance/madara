@@ -76,7 +76,7 @@ impl AtlanticClient {
             let response_text = response.bytes().await.map_err(AtlanticError::GetJobResultFailure)?;
             Ok(response_text.to_vec())
         } else {
-            Err(AtlanticError::SharpService(response.status()))
+            Err(AtlanticError::AtlanticService(response.status()))
         }
     }
 
@@ -92,7 +92,7 @@ impl AtlanticClient {
                 tracing::error!("Failed to parse bucket status, {}", e);
                 AtlanticError::GetBucketStatusFailure(e)
             }),
-            false => Err(AtlanticError::SharpService(response.status())),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 
@@ -121,7 +121,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::SharpService(response.status())),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 
@@ -145,7 +145,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::SharpService(response.status())),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 

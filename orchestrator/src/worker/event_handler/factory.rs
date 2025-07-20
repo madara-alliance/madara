@@ -63,7 +63,6 @@ pub mod factory {
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
             JobType::Aggregator => Box::new(AggregatorJobHandler),
-            _ => unimplemented!("Job type not implemented yet."),
         };
 
         Arc::new(job)

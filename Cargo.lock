@@ -3708,7 +3708,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
+source = "git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -8035,7 +8035,6 @@ dependencies = [
  "alloy 0.8.3",
  "async-trait",
  "cairo-vm",
- "chrono",
  "clap",
  "color-eyre",
  "dotenvy",

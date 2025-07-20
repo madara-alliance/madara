@@ -35,38 +35,22 @@ impl JobTrigger for ProvingJobTrigger {
                 e
             })?;
 
-            // Create proving job metadata
-            let mut proving_metadata = JobMetadata {
-                common: CommonMetadata::default(),
-                specific: JobSpecificMetadata::Proving(ProvingMetadata {
-                    block_number: snos_metadata.block_number,
-                    // Set input path as CairoPie type
-                    input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
-                    // Set a download path if needed
-                    // download_proof,
-                    // Set SNOS fact for on-chain verification
-                    // ensure_on_chain_registration: snos_fact,
-                    n_steps: snos_metadata.snos_n_steps,
-                    // bucked_id: Some(batch.bucket_id),
-                    // bucket_job_index: Some(snos_metadata.block_number - batch.start_block + 1),
-                    ..default::Default(),
-                }),
-            };
-
-            match config.layer() {
+            let (download_proof, snos_fact, bucket_id, bucket_job_index) = match config.layer() {
                 Layer::L2 => {
                     // Set the bucket_id and bucket_job_index for Applicative Recursion
                     match config.database().get_batch_for_block(snos_metadata.block_number).await? {
-                        Some(batch) => {
-                            proving_metadata.bucked_id = Some(batch.bucker_id);
-                            proving_metadata.bucket_job_index = Some(snos_metadata.block_number - batch.start_block + 1);
-                        },
+                        Some(batch) => (
+                            None,
+                            None,
+                            Some(batch.bucket_id),
+                            Some(snos_metadata.block_number - batch.start_block + 1),
+                        ),
                         None => {
                             tracing::warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
                             continue;
                         }
                     }
-                },
+                }
                 Layer::L3 => {
                     // Set the snos_fact and path to download proof
                     let snos_fact = match &snos_metadata.snos_fact {
@@ -76,9 +60,26 @@ impl JobTrigger for ProvingJobTrigger {
                             continue;
                         }
                     };
-                    proving_metadata.ensure_on_chain_registration = Some(snos_fact);
-                    proving_metadata.download_proof = Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME));
+                    (Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME)), Some(snos_fact), None, None)
                 }
+            };
+
+            // Create proving job metadata
+            let proving_metadata = JobMetadata {
+                common: CommonMetadata::default(),
+                specific: JobSpecificMetadata::Proving(ProvingMetadata {
+                    block_number: snos_metadata.block_number,
+                    // Set input path as CairoPie type
+                    input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
+                    // Set a download path if needed
+                    download_proof,
+                    // Set SNOS fact for on-chain verification
+                    ensure_on_chain_registration: snos_fact,
+                    n_steps: snos_metadata.snos_n_steps,
+                    // Set the bucket_id and bucket_job_index for Applicative Recursion
+                    bucket_id,
+                    bucket_job_index,
+                }),
             };
 
             tracing::debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
