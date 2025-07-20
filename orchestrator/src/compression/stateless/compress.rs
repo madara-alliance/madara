@@ -3,7 +3,7 @@ use crate::compression::stateless::constants::{
     COMPRESSION_VERSION, HEADER_ELM_BOUND, N_UNIQUE_BUCKETS, TOTAL_N_BUCKETS,
 };
 use crate::compression::stateless::utils::{pack_usize_in_felt, pack_usize_in_felts};
-use color_eyre::eyre::eyre;
+use color_eyre::eyre::{eyre, Result};
 use starknet_core::types::Felt;
 use std::cmp::max;
 
@@ -17,7 +17,7 @@ pub(crate) struct CompressionSet {
 }
 impl CompressionSet {
     // Revert new signature and logic to match the original (no Result, use expect)
-    pub fn new(values: &[Felt]) -> Self {
+    pub fn new(values: &[Felt]) -> Result<Self> {
         // Initialize Self with fields
         let mut obj = Self {
             unique_value_buckets: Buckets::new(),
@@ -28,7 +28,7 @@ impl CompressionSet {
 
         for value in values {
             // Use From trait (requires reverting BucketElement::From)
-            let bucket_element = BucketElement::from(*value);
+            let bucket_element = BucketElement::try_from(*value)?;
             let (bucket_index, inverse_bucket_index) = obj.unique_value_buckets.bucket_indices(&bucket_element);
 
             if let Some(element_index) = obj.unique_value_buckets.get_element_index(&bucket_element) {
@@ -39,7 +39,7 @@ impl CompressionSet {
                 obj.bucket_index_per_elm.push(inverse_bucket_index);
             }
         }
-        obj // Return Self directly
+        Ok(obj)
     }
 
     // ... get_unique_value_bucket_lengths, n_repeating_values ...
@@ -75,17 +75,17 @@ impl CompressionSet {
     }
 
     // Return Vec<Felt> not Result
-    pub fn pack_unique_values(self) -> Vec<Felt> {
+    pub fn pack_unique_values(self) -> Result<Vec<Felt>> {
         self.unique_value_buckets.pack_in_felts()
     }
 }
 
 // Compression Logic
 // Revert compress signature and logic (no Result, use expect/panic)
-pub fn compress(data: &[Felt]) -> color_eyre::Result<Vec<Felt>> {
-    let data_len_usize = data.len();
-    // Use assert! like Python version
-    assert!(data_len_usize < HEADER_ELM_BOUND as usize, "Data is too long: {} >= {}", data_len_usize, HEADER_ELM_BOUND);
+pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
+    if data.len() >= HEADER_ELM_BOUND as usize {
+        return Err(eyre!("Data is too long: {} >= {}", data.len(), HEADER_ELM_BOUND));
+    }
 
     // Handle the empty case
     if data.is_empty() {
@@ -94,7 +94,7 @@ pub fn compress(data: &[Felt]) -> color_eyre::Result<Vec<Felt>> {
         return Ok(vec![pack_usize_in_felt(&header, HEADER_ELM_BOUND)?]);
     }
 
-    let compression_set = CompressionSet::new(data); // Uses new which now returns Self
+    let compression_set = CompressionSet::new(data)?;
 
     let unique_value_bucket_lengths = compression_set.get_unique_value_bucket_lengths();
     let n_unique_values: usize = unique_value_bucket_lengths.iter().sum();
@@ -118,7 +118,7 @@ pub fn compress(data: &[Felt]) -> color_eyre::Result<Vec<Felt>> {
         &compression_set.bucket_index_per_elm,
         u32::try_from(TOTAL_N_BUCKETS).map_err(|err| eyre!("TOTAL_N_BUCKETS does not fit in u32: {}", err))?,
     )?;
-    let unique_values = compression_set.pack_unique_values(); // Now returns Vec<Felt>
+    let unique_values = compression_set.pack_unique_values()?; // Now returns Vec<Felt>
 
     Ok([vec![packed_header], unique_values, packed_repeating_value_pointers, packed_bucket_index_per_elm]
         .into_iter()

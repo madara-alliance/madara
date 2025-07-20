@@ -16,9 +16,7 @@ use crate::types::jobs::metadata::{
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use color_eyre::Result;
-use num_bigint::BigUint;
-use num_traits::Num;
-use starknet_core::types::StateUpdate;
+use starknet_core::types::{Felt, StateUpdate};
 use std::fs::File;
 use std::io::Read;
 use url::Url;
@@ -111,18 +109,9 @@ pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderR
     Ok(TestConfigBuilder::new().configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url))).build().await)
 }
 
-pub fn read_biguint_from_file(file_path: &str) -> Result<Vec<BigUint>> {
-    let hex_vec: Vec<String> = serde_json::from_str(&read_file_to_string(file_path)?)
-        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse BigUint vector file: {}", e))?;
-
-    let mut result = Vec::new();
-    for hex in hex_vec {
-        result.push(
-            BigUint::from_str_radix(&hex.replace("0x", ""), 16).expect("Failed to parse BigUint from hex string"),
-        );
-    }
-
-    Ok(result)
+pub fn read_felt_vec_from_file(file_path: &str) -> Result<Vec<Felt>> {
+    serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse felt vector file: {}", e))
 }
 
 pub fn read_state_updates_vec_from_file(file_path: &str) -> Result<Vec<StateUpdate>> {

@@ -80,11 +80,11 @@ impl MongoDbClient {
         self.database.collection("batches")
     }
 
-    pub fn get_collection(&self, name: &str) -> Collection<JobItem> {
+    pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
     pub fn jobs_collection(&self) -> Collection<JobItem> {
-        self.get_collection("jobs")
+        self.get_collection::<JobItem>("jobs")
     }
 
     pub fn locks_collection(&self) -> Collection<JobItem> {
@@ -1010,6 +1010,87 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(jobs)
+    }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": {
+                "$in": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
+        };
+
+        let find_options = FindOptions::builder().sort(doc! { "internal_id": -1 }).build();
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            job_count = jobs.len(),
+            category = "db_call",
+            "Retrieved jobs by type and statuses"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_statuses")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let block_number_i64 = block_number as i64; // MongoDB typically handles numbers as i32 or i64
+
+        // Query for jobs where metadata.specific.block_number matches
+        let query1 = doc! {
+            "metadata.specific.block_number": block_number_i64,
+            "job_type": {
+                "$in": [
+                    mongodb::bson::to_bson(&JobType::SnosRun)?,
+                    mongodb::bson::to_bson(&JobType::ProofCreation)?,
+                    mongodb::bson::to_bson(&JobType::ProofRegistration)?,
+                    mongodb::bson::to_bson(&JobType::DataSubmission)?,
+                ]
+            }
+        };
+
+        // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
+        let query2 = doc! {
+            "job_type": mongodb::bson::to_bson(&JobType::StateTransition)?,
+            "metadata.specific.blocks_to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
+        };
+
+        let mut results: Vec<JobItem> = Vec::new();
+
+        let job_collection = self.get_job_collection();
+
+        // Execute first query
+        let cursor1 = job_collection.find(query1, None).await?;
+        results.extend(cursor1.try_collect::<Vec<JobItem>>().await?);
+
+        // Execute second query
+        let cursor2 = job_collection.find(query2, None).await?;
+        results.extend(cursor2.try_collect::<Vec<JobItem>>().await?);
+
+        tracing::debug!(
+            block_number = block_number,
+            count = results.len(),
+            category = "db_call",
+            "Fetched jobs by block number"
+        );
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_block_number")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(results)
     }
 }
 

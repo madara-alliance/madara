@@ -1,5 +1,5 @@
 use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_blob_data};
-use crate::compression::squash::squash_state_updates;
+use crate::compression::squash::squash;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::{Config, StarknetVersion};
@@ -23,6 +23,8 @@ use std::sync::Arc;
 use tokio::try_join;
 
 pub struct BatchingTrigger;
+
+// Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
 
 #[async_trait::async_trait]
 impl JobTrigger for BatchingTrigger {
@@ -84,12 +86,14 @@ impl BatchingTrigger {
         // Get the storage client
         let storage = config.storage();
 
+        // Get the latest batch from the database
         let (mut batch, mut state_update) = match database.get_latest_batch().await? {
             Some(batch) => {
                 // The latest batch is full. Start a new batch
                 if batch.is_batch_ready {
                     (self.start_batch(&config, batch.index + 1, batch.end_block + 1).await?, None)
                 } else {
+                    // Previous batch is not full, continue with the previous batch
                     let state_update_bytes = storage.get_data(&batch.squashed_state_updates_path).await?;
                     let state_update: StateUpdate = serde_json::from_slice(&state_update_bytes)?;
                     (batch, Some(state_update))
@@ -102,6 +106,7 @@ impl BatchingTrigger {
             ),
         };
 
+        // Assign batches to all the blocks
         for block_number in start_block_number..end_block_number + 1 {
             (state_update, batch) = self.assign_batch(block_number, state_update, batch, &config).await?;
         }
@@ -138,7 +143,7 @@ impl BatchingTrigger {
                 match prev_state_update {
                     Some(prev_state_update) => {
                         // Squash the state updates
-                        let squashed_state_update = squash_state_updates(
+                        let squashed_state_update = squash(
                             vec![prev_state_update.clone(), state_update.clone()],
                             if current_batch.start_block == 0 { None } else { Some(current_batch.start_block - 1) },
                             provider,
@@ -282,12 +287,11 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        let compressed_vec_felts = if madara_version >= StarknetVersion::V0_13_3 {
-            stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))?
+        if madara_version >= StarknetVersion::V0_13_2 {
+            stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))
         } else {
-            vec_felts
-        };
-        Ok(compressed_vec_felts)
+            Ok(vec_felts)
+        }
     }
 
     /// get_state_update_file_name returns the file path for storing the state update in storage

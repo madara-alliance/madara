@@ -105,4 +105,13 @@ pub trait DatabaseClient: Send + Sync {
         gte: u64,
         lte: u64,
     ) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_jobs_by_type_and_statuses - Get jobs by their type and statuses
+    /// This method is used to get jobs by their type and statuses.
+    async fn get_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_jobs_by_block_number - Get all jobs for a specific block number
+    async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError>;
 }

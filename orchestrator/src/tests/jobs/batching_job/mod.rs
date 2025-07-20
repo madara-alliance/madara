@@ -16,6 +16,7 @@ use url::Url;
 
 #[rstest]
 #[case("src/tests/artifacts/8373665/blobs/", 789878, 790377)]
+#[ignore = "Ignoring this test because it takes a long time on CI and we have individual tests for all the steps - squash, stateless, stateful, blob, etc."]
 #[tokio::test]
 async fn test_assign_batch_to_block_new_batch(
     #[case] blob_dir: String,

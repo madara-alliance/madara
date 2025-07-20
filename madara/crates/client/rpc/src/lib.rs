@@ -45,8 +45,10 @@ impl Default for StorageProofConfig {
 #[derive(Clone)]
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
+    ws_handles: Arc<WsSubscribeHandles>,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
+    pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
     pub ctx: ServiceContext,
 }
 
@@ -55,9 +57,11 @@ impl Starknet {
         backend: Arc<MadaraBackend>,
         add_transaction_provider: Arc<dyn SubmitTransaction>,
         storage_proof_config: StorageProofConfig,
+        block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
         ctx: ServiceContext,
     ) -> Self {
-        Self { backend, add_transaction_provider, storage_proof_config, ctx }
+        let ws_handles = Arc::new(WsSubscribeHandles::new());
+        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -130,4 +134,85 @@ pub fn rpc_api_admin(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::admin::v0_1_0::MadaraServicesRpcApiV0_1_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
+}
+
+pub(crate) struct WsSubscribeHandles {
+    /// Keeps track of all ws connection handles.
+    ///
+    /// This can be used to request the closure of a ws connection.
+    ///
+    /// ## Preventing Leaks
+    ///
+    /// Stale handles are removed each time a subscription is dropped to keep the backing map from
+    /// growing to an unbounded size. Note that there is no hard upper limit on the size of the map,
+    /// other than those set in the RPC middleware, but at least this way we clean up connections on
+    /// close.
+    ///
+    /// ## Thread Safety
+    ///
+    /// From the [DashMap] docs:
+    ///
+    /// > Documentation mentioning locking behaviour acts in the reference frame of the calling
+    /// > thread. This means that it is safe to ignore it across multiple threads.
+    ///
+    /// And from [DashMap::entry]:
+    ///
+    /// > Locking behaviour: May deadlock if called when holding any sort of reference into the map.
+    ///
+    /// This is fine in our case as we do not maintain references to a map in the same thread while
+    /// mutating it and instead operate directly on-value by sharing the map inside an [Arc].
+    ///
+    /// [DashMap]: dashmap::DashMap
+    /// [DashMap::entry]: dashmap::DashMap::entry
+    /// [Arc]: std::sync::Arc
+    handles: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+}
+
+impl WsSubscribeHandles {
+    pub fn new() -> Self {
+        Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
+    }
+
+    pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
+        let id = match id {
+            jsonrpsee::types::SubscriptionId::Num(id) => id,
+            jsonrpsee::types::SubscriptionId::Str(_) => {
+                unreachable!("Jsonrpsee middleware has been configured to use u64 subscription ids")
+            }
+        };
+
+        let handle = std::sync::Arc::new(tokio::sync::Notify::new());
+        let map = std::sync::Arc::clone(&self.handles);
+
+        self.handles.insert(id, std::sync::Arc::clone(&handle));
+
+        WsSubscriptionGuard { id, handle, map }
+    }
+
+    pub async fn subscription_close(&self, id: u64) -> bool {
+        if let Some((_, handle)) = self.handles.remove(&id) {
+            handle.notify_one();
+            true
+        } else {
+            false
+        }
+    }
+}
+
+pub(crate) struct WsSubscriptionGuard {
+    id: u64,
+    handle: std::sync::Arc<tokio::sync::Notify>,
+    map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
+}
+
+impl WsSubscriptionGuard {
+    pub async fn cancelled(&self) {
+        self.handle.notified().await
+    }
+}
+
+impl Drop for WsSubscriptionGuard {
+    fn drop(&mut self) {
+        self.map.remove(&self.id);
+    }
 }

@@ -15,16 +15,16 @@ use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::MadaraMaybePendingBlockInfo;
 use mp_chain_config::L1DataAvailabilityMode;
 
-use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdaptor};
+use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdapter};
 
 /// Extension trait that provides execution capabilities on the madara backend.
 pub trait MadaraBackendExecutionExt {
     /// Executor used for producing blocks.
     fn new_executor_for_block_production(
         self: &Arc<Self>,
-        state_adaptor: LayeredStateAdaptor,
+        state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
-    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error>;
+    ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error>;
     /// Executor used for validating transactions on top of the pending block.
     fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error>;
 }
@@ -32,9 +32,9 @@ pub trait MadaraBackendExecutionExt {
 impl MadaraBackendExecutionExt for MadaraBackend {
     fn new_executor_for_block_production(
         self: &Arc<Self>,
-        state_adaptor: LayeredStateAdaptor,
+        state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
-    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error> {
+    ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error> {
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),
             BlockContext::new(

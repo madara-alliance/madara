@@ -8,7 +8,6 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
@@ -355,9 +354,6 @@ impl JobHandlerTrait for DAJobHandler {
     fn verification_polling_delay_seconds(&self) -> u64 {
         60
     }
-    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -367,6 +363,7 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
+    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -448,6 +445,7 @@ pub mod test {
         let services = TestConfigBuilder::new()
             .configure_starknet_client(provider.into())
             .configure_da_client(da_client.into())
+            .configure_madara_version(StarknetVersion::V0_13_2)
             .build()
             .await;
 

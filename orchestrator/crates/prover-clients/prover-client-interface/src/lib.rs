@@ -1,4 +1,5 @@
 use async_trait::async_trait;
+use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use mockall::automock;
 use orchestrator_gps_fact_checker::FactCheckerError;
@@ -9,7 +10,7 @@ use orchestrator_gps_fact_checker::FactCheckerError;
 ///   inputs)
 /// - Register the proof onchain (individual proof facts available for each task)
 ///
-/// A common Madara workflow would be single task per block (SNOS execution result) or per block
+/// A common Madara workflow would be a single task per block (SNOS execution result) or per block
 /// span (SNAR).
 #[automock]
 #[async_trait]
@@ -30,6 +31,12 @@ pub trait ProverClient: Send + Sync {
     ) -> Result<Vec<u8>, ProverClientError>;
     async fn get_aggregator_task_id(&self, bucket_id: &str, aggregator_index: u64)
         -> Result<String, ProverClientError>;
+    async fn submit_l2_query(
+        &self,
+        task_id: &str,
+        fact: &str,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError>;
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -88,4 +95,10 @@ pub enum ProverClientError {
     FailedToWriteFile(String),
     #[error("Failed to get aggregator id for bucket ID: {0}")]
     FailedToGetAggregatorId(String),
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("Invalid proof format: {0}")]
+    InvalidProofFormat(String),
+    #[error("Missing Cairo verifier program hash")]
+    MissingCairoVerifierProgramHash,
 }

@@ -1,11 +1,11 @@
+use crate::core::config::StarknetVersion;
+use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
 use provider::aws::AWSConfigCliArgs;
-use url::Url;
-
-use crate::core::config::StarknetVersion;
 pub use server::ServerCliArgs as ServerParams;
 pub use service::ServiceCliArgs as ServiceParams;
+use url::Url;
 
 pub mod alert;
 pub mod cron;
@@ -51,12 +51,6 @@ pub enum Commands {
             .multiple(false)
     ),
     group(
-        ArgGroup::new("settlement_layer")
-            .args(&["settle_on_ethereum", "settle_on_starknet"])
-            .required(true)
-            .multiple(false)
-    ),
-    group(
         ArgGroup::new("storage")
             .args(&["aws_s3"])
             .required(true)
@@ -84,8 +78,14 @@ pub enum Commands {
             .multiple(false)
     ),
     group(
+        ArgGroup::new("settlement_layer")
+            .args(&["settle_on_ethereum", "settle_on_starknet"])
+            .required(true)
+            .multiple(false)
+    ),
+    group(
         ArgGroup::new("da_layer")
-            .args(&["da_on_ethereum"])
+            .args(&["da_on_ethereum", "da_on_starknet"])
             .required(true)
             .multiple(false)
     ),
@@ -120,6 +120,9 @@ pub struct RunCmd {
     pub ethereum_da_args: da::ethereum::EthereumDaCliArgs,
 
     #[clap(flatten)]
+    pub starknet_da_args: da::starknet::StarknetDaCliArgs,
+
+    #[clap(flatten)]
     pub proving_layout_args: prover_layout::ProverLayoutCliArgs,
 
     // Settlement Layer
@@ -142,6 +145,7 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
+
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 
@@ -194,6 +198,9 @@ pub struct RunCmd {
     ),
 )]
 pub struct SetupCmd {
+    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
+    pub layer: Layer,
+
     // AWS Config
     #[clap(flatten)]
     pub aws_config_args: AWSConfigCliArgs,
@@ -220,13 +227,4 @@ pub struct SetupCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_RESOURCE_POLL_INTERVAL", long, default_value = Some("5"))]
     pub poll_interval: Option<u64>,
-
-    #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
-    pub layer: Layer,
-}
-
-#[derive(Debug, Clone, clap::ValueEnum, PartialEq)]
-pub enum Layer {
-    L2,
-    L3,
 }

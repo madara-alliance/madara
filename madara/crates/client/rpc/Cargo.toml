@@ -26,6 +26,7 @@ assert_matches = { workspace = true }
 
 # Madara
 m-proc-macros = { workspace = true }
+mc-block-production = { workspace = true }
 mc-db = { workspace = true }
 mc-exec = { workspace = true }
 mc-submit-tx = { workspace = true }
@@ -48,6 +49,7 @@ starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
 bitvec = { workspace = true }
+dashmap = { workspace = true }
 futures = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",

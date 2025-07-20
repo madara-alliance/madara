@@ -1,6 +1,8 @@
 use crate::compression::stateless::bitops::{BitLength, BitsArray};
 use crate::compression::stateless::constants::N_UNIQUE_BUCKETS;
 use crate::compression::stateless::utils::felt_from_bits_le;
+use color_eyre::eyre::{eyre, Report};
+use color_eyre::Result;
 use indexmap::IndexMap;
 use starknet_core::types::Felt;
 use std::hash::Hash;
@@ -16,23 +18,26 @@ pub(crate) type BucketElement252 = Felt;
 // BucketElementTrait
 // Modify trait to match an original structure (no bit_length, unpack_from_felts)
 pub(crate) trait BucketElementTrait: Sized + Clone {
-    fn pack_in_felts(elms: &[Self]) -> Vec<Felt>;
+    fn pack_in_felts(elms: &[Self]) -> Result<Vec<Felt>>;
 }
 
 macro_rules! impl_bucket_element_trait {
     ($bucket_element:ident, $bit_length_enum:ident) => {
         // Removed $len parameter
         impl BucketElementTrait for $bucket_element {
-            fn pack_in_felts(elms: &[Self]) -> Vec<Felt> {
+            fn pack_in_felts(elms: &[Self]) -> Result<Vec<Felt>> {
                 let bit_length = BitLength::$bit_length_enum;
                 elms.chunks(bit_length.n_elems_in_felt())
                     .map(|chunk| {
                         felt_from_bits_le(&(chunk.iter().flat_map(|elem| elem.0.as_ref()).copied().collect::<Vec<_>>()))
-                            .expect(&format!(
-                                "Chunks of size {}, each of bit length {}, fit in felts.",
-                                bit_length.n_elems_in_felt(),
-                                bit_length
-                            ))
+                            .map_err(|e| {
+                                eyre!(
+                                    "Chunks of size {}, each of bit length {}, fit in felts, {}",
+                                    bit_length.n_elems_in_felt(),
+                                    bit_length,
+                                    e
+                                )
+                            })
                     })
                     .collect()
             }
@@ -46,8 +51,8 @@ impl_bucket_element_trait!(BucketElement62, Bits62);
 impl_bucket_element_trait!(BucketElement83, Bits83);
 impl_bucket_element_trait!(BucketElement125, Bits125);
 impl BucketElementTrait for BucketElement252 {
-    fn pack_in_felts(elms: &[Self]) -> Vec<Felt> {
-        elms.to_vec()
+    fn pack_in_felts(elms: &[Self]) -> Result<Vec<Felt>> {
+        Ok(elms.to_vec())
     }
 }
 
@@ -65,23 +70,24 @@ pub(crate) enum BucketElement {
 // Revert From<Felt> to original logic (using expect)
 // Note: This loses the nice Result propagation but matches the provided code
 // If Result is preferred, keep the TryFrom implementation instead.
-impl From<Felt> for BucketElement {
-    fn from(felt: Felt) -> Self {
-        match BitLength::min_bit_length(felt.bits()).expect("felt is up to 252 bits") {
-            BitLength::Bits15 => BucketElement::BucketElement15(felt.try_into().expect("Up to 15 bits")),
-            BitLength::Bits31 => BucketElement::BucketElement31(felt.try_into().expect("Up to 31 bits")),
-            BitLength::Bits62 => BucketElement::BucketElement62(felt.try_into().expect("Up to 62 bits")),
-            BitLength::Bits83 => BucketElement::BucketElement83(felt.try_into().expect("Up to 83 bits")),
-            BitLength::Bits125 => BucketElement::BucketElement125(felt.try_into().expect("Up to 125 bits")),
-            BitLength::Bits252 => BucketElement::BucketElement252(felt),
+impl TryFrom<Felt> for BucketElement {
+    type Error = Report;
+    fn try_from(felt: Felt) -> Result<Self> {
+        match BitLength::min_bit_length(felt.bits())? {
+            BitLength::Bits15 => Ok(BucketElement::BucketElement15(felt.try_into()?)),
+            BitLength::Bits31 => Ok(BucketElement::BucketElement31(felt.try_into()?)),
+            BitLength::Bits62 => Ok(BucketElement::BucketElement62(felt.try_into()?)),
+            BitLength::Bits83 => Ok(BucketElement::BucketElement83(felt.try_into()?)),
+            BitLength::Bits125 => Ok(BucketElement::BucketElement125(felt.try_into()?)),
+            BitLength::Bits252 => Ok(BucketElement::BucketElement252(felt)),
         }
     }
 }
 
 // Keep TryFrom<BucketElement> for Felt for decompression
 impl TryFrom<BucketElement> for Felt {
-    type Error = color_eyre::Report;
-    fn try_from(bucket_element: BucketElement) -> color_eyre::Result<Self, Self::Error> {
+    type Error = Report;
+    fn try_from(bucket_element: BucketElement) -> Result<Self, Self::Error> {
         match bucket_element {
             BucketElement::BucketElement15(be) => Felt::try_from(be),
             BucketElement::BucketElement31(be) => Felt::try_from(be),
@@ -114,14 +120,9 @@ impl<SizedElement: BucketElementTrait + Clone + Eq + Hash> UniqueValueBucket<Siz
         self.value_to_index.get(value)
     }
 
-    fn pack_in_felts(self) -> Vec<Felt> {
+    fn pack_in_felts(self) -> Result<Vec<Felt>> {
         let values = self.value_to_index.into_keys().collect::<Vec<_>>();
         SizedElement::pack_in_felts(&values)
-    }
-
-    #[allow(dead_code)]
-    fn get_values(self) -> Vec<SizedElement> {
-        self.value_to_index.into_keys().collect()
     }
 }
 
@@ -216,36 +217,18 @@ impl Buckets {
     }
 
     // Return Vec<Felt> not Result
-    pub(crate) fn pack_in_felts(self) -> Vec<Felt> {
-        [
-            self.bucket15.pack_in_felts(),
-            self.bucket31.pack_in_felts(),
-            self.bucket62.pack_in_felts(),
-            self.bucket83.pack_in_felts(),
-            self.bucket125.pack_in_felts(),
-            self.bucket252.pack_in_felts(),
+    pub(crate) fn pack_in_felts(self) -> Result<Vec<Felt>> {
+        Ok([
+            self.bucket15.pack_in_felts()?,
+            self.bucket31.pack_in_felts()?,
+            self.bucket62.pack_in_felts()?,
+            self.bucket83.pack_in_felts()?,
+            self.bucket125.pack_in_felts()?,
+            self.bucket252.pack_in_felts()?,
         ]
         .into_iter()
         .rev()
         .flatten()
-        .collect()
-    }
-
-    // Remove unpack_from_felts if not in an original concept
-
-    // Gets all unique values ordered from the largest bit bucket to the smallest.
-    // Keep this helper method as it's useful for decompression
-    #[allow(dead_code)]
-    fn get_all_unique_values(self) -> Vec<BucketElement> {
-        self.bucket252
-            .get_values()
-            .into_iter()
-            .map(BucketElement::BucketElement252)
-            .chain(self.bucket125.get_values().into_iter().map(BucketElement::BucketElement125))
-            .chain(self.bucket83.get_values().into_iter().map(BucketElement::BucketElement83))
-            .chain(self.bucket62.get_values().into_iter().map(BucketElement::BucketElement62))
-            .chain(self.bucket31.get_values().into_iter().map(BucketElement::BucketElement31))
-            .chain(self.bucket15.get_values().into_iter().map(BucketElement::BucketElement15))
-            .collect()
+        .collect::<Vec<Felt>>())
     }
 }

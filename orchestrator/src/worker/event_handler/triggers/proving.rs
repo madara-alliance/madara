@@ -1,4 +1,5 @@
 use crate::core::config::Config;
+use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
@@ -8,6 +9,7 @@ use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
 
 pub struct ProvingJobTrigger;
@@ -33,60 +35,69 @@ impl JobTrigger for ProvingJobTrigger {
                 e
             })?;
 
-            // Get SNOS fact early to handle the error case
-            // Commenting this out because we don't want to verify the individual SNOS proofs
-            // let snos_fact = match &snos_metadata.snos_fact {
-            //     Some(fact) => fact.clone(),
-            //     None => {
-            //         tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
-            //         continue;
-            //     }
-            // };
+            // Create proving job metadata
+            let mut proving_metadata = JobMetadata {
+                common: CommonMetadata::default(),
+                specific: JobSpecificMetadata::Proving(ProvingMetadata {
+                    block_number: snos_metadata.block_number,
+                    // Set input path as CairoPie type
+                    input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
+                    // Set a download path if needed
+                    // download_proof,
+                    // Set SNOS fact for on-chain verification
+                    // ensure_on_chain_registration: snos_fact,
+                    n_steps: snos_metadata.snos_n_steps,
+                    // bucked_id: Some(batch.bucket_id),
+                    // bucket_job_index: Some(snos_metadata.block_number - batch.start_block + 1),
+                    ..default::Default(),
+                }),
+            };
 
-            match config.database().get_batch_for_block(snos_metadata.block_number).await? {
-                Some(batch) => {
-                    // Create proving job metadata
-                    let proving_metadata = JobMetadata {
-                        common: CommonMetadata::default(),
-                        specific: JobSpecificMetadata::Proving(ProvingMetadata {
-                            block_number: snos_metadata.block_number,
-                            // Set input path as CairoPie type
-                            input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
-                            // Set a download path if needed
-                            download_proof: None,
-                            // Set SNOS fact for on-chain verification (not needed since we'll verify the aggregator proof)
-                            ensure_on_chain_registration: None,
-                            n_steps: snos_metadata.snos_n_steps,
-                            bucked_id: Some(batch.bucket_id),
-                            bucket_job_index: Some(snos_metadata.block_number - batch.start_block + 1),
-                        }),
-                    };
-
-                    tracing::debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
-                    match JobHandlerService::create_job(
-                        JobType::ProofCreation,
-                        snos_job.internal_id.clone(),
-                        proving_metadata,
-                        config.clone(),
-                    )
-                    .await
-                    {
-                        Ok(_) => {
-                            tracing::info!(block_id = %snos_job.internal_id, "Successfully created new proving job")
-                        }
-                        Err(e) => {
-                            tracing::warn!(job_id = %snos_job.internal_id, error = %e, "Failed to create new proving job");
-                            let attributes = [
-                                KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofCreation)),
-                                KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                            ];
-                            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+            match config.layer() {
+                Layer::L2 => {
+                    // Set the bucket_id and bucket_job_index for Applicative Recursion
+                    match config.database().get_batch_for_block(snos_metadata.block_number).await? {
+                        Some(batch) => {
+                            proving_metadata.bucked_id = Some(batch.bucker_id);
+                            proving_metadata.bucket_job_index = Some(snos_metadata.block_number - batch.start_block + 1);
+                        },
+                        None => {
+                            tracing::warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
+                            continue;
                         }
                     }
+                },
+                Layer::L3 => {
+                    // Set the snos_fact and path to download proof
+                    let snos_fact = match &snos_metadata.snos_fact {
+                        Some(fact) => fact.clone(),
+                        None => {
+                            tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
+                            continue;
+                        }
+                    };
+                    proving_metadata.ensure_on_chain_registration = Some(snos_fact);
+                    proving_metadata.download_proof = Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME));
                 }
-                None => {
-                    tracing::warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
-                    continue;
+            };
+
+            tracing::debug!(job_id = %snos_job.internal_id, "Creating proof creation job for SNOS job");
+            match JobHandlerService::create_job(
+                JobType::ProofCreation,
+                snos_job.internal_id.clone(),
+                proving_metadata,
+                config.clone(),
+            )
+            .await
+            {
+                Ok(_) => tracing::info!(block_id = %snos_job.internal_id, "Successfully created new proving job"),
+                Err(e) => {
+                    tracing::warn!(job_id = %snos_job.internal_id, error = %e, "Failed to create new proving job");
+                    let attributes = [
+                        KeyValue::new("operation_job_type", format!("{:?}", JobType::ProofCreation)),
+                        KeyValue::new("operation_type", format!("{:?}", "create_job")),
+                    ];
+                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
                 }
             }
         }

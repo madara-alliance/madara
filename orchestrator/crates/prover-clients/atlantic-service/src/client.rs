@@ -7,6 +7,7 @@ use reqwest::Method;
 use tracing::debug;
 use url::Url;
 
+use crate::constants::ATLANTIC_PROOF_URL;
 use crate::error::AtlanticError;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
@@ -37,7 +38,7 @@ impl ProvingLayer for EthereumLayer {
 struct StarknetLayer;
 impl ProvingLayer for StarknetLayer {
     fn customize_request<'a>(&self, request: RequestBuilder<'a>) -> RequestBuilder<'a> {
-        request.form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
+        request.form_text("result", &AtlanticQueryStep::ProofGeneration.to_string())
     }
 }
 
@@ -168,6 +169,13 @@ impl AtlanticClient {
             _ => proof_layout.to_str(),
         };
 
+        debug!(
+            "Submitting job with layout: {}, n_steps: {}, network: {}, ",
+            proof_layout,
+            self.n_steps_to_job_size(n_steps),
+            atlantic_network.as_ref()
+        );
+
         let mut request = self.proving_layer.customize_request(
             self.client
                 .request()
@@ -180,23 +188,21 @@ impl AtlanticClient {
                 .form_text("network", atlantic_network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &cairo_vm.as_str())
-                .form_file("pieFile", pie_file, "pie.zip")?,
+                .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))?,
         );
 
-        // TODO: check if we can add this in customize_request
-        // current problem is that we need to pass the bucket_id and bucket_job_id as arguments
-        // think of a function signature that can be used for both ethereum and starknet
         if let Some(bucket_id) = bucket_id {
             request = request.form_text("bucketId", &bucket_id);
         }
         if let Some(bucket_job_index) = bucket_job_index {
             request = request.form_text("bucketJobIndex", &bucket_job_index.to_string());
         }
+
         let response = request.send().await.map_err(AtlanticError::AddJobFailure)?;
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::SharpService(response.status())),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 
@@ -214,7 +220,60 @@ impl AtlanticClient {
         if response.status().is_success() {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
-            Err(AtlanticError::SharpService(response.status()))
+            Err(AtlanticError::AtlanticService(response.status()))
+        }
+    }
+
+    // get_proof_by_task_id - is a endpoint to get the proof from the herodotus service
+    // Args:
+    // task_id - the task id of the proof to get
+    // Returns:
+    // The proof as a string if the request is successful, otherwise an error is returned
+    pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
+        // Note: It seems this code will be replaced by the proper API once it is available
+        debug!("Getting proof for task_id: {}", task_id);
+        let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
+        let client = reqwest::Client::new();
+        let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
+
+        if response.status().is_success() {
+            let response_text = response.text().await.map_err(AtlanticError::GetJobResultFailure)?;
+            Ok(response_text)
+        } else {
+            Err(AtlanticError::AtlanticService(response.status()))
+        }
+    }
+
+    pub async fn submit_l2_query(
+        &self,
+        proof: &str,
+        n_steps: Option<usize>,
+        atlantic_network: impl AsRef<str>,
+        atlantic_api_key: &str,
+        program_hash: &str,
+    ) -> Result<AtlanticAddJobResponse, AtlanticError> {
+        // TODO: we are having two function to atlantic query might need to merge them with appropriate argument
+        let response = self
+            .client
+            .request()
+            .method(Method::POST)
+            .path("atlantic-query")
+            .query_param("apiKey", atlantic_api_key.as_ref())
+            .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
+            .form_text("programHash", program_hash)
+            .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
+            .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+            .form_text("network", atlantic_network.as_ref())
+            .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
+            .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
+            .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
+            .send()
+            .await
+            .map_err(AtlanticError::AddJobFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
 

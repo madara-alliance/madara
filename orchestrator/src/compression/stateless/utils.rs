@@ -1,12 +1,12 @@
 use crate::compression::stateless::constants::MAX_N_BITS;
-use color_eyre::eyre::{bail, eyre};
+use color_eyre::eyre::{eyre, Result};
 use itertools::Itertools;
 use num_bigint::BigUint;
 use num_traits::Zero;
 use starknet_core::types::Felt;
 
 /// Revert signatures (no Result) and use expect/panic
-pub fn get_n_elms_per_felt(elm_bound: u32) -> color_eyre::Result<usize> {
+pub fn get_n_elms_per_felt(elm_bound: u32) -> Result<usize> {
     if elm_bound == 0 {
         return Err(eyre!("Element bound cannot be 0"));
     }
@@ -20,14 +20,16 @@ pub fn get_n_elms_per_felt(elm_bound: u32) -> color_eyre::Result<usize> {
 }
 
 /// Packs a slice of usize into a vector of Felt
-pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> color_eyre::Result<Vec<Felt>> {
+pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> Result<Vec<Felt>> {
     if elm_bound == 0 {
         return Err(eyre!("Element bound cannot be 0 for packing"));
     }
     // Check elements are within bound
     for elm in elms {
         let elm_u32 = u32::try_from(*elm).map_err(|err| eyre!("Cannot convert element to u32: {}", err))?;
-        assert!(elm_u32 < elm_bound, "Element {} exceeds bound {}", elm, elm_bound);
+        if elm_u32 >= elm_bound {
+            return Err(eyre!("Element {} exceeds bound {}", elm, elm_bound));
+        }
     }
 
     let n_per_felt = get_n_elms_per_felt(elm_bound)?;
@@ -39,7 +41,7 @@ pub fn pack_usize_in_felts(elms: &[usize], elm_bound: u32) -> color_eyre::Result
 }
 
 /// Packs a slice of usize into a Felt
-pub fn pack_usize_in_felt(elms: &[usize], elm_bound: u32) -> color_eyre::Result<Felt> {
+pub fn pack_usize_in_felt(elms: &[usize], elm_bound: u32) -> Result<Felt> {
     let elm_bound_big = BigUint::from(elm_bound);
     let packed_big = elms.iter().enumerate().try_fold(BigUint::zero(), |acc, (i, elm)| {
         let elm_u32 =
@@ -55,9 +57,9 @@ pub fn pack_usize_in_felt(elms: &[usize], elm_bound: u32) -> color_eyre::Result<
 
 /// Converts a slice of bits into a Felt
 /// Returns an error in case the length is not guaranteed to fit in Felt (more than 251 bits).
-pub(crate) fn felt_from_bits_le(bits: &[bool]) -> color_eyre::Result<Felt> {
+pub(crate) fn felt_from_bits_le(bits: &[bool]) -> Result<Felt> {
     if bits.len() > MAX_N_BITS {
-        bail!("Value requires {} bits, exceeding limit for Felt", bits.len());
+        return Err(eyre!("Value requires {} bits, exceeding limit for Felt", bits.len()));
     }
 
     let mut bytes = [0_u8; 32];

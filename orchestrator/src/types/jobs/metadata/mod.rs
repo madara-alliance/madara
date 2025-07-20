@@ -112,9 +112,12 @@ pub struct ProvingMetadata {
     /// `Some(value)`, it checks for `value` on the chain.
     pub ensure_on_chain_registration: Option<String>,
     /// Path where the generated proof should be downloaded. If `None`, the proof will not be
-    /// downloaded. If `Some(value)`, the proof will be downloaded and stored to the specified path
-    /// in the provided storage.
+    /// downloaded. If `Some(path)`, the proof will be downloaded and stored to the specified path
+    /// in the provided storage. The actual proof type depends on the job:
+    /// - ProofCreation: Downloads the SNOS proof (proof.json)
+    /// - ProofRegistration: Downloads the bridge proof (proof_part2.json)
     pub download_proof: Option<String>,
+    /// Number of steps taken by SNOS to generate the proof
     pub n_steps: Option<usize>,
     /// Bucket ID received from the prover client.
     /// If None, it's assumed that the bucket ID is not needed (i.e., not using Applicative Recursion)
@@ -138,6 +141,8 @@ pub struct SnosMetadata {
     pub full_output: bool,
     /// Path to the Cairo PIE file
     pub cairo_pie_path: Option<String>,
+    /// Path to the on-chain data file
+    pub on_chain_data_path: Option<String>,
     /// Path to the SNOS output file
     pub snos_output_path: Option<String>,
     /// Path to the program output file

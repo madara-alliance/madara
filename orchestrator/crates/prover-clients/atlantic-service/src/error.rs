@@ -13,8 +13,11 @@ pub enum AtlanticError {
     #[error("Failed to get artifacts of an Atlantic job: {0}")]
     GetJobResultFailure(#[source] reqwest::Error),
 
+    #[error("Failed to submit L2 query: {0}")]
+    SubmitL2QueryFailure(#[source] reqwest::Error),
+
     #[error("Atlantic service returned an error {0}")]
-    SharpService(StatusCode),
+    AtlanticService(StatusCode),
 
     #[error("Failed to read file: {0}")]
     FileError(#[from] std::io::Error),

@@ -22,4 +22,7 @@ pub enum ConsumptionError {
 
     #[error("Failed to parse message from queue, error {0}")]
     FailedToAcknowledgeMessage(String),
+
+    #[error("Queue Type not found: {0}")]
+    QueueNotFound(String),
 }

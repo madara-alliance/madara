@@ -77,6 +77,8 @@ pub enum StarknetRpcApiError {
     ClassAlreadyDeclared { error: Cow<'static, str> },
     #[error("Invalid transaction nonce")]
     InvalidTxnNonce { error: Cow<'static, str> },
+    #[error("Invalid subscription id")]
+    InvalidSubscriptionId,
     #[error("Max fee is smaller than the minimal transaction cost (validation plus fee transfer)")]
     InsufficientMaxFee { error: Cow<'static, str> },
     #[error("Account balance is smaller than the transaction's max_fee")]
@@ -166,6 +168,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InvalidContractClass { .. } => 50,
             StarknetRpcApiError::ClassAlreadyDeclared { .. } => 51,
             StarknetRpcApiError::InvalidTxnNonce { .. } => 52,
+            StarknetRpcApiError::InvalidSubscriptionId => 66,
             StarknetRpcApiError::InsufficientMaxFee { .. } => 53,
             StarknetRpcApiError::InsufficientAccountBalance { .. } => 54,
             StarknetRpcApiError::ValidationFailure { .. } => 55,
@@ -222,6 +225,7 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::InvalidTxnHash
             | StarknetRpcApiError::InvalidBlockHash
             | StarknetRpcApiError::InvalidTxnIndex
+            | StarknetRpcApiError::InvalidSubscriptionId
             | StarknetRpcApiError::TxnHashNotFound
             | StarknetRpcApiError::PageSizeTooBig
             | StarknetRpcApiError::NoBlocks

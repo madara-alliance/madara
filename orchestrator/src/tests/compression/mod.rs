@@ -1,11 +1,10 @@
 use crate::compression::blob::{convert_felt_vec_to_blob_data, da_word, state_update_to_blob_data};
-use crate::compression::squash::squash_state_updates;
+use crate::compression::squash::squash;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::StarknetVersion;
-use crate::tests::jobs::batching_job::convert_biguints_to_felts;
 use crate::tests::utils::{
-    build_test_config_with_real_provider, read_biguint_from_file, read_file_to_string, read_state_update_from_file,
+    build_test_config_with_real_provider, read_felt_vec_from_file, read_file_to_string, read_state_update_from_file,
     read_state_updates_vec_from_file,
 };
 use crate::worker::utils::biguint_vec_to_u8_vec;
@@ -28,8 +27,7 @@ async fn test_squash_state_updates() -> Result<()> {
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
-    let squashed_state_update =
-        squash_state_updates(state_updates_vector, Some(789877), services.config.madara_client()).await?;
+    let squashed_state_update = squash(state_updates_vector, Some(789877), services.config.madara_client()).await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
 
@@ -68,10 +66,10 @@ async fn test_stateless_compression(#[case] version: StarknetVersion) -> Result<
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
-    let expected_compressed_state_update = convert_biguints_to_felts(&read_biguint_from_file(&format!(
+    let expected_compressed_state_update = read_felt_vec_from_file(&format!(
         "{}/src/tests/artifacts/8373665/stateless_compressed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
-    ))?)?;
+    ))?;
 
     // Get a vector of felts from the compressed state update
     let vec_felts = state_update_to_blob_data(uncompressed_state_update, version).await?;
@@ -87,10 +85,10 @@ async fn test_stateless_compression(#[case] version: StarknetVersion) -> Result<
 #[rstest]
 #[tokio::test]
 async fn test_felt_vec_to_blob_data() -> Result<()> {
-    let vec_felts = convert_biguints_to_felts(&read_biguint_from_file(&format!(
+    let vec_felts = read_felt_vec_from_file(&format!(
         "{}/src/tests/artifacts/8373665/stateless_compressed_state_update.json",
         env!("CARGO_MANIFEST_DIR")
-    ))?)?;
+    ))?;
 
     let blobs = convert_felt_vec_to_blob_data(&vec_felts)?;
     for (index, blob) in blobs.iter().enumerate() {

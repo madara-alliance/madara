@@ -1,5 +1,5 @@
 pub mod client;
-mod constants;
+pub mod constants;
 pub mod error;
 pub mod types;
 
@@ -13,6 +13,7 @@ use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
     AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
+use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
 
@@ -30,6 +31,7 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_mock_fact_hash: String,
     pub atlantic_prover_type: String,
     pub atlantic_network: String,
+    pub cairo_verifier_program_hash: Option<String>,
     pub atlantic_cairo_vm: AtlanticCairoVm,
     pub atlantic_result: AtlanticQueryStep,
 }
@@ -43,6 +45,7 @@ pub struct AtlanticProverService {
     pub atlantic_network: String,
     pub cairo_vm: AtlanticCairoVm,
     pub result: AtlanticQueryStep,
+    pub cairo_verifier_program_hash: Option<String>,
 }
 
 #[async_trait]
@@ -64,8 +67,6 @@ impl ProverClient for AtlanticProverService {
                     .write_zip_file(pie_file_path, true)
                     .map_err(|e| ProverClientError::FailedToWriteFile(e.to_string()))?;
 
-                // sleep for 2 seconds to make sure the job is submitted
-                tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                 let atlantic_job_response = self
                     .atlantic_client
                     .add_job(
@@ -80,8 +81,7 @@ impl ProverClient for AtlanticProverService {
                         bucket_job_index,
                     )
                     .await?;
-                // sleep for 10 seconds to make sure the job is submitted
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
                 tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
                 // The temporary file will be automatically deleted when `temp_file` goes out of scope
                 Ok(atlantic_job_response.atlantic_query_id)
@@ -106,15 +106,52 @@ impl ProverClient for AtlanticProverService {
         &self,
         task: AtlanticStatusType,
         job_key: &str,
-        _: Option<String>,
-        _: bool,
+        fact: Option<String>,
+        cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
             AtlanticStatusType::Job => {
                 match self.atlantic_client.get_job_status(job_key).await?.atlantic_query.status {
                     AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
-                    AtlanticQueryStatus::Done => Ok(TaskStatus::Succeeded),
+                    AtlanticQueryStatus::Done => {
+                        if !cross_verify {
+                            tracing::debug!("Skipping cross-verification as it's disabled");
+                            return Ok(TaskStatus::Succeeded);
+                        }
+                        match &self.fact_checker {
+                            None => {
+                                tracing::debug!("There is no Fact check registered");
+                                Ok(TaskStatus::Succeeded)
+                            }
+                            Some(fact_checker) => {
+                                tracing::debug!("Fact check registered");
+                                // Cross-verification is enabled
+                                let fact_str = match fact {
+                                    Some(f) => f,
+                                    None => {
+                                        return Ok(TaskStatus::Failed(
+                                            "Cross verification enabled but no fact provided".to_string(),
+                                        ));
+                                    }
+                                };
+
+                                let fact = B256::from_str(&fact_str)
+                                    .map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;
+
+                                tracing::debug!(fact = %hex::encode(fact), "Cross-verifying fact on chain");
+
+                                if fact_checker.is_valid(&fact).await? {
+                                    Ok(TaskStatus::Succeeded)
+                                } else {
+                                    Ok(TaskStatus::Failed(format!(
+                                        "Fact {} is not valid or not registered",
+                                        hex::encode(fact)
+                                    )))
+                                }
+                            }
+                        }
+                    }
                     AtlanticQueryStatus::Failed => {
                         Ok(TaskStatus::Failed("Task failed while processing on Atlantic side".to_string()))
                     }
@@ -129,6 +166,50 @@ impl ProverClient for AtlanticProverService {
                 }
             },
         }
+    }
+    async fn get_proof(&self, task_id: &str) -> Result<String, ProverClientError> {
+        let proof = self.atlantic_client.get_proof_by_task_id(task_id).await?;
+
+        // Verify if it's a valid proof format
+        let _: StarkProof = parse(proof.clone()).map_err(|e| ProverClientError::InvalidProofFormat(e.to_string()))?;
+        Ok(proof)
+    }
+
+    /// Submit a L2 query to the Atlantic service
+    ///
+    /// # Arguments
+    /// * `task_id` - The task id of the proof to submit
+    /// * `proof` - The proof to submit
+    /// * `n_steps` - The number of steps to submit
+    ///
+    async fn submit_l2_query(
+        &self,
+        task_id: &str,
+        proof: &str,
+        n_steps: Option<usize>,
+    ) -> Result<String, ProverClientError> {
+        tracing::info!(
+            task_id = %task_id,
+            log_type = "starting",
+            category = "submit_l2_query",
+            function_type = "proof",
+            "Submitting L2 query."
+        );
+        let program_hash =
+            self.cairo_verifier_program_hash.as_ref().ok_or(ProverClientError::MissingCairoVerifierProgramHash)?;
+        let atlantic_job_response = self
+            .atlantic_client
+            .submit_l2_query(proof, n_steps, &self.atlantic_network, &self.atlantic_api_key, program_hash)
+            .await?;
+
+        tracing::info!(
+            log_type = "completed",
+            category = "submit_l2_query",
+            function_type = "proof",
+            "L2 query submitted."
+        );
+
+        Ok(atlantic_job_response.atlantic_query_id)
     }
 
     async fn get_aggregator_task_id(
@@ -180,6 +261,7 @@ impl AtlanticProverService {
         result: AtlanticQueryStep,
         atlantic_network: String,
         fact_checker: Option<FactChecker>,
+        cairo_verifier_program_hash: Option<String>,
     ) -> Self {
         Self {
             atlantic_client,
@@ -189,6 +271,7 @@ impl AtlanticProverService {
             cairo_vm,
             atlantic_network,
             result,
+            cairo_verifier_program_hash,
         }
     }
 
@@ -215,6 +298,7 @@ impl AtlanticProverService {
             atlantic_params.atlantic_result.clone(),
             atlantic_params.atlantic_network.clone(),
             fact_checker,
+            atlantic_params.cairo_verifier_program_hash.clone(),
         )
     }
 
@@ -232,6 +316,7 @@ impl AtlanticProverService {
             AtlanticQueryStep::ProofVerificationOnL1,
             "TESTNET".to_string(),
             fact_checker,
+            None,
         )
     }
 
@@ -242,6 +327,7 @@ impl AtlanticProverService {
             Some(FactChecker::new(
                 atlantic_params.atlantic_rpc_node_url.clone(),
                 atlantic_params.atlantic_verifier_contract_address.clone(),
+                atlantic_params.atlantic_settlement_layer.clone(),
             ))
         }
     }
