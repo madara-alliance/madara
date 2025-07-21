@@ -3,8 +3,7 @@ mod state_update;
 
 use crate::compression::blob::da::{build_da_word_pre_v0_13_3, build_da_word_v0_13_3_and_above};
 use crate::compression::blob::state_update::{
-    add_contract_diffs_to_blob_data, add_declared_classes_to_blob_data, convert_to_biguint,
-    process_addresses_with_storage_diffs, process_addresses_without_storage_diffs, BlobContractDiff,
+    add_contract_diffs_to_blob_data, add_declared_classes_to_blob_data, convert_to_biguint, BlobContractDiffVec,
 };
 use crate::core::config::StarknetVersion;
 use crate::error::job::JobError;
@@ -33,9 +32,6 @@ pub async fn state_update_to_blob_data(
     // Initialize with placeholder for total contract count (will update later)
     let mut blob_data: Vec<Felt> = vec![Felt::ZERO];
 
-    // Create a vector to hold the contract diffs
-    let mut contract_diffs: Vec<BlobContractDiff> = Vec::new();
-
     // Create maps for an easier lookup
     let mut deployed_contracts: HashMap<Felt, Felt> =
         state_diff.deployed_contracts.into_iter().map(|item| (item.address, item.class_hash)).collect();
@@ -49,33 +45,32 @@ pub async fn state_update_to_blob_data(
 
     let len_storage_diffs = state_diff.storage_diffs.len();
 
-    // Process each storage diff
-    process_addresses_with_storage_diffs(
+    // Process all contracts with storage updates
+    // In the process, also remove these addresses from other maps
+    let mut contract_diffs = BlobContractDiffVec::from_storage_diffs(
         state_diff.storage_diffs,
-        version,
-        &mut contract_diffs,
         &mut processed_addresses,
         &mut deployed_contracts,
         &mut replaced_classes,
         &mut nonces,
+        version,
     )?;
 
-    // Process leftover nonces (contracts that have nonce updates but no storage updates)
-    let leftover_count = process_addresses_without_storage_diffs(
-        &processed_addresses,
+    // Process all addresses without storage updates, i.e., addresses remaining in other maps
+    let without_storage_diff_count = contract_diffs.add_addresses_without_storage_diffs(
+        &mut processed_addresses,
         &mut deployed_contracts,
         &mut replaced_classes,
         &mut nonces,
         version,
-        &mut contract_diffs,
     )?;
 
     // Update the first element with the total number of contracts (original storage diffs and leftover addresses)
-    let total_contracts = len_storage_diffs + leftover_count;
+    let total_contracts = len_storage_diffs + without_storage_diff_count;
     blob_data[0] = Felt::from(total_contracts);
 
     // Sorting all the contract diffs by address
-    contract_diffs.sort_by_key(|contract_diff| contract_diff.address);
+    contract_diffs.sort_contracts();
 
     // Add all contract diffs to blob data
     add_contract_diffs_to_blob_data(contract_diffs, &mut blob_data)?;

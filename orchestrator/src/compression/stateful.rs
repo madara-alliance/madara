@@ -39,19 +39,23 @@ pub async fn compress(
 ) -> Result<StateUpdate> {
     let mut state_update = state_update.clone();
 
-    let mapping = CompressedKeyValues::from_state_update_and_provider(&state_update, last_block_before_state_update, provider).await?;
+    let mapping =
+        CompressedKeyValues::from_state_update_and_provider(&state_update, last_block_before_state_update, provider)
+            .await?;
 
     // Process storage diffs
-    state_update.state_diff.storage_diffs = process_storage_diffs(&state_update, &mapping)?;
+    state_update.state_diff.storage_diffs = process_storage_diffs(state_update.state_diff.storage_diffs, &mapping)?;
 
     // Process deployed contracts
-    state_update.state_diff.deployed_contracts = process_deployed_contracts(&state_update, &mapping)?;
+    state_update.state_diff.deployed_contracts =
+        process_deployed_contracts(state_update.state_diff.deployed_contracts, &mapping)?;
 
     // Process nonces
-    state_update.state_diff.nonces = process_nonces(&state_update, &mapping)?;
+    state_update.state_diff.nonces = process_nonces(state_update.state_diff.nonces, &mapping)?;
 
     // Process replaced classes
-    state_update.state_diff.replaced_classes = process_replaced_classes(&state_update, &mapping)?;
+    state_update.state_diff.replaced_classes =
+        process_replaced_classes(state_update.state_diff.replaced_classes, &mapping)?;
 
     // Declared class remain as it is as it only contains class hashes
     // Deprecated declared classes remain as it is as it only contains class hashes
@@ -69,6 +73,12 @@ struct CompressedKeyValues(HashMap<Felt, Felt>);
 
 impl CompressedKeyValues {
     /// Creates a new CompressedKeyValues using state update and provider
+    /// This will create a HashMap which will contain all the required addresses and storage keys
+    /// `key` - address/storage key
+    /// `value` - compressed mapping for the address/storage key
+    /// PLEASE NOTE: All the keys that will be required for the stateful compression will be present
+    /// in the HashMap.
+    /// You can read more about it in the community notes for stateful compression linked above
     async fn from_state_update_and_provider(
         state_update: &StateUpdate,
         last_block_before_state_update: u64,
@@ -78,12 +88,17 @@ impl CompressedKeyValues {
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| !Self::skip_address_compression(diff.address)).for_each(|diff| {
-            keys.insert(diff.address);
-            diff.storage_entries.iter().for_each(|entry| {
-                keys.insert(entry.key);
+        state_update
+            .state_diff
+            .storage_diffs
+            .iter()
+            .filter(|diff| !Self::skip_address_compression(diff.address))
+            .for_each(|diff| {
+                keys.insert(diff.address);
+                diff.storage_entries.iter().for_each(|entry| {
+                    keys.insert(entry.key);
+                });
             });
-        });
         state_update.state_diff.deployed_contracts.iter().for_each(|contract| {
             keys.insert(contract.address);
         });
@@ -105,7 +120,11 @@ impl CompressedKeyValues {
                 async move {
                     match special_address_mappings.get(&key).cloned() {
                         Some(value) => Ok((key, value)),
-                        None => Ok((key, Self::get_compressed_key_from_provider(provider, &key, last_block_before_state_update).await?)),
+                        None => Ok((
+                            key,
+                            Self::get_compressed_key_from_provider(provider, &key, last_block_before_state_update)
+                                .await?,
+                        )),
                     }
                 }
             })
@@ -131,9 +150,13 @@ impl CompressedKeyValues {
             let mut mappings: HashMap<Felt, Felt> = HashMap::new();
 
             // Add each key-value pair to our mapping, ignoring the global counter-slot
-            special_contract.storage_entries.iter().filter(|entry| !Self::skip_address_compression(entry.key)).for_each(|entry| {
-                mappings.insert(entry.key, entry.value);
-            });
+            special_contract
+                .storage_entries
+                .iter()
+                .filter(|entry| !Self::skip_address_compression(entry.key))
+                .for_each(|entry| {
+                    mappings.insert(entry.key, entry.value);
+                });
 
             Ok(mappings)
         } else {
@@ -152,7 +175,11 @@ impl CompressedKeyValues {
         }
 
         retry_async(
-            async || provider.get_storage_at(STATEFUL_SPECIAL_ADDRESS, key, BlockId::Number(last_block_before_state_update)).await,
+            async || {
+                provider
+                    .get_storage_at(STATEFUL_SPECIAL_ADDRESS, key, BlockId::Number(last_block_before_state_update))
+                    .await
+            },
             MAX_GET_STORAGE_AT_CALL_RETRY,
             Some(Duration::from_secs(5)),
         )
@@ -176,18 +203,21 @@ impl CompressedKeyValues {
     }
 }
 
-fn process_storage_diffs(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<ContractStorageDiffItem>> {
+fn process_storage_diffs(
+    storage_diffs: Vec<ContractStorageDiffItem>,
+    mapping: &CompressedKeyValues,
+) -> Result<Vec<ContractStorageDiffItem>> {
     let mut new_storage_diffs: Vec<ContractStorageDiffItem> = Vec::new();
-    for diff in &state_update.state_diff.storage_diffs {
+    for diff in storage_diffs {
         if CompressedKeyValues::skip_address_compression(diff.address) {
-            new_storage_diffs.push(diff.clone());
+            new_storage_diffs.push(diff);
             continue;
         }
 
         let mapped_address = mapping.get_compressed_value(&diff.address)?;
         let mut mapped_entries = Vec::new();
 
-        for entry in &diff.storage_entries {
+        for entry in diff.storage_entries {
             mapped_entries.push(StorageEntry { key: mapping.get_compressed_value(&entry.key)?, value: entry.value });
         }
 
@@ -196,31 +226,44 @@ fn process_storage_diffs(state_update: &StateUpdate, mapping: &CompressedKeyValu
     Ok(new_storage_diffs)
 }
 
-fn process_deployed_contracts(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<DeployedContractItem>> {
-    let mut new_deployed_contracts = Vec::new();
-    for item in &state_update.state_diff.deployed_contracts {
-        new_deployed_contracts
-            .push(DeployedContractItem { address: mapping.get_compressed_value(&item.address)?, class_hash: item.class_hash });
-    }
-    Ok(new_deployed_contracts)
+fn process_deployed_contracts(
+    deployed_contracts: Vec<DeployedContractItem>,
+    mapping: &CompressedKeyValues,
+) -> Result<Vec<DeployedContractItem>> {
+    deployed_contracts
+        .into_iter()
+        .map(|item| {
+            Ok(DeployedContractItem {
+                address: mapping.get_compressed_value(&item.address)?,
+                class_hash: item.class_hash,
+            })
+        })
+        .collect()
 }
 
-fn process_nonces(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<NonceUpdate>> {
-    let mut new_nonces = Vec::new();
-    for item in &state_update.state_diff.nonces {
-        new_nonces
-            .push(NonceUpdate { contract_address: mapping.get_compressed_value(&item.contract_address)?, nonce: item.nonce });
-    }
-    Ok(new_nonces)
+fn process_nonces(nonces: Vec<NonceUpdate>, mapping: &CompressedKeyValues) -> Result<Vec<NonceUpdate>> {
+    nonces
+        .into_iter()
+        .map(|item| {
+            Ok(NonceUpdate {
+                contract_address: mapping.get_compressed_value(&item.contract_address)?,
+                nonce: item.nonce,
+            })
+        })
+        .collect()
 }
 
-fn process_replaced_classes(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<ReplacedClassItem>> {
-    let mut new_replaced_classes = Vec::new();
-    for item in &state_update.state_diff.replaced_classes {
-        new_replaced_classes.push(ReplacedClassItem {
-            contract_address: mapping.get_compressed_value(&item.contract_address)?,
-            class_hash: item.class_hash,
-        });
-    }
-    Ok(new_replaced_classes)
+fn process_replaced_classes(
+    replaced_classes: Vec<ReplacedClassItem>,
+    mapping: &CompressedKeyValues,
+) -> Result<Vec<ReplacedClassItem>> {
+    replaced_classes
+        .into_iter()
+        .map(|item| {
+            Ok(ReplacedClassItem {
+                contract_address: mapping.get_compressed_value(&item.contract_address)?,
+                class_hash: item.class_hash,
+            })
+        })
+        .collect()
 }
