@@ -1,4 +1,4 @@
-use crate::types::batch::Batch;
+use crate::types::batch::{Batch, BatchStatus};
 use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
@@ -11,8 +11,8 @@ use crate::types::constant::{
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
-    StateUpdateMetadata,
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SettlementContext,
+    SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use color_eyre::Result;
@@ -26,12 +26,14 @@ pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64
         JobType::StateTransition => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-                blocks_to_settle: vec![internal_id],
                 snos_output_paths: vec![format!("{}/{}", internal_id, SNOS_OUTPUT_FILE_NAME)],
                 program_output_paths: vec![format!("{}/{}", internal_id, PROGRAM_OUTPUT_FILE_NAME)],
                 blob_data_paths: vec![format!("{}/{}", internal_id, BLOB_DATA_FILE_NAME)],
-                last_failed_block_no: None,
                 tx_hashes: Vec::new(),
+                context: SettlementContext::Block(SettlementContextData {
+                    to_settle: vec![internal_id],
+                    last_failed: None,
+                }),
             }),
         },
         JobType::SnosRun => JobMetadata {

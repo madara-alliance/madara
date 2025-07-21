@@ -1,12 +1,12 @@
+use crate::constants::{CAIRO_PIE_PATH, MAX_RETRIES, RETRY_DELAY};
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
+use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticQueryStatus, AtlanticValidatedArgs};
 use orchestrator_prover_client_interface::{ProverClient, Task};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
-
-use crate::constants::{CAIRO_PIE_PATH, MAX_RETRIES, RETRY_DELAY};
 mod constants;
 
 #[tokio::test]
@@ -25,6 +25,8 @@ async fn atlantic_client_submit_task_when_mock_works() {
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
         cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
     // Start a mock server
     let mock_server = MockServer::start();
@@ -67,6 +69,8 @@ async fn atlantic_client_get_task_status_works() {
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
         cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
     let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
 
@@ -90,6 +94,9 @@ async fn atlantic_client_get_bucket_status_works() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Python,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
     let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
 
@@ -116,6 +123,8 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
         cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
 
     // Create the Atlantic service with actual configuration

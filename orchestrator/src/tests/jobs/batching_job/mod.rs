@@ -7,7 +7,6 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use alloy::hex;
 use color_eyre::Result;
 use num_bigint::BigUint;
-use num_traits::{Num, ToPrimitive, Zero};
 use orchestrator_prover_client_interface::MockProverClient;
 use rstest::*;
 use starknet_core::types::Felt;

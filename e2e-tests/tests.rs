@@ -20,7 +20,8 @@ use orchestrator::types::constant::{
 use orchestrator::types::jobs::external_id::ExternalId;
 use orchestrator::types::jobs::job_item::JobItem;
 use orchestrator::types::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata, SnosMetadata, StateUpdateMetadata,
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingMetadata, SettlementContext,
+    SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use orchestrator::types::jobs::types::{JobStatus, JobType};
 use orchestrator::types::params::database::DatabaseArgs;
@@ -476,12 +477,11 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
 
     // Create the StateUpdate-specific metadata
     let state_update_metadata = StateUpdateMetadata {
-        blocks_to_settle: vec![block_number],
         snos_output_paths: vec![format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)],
         program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
         blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
-        last_failed_block_no: None,
         tx_hashes: Vec::new(),
+        context: SettlementContext::Block(SettlementContextData { to_settle: vec![block_number], last_failed: None }),
     };
 
     // Create the common metadata with default values

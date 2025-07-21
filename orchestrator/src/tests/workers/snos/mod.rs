@@ -2,7 +2,9 @@ use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
-use crate::types::jobs::metadata::{JobSpecificMetadata, SnosMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{
+    JobSpecificMetadata, SettlementContext, SettlementContextData, SnosMetadata, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
@@ -162,7 +164,8 @@ async fn test_snos_worker(
         let mut job_item = get_job_item_mock_by_id("state_transition".to_string(), Uuid::new_v4());
         let blocks_to_settle: Vec<u64> = (0..=max_block).collect();
         job_item.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            batches_to_settle: blocks_to_settle,
+            // batches_to_settle: blocks_to_settle,
+            context: SettlementContext::Block(SettlementContextData { to_settle: blocks_to_settle, last_failed: None }),
             ..Default::default()
         });
         job_item.status = JobStatus::Completed;

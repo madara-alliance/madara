@@ -8,8 +8,8 @@ use crate::types::constant::{
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
-    StateUpdateMetadata,
+    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SettlementContext,
+    SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::MockJobHandlerTrait;
@@ -120,12 +120,14 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         JobType::StateTransition => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-                blocks_to_settle: vec![block_number],
                 snos_output_paths: vec![format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)],
                 program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
                 blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
-                last_failed_block_no: None,
                 tx_hashes: Vec::new(),
+                context: SettlementContext::Block(SettlementContextData {
+                    to_settle: vec![block_number],
+                    last_failed: None,
+                }),
             }),
         },
         // For any other job types, use a default metadata structure
