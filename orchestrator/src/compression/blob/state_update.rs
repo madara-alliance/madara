@@ -177,7 +177,7 @@ pub(super) fn convert_to_biguint(elements: &[Felt]) -> Vec<BigUint> {
 
     elements
         .iter()
-        .map(|e| BigUint::from_bytes_be(&e.to_bytes_be()))
+        .map(|e| e.to_biguint())
         .chain(repeat_n(BigUint::zero(), pad_len))
         .collect()
 }

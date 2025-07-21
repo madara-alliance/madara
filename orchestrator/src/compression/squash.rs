@@ -3,8 +3,8 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::utils::helpers::retry_async;
 use color_eyre::eyre::eyre;
-use futures::stream;
 use futures::stream::StreamExt;
+use futures::{stream, TryStreamExt};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider, ProviderError};
 use starknet_core::types::{
@@ -111,38 +111,19 @@ impl StateDiffMap {
         pre_range_block: Option<u64>,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<StateDiff, JobError> {
-        // Create a new StateDiff to hold the merged state
-        let mut state_diff = StateDiff {
-            storage_diffs: Vec::new(),
-            deployed_contracts: Vec::new(),
-            declared_classes: Vec::new(),
-            deprecated_declared_classes: Vec::new(),
-            nonces: Vec::new(),
-            replaced_classes: Vec::new(),
-        };
-
         // Processing all contracts in parallel.
         // The idea is that it might be the case that for a contract, a particular storage slot is
         // changed twice to finally have the original value, in which case the new final value is not
         // different from the value in the previous batch and hence it shouldn't be in the storage diff
         // The result is the storage diff of all the contracts
-        let results: Vec<_> = stream::iter(self.storage_diffs)
+        let storage_diffs = stream::iter(self.storage_diffs)
             .map(|(contract_addr, storage_map)| async move {
                 process_single_contract(contract_addr, storage_map, provider, pre_range_block).await
             })
             .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
-            .collect()
-            .await;
-
-        for result in results {
-            match result {
-                Ok(Some(contract_storage_diff)) => {
-                    state_diff.storage_diffs.push(contract_storage_diff);
-                }
-                Ok(None) => {} // No storage entries for this contract
-                Err(e) => return Err(e),
-            }
-        }
+            .try_filter_map(|contract_storage_diff| async move { Ok(contract_storage_diff) })
+            .try_collect::<Vec<_>>()
+            .await?;
 
         // Processing deployed contracts and replaced classes
         // The idea is that it might be the case that a class is replaced twice to the original value,
@@ -150,31 +131,36 @@ impl StateDiffMap {
         // Secondly, it might also be possible that a contract is deployed and its class is replaced
         // in the same batch, in which case we should just update the class hash in deployed contracts
         // and remove it from the replaced class map
-        let (replaced_class_items, deployed_contract_items) = process_deployed_contracts_and_replaced_classes(
+        let (replaced_classes, deployed_contracts) = process_deployed_contracts_and_replaced_classes(
             provider,
             pre_range_block,
             self.deployed_contracts,
             self.replaced_classes,
         )
         .await?;
-        state_diff.replaced_classes = replaced_class_items;
-        state_diff.deployed_contracts = deployed_contract_items;
 
         // Declared classes
-        state_diff.declared_classes = self
+        let declared_classes = self
             .declared_classes
             .into_iter()
             .map(|(class_hash, compiled_class_hash)| DeclaredClassItem { class_hash, compiled_class_hash })
             .collect();
 
         // Nonces
-        state_diff.nonces =
+        let nonces =
             self.nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect();
 
         // Deprecated classes
-        state_diff.deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
+        let deprecated_declared_classes = self.deprecated_declared_classes.into_iter().collect();
 
-        Ok(state_diff)
+        Ok(StateDiff {
+            storage_diffs,
+            deployed_contracts,
+            declared_classes,
+            deprecated_declared_classes,
+            nonces,
+            replaced_classes,
+        })
     }
 }
 
@@ -188,51 +174,41 @@ async fn process_deployed_contracts_and_replaced_classes(
     mut deployed_contracts: HashMap<Felt, Felt>,
     mut replaced_class_hashes: HashMap<Felt, Felt>,
 ) -> Result<(Vec<ReplacedClassItem>, Vec<DeployedContractItem>), JobError> {
-    let mut contracts_to_remove = Vec::new();
-
-    // Loop through all replaced class hashes and check if they exist in the deployed contracts
-    for (contract_address, class_hash) in &replaced_class_hashes {
-        if deployed_contracts.contains_key(contract_address) {
-            // replace the class hash in deployed contracts
-            deployed_contracts.insert(*contract_address, *class_hash);
-            // mark the class hash for removal from replaced class hashes
-            contracts_to_remove.push(*contract_address);
-        }
-    }
-    // Remove the contracts from replaced class hashes that were marked for removal
-    for contract_address in contracts_to_remove {
-        replaced_class_hashes.remove(&contract_address);
-    }
-
-    let mut replaced_class_hash_items: Vec<ReplacedClassItem> = Vec::new();
-    let mut deployed_contract_items: Vec<DeployedContractItem> = Vec::new();
-
-    if let Some(pre_range_block) = pre_range_block_option {
-        let result: Vec<_> = stream::iter(replaced_class_hashes)
-            .map(|(contract_address, class_hash)| async move {
-                process_class(provider, pre_range_block, contract_address, class_hash).await
-            })
-            .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
-            .collect()
-            .await;
-        for res in result {
-            match res {
-                Ok((contract_address, class_hash)) => match class_hash {
-                    None => {}
-                    Some(class_hash) => {
-                        replaced_class_hash_items.push(ReplacedClassItem { contract_address, class_hash });
-                    }
-                },
-                Err(e) => {
-                    return Err(e);
-                }
+    // Loop through all replaced_class_hashes and check if they exist in the deployed_contracts
+    // Remove the contracts from replaced_class_hashes if they exist in deployed_contracts
+    replaced_class_hashes.retain(|contract_address, class_hash| {
+        match deployed_contracts.get_mut(contract_address) {
+            Some(existing_class_hash) => {
+                // replace the class hash in deployed_contracts
+                *existing_class_hash = *class_hash;
+                // remove
+                false
             }
+            // keep
+            None => true,
         }
-    }
+    });
 
-    for (contract_address, class_hash) in deployed_contracts {
-        deployed_contract_items.push(DeployedContractItem { address: contract_address, class_hash });
-    }
+    let replaced_class_hash_items: Vec<ReplacedClassItem> = match pre_range_block_option {
+        Some(pre_range_block) => {
+            stream::iter(replaced_class_hashes)
+                .map(|(contract_address, class_hash)| async move {
+                    process_class(provider, pre_range_block, contract_address, class_hash).await
+                })
+                .buffer_unordered(MAX_CONCURRENT_CONTRACTS_PROCESSING)
+                .try_filter_map(|(contract_address, class_hash)| async move {
+                    Ok(class_hash.map(|class_hash| ReplacedClassItem { contract_address, class_hash }))
+                })
+                .try_collect::<Vec<_>>()
+                .await?
+        }
+        None => Vec::new(),
+    };
+
+    let deployed_contract_items: Vec<DeployedContractItem> = deployed_contracts
+        .into_iter()
+        .map(|(address, class_hash)| DeployedContractItem { address, class_hash })
+        .collect();
 
     Ok((replaced_class_hash_items, deployed_contract_items))
 }
@@ -265,26 +241,21 @@ async fn process_single_contract(
     provider: &Arc<JsonRpcClient<HttpTransport>>,
     pre_range_block_option: Option<u64>,
 ) -> Result<Option<ContractStorageDiffItem>, JobError> {
-    let mut storage_entries = Vec::new();
-
-    match pre_range_block_option {
+    let storage_entries = match pre_range_block_option {
         None => {
             // pre_range_block is not available, filter non-zero values
             // We don't need zero values if this is the first block (i.e., pre_range_block doesn't exist)
             // since zero is the default value
-            for (key, value) in storage_map {
-                if value != Felt::ZERO {
-                    storage_entries.push(StorageEntry { key, value });
-                }
-            }
+            storage_map
+                .into_iter()
+                .filter(|(_, value)| *value != Felt::ZERO)
+                .map(|(key, value)| StorageEntry { key, value })
+                .collect()
         }
         Some(pre_range_block) => {
-            // Check if the contract existed at the pre-range block
-            let contract_existed = check_contract_existed_at_block(provider, contract_addr, pre_range_block).await?;
-
-            if contract_existed {
+            if check_contract_existed_at_block(provider, contract_addr, pre_range_block).await? {
                 // Process storage entries only for an existing contract
-                let results: Vec<_> = stream::iter(storage_map)
+                stream::iter(storage_map)
                     .map(|(key, value)| {
                         let provider = Arc::clone(provider);
                         async move {
@@ -295,28 +266,23 @@ async fn process_single_contract(
                         }
                     })
                     .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
-                    .collect()
-                    .await;
-
-                // Process results
-                for result in results {
-                    let (key, value, pre_range_value) = result?;
-                    if pre_range_value != value {
-                        storage_entries.push(StorageEntry { key, value });
-                    }
-                }
+                    .try_filter_map(|(key, value, pre_range_value)| async move {
+                        Ok(if pre_range_value != value { Some(StorageEntry { key, value }) } else { None })
+                    })
+                    .try_collect::<Vec<_>>()
+                    .await?
             } else {
                 // Contract didn't exist, filter non-zero values
                 // We don't need zero values if the contract didn't exist at the pre-range block
                 // since zero is the default value
-                for (key, value) in storage_map {
-                    if value != Felt::ZERO {
-                        storage_entries.push(StorageEntry { key, value });
-                    }
-                }
+                storage_map
+                    .into_iter()
+                    .filter(|(_, value)| *value != Felt::ZERO)
+                    .map(|(key, value)| StorageEntry { key, value })
+                    .collect()
             }
         }
-    }
+    };
 
     if !storage_entries.is_empty() {
         Ok(Some(ContractStorageDiffItem { address: contract_addr, storage_entries }))

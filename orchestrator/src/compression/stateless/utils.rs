@@ -5,18 +5,18 @@ use num_bigint::BigUint;
 use num_traits::Zero;
 use starknet_core::types::Felt;
 
-/// Revert signatures (no Result) and use expect/panic
+/// Revert signatures
 pub fn get_n_elms_per_felt(elm_bound: u32) -> Result<usize> {
-    if elm_bound == 0 {
-        return Err(eyre!("Element bound cannot be 0"));
+    match elm_bound {
+        0 => Err(eyre!("Element bound cannot be 0")),
+        1 => Ok(MAX_N_BITS),
+        _ => {
+            let n_bits_required = (elm_bound - 1).ilog2() + 1;
+            usize::try_from(n_bits_required)
+                .map(|b| MAX_N_BITS / b)
+                .map_err(|err| eyre!("Failed usize conversion for bits required: {}", err))
+        }
     }
-    if elm_bound <= 1 {
-        return Ok(MAX_N_BITS);
-    }
-    let n_bits_required = (elm_bound - 1).ilog2() + 1;
-    Ok(MAX_N_BITS
-        / usize::try_from(n_bits_required)
-            .map_err(|err| eyre!("Failed usize conversion for bits required: {}", err))?)
 }
 
 /// Packs a slice of usize into a vector of Felt
@@ -57,36 +57,17 @@ pub fn pack_usize_in_felt(elms: &[usize], elm_bound: u32) -> Result<Felt> {
 
 /// Converts a slice of bits into a Felt
 /// Returns an error in case the length is not guaranteed to fit in Felt (more than 251 bits).
-pub(crate) fn felt_from_bits_le(bits: &[bool]) -> Result<Felt> {
+pub(crate) fn felt_from_bits_le_bytes_be(bits: &[bool]) -> Result<Felt> {
     if bits.len() > MAX_N_BITS {
         return Err(eyre!("Value requires {} bits, exceeding limit for Felt", bits.len()));
     }
 
     let mut bytes = [0_u8; 32];
-    for (byte_idx, chunk) in bits.chunks(8).enumerate() {
-        if byte_idx >= 32 {
-            break;
+    for (i, bit) in bits.iter().enumerate() {
+        if *bit {
+            bytes[i / 8] |= 1 << (i % 8);
         }
-        let mut byte = 0_u8;
-        for (bit_idx, bit) in chunk.iter().enumerate() {
-            if *bit {
-                byte |= 1 << bit_idx;
-            }
-        }
-        bytes[byte_idx] = byte;
     }
 
-    Ok(Felt::from_bytes_be(&bytes_le_to_be(&bytes)))
-}
-
-/// Helper function to reverse the bytes of a byte slice
-pub fn bytes_le_to_be(bytes_le: &[u8; 32]) -> [u8; 32] {
-    let mut bytes_be = *bytes_le;
-    bytes_be.reverse();
-    bytes_be
-}
-
-/// Helper function to convert a Felt to BigUint
-pub fn felt_to_big_uint(value: &Felt) -> BigUint {
-    BigUint::from_bytes_be(&value.to_bytes_be())
+    Ok(Felt::from_bytes_le(&bytes))
 }

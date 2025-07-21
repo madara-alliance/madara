@@ -1,5 +1,5 @@
 use crate::compression::stateless::constants::MAX_N_BITS;
-use crate::compression::stateless::utils::{felt_from_bits_le, felt_to_big_uint};
+use crate::compression::stateless::utils::felt_from_bits_le_bytes_be;
 use color_eyre::eyre::{bail, eyre};
 use starknet_core::types::Felt;
 use std::any::type_name;
@@ -31,7 +31,7 @@ impl<const LENGTH: usize> TryFrom<Felt> for BitsArray<LENGTH> {
             }
         }
         // Original used felt.to_bits_le()[0..LENGTH]. Let's stick to a BigUint method if to_bits_le isn't ideal/available
-        let felt_as_biguint = felt_to_big_uint(&felt);
+        let felt_as_biguint = felt.to_biguint();
         let mut bits_vec = Vec::with_capacity(LENGTH);
         for i in 0..LENGTH {
             bits_vec.push(felt_as_biguint.bit(i as u64));
@@ -48,7 +48,7 @@ impl<const LENGTH: usize> TryFrom<BitsArray<LENGTH>> for Felt {
     type Error = color_eyre::Report;
 
     fn try_from(bits_array: BitsArray<LENGTH>) -> color_eyre::Result<Self, Self::Error> {
-        felt_from_bits_le(&bits_array.0)
+        felt_from_bits_le_bytes_be(&bits_array.0)
     }
 }
 
