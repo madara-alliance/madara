@@ -60,7 +60,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
         // Mock storage expectations for each block
         let state_update_path = format!("state_update/batch/{}.json", if has_existing_batch { 2 } else { 1 });
         let state_update_path_clone = state_update_path.clone();
-        storage.expect_put_data().withf(move |_, path| path == &state_update_path_clone).returning(|_, _| Ok(()));
+        storage.expect_put_data().withf(move |_, path| path == state_update_path_clone).returning(|_, _| Ok(()));
 
         // Mock database expectations for each block
         if block_num == start_block {
@@ -71,7 +71,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
                         && batch.num_blocks == 1
                         && batch.squashed_state_updates_path == state_update_path
                 })
-                .returning(|batch| Ok(batch));
+                .returning(Ok);
         } else {
             db.expect_update_or_create_batch()
                 .withf(move |batch, updates| {

@@ -7974,7 +7974,6 @@ dependencies = [
  "hex",
  "httpmock",
  "hyper 0.14.31",
- "hyper 1.6.0",
  "indexmap 2.10.0",
  "itertools 0.13.0",
  "jemallocator",
