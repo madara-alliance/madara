@@ -27,7 +27,8 @@ async fn test_squash_state_updates() -> Result<()> {
         env!("CARGO_MANIFEST_DIR")
     ))?;
 
-    let squashed_state_update = squash(state_updates_vector, Some(789877), services.config.madara_client()).await?;
+    let squashed_state_update =
+        squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(789877), services.config.madara_client()).await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
 

@@ -24,7 +24,8 @@ impl BlobContractDiffVec {
     /// - deployed_contracts
     /// - replaced_classes
     /// - nonces
-    /// These needs to be passed as mutable reference to the function
+    ///
+    /// These need to be passed as mutable reference to the function
     pub(super) fn from_storage_diffs(
         storage_diffs: Vec<ContractStorageDiffItem>,
         processed_addresses: &mut HashSet<Felt>,
