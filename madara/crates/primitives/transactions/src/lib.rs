@@ -206,6 +206,15 @@ impl Transaction {
         }
     }
 
+    pub fn tip(&self) -> Option<u64> {
+        match self {
+            Transaction::Invoke(InvokeTransaction::V3(tx)) => Some(tx.tip),
+            Transaction::Declare(DeclareTransaction::V3(tx)) => Some(tx.tip),
+            Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => Some(tx.tip),
+            _ => None,
+        }
+    }
+
     pub fn is_l1_handler(&self) -> bool {
         matches!(self, Transaction::L1Handler(_))
     }
@@ -255,7 +264,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InvokeTransaction {
     V0(InvokeTransactionV0),
     V1(InvokeTransactionV1),
@@ -325,7 +334,7 @@ impl InvokeTransaction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV0 {
     pub max_fee: Felt,
     pub signature: Signature,
@@ -340,7 +349,7 @@ impl InvokeTransactionV0 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
     pub calldata: Calldata,
@@ -355,7 +364,7 @@ impl InvokeTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV3 {
     pub sender_address: Felt,
     pub calldata: Calldata,
@@ -418,7 +427,7 @@ impl From<mp_rpc::MsgFromL1> for L1HandlerTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeclareTransaction {
     V0(DeclareTransactionV0),
     V1(DeclareTransactionV1),
@@ -502,7 +511,7 @@ impl DeclareTransaction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV0 {
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -516,7 +525,7 @@ impl DeclareTransactionV0 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV1 {
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -531,7 +540,7 @@ impl DeclareTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV2 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
@@ -547,7 +556,7 @@ impl DeclareTransactionV2 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV3 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
@@ -568,7 +577,7 @@ impl DeclareTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployTransaction {
     pub version: Felt,
     pub contract_address_salt: Felt,
@@ -582,7 +591,7 @@ impl DeployTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeployAccountTransaction {
     V1(DeployAccountTransactionV1),
     V3(DeployAccountTransactionV3),
@@ -643,7 +652,7 @@ impl DeployAccountTransaction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV1 {
     pub max_fee: Felt,
     pub signature: Signature,
@@ -659,7 +668,7 @@ impl DeployAccountTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV3 {
     pub signature: Signature,
     pub nonce: Felt,
@@ -679,7 +688,7 @@ impl DeployAccountTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Default, Copy, PartialEq, Eq)]
 pub enum DataAvailabilityMode {
     #[default]
     L1 = 0,
@@ -709,7 +718,7 @@ impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
@@ -717,7 +726,7 @@ pub struct ResourceBoundsMapping {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceBounds {
     #[serde_as(as = "U64AsHex")]
     pub max_amount: u64,
