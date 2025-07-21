@@ -222,11 +222,9 @@ impl ProverClient for AtlanticProverService {
         Ok(bucket
             .queries
             .iter()
-            .find(|query| {
-                return match query.bucket_job_index {
-                    Some(index) => index == aggregator_index,
-                    None => false,
-                };
+            .find(|query| match query.bucket_job_index {
+                Some(index) => index == aggregator_index,
+                None => false,
             })
             .ok_or(ProverClientError::FailedToGetAggregatorId(bucket_id.to_string()))?
             .id
@@ -253,6 +251,7 @@ impl ProverClient for AtlanticProverService {
 }
 
 impl AtlanticProverService {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,

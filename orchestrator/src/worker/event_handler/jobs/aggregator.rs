@@ -249,7 +249,7 @@ impl AggregatorJobHandler {
     ) -> Result<Vec<u8>, JobError> {
         tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
         let cairo_pie =
-            config.prover_client().get_task_artifacts(&task_id, TaskType::Query, file_name).await.map_err(|e| {
+            config.prover_client().get_task_artifacts(task_id, TaskType::Query, file_name).await.map_err(|e| {
                 tracing::error!(error = %e, "Failed to download {}", file_name);
                 JobError::Other(OtherError(eyre!(e)))
             })?;

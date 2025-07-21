@@ -244,7 +244,7 @@ impl BatchingTrigger {
         // Update batch status in the database
         database
             .update_or_create_batch(
-                &batch,
+                batch,
                 &BatchUpdates {
                     end_block: Some(batch.end_block),
                     is_batch_ready: Some(is_batch_ready),
