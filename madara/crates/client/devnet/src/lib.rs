@@ -355,10 +355,7 @@ mod tests {
         g.build_and_store(&backend).await.unwrap();
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
-        let mempool = Arc::new(Mempool::new(
-            Arc::clone(&backend),
-            MempoolConfig::new(mc_mempool::MempoolLimits::new(&chain_config)),
-        ));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let metrics = BlockProductionMetrics::register();
 
         let block_production = BlockProductionTask::new(

@@ -16,7 +16,7 @@ use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
-use mp_state_update::DeclaredClassItem;
+use mp_state_update::{DeclaredClassItem, NonceUpdate};
 use mp_transactions::validated::ValidatedMempoolTx;
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
@@ -355,14 +355,13 @@ impl BlockProductionTask {
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 tracing::debug!(
-                    "Received ExecutorMessage::BatchExecuted executed_txs={}",
-                    batch_execution_result.executed_txs.len()
+                    "Received ExecutorMessage::BatchExecuted executed_txs={:?}",
+                    batch_execution_result.executed_txs
                 );
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
-
                 state.append_batch(batch_execution_result);
             }
             ExecutorMessage::EndBlock => {
@@ -371,6 +370,17 @@ impl BlockProductionTask {
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
+
+                self.mempool
+                    .on_tx_batch_executed(
+                        state.block.state.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                            contract_address: contract_address.to_felt(),
+                            nonce: nonce.to_felt(),
+                        }),
+                        state.tx_executed_for_tick.iter().cloned(),
+                    )
+                    .await
+                    .context("Updating mempool state")?;
 
                 let (block, classes) = state.block.into_full_block_with_classes(&self.backend, state.block_n)?;
                 let block_hash = self
@@ -388,7 +398,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    fn store_pending_block(&mut self) -> anyhow::Result<()> {
+    async fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let TaskState::Executing(state) = self.current_state.as_mut().context("No current state")? {
             for l1_nonce in &state.block.consumed_core_contract_nonces {
                 // This ensures we remove the nonces for rejected L1 to L2 message transactions. This avoids us from reprocessing them on restart.
@@ -403,6 +413,17 @@ impl BlockProductionTask {
                 .into_full_block_with_classes(&self.backend, state.block_n)
                 .context("Converting to full pending block")?;
             self.backend.store_pending_block_with_classes(block, &classes)?;
+
+            self.mempool
+                .on_tx_batch_executed(
+                    state.block.state.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                        contract_address: contract_address.to_felt(),
+                        nonce: nonce.to_felt(),
+                    }),
+                    state.tx_executed_for_tick.iter().cloned(),
+                )
+                .await
+                .context("Updating mempool state")?;
 
             let stats = mem::take(&mut state.stats_for_tick);
             if stats.n_added_to_block > 0 {
@@ -494,7 +515,7 @@ impl BlockProductionTask {
 
                 // Update the pending block in db periodically.
                 Some(_) = OptionFuture::from(interval_pending_block_update.as_mut().map(|int| int.tick())) => {
-                    self.store_pending_block().context("Storing pending block")?;
+                    self.store_pending_block().await.context("Storing pending block")?;
                 }
 
                 // Bubble up errors from the executor thread, or graceful shutdown.
@@ -613,7 +634,7 @@ pub(crate) mod tests {
         backend.set_l1_gas_quote_for_testing();
         genesis.build_and_store(&backend).await.unwrap();
 
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing()));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,
             Arc::clone(&backend),

@@ -18,7 +18,7 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{Mempool, MempoolConfig, MempoolLimits};
+use mc_mempool::{Mempool, MempoolConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
 use mc_telemetry::{SysInfo, TelemetryService};
@@ -151,10 +151,9 @@ async fn main() -> anyhow::Result<()> {
         .context("Initializing db service")?;
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mut mempool = Mempool::new(
+    let mempool = Mempool::new(
         Arc::clone(service_db.backend()),
-        MempoolConfig::new(MempoolLimits::new(&chain_config))
-            .with_no_saving(run_cmd.validator_params.no_mempool_saving),
+        MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving },
     );
     mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);

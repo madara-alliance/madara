@@ -48,6 +48,7 @@ starknet_api = { workspace = true, default-features = true }
 # Others
 anyhow = { workspace = true }
 bitvec = { workspace = true }
+dashmap = { workspace = true }
 futures = { workspace = true }
 jsonrpsee = { workspace = true, default-features = true, features = [
   "macros",

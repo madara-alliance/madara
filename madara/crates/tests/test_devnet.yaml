@@ -21,9 +21,9 @@ bouncer_config:
 sequencer_address: "0x123"
 eth_core_contract_address: "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512"
 eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
-mempool_tx_limit: 10000
-mempool_declare_tx_limit: 20
-mempool_tx_max_age: "5h"
+mempool_max_transactions: 10000
+mempool_max_declare_transactions: 20
+mempool_ttl: "5h"
 l2_gas_target: 2000000000
 min_l2_gas_price: 100000
 l2_gas_price_max_change_denominator: 48

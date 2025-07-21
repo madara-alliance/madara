@@ -21,6 +21,11 @@ impl JobTrigger for UpdateStateJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
 
+        // Self-healing: recover any orphaned StateTransition jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
+            tracing::error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
+        }
+
         let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
         let (completed_da_jobs, last_block_processed_in_last_job) = match latest_job {
             Some(job) => {
