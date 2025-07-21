@@ -27,17 +27,19 @@ const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
 ///
 /// # Arguments
 /// * `state_update` - StateUpdate to compress
+/// * `last_block_before_state_update` - The last block before the state update
+/// * `provider` - Provider to use for fetching values from the special address
 ///
 /// # Returns
 /// A compressed StateUpdate with values mapped according to the special address mappings
 pub async fn compress(
     state_update: &StateUpdate,
-    pre_range_block: u64,
+    last_block_before_state_update: u64,
     provider: &Arc<JsonRpcClient<HttpTransport>>,
 ) -> Result<StateUpdate> {
     let mut state_update = state_update.clone();
 
-    let mapping = ValueMapping::from_state_update_or_provider(&state_update, pre_range_block, provider).await?;
+    let mapping = CompressedKeyValues::from_state_update_and_provider(&state_update, last_block_before_state_update, provider).await?;
 
     // Process storage diffs
     state_update.state_diff.storage_diffs = process_storage_diffs(&state_update, &mapping)?;
@@ -63,20 +65,20 @@ pub async fn compress(
 
 /// Represents a mapping from one value to another
 #[derive(Debug)]
-struct ValueMapping(HashMap<Felt, Felt>);
+struct CompressedKeyValues(HashMap<Felt, Felt>);
 
-impl ValueMapping {
-    /// Creates a new ValueMapping using state update and provider
-    async fn from_state_update_or_provider(
+impl CompressedKeyValues {
+    /// Creates a new CompressedKeyValues using state update and provider
+    async fn from_state_update_and_provider(
         state_update: &StateUpdate,
-        pre_range_block: u64,
+        last_block_before_state_update: u64,
         provider: &Arc<JsonRpcClient<HttpTransport>>,
     ) -> Result<Self> {
         let mut mappings: HashMap<Felt, Felt> = HashMap::new();
         let mut keys: HashSet<Felt> = HashSet::new();
 
         // Collecting all the keys for which mapping might be required
-        state_update.state_diff.storage_diffs.iter().filter(|diff| !Self::skip(diff.address)).for_each(|diff| {
+        state_update.state_diff.storage_diffs.iter().filter(|diff| !Self::skip_address_compression(diff.address)).for_each(|diff| {
             keys.insert(diff.address);
             diff.storage_entries.iter().for_each(|entry| {
                 keys.insert(entry.key);
@@ -93,17 +95,17 @@ impl ValueMapping {
         });
 
         // Fetch the values for the keys from the special address (0x2)
-        let special_address_mappings = Self::get_special_address_mappings(state_update)?;
+        let compressed_key_values = Self::get_compressed_key_values_from_state_update(state_update)?;
 
         // Fetch the value for the keys in the special address either from the current mapping or from the provider
         // Doing this in parallel
         stream::iter(keys)
             .map(|key| {
-                let special_address_mappings = special_address_mappings.clone();
+                let special_address_mappings = compressed_key_values.clone();
                 async move {
                     match special_address_mappings.get(&key).cloned() {
                         Some(value) => Ok((key, value)),
-                        None => Ok((key, Self::get_value_from_provider(provider, &key, pre_range_block).await?)),
+                        None => Ok((key, Self::get_compressed_key_from_provider(provider, &key, last_block_before_state_update).await?)),
                     }
                 }
             })
@@ -120,8 +122,8 @@ impl ValueMapping {
         Ok(Self(mappings))
     }
 
-    /// get_special_address_mappings create a hashmap from the storage mappings at the special address
-    fn get_special_address_mappings(state_update: &StateUpdate) -> Result<HashMap<Felt, Felt>> {
+    /// Creates a hashmap from the storage mappings at the special address
+    fn get_compressed_key_values_from_state_update(state_update: &StateUpdate) -> Result<HashMap<Felt, Felt>> {
         // Find the special address storage entries
         if let Some(special_contract) =
             state_update.state_diff.storage_diffs.iter().find(|diff| diff.address == STATEFUL_SPECIAL_ADDRESS)
@@ -129,7 +131,7 @@ impl ValueMapping {
             let mut mappings: HashMap<Felt, Felt> = HashMap::new();
 
             // Add each key-value pair to our mapping, ignoring the global counter-slot
-            special_contract.storage_entries.iter().filter(|entry| !Self::skip(entry.key)).for_each(|entry| {
+            special_contract.storage_entries.iter().filter(|entry| !Self::skip_address_compression(entry.key)).for_each(|entry| {
                 mappings.insert(entry.key, entry.value);
             });
 
@@ -139,23 +141,18 @@ impl ValueMapping {
         }
     }
 
-    /// skip determines if we can skip a contract or storage address from stateful compression mapping
-    fn skip(address: Felt) -> bool {
-        address < STATEFUL_MAPPING_START
-    }
-
-    /// get_value_from_provider returns the mapping for a key after fetching it from the provider
-    async fn get_value_from_provider(
+    /// Returns the mapping for a key after fetching it from the provider
+    async fn get_compressed_key_from_provider(
         provider: &Arc<JsonRpcClient<HttpTransport>>,
         key: &Felt,
-        pre_range_block: u64,
+        last_block_before_state_update: u64,
     ) -> Result<Felt, ProviderError> {
-        if Self::skip(*key) {
+        if Self::skip_address_compression(*key) {
             return Ok(*key);
         }
 
         retry_async(
-            async || provider.get_storage_at(STATEFUL_SPECIAL_ADDRESS, key, BlockId::Number(pre_range_block)).await,
+            async || provider.get_storage_at(STATEFUL_SPECIAL_ADDRESS, key, BlockId::Number(last_block_before_state_update)).await,
             MAX_GET_STORAGE_AT_CALL_RETRY,
             Some(Duration::from_secs(5)),
         )
@@ -163,29 +160,35 @@ impl ValueMapping {
         .map_err(|err| {
             ProviderError::StarknetError(StarknetError::UnexpectedError(format!(
                 "Failed to get pre-range storage value for contract: {}, key: {} at block {}: {}",
-                STATEFUL_SPECIAL_ADDRESS, key, pre_range_block, err
+                STATEFUL_SPECIAL_ADDRESS, key, last_block_before_state_update, err
             )))
         })
     }
 
-    fn get_value(&self, value: &Felt) -> Result<Felt> {
-        self.0.get(value).cloned().ok_or(eyre::eyre!("Value not found in mapping: {}", value))
+    /// Determines if we can skip a contract or storage address from stateful compression mapping
+    fn skip_address_compression(address: Felt) -> bool {
+        address < STATEFUL_MAPPING_START
+    }
+
+    /// Returns the compressed key for a given value
+    fn get_compressed_value(&self, key: &Felt) -> Result<Felt> {
+        self.0.get(key).cloned().ok_or(eyre::eyre!("Compressed value not found in mapping for key {}", key))
     }
 }
 
-fn process_storage_diffs(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<ContractStorageDiffItem>> {
+fn process_storage_diffs(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<ContractStorageDiffItem>> {
     let mut new_storage_diffs: Vec<ContractStorageDiffItem> = Vec::new();
     for diff in &state_update.state_diff.storage_diffs {
-        if ValueMapping::skip(diff.address) {
+        if CompressedKeyValues::skip_address_compression(diff.address) {
             new_storage_diffs.push(diff.clone());
             continue;
         }
 
-        let mapped_address = mapping.get_value(&diff.address)?;
+        let mapped_address = mapping.get_compressed_value(&diff.address)?;
         let mut mapped_entries = Vec::new();
 
         for entry in &diff.storage_entries {
-            mapped_entries.push(StorageEntry { key: mapping.get_value(&entry.key)?, value: entry.value });
+            mapped_entries.push(StorageEntry { key: mapping.get_compressed_value(&entry.key)?, value: entry.value });
         }
 
         new_storage_diffs.push(ContractStorageDiffItem { address: mapped_address, storage_entries: mapped_entries });
@@ -193,29 +196,29 @@ fn process_storage_diffs(state_update: &StateUpdate, mapping: &ValueMapping) -> 
     Ok(new_storage_diffs)
 }
 
-fn process_deployed_contracts(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<DeployedContractItem>> {
+fn process_deployed_contracts(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<DeployedContractItem>> {
     let mut new_deployed_contracts = Vec::new();
     for item in &state_update.state_diff.deployed_contracts {
         new_deployed_contracts
-            .push(DeployedContractItem { address: mapping.get_value(&item.address)?, class_hash: item.class_hash });
+            .push(DeployedContractItem { address: mapping.get_compressed_value(&item.address)?, class_hash: item.class_hash });
     }
     Ok(new_deployed_contracts)
 }
 
-fn process_nonces(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<NonceUpdate>> {
+fn process_nonces(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<NonceUpdate>> {
     let mut new_nonces = Vec::new();
     for item in &state_update.state_diff.nonces {
         new_nonces
-            .push(NonceUpdate { contract_address: mapping.get_value(&item.contract_address)?, nonce: item.nonce });
+            .push(NonceUpdate { contract_address: mapping.get_compressed_value(&item.contract_address)?, nonce: item.nonce });
     }
     Ok(new_nonces)
 }
 
-fn process_replaced_classes(state_update: &StateUpdate, mapping: &ValueMapping) -> Result<Vec<ReplacedClassItem>> {
+fn process_replaced_classes(state_update: &StateUpdate, mapping: &CompressedKeyValues) -> Result<Vec<ReplacedClassItem>> {
     let mut new_replaced_classes = Vec::new();
     for item in &state_update.state_diff.replaced_classes {
         new_replaced_classes.push(ReplacedClassItem {
-            contract_address: mapping.get_value(&item.contract_address)?,
+            contract_address: mapping.get_compressed_value(&item.contract_address)?,
             class_hash: item.class_hash,
         });
     }

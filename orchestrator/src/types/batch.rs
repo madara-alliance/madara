@@ -39,7 +39,7 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn create(index: u64, start_block: u64, squashed_state_updates_path: String, blob_path: String) -> Self {
+    pub fn new(index: u64, start_block: u64, squashed_state_updates_path: String, blob_path: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             index,

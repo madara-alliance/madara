@@ -79,7 +79,7 @@ impl BatchingTrigger {
                 if batch.is_batch_ready {
                     // Previous batch is full, create a new batch
                     (
-                        Batch::create(
+                        Batch::new(
                             batch.index + 1,
                             batch.end_block + 1,
                             self.get_state_update_file_path(batch.index + 1),
@@ -96,7 +96,7 @@ impl BatchingTrigger {
             }
             None => (
                 // No batch found, create a new batch
-                Batch::create(1, start_block_number, self.get_state_update_file_path(1), self.get_blob_dir_path(1)),
+                Batch::new(1, start_block_number, self.get_state_update_file_path(1), self.get_blob_dir_path(1)),
                 None,
             ),
         };
@@ -138,7 +138,7 @@ impl BatchingTrigger {
                 match prev_state_update {
                     Some(prev_state_update) => {
                         let squashed_state_update = squash(
-                            vec![prev_state_update.clone(), state_update.clone()],
+                            vec![&prev_state_update, &state_update],
                             if current_batch.start_block == 0 { None } else { Some(current_batch.start_block - 1) },
                             provider,
                         )
@@ -168,7 +168,7 @@ impl BatchingTrigger {
                             .await?;
 
                             // Start a new batch
-                            let new_batch = Batch::create(
+                            let new_batch = Batch::new(
                                 current_batch.index + 1,
                                 block_number,
                                 self.get_state_update_file_path(current_batch.index + 1),
