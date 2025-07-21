@@ -23,7 +23,7 @@ const MAX_GET_CLASS_HASH_AT_CALL_RETRY: u64 = 3;
 
 /// squash_state_updates merge all the StateUpdate into a single StateUpdate
 pub async fn squash(
-    state_updates: Vec<StateUpdate>,
+    state_updates: Vec<&StateUpdate>,
     pre_range_block: Option<u64>,
     provider: &Arc<JsonRpcClient<HttpTransport>>,
 ) -> Result<StateUpdate, JobError> {
@@ -38,7 +38,7 @@ pub async fn squash(
     let old_root = state_updates.first().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?.old_root;
 
     // Collecting a simplified squashed state diff map
-    let state_diff_map = StateDiffMap::from_state_update(&state_updates);
+    let state_diff_map = StateDiffMap::from_state_update(state_updates);
     let state_diff = state_diff_map.get_state_diff(pre_range_block, provider).await?;
 
     // Create the merged StateUpdate
@@ -61,7 +61,7 @@ struct StateDiffMap {
 }
 
 impl StateDiffMap {
-    fn from_state_update(state_updates: &Vec<StateUpdate>) -> Self {
+    fn from_state_update(state_updates: Vec<&StateUpdate>) -> Self {
         // Maps to efficiently track the latest state
         let mut state_diff_map = StateDiffMap::default();
 

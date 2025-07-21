@@ -144,7 +144,7 @@ impl BatchingTrigger {
                     Some(prev_state_update) => {
                         // Squash the state updates
                         let squashed_state_update = squash(
-                            vec![prev_state_update.clone(), state_update.clone()],
+                            vec![&prev_state_update, &state_update],
                             if current_batch.start_block == 0 { None } else { Some(current_batch.start_block - 1) },
                             provider,
                         )
@@ -208,7 +208,7 @@ impl BatchingTrigger {
                 JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
             })?;
         tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
-        Ok(Batch::create(
+        Ok(Batch::new(
             index,
             start_block,
             self.get_state_update_file_path(index),

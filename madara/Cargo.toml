@@ -223,6 +223,7 @@ siphasher = "1.0"
 lazy_static = { version = "1.4", default-features = false }
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
+smallvec = { version = "1.15", features = ["write"] }
 itertools = { version = "0.13.0" }
 
 # Error handling

@@ -70,7 +70,7 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn create(
+    pub fn new(
         index: u64,
         start_block: u64,
         squashed_state_updates_path: String,
