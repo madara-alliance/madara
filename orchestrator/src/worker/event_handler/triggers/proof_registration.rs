@@ -20,6 +20,12 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             category = "ProofRegistrationWorker",
             "ProofRegistrationWorker started."
         );
+
+        // Self-healing: recover any orphaned ProofRegistration jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofRegistration).await {
+            tracing::error!(error = %e, "Failed to heal orphaned ProofRegistration jobs, continuing with normal processing");
+        }
+
         let db = config.database();
 
         let successful_proving_jobs = db
