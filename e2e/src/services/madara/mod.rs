@@ -34,6 +34,7 @@ impl MadaraService {
             service_name: format!("Madara-{}", config.mode().to_string()),
             connection_attempts: 60, // Madara might take time to start
             connection_delay_ms: 2000,
+            logs: config.logs(),
             ..Default::default()
         };
 
@@ -111,6 +112,11 @@ impl MadaraService {
     /// Get the current configuration
     pub fn config(&self) -> &MadaraConfig {
         &self.config
+    }
+
+    pub fn stop(&mut self) -> Result<(), MadaraError> {
+        println!("☠️ Stopping Madara");
+        self.server.stop().map_err(|err| MadaraError::Server(err))
     }
 
     /// Get the process ID

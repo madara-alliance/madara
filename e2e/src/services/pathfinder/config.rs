@@ -6,6 +6,7 @@ use tokio::process::Command;
 use crate::services::helpers::NodeRpcError;
 
 use crate::services::docker::DockerError;
+use crate::services::server::ServerError;
 
 const DEFAULT_PATHFINDER_PORT: u16 = 9545;
 pub const DEFAULT_PATHFINDER_IMAGE: &str = "prkpandey942/pathfinder:549aa84_2025-05-29_appchain-vers-cons_amd";
@@ -27,6 +28,8 @@ pub enum PathfinderError {
     InvalidResponse,
     #[error("RPC error: {0}")]
     RpcError(#[from] NodeRpcError),
+    #[error("Server error: {0}")]
+    Server(#[from] ServerError),
 }
 
 // Final immutable configuration
@@ -45,6 +48,7 @@ pub struct PathfinderConfig {
     storage_state_tries: String,
     gateway_request_timeout: u64,
     data_volume: Option<String>,
+    logs: (bool, bool),
     environment_vars: Vec<(String, String)>,
 }
 
@@ -65,6 +69,7 @@ impl Default for PathfinderConfig {
             gateway_request_timeout: 1000,
             data_volume: None,
             environment_vars: vec![],
+            logs: (true, true),
         }
     }
 }
@@ -83,6 +88,11 @@ impl PathfinderConfig {
     /// Get the RPC port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the logs configuration
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the Docker image

@@ -23,12 +23,12 @@ impl MongoService {
     /// Will panic if MongoDB is already running as per pattern
     pub async fn start(config: MongoConfig) -> Result<Self, MongoError> {
         // Validate Docker is running
-        if !DockerServer::is_docker_running() {
+        if !DockerServer::is_docker_running().await {
             return Err(MongoError::Docker(DockerError::NotRunning));
         }
 
         // Check if container is already running - PANIC as per pattern
-        if DockerServer::is_container_running(config.container_name())? {
+        if DockerServer::is_container_running(config.container_name()).await? {
             panic!(
                 "MongoDB container '{}' is already running on port {}. Please stop it first.",
                 config.container_name(),
@@ -42,8 +42,8 @@ impl MongoService {
         }
 
         // Clean up any existing stopped container with the same name
-        if DockerServer::does_container_exist(config.container_name())? {
-            DockerServer::remove_container(config.container_name())?;
+        if DockerServer::does_container_exist(config.container_name()).await? {
+            DockerServer::remove_container(config.container_name()).await?;
         }
 
         // Build the docker command
@@ -55,6 +55,7 @@ impl MongoService {
             service_name: "MongoDB".to_string(),
             connection_attempts: 30, // MongoDB usually starts quickly
             connection_delay_ms: 1000,
+            logs: config.logs(),
             ..Default::default()
         };
 
@@ -81,6 +82,11 @@ impl MongoService {
     /// Get the configuration used
     pub fn config(&self) -> &MongoConfig {
         &self.config
+    }
+
+    pub fn stop(&mut self) -> Result<(), MongoError> {
+        println!("☠️ Stopping MongoDB");
+        self.server.stop().map_err(|err| MongoError::Server(err))
     }
 
     /// Get dependencies (Docker is required)

@@ -26,6 +26,7 @@ impl AnvilService {
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
             rpc_port: Some(config.port()),
+            logs: config.logs(),
             service_name: "Anvil".to_string(),
             ..Default::default()
         };
@@ -42,7 +43,7 @@ impl AnvilService {
         &self.server
     }
 
-    pub fn stop(mut self) -> Result<(), AnvilError> {
+    pub fn stop(&mut self) -> Result<(), AnvilError> {
         println!("☠️ Stopping Anvil");
         self.server.stop().map_err(|err| AnvilError::Server(err))
     }
@@ -54,5 +55,4 @@ impl AnvilService {
     pub fn endpoint(&self) -> Url {
         self.server().endpoint().expect("Anvil should have an endpoint")
     }
-
 }

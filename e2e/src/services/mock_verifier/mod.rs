@@ -36,6 +36,7 @@ impl MockVerifierDeployerService {
         let server_config = ServerConfig {
             connection_attempts: 1, // No connection check needed
             connection_delay_ms: 100,
+            logs: config.logs(),
             service_name: "MockVerifierDeployer".to_string(),
             ..Default::default()
         };

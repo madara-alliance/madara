@@ -80,10 +80,7 @@ impl BootstrapperService {
         }
     }
 
-    /// Get access to the underlying server
-    pub fn server(&self) -> &Server {
-        &self.server
-    }
+
 
     /// Get the mode that was executed
     pub fn mode(&self) -> &BootstrapperMode {
@@ -93,6 +90,16 @@ impl BootstrapperService {
     /// Get the configuration used
     pub fn config(&self) -> &BootstrapperConfig {
         &self.config
+    }
+
+    pub fn stop(&mut self) -> Result<(), BootstrapperError> {
+        println!("☠️ Stopping Bootstrapper");
+        self.server.stop().map_err(|err| BootstrapperError::Server(err))
+    }
+
+    /// Get logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.config.logs()
     }
 
     /// Get dependencies

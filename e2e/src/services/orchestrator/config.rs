@@ -56,6 +56,7 @@ pub struct OrchestratorConfig {
     mode: OrchestratorMode,
     layer: Layer,
     port: Option<u16>,
+    logs: (bool, bool),
 
     // External Service
     // Database
@@ -109,6 +110,7 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
+            logs: (true, true),
         }
     }
 }
@@ -141,6 +143,11 @@ impl OrchestratorConfig {
     /// Get the port
     pub fn port(&self) -> Option<u16> {
         self.port
+    }
+
+    /// Get the logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the environment variables

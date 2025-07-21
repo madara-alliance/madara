@@ -21,12 +21,12 @@ impl LocalstackService {
     /// Will panic if Localstack is already running as per your requirement
     pub async fn start(config: LocalstackConfig) -> Result<Self, LocalstackError> {
         // Validate Docker is running
-        if !DockerServer::is_docker_running() {
+        if !DockerServer::is_docker_running().await {
             return Err(LocalstackError::Docker(DockerError::NotRunning));
         }
 
         // Check if container is already running - PANIC as requested
-        if DockerServer::is_container_running(config.container_name())? {
+        if DockerServer::is_container_running(config.container_name()).await? {
             panic!(
                 "Localstack container '{}' is already running on port {}. Please stop it first.",
                 config.container_name(),
@@ -40,8 +40,8 @@ impl LocalstackService {
         }
 
         // Clean up any existing stopped container with the same name
-        if DockerServer::does_container_exist(config.container_name())? {
-            DockerServer::remove_container(config.container_name())?;
+        if DockerServer::does_container_exist(config.container_name()).await? {
+            DockerServer::remove_container(config.container_name()).await?;
         }
 
         // Build the docker command
@@ -53,6 +53,7 @@ impl LocalstackService {
             service_name: "Localstack".to_string(),
             connection_attempts: 60, // Localstack takes longer to start
             connection_delay_ms: 2000,
+            logs: config.logs(),
             ..Default::default()
         };
 
@@ -96,6 +97,11 @@ impl LocalstackService {
     /// Get the configuration used
     pub fn config(&self) -> &LocalstackConfig {
         &self.config
+    }
+
+    pub fn stop(&mut self) -> Result<(), LocalstackError> {
+        println!("☠️ Stopping Localstack");
+        self.server.stop().map_err(|err| LocalstackError::Server(err))
     }
 
 

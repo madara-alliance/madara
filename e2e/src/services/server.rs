@@ -34,8 +34,8 @@ pub struct ServerConfig {
     pub connection_attempts: usize,
     pub connection_delay_ms: u64,
     pub service_name: String,
-    pub enable_stdout: bool,
-    pub enable_stderr: bool,
+    // stdout, stderr
+    pub logs: (bool, bool),
 }
 
 impl Default for ServerConfig {
@@ -45,8 +45,7 @@ impl Default for ServerConfig {
             rpc_port: None,
             connection_attempts: 30,
             connection_delay_ms: 1000,
-            enable_stdout: true,
-            enable_stderr: true
+            logs: (true, true),
         }
     }
 }
@@ -65,18 +64,18 @@ impl Server {
 
         println!("🔔 Starting {} service", config.service_name);
 
-        if config.enable_stderr {
-            command.stderr(Stdio::piped());
-        } else {
-            // Suppress stderr if disabled
-            command.stderr(Stdio::null());
-        }
-
-        if config.enable_stdout {
+        if config.logs.0 {
             command.stdout(Stdio::piped());
         } else {
             // Suppress stdout if disabled
             command.stdout(Stdio::null());
+        }
+
+        if config.logs.1 {
+            command.stderr(Stdio::piped());
+        } else {
+            // Suppress stderr if disabled
+            command.stderr(Stdio::null());
         }
 
         // Start the process
@@ -86,7 +85,7 @@ impl Server {
         let mut stderr_task = None;
 
         // Extract stdout and stderr for log monitoring
-        if config.enable_stdout {
+        if config.logs.0 {
             command.stdout(Stdio::piped());
 
             let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(
@@ -110,7 +109,7 @@ impl Server {
             stdout_task = Some(stdout_task_inner);
         }
 
-        if config.enable_stderr {
+        if config.logs.1 {
             command.stderr(Stdio::piped());
 
             let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(
@@ -209,7 +208,7 @@ impl Server {
             loop {
                 match TcpStream::connect(&socket_addr).await {
                     Ok(_) => return Ok(()),
-                    Err(e) => {
+                    Err(_) => {
                         // Check if process has exited
                         if let Some(status) = self.has_exited() {
                             return Err(ServerError::ProcessExited(status));
@@ -231,7 +230,7 @@ impl Server {
     }
     /// Stop the server gracefully
     pub fn stop(&mut self) -> Result<(), ServerError> {
-        if self.config.rpc_port.is_some() {
+        if !self.config.rpc_port.is_some() {
             return Ok(());
         }
         if self.has_exited().is_some() {

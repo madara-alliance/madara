@@ -14,21 +14,26 @@ pub enum AnvilError {
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct AnvilConfig {
-    port: u16,
     fork_url: Option<String>,
     load_state: Option<String>,
     dump_state: Option<String>,
     block_time: Option<f64>,
+    // Server Configs
+    port: u16,
+    logs: (bool, bool),
 }
 
 impl Default for AnvilConfig {
     fn default() -> Self {
         Self {
-            port: 8545,
             fork_url: None,
             load_state: None,
             dump_state: None,
             block_time: None,
+
+            // Server Config
+            port: 8545,
+            logs: (true, true),
         }
     }
 }
@@ -47,6 +52,11 @@ impl AnvilConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the logs configuration
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the fork URL

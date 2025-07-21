@@ -23,7 +23,7 @@ impl PathfinderService {
     /// Will panic if Pathfinder is already running as per pattern
     pub async fn start(config: PathfinderConfig) -> Result<Self, PathfinderError> {
         // Validate Docker is running
-        if !DockerServer::is_docker_running() {
+        if !DockerServer::is_docker_running().await {
             return Err(PathfinderError::Docker(DockerError::NotRunning));
         }
 
@@ -31,7 +31,7 @@ impl PathfinderService {
         Self::validate_config(&config)?;
 
         // Check if container is already running - PANIC as per pattern
-        if DockerServer::is_container_running(config.container_name())? {
+        if DockerServer::is_container_running(config.container_name()).await? {
             panic!(
                 "Pathfinder container '{}' is already running on port {}. Please stop it first.",
                 config.container_name(),
@@ -45,8 +45,8 @@ impl PathfinderService {
         }
 
         // Clean up any existing stopped container with the same name
-        if DockerServer::does_container_exist(config.container_name())? {
-            DockerServer::remove_container(config.container_name())?;
+        if DockerServer::does_container_exist(config.container_name()).await? {
+            DockerServer::remove_container(config.container_name()).await?;
         }
 
         // Build the docker command
@@ -58,6 +58,7 @@ impl PathfinderService {
             service_name: format!("Pathfinder"),
             connection_attempts: 60, // Pathfinder takes time to sync
             connection_delay_ms: 2000,
+            logs: config.logs(),
             ..Default::default()
         };
 
@@ -143,6 +144,11 @@ impl PathfinderService {
     /// Get the configuration used
     pub fn config(&self) -> &PathfinderConfig {
         &self.config
+    }
+
+    pub fn stop(&mut self) -> Result<(), PathfinderError> {
+        println!("☠️ Stopping Pathfinder");
+        self.server.stop().map_err(|err| PathfinderError::Server(err))
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {

@@ -1,4 +1,5 @@
 use tokio::process::Command;
+use crate::services::server::ServerError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LocalstackError {
@@ -8,6 +9,8 @@ pub enum LocalstackError {
     AlreadyRunning(u16),
     #[error("Port {0} is already in use")]
     PortInUse(u16),
+    #[error("Server error: {0}")]
+    Server(#[from] ServerError),
 }
 
 use crate::services::docker::DockerError;
@@ -21,22 +24,27 @@ const DEFAULT_LOCALSTACK_CONTAINER_NAME: &str = "localstack-service";
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct LocalstackConfig {
-    port: u16,
     image: String,
     container_name: String,
     environment_vars: Vec<(String, String)>,
+
+    // Server Configs
+    port: u16,
+    logs: (bool, bool),
 }
 
 impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
-            port: DEFAULT_LOCALSTACK_PORT,
             image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
             container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
             environment_vars: vec![
                 ("DEBUG".to_string(), "1".to_string()),
                 ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
             ],
+
+            port: DEFAULT_LOCALSTACK_PORT,
+            logs: (true, true),
         }
     }
 }
@@ -55,6 +63,11 @@ impl LocalstackConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the Docker image

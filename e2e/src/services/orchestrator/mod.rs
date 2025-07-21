@@ -19,7 +19,7 @@ pub struct OrchestratorService {
 
 impl OrchestratorService {
 
-    pub async fn start(config: OrchestratorConfig) -> Result<Self, OrchestratorError> {
+    pub async fn run(config: OrchestratorConfig) -> Result<Self, OrchestratorError> {
         // TODO: config mode should only be run
 
         let command = config.to_command();
@@ -34,6 +34,7 @@ impl OrchestratorService {
             service_name: format!("Orchestrator-{}", config.mode().to_string()),
             connection_attempts: 60, // Orchestrator might take time to start
             connection_delay_ms: 2000,
+            logs: config.logs(),
             ..Default::default()
         };
 
@@ -153,6 +154,11 @@ impl OrchestratorService {
     /// Get the configuration used
     pub fn config(&self) -> &OrchestratorConfig {
         &self.config
+    }
+
+    pub fn stop(&mut self) -> Result<(), OrchestratorError> {
+        println!("☠️ Stopping Orchestrator");
+        self.server.stop().map_err(|err| OrchestratorError::Server(err))
     }
 
     /// Get the underlying server (run mode only)

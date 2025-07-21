@@ -1,5 +1,5 @@
 use crate::services::{anvil::{AnvilConfig, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperError}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraError}, mock_prover::MockProverError, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorError}, pathfinder::{PathfinderConfig, PathfinderError}};
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use crate::services::mock_prover::MockProverConfig;
 
 // TODO: write layer here and use there
@@ -74,6 +74,7 @@ pub const DEFAULT_DATA_DIR: &str = "./data";
 // If not met, the service will not be started.
 #[derive(Debug, Clone)]
 pub struct Timeouts {
+    pub validate_dependencies: Duration,
     pub start_infrastructure_services: Duration,
     pub setup_infrastructure_services: Duration,
     pub start_l1_setup: Duration,
@@ -81,15 +82,6 @@ pub struct Timeouts {
     pub start_full_node_syncing: Duration,
     pub start_mock_prover: Duration,
     pub start_orchestration: Duration,
-
-    pub anvil: Duration,
-    pub docker: Duration,
-    pub mongo: Duration,
-    pub localstack: Duration,
-    pub madara: Duration,
-    pub pathfinder: Duration,
-    pub orchestrator: Duration,
-    pub validate_dependencies: Duration,
 }
 
 impl Default for Timeouts {
@@ -102,43 +94,24 @@ impl Default for Timeouts {
             start_full_node_syncing: Duration::from_secs(300),
             start_mock_prover: Duration::from_secs(300),
             start_orchestration: Duration::from_secs(1800),
-
-            anvil: Duration::from_secs(10),
-            docker: Duration::from_secs(10),
-            mongo: Duration::from_secs(10),
-            localstack: Duration::from_secs(10),
-            madara: Duration::from_secs(10),
-            pathfinder: Duration::from_secs(10),
-            orchestrator: Duration::from_secs(10),
             validate_dependencies: Duration::from_secs(10),
         }
     }
 }
 
 // =============================================================================
-// CONTEXT (READ-ONLY RUNTIME CONTEXT)
+// CONFIG (READ-ONLY RUNTIME CONTEXT)
 // =============================================================================
-
-// Maybe :
-// layer
-// madara_config {
-//      port :
-//      start_timeout
-//      enable_stdout
-//      enable_stderr
-// }
-// bootstrapper_config
-
 
 
 #[derive(Debug, Clone)]
-pub struct Context {
-
+pub struct SetupConfig {
+    // General Configurations
     pub layer: Layer,
     pub timeouts : Timeouts,
 
-
-    // Shift all to config, context will be in-between services!
+    // Individual Component Configurations
+    pub anvil_config: AnvilConfig,
     pub localstack_config: LocalstackConfig,
     pub mongo_config: MongoConfig,
     pub orchestrator_setup_config: OrchestratorConfig,
@@ -147,39 +120,39 @@ pub struct Context {
     pub mock_verifier_config: MockVerifierDeployerConfig,
     pub mock_prover_config: MockProverConfig,
     pub orchestrator_run_config: OrchestratorConfig,
-
     pub bootstrapper_setup_l1_config: BootstrapperConfig,
     pub bootstrapper_setup_l2_config: BootstrapperConfig,
-    pub anvil_config: AnvilConfig,
-
-
-
-
-    pub data_directory: String,
-    pub setup_timeout: Duration,
-    pub wait_for_sync: bool,
-    pub skip_existing_dbs: bool,
-    pub db_dir_path: String,
-
-    // // Runtime context fields
-    // pub anvil_endpoint: String,
-    // pub localstack_endpoint: String,
-    // pub mongo_connection_string: String,
-    // pub pathfinder_endpoint: String,
-    // pub orchestrator_endpoint: Option<String>,
-    // pub sequencer_endpoint: String,
-    // pub bootstrapper_endpoint: String,
-    // pub setup_start_time: Instant,
 }
 
-impl Context {
-    pub fn builder() -> ContextBuilder {
-        ContextBuilder::new()
+impl Default for SetupConfig {
+    fn default() -> Self {
+        Self {
+            layer: Layer::L2,
+            timeouts: Timeouts::default(),
+            anvil_config: AnvilConfig::default(),
+            localstack_config: LocalstackConfig::default(),
+            mongo_config: MongoConfig::default(),
+            orchestrator_setup_config: OrchestratorConfig::default(),
+            madara_config: MadaraConfig::default(),
+            pathfinder_config: PathfinderConfig::default(),
+            mock_verifier_config: MockVerifierDeployerConfig::default(),
+            mock_prover_config: MockProverConfig::default(),
+            orchestrator_run_config: OrchestratorConfig::default(),
+            bootstrapper_setup_l1_config: BootstrapperConfig::default(),
+            bootstrapper_setup_l2_config: BootstrapperConfig::default(),
+        }
     }
+}
 
-    /// Reader methods
+impl SetupConfig {
+    /// Get Layer Config
     pub fn get_layer(&self) -> &Layer {
         &self.layer
+    }
+
+    /// Get Timeout Config
+    pub fn get_timeouts(&self) -> &Timeouts {
+        &self.timeouts
     }
 
     /// Get Localstack Config
@@ -192,7 +165,6 @@ impl Context {
         &self.mongo_config
     }
 
-
     // let anvil_db_path = format!("{}/anvil.json", self.context.db_dir_path);
     // let anvil_config = AnvilConfigBuilder::new()
     //     .port(self.context.anvil_port)
@@ -204,7 +176,6 @@ impl Context {
         &self.anvil_config
     }
 
-
     // let madara_config = MadaraConfigBuilder::new()
     // .rpc_port(self.context.madara_port)
     // .build();
@@ -212,7 +183,6 @@ impl Context {
     pub fn get_madara_config(&self) -> &MadaraConfig {
         &self.madara_config
     }
-
 
     // let pathfinder_config = PathfinderConfigBuilder::new().build();
     /// Get pathfinder Config
@@ -258,7 +228,6 @@ impl Context {
         &self.bootstrapper_setup_l2_config
     }
 
-
     // let mock_prover_config = MockProverConfigBuilder::new()
     //     .port(5555)
     //     .build()?;
@@ -275,152 +244,110 @@ impl Context {
         &self.orchestrator_run_config
     }
 
-
-    /// Get Timeout Config
-    pub fn get_timeouts(&self) -> &Timeouts {
-        &self.timeouts
-    }
-
-
-
-
 }
 
 // =============================================================================
 // CONTEXT BUILDER (CONFIGURATION/SETTER METHODS)
 // =============================================================================
 
-pub struct ContextBuilder {
-    context: Context,
+#[derive(Debug, Clone)]
+pub struct SetupConfigBuilder {
+    config: SetupConfig,
 }
 
-impl ContextBuilder {
+impl SetupConfigBuilder {
     pub fn new() -> Self {
-        // TODO: We've defined defaults ports in each servces' config use that
-        let anvil_port = 8545;
-        let localstack_port = 4566;
-        let mongo_port = 27017;
-        let pathfinder_port = 9545;
-        let orchestrator_port: Option<u16> = None;
-        let madara_port = 9944;
-        let bootstrapper_port = 9945;
-        let data_directory = "/tmp/madara-setup".to_string();
-
-        let context = Context {
-            // Configuration fields
-            layer: Layer::L2,
-            ethereum_api_key: String::new(),
-            anvil_port,
-            localstack_port,
-            mongo_port,
-            pathfinder_port,
-            orchestrator_port,
-            madara_port,
-            bootstrapper_port,
-            data_directory: data_directory.clone(),
-            setup_timeout: Duration::from_secs(300), // 5 minutes
-            wait_for_sync: true,
-            skip_existing_dbs: false,
-            db_dir_path: DEFAULT_DATA_DIR.to_string(),
-
-            // Runtime context fields
-            anvil_endpoint: format!("http://127.0.0.1:{}", anvil_port),
-            localstack_endpoint: format!("http://127.0.0.1:{}", localstack_port),
-            mongo_connection_string: format!("mongodb://127.0.0.1:{}/madara", mongo_port),
-            pathfinder_endpoint: format!("http://127.0.0.1:{}", pathfinder_port),
-            orchestrator_endpoint: orchestrator_port.map(|port| format!("http://127.0.0.1:{}", port)),
-            sequencer_endpoint: format!("http://127.0.0.1:{}", madara_port),
-            bootstrapper_endpoint: format!("http://127.0.0.1:{}", bootstrapper_port),
-            setup_start_time: Instant::now(),
-        };
-
-        Self { context }
+        Self {
+            config: SetupConfig::default(),
+        }
     }
 
-    // Setter methods (builder pattern)
+    /// Set Layer
     pub fn layer(mut self, layer: Layer) -> Self {
-        self.context.layer = layer;
+        self.config.layer = layer;
         self
     }
 
-    pub fn ethereum_api_key(mut self, api_key: String) -> Self {
-        self.context.ethereum_api_key = api_key;
+    /// Set Timeouts
+    pub fn timeouts(mut self, timeouts: Timeouts) -> Self {
+        self.config.timeouts = timeouts;
         self
     }
 
-    pub fn anvil_port(mut self, port: u16) -> Self {
-        self.context.anvil_port = port;
-        self.context.anvil_endpoint = format!("http://127.0.0.1:{}", port);
+    /// Set the Anvil Config
+    pub fn anvil_config(mut self, anvil_config: AnvilConfig) -> Self {
+        self.config.anvil_config = anvil_config;
         self
     }
 
-    pub fn localstack_port(mut self, port: u16) -> Self {
-        self.context.localstack_port = port;
-        self.context.localstack_endpoint = format!("http://127.0.0.1:{}", port);
+    /// Set the Localstack Config
+    pub fn localstack_config(mut self, localstack_config: LocalstackConfig) -> Self {
+        self.config.localstack_config = localstack_config;
         self
     }
 
-    pub fn mongo_port(mut self, port: u16) -> Self {
-        self.context.mongo_port = port;
-        self.context.mongo_connection_string = format!("mongodb://127.0.0.1:{}/madara", port);
+    /// Set the Mongo Config
+    pub fn mongo_config(mut self, mongo_config: MongoConfig) -> Self {
+        self.config.mongo_config = mongo_config;
         self
     }
 
-    pub fn pathfinder_port(mut self, port: u16) -> Self {
-        self.context.pathfinder_port = port;
-        self.context.pathfinder_endpoint = format!("http://127.0.0.1:{}", port);
+
+    /// Set the Orchestrator Run Config
+    pub fn orchestrator_run_config(mut self, orchestrator_run_config: OrchestratorConfig) -> Self {
+        self.config.orchestrator_run_config = orchestrator_run_config;
         self
     }
 
-    pub fn orchestrator_port(mut self, port: Option<u16>) -> Self {
-        self.context.orchestrator_port = port;
-        self.context.orchestrator_endpoint = port.map(|p| format!("http://127.0.0.1:{}", p));
+    /// Set the orchestrator setup config
+    pub fn orchestrator_setup_config(mut self, orchestrator_setup_config: OrchestratorConfig) -> Self {
+        self.config.orchestrator_setup_config = orchestrator_setup_config;
         self
     }
 
-    pub fn madara_port(mut self, port: u16) -> Self {
-        self.context.madara_port = port;
-        self.context.sequencer_endpoint = format!("http://127.0.0.1:{}", port);
+
+    /// Set the Madara Config
+    pub fn madara_config(mut self, madara_config: MadaraConfig) -> Self {
+        self.config.madara_config = madara_config;
         self
     }
 
-    pub fn bootstrapper_port(mut self, port: u16) -> Self {
-        self.context.bootstrapper_port = port;
-        self.context.bootstrapper_endpoint = format!("http://127.0.0.1:{}", port);
+    /// Set the Pathfinder Config
+    pub fn pathfinder_config(mut self, pathfinder_config: PathfinderConfig) -> Self {
+        self.config.pathfinder_config = pathfinder_config;
         self
     }
 
-    pub fn data_directory(mut self, directory: String) -> Self {
-        self.context.data_directory = directory;
+    /// Set the Mock Verifier Config
+    pub fn mock_verifier_config(mut self, mock_verifier_config: MockVerifierDeployerConfig) -> Self {
+        self.config.mock_verifier_config = mock_verifier_config;
         self
     }
 
-    pub fn setup_timeout(mut self, timeout: Duration) -> Self {
-        self.context.setup_timeout = timeout;
+    /// Set the Mock Prover Config
+    pub fn mock_prover_config(mut self, mock_prover_config: MockProverConfig) -> Self {
+        self.config.mock_prover_config = mock_prover_config;
         self
     }
 
-    pub fn wait_for_sync(mut self, wait: bool) -> Self {
-        self.context.wait_for_sync = wait;
+    /// Set the Bootstrapper Setup L1 Config
+    pub fn bootstrapper_setup_l1_config(mut self, bootstrapper_setup_l1_config: BootstrapperConfig) -> Self {
+        self.config.bootstrapper_setup_l1_config = bootstrapper_setup_l1_config;
         self
     }
 
-    pub fn skip_existing_dbs(mut self, skip: bool) -> Self {
-        self.context.skip_existing_dbs = skip;
+    /// Set the Bootstrapper Setup L2 Config
+    pub fn bootstrapper_setup_l2_config(mut self, bootstrapper_setup_l2_config: BootstrapperConfig) -> Self {
+        self.config.bootstrapper_setup_l2_config = bootstrapper_setup_l2_config;
         self
     }
 
-    pub fn db_dir_path(mut self, path: String) -> Self {
-        self.context.db_dir_path = path;
-        self
-    }
-
-    pub fn build(self) -> Context {
-        self.context
+    pub fn build(self) -> SetupConfig {
+        self.config
     }
 }
 
-impl Default for ContextBuilder {
+impl Default for SetupConfigBuilder {
     fn default() -> Self {
         Self::new()
     }

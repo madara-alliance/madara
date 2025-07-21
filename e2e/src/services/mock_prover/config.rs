@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use tokio::process::Command;
 
 pub const DEFAULT_MOCK_PROVER_BINARY: &str = "../target/release/mock-atlantic-server";
+pub const DEFAULT_MOCK_PROVER_PORT: u16 = 8080;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockProverError {
@@ -15,14 +16,26 @@ pub enum MockProverError {
 pub struct MockProverConfig {
     binary_path: PathBuf,
     port: u16,
+    logs: (bool, bool),
+}
+
+
+impl Default for MockProverConfig {
+    fn default() -> Self {
+        Self {
+            binary_path: PathBuf::from(DEFAULT_MOCK_PROVER_BINARY),
+            port: DEFAULT_MOCK_PROVER_PORT,
+            logs: (true, true),
+        }
+    }
 }
 
 impl MockProverConfig {
     /// Create a new configuration with the specified port
     pub fn new(port: u16) -> Self {
         Self {
-            binary_path: PathBuf::from(DEFAULT_MOCK_PROVER_BINARY),
             port,
+            ..Default::default()
         }
     }
 
@@ -34,6 +47,11 @@ impl MockProverConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the binary path
@@ -84,8 +102,8 @@ impl MockProverConfigBuilder {
         })?;
 
         Ok(MockProverConfig {
-            binary_path: self.binary_path,
             port,
+            ..Default::default()
         })
     }
 }

@@ -47,6 +47,7 @@ pub struct BootstrapperConfig {
     timeout: Duration,
     config_path: Option<PathBuf>,
     binary_path: PathBuf,
+    logs: (bool, bool),
     environment_vars: HashMap<String, String>,
     additional_args: Vec<String>,
 }
@@ -58,6 +59,7 @@ impl Default for BootstrapperConfig {
             timeout: Duration::from_secs(6000),
             config_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG)),
             binary_path: PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY),
+            logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
         }
@@ -83,6 +85,11 @@ impl BootstrapperConfig {
     /// Get the timeout duration
     pub fn timeout(&self) -> Duration {
         self.timeout
+    }
+
+    /// Get the logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the configuration file path

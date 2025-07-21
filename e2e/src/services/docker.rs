@@ -3,7 +3,7 @@
 // =============================================================================
 
 use crate::services::server::ServerError;
-use std::process::Command;
+use tokio::process::Command;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {
@@ -21,8 +21,8 @@ pub struct DockerServer;
 
 impl DockerServer {
     /// Check if Docker is running
-    pub fn is_docker_running() -> bool {
-        let result = Command::new("docker").arg("info").output();
+    pub async fn is_docker_running() -> bool {
+        let result = Command::new("docker").arg("info").output().await;
 
         match result {
             Ok(output) => output.status.success(),
@@ -31,30 +31,33 @@ impl DockerServer {
     }
 
     /// Check if a container with the given name is already running
-    pub fn is_container_running(container_name: &str) -> Result<bool, DockerError> {
+    pub async fn is_container_running(container_name: &str) -> Result<bool, DockerError> {
         let output = Command::new("docker")
             .args(["ps", "-q", "-f", &format!("name={}", container_name)])
             .output()
+            .await
             .map_err(DockerError::ContainerStatusFailed)?;
 
         Ok(!output.stdout.is_empty())
     }
 
     /// Check if a container with the given name exists (running or stopped)
-    pub fn does_container_exist(container_name: &str) -> Result<bool, DockerError> {
+    pub async fn does_container_exist(container_name: &str) -> Result<bool, DockerError> {
         let output = Command::new("docker")
             .args(["ps", "-a", "-q", "-f", &format!("name={}", container_name)])
             .output()
+            .await
             .map_err(DockerError::ContainerStatusFailed)?;
 
         Ok(!output.stdout.is_empty())
     }
 
     /// Remove a container (force remove if running)
-    pub fn remove_container(container_name: &str) -> Result<(), DockerError> {
+    pub async fn remove_container(container_name: &str) -> Result<(), DockerError> {
         let _output = Command::new("docker")
             .args(["rm", "-f", container_name])
             .output()
+            .await
             .map_err(DockerError::ContainerStatusFailed)?;
 
         Ok(())

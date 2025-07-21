@@ -69,6 +69,7 @@ pub struct MadaraConfig {
     blob_gas_price: u64,
     environment_vars: HashMap<String, String>,
     additional_args: Vec<String>,
+    logs: (bool, bool),
 }
 
 impl Default for MadaraConfig {
@@ -96,6 +97,7 @@ impl Default for MadaraConfig {
             blob_gas_price: 0,
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
+            logs: (true, true),
         }
     }
 }
@@ -214,6 +216,11 @@ impl MadaraConfig {
     /// Get additional arguments
     pub fn additional_args(&self) -> &[String] {
         &self.additional_args
+    }
+
+    /// Get logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Convert the configuration to a command

@@ -26,6 +26,7 @@ impl MockProverService {
         let server_config = ServerConfig {
             rpc_port: Some(port),
             service_name: "MockProver".to_string(),
+            logs: config.logs(),
             connection_attempts: 30,
             connection_delay_ms: 1000,
             ..Default::default()

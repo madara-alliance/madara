@@ -36,6 +36,7 @@ pub struct MockVerifierDeployerConfig {
     anvil_url: String,
     mock_gps_verifier_path: String,
     verifier_file_name: String,
+    logs: (bool, bool),
     environment_vars: HashMap<String, String>,
     additional_args: Vec<String>,
 }
@@ -49,6 +50,7 @@ impl Default for MockVerifierDeployerConfig {
             anvil_url: DEFAULT_ANVIL_URL.to_string(),
             mock_gps_verifier_path: DEFAULT_MOCK_GPS_VERIFIER_PATH.to_string(),
             verifier_file_name: DEFAULT_VERIFIER_FILE_NAME.to_string(),
+            logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
         }
@@ -74,6 +76,11 @@ impl MockVerifierDeployerConfig {
     /// Get the script path
     pub fn script_path(&self) -> &PathBuf {
         &self.script_path
+    }
+
+    /// Get the logs
+    pub fn logs(&self) -> (bool, bool) {
+        self.logs
     }
 
     /// Get the private key

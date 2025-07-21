@@ -1,5 +1,6 @@
 use crate::services::docker::DockerError;
 use tokio::process::Command;
+use crate::services::server::ServerError;
 
 const DEFAULT_MONGO_PORT: u16 = 27017;
 pub const DEFAULT_MONGO_IMAGE: &str = "mongo:latest";
@@ -16,22 +17,28 @@ pub enum MongoError {
     PortInUse(u16),
     #[error("MongoDB connection failed: {0}")]
     ConnectionFailed(String),
+    #[error("Server error: {0}")]
+    Server(#[from] ServerError),
 }
 
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct MongoConfig {
-    port: u16,
     image: String,
     container_name: String,
+
+    // Server configs
+    port: u16,
+    logs: (bool,bool),
 }
 
 impl Default for MongoConfig {
     fn default() -> Self {
         Self {
-            port: DEFAULT_MONGO_PORT,
             image: DEFAULT_MONGO_IMAGE.to_string(),
             container_name: DEFAULT_MONGO_CONTAINER_NAME.to_string(),
+            port: DEFAULT_MONGO_PORT,
+            logs: (true,true),
         }
     }
 }
@@ -50,6 +57,11 @@ impl MongoConfig {
     /// Get the port
     pub fn port(&self) -> u16 {
         self.port
+    }
+
+    /// Get the logs
+    pub fn logs(&self) -> (bool,bool) {
+        self.logs
     }
 
     /// Get the Docker image
