@@ -194,6 +194,7 @@ mod tests {
     #[tokio::test]
     async fn test_layered_state_adapter() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
         let mut adaptor = LayeredStateAdapter::new(backend.clone()).unwrap();
 
         // initial state (no genesis block)

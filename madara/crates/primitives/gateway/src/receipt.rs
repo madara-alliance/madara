@@ -223,17 +223,11 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[serde(default)]
 pub struct BuiltinCounters {
-    #[serde(skip_serializing_if = "is_zero")]
     pub output_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub pedersen_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub range_check_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub ecdsa_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub bitwise_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub ec_op_builtin: u64,
     #[serde(skip_serializing_if = "is_zero")]
     pub keccak_builtin: u64,

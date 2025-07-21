@@ -98,6 +98,7 @@ pub struct ProviderBlock {
     pub parent_block_hash: Felt,
     pub timestamp: u64,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sequencer_address: Option<Felt>,
     pub state_root: Felt,
     pub transaction_commitment: Felt,
@@ -109,6 +110,7 @@ pub struct ProviderBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_commitment: Option<Felt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_length: Option<u64>,
     pub status: BlockStatus,
     pub l1_da_mode: L1DataAvailabilityMode,
@@ -118,6 +120,7 @@ pub struct ProviderBlock {
     pub transactions: Vec<Transaction>,
     pub transaction_receipts: Vec<ConfirmedReceipt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub starknet_version: Option<String>,
 }
 

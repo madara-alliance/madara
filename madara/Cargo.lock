@@ -6759,6 +6759,7 @@ dependencies = [
  "mp-gateway",
  "mp-rpc",
  "mp-transactions",
+ "reqwest 0.12.19",
  "rstest 0.18.2",
  "serde",
  "serde_json",
