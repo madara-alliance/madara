@@ -2,6 +2,7 @@
 members = [
   # "madara",
   "orchestrator",
+  "e2e",
   "e2e-tests",
   "bootstrapper",
   "build-artifacts",
