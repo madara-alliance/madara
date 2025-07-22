@@ -15,7 +15,7 @@ async fn e2e_test_setup() {
     // This will panic with the actual error message if it fails
     let mut setup_struct = Setup::new(setup_config).unwrap();
 
-    match setup_struct.setup().await {
+    match setup_struct.setup("e2e_test_setup").await {
         Ok(()) => println!("✅ Setup completed successfully"),
         Err(e) => {
             println!("❌ Setup failed: {}", e);
@@ -27,5 +27,5 @@ async fn e2e_test_setup() {
         }
     }
 
-    sleep(Duration::from_secs(5000)).await;
+    // sleep(Duration::from_secs(5000)).await;
 }
