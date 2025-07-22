@@ -233,16 +233,19 @@ where
         };
     }
 
-    let strk_per_eth = gas_provider_config
-        .oracle_provider
-        .as_ref()
-        .expect("Oracle is needed if no fix_strk_per_eth is set") // checked in config builder
-        .fetch_strk_per_eth()
-        .await
-        .map_err(|e| {
-            SettlementClientError::PriceOracle(format!("Failed to fetch STRK/ETH price from oracle: {}", e))
-        })?;
-    l1_gas_quote.strk_per_eth = strk_per_eth;
+    if gas_provider_config.fix_strk_per_eth.is_none() {
+        // If no fixed STRK/ETH price is set, fetch it from the oracle
+        let strk_per_eth = gas_provider_config
+            .oracle_provider
+            .as_ref()
+            .expect("Oracle is needed if no fix_strk_per_eth is set") // checked in config builder
+            .fetch_strk_per_eth()
+            .await
+            .map_err(|e| {
+                SettlementClientError::PriceOracle(format!("Failed to fetch STRK/ETH price from oracle: {}", e))
+            })?;
+        l1_gas_quote.strk_per_eth = strk_per_eth;
+    }
 
     Ok(l1_gas_quote)
 }
