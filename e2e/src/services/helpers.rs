@@ -3,6 +3,8 @@ use serde_json::json;
 use url::Url;
 
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
+pub const DEFAULT_BINARY_DIR: &str = "../target/release";
+pub const DEFAULT_DATA_DIR: &str = "./data";
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeRpcError {
