@@ -24,6 +24,8 @@ use crate::services::mock_verifier::MockVerifierDeployerService;
 use crate::services::constants::*;
 =======
 use crate::services::mock_verifier::DEFAULT_VERIFIER_FILE_NAME;
+use crate::services::mongodb::MONGO_DEFAULT_DATABASE_PATH;
+use crate::services::orchestrator::DEFAULT_ORCHESTRATOR_DATABASE_NAME;
 use crate::services::pathfinder::DEFAULT_PATHFINDER_IMAGE;
 use crate::services::bootstrapper::BOOTSTRAPPER_DEFAULT_ADDRESS_PATH;
 use crate::services::anvil::ANVIL_DEFAULT_DATABASE_NAME;
@@ -134,8 +136,12 @@ impl Setup {
         }
         else if db_status == DBState::NotReady {
             println!("❌ Chain state does not exist, setting up new chain...");
+            let test_config = self.config().to_owned();
+            let setup_config = SetupConfigBuilder::new().build_l2_config();
+            self.config = Arc::new(setup_config);
             self.setup_new_chain().await?;
             println!("✅ Chain state created, using...");
+            self.config = Arc::new(test_config);
         }
         else {
             return Err(SetupError::OtherError(format!("DB Status invalid")));
@@ -373,28 +379,24 @@ impl Setup {
 
         // Use the newly created data_test_name directory for db of all services
 
-        // // Infrastructure services (parallel)
-        // self.start_infrastructure_services().await?;
+        // Infrastructure services (parallel)
+        self.start_infrastructure_services().await?;
 
         // // Setup infrastructure services
-        // self.setup_infrastructure_services().await?;
+        self.setup_infrastructure_services().await?;
 
-        // // Start Anvil, Madara, Pathfinder
-        // // Mock Prover, Orchestrator services (parallel)
-        // self.start_anvil_service().await?;
-        // self.start_madara_service().await?;
-        // self.start_pathfinder_service().await?;
-        // self.start_mock_prover_service().await?;
-        // // self.start_orchestration(db_dir).await?;
+        // Start Anvil, Madara, Pathfinder
+        // Mock Prover, Orchestrator services (parallel)
+        self.start_anvil_service().await?;
+        self.start_madara_service().await?;
+        self.start_pathfinder_service().await?;
+        self.start_mock_prover_service().await?;
+        // self.start_orchestration(db_dir).await?;
 
         // shutdown all the services
         println!("✅ Starting Chain completed successfully in {:?}", start.elapsed());
         Ok(())
     }
-
-
-
-
 }
 
 // =============================================================================
@@ -698,10 +700,15 @@ impl Setup {
     async fn setup_resource_for_orchestrator(&self) -> Result<(), SetupError> {
         println!("🧑‍💻 Starting Setup Resoruce Orchestrator L1");
 
-        let orchestrator_setup_config = self.config().get_orchestrator_setup_config().clone();
+        // TODO: Implement load data to mongodb if available!
+        if let Some(ref mongodb) = self.mongo_service {
+            mongodb.restore_db(DEFAULT_ORCHESTRATOR_DATABASE_NAME).await?;
+        }
 
-        let status = OrchestratorService::setup(orchestrator_setup_config).await?;
-        println!("🥳 Resource Setup for Orchestrator finished with {}", status);
+        // let orchestrator_setup_config = self.config().get_orchestrator_setup_config().clone();
+
+        // let status = OrchestratorService::setup(orchestrator_setup_config).await?;
+        // println!("🥳 Resource Setup for Orchestrator finished with {}", status);
 
         Ok(())
     }
