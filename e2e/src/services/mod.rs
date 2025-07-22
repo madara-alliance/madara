@@ -7,5 +7,6 @@ pub mod madara;
 pub mod mock_prover;
 pub mod mock_verifier;
 pub mod mongodb;
+pub mod pathfinder;
 pub mod server;
 pub mod constants;
