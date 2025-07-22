@@ -7,7 +7,7 @@ use reqwest::Method;
 use tracing::debug;
 use url::Url;
 
-use crate::constants::ATLANTIC_PROOF_URL;
+use crate::constants::{AGGREGATOR_FULL_OUTPUT, AGGREGATOR_USE_KZG_DA, ATLANTIC_PROOF_URL};
 use crate::error::AtlanticError;
 use crate::types::{
     AtlanticAddJobResponse, AtlanticAggregatorParams, AtlanticAggregatorVersion, AtlanticBucketResponse,
@@ -112,15 +112,18 @@ impl AtlanticClient {
                 external_id: None,
                 node_width: None,
                 aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
-                aggregator_params: AtlanticAggregatorParams { use_kzg_da: true, full_output: false },
+                aggregator_params: AtlanticAggregatorParams {
+                    use_kzg_da: AGGREGATOR_USE_KZG_DA,
+                    full_output: AGGREGATOR_FULL_OUTPUT,
+                },
             })
-            .map_err(AtlanticError::CreateBucketFailure)?
+            .map_err(AtlanticError::BodyParseError)?
             .send()
             .await
-            .map_err(AtlanticError::AddJobFailure)?;
+            .map_err(AtlanticError::CreateBucketFailure)?;
 
         match response.status().is_success() {
-            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            true => response.json().await.map_err(AtlanticError::CreateBucketFailure),
             false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
@@ -141,10 +144,10 @@ impl AtlanticClient {
             .query_param("apiKey", atlantic_api_key.as_ref())
             .send()
             .await
-            .map_err(AtlanticError::AddJobFailure)?;
+            .map_err(AtlanticError::CloseBucketFailure)?;
 
         match response.status().is_success() {
-            true => response.json().await.map_err(AtlanticError::AddJobFailure),
+            true => response.json().await.map_err(AtlanticError::CloseBucketFailure),
             false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
