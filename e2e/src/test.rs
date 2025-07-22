@@ -27,5 +27,12 @@ async fn e2e_test_setup() {
         }
     }
 
-    // sleep(Duration::from_secs(5000)).await;
+    // Test here!
+    sleep(Duration::from_secs(500)).await;
+
+    // Delete the created directory
+    if let Err(err) = std::fs::remove_dir_all("data_e2e_test_setup") {
+        eprintln!("Failed to delete directory: {}", err);
+    }
+
 }
