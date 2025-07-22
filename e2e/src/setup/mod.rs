@@ -13,12 +13,21 @@ use tokio::time::timeout;
 use tokio::time::Instant;
 use tokio::process::Command;
 use tokio::time::Duration;
+use tokio::fs;
+use fs_extra::dir::{copy, CopyOptions};
 // Import all the services we've created
 use crate::services::anvil::AnvilService;
 use crate::services::bootstrapper::BootstrapperService;
 use crate::services::docker::DockerServer;
 use crate::services::mock_verifier::MockVerifierDeployerService;
 use crate::services::constants::*;
+use crate::services::mock_verifier::DEFAULT_VERIFIER_FILE_NAME;
+use crate::services::pathfinder::DEFAULT_PATHFINDER_IMAGE;
+use crate::services::bootstrapper::BOOTSTRAPPER_DEFAULT_ADDRESS_PATH;
+use crate::services::anvil::ANVIL_DEFAULT_DATABASE_NAME;
+use crate::services::madara::MADARA_DEFAULT_DATABASE_NAME;
+use crate::services::mongodb::DEFAULT_MONGO_IMAGE;
+use crate::services::localstack::DEFAULT_LOCALSTACK_IMAGE;
 use crate::services::localstack::LocalstackService;
 use crate::services::madara::{MadaraService, MadaraError};
 use crate::services::mongodb::MongoService;
@@ -28,6 +37,29 @@ use crate::services::orchestrator::{
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
 use crate::services::helpers::NodeRpcMethods;
+
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub enum DBState {
+    /// Database is ready to copy
+    ReadyToUse,
+    /// Database is being created, hence locked
+    Locked,
+    /// Database is not ready to copy, can be created
+    NotReady,
+    /// Database is in error state
+    Error,
+}
+
+impl From<String> for DBState {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "READY" => DBState::ReadyToUse,
+            "NOT_READY" => DBState::NotReady,
+            "LOCKED" => DBState::Locked,
+            _ => DBState::Error,
+        }
+    }
+}
 
 
 // =============================================================================
@@ -83,24 +115,30 @@ impl Setup {
     }
 
     /// Run the complete setup process
-    pub async fn setup(&mut self) -> Result<(), SetupError> {
+    pub async fn setup(&mut self, test_name: &str) -> Result<(), SetupError> {
         println!("🚀 Starting Chain Setup for {:?} layer...", self.config.layer);
 
-        // Step 1: Validate dependencies within timeout
-        // Needs layer and timeout
-        self.validate_and_pull_dependencies().await?;
+        // Step 1: Check for existing chain state and decide setup path
+        let db_status = self.check_existing_chain_state().await?;
 
-        // Step 2: Check for existing chain state and decide setup path
-        let state_exists = self.check_existing_chain_state().await?;
-
-        if state_exists {
+        if db_status == DBState::ReadyToUse {
             println!("✅ Chain state exists, starting servers...");
-            // TODO: Implement start_existing_chain method
-        } else {
+        }
+        else if db_status == DBState::Locked {
+            println!("⚠️ Chain state is locked, waiting for unlock...");
+            // TODO: Implement timeout and re-call setup
+            unimplemented!("Implement timeout and re-call setup");
+        }
+        else if db_status == DBState::NotReady {
             println!("❌ Chain state does not exist, setting up new chain...");
             self.setup_new_chain().await?;
+            println!("✅ Chain state created, using...");
+        }
+        else {
+            return Err(SetupError::OtherError(format!("DB Status invalid")));
         }
 
+        self.start_chain(test_name).await?;
         Ok(())
     }
 }
@@ -240,23 +278,43 @@ impl Setup {
     }
 
     /// Check if database exists in the Default Data Directory
-    async fn check_existing_chain_state(&self) -> Result<bool, SetupError> {
-        println!("🗄️  Checking existing databases...");
-
-        // TODO: shoud add bootstrapper's addresses.json
-        // And mockverifier txt file as well as well
+    async fn check_existing_chain_state(&self) -> Result<DBState, SetupError> {
+        println!("🗄️ Checking existing databases...");
 
         let data_dir = Path::new(DEFAULT_DATA_DIR);
 
-        // Check for required files/directories
-        let mongodb_dump_exists = data_dir.join(MONGO_DEFAULT_DATABASE_PATH).exists();
-        let anvil_json_exists = data_dir.join(ANVIL_DEFAULT_DATABASE_NAME).exists();
-        let madara_db_exists = data_dir.join(MADARA_DEFAULT_DATABASE_NAME).exists();
-        let address_json_exists = data_dir.join(BOOTSTRAPPER_DEFAULT_ADDRESS_PATH).exists();
+        // Read the status off Status file
+        let status_file = data_dir.join("STATUS");
+        let status = match fs::read_to_string(&status_file).await {
+            Ok(s) => s.into(),
+            // if file is not found, return not ready
+            Err(_) => DBState::NotReady,
+        };
 
-        let all_exist = mongodb_dump_exists && anvil_json_exists && madara_db_exists && address_json_exists;
+        println!("Pre Existing DB Status: {:?}", status);
 
-        Ok(all_exist)
+        if status == DBState::ReadyToUse {
+            // Extra validation checks
+            // Check for required files/directories
+            // TODO: fix : let mongodb_dump_exists = data_dir.join(MONGO_DEFAULT_DATABASE_PATH).exists();
+            let anvil_json_exists = data_dir.join(ANVIL_DEFAULT_DATABASE_NAME).exists();
+            let madara_db_exists = data_dir.join(MADARA_DEFAULT_DATABASE_NAME).exists();
+            let address_json_exists = data_dir.join(BOOTSTRAPPER_DEFAULT_ADDRESS_PATH).exists();
+            let mock_verifier_exists = data_dir.join(DEFAULT_VERIFIER_FILE_NAME).exists();
+
+            let all_exist =
+                anvil_json_exists && madara_db_exists &&
+                address_json_exists && mock_verifier_exists;
+
+            if all_exist {
+                Ok(DBState::ReadyToUse)
+            } else {
+                Err(SetupError::OtherError("Database not ready, but status is ReadyToUse".to_string()))
+            }
+        } else {
+            Ok(status)
+        }
+
     }
 }
 
@@ -268,6 +326,9 @@ impl Setup {
     /// Set up a fresh chain from scratch
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
         let start = Instant::now();
+
+        // Validate dependencies within timeout
+        self.validate_and_pull_dependencies().await?;
 
         // Infrastructure services (parallel)
         self.start_infrastructure_services().await?;
@@ -290,9 +351,46 @@ impl Setup {
         // Orchestrator service
         self.start_orchestration().await?;
 
+        if let Err(cleanup_err) = self.stop_all().await {
+            println!("Failed to cleanup: {}", cleanup_err);
+        }
+
+        // TODO: create a file in data saying status : ReadyToUse
+        // shutdown all the services
         println!("✅ Setup completed successfully in {:?}", start.elapsed());
         Ok(())
     }
+
+
+    async fn start_chain(&mut self, test_name: &str) -> Result<(), SetupError> {
+        let start = Instant::now();
+
+        // Copy the database
+        self.copy_databases(test_name).await?;
+
+        // Use the newly created data_test_name directory for db of all services
+
+        // // Infrastructure services (parallel)
+        // self.start_infrastructure_services().await?;
+
+        // // Setup infrastructure services
+        // self.setup_infrastructure_services().await?;
+
+        // // Start Anvil, Madara, Pathfinder
+        // // Mock Prover, Orchestrator services (parallel)
+        // self.start_anvil_service().await?;
+        // self.start_madara_service().await?;
+        // self.start_pathfinder_service().await?;
+        // self.start_mock_prover_service().await?;
+        // // self.start_orchestration(db_dir).await?;
+
+        // shutdown all the services
+        println!("✅ Starting Chain completed successfully in {:?}", start.elapsed());
+        Ok(())
+    }
+
+
+
 
 }
 
@@ -427,6 +525,13 @@ impl Setup {
             }
 
             println!("✅ Pathfinder started and synced");
+
+            if let Some(mut madara) = self.madara_service.take() {
+                madara.stop()?;
+                println!("🛑 Madara stopped, after Pathfinder synced");
+
+            }
+
             Ok(())
         })
         .await
@@ -604,6 +709,22 @@ impl Setup {
 // =============================================================================
 
 impl Setup {
+
+    /// Copy the databases to a new directory
+    async fn copy_databases(&self, dir_suffix: &str) -> Result<(), SetupError> {
+        let data_test_name = format!("data_{}", dir_suffix);
+        println!("🧑‍💻 Copying databases to {}", data_test_name);
+
+        let mut options = CopyOptions::new();
+        options.overwrite = true;
+        options.copy_inside = true;
+
+        copy(DEFAULT_DATA_DIR, &data_test_name, &options)
+            .map_err(|e| SetupError::OtherError(e.to_string()))?;
+
+        Ok(())
+    }
+
     /// Get latest block number from Madara
     async fn get_madara_latest_block(&self) -> Result<i64, SetupError> {
         if let Some(madara) = &self.madara_service {
