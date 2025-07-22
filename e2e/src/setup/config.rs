@@ -159,80 +159,47 @@ impl SetupConfig {
         &self.mongo_config
     }
 
-    // let anvil_db_path = format!("{}/anvil.json", self.context.db_dir_path);
-    // let anvil_config = AnvilConfigBuilder::new()
-    //     .port(self.context.anvil_port)
-    //     .block_time(1_f64)
-    //     .dump_state(anvil_db_path)
-    //     .build();
     /// Get Anvil Config
     pub fn get_anvil_config(&self) -> &AnvilConfig {
         &self.anvil_config
     }
 
-    // let madara_config = MadaraConfigBuilder::new()
-    // .rpc_port(self.context.madara_port)
-    // .build();
     /// Get Madara Config
     pub fn get_madara_config(&self) -> &MadaraConfig {
         &self.madara_config
     }
 
-    // let pathfinder_config = PathfinderConfigBuilder::new().build();
     /// Get pathfinder Config
     pub fn get_pathfinder_config(&self) -> &PathfinderConfig {
         &self.pathfinder_config
     }
 
-    // let mock_verifier_config = MockVerifierDeployerConfigBuilder::new().build();
+    /// Get Mock Verifier Deployer Config
     pub fn get_mock_verifier_deployer_config(&self) -> &MockVerifierDeployerConfig {
         &self.mock_verifier_deployer_config
     }
 
 
-    // let orchestrator_setup_config = OrchestratorConfigBuilder::new()
-    //     .mode(OrchestratorMode::Setup)
-    //     .env_var("RUST_LOG", "info")
-    //     .build();
     /// Get the Orchestrator Config
     pub fn get_orchestrator_setup_config(&self) -> &OrchestratorConfig {
         &self.orchestrator_setup_config
     }
 
-    // let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-    //     .mode(BootstrapperMode::SetupL1)
-    //     .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-    //     .env_var("ETH_RPC", "http://localhost:8545")
-    //     .env_var("RUST_LOG", "info")
-    //     .build();
     /// Get the Bootstrapper Setup L1 Config
     pub fn get_bootstrapper_setup_l1_config(&self) -> &BootstrapperConfig {
         &self.bootstrapper_setup_l1_config
     }
 
-    // let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-    //     .mode(BootstrapperMode::SetupL2)
-    //     .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-    //     .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-    //     .env_var("ETH_RPC", "http://localhost:8545")
-    //     .env_var("RUST_LOG", "info")
-    //     .build();
     /// Get the Bootstrapper Setup L2 Config
     pub fn get_bootstrapper_setup_l2_config(&self) -> &BootstrapperConfig {
         &self.bootstrapper_setup_l2_config
     }
 
-    // let mock_prover_config = MockProverConfigBuilder::new()
-    //     .port(5555)
-    //     .build()?;
     /// Get the Mock Prover Config
     pub fn get_mock_prover_config(&self) -> &MockProverConfig {
         &self.mock_prover_config
     }
 
-    // let orchestrator_setup_config = OrchestratorConfigBuilder::run_l2()
-    //     .port(3000)
-    //     .build();
     /// Get the Orchestrator Setup Config
     pub fn get_orchestrator_run_config(&self) -> &OrchestratorConfig {
         &self.orchestrator_run_config
@@ -347,8 +314,8 @@ impl SetupConfigBuilder {
             .port(8545)
             .block_time(1_f64)
             .dump_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
+            .load_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
             .build();
-
 
         let madara_config = MadaraConfigBuilder::new()
         .rpc_port(9944)
