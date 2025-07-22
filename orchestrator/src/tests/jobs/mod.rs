@@ -350,7 +350,7 @@ async fn process_job_two_workers_process_same_job_works() {
     // Mocking the `get_job_handler` call in create_job function.
     let job_handler: Arc<Box<dyn JobHandlerTrait>> = Arc::new(Box::new(job_handler));
     let ctx = mock_factory::get_job_handler_context();
-    ctx.expect().times(2).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
+    ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
     let services = TestConfigBuilder::new()
