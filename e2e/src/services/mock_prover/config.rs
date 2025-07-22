@@ -70,41 +70,32 @@ impl MockProverConfig {
 /// Builder for MockProverConfig
 #[derive(Debug, Clone)]
 pub struct MockProverConfigBuilder {
-    binary_path: PathBuf,
-    port: Option<u16>,
+    config: MockProverConfig,
 }
 
 impl MockProverConfigBuilder {
     /// Create a new builder
     pub fn new() -> Self {
         Self {
-            binary_path: PathBuf::from(DEFAULT_MOCK_PROVER_BINARY),
-            port: None,
+            config: MockProverConfig::default(),
         }
     }
 
     /// Set the binary path
     pub fn binary_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
-        self.binary_path = path.into();
+        self.config.binary_path = path.into();
         self
     }
 
     /// Set the port
     pub fn port(mut self, port: u16) -> Self {
-        self.port = Some(port);
+        self.config.port = port;
         self
     }
 
     /// Build the final configuration
-    pub fn build(self) -> Result<MockProverConfig, MockProverError> {
-        let port = self.port.ok_or_else(|| {
-            MockProverError::ExecutionFailed("Port must be specified".to_string())
-        })?;
-
-        Ok(MockProverConfig {
-            port,
-            ..Default::default()
-        })
+    pub fn build(self) -> MockProverConfig {
+        self.config
     }
 }
 

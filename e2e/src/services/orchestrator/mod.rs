@@ -9,7 +9,7 @@ pub use config::*;
 
 use crate::services::server::{Server, ServerConfig};
 use std::process::ExitStatus;
-
+use reqwest::Url;
 use std::time::Duration;
 
 pub struct OrchestratorService {
@@ -134,6 +134,10 @@ impl OrchestratorService {
 
     // TODO: Will need a endpoint() fn here
 
+    pub fn endpoint(&self) -> Option<Url> {
+        self.server().endpoint()
+    }
+
     // TODO: A mongodb respective fn that dumps and loads the db
 
     /// Get the current mode
@@ -164,5 +168,90 @@ impl OrchestratorService {
     /// Get the underlying server (run mode only)
     pub fn server(&self) -> &Server {
         &self.server
+    }
+}
+
+
+impl OrchestratorService {
+    /// Check if State Update for specified block completed or not
+    ///
+    /// This method calls the orchestrator's job status endpoint to check if the StateTransition
+    /// job for the given block number has completed.
+    ///
+    /// Returns:
+    /// - `Ok(true)` if the StateTransition job for the block is completed
+    /// - `Ok(false)` if the StateTransition job is not completed or doesn't exist
+    /// - `Err(OrchestratorError)` for RPC errors or parsing failures
+    pub async fn check_state_update(&self, block_number: u64) -> Result<bool, OrchestratorError> {
+        let url = format!("{}jobs/block/{}/status", self.endpoint().unwrap(), block_number);
+        let client = reqwest::Client::new();
+
+        println!("Orchestrator URL: {}", url);
+
+        let response = client.get(&url)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| {
+                println!("Failed to send request to orchestrator: {}", e);
+                OrchestratorError::NetworkError(e.to_string())
+            })?;
+        let response_clone = client.get(&url)
+            .header("accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| {
+                println!("Failed to send request to orchestrator: {}", e);
+                OrchestratorError::NetworkError(e.to_string())
+            })?;
+
+        println!("Orchestrator URL: {:?}", response_clone.text().await);
+
+        let json = response.json::<serde_json::Value>().await
+            .map_err(|e| {
+                println!("Failed to parse JSON response: {}", e);
+                OrchestratorError::InvalidResponse(e.to_string())
+            })?;
+
+        println!("JSON RESPONSE : {}", json);
+
+        // Check if the API call was successful
+        let success = json.get("success")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false);
+
+        if !success {
+            let message = json.get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown error");
+            println!("Orchestrator API error: {}", message);
+            return Err(OrchestratorError::InvalidResponse(message.to_string()));
+        }
+
+        let empty_vec = vec![];
+
+        // Extract jobs array from the response
+        let jobs = json.get("data")
+            .and_then(|data| data.get("jobs"))
+            .and_then(|jobs| jobs.as_array())
+            .unwrap_or(&empty_vec);
+
+        // Look for StateTransition job and check its status
+        for job in jobs {
+            if let (Some(job_type), Some(status)) = (
+                job.get("job_type").and_then(|v| v.as_str()),
+                job.get("status").and_then(|v| v.as_str())
+            ) {
+                if job_type == "StateTransition" {
+                    let is_completed = status == "Completed";
+                    println!("StateTransition job for block {}: {}", block_number, status);
+                    return Ok(is_completed);
+                }
+            }
+        }
+
+        // No StateTransition job found for this block
+        println!("No StateTransition job found for block {}", block_number);
+        Ok(false)
     }
 }

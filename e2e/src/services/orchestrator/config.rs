@@ -4,7 +4,7 @@ use strum_macros::Display;
 use tokio::process::Command;
 
 pub const DEFAULT_ORCHESTRATOR_BINARY: &str = "../target/release/orchestrator";
-
+pub const DEFAULT_ORCHESTRATOR_DATABASE_NAME: &str = "orchestrator";
 
 // TODO: options are currently limited to per-usages bases
 
@@ -45,6 +45,10 @@ pub enum OrchestratorError {
     MissingDependency(String),
     #[error("Orchestrator execution failed: {0}")]
     ExecutionFailed(String),
+    #[error("Network error: {0}")]
+    NetworkError(String),
+    #[error("Invalid response: {0}")]
+    InvalidResponse(String),
 }
 
 #[derive(Debug, Clone)]
@@ -61,6 +65,7 @@ pub struct OrchestratorConfig {
     // External Service
     // Database
     mongodb: bool,
+    database_name : String,
 
     // AWS Configuration
     aws: bool,
@@ -100,6 +105,7 @@ impl Default for OrchestratorConfig {
             mongodb: true,
             aws: true,
             event_bridge_type: AWSEventBridgeType::Rule,
+            database_name: String::from(DEFAULT_ORCHESTRATOR_DATABASE_NAME),
 
             settle_on_ethereum: false,
             settle_on_starknet: false,
@@ -110,7 +116,7 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            logs: (true, true),
+            logs: (false, true),
         }
     }
 }
@@ -210,6 +216,11 @@ impl OrchestratorConfig {
         &self.binary_path
     }
 
+    /// Get the database name
+    pub fn database_name(&self) -> &str {
+        &self.database_name
+    }
+
     pub fn to_command(&self) -> Command {
         let mut command = Command::new(&self.binary_path);
         command.arg(self.mode.to_string());
@@ -247,6 +258,7 @@ impl OrchestratorConfig {
         // TODO: might wanna remove it ?
         if self.mongodb {
             command.arg("--mongodb");
+            command.arg("--mongodb-database-name").arg(self.database_name());
         }
 
         // Add settlement flags

@@ -1,4 +1,4 @@
-use crate::services::{anvil::{AnvilConfig, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperError}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraError}, mock_prover::MockProverError, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorError}, pathfinder::{PathfinderConfig, PathfinderError}};
+use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode, DEFAULT_BOOTSTRAPPER_CONFIG}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
 use std::time::Duration;
 use crate::services::mock_prover::MockProverConfig;
 
@@ -93,7 +93,7 @@ impl Default for Timeouts {
             start_l2_setup: Duration::from_secs(1800),
             start_full_node_syncing: Duration::from_secs(300),
             start_mock_prover: Duration::from_secs(300),
-            start_orchestration: Duration::from_secs(1800),
+            start_orchestration: Duration::from_secs(10000),
             validate_dependencies: Duration::from_secs(10),
         }
     }
@@ -117,7 +117,7 @@ pub struct SetupConfig {
     pub orchestrator_setup_config: OrchestratorConfig,
     pub madara_config: MadaraConfig,
     pub pathfinder_config: PathfinderConfig,
-    pub mock_verifier_config: MockVerifierDeployerConfig,
+    pub mock_verifier_deployer_config: MockVerifierDeployerConfig,
     pub mock_prover_config: MockProverConfig,
     pub orchestrator_run_config: OrchestratorConfig,
     pub bootstrapper_setup_l1_config: BootstrapperConfig,
@@ -135,7 +135,7 @@ impl Default for SetupConfig {
             orchestrator_setup_config: OrchestratorConfig::default(),
             madara_config: MadaraConfig::default(),
             pathfinder_config: PathfinderConfig::default(),
-            mock_verifier_config: MockVerifierDeployerConfig::default(),
+            mock_verifier_deployer_config: MockVerifierDeployerConfig::default(),
             mock_prover_config: MockProverConfig::default(),
             orchestrator_run_config: OrchestratorConfig::default(),
             bootstrapper_setup_l1_config: BootstrapperConfig::default(),
@@ -191,8 +191,8 @@ impl SetupConfig {
     }
 
     // let mock_verifier_config = MockVerifierDeployerConfigBuilder::new().build();
-    pub fn get_mock_verifier_config(&self) -> &MockVerifierDeployerConfig {
-        &self.mock_verifier_config
+    pub fn get_mock_verifier_deployer_config(&self) -> &MockVerifierDeployerConfig {
+        &self.mock_verifier_deployer_config
     }
 
 
@@ -319,8 +319,8 @@ impl SetupConfigBuilder {
     }
 
     /// Set the Mock Verifier Config
-    pub fn mock_verifier_config(mut self, mock_verifier_config: MockVerifierDeployerConfig) -> Self {
-        self.config.mock_verifier_config = mock_verifier_config;
+    pub fn mock_verifier_deployer_config(mut self, mock_verifier_deployer_config: MockVerifierDeployerConfig) -> Self {
+        self.config.mock_verifier_deployer_config = mock_verifier_deployer_config;
         self
     }
 
@@ -345,6 +345,76 @@ impl SetupConfigBuilder {
     pub fn build(self) -> SetupConfig {
         self.config
     }
+
+
+    pub fn build_l2_config(self) -> SetupConfig {
+
+        let anvil_config = AnvilConfigBuilder::new()
+            .port(8545)
+            .block_time(1_f64)
+            .dump_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
+            .build();
+
+
+        let madara_config = MadaraConfigBuilder::new()
+        .rpc_port(9944)
+        .build();
+
+
+        let pathfinder_config = PathfinderConfigBuilder::new().build();
+
+
+        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new().build();
+
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
+            .mode(OrchestratorMode::Setup)
+            .env_var("RUST_LOG", "info")
+            .build();
+
+
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL1)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
+            .build();
+
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL2)
+            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
+            .build();
+
+        let mock_prover_config = MockProverConfigBuilder::new()
+            .port(5555)
+            .build();
+
+
+        let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
+            .port(3000)
+            .build();
+
+
+        let con = self.anvil_config(anvil_config)
+            .madara_config(madara_config)
+            .pathfinder_config(pathfinder_config)
+            .mock_verifier_deployer_config(mock_verifier_deployer_config)
+            .orchestrator_setup_config(orchestrator_setup_config)
+            .bootstrapper_setup_l1_config(bootstrapper_l1_config)
+            .bootstrapper_setup_l2_config(bootstrapper_l2_config)
+            .mock_prover_config(mock_prover_config)
+            .orchestrator_run_config(orchestrator_run_config)
+            .build();
+        con
+
+    }
+
+
+
+
 }
 
 impl Default for SetupConfigBuilder {

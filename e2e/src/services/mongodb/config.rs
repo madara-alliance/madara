@@ -1,4 +1,4 @@
-use crate::services::docker::DockerError;
+use crate::{services::{docker::DockerError, server::DEFAULT_SERVICE_HOST}, setup::DEFAULT_DATA_DIR};
 use tokio::process::Command;
 use crate::services::server::ServerError;
 
@@ -36,9 +36,9 @@ impl Default for MongoConfig {
     fn default() -> Self {
         Self {
             image: DEFAULT_MONGO_IMAGE.to_string(),
-            container_name: DEFAULT_MONGO_CONTAINER_NAME.to_string(),
+            container_name: format!("{}-{}", DEFAULT_MONGO_CONTAINER_NAME, uuid::Uuid::new_v4()),
             port: DEFAULT_MONGO_PORT,
-            logs: (true,true),
+            logs: (false,false),
         }
     }
 }
@@ -86,9 +86,6 @@ impl MongoConfig {
 
         command
     }
-
-
-
 }
 
 // Builder type that allows configuration

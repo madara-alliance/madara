@@ -11,6 +11,7 @@ const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
 const DEFAULT_MADARA_NAME: &str = "madara";
 pub const MADARA_DEFAULT_DATABASE_NAME: &str = "madara-db";
 pub const DEFAULT_MADARA_BINARY_PATH: &str = "../target/release/madara";
+pub const DEFAULT_MADARA_CONFIG_PATH: &str = "./config/madara.yaml";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MadaraError {
@@ -57,6 +58,7 @@ pub struct MadaraConfig {
     rpc_admin: bool,
     mode: MadaraMode,
     chain_config_path: Option<PathBuf>,
+    block_time: Option<String>,
     feeder_gateway_enable: bool,
     gateway_enable: bool,
     gateway_external: bool,
@@ -83,12 +85,13 @@ impl Default for MadaraConfig {
             rpc_external: true,
             rpc_admin: true,
             mode: MadaraMode::Sequencer,
-            chain_config_path: Some(PathBuf::from("../configs/presets/devnet.yaml")),
+            chain_config_path: Some(PathBuf::from(DEFAULT_MADARA_CONFIG_PATH)),
             feeder_gateway_enable: true,
             gateway_enable: true,
             gateway_external: true,
             gateway_port: DEFAULT_MADARA_GATEWAY_PORT,
             charge_fee: false,
+            block_time: None,
             // l1_endpoint: Some("http://127.0.0.1:8545".to_string()),
             l1_endpoint: None,
             strk_gas_price: 0,
@@ -121,6 +124,11 @@ impl MadaraConfig {
     /// Get the name
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Get the block time
+    pub fn block_time(&self) -> Option<String> {
+        self.block_time.clone()
     }
 
     /// Get the database path
@@ -287,6 +295,11 @@ impl MadaraConfig {
             cmd.arg("--chain-config-path").arg(chain_config);
         }
 
+        // --chain-config-override block_time=3s
+        if let Some(ref block_time) = self.block_time {
+            cmd.arg("--chain-config-override").arg(format!("block_time={}", block_time));
+        }
+
         // Additional arguments
         for arg in &self.additional_args {
             cmd.arg(arg);
@@ -327,6 +340,11 @@ impl MadaraConfigBuilder {
 
     pub fn name(mut self, name: &str) -> Self {
         self.config.name = name.to_string();
+        self
+    }
+
+    pub fn block_time(mut self, block_time: Option<String>) -> Self {
+        self.config.block_time = block_time;
         self
     }
 

@@ -6,14 +6,13 @@ pub mod config;
 
 // Re-export common utilities
 pub use config::*;
-
 use std::sync::Arc;
 use std::path::Path;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
 use tokio::time::Instant;
 use tokio::process::Command;
-
+use tokio::time::Duration;
 // Import all the services we've created
 use crate::services::anvil::AnvilService;
 use crate::services::bootstrapper::BootstrapperService;
@@ -475,10 +474,38 @@ impl Setup {
 
             self.orchestrator_service = Some(orchestrator_service);
 
+            let max_retries = 20;
+            let delay = Duration::from_secs(360);
+
+            let mut retries = 0;
+            loop {
+                println!("⏳ Checking orchestrator state update...");
+                let block_number = self.check_orchestrator_state_update(self.bootstrapped_madara_block_number.max(0) as u64).await?;
+                if block_number {
+                    break;
+                }
+                if retries >= max_retries {
+                    return Err(SetupError::Timeout("Orchestrator state update till bootstrapped madara block timed out".to_string()));
+                }
+                println!("😩 Retrying orchestrator state update check...");
+                retries += 1;
+                tokio::time::sleep(delay).await;
+            }
+
+            // Ideally: TODO: Restart orchestrator while dumping the database !
+            // So that no jobs are inn LockedForProcessing while the database is being dumped
+            if let Some(ref mut  mongo) = self.mongo_service {
+                println!("Dumping Mongodb database...");
+                if let Some(ref orchestrator) = self.orchestrator_service.as_mut() {
+                    mongo.dump_db(orchestrator.config().database_name()).await?;
+                }
+            }
+
             Ok(())
         })
         .await
         .map_err(|_| SetupError::Timeout("Start Orchestrator Service timed out".to_string()))?
+
     }
 }
 
@@ -528,7 +555,7 @@ impl Setup {
     async fn deploy_mock_verifier(&self) -> Result<(), SetupError> {
         println!("🧑‍💻 Starting mock verifier deployer");
 
-        let mock_verifier_config =  self.config().get_mock_verifier_config().clone();
+        let mock_verifier_config =  self.config().get_mock_verifier_deployer_config().clone();
 
         let address = MockVerifierDeployerService::run(mock_verifier_config).await?;
 
@@ -591,6 +618,17 @@ impl Setup {
             Ok(block_number)
         } else {
             panic!("Madara is not initialized");
+        }
+    }
+
+    /// Check if Orchestrator completed state update for specified block
+    async fn check_orchestrator_state_update(&self, block_number: u64) -> Result<bool, SetupError> {
+        if let Some(orchestrator) = &self.orchestrator_service {
+            let status = orchestrator.check_state_update(block_number).await
+                .map_err(|err| SetupError::Orchestrator(err))?;
+            Ok(status)
+        } else {
+            panic!("Orchestrator is not initialized");
         }
     }
 

@@ -37,14 +37,14 @@ impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
             image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
-            container_name: DEFAULT_LOCALSTACK_CONTAINER_NAME.to_string(),
+            container_name: format!("{}-{}", DEFAULT_LOCALSTACK_CONTAINER_NAME, uuid::Uuid::new_v4()),
             environment_vars: vec![
                 ("DEBUG".to_string(), "1".to_string()),
                 ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
             ],
 
             port: DEFAULT_LOCALSTACK_PORT,
-            logs: (true, true),
+            logs: (false, true),
         }
     }
 }

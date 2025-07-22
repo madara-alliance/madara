@@ -15,6 +15,8 @@ pub enum DockerError {
     ContainerStatusFailed(std::io::Error),
     #[error("Server error: {0}")]
     Server(#[from] ServerError),
+    #[error("Exec error: {0}")]
+    Exec(String),
 }
 
 pub struct DockerServer;

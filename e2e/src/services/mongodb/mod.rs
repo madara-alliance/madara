@@ -11,7 +11,10 @@ use crate::services::docker::{DockerError, DockerServer};
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
 
+use crate::setup::DEFAULT_DATA_DIR;
 use super::server::DEFAULT_SERVICE_HOST;
+use crate::services::server::DEFAULT_MONGODB_DIR;
+use tokio::process::Command;
 
 pub struct MongoService {
     server: Server,
@@ -92,5 +95,52 @@ impl MongoService {
     /// Get dependencies (Docker is required)
     pub fn dependencies(&self) -> Vec<String> {
         vec!["docker".to_string()]
+    }
+}
+
+
+// MongoDump and MongoRestore impl from within the docker container
+impl MongoService {
+    /// MongoDump
+    /// docker exec <container_name> mongodump --host "localhost:27017" --db orchestrator_3 --out /backup
+    pub async fn dump_db(&self, database_name: &str) -> Result<(), MongoError> {
+        let command = format!("docker exec {} mongodump --host \"{}:{}\" --db {} --out {}",
+            self.config().container_name(), DEFAULT_SERVICE_HOST, self.config().port(), database_name, DEFAULT_MONGODB_DIR);
+        println!("Command : {}", command);
+        let _ = Command::new("sh").arg("-c").arg(command).status().await
+            .map_err(|e| MongoError::Docker(DockerError::Exec(e.to_string())))?;
+
+        // Copy the dump to the host machine
+        // docker cp <container_name>:/backup ./backup
+        let command = format!("docker cp {}:/{}/{} {}/{}",
+            self.config().container_name(), DEFAULT_MONGODB_DIR, database_name, DEFAULT_DATA_DIR, database_name);
+        println!("Command : {}", command);
+        Command::new("sh").arg("-c").arg(command).status().await
+            .map_err(|e| MongoError::Docker(DockerError::Exec(e.to_string())))?;
+
+        Ok(())
+    }
+
+    /// MongoRestore
+    /// First copy backup from host to container, then restore
+    pub async fn restore_db(&self, database_name: &str) -> Result<(), MongoError> {
+        // Copy the backup from host machine to docker container
+        // docker cp ./backup <container_name>:/backup
+        let command = format!("docker cp {}/{} {}:/{}/{}",
+            DEFAULT_DATA_DIR, database_name, self.config().container_name(), DEFAULT_MONGODB_DIR, database_name);
+        println!("Command : {}", command);
+        Command::new("sh").arg("-c").arg(command).status().await
+            .map_err(|e| MongoError::Docker(DockerError::Exec(e.to_string())))?;
+
+        // Now restore the database inside the container
+        // docker exec <container_name> mongorestore --host "localhost:27017" --db orchestrator_3 /backup/database_name
+        let command = format!("docker exec {} mongorestore --host \"{}:{}\" --db {} {}/{}",
+            self.config().container_name(), DEFAULT_SERVICE_HOST, self.config().port(), database_name, DEFAULT_MONGODB_DIR, database_name);
+        println!("Command : {}", command);
+
+        Command::new("sh").arg("-c").arg(command).status().await
+            .map_err(|e| MongoError::Docker(DockerError::Exec(e.to_string())))?;
+
+        Ok(())
     }
 }

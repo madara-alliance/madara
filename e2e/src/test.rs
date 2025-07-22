@@ -4,9 +4,11 @@ use rstest::rstest;
 #[rstest]
 #[tokio::test]
 async fn e2e_test_setup() {
-    use crate::setup::{Setup,SetupConfig};
+    use crate::setup::{Setup,SetupConfigBuilder};
+    use tokio::time::Duration;
+    use tokio::time::sleep;
 
-    let setup_config = SetupConfig::default();
+    let setup_config = SetupConfigBuilder::new().build_l2_config();
 
     println!("Running setup");
 
@@ -24,4 +26,6 @@ async fn e2e_test_setup() {
             panic!("Setup failed: {}", e); // This will show your actual error
         }
     }
+
+    sleep(Duration::from_secs(5000)).await;
 }
