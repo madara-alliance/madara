@@ -1,8 +1,6 @@
 use std::path::PathBuf;
 use tokio::process::Command;
-
-pub const DEFAULT_MOCK_PROVER_BINARY: &str = "../target/release/mock-atlantic-server";
-pub const DEFAULT_MOCK_PROVER_PORT: u16 = 8080;
+use crate::services::constants::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockProverError {

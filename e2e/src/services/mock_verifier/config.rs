@@ -2,12 +2,8 @@ use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
+use crate::services::constants::*;
 
-pub const DEFAULT_SCRIPT_PATH: &str = "../test_utils/scripts/deploy_dummy_verifier.sh";
-pub const DEFAULT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-pub const DEFAULT_ANVIL_URL: &str = "http://localhost:8545";
-pub const DEFAULT_MOCK_GPS_VERIFIER_PATH: &str = "test_utils/scripts/artifacts/MockGPSVerifier.sol:MockGPSVerifier";
-pub const DEFAULT_VERIFIER_FILE_NAME: &str = "./data/verifier_address.txt";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockVerifierDeployerError {
