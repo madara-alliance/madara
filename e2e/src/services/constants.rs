@@ -21,3 +21,11 @@ pub const DEFAULT_MADARA_NAME: &str = "madara";
 pub const MADARA_DEFAULT_DATABASE_NAME: &str = "madara-db";
 pub const DEFAULT_MADARA_BINARY_PATH: &str = "../target/release/madara";
 pub const DEFAULT_MADARA_CONFIG_PATH: &str = "./config/madara.yaml";
+
+pub const DEFAULT_MOCK_PROVER_BINARY: &str = "../target/release/mock-atlantic-server";
+pub const DEFAULT_MOCK_PROVER_PORT: u16 = 8080;
+pub const DEFAULT_SCRIPT_PATH: &str = "../test_utils/scripts/deploy_dummy_verifier.sh";
+pub const DEFAULT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
+pub const DEFAULT_ANVIL_URL: &str = "http://localhost:8545";
+pub const DEFAULT_MOCK_GPS_VERIFIER_PATH: &str = "test_utils/scripts/artifacts/MockGPSVerifier.sol:MockGPSVerifier";
+pub const DEFAULT_VERIFIER_FILE_NAME: &str = "./data/verifier_address.txt";
