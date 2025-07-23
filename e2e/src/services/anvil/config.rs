@@ -1,8 +1,6 @@
 use crate::services::server::ServerError;
 use tokio::process::Command;
 
-pub const ANVIL_DEFAULT_DATABASE_NAME: &str = "anvil.json";
-
 #[derive(Debug, thiserror::Error)]
 pub enum AnvilError {
     #[error("Anvil is not installed on the system")]
