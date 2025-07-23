@@ -256,14 +256,10 @@ async fn process_single_contract(
             if check_contract_existed_at_block(provider, contract_addr, pre_range_block).await? {
                 // Process storage entries only for an existing contract
                 stream::iter(storage_map)
-                    .map(|(key, value)| {
-                        let provider = Arc::clone(provider);
-                        async move {
-                            let pre_range_value =
-                                check_pre_range_storage_value(&provider, contract_addr, key, pre_range_block).await?;
-
-                            Ok::<_, JobError>((key, value, pre_range_value))
-                        }
+                    .map(|(key, value)| async move {
+                        let pre_range_value =
+                            check_pre_range_storage_value(provider, contract_addr, key, pre_range_block).await?;
+                        Ok::<_, JobError>((key, value, pre_range_value))
                     })
                     .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
                     .try_filter_map(|(key, value, pre_range_value)| async move {
