@@ -5,13 +5,7 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
 use crate::services::helpers::NodeRpcError;
-
-const DEFAULT_MADARA_RPC_PORT: u16 = 9944;
-const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
-const DEFAULT_MADARA_NAME: &str = "madara";
-pub const MADARA_DEFAULT_DATABASE_NAME: &str = "madara-db";
-pub const DEFAULT_MADARA_BINARY_PATH: &str = "../target/release/madara";
-pub const DEFAULT_MADARA_CONFIG_PATH: &str = "./config/madara.yaml";
+use crate::services::constants::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MadaraError {
