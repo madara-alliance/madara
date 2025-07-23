@@ -2,9 +2,7 @@ use crate::services::server::ServerError;
 use std::path::PathBuf;
 use strum_macros::Display;
 use tokio::process::Command;
-
-pub const DEFAULT_ORCHESTRATOR_BINARY: &str = "../target/release/orchestrator";
-pub const DEFAULT_ORCHESTRATOR_DATABASE_NAME: &str = "orchestrator";
+use crate::services::constants::*;
 
 // TODO: options are currently limited to per-usages bases
 
