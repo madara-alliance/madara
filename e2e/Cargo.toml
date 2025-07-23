@@ -1,8 +1,12 @@
 [package]
 name = "e2e"
-version = "0.1.0"
-edition = "2021"
-authors = ["Heemank Verma <heemankv@gmail.com>"]
+description = ""
+authors.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+version.workspace = true
+homepage.workspace = true
 
 [lib]
 name = "e2e"
