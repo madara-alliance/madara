@@ -519,7 +519,7 @@ mod tests {
         let receipt: TransactionReceipt = dummy_invoke_receipt().into();
         let hash = receipt.compute_hash();
         let expected_hash =
-            Felt::from_hex_unchecked("0x4ec732a8832cee7ed43a5fb10c20077e8b6d84196ea455ce4b06d27472176e2");
+            Felt::from_hex_unchecked("0x1148dd71676e6e2716fa87e39b09ed67abaa8dc3dea5e4260a7f3618eb22dd7");
         assert_eq!(hash, expected_hash);
 
         let receipt: TransactionReceipt = dummy_declare_receipt().into();
@@ -537,7 +537,7 @@ mod tests {
         let receipt: TransactionReceipt = dummy_l1_handler_receipt().into();
         let hash = receipt.compute_hash();
         let expected_hash =
-            Felt::from_hex_unchecked("0x4e34009fa7c50a33edcba2912c8f8195bcebc65d73002b712d0e87e4d9c4425");
+            Felt::from_hex_unchecked("0x3e1d6370d26591a5e69de6ffc6d46ef936b3b664afa6f2f1b46a6f4029e604");
         assert_eq!(hash, expected_hash);
     }
 
