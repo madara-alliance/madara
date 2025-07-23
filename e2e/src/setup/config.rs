@@ -22,6 +22,25 @@ pub enum Dependencies {
     OrchestratorIsRunning,
 }
 
+#[derive(Debug, PartialEq, serde::Serialize)]
+pub enum DBState {
+    ReadyToUse,
+    Locked,
+    NotReady,
+    Error,
+}
+
+impl From<String> for DBState {
+    fn from(s: String) -> Self {
+        match s.as_str() {
+            "READY" => DBState::ReadyToUse,
+            "NOT_READY" => DBState::NotReady,
+            "LOCKED" => DBState::Locked,
+            _ => DBState::Error,
+        }
+    }
+}
+
 // =============================================================================
 // ERROR TYPES
 // =============================================================================
@@ -70,7 +89,8 @@ pub enum SetupError {
 pub struct Timeouts {
     pub validate_dependencies: Duration,
     pub start_infrastructure_services: Duration,
-    pub setup_infrastructure_services: Duration,
+    pub setup_localstack_infrastructure_services: Duration,
+    pub setup_mongodb_infrastructure_services: Duration,
     pub start_l1_setup: Duration,
     pub start_l2_setup: Duration,
     pub start_full_node_syncing: Duration,
@@ -82,7 +102,8 @@ impl Default for Timeouts {
     fn default() -> Self {
         Self {
             start_infrastructure_services: Duration::from_secs(360),
-            setup_infrastructure_services: Duration::from_secs(360),
+            setup_localstack_infrastructure_services: Duration::from_secs(360),
+            setup_mongodb_infrastructure_services: Duration::from_secs(360),
             start_l1_setup: Duration::from_secs(360),
             start_l2_setup: Duration::from_secs(1800),
             start_full_node_syncing: Duration::from_secs(300),
@@ -139,6 +160,13 @@ impl Default for SetupConfig {
 }
 
 impl SetupConfig {
+    /// Get the builder
+    pub fn builder(&self) -> SetupConfigBuilder {
+        SetupConfigBuilder::new(
+            Some(self.clone()),
+        )
+    }
+
     /// Get Layer Config
     pub fn get_layer(&self) -> &Layer {
         &self.layer
@@ -217,9 +245,10 @@ pub struct SetupConfigBuilder {
 }
 
 impl SetupConfigBuilder {
-    pub fn new() -> Self {
+
+    pub fn new(config: Option<SetupConfig>) -> Self {
         Self {
-            config: SetupConfig::default(),
+            config: config.unwrap_or_else(SetupConfig::default)
         }
     }
 
@@ -314,7 +343,6 @@ impl SetupConfigBuilder {
             .port(8545)
             .block_time(1_f64)
             .dump_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
-            .load_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
             .build();
 
         let madara_config = MadaraConfigBuilder::new()
@@ -380,6 +408,6 @@ impl SetupConfigBuilder {
 
 impl Default for SetupConfigBuilder {
     fn default() -> Self {
-        Self::new()
+        Self::new(None)
     }
 }
