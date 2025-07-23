@@ -7,10 +7,7 @@ use crate::services::helpers::NodeRpcError;
 
 use crate::services::docker::DockerError;
 use crate::services::server::ServerError;
-
-const DEFAULT_PATHFINDER_PORT: u16 = 9545;
-pub const DEFAULT_PATHFINDER_IMAGE: &str = "prkpandey942/pathfinder:549aa84_2025-05-29_appchain-vers-cons_amd";
-const DEFAULT_PATHFINDER_CONTAINER_NAME: &str = "pathfinder-service";
+use crate::services::constants::*;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PathfinderError {
