@@ -7,21 +7,6 @@ use crate::services::mock_prover::MockProverConfig;
 use crate::services::orchestrator::Layer;
 use crate::services::constants::*;
 
-// =============================================================================
-// DEPENDENCIES ENUM
-// =============================================================================
-
-// Each service internally defines a sequence of dependencies that must be met before it can be started.
-// If not met, the service will not be started.
-pub enum Dependencies {
-    AnvilIsRunning,
-    DockerIsRunning,
-    MongoIsRunning,
-    LocalstackIsRunning,
-    MadaraIsRunning,
-    PathfinderIsRunning,
-    OrchestratorIsRunning,
-}
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {

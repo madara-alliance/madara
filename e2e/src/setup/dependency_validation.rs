@@ -6,9 +6,7 @@ use tokio::task::JoinSet;
 use tokio::process::Command;
 // Import all the services we've created
 use crate::services::docker::DockerServer;
-use crate::services::pathfinder::DEFAULT_PATHFINDER_IMAGE;
-use crate::services::mongodb::DEFAULT_MONGO_IMAGE;
-use crate::services::localstack::DEFAULT_LOCALSTACK_IMAGE;
+use crate::services::constants::*;
 use crate::services::orchestrator::Layer;
 pub use super::config::*;
 use tokio::time::Duration;
