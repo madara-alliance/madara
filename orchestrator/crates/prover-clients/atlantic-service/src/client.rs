@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
@@ -22,6 +22,34 @@ enum ProverType {
     Starkware,
     #[strum(serialize = "herodotus")]
     HeroDotus,
+}
+
+/// Struct to store job info
+pub(crate) struct AtlanticJobInfo {
+    /// Path of the Cairo PIE file
+    pub(crate) pie_file: PathBuf,
+    /// Number of steps
+    pub(crate) n_steps: Option<usize>,
+}
+
+/// Struct to store job config
+pub(crate) struct AtlanticJobConfig {
+    /// Layout to be used for the proof
+    pub(crate) proof_layout: LayoutName,
+    /// Cairo VM to be used
+    pub(crate) cairo_vm: AtlanticCairoVm,
+    /// Result to be returned by the prover
+    pub(crate) result: AtlanticQueryStep,
+    /// Network being used
+    pub(crate) network: String,
+}
+
+/// Struct to store bucket info
+pub(crate) struct AtlanticBucketInfo {
+    /// Bucket ID
+    pub(crate) bucket_id: Option<String>,
+    /// Index of the job in the bucket
+    pub(crate) bucket_job_index: Option<u64>,
 }
 
 trait ProvingLayer: Send + Sync {
@@ -157,26 +185,21 @@ impl AtlanticClient {
     /// `bucket_id` and `bucket_job_id` are `None` for L3 (or L2 when AR is not needed)
     pub async fn add_job(
         &self,
-        pie_file: &Path,
-        proof_layout: LayoutName,
-        cairo_vm: AtlanticCairoVm,
-        result: AtlanticQueryStep,
-        atlantic_api_key: impl AsRef<str>,
-        n_steps: Option<usize>,
-        atlantic_network: impl AsRef<str>,
-        bucket_id: Option<String>,
-        bucket_job_index: Option<u64>,
+        job_info: AtlanticJobInfo,
+        job_config: AtlanticJobConfig,
+        bucket_info: AtlanticBucketInfo,
+        api_key: impl AsRef<str>,
     ) -> Result<AtlanticAddJobResponse, AtlanticError> {
-        let proof_layout = match proof_layout {
+        let proof_layout = match job_config.proof_layout {
             LayoutName::dynamic => "dynamic",
-            _ => proof_layout.to_str(),
+            _ => job_config.proof_layout.to_str(),
         };
 
         debug!(
             "Submitting job with layout: {}, n_steps: {}, network: {}, ",
             proof_layout,
-            self.n_steps_to_job_size(n_steps),
-            atlantic_network.as_ref()
+            self.n_steps_to_job_size(job_info.n_steps),
+            job_config.network.as_ref()
         );
 
         let mut request = self.proving_layer.customize_request(
@@ -184,20 +207,20 @@ impl AtlanticClient {
                 .request()
                 .method(Method::POST)
                 .path("atlantic-query")
-                .query_param("apiKey", atlantic_api_key.as_ref())
-                .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+                .query_param("apiKey", api_key.as_ref())
+                .form_text("declaredJobSize", self.n_steps_to_job_size(job_info.n_steps))
                 .form_text("layout", proof_layout)
-                .form_text("result", &result.to_string())
-                .form_text("network", atlantic_network.as_ref())
+                .form_text("result", &job_config.result.to_string())
+                .form_text("network", job_config.network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
-                .form_text("cairoVm", &cairo_vm.as_str())
-                .form_file("pieFile", pie_file, "pie.zip", Some("application/zip"))?,
+                .form_text("cairoVm", &job_config.cairo_vm.as_str())
+                .form_file("pieFile", &job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
         );
 
-        if let Some(bucket_id) = bucket_id {
+        if let Some(bucket_id) = bucket_info.bucket_id {
             request = request.form_text("bucketId", &bucket_id);
         }
-        if let Some(bucket_job_index) = bucket_job_index {
+        if let Some(bucket_job_index) = bucket_info.bucket_job_index {
             request = request.form_text("bucketJobIndex", &bucket_job_index.to_string());
         }
 

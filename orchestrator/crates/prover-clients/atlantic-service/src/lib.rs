@@ -10,12 +10,12 @@ use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{TaskType, ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus, TaskType};
 use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
 
-use crate::client::AtlanticClient;
+use crate::client::{AtlanticBucketInfo, AtlanticClient, AtlanticJobConfig, AtlanticJobInfo};
 use crate::constants::ATLANTIC_FETCH_ARTIFACTS_BASE_URL;
 use crate::types::{AtlanticBucketStatus, AtlanticCairoVm, AtlanticQueryStep};
 
@@ -68,15 +68,15 @@ impl ProverClient for AtlanticProverService {
                 let atlantic_job_response = self
                     .atlantic_client
                     .add_job(
-                        pie_file_path,
-                        self.proof_layout,
-                        self.cairo_vm.clone(),
-                        self.result.clone(),
+                        AtlanticJobInfo { pie_file: pie_file_path.to_path_buf(), n_steps },
+                        AtlanticJobConfig {
+                            proof_layout: self.proof_layout,
+                            cairo_vm: self.cairo_vm.clone(),
+                            result: self.result.clone(),
+                            network: self.atlantic_network.clone(),
+                        },
+                        AtlanticBucketInfo { bucket_id, bucket_job_index },
                         self.atlantic_api_key.clone(),
-                        n_steps,
-                        self.atlantic_network.clone(),
-                        bucket_id,
-                        bucket_job_index,
                     )
                     .await?;
 
@@ -237,6 +237,7 @@ impl ProverClient for AtlanticProverService {
 
 impl AtlanticProverService {
     #[allow(clippy::too_many_arguments)]
+    // TODO: Create a struct for this
     pub fn new(
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,

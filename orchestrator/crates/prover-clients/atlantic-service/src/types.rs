@@ -54,6 +54,7 @@ pub struct AtlanticQueryBucket {
     pub bucket_job_index: Option<u64>,
 }
 
+/// This is the response struct for `get` bucket requests
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AtlanticGetBucketResponse {
