@@ -14,3 +14,10 @@ pub const DEFAULT_MONGO_CONTAINER_NAME: &str = "mongodb-service";
 pub const MONGO_DEFAULT_DATABASE_PATH: &str = "mongodb_dump.json";
 pub const DEFAULT_BINARY_DIR: &str = "../target/release";
 pub const DEFAULT_DATA_DIR: &str = "./data";
+
+pub const DEFAULT_MADARA_RPC_PORT: u16 = 9944;
+pub const DEFAULT_MADARA_GATEWAY_PORT: u16 = 8080;
+pub const DEFAULT_MADARA_NAME: &str = "madara";
+pub const MADARA_DEFAULT_DATABASE_NAME: &str = "madara-db";
+pub const DEFAULT_MADARA_BINARY_PATH: &str = "../target/release/madara";
+pub const DEFAULT_MADARA_CONFIG_PATH: &str = "./config/madara.yaml";
