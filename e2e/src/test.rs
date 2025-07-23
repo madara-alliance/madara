@@ -7,7 +7,7 @@ async fn e2e_test_setup() {
     use tokio::time::Duration;
     use tokio::time::sleep;
     use crate::services::anvil::AnvilConfigBuilder;
-    use crate::setup::DEFAULT_DATA_DIR;
+    use crate::services::constants::*;
 
     let anvil_config = AnvilConfigBuilder::new()
         .port(8545)
