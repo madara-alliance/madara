@@ -558,6 +558,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
+        job_processing_timeout_seconds: 3600,
     };
 
     let server_config = ServerParams {
