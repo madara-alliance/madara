@@ -14,7 +14,8 @@ use crate::services::madara::{MadaraService, MadaraError};
 use crate::services::mongodb::MongoService;
 use crate::services::orchestrator::OrchestratorService;
 pub use super::config::*;
-use crate::services::orchestrator::DEFAULT_ORCHESTRATOR_DATABASE_NAME;
+use crate::services::constants::*;
+
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
 use crate::services::helpers::NodeRpcMethods;
