@@ -33,3 +33,6 @@ pub const DEFAULT_VERIFIER_FILE_NAME: &str = "./data/verifier_address.txt";
 pub const DEFAULT_PATHFINDER_PORT: u16 = 9545;
 pub const DEFAULT_PATHFINDER_IMAGE: &str = "prkpandey942/pathfinder:549aa84_2025-05-29_appchain-vers-cons_amd";
 pub const DEFAULT_PATHFINDER_CONTAINER_NAME: &str = "pathfinder-service";
+
+pub const DEFAULT_ORCHESTRATOR_BINARY: &str = "../target/release/orchestrator";
+pub const DEFAULT_ORCHESTRATOR_DATABASE_NAME: &str = "orchestrator";
