@@ -2,7 +2,6 @@
 // SERVICE MANAGEMENT
 // =============================================================================
 
-
 use std::sync::Arc;
 
 // Import all the services we've created
@@ -21,7 +20,6 @@ use crate::services::pathfinder::PathfinderService;
 use crate::services::helpers::NodeRpcMethods;
 use tokio::time::sleep;
 
-use super::*;
 use tokio::time::{timeout, Instant, Duration};
 
 pub struct ServiceManager {
@@ -55,7 +53,7 @@ impl ServiceManager {
 
         // Infrastructure first
         self.start_infrastructure(&mut services).await?;
-        // self.setup_localstack_infrastructure(&services).await?;
+        self.setup_localstack_infrastructure().await?;
 
         // L1 setup
         self.setup_l1_chain(&mut services).await?;
@@ -84,7 +82,7 @@ impl ServiceManager {
 
         // Start infrastructure
         self.start_infrastructure(&mut services).await?;
-        // self.setup_localstack_infrastructure(&services).await?;
+        self.setup_localstack_infrastructure().await?;
         self.restore_mongodb_database(&services).await?;
 
         // Start runtime services
@@ -92,7 +90,7 @@ impl ServiceManager {
         self.start_madara(&mut services).await?;
         self.start_pathfinder(&mut services).await?;
         self.start_mock_prover(&mut services).await?;
-         self.setup_orchestration(&mut services).await?;
+        self.start_orchestrator(&mut services).await?;
 
         Ok(services)
     }
@@ -129,7 +127,7 @@ impl ServiceManager {
         .map_err(|_| SetupError::Timeout("Infrastructure startup timed out".to_string()))?
     }
 
-    async fn setup_localstack_infrastructure(&self, services: &RunningServices) -> Result<(), SetupError> {
+    async fn setup_localstack_infrastructure(&self) -> Result<(), SetupError> {
         println!("🏗️ Setting up localstack infrastructure...");
 
         let duration = self.config.get_timeouts().setup_localstack_infrastructure_services;
@@ -232,9 +230,7 @@ impl ServiceManager {
         let duration = self.config.get_timeouts().start_orchestration;
 
         timeout(duration, async {
-            let orchestrator_config = self.config.get_orchestrator_run_config().clone();
-            let orchestrator_service = OrchestratorService::run(orchestrator_config).await?;
-            services.orchestrator_service = Some(orchestrator_service);
+            self.start_orchestrator(services).await?;
 
             self.wait_for_orchestrator_sync(services).await?;
             self.dump_databases(services).await?;
@@ -355,7 +351,7 @@ impl ServiceManager {
         let address = MockVerifierDeployerService::run(mock_verifier_config).await?;
 
         println!("🥳 Mock verifier deployed at address {}", address);
-        BootstrapperService::update_config_file("verifier_address", address.as_str());
+        let _ =BootstrapperService::update_config_file("verifier_address", address.as_str());
 
         Ok(())
     }
@@ -379,4 +375,12 @@ impl ServiceManager {
         println!("🥳 L2 Bootstrapper finished with {}", status);
         Ok(())
     }
+
+    async fn start_orchestrator(&self, services: &mut RunningServices) -> Result<(), SetupError> {
+        let orchestrator_config = self.config.get_orchestrator_run_config().clone();
+        let orchestrator_service = OrchestratorService::run(orchestrator_config).await?;
+        services.orchestrator_service = Some(orchestrator_service);
+        Ok(())
+    }
+
 }
