@@ -10,9 +10,7 @@ use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{
-    AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
-};
+use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus};
 use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
@@ -93,8 +91,6 @@ impl ProverClient for AtlanticProverService {
             }
             Task::CloseBucket(bucket_id) => {
                 let response = self.atlantic_client.close_bucket(&bucket_id, self.atlantic_api_key.clone()).await?;
-                // sleep for 10 seconds to make sure that the bucket is closed
-                tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 tracing::debug!(bucker_id = %response.atlantic_bucket.id, "Successfully submitted close bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
@@ -231,22 +227,11 @@ impl ProverClient for AtlanticProverService {
             .clone())
     }
 
-    async fn get_task_artifacts(
-        &self,
-        task_id: &str,
-        task_type: TaskType,
-        file_name: &str,
-    ) -> Result<Vec<u8>, ProverClientError> {
-        match task_type {
-            TaskType::Query => Ok(self
-                .atlantic_client
-                .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
-                .await?),
-            TaskType::Bucket => Ok(self
-                .atlantic_client
-                .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
-                .await?),
-        }
+    async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
+        Ok(self
+            .atlantic_client
+            .get_artifacts(format!("{}/queries/{}/{}", ATLANTIC_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
+            .await?)
     }
 }
 

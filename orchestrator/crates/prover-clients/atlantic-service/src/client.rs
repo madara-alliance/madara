@@ -70,10 +70,10 @@ impl AtlanticClient {
     pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, AtlanticError> {
         debug!("Getting artifacts from {}", artifact_path);
         let client = reqwest::Client::new();
-        let response = client.get(&artifact_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
+        let response = client.get(&artifact_path).send().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
 
         if response.status().is_success() {
-            let response_text = response.bytes().await.map_err(AtlanticError::GetJobResultFailure)?;
+            let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text.to_vec())
         } else {
             Err(AtlanticError::AtlanticService(response.status()))
@@ -237,10 +237,10 @@ impl AtlanticClient {
         debug!("Getting proof for task_id: {}", task_id);
         let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
         let client = reqwest::Client::new();
-        let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobResultFailure)?;
+        let response = client.get(&proof_path).send().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
 
         if response.status().is_success() {
-            let response_text = response.text().await.map_err(AtlanticError::GetJobResultFailure)?;
+            let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text)
         } else {
             Err(AtlanticError::AtlanticService(response.status()))

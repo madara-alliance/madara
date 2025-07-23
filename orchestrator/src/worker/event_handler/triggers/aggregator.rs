@@ -112,13 +112,4 @@ impl AggregatorJobTrigger {
             .await?;
         Ok(jobs.len() == (end_block - start_block + 1) as usize)
     }
-
-    #[allow(dead_code)]
-    /// Convert &str to u64
-    fn str_to_u64(&self, str: &str) -> color_eyre::Result<u64> {
-        match str.parse::<u64>() {
-            Ok(num) => Ok(num),
-            Err(_) => Err(color_eyre::eyre::eyre!("Failed to  parse string as number: {}", str)),
-        }
-    }
 }

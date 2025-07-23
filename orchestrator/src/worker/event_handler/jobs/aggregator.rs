@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus, TaskType};
+use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus};
 use starknet_core::types::Felt;
 use std::sync::Arc;
 
@@ -236,7 +236,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {
-        30
+        300
     }
 }
 
@@ -248,11 +248,10 @@ impl AggregatorJobHandler {
         storage_path: &str,
     ) -> Result<Vec<u8>, JobError> {
         tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
-        let cairo_pie =
-            config.prover_client().get_task_artifacts(task_id, TaskType::Query, file_name).await.map_err(|e| {
-                tracing::error!(error = %e, "Failed to download {}", file_name);
-                JobError::Other(OtherError(eyre!(e)))
-            })?;
+        let cairo_pie = config.prover_client().get_task_artifacts(task_id, file_name).await.map_err(|e| {
+            tracing::error!(error = %e, "Failed to download {}", file_name);
+            JobError::Other(OtherError(eyre!(e)))
+        })?;
 
         config.storage().put_data(bytes::Bytes::from(cairo_pie.clone()), storage_path).await?;
 

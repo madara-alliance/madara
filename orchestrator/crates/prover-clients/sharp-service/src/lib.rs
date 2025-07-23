@@ -8,9 +8,7 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{
-    AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
-};
+use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 
@@ -181,7 +179,7 @@ impl ProverClient for SharpProverService {
         todo!()
     }
 
-    async fn get_task_artifacts(&self, _: &str, _: TaskType, _: &str) -> Result<Vec<u8>, ProverClientError> {
+    async fn get_task_artifacts(&self, _: &str, _: &str) -> Result<Vec<u8>, ProverClientError> {
         todo!()
     }
 

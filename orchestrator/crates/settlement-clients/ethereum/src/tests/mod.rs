@@ -376,7 +376,10 @@ mod settlement_client_tests {
 
     #[rstest]
     #[tokio::test]
-    #[case::basic(8373665)] // Ethereum block for Starknet blocks 789878-790377, version 0.13.5, created on 21/05/2025
+    // Ethereum block for Starknet blocks 789878-790377, version 0.13.5, created on 21/05/2025
+    // Ethereum Block - https://sepolia.etherscan.io/block/8373665
+    // Starknet L1 Transaction - https://sepolia.voyager.online/l1/tx/0x09ad9c188b1abb9f27509eaa0c12aada6b3f446b70319da6d555b49af8cf2c8e
+    #[case::basic(8373665)]
     async fn creating_input_data_works(#[case] fork_block_no: u64) {
         // get program output from the file
         let program_output = get_program_output_from_file(&format!(

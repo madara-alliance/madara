@@ -71,9 +71,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
         .times(1)
         .returning(|_, _, _, _| Ok(TaskStatus::Succeeded)); // Testing for the case when the task is completed
     prover_client.expect_get_task_artifacts().times(2).returning(move |_, _, file_name| {
-        println!("file_name: {}", file_name);
         if file_name == "pie.cairo0.zip" {
-            println!("returning file_content for cairo pie zip");
             // return the actual cairo pie so we can calculate the program output
             Ok(buffer_bytes.to_vec())
         } else {

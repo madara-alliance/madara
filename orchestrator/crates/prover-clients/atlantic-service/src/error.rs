@@ -4,14 +4,14 @@ use reqwest::StatusCode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
-    #[error("Failed to to add Atlantic job: {0}")]
+    #[error("Failed to add Atlantic job: {0}")]
     AddJobFailure(#[source] reqwest::Error),
 
-    #[error("Failed to to get status of an Atlantic job: {0}")]
+    #[error("Failed to get status of an Atlantic job: {0}")]
     GetJobStatusFailure(#[source] reqwest::Error),
 
     #[error("Failed to get artifacts of an Atlantic job: {0}")]
-    GetJobResultFailure(#[source] reqwest::Error),
+    GetJobArtifactsFailure(#[source] reqwest::Error),
 
     #[error("Failed to submit L2 query: {0}")]
     SubmitL2QueryFailure(#[source] reqwest::Error),
