@@ -7,8 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::task;
 
-pub const DEFAULT_SERVICE_HOST: &str = "127.0.0.1";
-pub const DEFAULT_MONGODB_DIR: &str = "data";
+use super::constants::*;
 
 // Custom error type
 #[derive(Debug, thiserror::Error)]
