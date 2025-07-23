@@ -1,13 +1,9 @@
 use crate::services::docker::DockerError;
 use crate::services::server::ServerError;
 
-use crate::services::helpers::DEFAULT_DATA_DIR;
+use crate::services::constants::*;
 use tokio::process::Command;
 
-const DEFAULT_MONGO_PORT: u16 = 27017;
-pub const DEFAULT_MONGO_IMAGE: &str = "mongo:latest";
-const DEFAULT_MONGO_CONTAINER_NAME: &str = "mongodb-service";
-pub const MONGO_DEFAULT_DATABASE_PATH: &str = "mongodb_dump.json";
 
 #[derive(Debug, thiserror::Error)]
 pub enum MongoError {
