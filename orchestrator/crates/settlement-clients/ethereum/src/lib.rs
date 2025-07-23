@@ -344,7 +344,12 @@ impl SettlementClient for EthereumSettlementClient {
                         tx_hash = %tx_status.transaction_hash,
                         "Tx inclusion pending."
                     );
-                    Ok(SettlementVerificationStatus::Pending)
+                    // TODO: Make sure that this is correct for other txn types as well
+                    Ok(SettlementVerificationStatus::Rejected(format!(
+                        "Txn {} of type {} rejected",
+                        tx_hash,
+                        tx_status.inner.tx_type()
+                    )))
                 }
             }
             None => {
