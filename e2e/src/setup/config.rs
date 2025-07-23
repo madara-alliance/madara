@@ -1,5 +1,6 @@
 use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
 use std::time::Duration;
+use crate::services::server::ServerError;
 use crate::services::mock_prover::MockProverConfig;
 
 // TODO: write layer here and use there
@@ -47,6 +48,8 @@ impl From<String> for DBState {
 
 #[derive(Debug, thiserror::Error)]
 pub enum SetupError {
+    #[error("Server error: {0}")]
+    Server(#[from] ServerError),
     #[error("Anvil service error: {0}")]
     Anvil(#[from] AnvilError),
     #[error("Localstack service error: {0}")]
@@ -337,7 +340,7 @@ impl SetupConfigBuilder {
     }
 
 
-    pub fn build_l2_config(self) -> SetupConfig {
+    pub fn build_l2_config(self) -> Result<SetupConfig, SetupError> {
 
         let anvil_config = AnvilConfigBuilder::new()
             .port(8545)
@@ -397,7 +400,7 @@ impl SetupConfigBuilder {
             .mock_prover_config(mock_prover_config)
             .orchestrator_run_config(orchestrator_run_config)
             .build();
-        con
+        Ok(con)
 
     }
 

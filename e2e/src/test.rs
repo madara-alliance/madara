@@ -1,6 +1,5 @@
 use rstest::rstest;
 
-
 #[rstest]
 #[tokio::test]
 async fn e2e_test_setup() {
@@ -13,11 +12,10 @@ async fn e2e_test_setup() {
     let anvil_config = AnvilConfigBuilder::new()
         .port(8545)
         .block_time(1_f64)
-        .dump_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
         .load_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
         .build();
 
-    let setup_config = SetupConfigBuilder::new(None).build_l2_config()
+    let setup_config = SetupConfigBuilder::new(None).build_l2_config().unwrap()
         .builder().anvil_config(anvil_config).build();
 
     println!("Running setup");
