@@ -1,4 +1,4 @@
-use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
+use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, helpers::get_free_port, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}, server::Server};
 use std::time::Duration;
 use crate::services::server::ServerError;
 use crate::services::mock_prover::MockProverConfig;
@@ -61,6 +61,8 @@ pub enum SetupError {
     StartupFailed(String),
     #[error("Context initialization failed: {0}")]
     ContextFailed(String),
+    #[error("IO Error: {0}")]
+    IoError(#[from] std::io::Error),
     #[error("Other Error : {0}")]
     OtherError(String),
 }
@@ -325,7 +327,7 @@ impl SetupConfigBuilder {
     }
 
 
-    pub fn build_l2_config(self) -> Result<SetupConfig, SetupError> {
+    pub fn build_l2_setup_config(self) -> Result<SetupConfig, SetupError> {
 
         let anvil_config = AnvilConfigBuilder::new()
             .port(8545)
@@ -342,6 +344,81 @@ impl SetupConfigBuilder {
 
 
         let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new().build();
+
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
+            .mode(OrchestratorMode::Setup)
+            .env_var("RUST_LOG", "info")
+            .build();
+
+
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL1)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
+            .build();
+
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL2)
+            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
+            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
+            .env_var("ETH_RPC", "http://localhost:8545")
+            .env_var("RUST_LOG", "info")
+            .build();
+
+        let mock_prover_config = MockProverConfigBuilder::new()
+            .port(5555)
+            .build();
+
+
+        let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
+            .port(3000)
+            .build();
+
+
+        let con = self.anvil_config(anvil_config)
+            .madara_config(madara_config)
+            .pathfinder_config(pathfinder_config)
+            .mock_verifier_deployer_config(mock_verifier_deployer_config)
+            .orchestrator_setup_config(orchestrator_setup_config)
+            .bootstrapper_setup_l1_config(bootstrapper_l1_config)
+            .bootstrapper_setup_l2_config(bootstrapper_l2_config)
+            .mock_prover_config(mock_prover_config)
+            .orchestrator_run_config(orchestrator_run_config)
+            .build();
+        Ok(con)
+
+    }
+
+
+    pub fn build_test_config_l2(self, ) -> Result<Self, SetupError> {
+
+        let anvil_config = AnvilConfigBuilder::new()
+            .port(get_free_port()?)
+            .block_time(DEFAULT_ANVIL_BLOCK_TIME)
+            // TODO: Fix directory path issue, shouldn't be DEFAULT_DATA_DIR, should be a temporary directory
+            .load_state(format!("{}/{}", DEFAULT_DATA_DIR, DEFAULT_ANVIL_DATABASE_NAME))
+            .logs((false, true))
+            .build();
+
+        let madara_config = MadaraConfigBuilder::new()
+            .rpc_port(get_free_port()?)
+            .gateway_port(get_free_port()?)
+            // TODO: Fix directory path issue, shouldn't be DEFAULT_DATA_DIR, should be a temporary directory
+            .database_path(format!("{}/{}", DEFAULT_DATA_DIR, DEFAULT_ANVIL_DATABASE_NAME))
+            .l1_endpoint(Some(anvil_config.endpoint()))
+            .build();
+
+        let pathfinder_config = PathfinderConfigBuilder::new()
+            .port(get_free_port()?)
+            .gateway_url(Some(madara_config.gateway_endpoint()))
+            .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
+            .build();
+
+        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
+            .l1_url(anvil_config.endpoint())
+            .build();
 
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::new()

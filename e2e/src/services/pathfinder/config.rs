@@ -3,8 +3,8 @@
 // a clean, fluent API for configuration.
 
 use tokio::process::Command;
-use crate::services::helpers::NodeRpcError;
-
+use crate::services::helpers::{docker_url_conversion, NodeRpcError};
+use url::Url;
 use crate::services::docker::DockerError;
 use crate::services::server::ServerError;
 use crate::services::constants::*;
@@ -35,13 +35,13 @@ pub struct PathfinderConfig {
     port: u16,
     image: String,
     container_name: String,
-    ethereum_url: String,
+    ethereum_url: Url,
     data_directory: String,
     rpc_root_version: String,
     network: String,
     chain_id: String,
-    gateway_url: Option<String>,
-    feeder_gateway_url: Option<String>,
+    gateway_url: Option<Url>,
+    feeder_gateway_url: Option<Url>,
     storage_state_tries: String,
     gateway_request_timeout: u64,
     data_volume: Option<String>,
@@ -55,13 +55,13 @@ impl Default for PathfinderConfig {
             port: DEFAULT_PATHFINDER_PORT,
             image: DEFAULT_PATHFINDER_IMAGE.to_string(),
             container_name: format!("{}-{}", DEFAULT_PATHFINDER_CONTAINER_NAME, uuid::Uuid::new_v4()),
-            ethereum_url: "https://ethereum-sepolia-rpc.publicnode.com".to_string(),
+            ethereum_url: Url::parse("https://ethereum-sepolia-rpc.publicnode.com").unwrap(),
             data_directory: "/var/pathfinder".to_string(),
             rpc_root_version: "v07".to_string(),
             network: "custom".to_string(),
             chain_id: "MADARA_DEVNET".to_string(),
-            gateway_url: Some("http://host.docker.internal:8080/feeder".to_string()),
-            feeder_gateway_url: Some("http://host.docker.internal:8080/feeder_gateway".to_string()),
+            gateway_url: Some(Url::parse("http://host.docker.internal:8080/feeder").unwrap()),
+            feeder_gateway_url: Some(Url::parse("http://host.docker.internal:8080/feeder_gateway").unwrap()),
             storage_state_tries: "archive".to_string(),
             gateway_request_timeout: 1000,
             data_volume: None,
@@ -103,7 +103,7 @@ impl PathfinderConfig {
     }
 
     /// Get the Ethereum URL
-    pub fn ethereum_url(&self) -> &str {
+    pub fn ethereum_url(&self) -> &Url {
         &self.ethereum_url
     }
 
@@ -128,13 +128,13 @@ impl PathfinderConfig {
     }
 
     /// Get the gateway URL
-    pub fn gateway_url(&self) -> Option<&str> {
-        self.gateway_url.as_deref()
+    pub fn gateway_url(&self) -> Option<&Url> {
+        self.gateway_url.as_ref()
     }
 
     /// Get the feeder gateway URL
-    pub fn feeder_gateway_url(&self) -> Option<&str> {
-        self.feeder_gateway_url.as_deref()
+    pub fn feeder_gateway_url(&self) -> Option<&Url> {
+        self.feeder_gateway_url.as_ref()
     }
 
     /// Get the storage state tries
@@ -180,21 +180,18 @@ impl PathfinderConfig {
         command.arg(self.image());
 
         // Add pathfinder binary command and arguments
-        command.arg("--ethereum.url").arg(self.ethereum_url());
-        // command.arg("--data-directory").arg(config.data_directory());
+        command.arg("--ethereum.url").arg(self.ethereum_url().to_string());
         command.arg("--http-rpc").arg(format!("0.0.0.0:{}", self.port()));
         command.arg("--rpc.root-version").arg(self.rpc_root_version());
         command.arg("--network").arg(self.network());
         command.arg("--chain-id").arg(self.chain_id());
 
         if let Some(gateway_url) = self.gateway_url() {
-            // command.arg("--add-host");
-            command.arg("--gateway-url").arg(gateway_url);
+            command.arg("--gateway-url").arg(gateway_url.to_string());
         }
 
         if let Some(feeder_gateway_url) = self.feeder_gateway_url() {
-            // command.arg("--add-host");
-            command.arg("--feeder-gateway-url").arg(feeder_gateway_url);
+            command.arg("--feeder-gateway-url").arg(feeder_gateway_url.to_string());
         }
 
         command.arg("--storage.state-tries").arg(self.storage_state_tries());
@@ -248,8 +245,8 @@ impl PathfinderConfigBuilder {
     }
 
     /// Set the Ethereum URL
-    pub fn ethereum_url<S: Into<String>>(mut self, url: S) -> Self {
-        self.config.ethereum_url = url.into();
+    pub fn ethereum_url(mut self, url: Url) -> Self {
+        self.config.ethereum_url = url;
         self
     }
 
@@ -278,14 +275,20 @@ impl PathfinderConfigBuilder {
     }
 
     /// Set the gateway URL
-    pub fn gateway_url<S: Into<String>>(mut self, url: Option<S>) -> Self {
-        self.config.gateway_url = url.map(|u| u.into());
+    pub fn gateway_url(mut self, url: Option<Url>) -> Self {
+        if let Some(url) = url {
+            let gateway_url = docker_url_conversion(&url);
+            self.config.gateway_url = Some(gateway_url);
+        }
         self
     }
 
     /// Set the feeder gateway URL
-    pub fn feeder_gateway_url<S: Into<String>>(mut self, url: Option<S>) -> Self {
-        self.config.feeder_gateway_url = url.map(|u| u.into());
+    pub fn feeder_gateway_url(mut self, url: Option<Url>) -> Self {
+        if let Some(url) = url {
+            let gateway_url = docker_url_conversion(&url);
+            self.config.feeder_gateway_url = Some(gateway_url);
+        }
         self
     }
 

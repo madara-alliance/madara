@@ -1,6 +1,9 @@
 use async_trait::async_trait;
 use serde_json::json;
 use url::Url;
+use std::net::TcpListener;
+use crate::services::constants::DEFAULT_SERVICE_HOST;
+use std::io;
 
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
 pub const DEFAULT_BINARY_DIR: &str = "../target/release";
@@ -67,5 +70,24 @@ pub trait NodeRpcMethods: Send + Sync {
         println!("Madara Block Number: {}", block_num_i64);
 
         Ok(block_num_i64)
+    }
+}
+
+/// Get a free port
+pub fn get_free_port() -> Result<u16, io::Error> {
+    let listener = TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))?;
+    let addr = listener.local_addr()?;
+    Ok(addr.port())
+}
+
+pub fn docker_url_conversion(url: &Url) -> Url {
+    // Convert a localhost / 0.0.0.0 / 127.0.0.1
+    // Url to host.docker.internal
+    if url.host_str() == Some("localhost") || url.host_str() == Some("0.0.0.0") || url.host_str() == Some("127.0.0.1") {
+        let mut new_url = url.clone();
+        let _ = new_url.set_host(Some("host.docker.internal"));
+        new_url
+    } else {
+        url.clone()
     }
 }
