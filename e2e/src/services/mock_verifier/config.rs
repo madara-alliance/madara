@@ -4,14 +4,6 @@ use std::path::PathBuf;
 use std::time::Duration;
 use crate::services::constants::*;
 
-<<<<<<< HEAD
-=======
-pub const DEFAULT_SCRIPT_PATH: &str = "../test_utils/scripts/deploy_dummy_verifier.sh";
-pub const DEFAULT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80";
-pub const DEFAULT_ANVIL_URL: &str = "http://localhost:8545";
-pub const DEFAULT_MOCK_GPS_VERIFIER_PATH: &str = "test_utils/scripts/artifacts/MockGPSVerifier.sol:MockGPSVerifier";
-pub const DEFAULT_VERIFIER_FILE_NAME: &str = "verifier_address.txt";
->>>>>>> 74d314c31 (Adding: start chain fn)
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockVerifierDeployerError {
@@ -53,7 +45,7 @@ impl Default for MockVerifierDeployerConfig {
             private_key: DEFAULT_PRIVATE_KEY.to_string(),
             anvil_url: DEFAULT_ANVIL_URL.to_string(),
             mock_gps_verifier_path: DEFAULT_MOCK_GPS_VERIFIER_PATH.to_string(),
-            verifier_file_name: DEFAULT_VERIFIER_FILE_NAME.to_string(),
+            verifier_file_name: format!("{}/{}", DEFAULT_DATA_DIR, DEFAULT_VERIFIER_FILE_NAME).to_string(),
             logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
