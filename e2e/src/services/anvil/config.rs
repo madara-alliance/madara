@@ -1,5 +1,7 @@
 use crate::services::{constants::DEFAULT_ANIVL_PORT, server::ServerError};
 use tokio::process::Command;
+use crate::services::constants::DEFAULT_SERVICE_HOST;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnvilError {
@@ -12,7 +14,7 @@ pub enum AnvilError {
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct AnvilConfig {
-    fork_url: Option<String>,
+    fork_url: Option<Url>,
     load_state: Option<String>,
     dump_state: Option<String>,
     block_time: Option<f64>,
@@ -58,8 +60,8 @@ impl AnvilConfig {
     }
 
     /// Get the fork URL
-    pub fn fork_url(&self) -> Option<&str> {
-        self.fork_url.as_deref()
+    pub fn fork_url(&self) -> Option<&Url> {
+        self.fork_url.as_ref()
     }
 
     /// Get the load state path
@@ -77,13 +79,18 @@ impl AnvilConfig {
         self.block_time
     }
 
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port())).unwrap()
+    }
+
     /// Build the final immutable configuration
     pub fn to_command(&self) -> Command {
         let mut command = Command::new("anvil");
         command.arg("--port").arg(self.port().to_string());
 
         if let Some(fork_url) = self.fork_url() {
-            command.arg("--fork-url").arg(fork_url);
+            command.arg("--fork-url").arg(fork_url.to_string());
         }
 
         if let Some(load_state) = self.load_state() {
@@ -128,8 +135,8 @@ impl AnvilConfigBuilder {
     }
 
     /// Set the fork URL for forking from an existing network
-    pub fn fork_url<S: Into<String>>(mut self, url: S) -> Self {
-        self.config.fork_url = Some(url.into());
+    pub fn fork_url(mut self, url: &Url) -> Self {
+        self.config.fork_url = Some(url.to_owned());
         self
     }
 
@@ -150,6 +157,12 @@ impl AnvilConfigBuilder {
         if seconds >= 0.0 {
             self.config.block_time = Some(seconds);
         }
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 }

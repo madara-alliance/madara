@@ -59,7 +59,7 @@ impl ChainSetup {
             DBState::NotReady => {
                 println!("❌ Chain state does not exist, setting up new chain...");
                 let test_config = self.config.to_owned();
-                let setup_config = SetupConfigBuilder::new(None).build_l2_config()?;
+                let setup_config = SetupConfigBuilder::new(None).build_l2_setup_config()?;
                 self.config = Arc::new(setup_config);
                 self.service_manager = ServiceManager::new(self.config.clone());
                 self.setup_new_chain().await?;
@@ -121,12 +121,13 @@ impl Drop for ChainSetup {
             let mut lifecycle = std::mem::take(&mut self.lifecycle_manager);
             handle.spawn(async move {
                 let _ = lifecycle.shutdown_all().await;
+                // TODO: Delete the created directory
+                // if let Err(err) = std::fs::remove_dir_all(&format!("data_{}", test_name)) {
+                //     eprintln!("Failed to delete directory: {}", err);
+                // }
             });
         } else if let Ok(rt) = tokio::runtime::Runtime::new() {
             let _ = rt.block_on(self.lifecycle_manager.shutdown_all());
         }
     }
 }
-
-// Re-export the main facade for easy usage
-pub use ChainSetup as Setup;
