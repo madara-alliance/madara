@@ -17,7 +17,7 @@ pub trait ProverClient: Send + Sync {
     async fn submit_task(&self, task: Task) -> Result<String, ProverClientError>;
     async fn get_task_status(
         &self,
-        task: AtlanticStatusType,
+        task: TaskType,
         task_id: &str,
         fact: Option<String>,
         cross_verify: bool,
@@ -57,9 +57,8 @@ pub enum TaskStatus {
     Failed(String),
 }
 
-// TODO: give this a better name
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum AtlanticStatusType {
+pub enum TaskType {
     Job,
     Bucket,
 }

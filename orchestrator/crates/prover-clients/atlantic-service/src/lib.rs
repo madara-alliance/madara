@@ -10,7 +10,7 @@ use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{AtlanticStatusType, ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{TaskType, ProverClient, ProverClientError, Task, TaskStatus};
 use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
@@ -100,13 +100,13 @@ impl ProverClient for AtlanticProverService {
     #[tracing::instrument(skip(self))]
     async fn get_task_status(
         &self,
-        task: AtlanticStatusType,
+        task: TaskType,
         job_key: &str,
         fact: Option<String>,
         cross_verify: bool,
     ) -> Result<TaskStatus, ProverClientError> {
         match task {
-            AtlanticStatusType::Job => {
+            TaskType::Job => {
                 match self.atlantic_client.get_job_status(job_key).await?.atlantic_query.status {
                     AtlanticQueryStatus::Received => Ok(TaskStatus::Processing),
                     AtlanticQueryStatus::InProgress => Ok(TaskStatus::Processing),
@@ -153,7 +153,7 @@ impl ProverClient for AtlanticProverService {
                     }
                 }
             }
-            AtlanticStatusType::Bucket => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
+            TaskType::Bucket => match self.atlantic_client.get_bucket(job_key).await?.bucket.status {
                 AtlanticBucketStatus::Open => Ok(TaskStatus::Processing),
                 AtlanticBucketStatus::InProgress => Ok(TaskStatus::Processing),
                 AtlanticBucketStatus::Done => Ok(TaskStatus::Succeeded),

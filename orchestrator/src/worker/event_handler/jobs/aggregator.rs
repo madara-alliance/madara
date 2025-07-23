@@ -13,7 +13,8 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use orchestrator_prover_client_interface::{AtlanticStatusType, Task, TaskStatus};
+use orchestrator_atlantic_service::constants::{CAIRO_PIE_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
 
@@ -108,16 +109,14 @@ impl JobHandlerTrait for AggregatorJobHandler {
         );
 
         let task_status =
-            config.prover_client().get_task_status(AtlanticStatusType::Bucket, &bucket_id, None, false).await.map_err(
-                |e| {
-                    tracing::error!(
-                        job_id = %job.internal_id,
-                        error = %e,
-                        "Failed to get bucket status from prover client"
-                    );
-                    JobError::Other(OtherError(eyre!("Prover Client Error: {}", e)))
-                },
-            )?;
+            config.prover_client().get_task_status(TaskType::Bucket, &bucket_id, None, false).await.map_err(|e| {
+                tracing::error!(
+                    job_id = %job.internal_id,
+                    error = %e,
+                    "Failed to get bucket status from prover client"
+                );
+                JobError::Other(OtherError(eyre!("Prover Client Error: {}", e)))
+            })?;
 
         match task_status {
             TaskStatus::Processing => {
@@ -151,14 +150,20 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 let cairo_pie_bytes = AggregatorJobHandler::fetch_and_store_artifact(
                     &config,
                     &aggregator_query_id,
-                    "pie.cairo0.zip",
+                    CAIRO_PIE_FILE_NAME,
                     &metadata.cairo_pie_path,
                 )
                 .await?;
 
                 // Fetch aggregator snos output and store it in storage
                 // TODO: Check if Atlantic provide this or if we need this
-                // AggregatorJobHandler::fetch_and_store_artifact(config, &aggregator_id, "snos_output.json", &metadata.snos_output_path).await?;
+                // AggregatorJobHandler::fetch_and_store_artifact(
+                //     &config,
+                //     &aggregator_query_id,
+                //     SNOS_OUTPUT_FILE_NAME,
+                //     &metadata.snos_output_path,
+                // )
+                // .await?;
 
                 // Calculate the program output from the cairo pie
                 let cairo_pie =
@@ -182,7 +187,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     AggregatorJobHandler::fetch_and_store_artifact(
                         &config,
                         &aggregator_query_id,
-                        "proof.json",
+                        PROOF_FILE_NAME,
                         &download_path,
                     )
                     .await?;

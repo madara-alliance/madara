@@ -12,7 +12,7 @@ use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use httpmock::prelude::*;
 use mockall::predicate::eq;
-use orchestrator_prover_client_interface::{AtlanticStatusType, MockProverClient, TaskStatus};
+use orchestrator_prover_client_interface::{TaskType, MockProverClient, TaskStatus};
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
@@ -67,7 +67,7 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     let mut prover_client = MockProverClient::new();
     prover_client
         .expect_get_task_status()
-        .with(eq(AtlanticStatusType::Bucket), eq("bucket_id".to_string()), eq(None), eq(false))
+        .with(eq(TaskType::Bucket), eq("bucket_id".to_string()), eq(None), eq(false))
         .times(1)
         .returning(|_, _, _, _| Ok(TaskStatus::Succeeded)); // Testing for the case when the task is completed
     prover_client.expect_get_task_artifacts().times(2).returning(move |_, _, file_name| {
