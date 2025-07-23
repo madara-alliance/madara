@@ -6,10 +6,7 @@ use std::path::Path;
 use tokio::fs;
 use fs_extra::dir::{copy, CopyOptions};
 // Import all the services we've created
-use crate::services::mock_verifier::DEFAULT_VERIFIER_FILE_NAME;
-use crate::services::bootstrapper::BOOTSTRAPPER_DEFAULT_ADDRESS_PATH;
-use crate::services::anvil::ANVIL_DEFAULT_DATABASE_NAME;
-use crate::services::madara::MADARA_DEFAULT_DATABASE_NAME;
+use crate::services::constants::*;
 pub use super::config::*;
 
 
