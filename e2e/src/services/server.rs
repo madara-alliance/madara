@@ -24,6 +24,8 @@ pub enum ServerError {
     ProcessNotRunning,
     #[error("Endpoint not available")]
     EndpointNotAvailable,
+    #[error("Failed to bind to port")]
+    PortBindFailed(std::io::Error),
 }
 
 // Generic server configuration
@@ -175,11 +177,11 @@ impl Server {
     }
 
     /// Get a free port
-    fn get_free_port() -> u16 {
-        std::net::TcpListener::bind("127.0.0.1:0")
+    pub fn get_free_port() -> Result<u16, ServerError> {
+        std::net::TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))
             .and_then(|listener| listener.local_addr())
             .map(|addr| addr.port())
-            .unwrap_or(8080) // Fallback port
+            .map_err(|e| ServerError::PortBindFailed(e))
     }
 
     /// Wait until the server is ready to accept connections

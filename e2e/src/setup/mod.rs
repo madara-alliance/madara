@@ -11,7 +11,9 @@ pub mod service_management;
 pub use config::*;
 pub use service_management::*;
 pub use dependency_validation::*;
+use tokio::time::sleep;
 use std::sync::Arc;
+use std::time::Duration;
 // Import all the services we've created
 use crate::services::constants::*;
 use crate::setup::database_management::DatabaseManager;
@@ -62,11 +64,12 @@ impl ChainSetup {
             DBState::NotReady => {
                 println!("❌ Chain state does not exist, setting up new chain...");
                 let test_config = self.config.to_owned();
-                let setup_config = SetupConfigBuilder::new(None).build_l2_config();
+                let setup_config = SetupConfigBuilder::new(None).build_l2_config()?;
                 self.config = Arc::new(setup_config);
                 self.service_manager = ServiceManager::new(self.config.clone());
                 self.setup_new_chain().await?;
                 self.config = test_config;
+                self.service_manager = ServiceManager::new(self.config.clone());
                 self.start_existing_chain().await?;
             },
             DBState::Error => {
