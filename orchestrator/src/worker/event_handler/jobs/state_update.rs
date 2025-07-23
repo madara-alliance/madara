@@ -26,6 +26,12 @@ use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, trace, warn};
 
+struct StateUpdateArtifacts {
+    snos_output: Option<StarknetOsOutput>,
+    program_output: Vec<[u8; 32]>,
+    blob_data: Vec<Vec<u8>>,
+}
+
 pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
@@ -110,9 +116,18 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         // Loop over the indices to process
         for &i in &filtered_indices {
-            let block_no = to_settle[i];
-            debug!(job_id = %job.internal_id, num = %block_no, "Processing block/batch");
-            let snos_output = fetch_snos_for_block(internal_id.clone(), i, config.clone(), &snos_output_paths).await?;
+            let to_settle_num = to_settle[i];
+            debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
+
+            // Get the artifacts for the block/batch
+            let snos_output =
+                match fetch_snos_for_block(internal_id.clone(), i, config.clone(), &snos_output_paths).await {
+                    Ok(snos_output) => Some(snos_output),
+                    Err(err) => {
+                        debug!("failed to fetch snos output, proceeding without it: {}", err);
+                        None
+                    }
+                };
             let program_output = fetch_program_output_for_block(i, config.clone(), &program_output_paths).await?;
             let blob_data = match config.layer() {
                 Layer::L2 => fetch_blob_data_for_batch(i, config.clone(), &blob_data_paths).await?,
@@ -120,14 +135,18 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             };
 
             let txn_hash = match self
-                .update_state_for_block(config.clone(), block_no, snos_output, nonce, program_output, blob_data)
+                .update_state(
+                    config.clone(),
+                    to_settle_num,
+                    nonce,
+                    StateUpdateArtifacts { snos_output, program_output, blob_data },
+                )
                 .await
             {
                 Ok(hash) => hash,
                 Err(e) => {
-                    error!(job_id = %job.internal_id, num = %block_no, error = %e, "Error updating state for block/batch");
-                    // state_metadata.last_failed_block_no = Some(block_no);
-                    state_metadata.context = self.update_last_failed(state_metadata.context.clone(), block_no);
+                    error!(job_id = %job.internal_id, num = %to_settle_num, error = %e, "Error updating state for block/batch");
+                    state_metadata.context = self.update_last_failed(state_metadata.context.clone(), to_settle_num);
                     state_metadata.tx_hashes = sent_tx_hashes.clone();
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
 
@@ -178,7 +197,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get transaction hashes
         let tx_hashes = state_metadata.tx_hashes.clone();
 
-        let to_settle = match state_metadata.context.clone() {
+        let nums_settled = match state_metadata.context.clone() {
             SettlementContext::Block(data) => data.to_settle,
             SettlementContext::Batch(data) => data.to_settle,
         };
@@ -186,11 +205,11 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         debug!(job_id = %job.internal_id, "Retrieved block numbers from metadata");
         let settlement_client = config.settlement_client();
 
-        for (tx_hash, block_no) in tx_hashes.iter().zip(to_settle.iter()) {
+        for (tx_hash, num_settled) in tx_hashes.iter().zip(nums_settled.iter()) {
             trace!(
                 job_id = %job.internal_id,
                 tx_hash = %tx_hash,
-                block_no = %block_no,
+                num = %num_settled,
                 "Verifying transaction inclusion"
             );
 
@@ -202,10 +221,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     warn!(
                         job_id = %job.internal_id,
                         tx_hash = %tx_hash,
-                        block_no = %block_no,
+                        num = %num_settled,
                         "Transaction rejected"
                     );
-                    state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *block_no);
+                    state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *num_settled);
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
                     return Ok(tx_inclusion_status.into());
                 }
@@ -231,10 +250,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                             warn!(
                                 job_id = %job.internal_id,
                                 tx_hash = %tx_hash,
-                                block_no = %block_no,
+                                num = %num_settled,
                                 "Transaction rejected after finality"
                             );
-                            state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *block_no);
+                            state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *num_settled);
                             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
                             return Ok(new_status.into());
                         }
@@ -266,7 +285,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         }
 
         // verify that the last settled block is indeed the one we expect to be
-        let last_settled = to_settle.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
+        let last_settled = nums_settled.last().ok_or_else(|| StateUpdateError::EmptyBlockNumberList)?;
         let expected_last_block_number = match config.layer() {
             Layer::L2 => {
                 // Get the batch details for the last-settled batch
@@ -287,10 +306,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         match last_settled_block_number {
             Some(block_num) => {
                 let block_status = if block_num == expected_last_block_number {
-                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
+                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job.id,  num = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
                     SettlementVerificationStatus::Verified
                 } else {
-                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
+                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job.id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
                     SettlementVerificationStatus::Rejected(format!(
                         "Last settle bock expected was {} but found {}",
                         expected_last_block_number, block_num
@@ -365,19 +384,54 @@ impl StateUpdateJobHandler {
             .expect("Unable to convert the data into onchain data")
     }
 
+    async fn update_state(
+        &self,
+        config: Arc<Config>,
+        to_settle_num: u64,
+        nonce: u64,
+        artifacts: StateUpdateArtifacts,
+    ) -> Result<String, JobError> {
+        match config.layer() {
+            Layer::L2 => self.update_state_for_batch(config, nonce, artifacts).await,
+            Layer::L3 => self.update_state_for_block(config, to_settle_num, artifacts).await,
+        }
+    }
+
+    async fn update_state_for_batch(
+        &self,
+        config: Arc<Config>,
+        nonce: u64,
+        artifacts: StateUpdateArtifacts,
+    ) -> Result<String, JobError> {
+        let settlement_client = config.settlement_client();
+        settlement_client
+            .update_state_with_blobs(artifacts.program_output, artifacts.blob_data, nonce)
+            .await
+            .map_err(|e| JobError::Other(OtherError(e)))
+    }
+
     /// Update the state for the corresponding block using the settlement layer.
-    #[allow(clippy::too_many_arguments)]
     async fn update_state_for_block(
         &self,
         config: Arc<Config>,
         block_no: u64,
-        snos: StarknetOsOutput,
-        nonce: u64,
-        program_output: Vec<[u8; 32]>,
-        blob_data: Vec<Vec<u8>>,
+        artifacts: StateUpdateArtifacts,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
-        let last_tx_hash_executed = if snos.use_kzg_da == Felt252::ZERO {
+
+        // Trying to get snos output
+        let snos_output = match artifacts.snos_output {
+            Some(snos_output) => snos_output,
+            None => {
+                error!("SnosOutput not found during state update for block. Cannot proceed without it!");
+                return Err(JobError::Other(OtherError(eyre!(
+                    "SnosOutput not found during state update for block. Cannot proceed without it!"
+                ))));
+            }
+        };
+
+        // Check for the correctness of the use_kzg_da flag in snos_output
+        let last_tx_hash_executed = if snos_output.use_kzg_da == Felt252::ZERO {
             let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
             debug!(%proof_key, "Fetching snos proof file");
 
@@ -421,14 +475,10 @@ impl StateUpdateJobHandler {
                 )
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
-        } else if snos.use_kzg_da == Felt252::ONE {
-            settlement_client
-                .update_state_with_blobs(program_output, blob_data, nonce)
-                .await
-                .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
             Err(StateUpdateError::UseKZGDaError { block_no })?
         };
+
         Ok(last_tx_hash_executed)
     }
 }
