@@ -153,8 +153,10 @@ impl JobTrigger for UpdateStateJobTrigger {
         let mut state_update_metadata = StateUpdateMetadata { context: settlement_context, ..Default::default() };
 
         // Collect paths for the following - snos output, program output and blob data
-        self.collect_paths_l2(&config, &to_process, &mut state_update_metadata).await?;
-        self.collect_paths_l3(&config, &to_process, &mut state_update_metadata).await?;
+        match config.layer() {
+            Layer::L2 => self.collect_paths_l2(&config, &to_process, &mut state_update_metadata).await?,
+            Layer::L3 => self.collect_paths_l3(&config, &to_process, &mut state_update_metadata).await?,
+        }
 
         // Create StateTransition job metadata
         let metadata = JobMetadata {
