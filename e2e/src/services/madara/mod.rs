@@ -12,8 +12,8 @@ use reqwest::Url;
 use std::path::PathBuf;
 
 use crate::services::helpers::NodeRpcMethods;
+use crate::services::constants::*;
 use tokio::time::Duration;
-use super::server::DEFAULT_SERVICE_HOST;
 
 pub struct MadaraService {
     server: Server,
