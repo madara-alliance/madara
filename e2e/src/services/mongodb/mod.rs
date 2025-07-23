@@ -6,14 +6,11 @@ pub mod config;
 
 // Re-export common utilities
 pub use config::*;
-
+use crate::services::constants::*;
 use crate::services::docker::{DockerError, DockerServer};
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
 
-use crate::services::helpers::DEFAULT_DATA_DIR;
-use crate::services::server::DEFAULT_MONGODB_DIR;
-use crate::services::server::DEFAULT_SERVICE_HOST;
 use tokio::process::Command;
 
 pub struct MongoService {

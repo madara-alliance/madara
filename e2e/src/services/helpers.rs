@@ -2,8 +2,6 @@ use async_trait::async_trait;
 use serde_json::json;
 use url::Url;
 
-pub const DEFAULT_BINARY_DIR: &str = "../target/release";
-pub const DEFAULT_DATA_DIR: &str = "./data";
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeRpcError {
