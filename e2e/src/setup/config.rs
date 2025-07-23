@@ -1,10 +1,10 @@
-use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode, DEFAULT_BOOTSTRAPPER_CONFIG}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
+use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
 use std::time::Duration;
 use crate::services::mock_prover::MockProverConfig;
 
 // TODO: write layer here and use there
 use crate::services::orchestrator::Layer;
-
+use crate::services::constants::*;
 
 // =============================================================================
 // DEPENDENCIES ENUM
@@ -58,12 +58,6 @@ pub enum SetupError {
     OtherError(String),
 }
 
-// =============================================================================
-// CONSTANTS
-// =============================================================================
-
-pub const DEFAULT_BINARY_DIR: &str = "../target/release";
-pub const DEFAULT_DATA_DIR: &str = "./data";
 
 
 // =============================================================================
