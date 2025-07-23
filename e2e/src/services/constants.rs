@@ -29,3 +29,7 @@ pub const DEFAULT_PRIVATE_KEY: &str = "0xac0974bec39a17e36ba4a6b4d238ff944bacb47
 pub const DEFAULT_ANVIL_URL: &str = "http://localhost:8545";
 pub const DEFAULT_MOCK_GPS_VERIFIER_PATH: &str = "test_utils/scripts/artifacts/MockGPSVerifier.sol:MockGPSVerifier";
 pub const DEFAULT_VERIFIER_FILE_NAME: &str = "./data/verifier_address.txt";
+
+pub const DEFAULT_PATHFINDER_PORT: u16 = 9545;
+pub const DEFAULT_PATHFINDER_IMAGE: &str = "prkpandey942/pathfinder:549aa84_2025-05-29_appchain-vers-cons_amd";
+pub const DEFAULT_PATHFINDER_CONTAINER_NAME: &str = "pathfinder-service";
