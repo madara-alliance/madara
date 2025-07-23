@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::{HttpClient, RequestBuilder};
@@ -25,31 +25,31 @@ enum ProverType {
 }
 
 /// Struct to store job info
-pub(crate) struct AtlanticJobInfo {
+pub struct AtlanticJobInfo {
     /// Path of the Cairo PIE file
-    pub(crate) pie_file: PathBuf,
+    pub pie_file: PathBuf,
     /// Number of steps
-    pub(crate) n_steps: Option<usize>,
+    pub n_steps: Option<usize>,
 }
 
 /// Struct to store job config
-pub(crate) struct AtlanticJobConfig {
+pub struct AtlanticJobConfig {
     /// Layout to be used for the proof
-    pub(crate) proof_layout: LayoutName,
+    pub proof_layout: LayoutName,
     /// Cairo VM to be used
-    pub(crate) cairo_vm: AtlanticCairoVm,
+    pub cairo_vm: AtlanticCairoVm,
     /// Result to be returned by the prover
-    pub(crate) result: AtlanticQueryStep,
+    pub result: AtlanticQueryStep,
     /// Network being used
-    pub(crate) network: String,
+    pub network: String,
 }
 
 /// Struct to store bucket info
-pub(crate) struct AtlanticBucketInfo {
+pub struct AtlanticBucketInfo {
     /// Bucket ID
-    pub(crate) bucket_id: Option<String>,
+    pub bucket_id: Option<String>,
     /// Index of the job in the bucket
-    pub(crate) bucket_job_index: Option<u64>,
+    pub bucket_job_index: Option<u64>,
 }
 
 trait ProvingLayer: Send + Sync {
@@ -199,7 +199,7 @@ impl AtlanticClient {
             "Submitting job with layout: {}, n_steps: {}, network: {}, ",
             proof_layout,
             self.n_steps_to_job_size(job_info.n_steps),
-            job_config.network.as_ref()
+            &job_config.network
         );
 
         let mut request = self.proving_layer.customize_request(

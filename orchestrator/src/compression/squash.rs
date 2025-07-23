@@ -286,11 +286,9 @@ async fn process_single_contract(
                 // Process storage entries only for an existing contract
                 let results: Vec<_> = stream::iter(storage_map)
                     .map(|(key, value)| {
-                        let provider = Arc::clone(provider);
                         async move {
                             let pre_range_value =
-                                check_pre_range_storage_value(&provider, contract_addr, key, pre_range_block).await?;
-
+                                check_pre_range_storage_value(provider, contract_addr, key, pre_range_block).await?;
                             Ok::<_, JobError>((key, value, pre_range_value))
                         }
                     })

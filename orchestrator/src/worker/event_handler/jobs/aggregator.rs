@@ -13,7 +13,7 @@ use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
-use orchestrator_atlantic_service::constants::{CAIRO_PIE_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
+use orchestrator_atlantic_service::constants::{CAIRO_PIE_FILE_NAME, PROOF_FILE_NAME};
 use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
