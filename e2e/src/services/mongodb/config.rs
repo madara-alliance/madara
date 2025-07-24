@@ -24,6 +24,7 @@ pub enum MongoError {
 pub struct MongoConfig {
     image: String,
     container_name: String,
+    environment_vars: Vec<(String, String)>,
 
     // Server configs
     port: u16,
@@ -35,6 +36,8 @@ impl Default for MongoConfig {
         Self {
             image: DEFAULT_MONGO_IMAGE.to_string(),
             container_name: format!("{}-{}", DEFAULT_MONGO_CONTAINER_NAME, uuid::Uuid::new_v4()),
+            environment_vars: vec![],
+
             port: DEFAULT_MONGO_PORT,
             logs: (false, false),
         }
@@ -67,6 +70,11 @@ impl MongoConfig {
         &self.image
     }
 
+    /// Get the environment variables
+    pub fn environment_vars(&self) -> &[(String, String)] {
+        &self.environment_vars
+    }
+
     /// Get the container name
     pub fn container_name(&self) -> &str {
         &self.container_name
@@ -79,6 +87,12 @@ impl MongoConfig {
         command.arg("--rm"); // Remove container when it stops
         command.arg("--name").arg(self.container_name());
         command.arg("-p").arg(format!("{}:27017", self.port()));
+
+        // Add environment variables
+        for (key, value) in self.environment_vars() {
+            command.arg("-e").arg(format!("{}={}", key, value));
+        }
+
         command.arg(self.image());
 
         command
