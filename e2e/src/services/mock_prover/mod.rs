@@ -40,14 +40,6 @@ impl MockProverService {
         Ok(Self { server, config })
     }
 
-    /// Get the dependencies required by the mock prover
-    pub fn dependencies(&self) -> Vec<String> {
-        vec![
-            // Mock prover typically has minimal dependencies
-            // Add any external dependencies here if needed
-        ]
-    }
-
     /// Get the port number
     pub fn port(&self) -> u16 {
         self.config.port()
