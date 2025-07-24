@@ -75,9 +75,9 @@ impl ServiceManager {
         let mut services = RunningServices::default();
 
         // Start infrastructure
-        // self.start_infrastructure(&mut services).await?;
-        // self.setup_localstack_infrastructure().await?;
-        // self.restore_mongodb_database(&services).await?;
+        self.start_infrastructure(&mut services).await?;
+        self.setup_localstack_infrastructure().await?;
+        self.restore_mongodb_database(&services).await?;
 
         // // Start runtime services
         self.start_anvil(&mut services).await?;

@@ -388,7 +388,7 @@ impl SetupConfigBuilder {
         let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((true, true)).build();
 
         let mongodb_config = MongoConfigBuilder::new()
-            .port(27017)
+            .port(get_free_port()?)
             .logs((false, true))
             .build();
 
