@@ -110,8 +110,4 @@ impl LocalstackService {
         self.server().endpoint().expect("Localstack server endpoint not found!")
     }
 
-    /// Get dependencies (Docker is required)
-    pub fn dependencies(&self) -> Vec<String> {
-        vec!["docker".to_string()]
-    }
 }
