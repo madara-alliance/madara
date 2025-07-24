@@ -93,7 +93,7 @@ impl LocalstackConfig {
         command.arg("run");
         command.arg("--rm"); // Remove container when it stops
         command.arg("--name").arg(self.container_name());
-        command.arg("-p").arg(format!("{}:{}", self.port(), self.port()));
+        command.arg("-p").arg(format!("{}:{}", self.port(), DEFAULT_LOCALSTACK_PORT));
 
         // Add environment variables
         for (key, value) in self.environment_vars() {

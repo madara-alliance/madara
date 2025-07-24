@@ -396,7 +396,7 @@ impl SetupConfigBuilder {
     }
 
 
-    pub async fn test_config_l2(self, test_name: &str ) -> Result<SetupConfig, SetupError> {
+    pub fn test_config_l2(self, test_name: &str ) -> Result<SetupConfig, SetupError> {
 
         let anvil_config = AnvilConfigBuilder::new()
             .port(get_free_port()?)
@@ -449,7 +449,7 @@ impl SetupConfigBuilder {
 
 
         let mongodb_config = MongoConfigBuilder::new()
-            .port(27017)
+            .port(get_free_port()?)
             .logs((false, true))
             .build();
 
