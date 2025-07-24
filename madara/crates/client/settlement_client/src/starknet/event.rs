@@ -389,9 +389,11 @@ mod starknet_event_stream_tests {
 
         let mut stream = Box::pin(create_stream(&mock_server));
 
-        assert_matches!(stream.next().await, Some(Err(_)), "Expected error");
+        // The stream should return an error after max retries
+        assert_matches!(stream.next().await, Some(Err(_)), "Expected error after max retries");
 
-        error_mock.assert();
+        // Verify that the error mock was called (max retries exceeded)
+        error_mock.assert_hits(4);
     }
 
     #[tokio::test]
