@@ -22,14 +22,20 @@ use crate::types::Layer;
 use crate::{OrchestratorError, OrchestratorResult};
 
 lazy_static! {
-    pub static ref WORKER_TRIGGERS: Vec<WorkerTriggerType> = vec![
+    pub static ref WORKER_TRIGGERS_L2: Vec<WorkerTriggerType> = vec![
+        WorkerTriggerType::Snos,
+        WorkerTriggerType::Proving,
+        WorkerTriggerType::UpdateState,
+        WorkerTriggerType::Batching,
+        WorkerTriggerType::Aggregator,
+    ];
+
+    pub static ref WORKER_TRIGGERS_L3: Vec<WorkerTriggerType> = vec![
         WorkerTriggerType::Snos,
         WorkerTriggerType::Proving,
         WorkerTriggerType::ProofRegistration,
         WorkerTriggerType::DataSubmission,
         WorkerTriggerType::UpdateState,
-        WorkerTriggerType::Batching,
-        WorkerTriggerType::Aggregator,
     ];
 }
 
@@ -70,12 +76,7 @@ impl Resource for InnerAWSEventBridge {
             })?;
         sleep(Duration::from_secs(15)).await;
 
-        for trigger in WORKER_TRIGGERS.iter() {
-            // Proof registration is only required in L3
-            // TODO: Remove this once we have handle the pipeline with state machine
-            if *trigger == WorkerTriggerType::ProofRegistration && layer.clone() != Layer::L3 {
-                continue;
-            }
+        for trigger in self.get_worker_triggers(layer).iter() {
             if self
                 .check_if_exists(&(
                     args.event_bridge_type.clone(),
@@ -128,9 +129,9 @@ impl Resource for InnerAWSEventBridge {
     ///
     /// # Returns
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule is ready to use
-    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let mut flag = true;
-        for trigger_type in WORKER_TRIGGERS.iter() {
+        for trigger_type in self.get_worker_triggers(layer).iter() {
             let trigger_name = Self::get_trigger_name_from_trigger_type(&args.trigger_rule_template_name, trigger_type);
             flag = flag && self.eb_client.describe_rule().name(trigger_name).send().await.is_ok()
         }
@@ -139,6 +140,19 @@ impl Resource for InnerAWSEventBridge {
 }
 
 impl InnerAWSEventBridge {
+    /// Get worker triggers for the given layer
+    ///
+    /// # Arguments
+    /// * `layer` - Layer being used
+    ///
+    /// # Returns
+    /// `Vec<WorkerTriggerType>` - Vector of worker triggers
+    async fn get_worker_triggers(&self, layer: &Layer) -> Vec<WorkerTriggerType> {
+        match layer {
+            Layer::L2 => WORKER_TRIGGERS_L2.clone(),
+            Layer::L3 => WORKER_TRIGGERS_L3.clone(),
+        }
+    }
     /// get_queue_arn - Get the ARN of a queue
     ///
     /// # Arguments
