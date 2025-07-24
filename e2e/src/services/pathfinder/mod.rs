@@ -26,9 +26,6 @@ impl PathfinderService {
             return Err(PathfinderError::Docker(DockerError::NotRunning));
         }
 
-        // Validate required configuration
-        Self::validate_config(&config)?;
-
         // Check if container is already running - PANIC as per pattern
         if DockerServer::is_container_running(config.container_name()).await? {
             panic!(
@@ -68,15 +65,6 @@ impl PathfinderService {
 
         Ok(Self { server, config })
     }
-
-    /// Validate the configuration
-    fn validate_config(config: &PathfinderConfig) -> Result<(), PathfinderError> {
-        if config.ethereum_url().contains("YOUR_API_KEY") {
-            return Err(PathfinderError::MissingConfig("ethereum_url must contain a valid API key".to_string()));
-        }
-        Ok(())
-    }
-
 
     /// Validate if Pathfinder is ready and responsive
     pub async fn validate_connection(&self) -> Result<bool, PathfinderError> {
