@@ -419,8 +419,7 @@ impl SetupConfigBuilder {
             .port(get_free_port()?)
             .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
-            .logs((false, true))
-            .env_var("RUST_LOG", "debug")
+            .logs((true, true))
             .build();
 
         let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
@@ -432,7 +431,7 @@ impl SetupConfigBuilder {
         let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
             .mode(BootstrapperMode::SetupL1)
             .env_var("ETH_RPC", anvil_config.endpoint().as_str())
-            .logs((false, true))
+            .logs((true, true))
             .build();
 
         let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
@@ -450,14 +449,14 @@ impl SetupConfigBuilder {
 
         let mongodb_config = MongoConfigBuilder::new()
             .port(get_free_port()?)
-            .logs((false, true))
+            .logs((true, true))
             .build();
 
         let localstack_port = get_free_port()?;
         let localstack_host = format!("localhost:{}", localstack_port);
         let localstack_config = LocalstackConfigBuilder::new()
             .port(localstack_port)
-            .logs((false, true))
+            .logs((true, true))
             .env_var("LOCALSTACK_HOST", localstack_host)
             .build();
 

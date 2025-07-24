@@ -83,6 +83,8 @@ impl Server {
             command.stderr(Stdio::null());
         }
 
+        println!("Command : {:?}", command);
+
         // Start the process
         let mut process = command.spawn().map_err(ServerError::StartupFailed)?;
 
