@@ -47,7 +47,7 @@ async fn setup_chain(
 }
 
 #[rstest]
-#[case("e2e_test_setup")]
+#[case("e2esetup")]
 #[tokio::test]
 async fn e2e_test_setup(
     #[case] test_name: &str,

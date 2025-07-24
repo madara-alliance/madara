@@ -157,7 +157,7 @@ impl MongoService {
             "docker exec {} mongorestore --host \"{}:{}\" --db {} {}/{}",
             self.config().container_name(),
             DEFAULT_SERVICE_HOST,
-            self.config().port(),
+            DEFAULT_MONGO_PORT,
             database_name,
             DEFAULT_MONGODB_DIR,
             database_name

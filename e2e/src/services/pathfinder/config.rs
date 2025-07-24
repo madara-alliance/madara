@@ -147,6 +147,11 @@ impl PathfinderConfig {
         self.gateway_request_timeout
     }
 
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
+    }
+
     /// Get the data volume
     pub fn data_volume(&self) -> Option<&str> {
         self.data_volume.as_deref()
@@ -307,6 +312,12 @@ impl PathfinderConfigBuilder {
     /// Set the data volume for persistent storage
     pub fn data_volume<S: Into<String>>(mut self, volume: Option<S>) -> Self {
         self.config.data_volume = volume.map(|v| v.into());
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 

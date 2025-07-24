@@ -179,6 +179,12 @@ impl MockVerifierDeployerConfigBuilder {
         self
     }
 
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
+        self
+    }
+
     /// Set the mock GPS verifier path
     pub fn mock_gps_verifier_path<S: Into<String>>(mut self, path: S) -> Self {
         self.config.mock_gps_verifier_path = path.into();

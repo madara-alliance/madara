@@ -3,7 +3,7 @@ use crate::services::server::ServerError;
 
 use crate::services::constants::*;
 use tokio::process::Command;
-
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MongoError {
@@ -80,6 +80,12 @@ impl MongoConfig {
         &self.container_name
     }
 
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
+    }
+
+
     /// Build the Docker command for MongoDB
     pub fn to_command(&self) -> Command {
         let mut command = Command::new("docker");
@@ -126,6 +132,12 @@ impl MongoConfigBuilder {
     /// Set the container name
     pub fn container_name<S: Into<String>>(mut self, name: S) -> Self {
         self.config.container_name = name.into();
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 
