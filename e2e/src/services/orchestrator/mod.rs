@@ -111,34 +111,9 @@ impl OrchestratorService {
         Ok(Self { server, config })
     }
 
-
-    // TODO: these dependencies should be typed and not a Vec<String>
-
-    /// Get the dependencies required by the orchestrator
-    pub fn dependencies(&self) -> Vec<String> {
-        vec![
-            // internal
-            "anvil".to_string(),
-            "madara".to_string(),
-            "pathfinder".to_string(),
-            // TODO: Actually bootstrapper is not a direct dep of orchestrator
-            // we can remove this
-            "bootstrapper_l1".to_string(),
-            "bootstrapper_l2".to_string(),
-            // external
-            "atlantic".to_string(),
-            "localstack".to_string(),
-            "mongodb".to_string(),
-        ]
-    }
-
-    // TODO: Will need a endpoint() fn here
-
     pub fn endpoint(&self) -> Option<Url> {
         self.server().endpoint()
     }
-
-    // TODO: A mongodb respective fn that dumps and loads the db
 
     /// Get the current mode
     pub fn mode(&self) -> &OrchestratorMode {
