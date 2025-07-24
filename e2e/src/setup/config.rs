@@ -387,6 +387,26 @@ impl SetupConfigBuilder {
 
         let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((true, true)).build();
 
+        let mongodb_config = MongoConfigBuilder::new()
+            .port(27017)
+            .logs((false, true))
+            .build();
+
+        let localstack_port = 3000;
+        let localstack_host = format!("localhost:{}", localstack_port);
+        let localstack_config = LocalstackConfigBuilder::new()
+            .port(localstack_port)
+            .logs((false, true))
+            .env_var("LOCALSTACK_HOST", localstack_host)
+            .build();
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
+            .mode(OrchestratorMode::Setup)
+            .env_var("MADARA_ORCHESTRATOR_AWS_PREFIX", test_name)
+            .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .logs((true, true))
+            .build();
+
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port()?)
             .da_on_ethereum(true)
