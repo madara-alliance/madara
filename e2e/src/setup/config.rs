@@ -389,14 +389,14 @@ impl SetupConfigBuilder {
 
         let mongodb_config = MongoConfigBuilder::new()
             .port(get_free_port()?)
-            .logs((false, true))
+            .logs((true, true))
             .build();
 
         let localstack_port = get_free_port()?;
         let localstack_host = format!("localhost:{}", localstack_port);
         let localstack_config = LocalstackConfigBuilder::new()
             .port(localstack_port)
-            .logs((false, true))
+            .logs((true, true))
             .env_var("LOCALSTACK_HOST", localstack_host)
             .build();
 
