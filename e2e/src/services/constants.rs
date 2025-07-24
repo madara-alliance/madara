@@ -57,9 +57,12 @@ pub const DEFAULT_MADARA_CONFIG_PATH: &str = "./config/madara.yaml";
 // =============================================================================
 pub const DEFAULT_MOCK_PROVER_BINARY: &str = "../target/release/mock-atlantic-server";
 pub const DEFAULT_MOCK_PROVER_PORT: u16 = 8080;
+<<<<<<< HEAD
 pub const DEFAULT_SCRIPT_PATH: &str = "../test_utils/scripts/deploy_dummy_verifier.sh";
 pub const DEFAULT_MOCK_GPS_VERIFIER_PATH: &str = "test_utils/scripts/artifacts/MockGPSVerifier.sol:MockGPSVerifier";
 pub const DEFAULT_VERIFIER_FILE_NAME: &str = "verifier_address.txt";
+=======
+>>>>>>> b6aa104c0 (fixes: update constants)
 
 // =============================================================================
 // PATHFINDER SERVICE
