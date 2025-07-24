@@ -98,14 +98,6 @@ impl BootstrapperService {
         self.config.logs()
     }
 
-    /// Get dependencies
-    pub fn dependencies(&self) -> Option<Vec<String>> {
-        Some(if *self.config().mode() == BootstrapperMode::SetupL1 {
-            vec!["anvil".to_string()]
-        } else {
-            vec!["anvil".to_string(), "madara".to_string(), "bootstrapper_l1".to_string()]
-        })
-    }
 
     /// Check if bootstrapper binary exists (static method for convenience)
     pub fn check_binary() -> Result<(), BootstrapperError> {
