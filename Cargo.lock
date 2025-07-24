@@ -2875,6 +2875,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bootstrapper-v2"
+version = "0.8.0"
+dependencies = [
+ "anyhow",
+ "clap",
+ "dotenvy",
+ "serde",
+ "serde_json",
+ "starknet 0.14.0",
+ "thiserror 2.0.3",
+]
+
+[[package]]
 name = "bs58"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -10712,9 +10725,9 @@ dependencies = [
 
 [[package]]
 name = "smallvec"
-version = "1.13.2"
+version = "1.15.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3c5e1a9a646d36c3599cd173a41282daf47c44583ad367b8e6837255952e5c67"
+checksum = "67b1b7a3b5fe4f1376887184045fcf45c69e92af734b7aaddc05fb777b6fbd03"
 dependencies = [
  "serde",
 ]

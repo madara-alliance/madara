@@ -20,7 +20,6 @@ use crate::types::params::settlement::SettlementConfig;
 use crate::types::params::snos::SNOSParams;
 use crate::types::params::{AWSResourceIdentifier, AlertArgs, OTELConfig, QueueArgs, StorageArgs};
 use crate::types::Layer;
-use crate::utils::helpers::ProcessingLocks;
 use alloy::primitives::Address;
 use axum::Router;
 use cairo_vm::types::layout_name::LayoutName;
@@ -243,8 +242,6 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let processing_locks = ProcessingLocks::default();
-
         let config = Arc::new(Config::new(
             Layer::L2,
             params.orchestrator_params,
@@ -255,7 +252,6 @@ impl TestConfigBuilder {
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         ));
 
@@ -562,6 +558,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         max_concurrent_created_snos_jobs,
         max_concurrent_snos_jobs,
         max_concurrent_proving_jobs,
+        job_processing_timeout_seconds: 3600,
     };
 
     let server_config = ServerParams {

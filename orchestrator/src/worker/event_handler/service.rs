@@ -165,13 +165,6 @@ impl JobHandlerService {
         }
 
         let job_handler = factory::get_job_handler(&job.job_type).await;
-        let job_processing_locks = job_handler.job_processing_lock(config.clone());
-
-        let permit = if let Some(ref processing_locks) = job_processing_locks {
-            Some(processing_locks.try_acquire_lock(&job, config.clone()).await?)
-        } else {
-            None
-        };
 
         // this updates the version of the job. this ensures that if another thread was about to process
         // the same job, it would fail to update the job in the database because the version would be
@@ -278,12 +271,6 @@ impl JobHandlerService {
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, &job.internal_id, external_id.into(), &attributes)?;
-
-        if let Some(permit) = permit {
-            if let Some(ref processing_locks) = job_processing_locks {
-                processing_locks.try_release_lock(permit).await?;
-            }
-        }
 
         Ok(())
     }
