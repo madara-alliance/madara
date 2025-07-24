@@ -412,7 +412,7 @@ impl SetupConfigBuilder {
             // TODO: Fix directory path issue, shouldn't be DEFAULT_DATA_DIR, should be a temporary directory
             .database_path(format!("{}/{}", DEFAULT_DATA_DIR, MADARA_DEFAULT_DATABASE_NAME))
             .l1_endpoint(Some(anvil_config.endpoint()))
-            .logs((false, true))
+            .logs((true, true))
             .build();
 
         let pathfinder_config = PathfinderConfigBuilder::new()
@@ -453,7 +453,7 @@ impl SetupConfigBuilder {
             .logs((false, true))
             .build();
 
-        let localstack_port = 3000;
+        let localstack_port = get_free_port()?;
         let localstack_host = format!("localhost:{}", localstack_port);
         let localstack_config = LocalstackConfigBuilder::new()
             .port(localstack_port)
@@ -479,8 +479,8 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_AWS_PREFIX", test_name)
-            // .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
-            .env_var("RUST_LOG", "debug")
+            .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .env_var("RUST_LOG", "info")
             .logs((true, true))
             .build();
 
