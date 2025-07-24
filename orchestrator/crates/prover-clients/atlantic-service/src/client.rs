@@ -214,7 +214,7 @@ impl AtlanticClient {
                 .form_text("network", job_config.network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
                 .form_text("cairoVm", &job_config.cairo_vm.as_str())
-                .form_file("pieFile", &job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
+                .form_file("pieFile", job_info.pie_file.as_ref(), "pie.zip", Some("application/zip"))?,
         );
 
         if let Some(bucket_id) = bucket_info.bucket_id {

@@ -253,7 +253,8 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                                 num = %num_settled,
                                 "Transaction rejected after finality"
                             );
-                            state_metadata.context = self.update_last_failed(state_metadata.context.clone(), *num_settled);
+                            state_metadata.context =
+                                self.update_last_failed(state_metadata.context.clone(), *num_settled);
                             job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
                             return Ok(new_status.into());
                         }

@@ -285,12 +285,10 @@ async fn process_single_contract(
             if contract_existed {
                 // Process storage entries only for an existing contract
                 let results: Vec<_> = stream::iter(storage_map)
-                    .map(|(key, value)| {
-                        async move {
-                            let pre_range_value =
-                                check_pre_range_storage_value(provider, contract_addr, key, pre_range_block).await?;
-                            Ok::<_, JobError>((key, value, pre_range_value))
-                        }
+                    .map(|(key, value)| async move {
+                        let pre_range_value =
+                            check_pre_range_storage_value(provider, contract_addr, key, pre_range_block).await?;
+                        Ok::<_, JobError>((key, value, pre_range_value))
                     })
                     .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
                     .collect()

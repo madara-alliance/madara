@@ -8,7 +8,7 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{TaskType, ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus, TaskType};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 

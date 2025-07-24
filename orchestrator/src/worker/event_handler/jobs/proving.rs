@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
-use orchestrator_prover_client_interface::{TaskType, Task, TaskStatus};
+use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
 use std::sync::Arc;
 
 use crate::core::config::Config;
@@ -114,17 +114,16 @@ impl JobHandlerTrait for ProvingJobHandler {
             "Getting task status from prover client"
         );
 
-        let task_status = config
-            .prover_client()
-            .get_task_status(TaskType::Job, &task_id, fact, cross_verify)
-            .await
-            .inspect_err(|e| {
-                tracing::error!(
-                    job_id = %job.internal_id,
-                    error = %e,
-                    "Failed to get task status from prover client"
-                );
-            })?;
+        let task_status =
+            config.prover_client().get_task_status(TaskType::Job, &task_id, fact, cross_verify).await.inspect_err(
+                |e| {
+                    tracing::error!(
+                        job_id = %job.internal_id,
+                        error = %e,
+                        "Failed to get task status from prover client"
+                    );
+                },
+            )?;
 
         match task_status {
             TaskStatus::Processing => {

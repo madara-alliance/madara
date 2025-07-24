@@ -29,7 +29,6 @@ lazy_static! {
         WorkerTriggerType::Batching,
         WorkerTriggerType::Aggregator,
     ];
-
     pub static ref WORKER_TRIGGERS_L3: Vec<WorkerTriggerType> = vec![
         WorkerTriggerType::Snos,
         WorkerTriggerType::Proving,
@@ -147,7 +146,7 @@ impl InnerAWSEventBridge {
     ///
     /// # Returns
     /// `Vec<WorkerTriggerType>` - Vector of worker triggers
-    async fn get_worker_triggers(&self, layer: &Layer) -> Vec<WorkerTriggerType> {
+    fn get_worker_triggers(&self, layer: &Layer) -> Vec<WorkerTriggerType> {
         match layer {
             Layer::L2 => WORKER_TRIGGERS_L2.clone(),
             Layer::L3 => WORKER_TRIGGERS_L3.clone(),

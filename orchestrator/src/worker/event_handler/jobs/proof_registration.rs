@@ -9,7 +9,7 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use anyhow::Context;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
-use orchestrator_prover_client_interface::{TaskType, TaskStatus};
+use orchestrator_prover_client_interface::{TaskStatus, TaskType};
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 
@@ -121,14 +121,13 @@ impl JobHandlerTrait for RegisterProofJobHandler {
         };
 
         tracing::debug!(job_id = %job.internal_id, %task_id, "Getting task status from prover client");
-        let task_status = config
-            .prover_client()
-            .get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify)
-            .await
-            .context(format!(
-                "Failed to get task status from prover client for job_id: {}, task_id: {}",
-                job.internal_id, task_id
-            ))?;
+        let task_status =
+            config.prover_client().get_task_status(TaskType::Job, &task_id, fact.clone(), cross_verify).await.context(
+                format!(
+                    "Failed to get task status from prover client for job_id: {}, task_id: {}",
+                    job.internal_id, task_id
+                ),
+            )?;
 
         match task_status {
             TaskStatus::Processing => {
