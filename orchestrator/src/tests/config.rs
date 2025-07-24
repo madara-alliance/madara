@@ -7,7 +7,7 @@ use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
 use crate::core::cloud::CloudProvider;
-use crate::core::config::{Config, ConfigParam};
+use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
@@ -113,6 +113,13 @@ pub struct TestConfigBuilder {
     storage_type: ConfigType,
     /// API Service
     api_server_type: ConfigType,
+
+    /// Minimum block to process
+    min_block_to_process: Option<u64>,
+    /// Maximum block to process
+    max_block_to_process: Option<Option<u64>>,
+    /// Madara version
+    madara_version: Option<StarknetVersion>,
 }
 
 impl Default for TestConfigBuilder {
@@ -142,6 +149,9 @@ impl TestConfigBuilder {
             storage_type: ConfigType::default(),
             alerts_type: ConfigType::default(),
             api_server_type: ConfigType::default(),
+            min_block_to_process: None,
+            max_block_to_process: None,
+            madara_version: None,
         }
     }
 
@@ -194,10 +204,25 @@ impl TestConfigBuilder {
         self
     }
 
+    pub fn configure_min_block_to_process(mut self, min_block_to_process: u64) -> TestConfigBuilder {
+        self.min_block_to_process = Some(min_block_to_process);
+        self
+    }
+
+    pub fn configure_max_block_to_process(mut self, max_block_to_process: Option<u64>) -> TestConfigBuilder {
+        self.max_block_to_process = Some(max_block_to_process);
+        self
+    }
+
+    pub fn configure_madara_version(mut self, madara_version: StarknetVersion) -> TestConfigBuilder {
+        self.madara_version = Some(madara_version);
+        self
+    }
+
     pub async fn build(self) -> TestConfigBuilderReturns {
         dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env.test file");
 
-        let params = get_env_params();
+        let mut params = get_env_params();
 
         let provider_config =
             Arc::new(CloudProvider::try_from(params.aws_params.clone()).expect("Failed to create provider config"));
@@ -213,6 +238,9 @@ impl TestConfigBuilder {
             queue_type,
             storage_type,
             api_server_type,
+            min_block_to_process,
+            max_block_to_process,
+            madara_version,
         } = self;
 
         let (_starknet_rpc_url, starknet_client, starknet_server) =
@@ -241,6 +269,16 @@ impl TestConfigBuilder {
         drop_database(&params.db_params).await.expect("Unable to drop the database.");
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
+
+        if let Some(min_block_to_process) = min_block_to_process {
+            params.orchestrator_params.service_config.min_block_to_process = min_block_to_process;
+        }
+        if let Some(max_block_to_process) = max_block_to_process {
+            params.orchestrator_params.service_config.max_block_to_process = max_block_to_process;
+        }
+        if let Some(madara_version) = madara_version {
+            params.orchestrator_params.madara_version = madara_version;
+        }
 
         let config = Arc::new(Config::new(
             Layer::L2,
@@ -571,6 +609,11 @@ pub(crate) fn get_env_params() -> EnvParams {
     let orchestrator_params = ConfigParam {
         madara_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_MADARA_RPC_URL"),
+        madara_version: StarknetVersion::from_str(&get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MADARA_VERSION",
+            "0.13.4",
+        ))
+        .unwrap_or_default(),
         snos_config,
         service_config,
         server_config,

@@ -1,3 +1,4 @@
+use crate::core::config::StarknetVersion;
 use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
@@ -147,6 +148,9 @@ pub struct RunCmd {
 
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
+    pub madara_version: StarknetVersion,
 
     // Service
     #[clap(flatten)]
