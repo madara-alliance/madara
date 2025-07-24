@@ -52,13 +52,6 @@ impl MadaraService {
         vec!["anvil".to_string()] // L1 endpoint dependency
     }
 
-    // TODO: ideally validating deps should be done inside setup coz it has the deps listed within itself as Option
-    /// Validate that all required dependencies are available
-    pub fn validate_dependencies(&self) -> Result<(), MadaraError> {
-        //  need to move to setup
-        Ok(())
-    }
-
     /// Get the RPC endpoint URL
     pub fn rpc_endpoint(&self) -> Url {
         Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().rpc_port())).unwrap()
@@ -124,10 +117,6 @@ impl MadaraService {
         self.server.pid()
     }
 
-    /// Check if the process has exited
-    // pub fn has_exited(&mut self) -> Option<ExitStatus> {
-    //     self.server.has_exited().unwrap()
-    // }
 
     /// Check if the service is running
     pub fn is_running(&mut self) -> bool {
@@ -146,75 +135,6 @@ impl MadaraService {
 
         Ok(())
     }
-
-    // Stop the Madara service
-    // pub async fn stop(&mut self) -> Result<(), MadaraError> {
-    //     self.server.stop().await.map_err(MadaraError::Server)
-    // }
-
-    // Restart the Madara service (useful after bootstrapper setup)
-    // pub async fn restart(&mut self) -> Result<(), MadaraError> {
-    //     println!("🔄 Restarting Madara service...");
-
-    //     // Stop current instance
-    //     self.stop().await?;
-
-    //     // Wait a moment for clean shutdown
-    //     tokio::time::sleep(Duration::from_secs(10)).await;
-
-    //     // Build new command
-    //     let command = self.config.to_command();
-
-    //     // Create server config
-    //     let server_config = ServerConfig {
-    //         port: self.config.rpc_port(),
-    //         host: "127.0.0.1".to_string(),
-    //         connection_attempts: 60,
-    //         connection_delay_ms: 2000,
-    //         ..Default::default()
-    //     };
-
-    //     // Start new instance
-    //     self.server = Server::start_process(command, server_config)
-    //         .await
-    //         .map_err(MadaraError::Server)?;
-
-    //     println!("✅ Madara service restarted");
-    //     Ok(())
-    // }
-
-    // /// Create database directory if it doesn't exist
-    // pub async fn ensure_database_directory(&self) -> Result<(), MadaraError> {
-    //     if !self.config.database_path().exists() {
-    //         tokio::fs::create_dir_all(self.config.database_path()).await?;
-    //         println!("📁 Created database directory: {}", self.config.database_path().display());
-    //     }
-    //     Ok(())
-    // }
-
-    // /// Check if database has been initialized
-    // pub fn is_database_initialized(&self) -> bool {
-    //     self.config.database_path().exists() && self.config.database_path().join("db").exists()
-    // }
-
-    // /// Get database size in bytes
-    // pub async fn get_database_size(&self) -> Result<u64, MadaraError> {
-    //     if !self.config.database_path().exists() {
-    //         return Ok(0);
-    //     }
-
-    //     let mut size = 0u64;
-    //     let mut entries = tokio::fs::read_dir(self.config.database_path()).await?;
-
-    //     while let Some(entry) = entries.next_entry().await? {
-    //         let metadata = entry.metadata().await?;
-    //         if metadata.is_file() {
-    //             size += metadata.len();
-    //         }
-    //     }
-
-    //     Ok(size)
-    // }
 
 }
 
