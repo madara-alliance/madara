@@ -11,7 +11,6 @@ use tokio::time::Duration;
 use crate::services::docker::{DockerError, DockerServer};
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
-use tokio::process::Command;
 
 pub struct PathfinderService {
     server: Server,
@@ -78,25 +77,6 @@ impl PathfinderService {
         Ok(())
     }
 
-    /// Get the dependencies required by Pathfinder
-    pub fn dependencies(&self) -> Vec<String> {
-        vec!["madara".to_string(), "anvil".to_string()]
-    }
-
-    /// Validate that all required dependencies are available
-    pub async fn validate_dependencies(&self) -> Result<(), PathfinderError> {
-        let dependencies = self.dependencies();
-
-        for dep in dependencies {
-            let result = Command::new(&dep).arg("--version").output().await;
-
-            if result.is_err() {
-                return Err(PathfinderError::MissingConfig(format!("Required dependency '{}' not found", dep)));
-            }
-        }
-
-        Ok(())
-    }
 
     /// Validate if Pathfinder is ready and responsive
     pub async fn validate_connection(&self) -> Result<bool, PathfinderError> {
@@ -163,10 +143,6 @@ impl PathfinderService {
 
         Ok(())
     }
-
-    // TODO: dump and load from db fns!
-    // TODO: volume attachment !
-
 }
 
 
