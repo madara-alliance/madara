@@ -74,7 +74,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
             .await
             .map_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit close bucket task to prover client");
-                JobError::Other(OtherError(eyre!("Prover Client Error: {}", e))) // TODO: Add a new error type to be used for prover client error
+                JobError::ProverClientError(e)
             })?;
 
         config
