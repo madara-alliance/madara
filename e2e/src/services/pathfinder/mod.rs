@@ -100,7 +100,7 @@ impl PathfinderService {
     }
 
     /// Get the Ethereum URL
-    pub fn ethereum_url(&self) -> &str {
+    pub fn ethereum_url(&self) -> &Url {
         self.config.ethereum_url()
     }
 

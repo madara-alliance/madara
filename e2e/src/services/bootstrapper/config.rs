@@ -182,6 +182,12 @@ impl BootstrapperConfigBuilder {
         self
     }
 
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
+        self
+    }
+
     /// Add an additional argument
     pub fn arg(mut self, arg: &str) -> Self {
         self.config.additional_args.push(arg.to_string());

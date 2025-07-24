@@ -1,5 +1,6 @@
 use tokio::process::Command;
 use crate::services::server::ServerError;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LocalstackError {
@@ -80,6 +81,12 @@ impl LocalstackConfig {
         &self.environment_vars
     }
 
+    /// Get the endpoint URL
+    pub fn endpoint(&self) -> Url {
+        let url = format!("http://localhost.localstack.cloud:{}", self.port());
+        Url::parse(&url).unwrap()
+    }
+
     /// Build the Docker command for Localstack
     pub fn to_command(&self) -> Command {
         let mut command = Command::new("docker");
@@ -139,6 +146,12 @@ impl LocalstackConfigBuilder {
     /// Add an environment variable
     pub fn env_var<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
         self.config.environment_vars.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 
