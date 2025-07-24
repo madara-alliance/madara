@@ -83,7 +83,7 @@ impl LocalstackConfig {
 
     /// Get the endpoint URL
     pub fn endpoint(&self) -> Url {
-        let url = format!("http://localhost.localstack.cloud:{}", self.port());
+        let url = format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port());
         Url::parse(&url).unwrap()
     }
 
