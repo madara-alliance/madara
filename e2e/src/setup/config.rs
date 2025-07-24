@@ -392,7 +392,7 @@ impl SetupConfigBuilder {
             .logs((false, true))
             .build();
 
-        let localstack_port = 3000;
+        let localstack_port = get_free_port()?;
         let localstack_host = format!("localhost:{}", localstack_port);
         let localstack_config = LocalstackConfigBuilder::new()
             .port(localstack_port)
