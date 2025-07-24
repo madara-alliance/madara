@@ -103,13 +103,6 @@ impl MockVerifierDeployerService {
             .map_err(|e| MockVerifierDeployerError::FileSystem(e))
     }
 
-    /// Get dependencies
-    pub fn dependencies(&self) -> Option<Vec<String>> {
-        Some(vec![
-            "anvil".to_string(),
-            "forge".to_string(),
-        ])
-    }
 
     /// Check if deployment script exists (static method for convenience)
     pub fn check_script() -> Result<(), MockVerifierDeployerError> {
