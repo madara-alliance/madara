@@ -88,10 +88,6 @@ impl MongoService {
         self.server.stop().map_err(|err| MongoError::Server(err))
     }
 
-    /// Get dependencies (Docker is required)
-    pub fn dependencies(&self) -> Vec<String> {
-        vec!["docker".to_string()]
-    }
 }
 
 // MongoDump and MongoRestore impl from within the docker container
