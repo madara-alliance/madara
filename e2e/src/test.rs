@@ -16,18 +16,9 @@ async fn setup_chain(
 
     println!("Running {}", test_name);
 
-    let anvil_config = AnvilConfigBuilder::new()
-        .port(8545)
-        .block_time(1_f64)
-        .load_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
-        .build();
 
     let setup_config = SetupConfigBuilder::new(None)
-        .build_l2_setup_config()
-        .unwrap()
-        .builder()
-        .anvil_config(anvil_config)
-        .build();
+        .test_config_l2("e2esetup").unwrap();
 
     println!("Running setup");
 
