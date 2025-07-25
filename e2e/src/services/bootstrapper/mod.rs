@@ -95,9 +95,9 @@ impl BootstrapperService {
         &self.config
     }
 
-    pub fn stop(&mut self) -> Result<(), BootstrapperError> {
+    pub async fn stop(&mut self) -> Result<(), BootstrapperError> {
         println!("☠️ Stopping Bootstrapper");
-        self.server.stop().map_err(|err| BootstrapperError::Server(err))
+        self.server.stop().await.map_err(|err| BootstrapperError::Server(err))
     }
 
     /// Get logs
