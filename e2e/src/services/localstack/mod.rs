@@ -99,9 +99,9 @@ impl LocalstackService {
         &self.config
     }
 
-    pub async fn stop(&mut self) -> Result<(), LocalstackError> {
+    pub fn stop(&mut self) -> Result<(), LocalstackError> {
         println!("☠️ Stopping Localstack");
-        self.server.stop().await.map_err(|err| LocalstackError::Server(err))
+        self.server.stop().map_err(|err| LocalstackError::Server(err))
     }
 
 
