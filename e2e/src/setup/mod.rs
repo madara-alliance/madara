@@ -82,6 +82,9 @@ impl ChainSetup {
         // Setup new chain using service manager
         self.service_manager.setup_new_chain().await?;
 
+        // Shutdown services
+        self.shutdown().await?;
+
         // Mark database as ready
         self.database_manager.mark_as_ready().await?;
 
