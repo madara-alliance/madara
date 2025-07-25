@@ -53,8 +53,6 @@ impl MongoService {
         let server_config = ServerConfig {
             rpc_port: Some(config.port()),
             service_name: "MongoDB".to_string(),
-            connection_attempts: 30, // MongoDB usually starts quickly
-            connection_delay_ms: 1000,
             logs: config.logs(),
             ..Default::default()
         };
