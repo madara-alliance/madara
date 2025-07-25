@@ -4,9 +4,10 @@
 
 pub mod config;
 // Re-export common utilities
-pub use config::*;
 use crate::services::constants::*;
+pub use config::*;
 
+use crate::services::helpers::get_file_path;
 use crate::services::server::{Server, ServerConfig};
 use std::process::ExitStatus;
 
@@ -70,9 +71,9 @@ impl BootstrapperService {
                     Ok(exit_status)
                 } else {
                     let error_msg = if let Some(code) = exit_status.code() {
-                            format!("Process exited with code: {}", code)
-                        } else {
-                            format!("Process terminated by signal: {}", exit_status)
+                        format!("Process exited with code: {}", code)
+                    } else {
+                        format!("Process terminated by signal: {}", exit_status)
                     };
                     Err(BootstrapperError::SetupFailed(error_msg))
                 }
@@ -95,9 +96,9 @@ impl BootstrapperService {
         &self.config
     }
 
-    pub async fn stop(&mut self) -> Result<(), BootstrapperError> {
+    pub fn stop(&mut self) -> Result<(), BootstrapperError> {
         println!("☠️ Stopping Bootstrapper");
-        self.server.stop().await.map_err(|err| BootstrapperError::Server(err))
+        self.server.stop().map_err(|err| BootstrapperError::Server(err))
     }
 
     /// Get logs
@@ -105,22 +106,11 @@ impl BootstrapperService {
         self.config.logs()
     }
 
-
-    /// Check if bootstrapper binary exists (static method for convenience)
-    pub fn check_binary() -> Result<(), BootstrapperError> {
-        let binary_path = std::path::PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY);
-        if binary_path.exists() {
-            Ok(())
-        } else {
-            Err(BootstrapperError::BinaryNotFound(format!("Default binary not found: {}", binary_path.display())))
-        }
-    }
-
     // update values in the config file
     pub fn update_config_file(key: &str, value: &str) -> Result<(), BootstrapperError> {
-        // Update bootstrapper config
+        let bootstrapper_config_file = get_file_path(BOOTSTRAPPER_CONFIG);
         let mut config: serde_json::Value = serde_json::from_str(
-            &std::fs::read_to_string(DEFAULT_BOOTSTRAPPER_CONFIG)
+            &std::fs::read_to_string(bootstrapper_config_file.clone())
                 .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?,
         )
         .map_err(|e| BootstrapperError::ConfigParseError(e))?;
@@ -128,9 +118,8 @@ impl BootstrapperService {
         config[key] = serde_json::Value::String(value.to_string());
 
         std::fs::write(
-            DEFAULT_BOOTSTRAPPER_CONFIG,
-            serde_json::to_string_pretty(&config)
-                .map_err(|e| BootstrapperError::ConfigParseError(e))?,
+            bootstrapper_config_file,
+            serde_json::to_string_pretty(&config).map_err(|e| BootstrapperError::ConfigParseError(e))?,
         )
         .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?;
 
