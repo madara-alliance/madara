@@ -27,8 +27,6 @@ impl MockProverService {
             rpc_port: Some(port),
             service_name: "Mock Prover".to_string(),
             logs: config.logs(),
-            connection_attempts: 30,
-            connection_delay_ms: 1000,
             ..Default::default()
         };
 
