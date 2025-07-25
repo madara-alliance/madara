@@ -79,7 +79,7 @@ impl JobTrigger for BatchingTrigger {
 impl BatchingTrigger {
     pub async fn new() -> Self {
         let mut res = Self { data: HashSet::new() };
-        res.load_data(&format!("{}/scripts/paradex/data/batches_simple.json", env!("CARGO_MANIFEST_DIR"))).await;
+        res.load_data(std::env::var("BATCH_INFO").unwrap().as_str()).await;
         res
     }
 
