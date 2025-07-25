@@ -11,8 +11,8 @@ use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
 use std::path::PathBuf;
 
-use crate::services::helpers::NodeRpcMethods;
 use crate::services::constants::*;
+use crate::services::helpers::NodeRpcMethods;
 use tokio::time::Duration;
 
 pub struct MadaraService {
@@ -39,9 +39,7 @@ impl MadaraService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(MadaraError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(MadaraError::Server)?;
 
         Ok(Self { server, config })
     }
@@ -64,12 +62,7 @@ impl MadaraService {
 
     /// Get the Feeder Gateway endpoint URL
     pub fn feeder_gateway_endpoint(&self) -> Url {
-        Url::parse(&format!(
-            "http://{}:{}/feeder_gateway",
-            DEFAULT_SERVICE_HOST,
-            self.config().gateway_port()
-        ))
-        .unwrap()
+        Url::parse(&format!("http://{}:{}/feeder_gateway", DEFAULT_SERVICE_HOST, self.config().gateway_port())).unwrap()
     }
 
     /// Get the main endpoint URL (alias for rpc_endpoint)
@@ -80,6 +73,11 @@ impl MadaraService {
     /// Get the RPC port number
     pub fn port(&self) -> u16 {
         self.config().rpc_port()
+    }
+
+    /// Get the RPC admin port number
+    pub fn rpc_admin_port(&self) -> u16 {
+        self.config().rpc_admin_port()
     }
 
     /// Get the Gateway port number
@@ -117,17 +115,15 @@ impl MadaraService {
         self.server.pid()
     }
 
-
     /// Check if the service is running
     pub fn is_running(&mut self) -> bool {
-        self.server.is_running()
+        self.server.has_exited().is_none()
     }
 
     pub async fn wait_for_block_mined(&self, block_number: u64) -> Result<(), MadaraError> {
         println!("⏳ Waiting for Madara block {} to be mined", block_number);
 
-        while self.get_latest_block_number().await
-            .map_err(|err| MadaraError::RpcError(err))? < 0 {
+        while self.get_latest_block_number().await.map_err(|err| MadaraError::RpcError(err))? < 0 {
             println!("⏳ Checking Madara block status...");
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
@@ -135,9 +131,7 @@ impl MadaraService {
 
         Ok(())
     }
-
 }
-
 
 impl NodeRpcMethods for MadaraService {
     fn get_endpoint(&self) -> Url {
