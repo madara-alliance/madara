@@ -6,6 +6,8 @@ use crate::setup::service_management::RunningServices;
 use crate::setup::SetupError;
 use tokio::time::{sleep,Duration};
 
+const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
+
 pub struct ServiceLifecycleManager {
     services: Option<RunningServices>,
 }
@@ -27,37 +29,37 @@ impl ServiceLifecycleManager {
             // Shutdown in reverse dependency order
 
             if let Some(mut orchestrator) = services.orchestrator_service.take() {
-                let _ = orchestrator.stop().await?;
+                let _ = orchestrator.stop()?;
                 println!("🛑 Orchestrator stopped");
             }
 
             if let Some(mut mock_prover) = services.mock_prover_service.take() {
-                let _ = mock_prover.stop().await?;
+                let _ = mock_prover.stop()?;
                 println!("🛑 Mock Prover stopped");
             }
 
             if let Some(mut pathfinder) = services.pathfinder_service.take() {
-                let _ = pathfinder.stop().await?;
+                let _ = pathfinder.stop()?;
                 println!("🛑 Pathfinder stopped");
             }
 
             if let Some(mut madara) = services.madara_service.take() {
-                let _ = madara.stop().await?;
+                let _ = madara.stop()?;
                 println!("🛑 Madara stopped");
             }
 
             if let Some(mut anvil) = services.anvil_service.take() {
-                let _ = anvil.stop().await?;
+                let _ = anvil.stop()?;
                 println!("🛑 Anvil stopped");
             }
 
             if let Some(mut mongo) = services.mongo_service.take() {
-                let _ = mongo.stop().await?;
+                let _ = mongo.stop()?;
                 println!("🛑 MongoDB stopped");
             }
 
             if let Some(mut localstack) = services.localstack_service.take() {
-                let _ = localstack.stop().await?;
+                let _ = localstack.stop()?;
                 println!("🛑 Localstack stopped");
             }
 
@@ -65,7 +67,7 @@ impl ServiceLifecycleManager {
         }
 
         // Docker takes a while to close the containers
-        sleep(Duration::from_secs(10)).await;
+        sleep(SHUTDOWN_TIMEOUT).await;
 
         Ok(())
     }
