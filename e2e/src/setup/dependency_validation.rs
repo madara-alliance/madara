@@ -2,24 +2,23 @@
 // DEPENDENCY VALIDATION
 // =============================================================================
 
-use tokio::task::JoinSet;
 use tokio::process::Command;
+use tokio::task::JoinSet;
 // Import all the services we've created
-use crate::services::docker::DockerServer;
-use crate::services::constants::*;
-use crate::services::orchestrator::Layer;
 pub use super::config::*;
-use tokio::time::Duration;
+use crate::services::constants::*;
+use crate::services::docker::DockerServer;
+use crate::services::orchestrator::Layer;
 use tokio::time::timeout;
+use tokio::time::Duration;
 
 pub struct DependencyValidator {
-    layer : Layer,
-    validate_deps_timeout : Duration,
-
+    layer: Layer,
+    validate_deps_timeout: Duration,
 }
 
 impl DependencyValidator {
-    pub fn new(layer : Layer, validate_deps_timeout : Duration) -> Self {
+    pub fn new(layer: Layer, validate_deps_timeout: Duration) -> Self {
         Self { layer, validate_deps_timeout }
     }
 
@@ -78,9 +77,8 @@ impl DependencyValidator {
         println!("📦 Pulling required Docker images...");
 
         let images = vec![
-            ("mongo", DEFAULT_MONGO_IMAGE),
-            ("localstack/localstack", DEFAULT_LOCALSTACK_IMAGE),
-            ("pathfinder", DEFAULT_PATHFINDER_IMAGE),
+            ("mongo", MONGODB_IMAGE),
+            ("localstack/localstack", LOCALSTACK_IMAGE),
         ];
 
         let mut join_set = JoinSet::new();
@@ -99,22 +97,16 @@ impl DependencyValidator {
     async fn pull_image(display_name: &str, image_name: &str) -> Result<(), SetupError> {
         println!("📦 Pulling {}...", display_name);
 
-        let output = Command::new("docker")
-            .args(["pull", image_name])
-            .output()
-            .await
-            .map_err(|e| SetupError::DependencyFailed(
-                format!("Failed to execute docker pull {}: {}", display_name, e)
-            ))?;
+        let output = Command::new("docker").args(["pull", image_name]).output().await.map_err(|e| {
+            SetupError::DependencyFailed(format!("Failed to execute docker pull {}: {}", display_name, e))
+        })?;
 
         if output.status.success() {
             println!("✅ Successfully pulled {}", display_name);
             Ok(())
         } else {
             let error_msg = String::from_utf8_lossy(&output.stderr);
-            Err(SetupError::DependencyFailed(
-                format!("Failed to pull {}: {}", display_name, error_msg)
-            ))
+            Err(SetupError::DependencyFailed(format!("Failed to pull {}: {}", display_name, error_msg)))
         }
     }
 }

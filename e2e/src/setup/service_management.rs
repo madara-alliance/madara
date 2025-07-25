@@ -9,18 +9,18 @@ use crate::services::anvil::AnvilService;
 use crate::services::bootstrapper::BootstrapperService;
 use crate::services::mock_verifier::MockVerifierDeployerService;
 
-use crate::services::localstack::LocalstackService;
-use crate::services::madara::{MadaraService, MadaraError};
-use crate::services::mongodb::MongoService;
-use crate::services::orchestrator::OrchestratorService;
 pub use super::config::*;
 use crate::services::constants::*;
+use crate::services::localstack::LocalstackService;
+use crate::services::madara::{MadaraError, MadaraService};
+use crate::services::mongodb::MongoService;
+use crate::services::orchestrator::OrchestratorService;
 
+use crate::services::helpers::NodeRpcMethods;
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
-use crate::services::helpers::NodeRpcMethods;
 
-use tokio::time::{timeout, Instant, Duration};
+use tokio::time::{timeout, Duration, Instant};
 
 pub struct ServiceManager {
     config: Arc<SetupConfig>,
@@ -40,10 +40,7 @@ pub struct RunningServices {
 
 impl ServiceManager {
     pub fn new(config: Arc<SetupConfig>) -> Self {
-        Self {
-            config,
-            bootstrapped_madara_block_number: i64::MIN,
-        }
+        Self { config, bootstrapped_madara_block_number: i64::MIN }
     }
 
     pub async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
@@ -82,7 +79,7 @@ impl ServiceManager {
         self.setup_localstack_infrastructure().await?;
         self.restore_mongodb_database(&services).await?;
 
-        // Start runtime services
+        // // Start runtime services
         self.start_anvil(&mut services).await?;
         self.start_madara(&mut services).await?;
         self.start_pathfinder(&mut services).await?;
@@ -120,7 +117,8 @@ impl ServiceManager {
 
             println!("🏗️✅ Infrastructure services started");
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("Infrastructure startup timed out".to_string()))?
     }
 
@@ -135,22 +133,9 @@ impl ServiceManager {
             let status = OrchestratorService::setup(orchestrator_setup_config).await?;
             println!("🥳 Resource Setup for Orchestrator finished with {}", status);
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("LocalstackInfrastructure setup timed out".to_string()))?
-    }
-
-    async fn restore_mongodb_database(&self, services: &RunningServices) -> Result<(), SetupError> {
-        println!("🏗️ Setting up mongodb infrastructure...");
-
-        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
-
-        timeout(duration, async {
-            if let Some(ref mongo) = services.mongo_service {
-                mongo.restore_db(DEFAULT_ORCHESTRATOR_DATABASE_NAME).await?;
-            }
-            Ok(())
-        }).await
-        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
     }
 
     async fn setup_l1_chain(&self, services: &mut RunningServices) -> Result<(), SetupError> {
@@ -163,7 +148,8 @@ impl ServiceManager {
             self.deploy_mock_verifier().await?;
             self.bootstrap_l1().await?;
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("L1 setup timed out".to_string()))?
     }
 
@@ -183,18 +169,21 @@ impl ServiceManager {
 
             // Get the block number for syncing
             if let Some(madara) = &services.madara_service {
-                self.bootstrapped_madara_block_number = madara.get_latest_block_number().await
+                self.bootstrapped_madara_block_number = madara
+                    .get_latest_block_number()
+                    .await
                     .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
             }
 
             println!("✅ L2 Setup completed");
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("L2 setup timed out".to_string()))?
     }
 
     async fn setup_full_node_syncing(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        println!("🎯 Starting Pathfinder syncing...");
+        println!("🎯 Starting Pathfinder syncing till # Block {}", self.bootstrapped_madara_block_number);
 
         let duration = self.config.get_timeouts().start_full_node_syncing;
 
@@ -213,7 +202,8 @@ impl ServiceManager {
             }
 
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("Pathfinder syncing timed out".to_string()))?
     }
 
@@ -233,7 +223,8 @@ impl ServiceManager {
             self.dump_databases(services).await?;
 
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("Orchestration setup timed out".to_string()))?
     }
 
@@ -246,8 +237,8 @@ impl ServiceManager {
 
             if let Some(orchestrator) = &services.orchestrator_service {
                 let sync_block = self.bootstrapped_madara_block_number.max(0) as u64;
-                let is_synced = orchestrator.check_state_update(sync_block).await
-                    .map_err(|err| SetupError::Orchestrator(err))?;
+                let is_synced =
+                    orchestrator.check_state_update(sync_block).await.map_err(|err| SetupError::Orchestrator(err))?;
 
                 if is_synced {
                     return Ok(());
@@ -264,11 +255,34 @@ impl ServiceManager {
     }
 
     async fn dump_databases(&self, services: &RunningServices) -> Result<(), SetupError> {
-        if let (Some(mongo), Some(orchestrator)) = (&services.mongo_service, &services.orchestrator_service) {
-            println!("Dumping MongoDB database...");
-            mongo.dump_db(orchestrator.config().database_name()).await?;
-        }
-        Ok(())
+        println!("🏗️ Dumping databases...");
+
+        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
+
+        timeout(duration, async {
+            if let Some(mongo) = &services.mongo_service {
+                println!("Dumping MongoDB database...");
+                mongo.dump_db(DATA_DIR, ORCHESTRATOR_DATABASE_NAME).await?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
+    }
+
+    async fn restore_mongodb_database(&self, services: &RunningServices) -> Result<(), SetupError> {
+        println!("🏗️ Setting up mongodb infrastructure...");
+
+        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
+
+        timeout(duration, async {
+            if let Some(ref mongo) = services.mongo_service {
+                mongo.restore_db(DATA_DIR, ORCHESTRATOR_DATABASE_NAME).await?;
+            }
+            Ok(())
+        })
+        .await
+        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
     }
 
     // Individual service startup methods
@@ -307,7 +321,8 @@ impl ServiceManager {
             services.mock_prover_service = Some(mock_prover_service);
             println!("✅ Mock Prover Service started");
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("Mock Prover startup timed out".to_string()))?
     }
 
@@ -319,7 +334,7 @@ impl ServiceManager {
         let address = MockVerifierDeployerService::run(mock_verifier_config).await?;
 
         println!("🥳 Mock verifier deployed at address {}", address);
-        let _ =BootstrapperService::update_config_file("verifier_address", address.as_str());
+        let _ = BootstrapperService::update_config_file("verifier_address", address.as_str());
 
         Ok(())
     }
@@ -350,5 +365,4 @@ impl ServiceManager {
         services.orchestrator_service = Some(orchestrator_service);
         Ok(())
     }
-
 }
