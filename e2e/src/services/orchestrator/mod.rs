@@ -135,9 +135,9 @@ impl OrchestratorService {
         &self.config
     }
 
-    pub fn stop(&mut self) -> Result<(), OrchestratorError> {
+    pub async fn stop(&mut self) -> Result<(), OrchestratorError> {
         println!("☠️ Stopping Orchestrator");
-        self.server.stop().map_err(|err| OrchestratorError::Server(err))
+        self.server.stop().await.map_err(|err| OrchestratorError::Server(err))
     }
 
     /// Get the underlying server (run mode only)
