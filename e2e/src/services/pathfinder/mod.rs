@@ -1,16 +1,15 @@
 // =============================================================================
-// PATHFINDER SERVICE - Using Docker and generic Server
+// PATHFINDER SERVICE - Using generic Server
 // =============================================================================
 
 pub mod config;
 
 use crate::services::helpers::NodeRpcMethods;
 // Re-export common utilities
-pub use config::*;
-use tokio::time::Duration;
-use crate::services::docker::{DockerError, DockerServer};
 use crate::services::server::{Server, ServerConfig};
+pub use config::*;
 use reqwest::Url;
+use tokio::time::Duration;
 
 pub struct PathfinderService {
     server: Server,
@@ -21,31 +20,6 @@ impl PathfinderService {
     /// Start a new Pathfinder service
     /// Will panic if Pathfinder is already running as per pattern
     pub async fn start(config: PathfinderConfig) -> Result<Self, PathfinderError> {
-        // Validate Docker is running
-        if !DockerServer::is_docker_running().await {
-            return Err(PathfinderError::Docker(DockerError::NotRunning));
-        }
-
-        // Check if container is already running - PANIC as per pattern
-        if DockerServer::is_container_running(config.container_name()).await? {
-            panic!(
-                "Pathfinder container '{}' is already running on port {}. Please stop it first.",
-                config.container_name(),
-                config.port()
-            );
-        }
-
-        // Check if ports are in use
-        if DockerServer::is_port_in_use(config.port()) {
-            return Err(PathfinderError::PortInUse(config.port()));
-        }
-
-        // Clean up any existing stopped container with the same name
-        if DockerServer::does_container_exist(config.container_name()).await? {
-            DockerServer::remove_container(config.container_name()).await?;
-        }
-
-        // Build the docker command
         let command = config.to_command();
 
         // Create server config using the immutable config getters
@@ -59,9 +33,7 @@ impl PathfinderService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(|e| PathfinderError::Docker(DockerError::Server(e)))?;
+        let server = Server::start_process(command, server_config).await.map_err(PathfinderError::Server)?;
 
         Ok(Self { server, config })
     }
@@ -85,8 +57,7 @@ impl PathfinderService {
 
     /// Get the RPC endpoint URL
     pub fn endpoint(&self) -> Url {
-        self.server().endpoint()
-            .expect("Failed to get endpoint")
+        self.server().endpoint().expect("Failed to get endpoint")
     }
 
     /// Get the network name
@@ -100,7 +71,7 @@ impl PathfinderService {
     }
 
     /// Get the Ethereum URL
-    pub fn ethereum_url(&self) -> &str {
+    pub fn ethereum_url(&self) -> &Url {
         self.config.ethereum_url()
     }
 
@@ -120,10 +91,10 @@ impl PathfinderService {
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
+        tokio::time::sleep(Duration::from_secs(1)).await;
         println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
 
-        while self.get_latest_block_number().await
-            .map_err(|err| PathfinderError::RpcError(err))? < 0 {
+        while self.get_latest_block_number().await.map_err(|err| PathfinderError::RpcError(err))? < 0 {
             println!("⏳ Checking Pathfinder block status...");
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
@@ -132,7 +103,6 @@ impl PathfinderService {
         Ok(())
     }
 }
-
 
 impl NodeRpcMethods for PathfinderService {
     fn get_endpoint(&self) -> Url {
