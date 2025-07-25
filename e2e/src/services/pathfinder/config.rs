@@ -1,18 +1,12 @@
-// Originally implemented with just a struct with public fields. We've refactored
-// to use a builder pattern that ensures immutability after building while providing
-// a clean, fluent API for configuration.
-
-use tokio::process::Command;
-use crate::services::helpers::NodeRpcError;
-
-use crate::services::docker::DockerError;
-use crate::services::server::ServerError;
 use crate::services::constants::*;
+use crate::services::helpers::{get_binary_path, NodeRpcError};
+use crate::services::server::ServerError;
+use tokio::process::Command;
+use url::Url;
+use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PathfinderError {
-    #[error("Docker error: {0}")]
-    Docker(#[from] DockerError),
     #[error("Pathfinder container already running on port {0}")]
     AlreadyRunning(u16),
     #[error("Port {0} is already in use")]
@@ -32,19 +26,16 @@ pub enum PathfinderError {
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct PathfinderConfig {
+    binary_path: PathBuf,
     port: u16,
-    image: String,
-    container_name: String,
-    ethereum_url: String,
-    data_directory: String,
+    ethereum_url: Url,
     rpc_root_version: String,
     network: String,
     chain_id: String,
-    gateway_url: Option<String>,
-    feeder_gateway_url: Option<String>,
+    gateway_url: Option<Url>,
+    feeder_gateway_url: Option<Url>,
     storage_state_tries: String,
     gateway_request_timeout: u64,
-    data_volume: Option<String>,
     logs: (bool, bool),
     environment_vars: Vec<(String, String)>,
 }
@@ -52,19 +43,16 @@ pub struct PathfinderConfig {
 impl Default for PathfinderConfig {
     fn default() -> Self {
         Self {
-            port: DEFAULT_PATHFINDER_PORT,
-            image: DEFAULT_PATHFINDER_IMAGE.to_string(),
-            container_name: format!("{}-{}", DEFAULT_PATHFINDER_CONTAINER_NAME, uuid::Uuid::new_v4()),
-            ethereum_url: "https://ethereum-sepolia-rpc.publicnode.com".to_string(),
-            data_directory: "/var/pathfinder".to_string(),
+            port: PATHFINDER_PORT,
+            binary_path: get_binary_path(PATHFINDER_BINARY),
+            ethereum_url: Url::parse("https://ethereum-sepolia-rpc.publicnode.com").unwrap(),
             rpc_root_version: "v07".to_string(),
             network: "custom".to_string(),
             chain_id: "MADARA_DEVNET".to_string(),
-            gateway_url: Some("http://host.docker.internal:8080/feeder".to_string()),
-            feeder_gateway_url: Some("http://host.docker.internal:8080/feeder_gateway".to_string()),
+            gateway_url: Some(Url::parse(format!("http://{}:8080/feeder", DEFAULT_SERVICE_HOST).as_str()).unwrap()),
+            feeder_gateway_url: Some(Url::parse(format!("http://{}:8080/feeder_gateway", DEFAULT_SERVICE_HOST).as_str()).unwrap()),
             storage_state_tries: "archive".to_string(),
             gateway_request_timeout: 1000,
-            data_volume: None,
             environment_vars: vec![],
             logs: (true, true),
         }
@@ -92,24 +80,9 @@ impl PathfinderConfig {
         self.logs
     }
 
-    /// Get the Docker image
-    pub fn image(&self) -> &str {
-        &self.image
-    }
-
-    /// Get the container name
-    pub fn container_name(&self) -> &str {
-        &self.container_name
-    }
-
     /// Get the Ethereum URL
-    pub fn ethereum_url(&self) -> &str {
+    pub fn ethereum_url(&self) -> &Url {
         &self.ethereum_url
-    }
-
-    /// Get the data directory
-    pub fn data_directory(&self) -> &str {
-        &self.data_directory
     }
 
     /// Get the RPC root version
@@ -128,13 +101,13 @@ impl PathfinderConfig {
     }
 
     /// Get the gateway URL
-    pub fn gateway_url(&self) -> Option<&str> {
-        self.gateway_url.as_deref()
+    pub fn gateway_url(&self) -> Option<&Url> {
+        self.gateway_url.as_ref()
     }
 
     /// Get the feeder gateway URL
-    pub fn feeder_gateway_url(&self) -> Option<&str> {
-        self.feeder_gateway_url.as_deref()
+    pub fn feeder_gateway_url(&self) -> Option<&Url> {
+        self.feeder_gateway_url.as_ref()
     }
 
     /// Get the storage state tries
@@ -147,9 +120,9 @@ impl PathfinderConfig {
         self.gateway_request_timeout
     }
 
-    /// Get the data volume
-    pub fn data_volume(&self) -> Option<&str> {
-        self.data_volume.as_deref()
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
     }
 
     /// Get the environment variables
@@ -158,56 +131,35 @@ impl PathfinderConfig {
     }
 
     pub fn to_command(&self) -> Command {
-        let mut command = Command::new("docker");
-        command.arg("run");
-        command.arg("--rm"); // Remove container when it stops
-        command.arg("--name").arg(self.container_name());
+        let binary_path = self.binary_path.to_owned();
 
-        // Port mappings
-        command.arg("-p").arg(format!("{}:{}", self.port(), self.port()));
+        let mut command = Command::new(binary_path);
 
-        // Add data volume if specified
-        if let Some(volume) = self.data_volume() {
-            command.arg("-v").arg(format!("{}:{}", volume, self.data_directory()));
-        }
-
-        // Add custom environment variables
-        for (key, value) in self.environment_vars() {
-            command.arg("-e").arg(format!("{}={}", key, value));
-        }
-
-        // Add the image
-        command.arg(self.image());
-
-        // Add pathfinder binary command and arguments
-        command.arg("--ethereum.url").arg(self.ethereum_url());
-        // command.arg("--data-directory").arg(config.data_directory());
-        command.arg("--http-rpc").arg(format!("0.0.0.0:{}", self.port()));
+        // Core arguments
+        command.arg("--ethereum.url").arg(self.ethereum_url().to_string());
+        command.arg("--http-rpc").arg(format!("{}:{}", DEFAULT_SERVICE_HOST, self.port()));
         command.arg("--rpc.root-version").arg(self.rpc_root_version());
         command.arg("--network").arg(self.network());
         command.arg("--chain-id").arg(self.chain_id());
 
         if let Some(gateway_url) = self.gateway_url() {
-            // command.arg("--add-host");
-            command.arg("--gateway-url").arg(gateway_url);
+            command.arg("--gateway-url").arg(gateway_url.to_string());
         }
 
         if let Some(feeder_gateway_url) = self.feeder_gateway_url() {
-            // command.arg("--add-host");
-            command.arg("--feeder-gateway-url").arg(feeder_gateway_url);
+            command.arg("--feeder-gateway-url").arg(feeder_gateway_url.to_string());
         }
 
         command.arg("--storage.state-tries").arg(self.storage_state_tries());
         command.arg("--gateway.request-timeout").arg(self.gateway_request_timeout().to_string());
 
-        // Add environment variables
-        for (key, value) in self.environment_vars() {
-            command.arg("-e").arg(format!("{}={}", key, value));
+        // Environment variables
+        for (key, value) in &self.environment_vars {
+            command.env(key, value);
         }
 
         command
     }
-
 }
 
 // Builder type that allows configuration
@@ -219,9 +171,7 @@ pub struct PathfinderConfigBuilder {
 impl PathfinderConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: PathfinderConfig::default(),
-        }
+        Self { config: PathfinderConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -235,27 +185,9 @@ impl PathfinderConfigBuilder {
         self
     }
 
-    /// Set the Docker image
-    pub fn image<S: Into<String>>(mut self, image: S) -> Self {
-        self.config.image = image.into();
-        self
-    }
-
-    /// Set the container name
-    pub fn container_name<S: Into<String>>(mut self, name: S) -> Self {
-        self.config.container_name = name.into();
-        self
-    }
-
     /// Set the Ethereum URL
-    pub fn ethereum_url<S: Into<String>>(mut self, url: S) -> Self {
-        self.config.ethereum_url = url.into();
-        self
-    }
-
-    /// Set the data directory
-    pub fn data_directory<S: Into<String>>(mut self, directory: S) -> Self {
-        self.config.data_directory = directory.into();
+    pub fn ethereum_url(mut self, url: Url) -> Self {
+        self.config.ethereum_url = url;
         self
     }
 
@@ -278,14 +210,18 @@ impl PathfinderConfigBuilder {
     }
 
     /// Set the gateway URL
-    pub fn gateway_url<S: Into<String>>(mut self, url: Option<S>) -> Self {
-        self.config.gateway_url = url.map(|u| u.into());
+    pub fn gateway_url(mut self, url: Option<Url>) -> Self {
+        if let Some(url) = url {
+            self.config.gateway_url = Some(url);
+        }
         self
     }
 
     /// Set the feeder gateway URL
-    pub fn feeder_gateway_url<S: Into<String>>(mut self, url: Option<S>) -> Self {
-        self.config.feeder_gateway_url = url.map(|u| u.into());
+    pub fn feeder_gateway_url(mut self, url: Option<Url>) -> Self {
+        if let Some(url) = url {
+            self.config.feeder_gateway_url = Some(url);
+        }
         self
     }
 
@@ -301,9 +237,9 @@ impl PathfinderConfigBuilder {
         self
     }
 
-    /// Set the data volume for persistent storage
-    pub fn data_volume<S: Into<String>>(mut self, volume: Option<S>) -> Self {
-        self.config.data_volume = volume.map(|v| v.into());
+    /// Set the logs
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 
