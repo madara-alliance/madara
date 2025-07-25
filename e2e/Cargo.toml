@@ -16,6 +16,7 @@ path = "src/mod.rs"
 async-trait = { workspace = true }
 dotenvy = { workspace = true }
 dotenv = { workspace = true }
+dotenvy = { workspace = true }
 env_logger = { workspace = true }
 fs_extra = { workspace = true }
 httpmock = { version = "0.8.0-alpha.1", features = ["proxy", "remote"] }
