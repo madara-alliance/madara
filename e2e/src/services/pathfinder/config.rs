@@ -164,7 +164,7 @@ impl PathfinderConfig {
         command.arg("--name").arg(self.container_name());
 
         // Port mappings
-        command.arg("-p").arg(format!("{}:{}", self.port(), self.port()));
+        command.arg("-p").arg(format!("{}:{}", self.port(), DEFAULT_PATHFINDER_PORT));
 
         // Add data volume if specified
         if let Some(volume) = self.data_volume() {
