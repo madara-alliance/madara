@@ -1,4 +1,4 @@
-use crate::services::server::ServerError;
+use crate::services::{constants::DEFAULT_ANIVL_PORT, server::ServerError};
 use tokio::process::Command;
 
 #[derive(Debug, thiserror::Error)]
@@ -30,7 +30,7 @@ impl Default for AnvilConfig {
             block_time: None,
 
             // Server Config
-            port: 8545,
+            port: DEFAULT_ANIVL_PORT,
             logs: (true, true),
         }
     }
