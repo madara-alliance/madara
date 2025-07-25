@@ -210,35 +210,40 @@ impl Server {
     }
 
     /// Stop the server gracefully
-    pub async fn stop(&mut self) -> Result<(), ServerError> {
-        // Clean up sub-tasks first
+    /// This function should not be turned async since it's used within Drop.
+    /// And drop impl doesn't handle async functions.
+    pub fn stop(&mut self) -> Result<(), ServerError> {
+        if !self.config.rpc_port.is_some() {
+            return Ok(());
+        }
+        if self.has_exited().is_some() {
+            return Ok(());
+        }
+
+        // Try to terminate gracefully first
+        let pid = self.process.id();
+        if let Some(pid) = pid {
+            let kill_result = Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn();
+
+            match kill_result {
+                Ok(mut kill_process) => {
+                    let _ = kill_process.wait();
+                }
+                Err(_) => {
+                    // If kill command fails, try to kill the process directly
+                    let _ = self.process.kill();
+                }
+            }
+
+            // Wait for the process to actually exit
+            let _ = self.process.wait();
+        }
+
         if let Some(task) = self.stdout_task.take() {
             task.abort();
         }
         if let Some(task) = self.stderr_task.take() {
             task.abort();
-        }
-
-        // Check if already exited
-        if self.has_exited().is_some() {
-            return Ok(());
-        }
-
-        // Try graceful termination with timeout
-        if let Some(_pid) = self.process.id() {
-            let _ = self.process.kill(); // or use proper signal handling
-
-            // Wait with timeout
-            tokio::select! {
-                result = self.process.wait() => {
-                    result.map_err(ServerError::Io)?;
-                }
-                _ = tokio::time::sleep(TASK_FORCE_KILL_TIMEOUT) => {
-                    // Force kill if graceful shutdown fails
-                    let _ = self.process.kill();
-                    self.process.wait().await.map_err(ServerError::Io)?;
-                }
-            }
         }
 
         Ok(())
