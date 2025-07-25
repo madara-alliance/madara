@@ -32,10 +32,12 @@ pub enum BootstrapperError {
     InvalidConfig(String),
     #[error("Bootstrapper execution failed: {0}")]
     ExecutionFailed(String),
-    #[error("Setup failed with exit code: {0}")]
-    SetupFailed(i32),
-    #[error("Other Error : {0}")]
-    OtherError(String),
+    #[error("Setup failed with exit message: {0}")]
+    SetupFailed(String),
+    #[error("Config read error: {0}")]
+    ConfigReadWriteError(#[from] std::io::Error),
+    #[error("Config parse error: {0}")]
+    ConfigParseError(#[from] serde_json::Error),
 }
 
 // Final immutable configuration
