@@ -130,6 +130,13 @@ jobs:
     uses: ./.github/workflows/task-check-orchestrator.yml
     secrets: inherit
 
+  # TODO: maybe we can remove the check, if we are building the binary ourselves ?
+  # Build Orchestrator binary
+  build-orchestrator:
+    needs: [lint-code-style, check-orchestrator]
+    uses: ./.github/workflows/task-build-orchestrator.yml
+    secrets: inherit
+
   # Run coverage tests
   test-orchestrator:
     needs: [build-madara, check-orchestrator]
@@ -157,12 +164,32 @@ jobs:
     uses: ./.github/workflows/task-check-bootstrapper.yml
     secrets: inherit
 
+  # Build Bootstrapper binary
+  build-bootstrapper:
+    needs: [lint-code-style, check-bootstrapper]
+    uses: ./.github/workflows/task-build-bootstrapper.yml
+    secrets: inherit
+
   # Run coverage tests
   test-bootstrapper:
     needs: [build-madara, check-bootstrapper]
     uses: ./.github/workflows/task-test-bootstrapper.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+    secrets: inherit
+
+  # ========================================================================= #
+  #                                End-To-End                                 #
+  # ========================================================================= #
+
+  # End-to-end tests
+  test-end-to-end:
+    needs: [build-madara, build-orchestrator, build-bootstrapper]
+    uses: ./.github/workflows/task-test-end-to-end.yml
+    with:
+      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+      orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
+      bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
     secrets: inherit
 
   # ========================================================================= #
