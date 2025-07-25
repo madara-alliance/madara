@@ -203,13 +203,13 @@ impl AtlanticClient {
         );
 
         let mut request = self.proving_layer.customize_request(
+            // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by Atlantic)
             self.client
                 .request()
                 .method(Method::POST)
                 .path("atlantic-query")
                 .query_param("apiKey", api_key.as_ref())
                 .form_text("declaredJobSize", self.n_steps_to_job_size(job_info.n_steps))
-                .form_text("layout", proof_layout)
                 .form_text("result", &job_config.result.to_string())
                 .form_text("network", job_config.network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
