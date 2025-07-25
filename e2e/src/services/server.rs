@@ -9,6 +9,10 @@ use tokio::task;
 
 use super::constants::*;
 
+const BUFFER_CAPACITY: usize = 65536;
+const FALLBACK_PORT: u16 = 8080;
+const TASK_FORCE_KILL_TIMEOUT: Duration = Duration::from_secs(5);
+
 // Custom error type
 #[derive(Debug, thiserror::Error)]
 pub enum ServerError {
@@ -84,7 +88,6 @@ impl Server {
 
         // Extract stdout and stderr for log monitoring
         if config.logs.0 {
-            command.stdout(Stdio::piped());
 
             let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -94,7 +97,7 @@ impl Server {
             let service_name = config.service_name.clone();
             let stdout_task_inner = task::spawn(async move {
                 // Keeping a large buffer capacity for stdout, to not have buffer overflow
-                let reader = BufReader::with_capacity(65536, stdout);
+                let reader = BufReader::with_capacity(BUFFER_CAPACITY, stdout);
                 let mut lines = reader.lines();
 
                 while let Ok(Some(line)) = lines.next_line().await {
@@ -109,7 +112,6 @@ impl Server {
         }
 
         if config.logs.1 {
-            command.stderr(Stdio::piped());
 
             let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(std::io::Error::new(
                 std::io::ErrorKind::Other,
@@ -169,18 +171,6 @@ impl Server {
         }
     }
 
-    /// Check if the process is still running
-    pub fn is_running(&mut self) -> bool {
-        self.has_exited().is_none()
-    }
-
-    /// Get a free port
-    fn get_free_port() -> u16 {
-        std::net::TcpListener::bind("127.0.0.1:0")
-            .and_then(|listener| listener.local_addr())
-            .map(|addr| addr.port())
-            .unwrap_or(8080) // Fallback port
-    }
 
     /// Wait until the server is ready to accept connections
     async fn wait_till_started(&mut self) -> Result<(), ServerError> {
@@ -190,7 +180,7 @@ impl Server {
         if let Some(addr) = addr {
             // Extract just the socket address from the URL
             let socket_addr = if let Some(host) = addr.host_str() {
-                let port = addr.port().unwrap_or(80); // Default to 80 if no port
+                let port = addr.port().unwrap_or(FALLBACK_PORT); // Default to 80 if no port
                 format!("{}:{}", host, port)
             } else {
                 return Err(ServerError::EndpointNotAvailable);
@@ -218,31 +208,38 @@ impl Server {
             Err(ServerError::EndpointNotAvailable)
         }
     }
+
     /// Stop the server gracefully
-    pub fn stop(&mut self) -> Result<(), ServerError> {
-        if !self.config.rpc_port.is_some() {
-            return Ok(());
+    pub async fn stop(&mut self) -> Result<(), ServerError> {
+        // Clean up sub-tasks first
+        if let Some(task) = self.stdout_task.take() {
+            task.abort();
         }
+        if let Some(task) = self.stderr_task.take() {
+            task.abort();
+        }
+
+        // Check if already exited
         if self.has_exited().is_some() {
             return Ok(());
         }
 
-        // Try to terminate gracefully first
-        let pid = self.process.id();
-        let kill_result = Command::new("kill").args(["-s", "TERM", &pid.unwrap().to_string()]).spawn();
+        // Try graceful termination with timeout
+        if let Some(_pid) = self.process.id() {
+            let _ = self.process.kill(); // or use proper signal handling
 
-        match kill_result {
-            Ok(mut kill_process) => {
-                let _ = kill_process.wait();
-            }
-            Err(_) => {
-                // If kill command fails, try to kill the process directly
-                let _ = self.process.kill();
+            // Wait with timeout
+            tokio::select! {
+                result = self.process.wait() => {
+                    result.map_err(ServerError::Io)?;
+                }
+                _ = tokio::time::sleep(TASK_FORCE_KILL_TIMEOUT) => {
+                    // Force kill if graceful shutdown fails
+                    let _ = self.process.kill();
+                    self.process.wait().await.map_err(ServerError::Io)?;
+                }
             }
         }
-
-        // Wait for the process to actually exit
-        let _ = self.process.wait();
 
         Ok(())
     }
