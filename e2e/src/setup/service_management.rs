@@ -19,7 +19,6 @@ use crate::services::constants::*;
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
 use crate::services::helpers::NodeRpcMethods;
-use tokio::time::sleep;
 
 use tokio::time::{timeout, Instant, Duration};
 
