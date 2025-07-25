@@ -71,9 +71,6 @@ impl ServiceManager {
         // Orchestration
         self.setup_orchestration(&mut services).await?;
 
-        // Cleanup setup services
-        self.cleanup_setup_services(&mut services).await?;
-
         println!("✅ Setup completed successfully in {:?}", start.elapsed());
         Ok(())
     }
@@ -212,7 +209,7 @@ impl ServiceManager {
 
             // Stop Madara after Pathfinder syncs
             if let Some(mut madara) = services.madara_service.take() {
-                madara.stop()?;
+                let _ = madara.stop().await?;
                 println!("🛑 Madara stopped after Pathfinder sync");
             }
 
@@ -272,35 +269,6 @@ impl ServiceManager {
             println!("Dumping MongoDB database...");
             mongo.dump_db(orchestrator.config().database_name()).await?;
         }
-        Ok(())
-    }
-
-    async fn cleanup_setup_services(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        // Stop all services used during setup
-        if let Some(mut madara) = services.madara_service.take() {
-            madara.stop()?;
-        }
-        if let Some(mut orchestrator) = services.orchestrator_service.take() {
-            orchestrator.stop()?;
-        }
-        if let Some(mut pathfinder) = services.pathfinder_service.take() {
-            pathfinder.stop()?;
-        }
-        if let Some(mut mock_prover) = services.mock_prover_service.take() {
-            mock_prover.stop()?;
-        }
-        if let Some(mut mongo) = services.mongo_service.take() {
-            mongo.stop()?;
-        }
-        if let Some(mut localstack) = services.localstack_service.take() {
-            localstack.stop()?;
-        }
-        if let Some(mut anvil) = services.anvil_service.take() {
-            anvil.stop()?;
-        }
-
-        // Docker takes a while to close the containers
-        sleep(Duration::from_secs(10)).await;
         Ok(())
     }
 
