@@ -69,8 +69,12 @@ impl BootstrapperService {
                     println!("✅ Bootstrapper {} completed successfully with {}", self.config.mode(), exit_status);
                     Ok(exit_status)
                 } else {
-                    let exit_code = exit_status.code().unwrap_or(-1);
-                    Err(BootstrapperError::SetupFailed(exit_code))
+                    let error_msg = if let Some(code) = exit_status.code() {
+                            format!("Process exited with code: {}", code)
+                        } else {
+                            format!("Process terminated by signal: {}", exit_status)
+                    };
+                    Err(BootstrapperError::SetupFailed(error_msg))
                 }
             }
             Ok(Err(e)) => Err(BootstrapperError::ExecutionFailed(e.to_string())),
@@ -117,18 +121,18 @@ impl BootstrapperService {
         // Update bootstrapper config
         let mut config: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(DEFAULT_BOOTSTRAPPER_CONFIG)
-                .map_err(|e| BootstrapperError::OtherError(format!("Failed to read bootstrapper config: {}", e)))?,
+                .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?,
         )
-        .map_err(|e| BootstrapperError::OtherError(format!("Failed to parse bootstrapper config JSON: {}", e)))?;
+        .map_err(|e| BootstrapperError::ConfigParseError(e))?;
 
         config[key] = serde_json::Value::String(value.to_string());
 
         std::fs::write(
             DEFAULT_BOOTSTRAPPER_CONFIG,
             serde_json::to_string_pretty(&config)
-                .map_err(|e| BootstrapperError::OtherError(format!("Failed to serialize config: {}", e)))?,
+                .map_err(|e| BootstrapperError::ConfigParseError(e))?,
         )
-        .map_err(|e| BootstrapperError::OtherError(format!("Failed to write bootstrapper config: {}", e)))?;
+        .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?;
 
         println!("✅ Updated bootstrapper config with {} value: {}", key, value);
         Ok(())
