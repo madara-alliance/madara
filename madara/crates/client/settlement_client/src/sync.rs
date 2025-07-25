@@ -33,13 +33,15 @@ impl L1ClientImpl {
         ));
 
         if let Some(gas_provider_config) = config.gas_provider_config {
-            join_set.spawn(gas_price_worker(
-                self.provider.clone(),
-                Arc::clone(&self.backend),
-                ctx.clone(),
-                gas_provider_config,
-                config.l1_block_metrics,
-            ));
+            if !gas_provider_config.all_is_fixed() {
+                join_set.spawn(gas_price_worker(
+                    self.provider.clone(),
+                    Arc::clone(&self.backend),
+                    ctx.clone(),
+                    gas_provider_config,
+                    config.l1_block_metrics,
+                ));
+            }
         }
 
         while let Some(res) = join_set.join_next().await {

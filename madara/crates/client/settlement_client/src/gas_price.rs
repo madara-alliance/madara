@@ -201,7 +201,7 @@ pub async fn gas_price_worker(
             }
         }
 
-        if last_update_timestamp.duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch")
+        if SystemTime::now().duration_since(last_update_timestamp).expect("SystemTime::now() < last_update_timestamp")
             > gas_provider_config.poll_interval * 10
         {
             return Err(SettlementClientError::GasPrice(format!(
