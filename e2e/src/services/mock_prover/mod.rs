@@ -25,7 +25,7 @@ impl MockProverService {
         // Create server config
         let server_config = ServerConfig {
             rpc_port: Some(port),
-            service_name: "MockProver".to_string(),
+            service_name: "Mock Prover".to_string(),
             logs: config.logs(),
             connection_attempts: 30,
             connection_delay_ms: 1000,
@@ -53,5 +53,10 @@ impl MockProverService {
     /// Get the underlying server
     pub fn server(&self) -> &Server {
         &self.server
+    }
+
+    pub async fn stop(&mut self) -> Result<(), MockProverError> {
+        println!("☠️ Stopping Mock Prover");
+        self.server.stop().await.map_err(|err| MockProverError::Server(err))
     }
 }
