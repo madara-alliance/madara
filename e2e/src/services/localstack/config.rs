@@ -1,5 +1,7 @@
-use tokio::process::Command;
+use crate::services::helpers::get_container_name;
 use crate::services::server::ServerError;
+use tokio::process::Command;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LocalstackError {
@@ -13,8 +15,8 @@ pub enum LocalstackError {
     Server(#[from] ServerError),
 }
 
-use crate::services::docker::DockerError;
 use crate::services::constants::*;
+use crate::services::docker::DockerError;
 
 // Final immutable configuration
 #[derive(Debug, Clone)]
@@ -31,14 +33,11 @@ pub struct LocalstackConfig {
 impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
-            image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
-            container_name: format!("{}-{}", DEFAULT_LOCALSTACK_CONTAINER_NAME, uuid::Uuid::new_v4()),
-            environment_vars: vec![
-                ("DEBUG".to_string(), "1".to_string()),
-                ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
-            ],
+            image: LOCALSTACK_IMAGE.to_string(),
+            container_name: get_container_name(LOCALSTACK_CONTAINER),
+            environment_vars: vec![("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string())],
 
-            port: DEFAULT_LOCALSTACK_PORT,
+            port: LOCALSTACK_PORT,
             logs: (false, true),
         }
     }
@@ -80,13 +79,19 @@ impl LocalstackConfig {
         &self.environment_vars
     }
 
+    /// Get the endpoint URL
+    pub fn endpoint(&self) -> Url {
+        let url = format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port());
+        Url::parse(&url).unwrap()
+    }
+
     /// Build the Docker command for Localstack
     pub fn to_command(&self) -> Command {
         let mut command = Command::new("docker");
         command.arg("run");
         command.arg("--rm"); // Remove container when it stops
         command.arg("--name").arg(self.container_name());
-        command.arg("-p").arg(format!("{}:{}", self.port(), self.port()));
+        command.arg("-p").arg(format!("{}:{}", self.port(), LOCALSTACK_PORT));
 
         // Add environment variables
         for (key, value) in self.environment_vars() {
@@ -108,9 +113,7 @@ pub struct LocalstackConfigBuilder {
 impl LocalstackConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: LocalstackConfig::default(),
-        }
+        Self { config: LocalstackConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -139,6 +142,12 @@ impl LocalstackConfigBuilder {
     /// Add an environment variable
     pub fn env_var<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
         self.config.environment_vars.push((key.into(), value.into()));
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 

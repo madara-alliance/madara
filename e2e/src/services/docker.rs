@@ -2,6 +2,7 @@
 // DOCKER SERVER HELPER - For Docker-based services
 // =============================================================================
 
+use crate::services::constants::DEFAULT_SERVICE_HOST;
 use crate::services::server::ServerError;
 use tokio::process::Command;
 
@@ -67,6 +68,6 @@ impl DockerServer {
 
     /// Check if a port is in use
     pub fn is_port_in_use(port: u16) -> bool {
-        std::net::TcpListener::bind(format!("127.0.0.1:{}", port)).is_err()
+        std::net::TcpListener::bind(format!("{}:{}", DEFAULT_SERVICE_HOST, port)).is_err()
     }
 }
