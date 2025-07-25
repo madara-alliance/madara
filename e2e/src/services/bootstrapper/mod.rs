@@ -10,6 +10,9 @@ use crate::services::constants::*;
 use crate::services::server::{Server, ServerConfig};
 use std::process::ExitStatus;
 
+const CONNECTION_ATTEMPTS: usize = 1;
+const CONNECTION_DELAY_MS: u64 = 100;
+
 pub struct BootstrapperService {
     server: Server,
     config: BootstrapperConfig,
@@ -30,8 +33,8 @@ impl BootstrapperService {
         // Create server config - bootstrapper doesn't need network port,
         // but we'll use a dummy port for the generic server interface
         let server_config = ServerConfig {
-            connection_attempts: 1, // No connection check needed
-            connection_delay_ms: 100,
+            connection_attempts: CONNECTION_ATTEMPTS, // No connection check needed
+            connection_delay_ms: CONNECTION_DELAY_MS,
             service_name: format!("Bootstrapper-{}", config.mode().to_string()),
             ..Default::default()
         };
