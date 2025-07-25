@@ -7,7 +7,7 @@ members = [
   "bootstrapper",
   "build-artifacts",
   "bootstrapper-v2",
-  "test_utils/crates/mock-atlantic-server"
+  "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
@@ -310,7 +310,7 @@ orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator = { path = "orchestrator" }
 
-utils-mock-atlantic-server = {path = "test_utils/crates/mock-atlantic-server"}
+utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
 
 base64ct = "=1.6.0"
 

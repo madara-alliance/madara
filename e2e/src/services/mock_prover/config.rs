@@ -1,6 +1,7 @@
 use std::path::PathBuf;
 use tokio::process::Command;
 use crate::services::constants::*;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockProverError {
@@ -52,6 +53,11 @@ impl MockProverConfig {
         self.logs
     }
 
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
+    }
+
     /// Get the binary path
     pub fn binary_path(&self) -> &PathBuf {
         &self.binary_path
@@ -88,6 +94,12 @@ impl MockProverConfigBuilder {
     /// Set the port
     pub fn port(mut self, port: u16) -> Self {
         self.config.port = port;
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 

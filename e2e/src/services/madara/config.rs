@@ -6,6 +6,7 @@ use std::path::PathBuf;
 use tokio::process::Command;
 use crate::services::helpers::NodeRpcError;
 use crate::services::constants::*;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MadaraError {
@@ -58,7 +59,7 @@ pub struct MadaraConfig {
     gateway_external: bool,
     gateway_port: u16,
     charge_fee: bool,
-    l1_endpoint: Option<String>,
+    l1_endpoint: Option<Url>,
     strk_gas_price: u64,
     strk_blob_gas_price: u64,
     gas_price: u64,
@@ -73,7 +74,7 @@ impl Default for MadaraConfig {
         Self {
             binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
             name: DEFAULT_MADARA_NAME.to_string(),
-            database_path: PathBuf::from("./data/madara-db"),
+            database_path: PathBuf::from(format!("{}/{}", DEFAULT_DATA_DIR, MADARA_DEFAULT_DATABASE_NAME)),
             rpc_port: DEFAULT_MADARA_RPC_PORT,
             rpc_cors: "*".to_string(),
             rpc_external: true,
@@ -86,7 +87,6 @@ impl Default for MadaraConfig {
             gateway_port: DEFAULT_MADARA_GATEWAY_PORT,
             charge_fee: false,
             block_time: None,
-            // l1_endpoint: Some("http://127.0.0.1:8545".to_string()),
             l1_endpoint: None,
             strk_gas_price: 0,
             strk_blob_gas_price: 0,
@@ -186,8 +186,8 @@ impl MadaraConfig {
     }
 
     /// Get the L1 endpoint
-    pub fn l1_endpoint(&self) -> Option<&str> {
-        self.l1_endpoint.as_deref()
+    pub fn l1_endpoint(&self) -> Option<&Url> {
+        self.l1_endpoint.as_ref()
     }
 
     /// Get STRK gas price
@@ -223,6 +223,22 @@ impl MadaraConfig {
     /// Get logs
     pub fn logs(&self) -> (bool, bool) {
         self.logs
+    }
+
+
+    /// Get the rpc endpoint
+    pub fn rpc_endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.rpc_port())).unwrap()
+    }
+
+    /// Get the gateway endpoint
+    pub fn gateway_endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}/{}", DEFAULT_SERVICE_HOST, self.gateway_port(), "feeder")).unwrap()
+    }
+
+    /// Get the feeder gateway endpoint
+    pub fn feeder_gateway_endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}/{}", DEFAULT_SERVICE_HOST, self.gateway_port(), "feeder_gateway")).unwrap()
     }
 
     /// Convert the configuration to a command
@@ -279,7 +295,7 @@ impl MadaraConfig {
         }
 
         if let Some(ref l1_endpoint) = self.l1_endpoint {
-            cmd.arg("--l1-endpoint").arg(l1_endpoint);
+            cmd.arg("--l1-endpoint").arg(l1_endpoint.to_string());
         } else {
             cmd.arg("--no-l1-sync");
         }
@@ -402,8 +418,8 @@ impl MadaraConfigBuilder {
         self
     }
 
-    pub fn l1_endpoint(mut self, endpoint: Option<&str>) -> Self {
-        self.config.l1_endpoint = endpoint.map(|v| v.to_string());
+    pub fn l1_endpoint(mut self, endpoint: Option<Url>) -> Self {
+        self.config.l1_endpoint = endpoint;
         self
     }
 
@@ -424,6 +440,12 @@ impl MadaraConfigBuilder {
 
     pub fn blob_gas_price(mut self, price: u64) -> Self {
         self.config.blob_gas_price = price;
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 

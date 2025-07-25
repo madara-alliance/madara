@@ -1,3 +1,5 @@
+use url::Url;
+
 use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -29,7 +31,7 @@ pub struct MockVerifierDeployerConfig {
     timeout: Duration,
     script_path: PathBuf,
     private_key: String,
-    anvil_url: String,
+    l1_url: Url,
     mock_gps_verifier_path: String,
     verifier_file_name: String,
     logs: (bool, bool),
@@ -43,7 +45,7 @@ impl Default for MockVerifierDeployerConfig {
             timeout: Duration::from_secs(300), // 5 minutes should be enough for deployment
             script_path: PathBuf::from(DEFAULT_SCRIPT_PATH),
             private_key: DEFAULT_PRIVATE_KEY.to_string(),
-            anvil_url: DEFAULT_ANVIL_URL.to_string(),
+            l1_url: Url::parse(DEFAULT_ANVIL_URL).unwrap(),
             mock_gps_verifier_path: DEFAULT_MOCK_GPS_VERIFIER_PATH.to_string(),
             verifier_file_name: format!("{}/{}", DEFAULT_DATA_DIR, DEFAULT_VERIFIER_FILE_NAME).to_string(),
             logs: (true, true),
@@ -84,9 +86,9 @@ impl MockVerifierDeployerConfig {
         &self.private_key
     }
 
-    /// Get the anvil URL
-    pub fn anvil_url(&self) -> &str {
-        &self.anvil_url
+    /// Get the l1 URL
+    pub fn l1_url(&self) -> &Url {
+        &self.l1_url
     }
 
     /// Get the mock GPS verifier path
@@ -122,7 +124,7 @@ impl MockVerifierDeployerConfig {
 
         // Add script arguments
         command_string.push_str(&format!(" --private-key '{}'", self.private_key));
-        command_string.push_str(&format!(" --anvil-url '{}'", self.anvil_url));
+        command_string.push_str(&format!(" --anvil-url '{}'", self.l1_url));
         command_string.push_str(&format!(" --mock-gps-verifier-path '{}'", self.mock_gps_verifier_path));
         command_string.push_str(&format!(" --verifier-file-name '{}'", self.verifier_file_name));
 
@@ -172,8 +174,14 @@ impl MockVerifierDeployerConfigBuilder {
     }
 
     /// Set the anvil URL
-    pub fn anvil_url<S: Into<String>>(mut self, url: S) -> Self {
-        self.config.anvil_url = url.into();
+    pub fn l1_url(mut self, url: Url) -> Self {
+        self.config.l1_url = url;
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 
