@@ -5,7 +5,6 @@
 pub mod config;
 // Re-export common utilities
 pub use config::*;
-use crate::services::constants::*;
 
 use crate::services::server::{Server, ServerConfig};
 use std::process::ExitStatus;
@@ -43,9 +42,7 @@ impl MockVerifierDeployerService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(MockVerifierDeployerError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(MockVerifierDeployerError::Server)?;
 
         Ok(Self { server, config })
     }
@@ -98,34 +95,8 @@ impl MockVerifierDeployerService {
 
     /// Get the deployed verifier address from the output file
     pub fn get_verifier_address_from_output_file(&self) -> Result<String, MockVerifierDeployerError> {
-        std::fs::read_to_string(&self.config.verifier_file_name())
+        std::fs::read_to_string(&self.config.verifier_file_path())
             .map(|s| s.trim().to_string())
             .map_err(|e| MockVerifierDeployerError::FileSystem(e))
-    }
-
-
-    /// Check if deployment script exists (static method for convenience)
-    pub fn check_script() -> Result<(), MockVerifierDeployerError> {
-        let script_path = std::path::PathBuf::from(DEFAULT_SCRIPT_PATH);
-        if script_path.exists() {
-            Ok(())
-        } else {
-            Err(MockVerifierDeployerError::ScriptNotFound(format!(
-                "Default script not found: {}",
-                script_path.display()
-            )))
-        }
-    }
-
-    /// Check if deployment script exists for a specific path
-    pub fn check_script_path(path: &std::path::Path) -> Result<(), MockVerifierDeployerError> {
-        if path.exists() {
-            Ok(())
-        } else {
-            Err(MockVerifierDeployerError::ScriptNotFound(format!(
-                "Script not found: {}",
-                path.display()
-            )))
-        }
     }
 }

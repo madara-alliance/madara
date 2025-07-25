@@ -1,9 +1,11 @@
+use url::Url;
+
+use crate::services::constants::*;
+use crate::services::helpers::{get_database_path, get_file_path};
 use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-use crate::services::constants::*;
-
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockVerifierDeployerError {
@@ -29,9 +31,9 @@ pub struct MockVerifierDeployerConfig {
     timeout: Duration,
     script_path: PathBuf,
     private_key: String,
-    anvil_url: String,
+    l1_url: Url,
     mock_gps_verifier_path: String,
-    verifier_file_name: String,
+    verifier_file_path: PathBuf,
     logs: (bool, bool),
     environment_vars: HashMap<String, String>,
     additional_args: Vec<String>,
@@ -40,12 +42,12 @@ pub struct MockVerifierDeployerConfig {
 impl Default for MockVerifierDeployerConfig {
     fn default() -> Self {
         Self {
-            timeout: Duration::from_secs(300), // 5 minutes should be enough for deployment
-            script_path: PathBuf::from(DEFAULT_SCRIPT_PATH),
-            private_key: DEFAULT_PRIVATE_KEY.to_string(),
-            anvil_url: DEFAULT_ANVIL_URL.to_string(),
-            mock_gps_verifier_path: DEFAULT_MOCK_GPS_VERIFIER_PATH.to_string(),
-            verifier_file_name: DEFAULT_VERIFIER_FILE_NAME.to_string(),
+            timeout: Duration::from_secs(MOCK_VERIFIER_TIMEOUT_SECS),
+            script_path: get_file_path(MOCK_VERIFIER_DEPLOYER_SCRIPT),
+            private_key: ANVIL_PRIVATE_KEY.to_string(),
+            l1_url: Url::parse(format!("http://{}:{}", DEFAULT_SERVICE_HOST, ANVIL_PORT).as_str()).unwrap(),
+            mock_gps_verifier_path: get_file_path(MOCK_VERIFIER_CONTRACT).to_string_lossy().to_string(),
+            verifier_file_path: get_database_path(DATA_DIR, MOCK_VERIFIER_ADDRESS_FILE),
             logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
@@ -84,9 +86,9 @@ impl MockVerifierDeployerConfig {
         &self.private_key
     }
 
-    /// Get the anvil URL
-    pub fn anvil_url(&self) -> &str {
-        &self.anvil_url
+    /// Get the l1 URL
+    pub fn l1_url(&self) -> &Url {
+        &self.l1_url
     }
 
     /// Get the mock GPS verifier path
@@ -94,9 +96,9 @@ impl MockVerifierDeployerConfig {
         &self.mock_gps_verifier_path
     }
 
-    /// Get the verifier file name
-    pub fn verifier_file_name(&self) -> &str {
-        &self.verifier_file_name
+    /// Get the verifier file path
+    pub fn verifier_file_path(&self) -> &PathBuf {
+        &self.verifier_file_path
     }
 
     /// Get the environment variables
@@ -122,9 +124,9 @@ impl MockVerifierDeployerConfig {
 
         // Add script arguments
         command_string.push_str(&format!(" --private-key '{}'", self.private_key));
-        command_string.push_str(&format!(" --anvil-url '{}'", self.anvil_url));
+        command_string.push_str(&format!(" --anvil-url '{}'", self.l1_url));
         command_string.push_str(&format!(" --mock-gps-verifier-path '{}'", self.mock_gps_verifier_path));
-        command_string.push_str(&format!(" --verifier-file-name '{}'", self.verifier_file_name));
+        command_string.push_str(&format!(" --verifier-file-name '{}'", self.verifier_file_path.to_string_lossy()));
 
         // Additional arguments
         for arg in &self.additional_args {
@@ -172,8 +174,14 @@ impl MockVerifierDeployerConfigBuilder {
     }
 
     /// Set the anvil URL
-    pub fn anvil_url<S: Into<String>>(mut self, url: S) -> Self {
-        self.config.anvil_url = url.into();
+    pub fn l1_url(mut self, url: Url) -> Self {
+        self.config.l1_url = url;
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 
@@ -183,9 +191,9 @@ impl MockVerifierDeployerConfigBuilder {
         self
     }
 
-    /// Set the verifier file name
-    pub fn verifier_file_name<S: Into<String>>(mut self, name: S) -> Self {
-        self.config.verifier_file_name = name.into();
+    /// Set the verifier file path
+    pub fn verifier_file_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
+        self.config.verifier_file_path = path.into();
         self
     }
 
