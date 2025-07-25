@@ -1,9 +1,10 @@
 use crate::services::docker::DockerError;
+use crate::services::helpers::get_container_name;
 use crate::services::server::ServerError;
 
 use crate::services::constants::*;
 use tokio::process::Command;
-
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum MongoError {
@@ -34,11 +35,11 @@ pub struct MongoConfig {
 impl Default for MongoConfig {
     fn default() -> Self {
         Self {
-            image: DEFAULT_MONGO_IMAGE.to_string(),
-            container_name: format!("{}-{}", DEFAULT_MONGO_CONTAINER_NAME, uuid::Uuid::new_v4()),
+            image: MONGODB_IMAGE.to_string(),
+            container_name: get_container_name(MONGODB_CONTAINER),
             environment_vars: vec![],
 
-            port: DEFAULT_MONGO_PORT,
+            port: MONGODB_PORT,
             logs: (false, false),
         }
     }
@@ -78,6 +79,11 @@ impl MongoConfig {
     /// Get the container name
     pub fn container_name(&self) -> &str {
         &self.container_name
+    }
+
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
     }
 
     /// Build the Docker command for MongoDB
@@ -126,6 +132,12 @@ impl MongoConfigBuilder {
     /// Set the container name
     pub fn container_name<S: Into<String>>(mut self, name: S) -> Self {
         self.config.container_name = name.into();
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 
