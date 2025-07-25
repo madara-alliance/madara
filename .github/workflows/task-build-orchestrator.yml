@@ -52,7 +52,6 @@ jobs:
           echo "orchestrator-hash=$HASH" >> $GITHUB_OUTPUT
           echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
 
-
       # Upload Orchestrator binary as artifact
       - name: Upload Orchestrator binary
         uses: actions/upload-artifact@v4
