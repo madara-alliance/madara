@@ -43,9 +43,9 @@ impl AnvilService {
         &self.server
     }
 
-    pub fn stop(&mut self) -> Result<(), AnvilError> {
+    pub async fn stop(&mut self) -> Result<(), AnvilError> {
         println!("☠️ Stopping Anvil");
-        self.server.stop().map_err(|err| AnvilError::Server(err))
+        self.server.stop().await.map_err(|err| AnvilError::Server(err))
     }
 
     pub fn config(&self) -> &AnvilConfig {
