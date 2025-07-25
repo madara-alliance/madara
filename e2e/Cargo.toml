@@ -1,6 +1,6 @@
 [package]
 name = "e2e"
-description = ""
+description = "End-to-end testing for Madara Services"
 authors.workspace = true
 edition.workspace = true
 license.workspace = true
