@@ -11,7 +11,8 @@ use super::constants::*;
 
 const BUFFER_CAPACITY: usize = 65536;
 const FALLBACK_PORT: u16 = 8080;
-const TASK_FORCE_KILL_TIMEOUT: Duration = Duration::from_secs(5);
+const CONNECTION_ATTEMPTS: usize = 30;
+const CONNECTION_DELAY_MS: u64 = 1000;
 
 // Custom error type
 #[derive(Debug, thiserror::Error)]
@@ -46,8 +47,8 @@ impl Default for ServerConfig {
         Self {
             service_name: String::from(""),
             rpc_port: None,
-            connection_attempts: 30,
-            connection_delay_ms: 1000,
+            connection_attempts: CONNECTION_ATTEMPTS,
+            connection_delay_ms: CONNECTION_DELAY_MS,
             logs: (true, true),
         }
     }
