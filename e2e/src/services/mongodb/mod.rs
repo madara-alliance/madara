@@ -83,9 +83,9 @@ impl MongoService {
         &self.config
     }
 
-    pub async fn stop(&mut self) -> Result<(), MongoError> {
+    pub fn stop(&mut self) -> Result<(), MongoError> {
         println!("☠️ Stopping MongoDB");
-        self.server.stop().await.map_err(|err| MongoError::Server(err))
+        self.server.stop().map_err(|err| MongoError::Server(err))
     }
 
 }
