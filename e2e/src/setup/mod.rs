@@ -3,16 +3,17 @@
 // =============================================================================
 
 pub mod config;
-pub mod dependency_validation;
 pub mod database_management;
+pub mod dependency_validation;
 pub mod lifecycle_management;
 pub mod service_management;
 
-pub use service_management::*;
-pub use dependency_validation::*;
-use std::sync::Arc;
+use crate::services::constants::DATA_DIR;
 use crate::setup::database_management::DatabaseManager;
 use crate::setup::lifecycle_management::ServiceLifecycleManager;
+pub use dependency_validation::*;
+pub use service_management::*;
+use std::sync::Arc;
 
 // =============================================================================
 // MAIN SETUP FACADE
@@ -34,39 +35,39 @@ impl ChainSetup {
             service_manager: ServiceManager::new(config.clone()),
             database_manager: DatabaseManager::new(),
             lifecycle_manager: ServiceLifecycleManager::new(),
-            validator: DependencyValidator::new(
-                config.layer.clone(),
-                config.get_timeouts().validate_dependencies
-            ),
-            config
+            validator: DependencyValidator::new(config.layer.clone(), config.get_timeouts().validate_dependencies),
+            config,
         })
     }
 
-    pub async fn setup(&mut self) -> Result<(), SetupError> {
+    pub async fn setup(&mut self, test_name: &str) -> Result<(), SetupError> {
         println!("🚀 Starting Chain Setup for {:?} layer...", self.config.layer);
 
         let db_status = self.database_manager.check_existing_state().await?;
 
+        println!("{:?} db_statusdb_statusdb_statusdb_status", db_status);
+
         match db_status {
             DBState::ReadyToUse => {
                 println!("✅ Chain state exists, starting servers...");
-                self.start_existing_chain().await?;
-            },
+                self.start_existing_chain(test_name).await?;
+            }
             DBState::Locked => {
                 println!("⚠️ Chain state is locked, waiting for unlock...");
+                // TODO: incomplete code here
                 self.wait_for_unlock_and_retry().await?;
-            },
+            }
             DBState::NotReady => {
                 println!("❌ Chain state does not exist, setting up new chain...");
                 let test_config = self.config.to_owned();
-                let setup_config = SetupConfigBuilder::new(None).build_l2_config()?;
+                let setup_config = SetupConfigBuilder::new(None).build_l2_setup_config()?;
                 self.config = Arc::new(setup_config);
                 self.service_manager = ServiceManager::new(self.config.clone());
                 self.setup_new_chain().await?;
                 self.config = test_config;
                 self.service_manager = ServiceManager::new(self.config.clone());
-                self.start_existing_chain().await?;
-            },
+                self.start_existing_chain(test_name).await?;
+            }
             DBState::Error => {
                 return Err(SetupError::OtherError("Invalid DB status".to_string()));
             }
@@ -76,6 +77,9 @@ impl ChainSetup {
     }
 
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
+        // Create data dump directory
+        self.database_manager.create_data_directory(DATA_DIR).await?;
+
         // Validate dependencies
         self.validator.validate_all().await?;
 
@@ -91,10 +95,10 @@ impl ChainSetup {
         Ok(())
     }
 
-    async fn start_existing_chain(&mut self) -> Result<(), SetupError> {
+    async fn start_existing_chain(&mut self, test_name: &str) -> Result<(), SetupError> {
         // Copy databases for test isolation
         // TODO: remove the hardcoding
-        self.database_manager.copy_for_test("e2e_setup_test").await?;
+        self.database_manager.copy_for_test(test_name).await?;
 
         // Start services
         let services = self.service_manager.start_runtime_services().await?;
@@ -121,12 +125,13 @@ impl Drop for ChainSetup {
             let mut lifecycle = std::mem::take(&mut self.lifecycle_manager);
             handle.spawn(async move {
                 let _ = lifecycle.shutdown_all().await;
+                // TODO: Delete the created directory
+                // if let Err(err) = std::fs::remove_dir_all(&format!("data_{}", test_name)) {
+                //     eprintln!("Failed to delete directory: {}", err);
+                // }
             });
         } else if let Ok(rt) = tokio::runtime::Runtime::new() {
             let _ = rt.block_on(self.lifecycle_manager.shutdown_all());
         }
     }
 }
-
-// Re-export the main facade for easy usage
-pub use ChainSetup as Setup;
