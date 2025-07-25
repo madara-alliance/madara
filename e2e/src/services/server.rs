@@ -228,6 +228,11 @@ impl Server {
         if !self.config.rpc_port.is_some() {
             return Ok(());
         }
+        if let Some(task) = self.stderr_task.take() {
+            task.abort();
+        }
+
+        // Check if already exited
         if self.has_exited().is_some() {
             return Ok(());
         }
