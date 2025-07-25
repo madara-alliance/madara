@@ -1,13 +1,10 @@
 use crate::error::SettlementClientError;
-use crate::messaging::L1toL2MessagingEventData;
+use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use async_trait::async_trait;
-use futures::Stream;
-use mc_db::l1_db::LastSyncedEventBlock;
-#[cfg(test)]
-use mockall::automock;
+use futures::stream::BoxStream;
+use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
-use starknet_types_core::felt::Felt;
 
 pub enum ClientType {
     Eth,
@@ -17,21 +14,10 @@ pub enum ClientType {
 // Test types in a separate module
 #[cfg(test)]
 pub mod test_types {
-    use super::*;
-    use futures::stream::BoxStream;
-
     #[derive(Debug, Default, PartialEq)]
     pub struct DummyConfig;
-
-    pub type DummyStream = BoxStream<'static, Result<L1toL2MessagingEventData, SettlementClientError>>;
 }
 
-// Use different automock configurations based on the build type
-#[cfg_attr(test, automock(
-
-    type Config = test_types::DummyConfig;
-    type StreamType = test_types::DummyStream;
-))]
 /// A trait defining the interface for settlement layer clients (Ethereum L1, Starknet).
 ///
 /// This trait provides the core functionality needed to:
@@ -39,11 +25,6 @@ pub mod test_types {
 /// - Process cross-chain messaging
 /// - Verify state updates
 /// - Manage gas pricing
-///
-/// # Type Parameters
-///
-/// * `Config` - Configuration type specific to the settlement layer implementation
-/// * `StreamType` - Stream implementation for processing L1 events
 ///
 /// # Error Handling
 ///
@@ -55,8 +36,8 @@ pub mod test_types {
 ///
 /// # Stream Requirements
 ///
-/// The `StreamType` must be a stream that:
-/// - Produces `Result<L1toL2MessagingEventData, SettlementClientError>`
+/// The returned streams must be streams that:
+/// - Produces `Result<MessageToL2WithMetadata, SettlementClientError>`
 /// - Handles gaps in event sequences (via `Option`)
 /// - Manages errors during event processing
 /// - Implements `Send` for thread safety
@@ -68,20 +49,9 @@ pub mod test_types {
 /// - Handles network interruptions gracefully
 /// - Maintains consistency in event processing
 /// - Provides backpressure when needed
+#[cfg_attr(test, mockall::automock)]
 #[async_trait]
-pub trait SettlementClientTrait: Send + Sync {
-    /// Configuration type used to initialize the client
-    type Config;
-
-    /// Stream type for processing L1 events
-    ///
-    /// This type represents an asynchronous sequence of L1 events that need to be
-    /// processed by the L2 chain. The stream can:
-    /// - Return None to indicate end of current batch
-    /// - Return Some(Err) for processing/network errors
-    /// - Return Some(Ok) for valid events
-    type StreamType: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send;
-
+pub trait SettlementLayerProvider: Send + Sync {
     fn get_client_type(&self) -> ClientType;
     async fn get_latest_block_number(&self) -> Result<u64, SettlementClientError>;
     async fn get_last_event_block_number(&self) -> Result<u64, SettlementClientError>;
@@ -113,7 +83,7 @@ pub trait SettlementClientTrait: Send + Sync {
     async fn get_gas_prices(&self) -> Result<(u128, u128), SettlementClientError>;
 
     /// Computes the hash of a messaging event for verification purposes
-    fn get_messaging_hash(&self, event: &L1toL2MessagingEventData) -> Result<Vec<u8>, SettlementClientError>;
+    fn calculate_message_hash(&self, event: &L1HandlerTransactionWithFee) -> Result<Vec<u8>, SettlementClientError>;
 
     /// Get cancellation status of an L1 to L2 message
     ///
@@ -121,27 +91,43 @@ pub trait SettlementClientTrait: Send + Sync {
     /// * `msg_hash` - Hash of L1 to L2 message
     ///
     /// # Returns
-    /// * `Felt::ZERO` - Message has not been cancelled
-    /// * Other value - Timestamp when the message was cancelled
-    async fn get_l1_to_l2_message_cancellations(&self, msg_hash: &[u8]) -> Result<Felt, SettlementClientError>;
+    ///
+    /// - `true` if there is a cancellation request for this message to l2.
+    async fn message_to_l2_has_cancel_request(&self, msg_hash: &[u8]) -> Result<bool, SettlementClientError>;
+
+    /// Get cancellation status of an L1 to L2 message
+    ///
+    /// This function query the core contract to know if a L1->L2 still exists in the contract.
+    /// # Arguments
+    ///
+    /// - msg_hash : Hash of L1 to L2 message
+    ///
+    /// # Return
+    ///
+    /// - `true` if the message can be found on the core contract.
+    /// - An Error if the call fail
+    async fn message_to_l2_is_pending(&self, msg_hash: &[u8]) -> Result<bool, SettlementClientError>;
+
+    /// Return a block timestamp in second.
+    ///
+    /// # Arguments
+    /// * `l1_block_n` - Block number
+    ///
+    /// # Returns
+    /// * Block timestamp in seconds
+    async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError>;
 
     // ============================================================
     // Stream Implementations :
     // ============================================================
 
-    /// Creates a stream of messaging events from the settlement layer
+    /// Creates a stream listening to L1 to L2 events.
     ///
     /// # Arguments
-    /// * `last_synced_event_block` - Contains information about the last block that was
-    ///    successfully processed, used as starting point for the new stream
-    ///
-    /// This stream is used to process cross-chain messages in order, handling:
-    /// - Message sequencing and ordering
-    /// - Gap detection in event sequences
-    /// - Error handling and recovery
-    /// - Backpressure for event processing
-    async fn get_messaging_stream(
+    /// * `from_l1_block_n` - Start returning events from this block_n.
+    /// * `end_l1_block_n` - Stop returning events at this block_n. None to keep continuing.
+    async fn messages_to_l2_stream(
         &self,
-        last_synced_event_block: LastSyncedEventBlock,
-    ) -> Result<Self::StreamType, SettlementClientError>;
+        from_l1_block_n: u64,
+    ) -> Result<BoxStream<'static, Result<MessageToL2WithMetadata, SettlementClientError>>, SettlementClientError>;
 }

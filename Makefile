@@ -255,7 +255,7 @@ test-orchestrator:
 		--lcov \
 		--output-path lcov.info \
 		--test-threads=1 \
-		--package "orchestrator-*" \
+		--package "orchestrator*" \
 		--no-fail-fast
 	@echo -e "$(PASS)Unit tests completed!$(RESET)"
 

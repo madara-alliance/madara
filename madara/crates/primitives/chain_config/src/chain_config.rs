@@ -82,10 +82,23 @@ fn default_pending_block_update_time() -> Option<Duration> {
 fn default_block_time() -> Duration {
     Duration::from_secs(30)
 }
+fn default_l1_messages_replay_max_duration() -> Duration {
+    Duration::from_secs(3 * 24 * 60 * 60)
+}
+fn default_mempool_min_tip_bump() -> f64 {
+    0.1
+}
 
 #[derive(thiserror::Error, Debug)]
 #[error("Unsupported protocol version: {0}")]
 pub struct UnsupportedProtocolVersion(StarknetVersion);
+
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy)]
+pub enum MempoolMode {
+    #[default]
+    Timestamp,
+    Tip,
+}
 
 #[derive(Debug, Deserialize)]
 pub struct ChainConfig {
@@ -154,17 +167,29 @@ pub struct ChainConfig {
     #[serde(skip)]
     pub private_key: ZeroingPrivateKey,
 
+    #[serde(default)]
+    pub mempool_mode: MempoolMode,
+    /// Minimum tip increase when replacing a transaction with the same (contract_address, nonce) pair in the mempool, as a ratio.
+    /// Tip bumping allows users to increase the priority of their transaction in the mempool, so that they are included in a block sooner.
+    /// This has no effect on FCFS (First-come-first-serve) mode mempools.
+    /// Default is 0.1 which means you have to increase the tip by at least 10%.
+    #[serde(default = "default_mempool_min_tip_bump")]
+    pub mempool_min_tip_bump: f64,
     /// Transaction limit in the mempool.
-    pub mempool_tx_limit: usize,
+    pub mempool_max_transactions: usize,
     /// Transaction limit in the mempool, we have an additional limit for declare transactions.
-    pub mempool_declare_tx_limit: usize,
+    pub mempool_max_declare_transactions: Option<usize>,
     /// Max age of a transaction in the mempool.
     #[serde(deserialize_with = "deserialize_optional_duration")]
-    pub mempool_tx_max_age: Option<Duration>,
+    pub mempool_ttl: Option<Duration>,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
     pub block_production_concurrency: BlockProductionConfig,
+
+    /// Configuration for l1 messages max replay duration.
+    #[serde(default = "default_l1_messages_replay_max_duration", deserialize_with = "deserialize_duration")]
+    pub l1_messages_replay_max_duration: Duration,
 }
 
 impl ChainConfig {
@@ -216,7 +241,7 @@ impl ChainConfig {
             chain_id: ChainId::Mainnet,
             // Since L1 here is Ethereum, that supports Blob.
             l1_da_mode: L1DataAvailabilityMode::Blob,
-            feeder_gateway_url: Url::parse("https://alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
             native_fee_token_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
@@ -262,11 +287,15 @@ impl ChainConfig {
 
             private_key: ZeroingPrivateKey::default(),
 
-            mempool_tx_limit: 10_000,
-            mempool_declare_tx_limit: 20,
-            mempool_tx_max_age: Some(Duration::from_secs(60 * 60)), // an hour?
+            mempool_mode: MempoolMode::Timestamp,
+            mempool_max_transactions: 10_000,
+            mempool_max_declare_transactions: Some(20),
+            mempool_ttl: Some(Duration::from_secs(60 * 60)), // an hour?
+            mempool_min_tip_bump: 0.1,
 
             block_production_concurrency: BlockProductionConfig::default(),
+
+            l1_messages_replay_max_duration: default_l1_messages_replay_max_duration(),
         }
     }
 
@@ -274,7 +303,7 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia".into(),
             chain_id: ChainId::Sepolia,
-            feeder_gateway_url: Url::parse("https://alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.alpha-sepolia.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://alpha-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_TESTNET.parse().expect("parsing a constant"),
             eth_gps_statement_verifier: eth_gps_statement_verifier::SEPOLIA_TESTNET
@@ -288,7 +317,7 @@ impl ChainConfig {
         Self {
             chain_name: "Starknet Sepolia Integration".into(),
             chain_id: ChainId::IntegrationSepolia,
-            feeder_gateway_url: Url::parse("https://integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
+            feeder_gateway_url: Url::parse("https://feeder.integration-sepolia.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://integration-sepolia.starknet.io/gateway/").unwrap(),
             eth_core_contract_address: eth_core_contract_address::SEPOLIA_INTEGRATION
                 .parse()

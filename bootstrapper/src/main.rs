@@ -152,6 +152,18 @@ impl ConfigBuilder {
         if let Ok(rollup_priv_key) = std::env::var("ROLLUP_PRIVATE_KEY") {
             self.rollup_priv_key = Some(rollup_priv_key);
         }
+        if let Ok(rollup_seq_url) = std::env::var("ROLLUP_SEQ_URL") {
+            self.rollup_seq_url = rollup_seq_url;
+        }
+        if let Ok(rollup_declare_v0_seq_url) = std::env::var("ROLLUP_DECLARE_V0_SEQ_URL") {
+            self.rollup_declare_v0_seq_url = rollup_declare_v0_seq_url;
+        }
+        if let Ok(sn_os_program_hash) = std::env::var("SN_OS_PROGRAM_HASH") {
+            self.sn_os_program_hash = sn_os_program_hash;
+        }
+        if let Ok(config_hash_version) = std::env::var("CONFIG_HASH_VERSION") {
+            self.config_hash_version = config_hash_version;
+        }
         self
     }
 
@@ -193,7 +205,6 @@ impl ConfigBuilder {
         })
     }
 }
-
 #[derive(Serialize, Deserialize, Clone)]
 pub struct ConfigFile {
     pub eth_rpc: String,
@@ -227,9 +238,13 @@ pub struct ConfigFile {
 
 #[tokio::main]
 pub async fn main() -> color_eyre::Result<()> {
+    // a logger that can be configured by env
     env_logger::init();
+
+    // parsing env
     dotenv().ok();
 
+    // clap to make cli applications
     let args = CliArgs::parse();
 
     println!("{color_red}{}{color_reset}", BANNER);

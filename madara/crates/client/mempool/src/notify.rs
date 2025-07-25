@@ -1,39 +1,30 @@
-use crate::{MempoolInner, MempoolLimits, MempoolTransaction, TxInsertionError};
-use mc_db::mempool_db::NonceInfo;
-use mp_convert::{Felt, ToFelt};
-use starknet_api::core::Nonce;
-use std::collections::BTreeMap;
-use tokio::sync::{Notify, RwLock, RwLockReadGuard, RwLockWriteGuard};
+use crate::{tx::ScoreFunction, InnerMempool};
+use mp_chain_config::{ChainConfig, MempoolMode};
+use std::{
+    ops::{Deref, DerefMut},
+    sync::Arc,
+};
+use tokio::sync::{Notify, OwnedRwLockWriteGuard, RwLock, RwLockReadGuard};
 
-/// A view into the mempool, intended for consuming transactions. This is expected to be used by block production to
-/// pop transactions from the mempool and execute them.
-///
-/// This struct implements [`Iterator`] by popping the next transaction to execute from the mempool.
-///
-/// This holds the lock to the inner mempool - use with care.
-pub struct MempoolConsumerView<'a> {
-    notify: &'a Notify,
-    inner: RwLockWriteGuard<'a, MempoolInner>,
-    nonce_cache: RwLockWriteGuard<'a, BTreeMap<Felt, Nonce>>,
+/// Write access to the mempool. Holds a lock.
+/// When dropped, if there are ready transactions in the mempool, this will notify waiters.
+pub struct MempoolWriteAccess {
+    notify: Arc<Notify>,
+    inner: OwnedRwLockWriteGuard<InnerMempool>,
 }
-impl Iterator for MempoolConsumerView<'_> {
-    type Item = MempoolTransaction;
-    fn next(&mut self) -> Option<Self::Item> {
-        self.inner.pop_next().inspect(|tx| {
-            let contract_address = tx.contract_address().to_felt();
-            let nonce_next = tx.nonce_next;
-            self.nonce_cache.insert(contract_address, nonce_next);
-        })
+impl Deref for MempoolWriteAccess {
+    type Target = InnerMempool;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
 }
-impl MempoolConsumerView<'_> {
-    /// Total number of transactions in the mempool. This does not mean they all are currently executable.
-    pub fn n_txs_total(&self) -> usize {
-        self.inner.n_total()
+impl DerefMut for MempoolWriteAccess {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 
-impl Drop for MempoolConsumerView<'_> {
+impl Drop for MempoolWriteAccess {
     fn drop(&mut self) {
         // If there are still ready transactions in the mempool, notify the next waiter.
         if self.inner.has_ready_transactions() {
@@ -43,76 +34,46 @@ impl Drop for MempoolConsumerView<'_> {
     }
 }
 
-// Mutex Ordering (deadlocks): nonce_cache mutex should always be taken before inner mutex when the two are taken at the same time.
 pub(crate) struct MempoolInnerWithNotify {
-    inner: RwLock<MempoolInner>,
-    // TODO: should this be in inner mempool? I don't understand why it's here.
-    nonce_cache: RwLock<BTreeMap<Felt, Nonce>>,
+    inner: Arc<RwLock<InnerMempool>>,
     // Notify listener when the mempool goes from !has_ready_transactions to has_ready_transactions.
-    notify: Notify,
+    notify: Arc<Notify>,
 }
 impl MempoolInnerWithNotify {
-    pub fn new(limits: MempoolLimits) -> Self {
+    pub fn new(config: &ChainConfig) -> Self {
         Self {
-            inner: RwLock::new(MempoolInner::new(limits)),
-            nonce_cache: Default::default(),
+            inner: RwLock::new(InnerMempool::new(crate::InnerMempoolConfig {
+                score_function: match config.mempool_mode {
+                    MempoolMode::Timestamp => ScoreFunction::Timestamp,
+                    MempoolMode::Tip => ScoreFunction::Tip { min_tip_bump: config.mempool_min_tip_bump },
+                },
+                max_transactions: config.mempool_max_transactions,
+                max_declare_transactions: config.mempool_max_declare_transactions,
+                ttl: config.mempool_ttl,
+            }))
+            .into(),
             notify: Default::default(),
         }
     }
 
-    /// Insert a transaction into the inner mempool, possibly waking a waiting consumer.
-    pub async fn insert_tx(
-        &self,
-        mempool_tx: MempoolTransaction,
-        force: bool,
-        update_limits: bool,
-        nonce_info: NonceInfo,
-    ) -> Result<(), TxInsertionError> {
-        let mut lock = self.inner.write().await;
-        lock.insert_tx(mempool_tx, force, update_limits, nonce_info)?; // On insert error, bubble up and do not notify.
-
-        if lock.has_ready_transactions() {
-            // We notify a single waiter. The waked task is in charge of waking the next waker in the notify if there are still transactions
-            // in the mempool after it's done.
-            tracing::debug!("notify_one (insert)");
-            self.notify.notify_one();
-        }
-
-        Ok(())
-    }
-
     /// Returns a reading view of the inner mempool.
-    pub async fn read(&self) -> RwLockReadGuard<'_, MempoolInner> {
+    pub async fn read(&self) -> RwLockReadGuard<'_, InnerMempool> {
         self.inner.read().await
-    }
-
-    pub async fn nonce_cache_read(&self) -> RwLockReadGuard<'_, BTreeMap<Felt, Nonce>> {
-        self.nonce_cache.read().await
-    }
-
-    #[cfg(test)]
-    pub async fn write(&self) -> RwLockWriteGuard<'_, MempoolInner> {
-        self.inner.write().await
-    }
-    #[cfg(test)]
-    pub async fn nonce_cache_write(&self) -> RwLockWriteGuard<'_, BTreeMap<Felt, Nonce>> {
-        self.nonce_cache.write().await
     }
 
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
     /// If the mempool has no transaction that can be consumed, this function will wait until there is at least 1 transaction to consume.
-    pub async fn get_consumer_wait_for_ready_tx(&self) -> MempoolConsumerView<'_> {
+    pub async fn get_write_access_wait_for_ready(&self) -> MempoolWriteAccess {
         let permit = self.notify.notified(); // This doesn't actually register us to be notified yet.
         tokio::pin!(permit);
         loop {
             {
                 tracing::debug!("taking lock");
-                let nonce_cache = self.nonce_cache.write().await;
-                let inner = self.inner.write().await;
+                let inner = self.inner.clone().write_owned().await;
 
                 if inner.has_ready_transactions() {
                     tracing::debug!("consumer ready");
-                    return MempoolConsumerView { inner, nonce_cache, notify: &self.notify };
+                    return MempoolWriteAccess { inner, notify: self.notify.clone() };
                 }
                 // Note: we put ourselves in the notify list BEFORE giving back the lock.
                 // Otherwise, some transactions could be missed.
@@ -127,128 +88,108 @@ impl MempoolInnerWithNotify {
     }
 
     /// Returns a view of the mempool intended for consuming transactions from the mempool.
-    pub async fn get_consumer(&self) -> MempoolConsumerView<'_> {
-        MempoolConsumerView {
-            notify: &self.notify,
-            nonce_cache: self.nonce_cache.write().await,
-            inner: self.inner.write().await,
-        }
+    pub async fn write(&self) -> MempoolWriteAccess {
+        MempoolWriteAccess { notify: self.notify.clone(), inner: self.inner.clone().write_owned().await }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tests::tx_account_v0_valid;
+    use crate::tests::tx_account;
     use futures::FutureExt;
-    use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
+    use mp_chain_config::ChainConfig;
+    use mp_convert::Felt;
+    use mp_transactions::validated::ValidatedMempoolTx;
+    use starknet_api::core::Nonce;
     use std::sync::Arc;
 
     #[rstest::rstest]
     #[tokio::test]
-    async fn test_mempool_notify(tx_account_v0_valid: ValidatedMempoolTx) {
+    async fn test_mempool_notify(tx_account: ValidatedMempoolTx) {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
-        let mempool = Arc::new(MempoolInnerWithNotify::new(MempoolLimits::for_testing()));
+        let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::madara_test()));
 
-        let mut fut = Box::pin(mempool.get_consumer_wait_for_ready_tx());
+        let mut fut = Box::pin(mempool.get_write_access_wait_for_ready());
 
         // poll once
         assert!(fut.as_mut().now_or_never().is_none());
 
-        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
-        let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
-            arrived_at: TxTimestamp::now(),
-            converted_class: None,
-            nonce: nonce_info.nonce,
-            nonce_next: nonce_info.nonce_next,
-        };
-        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
+        mempool
+            .write()
+            .await
+            .insert_tx(tx_account.arrived_at, tx_account.clone(), Nonce(Felt::ZERO), &mut vec![])
+            .unwrap();
 
         // poll once
         let mut consumer = fut.as_mut().now_or_never().unwrap();
-        let received = consumer.next().unwrap();
-        assert_eq!(received.contract_address(), mempool_tx.contract_address());
-        assert_eq!(received.nonce(), mempool_tx.nonce());
-        assert_eq!(received.tx_hash(), mempool_tx.tx_hash());
+        let received = consumer.pop_next_ready().unwrap();
+        assert_eq!(received.contract_address, tx_account.contract_address);
+        assert_eq!(received.tx.nonce(), tx_account.tx.nonce());
+        assert_eq!(received.tx_hash, tx_account.tx_hash);
     }
 
     #[rstest::rstest]
     #[tokio::test]
     /// This is unused as of yet in madara, but the mempool supports having multiple waiters on the notify.
-    async fn test_mempool_notify_multiple_listeners(tx_account_v0_valid: ValidatedMempoolTx) {
+    async fn test_mempool_notify_multiple_listeners(tx_account: ValidatedMempoolTx) {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
-        let mempool = Arc::new(MempoolInnerWithNotify::new(MempoolLimits::for_testing()));
+        let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::starknet_mainnet()));
 
-        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
-        let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
-            arrived_at: TxTimestamp::now(),
-            converted_class: None,
-            nonce: nonce_info.nonce,
-            nonce_next: nonce_info.nonce_next,
-        };
-        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
+        mempool
+            .write()
+            .await
+            .insert_tx(tx_account.arrived_at, tx_account.clone(), Nonce(Felt::ZERO), &mut vec![])
+            .unwrap();
 
-        let first_consumer = mempool.get_consumer_wait_for_ready_tx().await;
+        let first_consumer = mempool.get_write_access_wait_for_ready().await;
         // don't consume txs from first consumer
 
-        // keep the first consumer around for now
-
-        tracing::debug!("Hiii");
-        let mut fut = Box::pin(mempool.get_consumer_wait_for_ready_tx());
-        tracing::debug!("Hiii 2");
+        // keep the first consumer around during this call
+        let mut fut = Box::pin(mempool.get_write_access_wait_for_ready());
 
         // poll once
         assert!(fut.as_mut().now_or_never().is_none());
-        tracing::debug!("Hiii 3");
 
         drop(first_consumer); // first consumer is dropped while there are still executable txs in the queue, this will wake up second consumer.
-        tracing::debug!("Hiii 4");
 
         // poll once
         let mut consumer = fut.as_mut().now_or_never().unwrap();
-        tracing::debug!("Hiii 5");
-        let received = consumer.next().unwrap();
-        tracing::debug!("Hiii 6");
-        assert_eq!(received.contract_address(), mempool_tx.contract_address());
-        assert_eq!(received.nonce(), mempool_tx.nonce());
-        assert_eq!(received.tx_hash(), mempool_tx.tx_hash());
+        let received = consumer.pop_next_ready().unwrap();
+        assert_eq!(received.contract_address, tx_account.contract_address);
+        assert_eq!(received.tx.nonce(), tx_account.tx.nonce());
+        assert_eq!(received.tx_hash, tx_account.tx_hash);
     }
 
     #[rstest::rstest]
     #[tokio::test]
     /// This is unused as of yet in madara, but the mempool supports having multiple waiters on the notify.
     /// Tests that the second consumer is not woken up if there are no more txs in the mempool.
-    async fn test_mempool_notify_multiple_listeners_not_woken(tx_account_v0_valid: ValidatedMempoolTx) {
-        let mempool = Arc::new(MempoolInnerWithNotify::new(MempoolLimits::for_testing()));
+    async fn test_mempool_notify_multiple_listeners_not_woken(tx_account: ValidatedMempoolTx) {
+        let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::madara_test()));
 
-        let nonce_info = NonceInfo::ready(Nonce(Felt::ZERO), Nonce(Felt::ONE));
-        let mempool_tx = MempoolTransaction {
-            tx: tx_account_v0_valid.into_blockifier_for_sequencing().unwrap().0,
-            arrived_at: TxTimestamp::now(),
-            converted_class: None,
-            nonce: nonce_info.nonce,
-            nonce_next: nonce_info.nonce_next,
-        };
-        mempool.insert_tx(mempool_tx.clone(), /* force */ false, /* update_limits */ true, nonce_info).await.unwrap();
+        mempool
+            .write()
+            .await
+            .insert_tx(tx_account.arrived_at, tx_account.clone(), Nonce(Felt::ZERO), &mut vec![])
+            .unwrap();
 
-        let mut first_consumer = mempool.get_consumer_wait_for_ready_tx().await;
+        let mut first_consumer = mempool.get_write_access_wait_for_ready().await;
         // consume!
-        let received = first_consumer.next().unwrap();
-        assert_eq!(received.contract_address(), mempool_tx.contract_address());
-        assert_eq!(received.nonce(), mempool_tx.nonce());
-        assert_eq!(received.tx_hash(), mempool_tx.tx_hash());
+        let received = first_consumer.pop_next_ready().unwrap();
+        assert_eq!(received.contract_address, tx_account.contract_address);
+        assert_eq!(received.tx.nonce(), tx_account.tx.nonce());
+        assert_eq!(received.tx_hash, tx_account.tx_hash);
 
         // keep the first consumer around for now
 
-        let mut fut = Box::pin(mempool.get_consumer_wait_for_ready_tx());
+        let mut fut = Box::pin(mempool.get_write_access_wait_for_ready());
 
         // poll once
         assert!(fut.as_mut().now_or_never().is_none());

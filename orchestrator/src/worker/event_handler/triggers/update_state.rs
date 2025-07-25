@@ -3,6 +3,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
 
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
@@ -19,6 +20,11 @@ pub struct UpdateStateJobTrigger;
 impl JobTrigger for UpdateStateJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
+
+        // Self-healing: recover any orphaned StateTransition jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
+            tracing::error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
+        }
 
         let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
         let (completed_da_jobs, last_block_processed_in_last_job) = match latest_job {
@@ -106,8 +112,14 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         let mut blocks_to_process = find_successive_blocks_in_vector(blocks_to_process);
-        if blocks_to_process.len() > 0 {
-            blocks_to_process = blocks_to_process.into_iter().take(1).collect();
+
+        // TODO: Remove this once we have a proper way to handle L3 blocks with use of receipt
+        let max_blocks = match config.layer() {
+            Layer::L2 => 10,
+            Layer::L3 => 1,
+        };
+        if blocks_to_process.len() >= max_blocks {
+            blocks_to_process = blocks_to_process.into_iter().take(max_blocks).collect();
         }
 
         // Prepare state transition metadata

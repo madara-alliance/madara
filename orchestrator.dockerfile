@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Rust using rustup (will respect rust-toolchain.toml)
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain nightly-2024-09-04
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.86
 ENV PATH="/root/.cargo/bin:${PATH}"
 
 # Set the working directory
@@ -17,12 +17,6 @@ WORKDIR /usr/src/madara/
 
 # Copy the local codebase
 COPY . .
-
-
-# Install the toolchain specified in rust-toolchain.toml
-# we might need to use toolchain.toml to install the correct toolchain for the project
-# but it's not working as expected, so we're using custom nightly version temprarily
-RUN rustup show
 
 # Setting it to avoid building artifacts again inside docker
 ENV RUST_BUILD_DOCKER=true

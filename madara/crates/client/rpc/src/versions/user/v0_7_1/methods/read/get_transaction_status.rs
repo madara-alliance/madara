@@ -133,7 +133,7 @@ mod tests {
         let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: false };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
-            mc_mempool::MempoolConfig::for_testing(),
+            mc_mempool::MempoolConfig::default(),
         ));
         let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
             mempool,
@@ -142,7 +142,7 @@ mod tests {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        Starknet::new(backend, mempool_validator, Default::default(), context)
+        Starknet::new(backend, mempool_validator, Default::default(), None, context)
     }
 
     #[tokio::test]

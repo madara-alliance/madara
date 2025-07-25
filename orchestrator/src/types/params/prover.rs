@@ -2,6 +2,7 @@ use crate::cli::RunCmd;
 use crate::OrchestratorError;
 use orchestrator_atlantic_service::AtlanticValidatedArgs;
 use orchestrator_sharp_service::SharpValidatedArgs;
+use orchestrator_utils::layer::Layer;
 
 #[derive(Debug, Clone)]
 pub enum ProverConfig {
