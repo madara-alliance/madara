@@ -41,11 +41,6 @@ impl MockProverService {
         self.config.port()
     }
 
-    pub fn stop(&mut self) -> Result<(), MockProverError> {
-        println!("☠️ Stopping Mock Prover");
-        self.server.stop().map_err(|err| MockProverError::Server(err))
-    }
-
     /// Get the configuration used
     pub fn config(&self) -> &MockProverConfig {
         &self.config
