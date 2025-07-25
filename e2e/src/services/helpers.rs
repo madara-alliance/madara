@@ -1,6 +1,12 @@
+use crate::services::constants::DEFAULT_SERVICE_HOST;
 use async_trait::async_trait;
 use serde_json::json;
+use std::io;
+use std::net::TcpListener;
+use std::path::PathBuf;
 use url::Url;
+
+use super::constants::{BINARY_DIR, REPO_ROOT};
 
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
 
@@ -46,7 +52,8 @@ pub trait NodeRpcMethods: Send + Sync {
         if let Some(error) = json.get("error") {
             // Check for specific "Block not found" error (code 24)
             if let (Some(code), Some(message)) = (error.get("code"), error.get("message")) {
-                if code.as_u64() == Some(BLOCK_NOT_FOUND_ERROR_CODE) && message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false)
+                if code.as_u64() == Some(BLOCK_NOT_FOUND_ERROR_CODE)
+                    && message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false)
                 {
                     println!("No blocks mined yet, returning -1");
                     return Ok(-1);
@@ -65,5 +72,51 @@ pub trait NodeRpcMethods: Send + Sync {
         println!("Madara Block Number: {}", block_num_i64);
 
         Ok(block_num_i64)
+    }
+}
+
+/// Get a free port
+pub fn get_free_port() -> Result<u16, io::Error> {
+    let listener = TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))?;
+    let addr = listener.local_addr()?;
+    Ok(addr.port())
+}
+
+/// Get the binary path
+pub fn get_binary_path(binary_name: &str) -> PathBuf {
+    let mut path = REPO_ROOT.clone();
+    path.push(BINARY_DIR);
+    path.push(binary_name);
+    path
+}
+
+pub fn get_file_path(file_path: &str) -> PathBuf {
+    let mut path = REPO_ROOT.clone();
+    path.push(file_path);
+    path
+}
+
+pub fn get_database_path(database_path: &str, database_name: &str) -> PathBuf {
+    let mut path = REPO_ROOT.clone();
+    path.push(database_path);
+    path.push(database_name);
+    path
+}
+
+pub fn get_container_name(name: &str) -> String {
+    let uuid_num = uuid::Uuid::new_v4().as_u128();
+    let random_suffix = (uuid_num % 9000 + 1000) as u16;
+    format!("{}-{}", name, random_suffix)
+}
+
+pub fn docker_url_conversion(url: &Url) -> Url {
+    // Convert a localhost / 0.0.0.0 / 127.0.0.1
+    // Url to host.docker.internal
+    if url.host_str() == Some("localhost") || url.host_str() == Some("0.0.0.0") || url.host_str() == Some("127.0.0.1") {
+        let mut new_url = url.clone();
+        let _ = new_url.set_host(Some("host.docker.internal"));
+        new_url
+    } else {
+        url.clone()
     }
 }
