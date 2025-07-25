@@ -55,8 +55,8 @@ impl MockProverService {
         &self.server
     }
 
-    pub async fn stop(&mut self) -> Result<(), MockProverError> {
+    pub fn stop(&mut self) -> Result<(), MockProverError> {
         println!("☠️ Stopping Mock Prover");
-        self.server.stop().await.map_err(|err| MockProverError::Server(err))
+        self.server.stop().map_err(|err| MockProverError::Server(err))
     }
 }
