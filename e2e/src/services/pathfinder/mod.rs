@@ -77,9 +77,9 @@ impl PathfinderService {
         &self.config
     }
 
-    pub async fn stop(&mut self) -> Result<(), PathfinderError> {
+    pub fn stop(&mut self) -> Result<(), PathfinderError> {
         println!("☠️ Stopping Pathfinder");
-        self.server.stop().await.map_err(|err| PathfinderError::Server(err))
+        self.server.stop().map_err(|err| PathfinderError::Server(err))
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
