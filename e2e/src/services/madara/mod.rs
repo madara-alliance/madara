@@ -104,9 +104,9 @@ impl MadaraService {
         &self.config
     }
 
-    pub async fn stop(&mut self) -> Result<(), MadaraError> {
+    pub fn stop(&mut self) -> Result<(), MadaraError> {
         println!("☠️ Stopping Madara");
-        self.server.stop().await.map_err(|err| MadaraError::Server(err))
+        self.server.stop().map_err(|err| MadaraError::Server(err))
     }
 
     /// Get the process ID
