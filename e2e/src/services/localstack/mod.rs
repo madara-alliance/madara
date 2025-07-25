@@ -65,30 +65,6 @@ impl LocalstackService {
         Ok(Self { server, config })
     }
 
-
-    /// Validate if AWS resources with the given prefix are available
-    /// This helps determine if the scenario setup is ready
-    pub async fn validate_resources(&self, aws_prefix: &str) -> Result<bool, LocalstackError> {
-        // This is a basic implementation - you might want to extend this
-        // to check specific resources like S3 buckets, DynamoDB tables, etc.
-
-        // Example: Check if we can connect to Localstack's health endpoint
-        let health_url = format!("{}/health", self.endpoint());
-
-        match reqwest::get(&health_url).await {
-            Ok(response) => {
-                if response.status().is_success() {
-                    // You can add more specific validation here
-                    // For example, check if specific AWS resources exist
-                    Ok(true)
-                } else {
-                    Ok(false)
-                }
-            }
-            Err(_) => Ok(false),
-        }
-    }
-
     /// Get the underlying server
     pub fn server(&self) -> &Server {
         &self.server

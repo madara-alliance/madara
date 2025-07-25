@@ -29,6 +29,8 @@ pub enum ServerError {
     ProcessNotRunning,
     #[error("Endpoint not available")]
     EndpointNotAvailable,
+    #[error("Failed to bind to port")]
+    PortBindFailed(std::io::Error),
 }
 
 // Generic server configuration

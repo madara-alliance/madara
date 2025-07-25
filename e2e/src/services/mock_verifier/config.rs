@@ -45,7 +45,7 @@ impl Default for MockVerifierDeployerConfig {
             private_key: DEFAULT_PRIVATE_KEY.to_string(),
             anvil_url: DEFAULT_ANVIL_URL.to_string(),
             mock_gps_verifier_path: DEFAULT_MOCK_GPS_VERIFIER_PATH.to_string(),
-            verifier_file_name: DEFAULT_VERIFIER_FILE_NAME.to_string(),
+            verifier_file_name: format!("{}/{}", DEFAULT_DATA_DIR, DEFAULT_VERIFIER_FILE_NAME).to_string(),
             logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
