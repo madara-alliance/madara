@@ -1,6 +1,5 @@
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_db::MadaraBackend;
-use mc_mempool::L1DataProvider;
 use mp_block::header::{BlockTimestamp, GasPrices, PendingHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
@@ -28,6 +27,8 @@ pub struct ExecutionStats {
     pub n_rejected: usize,
     /// Number of declared classes.
     pub declared_classes: usize,
+    /// Total L2 gas consumed by the transactions in the block.
+    pub l2_gas_consumed: u64,
     /// Execution time
     pub exec_duration: Duration,
 }
@@ -42,6 +43,7 @@ impl Add for ExecutionStats {
             n_reverted: self.n_reverted + other.n_reverted,
             n_rejected: self.n_rejected + other.n_rejected,
             declared_classes: self.declared_classes + other.declared_classes,
+            l2_gas_consumed: self.l2_gas_consumed + other.l2_gas_consumed,
             exec_duration: self.exec_duration + other.exec_duration,
         }
     }
@@ -130,7 +132,7 @@ pub(crate) struct BlockExecutionContext {
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
-    pub l1_gas_price: GasPrices,
+    pub gas_prices: GasPrices,
     /// The mode of data availability for this block
     pub l1_da_mode: L1DataAvailabilityMode,
 }
@@ -142,7 +144,7 @@ impl BlockExecutionContext {
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp.into(),
             protocol_version: self.protocol_version,
-            l1_gas_price: self.l1_gas_price,
+            gas_prices: self.gas_prices,
             l1_da_mode: self.l1_da_mode,
         }
     }
@@ -152,23 +154,24 @@ impl BlockExecutionContext {
             block_number: starknet_api::block::BlockNumber(self.block_n),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
             sequencer_address: self.sequencer_address.try_into()?,
-            gas_prices: (&self.l1_gas_price).into(),
+            gas_prices: (&self.gas_prices).into(),
             use_kzg_da: self.l1_da_mode == L1DataAvailabilityMode::Blob,
         })
     }
 }
 
 pub(crate) fn create_execution_context(
-    l1_data_provider: &Arc<dyn L1DataProvider>,
     backend: &Arc<MadaraBackend>,
     block_n: u64,
-) -> BlockExecutionContext {
-    BlockExecutionContext {
+    previous_l2_gas_price: u128,
+    previous_l2_gas_used: u64,
+) -> anyhow::Result<BlockExecutionContext> {
+    Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
         block_timestamp: SystemTime::now(),
         protocol_version: backend.chain_config().latest_protocol_version,
-        l1_gas_price: l1_data_provider.get_gas_prices(),
+        gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?,
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_n,
-    }
+    })
 }

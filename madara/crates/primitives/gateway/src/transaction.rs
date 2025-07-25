@@ -133,7 +133,7 @@ impl From<InvokeTransaction> for mp_transactions::InvokeTransaction {
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub struct InvokeTransactionV0 {
-    #[serde(alias = "contract_address")]
+    #[serde(rename = "contract_address")]
     pub sender_address: Felt,
     pub entry_point_selector: Felt,
     pub calldata: Calldata,

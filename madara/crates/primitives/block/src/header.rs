@@ -67,14 +67,13 @@ pub struct PendingHeader {
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
-    pub l1_gas_price: GasPrices,
+    pub gas_prices: GasPrices,
     /// The mode of data availability for this block
     pub l1_da_mode: L1DataAvailabilityMode,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 /// Starknet header definition.
-// TODO: add L2 gas
 pub struct Header {
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
@@ -103,7 +102,7 @@ pub struct Header {
     /// The version of the Starknet protocol used when creating this block
     pub protocol_version: StarknetVersion,
     /// Gas prices for this block
-    pub l1_gas_price: GasPrices,
+    pub gas_prices: GasPrices,
     /// The mode of data availability for this block
     pub l1_da_mode: L1DataAvailabilityMode,
 }
@@ -114,6 +113,8 @@ pub struct GasPrices {
     pub strk_l1_gas_price: u128,
     pub eth_l1_data_gas_price: u128,
     pub strk_l1_data_gas_price: u128,
+    pub eth_l2_gas_price: u128,
+    pub strk_l2_gas_price: u128,
 }
 
 // Starknet API can't have null gas prices, so the default null gas prices are set to 1.
@@ -125,15 +126,16 @@ impl From<&GasPrices> for starknet_api::block::GasPrices {
                     .unwrap_or_default(),
                 l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l1_data_gas_price.into())
                     .unwrap_or_default(),
-                // TODO: L2 gas price is not used in the current implementation, but it should be set to 1
-                l2_gas_price: Default::default(), // 1
+                l2_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.eth_l2_gas_price.into())
+                    .unwrap_or_default(),
             },
             strk_gas_prices: starknet_api::block::GasPriceVector {
                 l1_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l1_gas_price.into())
                     .unwrap_or_default(),
                 l1_data_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l1_data_gas_price.into())
                     .unwrap_or_default(),
-                l2_gas_price: Default::default(), // 1
+                l2_gas_price: starknet_api::block::NonzeroGasPrice::new(gas_prices.strk_l2_gas_price.into())
+                    .unwrap_or_default(),
             },
         }
     }
@@ -152,6 +154,19 @@ impl GasPrices {
             price_in_fri: self.strk_l1_data_gas_price.into(),
             price_in_wei: self.eth_l1_data_gas_price.into(),
         }
+    }
+
+    /// https://docs.starknet.io/architecture/blocks/#block_hash
+    pub fn compute_hash(&self) -> Felt {
+        Poseidon::hash_array(&[
+            Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0"),
+            Felt::from(self.eth_l1_gas_price),
+            Felt::from(self.strk_l1_gas_price),
+            Felt::from(self.eth_l1_data_gas_price),
+            Felt::from(self.strk_l1_data_gas_price),
+            Felt::from(self.eth_l2_gas_price),
+            Felt::from(self.strk_l2_gas_price),
+        ])
     }
 }
 
@@ -198,12 +213,13 @@ impl Header {
             state_diff_commitment,
             receipt_commitment,
             protocol_version,
-            l1_gas_price: gas_prices,
+            gas_prices,
             l1_da_mode,
         }
     }
 
     /// Compute the hash of the header.
+    /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self, chain_id: Felt, pre_v0_13_2_override: bool) -> Felt {
         let hash_version = if self.protocol_version < StarknetVersion::V0_13_2 && pre_v0_13_2_override {
             StarknetVersion::V0_13_2
@@ -227,32 +243,10 @@ impl Header {
                 Felt::ZERO, // reserved: extra data
                 self.parent_block_hash,
             ])
+        } else if hash_version < StarknetVersion::V0_13_4 {
+            self.compute_hash_inner_v0()
         } else {
-            // Based off https://github.com/starkware-libs/sequencer/blob/78ceca6aa230a63ca31f29f746fbb26d312fe381/crates/starknet_api/src/block_hash/block_hash_calculator.rs#L67
-            Poseidon::hash_array(&[
-                Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH0"),
-                Felt::from(self.block_number),
-                self.global_state_root,
-                self.sequencer_address,
-                Felt::from(self.block_timestamp.0),
-                concat_counts(
-                    self.transaction_count,
-                    self.event_count,
-                    self.state_diff_length.unwrap_or(0),
-                    self.l1_da_mode,
-                ),
-                self.state_diff_commitment.unwrap_or(Felt::ZERO),
-                self.transaction_commitment,
-                self.event_commitment,
-                self.receipt_commitment.unwrap_or(Felt::ZERO),
-                self.l1_gas_price.eth_l1_gas_price.into(),
-                self.l1_gas_price.strk_l1_gas_price.into(),
-                self.l1_gas_price.eth_l1_data_gas_price.into(),
-                self.l1_gas_price.strk_l1_data_gas_price.into(),
-                Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes()),
-                Felt::ZERO,
-                self.parent_block_hash,
-            ])
+            self.compute_hash_inner_v1()
         }
     }
 
@@ -269,6 +263,57 @@ impl Header {
             Felt::ZERO,
             Felt::ZERO,
             chain_id,
+            self.parent_block_hash,
+        ])
+    }
+
+    fn compute_hash_inner_v0(&self) -> Felt {
+        Poseidon::hash_array(&[
+            Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH0"),
+            Felt::from(self.block_number),
+            self.global_state_root,
+            self.sequencer_address,
+            Felt::from(self.block_timestamp.0),
+            concat_counts(
+                self.transaction_count,
+                self.event_count,
+                self.state_diff_length.unwrap_or(0),
+                self.l1_da_mode,
+            ),
+            self.state_diff_commitment.unwrap_or(Felt::ZERO),
+            self.transaction_commitment,
+            self.event_commitment,
+            self.receipt_commitment.unwrap_or(Felt::ZERO),
+            self.gas_prices.eth_l1_gas_price.into(),
+            self.gas_prices.strk_l1_gas_price.into(),
+            self.gas_prices.eth_l1_data_gas_price.into(),
+            self.gas_prices.strk_l1_data_gas_price.into(),
+            Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes()),
+            Felt::ZERO,
+            self.parent_block_hash,
+        ])
+    }
+
+    fn compute_hash_inner_v1(&self) -> Felt {
+        Poseidon::hash_array(&[
+            Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH1"),
+            Felt::from(self.block_number),
+            self.global_state_root,
+            self.sequencer_address,
+            Felt::from(self.block_timestamp.0),
+            concat_counts(
+                self.transaction_count,
+                self.event_count,
+                self.state_diff_length.unwrap_or(0),
+                self.l1_da_mode,
+            ),
+            self.state_diff_commitment.unwrap_or(Felt::ZERO),
+            self.transaction_commitment,
+            self.event_commitment,
+            self.receipt_commitment.unwrap_or(Felt::ZERO),
+            self.gas_prices.compute_hash(),
+            Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes()),
+            Felt::ZERO,
             self.parent_block_hash,
         ])
     }
@@ -330,6 +375,7 @@ mod tests {
                 strk_l1_gas_price: 15,
                 eth_l1_data_gas_price: 16,
                 strk_l1_data_gas_price: 17,
+                ..Default::default()
             },
             L1DataAvailabilityMode::Blob,
         );
@@ -379,11 +425,12 @@ mod tests {
             state_diff_commitment: Some(Felt::from(11)),
             receipt_commitment: Some(Felt::from(12)),
             protocol_version,
-            l1_gas_price: GasPrices {
+            gas_prices: GasPrices {
                 eth_l1_gas_price: 14,
                 strk_l1_gas_price: 15,
                 eth_l1_data_gas_price: 16,
                 strk_l1_data_gas_price: 17,
+                ..Default::default()
             },
             l1_da_mode: L1DataAvailabilityMode::Blob,
         }

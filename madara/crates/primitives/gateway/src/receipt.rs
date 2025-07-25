@@ -2,7 +2,7 @@ use crate::transaction::{
     DeclareTransaction, DeployAccountTransaction, DeployTransaction, InvokeTransaction, L1HandlerTransaction,
     Transaction,
 };
-use mp_receipt::{Event, L1Gas, MsgToL1, MsgToL2};
+use mp_receipt::{Event, GasVector, MsgToL1, MsgToL2};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
 
@@ -148,15 +148,15 @@ pub struct ExecutionResources {
     pub n_memory_holes: u64,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub data_availability: Option<L1Gas>,
+    pub data_availability: Option<GasVector>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub total_gas_consumed: Option<L1Gas>,
+    pub total_gas_consumed: Option<GasVector>,
 }
 
 impl From<mp_receipt::ExecutionResources> for ExecutionResources {
     fn from(resources: mp_receipt::ExecutionResources) -> Self {
-        fn none_if_zero(gas: L1Gas) -> Option<L1Gas> {
+        fn none_if_zero(gas: GasVector) -> Option<GasVector> {
             if gas.l1_gas == 0 && gas.l1_data_gas == 0 {
                 None
             } else {
@@ -223,17 +223,11 @@ impl From<ExecutionResources> for mp_receipt::ExecutionResources {
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[serde(default)]
 pub struct BuiltinCounters {
-    #[serde(skip_serializing_if = "is_zero")]
     pub output_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub pedersen_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub range_check_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub ecdsa_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub bitwise_builtin: u64,
-    #[serde(skip_serializing_if = "is_zero")]
     pub ec_op_builtin: u64,
     #[serde(skip_serializing_if = "is_zero")]
     pub keccak_builtin: u64,

@@ -42,6 +42,7 @@ use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use events::EventChannels;
 use mp_block::EventWithInfo;
+use mp_block::L1GasQuote;
 use mp_block::MadaraBlockInfo;
 use mp_chain_config::ChainConfig;
 use mp_convert::Felt;
@@ -365,6 +366,7 @@ pub struct MadaraBackend {
     head_status: ChainHead,
     watch_events: EventChannels,
     watch_blocks: BlockWatch,
+    watch_gas_quote: tokio::sync::watch::Sender<Option<L1GasQuote>>,
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
@@ -519,6 +521,7 @@ impl MadaraBackend {
             head_status: ChainHead::default(),
             snapshots,
             watch_blocks: BlockWatch::new(),
+            watch_gas_quote: tokio::sync::watch::channel(None).0,
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
         };

@@ -81,8 +81,7 @@ impl StarknetClient {
 
 const POLL_INTERVAL: Duration = Duration::from_secs(5); // Interval between event polling attempts
 const EVENT_SEARCH_BLOCK_RANGE: u64 = 6000; // Number of blocks to search backwards for l1->l2 events
-const STATE_UPDATE_EVENT_SEARCH_BLOCK_RANGE: u64 = 1000;// Number of blocks to search backwards for state update events 
-
+const STATE_UPDATE_EVENT_SEARCH_BLOCK_RANGE: u64 = 1000; // Number of blocks to search backwards for state update events
 
 // TODO : Remove github refs after implementing the zaun imports
 // Imp ⚠️ : zaun is not yet updated with latest app chain core contract implementations

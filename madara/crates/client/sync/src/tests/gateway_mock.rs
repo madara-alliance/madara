@@ -77,6 +77,7 @@ impl GatewayMock {
             })
             .into_iter()
             .collect::<Vec<_>>();
+        // block alpha-sepolia 172270
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", block_number.to_string());
             then.status(200).header("content-type", "application/json").json_body(json!({
@@ -99,6 +100,10 @@ impl GatewayMock {
                     "l1_data_gas_price": {
                         "price_in_wei": "0x3f9ffec0e7",
                         "price_in_fri": "0x5b269552db6fa"
+                    },
+                    "l2_gas_price": {
+                        "price_in_wei": "0x1",
+                        "price_in_fri": "0x1"
                     },
                     "transactions": [],
                     "timestamp": 1725974819,
@@ -181,6 +186,7 @@ impl GatewayMock {
 
     /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
     pub fn mock_block_pending_with_ts(&self, parent_hash: Felt, timestamp: usize) -> Mock {
+        // block alpha-sepolia 171544
         self.mock_server.mock(|when, then| {
             when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
             then.status(200).header("content-type", "application/json").json_body(json!({
@@ -195,6 +201,10 @@ impl GatewayMock {
                     "l1_data_gas_price": {
                         "price_in_wei": "0x2bc1e42413",
                         "price_in_fri": "0x3c735d85586c2"
+                    },
+                    "l2_gas_price": {
+                        "price_in_wei": "0x1",
+                        "price_in_fri": "0x1"
                     },
                     "transactions": [],
                     "timestamp": timestamp,
@@ -256,6 +266,10 @@ impl GatewayMock {
                     "l1_data_gas_price": {
                         "price_in_wei": "0x2bc1e42413",
                         "price_in_fri": "0x3c735d85586c2"
+                    },
+                    "l2_gas_price": {
+                        "price_in_wei": "0x1",
+                        "price_in_fri": "0x1"
                     },
                     "transactions": [],
                     "timestamp": timestamp,

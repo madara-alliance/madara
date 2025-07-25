@@ -588,9 +588,9 @@ pub struct ExecutionResources {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct DataAvailability {
     /// the data gas consumed by this transaction's data, 0 if it uses gas for DA
-    pub l1_data_gas: u128,
+    pub l1_data_gas: u64,
     /// the gas consumed by this transaction's data, 0 if it uses data gas for DA
-    pub l1_gas: u128,
+    pub l1_gas: u64,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]

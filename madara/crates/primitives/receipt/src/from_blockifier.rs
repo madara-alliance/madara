@@ -1,6 +1,6 @@
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, Event, ExecutionResources, ExecutionResult, FeePayment,
-    InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, MsgToL2, PriceUnit, TransactionReceipt,
+    GasVector, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MsgToL1, MsgToL2, PriceUnit, TransactionReceipt,
 };
 use anyhow::anyhow;
 use blockifier::execution::call_info::CallInfo;
@@ -12,7 +12,7 @@ use blockifier::transaction::{
 use cairo_vm::types::builtin_name::BuiltinName;
 use starknet_api::block::FeeType;
 use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
-use starknet_api::execution_resources::GasVector;
+use starknet_api::execution_resources::GasVector as ApiGasVector;
 use starknet_api::transaction::L1HandlerTransaction;
 use starknet_core::types::Hash256;
 use starknet_types_core::felt::Felt;
@@ -188,9 +188,9 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     }
 }
 
-impl From<GasVector> for L1Gas {
-    fn from(value: GasVector) -> Self {
-        L1Gas { l1_gas: value.l1_gas.0 as _, l1_data_gas: value.l1_data_gas.0 as _ }
+impl From<ApiGasVector> for GasVector {
+    fn from(value: ApiGasVector) -> Self {
+        GasVector { l1_gas: value.l1_gas.0, l1_data_gas: value.l1_data_gas.0, l2_gas: value.l2_gas.0 }
     }
 }
 

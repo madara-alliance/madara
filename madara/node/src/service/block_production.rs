@@ -3,7 +3,6 @@ use anyhow::Context;
 use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
 use mc_db::{DatabaseService, MadaraBackend};
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
-use mc_mempool::L1DataProvider;
 use mc_settlement_client::SettlementClient;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use std::{io::Write, sync::Arc};
@@ -21,22 +20,15 @@ impl BlockProductionService {
         config: &BlockProductionParams,
         db_service: &DatabaseService,
         mempool: Arc<mc_mempool::Mempool>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
         l1_client: Arc<dyn SettlementClient>,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
         Ok(Self {
-            task: Some(BlockProductionTask::new(
-                db_service.backend().clone(),
-                mempool,
-                metrics,
-                l1_data_provider,
-                l1_client,
-            )),
+            backend: Arc::clone(db_service.backend()),
+            task: Some(BlockProductionTask::new(db_service.backend().clone(), mempool, metrics, l1_client)),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
-            backend: db_service.backend().clone(),
         })
     }
 }

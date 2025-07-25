@@ -70,7 +70,7 @@ async fn l1_handler_setup(
     let setup = devnet_setup.await;
 
     let (commands_sender, commands) = mpsc::unbounded_channel();
-    let mut handle = start_executor_thread(setup.backend.clone(), setup.l1_data_provider.clone(), commands).unwrap();
+    let mut handle = start_executor_thread(setup.backend.clone(), commands).unwrap();
 
     let (tx, additional_info) = make_tx(
         &setup.backend,

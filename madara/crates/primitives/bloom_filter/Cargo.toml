@@ -16,7 +16,6 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 ahash.workspace = true
-mp-receipt.workspace = true
 serde.workspace = true
 starknet-types-core.workspace = true
 thiserror.workspace = true

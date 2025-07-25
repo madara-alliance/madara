@@ -6,6 +6,7 @@ use header::{BlockTimestamp, PendingHeader};
 use mp_chain_config::L1DataAvailabilityMode;
 
 use mp_chain_config::StarknetVersion;
+use mp_convert::FixedPoint;
 use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
 use mp_state_update::StateDiff;
 use mp_transactions::Transaction;
@@ -119,6 +120,13 @@ impl MadaraMaybePendingBlockInfo {
             MadaraMaybePendingBlockInfo::Pending(block) => block.header.block_timestamp,
         }
     }
+
+    pub fn gas_prices(&self) -> &GasPrices {
+        match self {
+            MadaraMaybePendingBlockInfo::NotPending(block) => &block.header.gas_prices,
+            MadaraMaybePendingBlockInfo::Pending(block) => &block.header.gas_prices,
+        }
+    }
 }
 
 impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
@@ -144,15 +152,21 @@ impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
                     sequencer_address,
                     block_timestamp: timestamp,
                     protocol_version,
-                    l1_gas_price,
+                    gas_prices,
                     l1_da_mode,
                     ..
                 },
             block_hash,
             ..
         } = info;
-        let GasPrices { eth_l1_gas_price, strk_l1_gas_price, eth_l1_data_gas_price, strk_l1_data_gas_price } =
-            l1_gas_price;
+        let GasPrices {
+            eth_l1_gas_price,
+            strk_l1_gas_price,
+            eth_l1_data_gas_price,
+            strk_l1_data_gas_price,
+            eth_l2_gas_price: _,
+            strk_l2_gas_price: _,
+        } = gas_prices;
 
         Self {
             block_hash,
@@ -389,6 +403,15 @@ impl PendingFullBlock {
             events: self.events,
         }
     }
+}
+
+/// Gas quote for calculating gas prices.
+/// It's represents an instantaneous quote of current L1 network fees.
+#[derive(Clone, Default)]
+pub struct L1GasQuote {
+    pub l1_gas_price: u128,
+    pub l1_data_gas_price: u128,
+    pub strk_per_eth: FixedPoint,
 }
 
 #[cfg(test)]

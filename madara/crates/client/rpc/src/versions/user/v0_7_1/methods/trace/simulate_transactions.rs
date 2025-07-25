@@ -3,6 +3,7 @@ use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{tx_api_to_blockifier, ResultExt};
 use crate::Starknet;
 use blockifier::transaction::account_transaction::ExecutionFlags;
+use mc_exec::execution::TxInfo;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
 use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
@@ -37,15 +38,18 @@ pub async fn simulate_transactions(
         .collect::<Result<Vec<_>, ToBlockifierError>>()
         .or_internal_server_error("Failed to convert broadcasted transaction to blockifier")?;
 
+    let tips = user_transactions.iter().map(|tx| tx.tip().unwrap_or_default()).collect::<Vec<_>>();
+
     let execution_resuls = exec_context.re_execute_transactions([], user_transactions)?;
 
     let simulated_transactions = execution_resuls
         .iter()
-        .map(|result| {
+        .enumerate()
+        .map(|(index, result)| {
             Ok(SimulateTransactionsResult {
                 transaction_trace: execution_result_to_tx_trace(result)
                     .or_internal_server_error("Converting execution infos to tx trace")?,
-                fee_estimation: exec_context.execution_result_to_fee_estimate(result),
+                fee_estimation: exec_context.execution_result_to_fee_estimate(result, tips[index]),
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
