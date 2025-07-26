@@ -73,49 +73,49 @@ jobs:
     secrets: inherit
 
   # ========================================================================= #
+  #                                   MADARA                                  #
+  # ========================================================================= #
+
+  # Build Madara binary (START IMMEDIATELY - foundational job for everything)
+  build-madara:
+    needs: [update-version-db, publish-artifacts] # Start as early as possible
+    uses: ./.github/workflows/task-build-madara.yml
+    secrets: inherit
+
+  # ========================================================================= #
   #                                   LINTS                                   #
   # ========================================================================= #
 
-  # Run linters for code style and quality (non-Rust, can run early)
+  # Run linters for code style and quality (non-Rust, can run in parallel with build)
   lint-code-style:
     needs: [update-version-db, publish-artifacts]
     uses: ./.github/workflows/task-lint-code-style.yml
 
-  # ========================================================================= #
-  #                                   MADARA                                  #
-  # ========================================================================= #
-
-  # Build Madara binary (FIRST Rust compilation - creates cache)
-  build-madara:
-    needs: [lint-code-style]
-    uses: ./.github/workflows/task-build-madara.yml
-    secrets: inherit
-
-  # Run Rust-specific linters (AFTER build-madara to reuse compilation cache)
+  # Run Rust-specific linters (reuse build-madara's compilation cache)
   lint-rust:
-    needs: [build-madara]  # ⚡ Sequential: reuse build-madara's compilation cache
+    needs: [build-madara] # ⚡ Reuse compilation cache from build-madara
     uses: ./.github/workflows/task-lint-cargo.yml
     secrets: inherit
 
-  # Run coverage tests
+  # Run coverage tests (reuse build-madara's compilation cache + binary)
   test-madara:
-    needs: build-madara
+    needs: [build-madara] # ⚡ Reuse cache + need binary
     uses: ./.github/workflows/task-test-madara.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
-  # Run JavaScript tests against the built binary
+  # Run JavaScript tests (need binary, non-Rust so can run after lint-code-style too)
   test-js:
-    needs: build-madara
+    needs: [build-madara, lint-code-style] # Need binary + can wait for linting
     uses: ./.github/workflows/task-test-js.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
       cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
 
-  # Run CLI tests against the built binary
+  # Run CLI tests (reuse build-madara's compilation cache)
   test-cli:
-    needs: build-madara
+    needs: [build-madara] # ⚡ Reuse cache + need binary
     uses: ./.github/workflows/task-test-cli.yml
     secrets: inherit
 
@@ -123,23 +123,23 @@ jobs:
   #                                ORCHESTRATOR                               #
   # ========================================================================= #
 
-  # Check Orchestrator binary (AFTER build-madara to reuse compilation cache)
+  # Check Orchestrator binary (reuse build-madara's compilation cache)
   check-orchestrator:
-    needs: [build-madara]  # ⚡ Sequential: reuse build-madara's compilation cache
+    needs: [build-madara] # ⚡ Reuse compilation cache from build-madara
     uses: ./.github/workflows/task-check-orchestrator.yml
     secrets: inherit
 
-  # Run coverage tests
+  # Run coverage tests (need binary + orchestrator check)
   test-orchestrator:
-    needs: [build-madara, check-orchestrator]
+    needs: [build-madara, check-orchestrator] # Need binary + orchestrator validation
     uses: ./.github/workflows/task-test-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
     secrets: inherit
 
-  # Run e2e tests
+  # Run e2e tests (need binary + orchestrator check)
   e2e-orchestrator:
-    needs: [build-madara, check-orchestrator]
+    needs: [build-madara, check-orchestrator] # Need binary + orchestrator validation
     uses: ./.github/workflows/task-e2e-orchestrator.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
@@ -149,15 +149,15 @@ jobs:
   #                                BOOTSTRAPPER                               #
   # ========================================================================= #
 
-  # Check Bootstrapper binary (AFTER build-madara to reuse compilation cache)
+  # Check Bootstrapper binary (reuse build-madara's compilation cache)
   check-bootstrapper:
-    needs: [build-madara]  # ⚡ Sequential: reuse build-madara's compilation cache
+    needs: [build-madara] # ⚡ Reuse compilation cache from build-madara
     uses: ./.github/workflows/task-check-bootstrapper.yml
     secrets: inherit
 
-  # Run coverage tests
+  # Run coverage tests (need binary + bootstrapper check)
   test-bootstrapper:
-    needs: [build-madara, check-bootstrapper]
+    needs: [build-madara, check-bootstrapper] # Need binary + bootstrapper validation
     uses: ./.github/workflows/task-test-bootstrapper.yml
     with:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
