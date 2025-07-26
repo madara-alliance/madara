@@ -99,7 +99,6 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
                 Ok(())
             },
             300, // 300 seconds timeout - matches Docker's default graceful shutdown period
-                 // Note: This Timeout might be to much for this case might need to revisit after consuting with mohit
         )
         .await;
 
