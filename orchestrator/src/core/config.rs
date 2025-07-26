@@ -382,6 +382,11 @@ impl Config {
         self.database.as_ref()
     }
 
+    /// Returns the Lock Client
+    pub fn lock(&self) -> &dyn LockClient {
+        self.lock.as_ref()
+    }
+
     /// Returns the queue provider
     pub fn queue(&self) -> &dyn QueueClient {
         self.queue.as_ref()

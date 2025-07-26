@@ -6,11 +6,9 @@ use chrono::Utc;
 use mongodb::bson::doc;
 use mongodb::{bson, Client, Collection, Database};
 use std::sync::Arc;
-use std::time::{Duration, Instant};
 
 /// MongoDB implementation of the CacheService trait
 pub struct MongoLockClient {
-    client: Client,
     database: Arc<Database>,
     collection_name: String,
 }
@@ -21,12 +19,12 @@ impl MongoLockClient {
         let client = Client::with_uri_str(&args.connection_uri).await?;
         let database = Arc::new(client.database(&args.database_name));
 
-        Ok(Self { client, database, collection_name: "locks".to_string() })
+        Ok(Self { database, collection_name: "locks".to_string() })
     }
 
     /// Creates a new MongolockClient with custom collection name and limits
     pub fn with_config(client: Client, database: Arc<Database>, collection_name: String) -> Self {
-        Self { client, database, collection_name }
+        Self { database, collection_name }
     }
 
     // TODO: move this to setup code
@@ -86,12 +84,12 @@ impl LockClient for MongoLockClient {
         key: &str,
         value: LockValue,
         expiry_seconds: u64,
-        owner: Option<&str>,
+        owner: Option<String>,
     ) -> Result<LockResult, LockError> {
         let collection = self.get_cache_collection();
         let expires_at = Utc::now() + chrono::Duration::seconds(expiry_seconds as i64);
 
-        let lock_info = LockInfo { _id: key.to_string(), value, expires_at: Some(expires_at) };
+        let lock_info = LockInfo { _id: key.to_string(), value, expires_at: Some(expires_at), owner };
 
         match collection.insert_one(&lock_info, None).await {
             Ok(_) => Ok(LockResult::Acquired),
@@ -111,7 +109,7 @@ impl LockClient for MongoLockClient {
         key: &str,
         value: LockValue,
         expiry_seconds: u64,
-        owner: Option<&str>,
+        owner: Option<String>,
     ) -> Result<LockResult, LockError> {
         match self.acquire_lock_if_available(key, value, expiry_seconds, owner).await? {
             LockResult::Acquired => Ok(LockResult::Acquired),
@@ -120,21 +118,15 @@ impl LockClient for MongoLockClient {
         }
     }
 
-    async fn acquire_lock_with_timeout(
-        &self,
-        key: &str,
-        value: LockValue,
-        timeout_ms: u64,
-        expiry_seconds: u64,
-        owner: Option<&str>,
-    ) -> Result<LockResult, LockError> {
-        todo!()
-    }
-
     async fn release_lock(&self, key: &str, owner: Option<&str>) -> Result<LockResult, LockError> {
         let collection = self.get_cache_collection();
 
-        match collection.delete_one(doc! { "_id": key }, None).await {
+        let filter = match owner {
+            Some(owner) => doc! { "_id": key, "owner": { "$eq": owner } },
+            None => doc! { "_id": key },
+        };
+
+        match collection.delete_one(filter, None).await {
             Ok(result) => {
                 if result.deleted_count > 0 {
                     Ok(LockResult::Released)
@@ -151,7 +143,7 @@ impl LockClient for MongoLockClient {
         key: &str,
         value: LockValue,
         expiry_seconds: u64,
-        owner: Option<&str>,
+        owner: Option<String>,
     ) -> Result<LockResult, LockError> {
         let collection = self.get_cache_collection();
         let expires_at = Utc::now() + chrono::Duration::seconds(expiry_seconds as i64);
@@ -162,8 +154,12 @@ impl LockClient for MongoLockClient {
                 "expires_at": expires_at
             }
         };
+        let filter = match owner {
+            Some(owner) => doc! { "_id": key, "owner": { "$eq": owner } },
+            None => doc! { "_id": key },
+        };
 
-        match collection.update_one(doc! { "_id": key }, update, None).await {
+        match collection.update_one(filter, update, None).await {
             Ok(result) => {
                 if result.modified_count > 0 {
                     Ok(LockResult::Extended)
@@ -175,13 +171,17 @@ impl LockClient for MongoLockClient {
         }
     }
 
-    async fn get_lock_owner(&self, key: &str) -> Result<Option<String>, LockError> {
+    async fn get_lock(&self, key: &str, owner: Option<String>) -> Result<LockInfo, LockError> {
         let collection = self.get_cache_collection();
+        let filter = match owner {
+            Some(owner) => doc! { "_id": key, "owner": { "$eq": owner } },
+            None => doc! { "_id": key },
+        };
 
-        match collection.find_one(doc! { "_id": key }, None).await {
-            Ok(Some(lock)) => Ok(Some(lock._id)),
-            Ok(None) => Ok(None),
+        match collection.find_one(filter, None).await {
+            Ok(Some(lock)) => Ok(lock),
             Err(e) => Err(LockError::MongoDB(e)),
+            _ => Err(LockError::InvalidKey(String::from(key))),
         }
     }
 
