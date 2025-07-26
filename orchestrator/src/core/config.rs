@@ -18,6 +18,8 @@ use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
+use crate::core::client::lock::mongodb::MongoLockClient;
+use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
@@ -121,6 +123,8 @@ pub struct Config {
     settlement_client: Box<dyn SettlementClient>,
     /// The database client
     database: Box<dyn DatabaseClient>,
+    /// Lock client
+    lock: Box<dyn LockClient>,
     /// Queue client
     queue: Box<dyn QueueClient>,
     /// Storage client
@@ -138,6 +142,7 @@ impl Config {
         madara_client: Arc<JsonRpcClient<HttpTransport>>,
         database: Box<dyn DatabaseClient>,
         storage: Box<dyn StorageClient>,
+        lock: Box<dyn LockClient>,
         alerts: Box<dyn AlertClient>,
         queue: Box<dyn QueueClient>,
         prover_client: Box<dyn ProverClient>,
@@ -149,6 +154,7 @@ impl Config {
             params,
             madara_client,
             database,
+            lock,
             storage,
             alerts,
             queue,
@@ -195,6 +201,7 @@ impl Config {
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
         let database = Self::build_database_client(&db).await?;
+        let lock = Self::build_lock_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
@@ -209,6 +216,7 @@ impl Config {
             params,
             madara_client: Arc::new(rpc_client),
             database,
+            lock,
             storage,
             alerts,
             queue,
@@ -227,6 +235,12 @@ impl Config {
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
         Ok(Box::new(MongoDbClient::new(db_args).await?))
+    }
+
+    pub(crate) async fn build_lock_client(
+        args: &DatabaseArgs,
+    ) -> OrchestratorCoreResult<Box<dyn LockClient + Send + Sync>> {
+        Ok(Box::new(MongoLockClient::new(args).await?))
     }
 
     pub(crate) async fn build_storage_client(
