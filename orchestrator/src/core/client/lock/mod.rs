@@ -5,7 +5,6 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use error::LockError;
 use serde::{Deserialize, Serialize};
-use std::time::Duration;
 
 /// Generic cache value that can store various data types
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -52,6 +51,7 @@ pub struct LockInfo {
     pub _id: String, // Unique Identifier
     pub value: LockValue,
     pub expires_at: Option<DateTime<Utc>>,
+    pub owner: Option<String>,
 }
 
 /// Result of lock acquisition attempts
@@ -75,7 +75,7 @@ pub trait LockClient: Send + Sync {
         key: &str,
         value: LockValue,
         expiry_seconds: u64,
-        owner: Option<&str>,
+        owner: Option<String>,
     ) -> Result<LockResult, LockError>;
 
     async fn acquire_lock(
@@ -83,16 +83,7 @@ pub trait LockClient: Send + Sync {
         key: &str,
         value: LockValue,
         expiry_seconds: u64,
-        owner: Option<&str>,
-    ) -> Result<LockResult, LockError>;
-
-    async fn acquire_lock_with_timeout(
-        &self,
-        key: &str,
-        value: LockValue,
-        timeout_ms: u64,
-        expiry_seconds: u64,
-        owner: Option<&str>,
+        owner: Option<String>,
     ) -> Result<LockResult, LockError>;
 
     /// Release a lock if owned by the specified owner
@@ -104,11 +95,11 @@ pub trait LockClient: Send + Sync {
         key: &str,
         value: LockValue,
         expiry_seconds: u64,
-        owner: Option<&str>,
+        owner: Option<String>,
     ) -> Result<LockResult, LockError>;
 
     /// Check if a lock exists and get its current owner
-    async fn get_lock_owner(&self, key: &str) -> Result<Option<String>, LockError>;
+    async fn get_lock(&self, key: &str, owner: Option<String>) -> Result<LockInfo, LockError>;
 
     /// Check if a lock is currently held
     async fn is_locked(&self, key: &str) -> Result<bool, LockError>;
