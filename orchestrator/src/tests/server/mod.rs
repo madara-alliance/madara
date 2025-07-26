@@ -1,13 +1,13 @@
 pub mod job_routes;
-use std::io::Read;
-
+use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::worker::initialize_worker;
 use axum::http::StatusCode;
 use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
-
-use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::worker::initialize_worker;
+use std::io::Read;
+use std::sync::Arc;
+use tokio::sync::Notify;
 
 #[rstest]
 #[tokio::test]
@@ -41,13 +41,7 @@ async fn test_health_endpoint() {
 async fn test_init_consumer() {
     let services = TestConfigBuilder::new().configure_queue_client(ConfigType::Actual).build().await;
 
-    let result = tokio::select! {
-        res = initialize_worker(services.config) => res,
-        _ = tokio::time::sleep(std::time::Duration::from_secs(10)) => {
-            println!("Timed out waiting for consumers to initialize");
-            Ok(())
-        }
-    };
+    let result = initialize_worker(services.config, Arc::new(Notify::new())).await;
 
     assert!(result.is_ok(), "Failed to initialize consumers: {:?}", result.err());
 }

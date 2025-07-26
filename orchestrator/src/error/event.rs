@@ -7,7 +7,6 @@ use crate::error::other::OtherError;
 use crate::error::ConsumptionError;
 use crate::types::jobs::WorkerTriggerType;
 use crate::types::queue::QueueType;
-use crate::OrchestratorError;
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -53,9 +52,6 @@ pub enum EventSystemError {
     #[error("Message Parsing Serde Error: {0}")]
     PayloadSerdeError(String),
 
-    #[error("OrchestratorError: {0}")]
-    FromOrchestratorError(#[from] OrchestratorError),
-
     #[error("ConsumptionError: {0}")]
     FromConsumptionError(#[from] ConsumptionError),
 
@@ -64,4 +60,7 @@ pub enum EventSystemError {
 
     #[error("Invalid Task join Error: {0}")]
     InvalidJoinError(#[from] tokio::task::JoinError),
+
+    #[error("Mutex Poison Error: {0}")]
+    MutexPoisonError(String),
 }
