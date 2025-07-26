@@ -2882,6 +2882,7 @@ dependencies = [
  "build-version",
  "clap",
  "dotenvy",
+ "fs_extra",
  "serde",
  "serde_json",
  "starknet 0.14.0",

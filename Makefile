@@ -99,7 +99,6 @@ DOCKER_TAG     := madara:latest
 DOCKER_IMAGE   := ghcr.io/madara-alliance/$(DOCKER_TAG)
 DOCKER_GZ      := image.tar.gz
 ARTIFACTS      := ./build-artifacts
-BOOTSTRAPPER_DIR := ./bootstrapper-v2/contracts
 
 # dim white italic
 DIM            := \033[2;3;37m
@@ -191,9 +190,7 @@ artifacts:
 			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
 			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
 			[ -d "$(ARTIFACTS)/starkgate_legacy"   ] || \
-			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/out" ] || \
-			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/src/starkware"   ] || \
-			[ -d "$(BOOTSTRAPPER_DIR)/ethereum/src/third_party" ]; \
+			[ -d "$(ARTIFACTS)/bootstrapper" ]; \
 	then \
 		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
 		read ans && \
@@ -209,13 +206,10 @@ artifacts:
 	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/out"
-	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/src/starkware"
-	@rm -rf "$(BOOTSTRAPPER_DIR)/ethereum/src/third_party"
+	@rm -rf "$(ARTIFACTS)/bootstrapper"
 	@docker build --platform=linux/amd64 -f $(ARTIFACTS)/build.docker -t contracts .
 	@ID=$$(docker create contracts do-nothing) && \
 		docker cp $${ID}:/artifacts/. $(ARTIFACTS) && \
-		docker cp $${ID}:/dependencies/. . && \
 		docker rm $${ID} > /dev/null
 
 .PHONY: check

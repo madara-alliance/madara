@@ -21,3 +21,4 @@ workspace = true
 
 [build-dependencies]
 build-version.workspace = true
+fs_extra = "1.3.0"

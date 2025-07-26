@@ -40,7 +40,7 @@ contract Factory is Ownable, Pausable, Implementations {
     (
       baseLayerContracts.manager,
       baseLayerContracts.registry
-    ) = deployManagerRegistry();
+    ) = deployManagerAndRegistry();
 
     // Deploy and setup MuiltiBridge
     address multiBridgeProxy = setupMultiBridge(
@@ -86,21 +86,23 @@ contract Factory is Ownable, Pausable, Implementations {
     _requireNotPaused();
     // Deploying proxy with 0 upgradeActivationDelay
     Proxy coreContractProxy = new Proxy(0);
-    // [sub_contracts addresses, eic address, initData].
+    // [sub_contracts_addresses[], eic address, initData].
     // In case of Starknet.sol the initData looks like
     //
-    // (
+    //``` (
     //    uint256 programHash_,
     //    uint256 aggregatorProgramHash_,
     //    address verifier_,
     //    uint256 configHash_,
     //    StarknetState.State memory initialState
-    // ) = abi.decode(data, (uint256, uint256, address, uint256, StarknetState.State));
-    bytes memory initData = abi.encode(address(0), coreContractInitData);
+    // ) = abi.decode(data, (uint256, uint256, address, uint256, StarknetState.State)); ```
+    // The sub_contracts_addresses[] is an array of addresses of the sub_contracts
+    // The above address is empty, while the eic address is 0 adderess.
+    bytes memory upgradeData = abi.encode(address(0), coreContractInitData);
     ProxySetup.addImplementationAndUpgrade(
       address(coreContractProxy),
       coreContractImplementation,
-      initData
+      upgradeData
     );
 
     IOperator(address(coreContractProxy)).registerOperator(operator);
@@ -110,7 +112,7 @@ contract Factory is Ownable, Pausable, Implementations {
     return address(coreContractProxy);
   }
 
-  function deployManagerRegistry() public returns (address, address) {
+  function deployManagerAndRegistry() public returns (address, address) {
     _requireNotPaused();
     Proxy managerProxy = new Proxy(0);
     Proxy registryProxy = new Proxy(0);
@@ -186,11 +188,11 @@ contract Factory is Ownable, Pausable, Implementations {
     address registryProxy,
     address governor
   ) public whenNotPaused {
-    bytes memory initData = abi.encode(address(0), bridgeProxy, registryProxy);
+    bytes memory upgradeData = abi.encode(address(0), registryProxy, bridgeProxy);
     ProxySetup.addImplementationAndUpgrade(
       managerProxy,
       managerImplementation,
-      initData
+      upgradeData
     );
     registerAdmins(managerProxy, governor);
   }
