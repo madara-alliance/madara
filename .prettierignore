@@ -2,7 +2,7 @@ target
 madara/crates/resources/*
 madara/crates/primitives/class/resources/*
 infra/Signoz
-build_artifacts/
+build-artifacts/
 dashboards
 
 orchestrator/cairo-lang/
