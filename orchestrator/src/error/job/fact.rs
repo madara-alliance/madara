@@ -54,4 +54,6 @@ pub enum FactError {
     L2FactCompute,
     #[error("Failed to calculate program output.")]
     ProgramOutputCompute,
+    #[error("Failed to convert felt to usize during parsing of the program output.")]
+    FeltToUsizeConversionError,
 }

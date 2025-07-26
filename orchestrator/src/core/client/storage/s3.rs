@@ -103,4 +103,35 @@ impl StorageClient for AWSS3 {
     async fn delete_data(&self, key: &str) -> Result<(), StorageError> {
         Ok(self.client().delete_object().bucket(self.bucket_name()?).key(key).send().await.map(|_| ())?)
     }
+
+    async fn list_files_in_dir(&self, dir_path: &str) -> Result<Vec<String>, StorageError> {
+        let mut file_paths = Vec::new();
+
+        // Ensure the directory path ends with '/' for proper prefix matching
+        let prefix = if dir_path.ends_with('/') { dir_path.to_string() } else { format!("{}/", dir_path) };
+
+        let mut paginator =
+            self.client().list_objects_v2().bucket(self.bucket_name()?).prefix(&prefix).into_paginator().send();
+
+        // Iterate through all pages of results
+        while let Some(page) = paginator.next().await {
+            if let Some(objects) = page
+                .map_err(|e| {
+                    StorageError::ObjectStreamError(format!("Failed to list files in path {}: {}", dir_path, e))
+                })?
+                .contents
+            {
+                for object in objects {
+                    if let Some(key) = object.key {
+                        // Skip directories (keys ending with '/')
+                        if !key.ends_with('/') {
+                            file_paths.push(key);
+                        }
+                    }
+                }
+            }
+        }
+
+        Ok(file_paths)
+    }
 }

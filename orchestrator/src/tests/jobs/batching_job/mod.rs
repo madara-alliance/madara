@@ -7,6 +7,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use alloy::hex;
 use color_eyre::Result;
 use num_bigint::BigUint;
+use orchestrator_prover_client_interface::MockProverClient;
 use rstest::*;
 use starknet_core::types::Felt;
 use tracing::warn;
@@ -29,10 +30,14 @@ async fn test_assign_batch_to_block_new_batch(
         }
     };
 
+    let mut mock_prover_client = MockProverClient::new();
+    mock_prover_client.expect_submit_task().returning(|_| Ok("01234ABCD".to_string()));
+
     let services = TestConfigBuilder::new()
         .configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url)))
         .configure_storage_client(ConfigType::Actual)
         .configure_database(ConfigType::Actual)
+        .configure_prover_client(mock_prover_client.into())
         .configure_min_block_to_process(min_block_to_process)
         .configure_max_block_to_process(Some(max_block_to_process))
         .build()

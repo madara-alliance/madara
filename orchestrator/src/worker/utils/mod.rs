@@ -51,6 +51,56 @@ pub fn biguint_to_32_bytes(num: &BigUint) -> [u8; 32] {
     result
 }
 
+/// fetch_blob_data_for_batch - Fetches blob data for a specific batch
+/// Fetching the blob data (stored in remote storage during Batching) for a particular batch
+///
+/// # Arguments
+/// * `index` - The index of the batch
+/// * `config` - The configuration object
+/// * `blob_data_paths` - A slice of blob data directory paths
+///
+/// # Returns
+/// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
+///
+pub async fn fetch_blob_data_for_batch(
+    index: usize,
+    config: Arc<Config>,
+    blob_data_paths: &[String],
+) -> Result<Vec<Vec<u8>>, JobError> {
+    tracing::debug!("Fetching blob data for batch index {}", index);
+
+    let storage_client = config.storage();
+
+    // Get the directory path for this batch
+    let dir_path = blob_data_paths.get(index).ok_or_else(|| {
+        tracing::error!("Blob data path not found for index {}", index);
+        JobError::Other(OtherError(eyre!("Blob data path not found for index {}", index)))
+    })?;
+
+    // Get the blob files for this batch
+    let mut files = config.storage().list_files_in_dir(dir_path).await.map_err(|e| {
+        tracing::error!("Failed to list files in path {}: {}", dir_path, e);
+        JobError::Other(OtherError(eyre!("Failed to list files in path {}: {}", dir_path, e)))
+    })?;
+    // Sort the files by name (which is the blob index)
+    files.sort();
+
+    tracing::debug!("Retrieving blob data from {} files in directory: {}", files.len(), dir_path);
+
+    let mut blobs = Vec::new();
+
+    for file in files {
+        let blob_data = storage_client.get_data(&file).await.map_err(|e| {
+            tracing::error!("Failed to retrieve blob data from path {}: {}", file, e);
+            JobError::Other(OtherError(eyre!("Failed to retrieve blob data from path {}: {}", file, e)))
+        })?;
+        blobs.push(blob_data.to_vec());
+    }
+
+    tracing::debug!("Successfully retrieved blob data for batch index {}", index);
+    Ok(blobs)
+}
+
 /// fetch_blob_data_for_block - Fetches blob data for a specific block index.
 /// Fetching the blob data (stored in remote storage during DA job) for a particular block
 ///

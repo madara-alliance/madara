@@ -2708,7 +2708,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.8.0-rc.3"
-source = "git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -3698,7 +3698,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#035d6fe92b6a5369d363a20fa033b325dbc959cf"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2#5dac8e4106a72d5f3b2d3256287a5439ca675851"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -3708,7 +3708,7 @@ dependencies = [
 [[package]]
 name = "cairo-vm"
 version = "1.0.1"
-source = "git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
+source = "git+https://github.com/Mohiiit/cairo-vm?branch=tmp%2Fmohit%2Fparadex#518b46879861b90fbbaa0a2d1fce8d8035f83a8e"
 dependencies = [
  "anyhow",
  "ark-ff 0.4.2",
@@ -3863,9 +3863,9 @@ dependencies = [
 
 [[package]]
 name = "clap"
-version = "4.5.20"
+version = "4.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b97f376d85a664d5837dbae44bf546e6477a679ff6610010f17276f686d867e8"
+checksum = "40b6887a1d8685cebccf115538db5c0efe625ccac9696ad45c409d96566e910f"
 dependencies = [
  "clap_builder",
  "clap_derive",
@@ -3873,9 +3873,9 @@ dependencies = [
 
 [[package]]
 name = "clap_builder"
-version = "4.5.20"
+version = "4.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "19bc80abd44e4bed93ca373a0704ccbd1b710dc5749406201bb018272808dc54"
+checksum = "e0c66c08ce9f0c698cbce5c0279d0bb6ac936d8674174fe48f736533b964f59e"
 dependencies = [
  "anstream",
  "anstyle",
@@ -3885,9 +3885,9 @@ dependencies = [
 
 [[package]]
 name = "clap_derive"
-version = "4.5.18"
+version = "4.5.40"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4ac6a0c7b1a9e9a5186361f67dfa1b88213572f427fb9ab038efb2bd8c582dab"
+checksum = "d2c7947ae4cc3d851207c1adb5b5e260ff0cca11446b1d6d1423788e442257ce"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3897,9 +3897,9 @@ dependencies = [
 
 [[package]]
 name = "clap_lex"
-version = "0.7.2"
+version = "0.7.5"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1462739cb27611015575c0c11df5df7601141071f07518d56fcc1be504cbec97"
+checksum = "b94f61472cee1439c0b966b47e3aca9ae07e45d070759512cd390ea2bebc6675"
 
 [[package]]
 name = "cmake"
@@ -7974,7 +7974,6 @@ dependencies = [
  "hex",
  "httpmock",
  "hyper 0.14.31",
- "hyper 1.6.0",
  "indexmap 2.10.0",
  "itertools 0.13.0",
  "jemallocator",
@@ -8035,6 +8034,7 @@ dependencies = [
  "alloy 0.8.3",
  "async-trait",
  "cairo-vm",
+ "clap",
  "color-eyre",
  "dotenvy",
  "env_logger",
@@ -8517,15 +8517,14 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-common"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "anyhow",
  "bitvec",
  "fake",
  "metrics",
  "num-bigint",
- "num-traits 0.2.19",
  "paste",
  "pathfinder-crypto",
  "primitive-types",
@@ -8542,8 +8541,8 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-crypto"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "bitvec",
  "fake",
@@ -8553,8 +8552,8 @@ dependencies = [
 
 [[package]]
 name = "pathfinder-serde"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "anyhow",
  "num-bigint",
@@ -9101,7 +9100,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#035d6fe92b6a5369d363a20fa033b325dbc959cf"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2#5dac8e4106a72d5f3b2d3256287a5439ca675851"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9601,7 +9600,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#035d6fe92b6a5369d363a20fa033b325dbc959cf"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2#5dac8e4106a72d5f3b2d3256287a5439ca675851"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9616,7 +9615,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#035d6fe92b6a5369d363a20fa033b325dbc959cf"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2#5dac8e4106a72d5f3b2d3256287a5439ca675851"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11305,8 +11304,8 @@ dependencies = [
 
 [[package]]
 name = "starknet-gateway-types"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "anyhow",
  "fake",
@@ -11338,7 +11337,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#035d6fe92b6a5369d363a20fa033b325dbc959cf"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2#5dac8e4106a72d5f3b2d3256287a5439ca675851"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11387,7 +11386,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?branch=release%2Fv0.13.2.1#035d6fe92b6a5369d363a20fa033b325dbc959cf"
+source = "git+https://github.com/karnotxyz/snos?branch=release%2F0.13.2#5dac8e4106a72d5f3b2d3256287a5439ca675851"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11586,7 +11585,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.13.0-rc.1"
-source = "git+https://github.com/karnotxyz/sequencer?branch=release%2F0.13.2#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
+source = "git+https://github.com/Moonsong-Labs/sequencer?rev=6624e910c57db9a16f1607c1ed26f7d8f1114e73#6624e910c57db9a16f1607c1ed26f7d8f1114e73"
 dependencies = [
  "bitvec",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11934,16 +11933,16 @@ dependencies = [
 
 [[package]]
 name = "tagged"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "fake",
 ]
 
 [[package]]
 name = "tagged-debug-derive"
-version = "0.15.2"
-source = "git+https://github.com/karnotxyz/pathfinder?rev=da522595fa5cf274dbd0f04fdddf779902d9fabb#da522595fa5cf274dbd0f04fdddf779902d9fabb"
+version = "0.14.3"
+source = "git+https://github.com/Moonsong-Labs/pathfinder?rev=9c19d9a37be8f447ec4548456c440ccbd0e44260#9c19d9a37be8f447ec4548456c440ccbd0e44260"
 dependencies = [
  "proc-macro2",
  "quote",
