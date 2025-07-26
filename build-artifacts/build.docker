@@ -239,8 +239,7 @@ WORKDIR starkgate_latest
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
-# TODO: Change this to ./bootstrapper/contracts/ethereum/src post bootstrapper v2 is the default 
-ENV BASE_CHAIN_FACTORY_DIR="bootstrapper-v2/contracts/ethereum"
+ENV BASE_CHAIN_FACTORY_DIR="bootstrapper/contracts/ethereum"
 
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra erc20.sierra.json
 COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm erc20.casm.json
@@ -255,12 +254,12 @@ COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ERC20_070.casm.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_upgraded.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
 
-WORKDIR /dependencies
-COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./$BASE_CHAIN_FACTORY_DIR/src/starkware/
-COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./$BASE_CHAIN_FACTORY_DIR/src/third_party/
-COPY --from=bootstrapper "/contracts/out" ./$BASE_CHAIN_FACTORY_DIR/out/
+WORKDIR ../bootstrapper
+COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./solidity/starkware/
+COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./solidity/third_party/
+COPY --from=bootstrapper "/contracts/out" ./solidity/out/
 
-WORKDIR /artifacts/starkgate_legacy
+WORKDIR ../starkgate_legacy
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts/build/Release/src"
 ENV ARTIFACTS_LEGACY="$STARKGATE_DIR/starkware/starknet"
