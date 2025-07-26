@@ -11,7 +11,7 @@ on:
 
 jobs:
   hive-madara:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
 
     steps:
       - name: Download madara

@@ -27,7 +27,7 @@ jobs:
   test-madara:
     permissions:
       pull-requests: write
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -44,8 +44,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-location: llvm-cov-target/release
-          cache-key: madara-test-${{ runner.os }}-rust-1.86
+          cache-key: madara-${{ runner.os }}
 
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
