@@ -32,7 +32,7 @@ pub struct AddJobQuery {
 
 #[derive(Debug, Deserialize)]
 pub struct ProofQuery {
-    task_id: String,
+    _task_id: String,
 }
 
 impl MockAtlanticState {

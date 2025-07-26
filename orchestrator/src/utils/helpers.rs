@@ -3,7 +3,6 @@ use std::pin::Pin;
 use std::time::Duration;
 
 /// wait_until_ready - Wait until the provided function returns a result or the timeout is reached
-/// This function will repeatedly call the provided function until it returns a result or the timeout is reached
 /// It will return the result of the function or an error if the timeout is reached
 /// # Arguments
 /// * `f` - The function to call

@@ -241,7 +241,8 @@ impl Config {
                             .parse()
                             .expect("Failed to parse mock server URL"),
                         atlantic_rpc_node_url: atlantic_params.atlantic_rpc_node_url.clone(),
-                        atlantic_verifier_contract_address: "0x007a9a039a9471a7bea2962695cebc03f01a702ffa848763a6749052b0396ccc".to_string(), // Hard-coded for mock mode
+                        atlantic_verifier_contract_address:
+                            "0x007a9a039a9471a7bea2962695cebc03f01a702ffa848763a6749052b0396ccc".to_string(), // Hard-coded for mock mode
                         atlantic_settlement_layer: atlantic_params.atlantic_settlement_layer.clone(),
                         atlantic_mock_fact_hash: atlantic_params.atlantic_mock_fact_hash.clone(),
                         atlantic_prover_type: atlantic_params.atlantic_prover_type.clone(),

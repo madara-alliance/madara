@@ -22,7 +22,7 @@ The Mock Atlantic Server provides the same HTTP interface as the real Atlantic s
 - `POST /atlantic-query?apiKey={key}` - Submit a new proving job
 - `GET /atlantic-query/{job_id}` - Get job status and details
 
-### Proof Retrieval  
+### Proof Retrieval
 
 - `GET /queries/{task_id}/proof.json` - Download proof data for completed jobs
 
@@ -62,6 +62,7 @@ The mock Atlantic server is automatically integrated with the orchestrator. When
 3. Disable fact checking for faster testing
 
 Example usage:
+
 ```bash
 # Run orchestrator with mock Atlantic server (SIMPLIFIED!)
 # Only 2 Atlantic parameters needed - everything else gets sensible defaults!
@@ -80,6 +81,7 @@ cargo run --bin orchestrator -- run \
 ```
 
 When `atlantic_mock_fact_hash=true`, the orchestrator will log:
+
 ```
 Starting Mock Atlantic Server for testing...
 Mock Atlantic Server started on port 3001
@@ -88,8 +90,9 @@ Using hardcoded verifier contract address for mock mode: 0x000000000000000000000
 ```
 
 **Important Notes for Orchestrator Integration:**
+
 - The `--atlantic-service-url` you provide on the command line is automatically overridden to `http://127.0.0.1:3001`
-- The `--atlantic-verifier-contract-address` is automatically overridden to `0x0000000000000000000000000000000000000000` 
+- The `--atlantic-verifier-contract-address` is automatically overridden to `0x0000000000000000000000000000000000000000`
 - Your actual API key, network, and other parameters are preserved and used by the mock server
 - This ensures seamless testing without requiring manual URL changes
 

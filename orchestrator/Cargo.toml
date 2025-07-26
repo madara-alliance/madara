@@ -54,9 +54,9 @@ omniqueue = { workspace = true, optional = true }
 once_cell = { workspace = true }
 orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
-orchestrator-mock-atlantic-server = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
+orchestrator-mock-atlantic-server = { workspace = true }
 orchestrator-prover-client-interface = { workspace = true }
 orchestrator-settlement-client-interface = { workspace = true }
 orchestrator-sharp-service = { workspace = true }
