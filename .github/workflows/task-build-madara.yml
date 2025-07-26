@@ -17,7 +17,7 @@ on:
 
 jobs:
   build-binaries:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
