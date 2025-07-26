@@ -500,6 +500,7 @@ mod l1_messaging_tests {
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::ServiceContext;
     use rstest::*;
+
     use starknet_types_core::felt::Felt;
     use std::{sync::Arc, time::Duration};
     use tracing_test::traced_test;

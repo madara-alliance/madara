@@ -1,13 +1,13 @@
-/// # Caution
-///
-/// This is a temporary workaround due to limitations in the way in which [jsonrpsee] works. If
-/// possible at all, clients should prefer to use the unsubscribe methods defined in [api.rs]. These
-/// follow the structure `starknet_unsubscribeMethodName`, so for example
-/// `starknet_unsubscribeNewHeads`.
-///
-/// Use these if you encounter any strange edge cases such as 500 error codes on unsubscribe.
-///
-/// [api.rs]: super::super::super::api
+//! # Caution
+//!
+//! This is a temporary workaround due to limitations in the way in which [jsonrpsee] works. If
+//! possible at all, clients should prefer to use the unsubscribe methods defined in [api.rs]. These
+//! follow the structure `starknet_unsubscribeMethodName`, so for example
+//! `starknet_unsubscribeNewHeads`.
+//!
+//! Use these if you encounter any strange edge cases such as 500 error codes on unsubscribe.
+//!
+//! [api.rs]: super::super::super::api
 
 pub async fn starknet_unsubscribe(starknet: &crate::Starknet, subscription_id: u64) -> crate::StarknetRpcResult<bool> {
     if starknet.ws_handles.subscription_close(subscription_id).await {
@@ -33,7 +33,7 @@ mod test {
         let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: true };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
-            mc_mempool::MempoolConfig::for_testing(),
+            mc_mempool::MempoolConfig::default(),
         ));
         let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
             mempool,

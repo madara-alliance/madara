@@ -19,6 +19,6 @@ bouncer_config:
 sequencer_address: "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8"
 eth_core_contract_address: "0xc662c410C0ECf747543f5bA90660f6ABeBD9C8c4"
 eth_gps_statement_verifier: "0x47312450B3Ac8b5b8e247a6bB6d523e7605bDb60"
-mempool_tx_limit: 10000
-mempool_declare_tx_limit: 20
-mempool_tx_max_age: null
+mempool_max_transactions: 10000
+mempool_max_declare_transactions: 20
+mempool_ttl: "5h"

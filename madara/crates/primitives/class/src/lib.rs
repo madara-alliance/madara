@@ -13,7 +13,7 @@ pub mod mainnet_legacy_class_hashes;
 mod to_blockifier;
 mod to_starknet_api;
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum ConvertedClass {
     Legacy(LegacyConvertedClass),
     Sierra(SierraConvertedClass),
@@ -35,20 +35,20 @@ impl ConvertedClass {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyConvertedClass {
     pub class_hash: Felt,
     pub info: LegacyClassInfo,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SierraConvertedClass {
     pub class_hash: Felt,
     pub info: SierraClassInfo,
     pub compiled: Arc<CompiledSierra>,
 }
 
-#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Copy, Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClassType {
     Sierra,
     Legacy,
@@ -60,7 +60,7 @@ impl fmt::Display for ClassType {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ClassInfoWithHash {
     pub class_info: ClassInfo,
     pub class_hash: Felt,
@@ -86,7 +86,7 @@ impl ClassInfoWithHash {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ClassInfo {
     Sierra(SierraClassInfo),
     Legacy(LegacyClassInfo),
@@ -131,12 +131,12 @@ impl ClassInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyClassInfo {
     pub contract_class: Arc<CompressedLegacyContractClass>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SierraClassInfo {
     pub contract_class: Arc<FlattenedSierraClass>,
     pub compiled_class_hash: Felt,
@@ -155,7 +155,7 @@ impl SierraClassInfo {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum ContractClass {
     Sierra(Arc<FlattenedSierraClass>),
     Legacy(Arc<CompressedLegacyContractClass>),
@@ -197,7 +197,7 @@ impl ContractClass {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct FlattenedSierraClass {
     pub sierra_program: Vec<Felt>,
     pub contract_class_version: String,
@@ -215,7 +215,7 @@ impl FlattenedSierraClass {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompressedSierraClass {
     /// The gzipped compressed program as a base64 string.
     pub sierra_program: String,
@@ -268,7 +268,7 @@ impl TryFrom<CompressedSierraClass> for FlattenedSierraClass {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "UPPERCASE")]
 pub struct EntryPointsByType {
     pub constructor: Vec<SierraEntryPoint>,
@@ -276,13 +276,13 @@ pub struct EntryPointsByType {
     pub l1_handler: Vec<SierraEntryPoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SierraEntryPoint {
     pub selector: Felt,
     pub function_idx: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompressedLegacyContractClass {
     pub program: Vec<u8>,
     pub entry_points_by_type: LegacyEntryPointsByType,
@@ -296,7 +296,7 @@ pub struct LegacyContractClass {
     pub program: starknet_core::types::contract::legacy::LegacyProgram,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEntryPointsByType {
     #[serde(rename = "CONSTRUCTOR")]
     pub constructor: Vec<LegacyContractEntryPoint>,
@@ -306,20 +306,20 @@ pub struct LegacyEntryPointsByType {
     pub l1_handler: Vec<LegacyContractEntryPoint>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyContractEntryPoint {
     pub offset: u64,
     pub selector: Felt,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum LegacyContractAbiEntry {
     Function(LegacyFunctionAbiEntry),
     Event(LegacyEventAbiEntry),
     Struct(LegacyStructAbiEntry),
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyFunctionAbiEntry {
     pub r#type: LegacyFunctionAbiType,
     pub name: String,
@@ -329,7 +329,7 @@ pub struct LegacyFunctionAbiEntry {
     pub state_mutability: Option<FunctionStateMutability>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyEventAbiEntry {
     pub r#type: LegacyEventAbiType,
     pub name: String,
@@ -337,7 +337,7 @@ pub struct LegacyEventAbiEntry {
     pub data: Vec<LegacyTypedParameter>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyStructAbiEntry {
     pub r#type: LegacyStructAbiType,
     pub name: String,
@@ -345,20 +345,20 @@ pub struct LegacyStructAbiEntry {
     pub members: Vec<LegacyStructMember>,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyStructMember {
     pub name: String,
     pub r#type: String,
     pub offset: u64,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct LegacyTypedParameter {
     pub name: String,
     pub r#type: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyFunctionAbiType {
     Function,
@@ -366,25 +366,25 @@ pub enum LegacyFunctionAbiType {
     Constructor,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyEventAbiType {
     Event,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum LegacyStructAbiType {
     Struct,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Clone, Copy, Hash, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum FunctionStateMutability {
     View,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct CompiledSierra(pub String);
 
 impl AsRef<str> for CompiledSierra {
