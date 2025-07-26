@@ -15,14 +15,14 @@ use mockall::automock;
 use mockall::predicate::*;
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
 use starknet::accounts::{ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
-use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus, U256};
+use starknet::core::types::{BlockId, BlockTag, Felt, FunctionCall, TransactionExecutionStatus};
 use starknet::core::utils::get_selector_from_name;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet::signers::{LocalWallet, SigningKey};
 use tokio::time::{sleep, Duration};
 
-use crate::conversion::{slice_slice_u8_to_vec_field, slice_u8_to_field, u64_from_felt};
+use crate::conversion::{slice_slice_u8_to_vec_field, u64_from_felt};
 
 pub type LocalWalletSignerMiddleware = Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>>;
 
@@ -117,8 +117,8 @@ impl SettlementClient for StarknetSettlementClient {
         &self,
         snos_output: Vec<[u8; 32]>,
         program_output: Vec<[u8; 32]>,
-        onchain_data_hash: [u8; 32],
-        onchain_data_size: [u8; 32],
+        _onchain_data_hash: [u8; 32],
+        _onchain_data_size: [u8; 32],
     ) -> Result<String> {
         tracing::info!(
             log_type = "starting",
@@ -127,16 +127,11 @@ impl SettlementClient for StarknetSettlementClient {
             "Updating state with calldata."
         );
         let snos_output = slice_slice_u8_to_vec_field(snos_output.as_slice());
-        let program_output = slice_slice_u8_to_vec_field(program_output.as_slice());
-        let onchain_data_hash = slice_u8_to_field(&onchain_data_hash);
+        let layout_bridge_output = slice_slice_u8_to_vec_field(program_output.as_slice());
         let core_contract: &CoreContract = self.starknet_core_contract_client.as_ref();
 
-        let low = u128::from_be_bytes(onchain_data_size[16..32].try_into()?);
-        let high = u128::from_be_bytes(onchain_data_size[0..16].try_into()?);
-        let size = U256::from_words(low, high);
-
         let invoke_result = core_contract
-            .update_state(snos_output, program_output, onchain_data_hash, size)
+            .update_state(snos_output, layout_bridge_output)
             .await
             .map_err(|e| eyre!("Failed to update state with calldata: {:?}", e))?;
         tracing::info!(
