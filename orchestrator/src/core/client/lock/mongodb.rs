@@ -9,7 +9,6 @@ use std::sync::Arc;
 
 /// MongoDB implementation of the CacheService trait
 pub struct MongoLockClient {
-    client: Client,
     database: Arc<Database>,
     collection_name: String,
 }
@@ -20,12 +19,12 @@ impl MongoLockClient {
         let client = Client::with_uri_str(&args.connection_uri).await?;
         let database = Arc::new(client.database(&args.database_name));
 
-        Ok(Self { client, database, collection_name: "locks".to_string() })
+        Ok(Self { database, collection_name: "locks".to_string() })
     }
 
     /// Creates a new MongolockClient with custom collection name and limits
-    pub fn with_config(client: Client, database: Arc<Database>, collection_name: String) -> Self {
-        Self { client, database, collection_name }
+    pub fn with_config(database: Arc<Database>, collection_name: String) -> Self {
+        Self { database, collection_name }
     }
 
     // TODO: move this to setup code
@@ -119,7 +118,7 @@ impl LockClient for MongoLockClient {
         }
     }
 
-    async fn release_lock(&self, key: &str, owner: Option<&str>) -> Result<LockResult, LockError> {
+    async fn release_lock(&self, key: &str, owner: Option<String>) -> Result<LockResult, LockError> {
         let collection = self.get_cache_collection();
 
         let filter = match owner {

@@ -230,7 +230,8 @@ impl TestConfigBuilder {
         // External Dependencies
         let storage =
             implement_client::init_storage_client(storage_type, &params.storage_params, provider_config.clone()).await;
-        let database = implement_client::init_database(database_type, &params.db_params).await;
+        let database = implement_client::init_database(database_type.clone(), &params.db_params).await;
+        let lock = implement_client::init_lock(database_type, &params.db_params).await;
         let queue =
             implement_client::init_queue_client(queue_type, params.queue_params.clone(), provider_config.clone()).await;
         // Deleting and Creating the queues in sqs.
@@ -242,18 +243,7 @@ impl TestConfigBuilder {
         // Creating the SNS ARN
         create_sns_arn(provider_config.clone(), &params.alert_params).await.expect("Unable to create the sns arn");
 
-        let config = Arc::new(Config::new(
-            Layer::L2,
-            params.orchestrator_params,
-            starknet_client,
-            database,
-            storage,
-            alerts,
-            queue,
-            prover_client,
-            da_client,
-            settlement_client,
-        ));
+        let config = Arc::new(Config::new(Layer::L2, params.orchestrator_params, starknet_client, database, storage, lock, alerts, queue, prover_client, da_client, settlement_client));
 
         let api_server_address = implement_api_server(api_server_type, config.clone()).await;
 
@@ -300,6 +290,7 @@ pub mod implement_client {
     use super::{ConfigType, EnvParams, MockType};
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
+    use crate::core::client::lock::LockClient;
     use crate::core::client::queue::MockQueueClient;
     use crate::core::client::storage::MockStorageClient;
     use crate::core::client::AlertClient;
@@ -423,6 +414,17 @@ pub mod implement_client {
         }
     }
 
+
+    pub(crate) async fn init_lock(service: ConfigType, database_params: &DatabaseArgs) -> Box<dyn LockClient> {
+        match service {
+            ConfigType::Mock(client) => client.into(),
+            ConfigType::Actual => {
+                Config::build_lock_client(database_params).await.expect("error creating database client")
+            }
+            ConfigType::Dummy => Box::new(MockDatabaseClient::new()),
+        }
+    }
+
     pub(crate) async fn init_starknet_client(
         starknet_rpc_url_type: ConfigType,
         service: ConfigType,
@@ -516,7 +518,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         ethereum_rpc_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL"))
             .expect("Failed to parse MADARA_ORCHESTRATOR_ETHEREUM_RPC_URL"),
         ethereum_private_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY"),
-        l1_core_contract_address: Address::from_str(&get_env_var_or_panic(
+    l1_core_contract_address: Address::from_str(&get_env_var_or_panic(
             "MADARA_ORCHESTRATOR_L1_CORE_CONTRACT_ADDRESS",
         ))
         .expect("Invalid L1 core contract address"),

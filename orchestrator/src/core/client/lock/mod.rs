@@ -87,7 +87,7 @@ pub trait LockClient: Send + Sync {
     ) -> Result<LockResult, LockError>;
 
     /// Release a lock if owned by the specified owner
-    async fn release_lock(&self, key: &str, owner: Option<&str>) -> Result<LockResult, LockError>;
+    async fn release_lock(&self, key: &str, owner: Option<String>) -> Result<LockResult, LockError>;
 
     /// Extend an existing lock's expiry time if owned by the specified owner
     async fn extend_lock(
