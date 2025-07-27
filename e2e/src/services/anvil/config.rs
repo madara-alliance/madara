@@ -1,7 +1,8 @@
-use crate::services::{constants::DEFAULT_ANIVL_PORT, server::ServerError};
+use crate::services::{constants::*, server::ServerError};
 use tokio::process::Command;
 use crate::services::constants::DEFAULT_SERVICE_HOST;
 use url::Url;
+use std::path::PathBuf;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnvilError {
@@ -15,10 +16,10 @@ pub enum AnvilError {
 #[derive(Debug, Clone)]
 pub struct AnvilConfig {
     fork_url: Option<Url>,
-    load_state: Option<String>,
-    dump_state: Option<String>,
+    load_state: Option<PathBuf>,
+    dump_state: Option<PathBuf>,
     block_time: Option<f64>,
-    // Server Configs
+    // Server Config
     port: u16,
     logs: (bool, bool),
 }
@@ -29,10 +30,9 @@ impl Default for AnvilConfig {
             fork_url: None,
             load_state: None,
             dump_state: None,
-            block_time: None,
-
+            block_time: Some(ANVIL_BLOCK_TIME),
             // Server Config
-            port: DEFAULT_ANIVL_PORT,
+            port: ANVIL_PORT,
             logs: (true, true),
         }
     }
@@ -65,13 +65,13 @@ impl AnvilConfig {
     }
 
     /// Get the load state path
-    pub fn load_state(&self) -> Option<&str> {
-        self.load_state.as_deref()
+    pub fn load_state(&self) -> Option<&PathBuf> {
+        self.load_state.as_ref()
     }
 
     /// Get the dump state path
-    pub fn dump_state(&self) -> Option<&str> {
-        self.dump_state.as_deref()
+    pub fn dump_state(&self) -> Option<&PathBuf> {
+        self.dump_state.as_ref()
     }
 
     /// Get the block time in seconds
@@ -141,14 +141,14 @@ impl AnvilConfigBuilder {
     }
 
     /// Set the database file to load state from
-    pub fn load_state<S: Into<String>>(mut self, path: S) -> Self {
-        self.config.load_state = Some(path.into());
+    pub fn load_state<S: AsRef<std::path::Path>>(mut self, path: S) -> Self {
+        self.config.load_state = Some(REPO_ROOT.clone().join(path));
         self
     }
 
     /// Set the database file to dump state to
-    pub fn dump_state<S: Into<String>>(mut self, path: S) -> Self {
-        self.config.dump_state = Some(path.into());
+    pub fn dump_state<S: AsRef<std::path::Path>>(mut self, path: S) -> Self {
+        self.config.dump_state = Some(REPO_ROOT.clone().join(path));
         self
     }
 

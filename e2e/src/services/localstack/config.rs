@@ -1,4 +1,5 @@
 use tokio::process::Command;
+use crate::services::helpers::get_container_name;
 use crate::services::server::ServerError;
 use url::Url;
 
@@ -32,14 +33,13 @@ pub struct LocalstackConfig {
 impl Default for LocalstackConfig {
     fn default() -> Self {
         Self {
-            image: DEFAULT_LOCALSTACK_IMAGE.to_string(),
-            container_name: format!("{}-{}", DEFAULT_LOCALSTACK_CONTAINER_NAME, uuid::Uuid::new_v4()),
+            image: LOCALSTACK_IMAGE.to_string(),
+            container_name: get_container_name(LOCALSTACK_CONTAINER),
             environment_vars: vec![
-                ("DEBUG".to_string(), "1".to_string()),
                 ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
             ],
 
-            port: DEFAULT_LOCALSTACK_PORT,
+            port: LOCALSTACK_PORT,
             logs: (false, true),
         }
     }
@@ -93,7 +93,7 @@ impl LocalstackConfig {
         command.arg("run");
         command.arg("--rm"); // Remove container when it stops
         command.arg("--name").arg(self.container_name());
-        command.arg("-p").arg(format!("{}:{}", self.port(), DEFAULT_LOCALSTACK_PORT));
+        command.arg("-p").arg(format!("{}:{}", self.port(), LOCALSTACK_PORT));
 
         // Add environment variables
         for (key, value) in self.environment_vars() {

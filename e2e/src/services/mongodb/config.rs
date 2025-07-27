@@ -1,4 +1,5 @@
 use crate::services::docker::DockerError;
+use crate::services::helpers::get_container_name;
 use crate::services::server::ServerError;
 
 use crate::services::constants::*;
@@ -34,11 +35,11 @@ pub struct MongoConfig {
 impl Default for MongoConfig {
     fn default() -> Self {
         Self {
-            image: DEFAULT_MONGO_IMAGE.to_string(),
-            container_name: format!("{}-{}", DEFAULT_MONGO_CONTAINER_NAME, uuid::Uuid::new_v4()),
+            image: MONGODB_IMAGE.to_string(),
+            container_name: get_container_name(MONGODB_CONTAINER),
             environment_vars: vec![],
 
-            port: DEFAULT_MONGO_PORT,
+            port: MONGODB_PORT,
             logs: (false, false),
         }
     }

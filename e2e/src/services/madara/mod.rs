@@ -82,6 +82,11 @@ impl MadaraService {
         self.config().rpc_port()
     }
 
+    /// Get the RPC admin port number
+    pub fn rpc_admin_port(&self) -> u16 {
+        self.config().rpc_admin_port()
+    }
+
     /// Get the Gateway port number
     pub fn gateway_port(&self) -> u16 {
         self.config.gateway_port()

@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 use tokio::process::Command;
-use crate::services::constants::*;
+use crate::services::{constants::*, helpers::get_binary_path};
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]
@@ -22,8 +22,8 @@ pub struct MockProverConfig {
 impl Default for MockProverConfig {
     fn default() -> Self {
         Self {
-            binary_path: PathBuf::from(DEFAULT_MOCK_PROVER_BINARY),
-            port: DEFAULT_MOCK_PROVER_PORT,
+            binary_path: get_binary_path(MOCK_PROVER_BINARY),
+            port: MOCK_PROVER_PORT,
             logs: (true, true),
         }
     }

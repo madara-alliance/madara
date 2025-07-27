@@ -1,6 +1,4 @@
-use tokio::time::sleep;
-
-use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, helpers::get_free_port, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}, server::Server};
+use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, helpers::{get_database_path, get_free_port}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
 use std::time::Duration;
 use crate::services::server::ServerError;
 use crate::services::mock_prover::MockProverConfig;
@@ -332,86 +330,61 @@ impl SetupConfigBuilder {
 
     pub fn build_l2_setup_config(self) -> Result<SetupConfig, SetupError> {
 
-        let anvil_config = AnvilConfigBuilder::new()
-            .port(8545)
-            .block_time(1_f64)
-            .dump_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
+        let mongodb_config = MongoConfigBuilder::new()
+            .port(get_free_port()?)
+            .logs((false, true))
             .build();
 
-        let madara_config = MadaraConfigBuilder::new()
-        .rpc_port(9944)
-        .build();
-
-
-        let pathfinder_config = PathfinderConfigBuilder::new().build();
-
-
-        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new().build();
-
+        let localstack_port = get_free_port()?;
+        let localstack_host = format!("{}:{}", DEFAULT_SERVICE_HOST, localstack_port);
+        let localstack_config = LocalstackConfigBuilder::new()
+            .port(localstack_port)
+            .logs((false, true))
+            .env_var("LOCALSTACK_HOST", localstack_host)
+            .build();
 
         let orchestrator_setup_config = OrchestratorConfigBuilder::new()
             .mode(OrchestratorMode::Setup)
-            .env_var("RUST_LOG", "info")
+            .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .logs((true, true))
             .build();
-
-
-        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL1)
-            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .env_var("ETH_RPC", "http://localhost:8545")
-            .env_var("RUST_LOG", "info")
-            .build();
-
-        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL2)
-            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-            .env_var("ETH_PRIVATE_KEY", "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80")
-            .env_var("ETH_RPC", "http://localhost:8545")
-            .env_var("RUST_LOG", "info")
-            .build();
-
-        let mock_prover_config = MockProverConfigBuilder::new()
-            .port(5555)
-            .build();
-
-
-        let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
-            .port(3000)
-            .build();
-
-
-        let sconfig = self.anvil_config(anvil_config)
-            .madara_config(madara_config)
-            .pathfinder_config(pathfinder_config)
-            .mock_verifier_deployer_config(mock_verifier_deployer_config)
-            .orchestrator_setup_config(orchestrator_setup_config)
-            .bootstrapper_setup_l1_config(bootstrapper_l1_config)
-            .bootstrapper_setup_l2_config(bootstrapper_l2_config)
-            .mock_prover_config(mock_prover_config)
-            .orchestrator_run_config(orchestrator_run_config)
-            .build();
-
-        Ok(sconfig)
-
-    }
-
-
-    pub fn test_config_l2(self, test_name: &str ) -> Result<SetupConfig, SetupError> {
 
         let anvil_config = AnvilConfigBuilder::new()
             .port(get_free_port()?)
-            .block_time(DEFAULT_ANVIL_BLOCK_TIME)
-            // TODO: Fix directory path issue, shouldn't be DEFAULT_DATA_DIR, should be a temporary directory
-            .load_state(format!("{}/{}", DEFAULT_DATA_DIR, DEFAULT_ANVIL_DATABASE_NAME))
-            .logs((false, true))
+            .dump_state(get_database_path(DATA_DIR, ANVIL_DATABASE_FILE))
+            .logs((true, true))
+            .build();
+
+        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
+            .l1_url(anvil_config.endpoint())
+            .logs((true, true))
+            .build();
+
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL1)
+            .config_path(BOOTSTRAPPER_CONFIG)
+            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
+            .env_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY)
+            .logs((true, true))
             .build();
 
         let madara_config = MadaraConfigBuilder::new()
             .rpc_port(get_free_port()?)
+            .rpc_admin_port(get_free_port()?)
             .gateway_port(get_free_port()?)
-            // TODO: Fix directory path issue, shouldn't be DEFAULT_DATA_DIR, should be a temporary directory
-            .database_path(format!("{}/{}", DEFAULT_DATA_DIR, MADARA_DEFAULT_DATABASE_NAME))
+            .database_path(get_database_path(DATA_DIR, MADARA_DATABASE_DIR))
             .l1_endpoint(Some(anvil_config.endpoint()))
+            .logs((true, true))
+            .build();
+
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL2)
+            .config_path(BOOTSTRAPPER_CONFIG)
+            .timeout(BOOTSTRAPPER_SETUP_L2_TIMEOUT.clone())
+            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
+            .env_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY)
+            .env_var("ROLLUP_SEQ_URL", madara_config.rpc_endpoint().as_str())
+            .env_var("ROLLUP_DECLARE_V0_SEQ_URL", madara_config.rpc_admin_endpoint().as_str())
             .logs((true, true))
             .build();
 
@@ -422,54 +395,15 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
-            .l1_url(anvil_config.endpoint())
-            .logs((false, true))
-            .build();
-
-
-        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL1)
-            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
-            .logs((true, true))
-            .build();
-
-        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
-            .mode(BootstrapperMode::SetupL2)
-            .config_path(DEFAULT_BOOTSTRAPPER_CONFIG)
-            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
-            .logs((true, true))
-            .build();
-
         let mock_prover_config = MockProverConfigBuilder::new()
             .port(get_free_port()?)
-            .logs((true, true))
-            .build();
-
-
-        let mongodb_config = MongoConfigBuilder::new()
-            .port(get_free_port()?)
-            .logs((true, true))
-            .build();
-
-        let localstack_port = get_free_port()?;
-        let localstack_host = format!("localhost:{}", localstack_port);
-        let localstack_config = LocalstackConfigBuilder::new()
-            .port(localstack_port)
-            .logs((true, true))
-            .env_var("LOCALSTACK_HOST", localstack_host)
-            .build();
-
-        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
-            .mode(OrchestratorMode::Setup)
-            .env_var("MADARA_ORCHESTRATOR_AWS_PREFIX", test_name)
-            .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
             .logs((true, true))
             .build();
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port()?)
             .da_on_ethereum(true)
+            .settle_on_ethereum(true)
             .ethereum_rpc_url(anvil_config.endpoint())
             .mongodb(true)
             .mongodb_connection_url(mongodb_config.endpoint())
@@ -477,12 +411,9 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
-            .env_var("MADARA_ORCHESTRATOR_AWS_PREFIX", test_name)
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
-            .env_var("RUST_LOG", "info")
             .logs((true, true))
             .build();
-
 
         let sconfig = self.anvil_config(anvil_config)
             .madara_config(madara_config)
@@ -499,6 +430,104 @@ impl SetupConfigBuilder {
 
         Ok(sconfig)
 
+    }
+
+
+    pub fn test_config_l2(self, test_name: &str ) -> Result<SetupConfig, SetupError> {
+
+        let mongodb_config = MongoConfigBuilder::new()
+            .port(get_free_port()?)
+            .logs((true, true))
+            .build();
+
+        let localstack_port = get_free_port()?;
+        let localstack_host = format!("{}:{}", DEFAULT_SERVICE_HOST, localstack_port);
+        let localstack_config = LocalstackConfigBuilder::new()
+            .port(localstack_port)
+            .logs((true, true))
+            .env_var("LOCALSTACK_HOST", localstack_host)
+            .build();
+
+        let orchestrator_setup_config = OrchestratorConfigBuilder::new()
+            .mode(OrchestratorMode::Setup)
+            .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .logs((true, true))
+            .build();
+
+        let anvil_config = AnvilConfigBuilder::new()
+            .port(get_free_port()?)
+            .load_state(get_database_path(test_name, ANVIL_DATABASE_FILE))
+            .logs((true, true))
+            .build();
+
+        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
+            .l1_url(anvil_config.endpoint())
+            .logs((true, true))
+            .build();
+
+        let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL1)
+            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
+            .logs((true, true))
+            .build();
+
+        let madara_config = MadaraConfigBuilder::new()
+            .rpc_port(get_free_port()?)
+            .rpc_admin_port(get_free_port()?)
+            .gateway_port(get_free_port()?)
+            .database_path(get_database_path(test_name, MADARA_DATABASE_DIR))
+            .l1_endpoint(Some(anvil_config.endpoint()))
+            .logs((true, true))
+            .build();
+
+        let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
+            .mode(BootstrapperMode::SetupL2)
+            .config_path(BOOTSTRAPPER_CONFIG)
+            .env_var("ETH_RPC", anvil_config.endpoint().as_str())
+            .logs((true, true))
+            .build();
+
+        let pathfinder_config = PathfinderConfigBuilder::new()
+            .port(get_free_port()?)
+            .gateway_url(Some(madara_config.gateway_endpoint()))
+            .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
+            .logs((true, true))
+            .build();
+
+        let mock_prover_config = MockProverConfigBuilder::new()
+            .port(get_free_port()?)
+            .logs((true, true))
+            .build();
+
+        let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
+            .port(get_free_port()?)
+            .da_on_ethereum(true)
+            .settle_on_ethereum(true)
+            .ethereum_rpc_url(anvil_config.endpoint())
+            .mongodb(true)
+            .mongodb_connection_url(mongodb_config.endpoint())
+            .atlantic_service_url(mock_prover_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
+            .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .logs((true, true))
+            .build();
+
+        let sconfig = self.anvil_config(anvil_config)
+            .madara_config(madara_config)
+            .pathfinder_config(pathfinder_config)
+            .mock_verifier_deployer_config(mock_verifier_deployer_config)
+            .orchestrator_setup_config(orchestrator_setup_config)
+            .bootstrapper_setup_l1_config(bootstrapper_l1_config)
+            .bootstrapper_setup_l2_config(bootstrapper_l2_config)
+            .mock_prover_config(mock_prover_config)
+            .mongo_config(mongodb_config)
+            .localstack_config(localstack_config)
+            .orchestrator_run_config(orchestrator_run_config)
+            .build();
+
+        Ok(sconfig)
     }
 
 }

@@ -4,7 +4,7 @@ use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
-use crate::services::helpers::NodeRpcError;
+use crate::services::helpers::{get_binary_path, get_database_path, get_file_path, NodeRpcError};
 use crate::services::constants::*;
 use url::Url;
 
@@ -44,10 +44,11 @@ impl std::fmt::Display for MadaraMode {
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct MadaraConfig {
-    binary_path: Option<PathBuf>,
+    binary_path: PathBuf,
     name: String,
     database_path: PathBuf,
     rpc_port: u16,
+    rpc_admin_port: u16,
     rpc_cors: String,
     rpc_external: bool,
     rpc_admin: bool,
@@ -72,19 +73,20 @@ pub struct MadaraConfig {
 impl Default for MadaraConfig {
     fn default() -> Self {
         Self {
-            binary_path: Some(PathBuf::from(DEFAULT_MADARA_BINARY_PATH)),
-            name: DEFAULT_MADARA_NAME.to_string(),
-            database_path: PathBuf::from(format!("{}/{}", DEFAULT_DATA_DIR, MADARA_DEFAULT_DATABASE_NAME)),
-            rpc_port: DEFAULT_MADARA_RPC_PORT,
+            binary_path: get_binary_path(MADARA_BINARY),
+            name: MADARA_NAME.to_string(),
+            mode: MadaraMode::Sequencer,
+            chain_config_path: Some(get_file_path(MADARA_CONFIG)),
+            database_path: get_database_path(DATA_DIR, MADARA_DATABASE_DIR),
+            rpc_port: MADARA_RPC_PORT,
+            rpc_admin_port: MADARA_RPC_ADMIN_PORT,
             rpc_cors: "*".to_string(),
             rpc_external: true,
             rpc_admin: true,
-            mode: MadaraMode::Sequencer,
-            chain_config_path: Some(PathBuf::from(DEFAULT_MADARA_CONFIG_PATH)),
             feeder_gateway_enable: true,
             gateway_enable: true,
             gateway_external: true,
-            gateway_port: DEFAULT_MADARA_GATEWAY_PORT,
+            gateway_port: MADARA_GATEWAY_PORT,
             charge_fee: false,
             block_time: None,
             l1_endpoint: None,
@@ -111,8 +113,8 @@ impl MadaraConfig {
     }
 
     /// Get the binary path
-    pub fn binary_path(&self) -> Option<&PathBuf> {
-        self.binary_path.as_ref()
+    pub fn binary_path(&self) -> &PathBuf {
+        &self.binary_path
     }
 
     /// Get the name
@@ -133,6 +135,11 @@ impl MadaraConfig {
     /// Get the RPC port
     pub fn rpc_port(&self) -> u16 {
         self.rpc_port
+    }
+
+    /// Get the RPC admin port
+    pub fn rpc_admin_port(&self) -> u16 {
+        self.rpc_admin_port
     }
 
     /// Get the RPC CORS
@@ -231,6 +238,11 @@ impl MadaraConfig {
         Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.rpc_port())).unwrap()
     }
 
+    /// Get the rpc admin endpoint
+    pub fn rpc_admin_endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.rpc_admin_port())).unwrap()
+    }
+
     /// Get the gateway endpoint
     pub fn gateway_endpoint(&self) -> Url {
         Url::parse(&format!("http://{}:{}/{}", DEFAULT_SERVICE_HOST, self.gateway_port(), "feeder")).unwrap()
@@ -243,9 +255,7 @@ impl MadaraConfig {
 
     /// Convert the configuration to a command
     pub fn to_command(&self) -> Command {
-        let binary_path = self.binary_path.as_ref()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|| DEFAULT_MADARA_BINARY_PATH.to_string());
+        let binary_path = self.binary_path.to_owned();
 
         let mut cmd = Command::new(binary_path);
 
@@ -253,6 +263,7 @@ impl MadaraConfig {
         cmd.arg("--name").arg(&self.name);
         cmd.arg("--base-path").arg(&self.database_path);
         cmd.arg("--rpc-port").arg(self.rpc_port.to_string());
+        cmd.arg("--rpc-admin-port").arg(self.rpc_admin_port.to_string());
         cmd.arg("--rpc-cors").arg(&self.rpc_cors);
         cmd.arg("--gateway-port").arg(self.gateway_port.to_string());
 
@@ -343,8 +354,9 @@ impl MadaraConfigBuilder {
         self.config
     }
 
-    pub fn binary_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
-        self.config.binary_path = path.map(|p| p.into());
+    /// Set the binary path
+    pub fn binary_path(mut self, path: &str) -> Self {
+        self.config.binary_path = get_binary_path(path);
         self
     }
 
@@ -358,13 +370,18 @@ impl MadaraConfigBuilder {
         self
     }
 
-    pub fn database_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
-        self.config.database_path = path.into();
+    pub fn database_path<S: AsRef<std::path::Path>>(mut self, path: S) -> Self {
+        self.config.database_path = path.as_ref().to_path_buf();
         self
     }
 
     pub fn rpc_port(mut self, port: u16) -> Self {
         self.config.rpc_port = port;
+        self
+    }
+
+    pub fn rpc_admin_port(mut self, port: u16) -> Self {
+        self.config.rpc_admin_port = port;
         self
     }
 

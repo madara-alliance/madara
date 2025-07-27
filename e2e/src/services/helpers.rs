@@ -2,12 +2,13 @@ use async_trait::async_trait;
 use serde_json::json;
 use url::Url;
 use std::net::TcpListener;
+use std::path::PathBuf;
 use crate::services::constants::DEFAULT_SERVICE_HOST;
 use std::io;
 
+use super::constants::{BINARY_DIR, REPO_ROOT};
+
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
-pub const DEFAULT_BINARY_DIR: &str = "../target/release";
-pub const DEFAULT_DATA_DIR: &str = "./data";
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeRpcError {
@@ -78,6 +79,33 @@ pub fn get_free_port() -> Result<u16, io::Error> {
     let listener = TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))?;
     let addr = listener.local_addr()?;
     Ok(addr.port())
+}
+
+/// Get the binary path
+pub fn get_binary_path(binary_name: &str) -> PathBuf {
+    let mut path = REPO_ROOT.clone();
+    path.push(BINARY_DIR);
+    path.push(binary_name);
+    path
+}
+
+pub fn get_file_path(file_path: &str) -> PathBuf {
+    let mut path = REPO_ROOT.clone();
+    path.push(file_path);
+    path
+}
+
+pub fn get_database_path(database_path: &str, database_name: &str) -> PathBuf {
+    let mut path = REPO_ROOT.clone();
+    path.push(database_path);
+    path.push(database_name);
+    path
+}
+
+pub fn get_container_name(name: &str) -> String {
+    let uuid_num = uuid::Uuid::new_v4().as_u128();
+    let random_suffix = (uuid_num % 9000 + 1000) as u16;
+    format!("{}-{}", name, random_suffix)
 }
 
 pub fn docker_url_conversion(url: &Url) -> Url {

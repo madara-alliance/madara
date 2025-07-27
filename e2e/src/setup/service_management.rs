@@ -52,8 +52,8 @@ impl ServiceManager {
         let mut services = RunningServices::default();
 
         // Infrastructure first
-        self.start_infrastructure(&mut services).await?;
-        self.setup_localstack_infrastructure().await?;
+        // self.start_infrastructure(&mut services).await?;
+        // self.setup_localstack_infrastructure().await?;
 
         // L1 setup
         self.setup_l1_chain(&mut services).await?;
@@ -139,19 +139,7 @@ impl ServiceManager {
         .map_err(|_| SetupError::Timeout("LocalstackInfrastructure setup timed out".to_string()))?
     }
 
-    async fn restore_mongodb_database(&self, services: &RunningServices) -> Result<(), SetupError> {
-        println!("🏗️ Setting up mongodb infrastructure...");
 
-        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
-
-        timeout(duration, async {
-            if let Some(ref mongo) = services.mongo_service {
-                mongo.restore_db(DEFAULT_ORCHESTRATOR_DATABASE_NAME).await?;
-            }
-            Ok(())
-        }).await
-        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
-    }
 
     async fn setup_l1_chain(&self, services: &mut RunningServices) -> Result<(), SetupError> {
         println!("🎯 Starting L1 setup...");
@@ -266,9 +254,23 @@ impl ServiceManager {
     async fn dump_databases(&self, services: &RunningServices) -> Result<(), SetupError> {
         if let (Some(mongo), Some(orchestrator)) = (&services.mongo_service, &services.orchestrator_service) {
             println!("Dumping MongoDB database...");
-            mongo.dump_db(orchestrator.config().database_name()).await?;
+            mongo.dump_db(DATA_DIR, orchestrator.config().database_name()).await?;
         }
         Ok(())
+    }
+
+    async fn restore_mongodb_database(&self, services: &RunningServices) -> Result<(), SetupError> {
+        println!("🏗️ Setting up mongodb infrastructure...");
+
+        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
+
+        timeout(duration, async {
+            if let Some(ref mongo) = services.mongo_service {
+                mongo.restore_db(DATA_DIR, ORCHESTRATOR_DATABASE_NAME).await?;
+            }
+            Ok(())
+        }).await
+        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
     }
 
     // Individual service startup methods

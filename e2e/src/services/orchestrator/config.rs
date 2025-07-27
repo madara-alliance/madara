@@ -1,4 +1,4 @@
-use crate::services::server::ServerError;
+use crate::services::{helpers::get_binary_path, server::ServerError};
 use std::path::PathBuf;
 use strum_macros::Display;
 use tokio::process::Command;
@@ -65,7 +65,7 @@ pub struct OrchestratorConfig {
     // Database
     mongodb: bool,
     mongodb_connection_url: Option<Url>,
-    database_name : String,
+    database_name: String,
 
     // AWS Configuration
     aws: bool,
@@ -99,17 +99,17 @@ pub struct OrchestratorConfig {
 impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
-            binary_path: PathBuf::from(DEFAULT_ORCHESTRATOR_BINARY),
+            binary_path: get_binary_path(ORCHESTRATOR_BINARY),
             mode: OrchestratorMode::Run,
             layer: Layer::L2,
             port: None,
             additional_args: vec![],
             environment_vars: vec![],
             mongodb: true,
-            mongodb_connection_url: Some(Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, 27017).as_str()).unwrap()),
+            mongodb_connection_url: Some(Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, MONGODB_PORT).as_str()).unwrap()),
             aws: true,
             event_bridge_type: AWSEventBridgeType::Rule,
-            database_name: String::from(DEFAULT_ORCHESTRATOR_DATABASE_NAME),
+            database_name: String::from(ORCHESTRATOR_DATABASE_NAME),
             settle_on_ethereum: false,
             settle_on_starknet: false,
             da_on_ethereum: false,

@@ -1,3 +1,4 @@
+use crate::services::helpers::{get_binary_path, get_file_path};
 use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -56,9 +57,9 @@ impl Default for BootstrapperConfig {
     fn default() -> Self {
         Self {
             mode: BootstrapperMode::SetupL1,
-            timeout: Duration::from_secs(6000),
-            config_path: Some(PathBuf::from(DEFAULT_BOOTSTRAPPER_CONFIG)),
-            binary_path: PathBuf::from(DEFAULT_BOOTSTRAPPER_BINARY),
+            timeout: BOOTSTRAPPER_SETUP_L1_TIMEOUT.clone(),
+            config_path: None,
+            binary_path: get_binary_path(BOOTSTRAPPER_BINARY),
             logs: (true, true),
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
@@ -163,16 +164,14 @@ impl BootstrapperConfigBuilder {
     }
 
     /// Set the configuration file path
-    pub fn config_path<P: Into<PathBuf>>(mut self, path: P) -> Self {
-        self.config.config_path = Some(path.into());
+    pub fn config_path(mut self, path: &str) -> Self {
+        self.config.config_path = Some(get_file_path(path));
         self
     }
 
     /// Set the binary path
-    pub fn binary_path<P: Into<PathBuf>>(mut self, path: Option<P>) -> Self {
-        if let Some(p) = path {
-            self.config.binary_path = p.into();
-        }
+    pub fn binary_path(mut self, path: &str) -> Self {
+        self.config.binary_path = get_binary_path(path);
         self
     }
 

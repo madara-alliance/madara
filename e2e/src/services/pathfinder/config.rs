@@ -3,7 +3,7 @@
 // a clean, fluent API for configuration.
 
 use tokio::process::Command;
-use crate::services::helpers::{docker_url_conversion, NodeRpcError};
+use crate::services::helpers::{docker_url_conversion, get_container_name, NodeRpcError};
 use url::Url;
 use crate::services::docker::DockerError;
 use crate::services::server::ServerError;
@@ -36,7 +36,6 @@ pub struct PathfinderConfig {
     image: String,
     container_name: String,
     ethereum_url: Url,
-    data_directory: String,
     rpc_root_version: String,
     network: String,
     chain_id: String,
@@ -44,7 +43,6 @@ pub struct PathfinderConfig {
     feeder_gateway_url: Option<Url>,
     storage_state_tries: String,
     gateway_request_timeout: u64,
-    data_volume: Option<String>,
     logs: (bool, bool),
     environment_vars: Vec<(String, String)>,
 }
@@ -52,11 +50,10 @@ pub struct PathfinderConfig {
 impl Default for PathfinderConfig {
     fn default() -> Self {
         Self {
-            port: DEFAULT_PATHFINDER_PORT,
-            image: DEFAULT_PATHFINDER_IMAGE.to_string(),
-            container_name: format!("{}-{}", DEFAULT_PATHFINDER_CONTAINER_NAME, uuid::Uuid::new_v4()),
+            port: PATHFINDER_PORT,
+            image: PATHFINDER_IMAGE.to_string(),
+            container_name: get_container_name(PATHFINDER_CONTAINER),
             ethereum_url: Url::parse("https://ethereum-sepolia-rpc.publicnode.com").unwrap(),
-            data_directory: "/var/pathfinder".to_string(),
             rpc_root_version: "v07".to_string(),
             network: "custom".to_string(),
             chain_id: "MADARA_DEVNET".to_string(),
@@ -64,7 +61,6 @@ impl Default for PathfinderConfig {
             feeder_gateway_url: Some(Url::parse("http://host.docker.internal:8080/feeder_gateway").unwrap()),
             storage_state_tries: "archive".to_string(),
             gateway_request_timeout: 1000,
-            data_volume: None,
             environment_vars: vec![],
             logs: (true, true),
         }
@@ -107,11 +103,6 @@ impl PathfinderConfig {
         &self.ethereum_url
     }
 
-    /// Get the data directory
-    pub fn data_directory(&self) -> &str {
-        &self.data_directory
-    }
-
     /// Get the RPC root version
     pub fn rpc_root_version(&self) -> &str {
         &self.rpc_root_version
@@ -152,11 +143,6 @@ impl PathfinderConfig {
         Url::parse(format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
     }
 
-    /// Get the data volume
-    pub fn data_volume(&self) -> Option<&str> {
-        self.data_volume.as_deref()
-    }
-
     /// Get the environment variables
     pub fn environment_vars(&self) -> &[(String, String)] {
         &self.environment_vars
@@ -169,12 +155,8 @@ impl PathfinderConfig {
         command.arg("--name").arg(self.container_name());
 
         // Port mappings
-        command.arg("-p").arg(format!("{}:{}", self.port(), DEFAULT_PATHFINDER_PORT));
+        command.arg("-p").arg(format!("{}:{}", self.port(), PATHFINDER_PORT));
 
-        // Add data volume if specified
-        if let Some(volume) = self.data_volume() {
-            command.arg("-v").arg(format!("{}:{}", volume, self.data_directory()));
-        }
 
         // Add custom environment variables
         for (key, value) in self.environment_vars() {
@@ -255,12 +237,6 @@ impl PathfinderConfigBuilder {
         self
     }
 
-    /// Set the data directory
-    pub fn data_directory<S: Into<String>>(mut self, directory: S) -> Self {
-        self.config.data_directory = directory.into();
-        self
-    }
-
     /// Set the RPC root version
     pub fn rpc_root_version<S: Into<String>>(mut self, version: S) -> Self {
         self.config.rpc_root_version = version.into();
@@ -306,12 +282,6 @@ impl PathfinderConfigBuilder {
     /// Set the gateway request timeout
     pub fn gateway_request_timeout(mut self, timeout: u64) -> Self {
         self.config.gateway_request_timeout = timeout;
-        self
-    }
-
-    /// Set the data volume for persistent storage
-    pub fn data_volume<S: Into<String>>(mut self, volume: Option<S>) -> Self {
-        self.config.data_volume = volume.map(|v| v.into());
         self
     }
 

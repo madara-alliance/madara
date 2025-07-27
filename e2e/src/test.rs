@@ -14,12 +14,12 @@ async fn setup_chain(
     // Setting Config!
     println!("Running {}", test_name);
     let setup_config = SetupConfigBuilder::new(None)
-        .test_config_l2("e2esetup").unwrap();
+        .test_config_l2(test_name).unwrap();
     println!("Running setup");
 
     // Running Chain
     let mut setup_struct = ChainSetup::new(setup_config).unwrap();
-    match setup_struct.setup().await {
+    match setup_struct.setup(test_name).await {
         Ok(()) => println!("✅ Setup completed successfully"),
         Err(e) => {
             println!("❌ Setup failed: {}", e);

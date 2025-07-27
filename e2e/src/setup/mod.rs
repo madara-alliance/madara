@@ -11,6 +11,7 @@ pub mod service_management;
 pub use service_management::*;
 pub use dependency_validation::*;
 use std::sync::Arc;
+use crate::services::constants::DATA_DIR;
 use crate::setup::database_management::DatabaseManager;
 use crate::setup::lifecycle_management::ServiceLifecycleManager;
 
@@ -42,18 +43,21 @@ impl ChainSetup {
         })
     }
 
-    pub async fn setup(&mut self) -> Result<(), SetupError> {
+    pub async fn setup(&mut self, test_name: &str) -> Result<(), SetupError> {
         println!("🚀 Starting Chain Setup for {:?} layer...", self.config.layer);
 
         let db_status = self.database_manager.check_existing_state().await?;
 
+        println!("{:?} db_statusdb_statusdb_statusdb_status", db_status);
+
         match db_status {
             DBState::ReadyToUse => {
                 println!("✅ Chain state exists, starting servers...");
-                self.start_existing_chain().await?;
+                self.start_existing_chain(test_name).await?;
             },
             DBState::Locked => {
                 println!("⚠️ Chain state is locked, waiting for unlock...");
+                // TODO: incomplete code here
                 self.wait_for_unlock_and_retry().await?;
             },
             DBState::NotReady => {
@@ -65,7 +69,7 @@ impl ChainSetup {
                 self.setup_new_chain().await?;
                 self.config = test_config;
                 self.service_manager = ServiceManager::new(self.config.clone());
-                self.start_existing_chain().await?;
+                self.start_existing_chain(test_name).await?;
             },
             DBState::Error => {
                 return Err(SetupError::OtherError("Invalid DB status".to_string()));
@@ -76,6 +80,9 @@ impl ChainSetup {
     }
 
     async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
+        // Create data dump directory
+        self.database_manager.create_data_directory(DATA_DIR).await?;
+
         // Validate dependencies
         self.validator.validate_all().await?;
 
@@ -91,10 +98,10 @@ impl ChainSetup {
         Ok(())
     }
 
-    async fn start_existing_chain(&mut self) -> Result<(), SetupError> {
+    async fn start_existing_chain(&mut self, test_name: &str) -> Result<(), SetupError> {
         // Copy databases for test isolation
         // TODO: remove the hardcoding
-        self.database_manager.copy_for_test("e2e_setup_test").await?;
+        self.database_manager.copy_for_test(test_name).await?;
 
         // Start services
         let services = self.service_manager.start_runtime_services().await?;
