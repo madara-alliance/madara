@@ -63,16 +63,14 @@ impl Batcher {
             let (chain_id, sn_version) =
                 (self.backend.chain_config().chain_id.to_felt(), self.backend.chain_config().latest_protocol_version);
 
-            let bypass_txs_stream = stream::unfold(&mut self.bypass_in, |chan| async move {
-                chan.recv().await.map(|tx| {
-                    (
+            let bypass_txs_stream =
+                stream::unfold(&mut self.bypass_in, |chan| async move { chan.recv().await.map(|tx| (tx, chan)) }).map(
+                    |tx| {
                         tx.into_blockifier_for_sequencing()
                             .map(|(btx, _ts, declared_class)| (btx, AdditionalTxInfo { declared_class }))
-                            .map_err(anyhow::Error::from),
-                        chan,
-                    )
-                })
-            });
+                            .map_err(anyhow::Error::from)
+                    },
+                );
 
             let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
                 Ok(res?
@@ -82,11 +80,15 @@ impl Batcher {
 
             // Note: this is not hoisted out of the loop, because we don't want to keep the lock around when waiting on the output channel reserve().
             let mempool_txs_stream = stream::unfold(self.mempool.clone(), |mempool| async move {
-                let consumer = mempool.clone().get_consumer_wait_for_ready_tx().await;
+                let consumer = mempool.get_consumer().await;
                 Some((consumer, mempool))
             })
             .map(|c| {
-                stream::iter(c.map(|tx| anyhow::Ok((tx.tx, AdditionalTxInfo { declared_class: tx.converted_class }))))
+                stream::iter(c.map(|tx| {
+                    tx.into_blockifier_for_sequencing()
+                        .map(|(btx, _ts, declared_class)| (btx, AdditionalTxInfo { declared_class }))
+                        .map_err(anyhow::Error::from)
+                }))
             })
             .flatten();
 
