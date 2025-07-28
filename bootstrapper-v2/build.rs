@@ -1,4 +1,3 @@
-use fs_extra;
 use std::fs;
 use std::path::Path;
 
@@ -26,7 +25,7 @@ fn main() {
                 dst_path.parent().unwrap(),
                 &fs_extra::dir::CopyOptions::new().skip_exist(true),
             )
-            .expect(&format!("Failed to copy from {} to {}", src, dst));
+            .unwrap_or_else(|_| panic!("Failed to copy from {} to {}", src, dst));
         }
     }
 }
