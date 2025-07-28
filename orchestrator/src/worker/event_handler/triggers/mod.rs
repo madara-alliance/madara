@@ -7,7 +7,8 @@ pub(crate) mod snos;
 pub(crate) mod update_state;
 
 use crate::core::config::Config;
-use crate::types::jobs::types::JobStatus;
+use crate::types::jobs::job_updates::JobItemUpdates;
+use crate::types::jobs::types::{JobStatus, JobType};
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -43,5 +44,86 @@ pub trait JobTrigger: Send + Sync {
         }
 
         Ok(true)
+    }
+
+    /// Self-healing mechanism to recover orphaned jobs for a specific job type.
+    ///
+    /// This method finds jobs that are stuck in `LockedForProcessing` status beyond the configured
+    /// timeout and resets them to `Created` status so they can be processed again.
+    ///
+    /// # Arguments
+    /// * `config` - Application configuration containing database access and timeout settings
+    /// * `job_type` - The type of job to heal (SNOS, Proving, etc.)
+    ///
+    /// # Returns
+    /// * `Result<u32>` - Number of jobs healed or an error
+    ///
+    /// # Behavior
+    /// - Only heals jobs that have been locked for longer than the configured timeout
+    /// - Resets job status from `LockedForProcessing` to `Created`
+    /// - Clears the `process_started_at` timestamp to allow fresh processing
+    /// - Logs recovery actions for monitoring and debugging
+    async fn heal_orphaned_jobs(&self, config: Arc<Config>, job_type: JobType) -> anyhow::Result<u32> {
+        let timeout_seconds = config.service_config().job_processing_timeout_seconds;
+        let orphaned_jobs = config.database().get_orphaned_jobs(&job_type, timeout_seconds).await?;
+
+        if orphaned_jobs.is_empty() {
+            return Ok(0);
+        }
+
+        tracing::warn!(
+            job_type = ?job_type,
+            orphaned_count = orphaned_jobs.len(),
+            timeout_seconds = timeout_seconds,
+            "Found orphaned jobs, initiating self-healing recovery"
+        );
+
+        let mut healed_count = 0;
+
+        for mut job in orphaned_jobs {
+            job.metadata.common.process_started_at = None;
+
+            let update_result = config
+                .database()
+                .update_job(
+                    &job,
+                    JobItemUpdates::new()
+                        .update_status(JobStatus::Created)
+                        .update_metadata(job.metadata.clone())
+                        .build(),
+                )
+                .await;
+
+            match update_result {
+                Ok(_) => {
+                    healed_count += 1;
+                    tracing::info!(
+                        job_id = %job.id,
+                        job_type = ?job_type,
+                        internal_id = %job.internal_id,
+                        "Successfully healed orphaned job - reset from LockedForProcessing to Created"
+                    );
+                }
+                Err(e) => {
+                    tracing::error!(
+                        job_id = %job.id,
+                        job_type = ?job_type,
+                        internal_id = %job.internal_id,
+                        error = %e,
+                        "Failed to heal orphaned job"
+                    );
+                }
+            }
+        }
+
+        if healed_count > 0 {
+            tracing::warn!(
+                job_type = ?job_type,
+                healed_count = healed_count,
+                "Self-healing completed: recovered orphaned jobs"
+            );
+        }
+
+        Ok(healed_count)
     }
 }

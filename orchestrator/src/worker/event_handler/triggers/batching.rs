@@ -2,6 +2,7 @@ use crate::compression::blob::{convert_felt_vec_to_blob_data, state_update_to_bl
 use crate::compression::squash::squash;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
+use crate::core::client::lock::LockValue;
 use crate::core::config::{Config, StarknetVersion};
 use crate::core::StorageClient;
 use crate::error::job::JobError;
@@ -46,6 +47,20 @@ impl JobTrigger for BatchingTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
 
+        // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
+        match config.lock().acquire_lock("BatchingWorker", LockValue::Boolean(false), 60 * 60, None).await {
+            Ok(_) => {
+                // Lock acquired successfully
+                tracing::info!("BatchingWorker acquired lock");
+            }
+            Err(err) => {
+                // Failed to acquire lock
+                // Returning safely
+                tracing::info!("BatchingWorker failed to acquire lock, returning safely: {}", err);
+                return Ok(());
+            }
+        }
+
         // Getting the latest block number from Starknet
         let provider = config.madara_client();
         let block_number_provider = provider.block_number().await?;
@@ -67,9 +82,13 @@ impl JobTrigger for BatchingTrigger {
             max(config.service_config().min_block_to_process, (latest_block_in_db + 1) as u64);
 
         if first_block_to_assign_batch <= last_block_to_assign_batch {
-            self.assign_batch_to_blocks(first_block_to_assign_batch, last_block_to_assign_batch, config.clone())
-                .await?;
+            let (start_block, end_block) =
+                self.get_blocks_range_to_process(first_block_to_assign_batch, last_block_to_assign_batch);
+            self.assign_batch_to_blocks(start_block, end_block, config.clone()).await?;
         }
+
+        // Releasing the lock
+        config.lock().release_lock("BatchingWorker", None).await?;
 
         tracing::trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
         Ok(())
@@ -374,5 +393,15 @@ impl BatchingTrigger {
                 .await?;
         }
         Ok(())
+    }
+
+    fn get_blocks_range_to_process(&self, start_block: u64, end_block: u64) -> (u64, u64) {
+        let max_blocks_to_process_at_once = self.max_blocks_to_process_at_once();
+        let end_block = min(end_block, start_block + max_blocks_to_process_at_once - 1);
+        (start_block, end_block)
+    }
+
+    fn max_blocks_to_process_at_once(&self) -> u64 {
+        100
     }
 }

@@ -81,7 +81,7 @@ impl CompressionSet {
 }
 
 // Compression Logic
-// Revert compress signature and logic (no Result, use expect/panic)
+// Revert compress signature and logic
 pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
     if data.len() >= HEADER_ELM_BOUND as usize {
         return Err(eyre!("Data is too long: {} >= {}", data.len(), HEADER_ELM_BOUND));
@@ -90,7 +90,7 @@ pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
     // Handle the empty case
     if data.is_empty() {
         let header: Vec<usize> = vec![COMPRESSION_VERSION.into(), 0, 0, 0, 0, 0, 0, 0, 0];
-        // Return packed header directly, handle potential packing errors with expect/panic
+        // Return packed header directly
         return Ok(vec![pack_usize_in_felt(&header, HEADER_ELM_BOUND)?]);
     }
 
@@ -110,7 +110,6 @@ pub fn compress(data: &[Felt]) -> Result<Vec<Felt>> {
         .chain([compression_set.n_repeating_values()])
         .collect();
 
-    // Use expect/panic where Results were previously handled
     let packed_header = pack_usize_in_felt(&header, HEADER_ELM_BOUND)?;
     let packed_repeating_value_pointers =
         pack_usize_in_felts(&compression_set.get_repeating_value_pointers(), repeating_pointers_bound)?;
