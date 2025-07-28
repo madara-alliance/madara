@@ -214,10 +214,10 @@ RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip
 RUN ./scarb/bin/scarb build
 
 # =========================================================================== #
-#                                  BOOTSTRAPPER                               #
+#                         BOOTSTRAPPER ETHEREUM                               #
 # =========================================================================== #
 
-FROM ghcr.io/foundry-rs/foundry AS bootstrapper
+FROM ghcr.io/foundry-rs/foundry AS bootstrapper-ethereum
 WORKDIR /contracts
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
@@ -226,6 +226,32 @@ COPY bootstrapper-v2/contracts/ethereum/ .
 COPY --from=starkgate-latest $STARKGATE_DIR/starkware/ ./src/starkware/
 COPY --from=starkgate-latest $STARKGATE_DIR/third_party/ ./src/third_party/
 RUN forge install --no-git && forge build
+
+
+# =========================================================================== #
+#                         BOOTSTRAPPER MADARA                                 #
+# =========================================================================== #
+FROM builder AS bootstrapper-madara
+
+ARG TARGETOS
+ARG TARGETARCH
+ENV SCARB_VERSION="2.11.3"
+ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
+RUN if [ "$TARGETARCH" = "arm64" ]; then \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  else \
+    echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-x86_64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
+  fi
+
+WORKDIR /contracts
+# Setup scarb
+RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
+
+COPY bootstrapper-v2/contracts/madara/ . 
+
+# Compile contracts
+RUN ./scarb/bin/scarb build
+
 
 # =========================================================================== #
 #                                  ARTIFACTS                                  #
@@ -257,7 +283,8 @@ COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInit
 WORKDIR ../bootstrapper
 COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./solidity/starkware/
 COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./solidity/third_party/
-COPY --from=bootstrapper "/contracts/out" ./solidity/out/
+COPY --from=bootstrapper-ethereum "/contracts/out" ./solidity/out/
+COPY --from=bootstrapper-madara "/contracts/target" ./cairo/target/
 
 WORKDIR ../starkgate_legacy
 
