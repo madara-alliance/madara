@@ -10,6 +10,7 @@ fn main() {
         ("../build-artifacts/bootstrapper/solidity/starkware", "./contracts/ethereum/src/starkware"),
         ("../build-artifacts/bootstrapper/solidity/third_party", "./contracts/ethereum/src/third_party"),
         ("../build-artifacts/bootstrapper/solidity/out", "./contracts/ethereum/out"),
+        ("../build-artifacts/bootstrapper/cairo/target", "./contracts/madara/target"),
     ];
 
     for (src, dst) in copy_dirs.iter() {
