@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Multipart, Path, Query, State},
+    extract::{DefaultBodyLimit, Multipart, Path, Query, State},
     http::StatusCode,
     response::Json,
     routing::{get, post},
@@ -385,5 +385,7 @@ pub fn create_router(state: MockAtlanticState) -> Router {
         .route("/atlantic-query/:job_id", get(get_job_status_handler))
         .route("/queries/:task_id/proof.json", get(get_proof_handler))
         .route("/is-alive", get(health_check))
+        // Amounting to accept at max of 100MB of data as a part of the API call
+        .layer(DefaultBodyLimit::max(100000000))
         .with_state(state)
 }
