@@ -52,8 +52,8 @@ impl ServiceManager {
         let mut services = RunningServices::default();
 
         // Infrastructure first
-        // self.start_infrastructure(&mut services).await?;
-        // self.setup_localstack_infrastructure().await?;
+        self.start_infrastructure(&mut services).await?;
+        self.setup_localstack_infrastructure().await?;
 
         // L1 setup
         self.setup_l1_chain(&mut services).await?;
@@ -78,16 +78,16 @@ impl ServiceManager {
         let mut services = RunningServices::default();
 
         // Start infrastructure
-        // self.start_infrastructure(&mut services).await?;
-        // self.setup_localstack_infrastructure().await?;
-        // self.restore_mongodb_database(&services).await?;
+        self.start_infrastructure(&mut services).await?;
+        self.setup_localstack_infrastructure().await?;
+        self.restore_mongodb_database(&services).await?;
 
-        // Start runtime services
+        // // Start runtime services
         self.start_anvil(&mut services).await?;
         self.start_madara(&mut services).await?;
         self.start_pathfinder(&mut services).await?;
-        // self.start_mock_prover(&mut services).await?;
-        // self.start_orchestrator(&mut services).await?;
+        self.start_mock_prover(&mut services).await?;
+        self.start_orchestrator(&mut services).await?;
 
         Ok(services)
     }
@@ -182,7 +182,7 @@ impl ServiceManager {
     }
 
     async fn setup_full_node_syncing(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        println!("🎯 Starting Pathfinder syncing...");
+        println!("🎯 Starting Pathfinder syncing till # Block {}", self.bootstrapped_madara_block_number);
 
         let duration = self.config.get_timeouts().start_full_node_syncing;
 

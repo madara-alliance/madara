@@ -168,7 +168,6 @@ impl PathfinderConfig {
 
         // Add pathfinder binary command and arguments
         command.arg("--ethereum.url").arg(self.ethereum_url().to_string());
-        command.arg("--http-rpc").arg(format!("0.0.0.0:{}", self.port()));
         command.arg("--rpc.root-version").arg(self.rpc_root_version());
         command.arg("--network").arg(self.network());
         command.arg("--chain-id").arg(self.chain_id());

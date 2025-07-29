@@ -45,7 +45,7 @@ impl DatabaseManager {
         println!("🗄️ Checking existing databases...");
 
         let data_dir = REPO_ROOT.join(DATA_DIR);
-        let status_file = data_dir.join("STATUS.txt");
+        let status_file = data_dir.join("STATUS");
 
         println!("{:?} status_filestatus_filestatus_filestatus_file ", status_file);
 
@@ -81,7 +81,7 @@ impl DatabaseManager {
 
     pub async fn mark_as_ready(&self) -> Result<(), SetupError> {
         let data_dir = Path::new(DATA_DIR);
-        let status_file = data_dir.join("STATUS.txt");
+        let status_file = data_dir.join("STATUS");
 
         fs::write(&status_file, "READY").await
             .map_err(|e| SetupError::OtherError(format!("Failed to write status file: {}", e)))?;

@@ -352,7 +352,7 @@ impl SetupConfigBuilder {
         let anvil_config = AnvilConfigBuilder::new()
             .port(get_free_port()?)
             .dump_state(get_database_path(DATA_DIR, ANVIL_DATABASE_FILE))
-            .logs((true, true))
+            .logs((false, true))
             .build();
 
         let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
@@ -410,8 +410,10 @@ impl SetupConfigBuilder {
             .atlantic_service_url(mock_prover_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
-            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
+            .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
+            .env_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", anvil_config.endpoint().as_str())
             .logs((true, true))
             .build();
 
@@ -509,8 +511,10 @@ impl SetupConfigBuilder {
             .atlantic_service_url(mock_prover_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
-            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
+            .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
+            .env_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", anvil_config.endpoint().as_str())
             .logs((true, true))
             .build();
 
