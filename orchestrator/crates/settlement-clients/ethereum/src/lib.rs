@@ -54,7 +54,7 @@ pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 // Ethereum Transaction Finality
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
 const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
-const TX_WAIT_SLEEP_DELAY_SECS: u64 = 60;
+const TX_WAIT_SLEEP_DELAY_SECS: u64 = 4;
 
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
