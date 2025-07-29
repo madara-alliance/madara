@@ -93,7 +93,7 @@ impl<'a> SubscriptionState<'a> {
                 let block_number = common
                     .starknet
                     .backend
-                    .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                    .get_block_n(&mp_rpc::v0_7_1::BlockId::Hash(block_info.header.parent_block_hash))
                     .or_else_internal_server_error(|| {
                         format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
                     })?
@@ -253,7 +253,7 @@ impl StateTransitionCommon<'_> {
         &self,
         status: mp_rpc::v0_7_1::TxnStatus,
     ) -> Result<(), crate::errors::StarknetWsApiError> {
-        let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.tx_hash, status };
+        let txn_status = mp_rpc::v0_8_1::NewTxnStatus { transaction_hash: self.tx_hash, status };
         let item = super::SubscriptionItem::new(self.sink.subscription_id(), txn_status);
         let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
             format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
@@ -353,7 +353,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                     break common
                         .starknet
                         .backend
-                        .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                        .get_block_n(&mp_rpc::v0_7_1::BlockId::Hash(block_info.header.parent_block_hash))
                         .or_else_internal_server_error(|| {
                             format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
                         })?
@@ -430,8 +430,8 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx() -> mp_rpc::BroadcastedInvokeTxn {
-        mp_rpc::BroadcastedInvokeTxn::V0(mp_rpc::InvokeTxnV0 {
+    fn tx() -> mp_rpc::v0_7_1::BroadcastedInvokeTxn {
+        mp_rpc::v0_7_1::BroadcastedInvokeTxn::V0(mp_rpc::v0_7_1::InvokeTxnV0 {
             calldata: Default::default(),
             contract_address: Default::default(),
             entry_point_selector: Default::default(),
@@ -441,7 +441,7 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx_with_receipt(tx: mp_rpc::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
+    fn tx_with_receipt(tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
         mp_block::TransactionWithReceipt {
             transaction: mp_transactions::Transaction::Invoke(tx.into()),
             receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
@@ -499,7 +499,7 @@ mod test {
     async fn subscribe_transaction_status_received_before(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
 
@@ -520,7 +520,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
                 });
@@ -533,7 +533,7 @@ mod test {
     async fn subscribe_transaction_status_received_after(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
 
@@ -554,7 +554,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
                 });
@@ -588,7 +588,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
                 });
@@ -601,7 +601,7 @@ mod test {
     async fn subscribe_transaction_status_accepted_on_l2_after(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn,
         tx_with_receipt: mp_block::TransactionWithReceipt,
         pending: mp_block::PendingFullBlock,
     ) {
@@ -625,7 +625,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
                 });
@@ -637,7 +637,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
                 });
@@ -674,7 +674,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
                 });
@@ -710,7 +710,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
                 });
@@ -724,7 +724,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
                 });
@@ -737,7 +737,7 @@ mod test {
     async fn subscribe_transaction_status_full_flow(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn,
         tx_with_receipt: mp_block::TransactionWithReceipt,
         pending: mp_block::PendingFullBlock,
         block: mp_block::MadaraMaybePendingBlock,
@@ -762,7 +762,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::Received
                 });
@@ -776,7 +776,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
                 });
@@ -792,7 +792,7 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
                     status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
                 });
@@ -804,7 +804,11 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn subscribe_transaction_status_unsubscribe(_logs: (), starknet: Starknet, tx: mp_rpc::BroadcastedInvokeTxn) {
+    async fn subscribe_transaction_status_unsubscribe(
+        _logs: (),
+        starknet: Starknet,
+        tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn,
+    ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
 
         let builder = jsonrpsee::server::Server::builder();

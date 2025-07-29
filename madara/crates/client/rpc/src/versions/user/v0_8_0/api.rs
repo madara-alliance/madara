@@ -1,60 +1,13 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
-use serde::{Deserialize, Serialize};
+use mp_rpc::v0_8_1::{ContractStorageKeysItem, GetStorageProofResult};
 use starknet_types_core::felt::Felt;
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContractStorageKeysItem {
-    pub contract_address: Felt,
-    pub storage_keys: Vec<Felt>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum MerkleNode {
-    Binary { left: Felt, right: Felt },
-    Edge { child: Felt, path: Felt, length: usize },
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct NodeHashToNodeMappingItem {
-    pub node_hash: Felt,
-    pub node: MerkleNode,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContractLeavesDataItem {
-    pub nonce: Felt,
-    pub class_hash: Felt,
-    pub storage_root: Felt,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContractsProof {
-    pub nodes: Vec<NodeHashToNodeMappingItem>,
-    pub contract_leaves_data: Vec<ContractLeavesDataItem>,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GlobalRoots {
-    pub contracts_tree_root: Felt,
-    pub classes_tree_root: Felt,
-    pub block_hash: Felt,
-}
-
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GetStorageProofResult {
-    pub classes_proof: Vec<NodeHashToNodeMappingItem>,
-    pub contracts_proof: ContractsProof,
-    pub contracts_storage_proofs: Vec<Vec<NodeHashToNodeMappingItem>>,
-    pub global_roots: GlobalRoots,
-}
 
 type SubscriptionItemPendingTxs = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
 type SubscriptionItemEvents = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::EmittedEvent>;
 type SubscriptionItemNewHeads = super::methods::ws::SubscriptionItem<mp_rpc::v0_7_1::BlockHeader>;
-type SubscriptionItemTransactionStatus = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::TxnStatus>;
+type SubscriptionItemTransactionStatus = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::NewTxnStatus>;
 
 #[versioned_rpc("V0_8_0", "starknet")]
 pub trait StarknetWsRpcApi {

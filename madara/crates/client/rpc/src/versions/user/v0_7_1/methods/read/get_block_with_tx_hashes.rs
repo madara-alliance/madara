@@ -1,5 +1,5 @@
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
     PendingBlockWithTxHashes,
 };
@@ -76,7 +76,7 @@ mod tests {
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mp_block::BlockTag;
-    use mp_rpc::{BlockHeader, L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{BlockHeader, L1DaMode, ResourcePrice};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
 

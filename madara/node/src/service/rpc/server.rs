@@ -7,7 +7,7 @@ use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 use anyhow::Context;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
 use mc_rpc::Starknet;
-use mp_rpc::SyncingStatus;
+use mp_rpc::v0_7_1::SyncingStatus;
 use mp_utils::service::ServiceContext;
 use std::convert::Infallible;
 use std::net::SocketAddr;

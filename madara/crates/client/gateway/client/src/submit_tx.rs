@@ -4,7 +4,7 @@ use crate::GatewayProvider;
 use async_trait::async_trait;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
 use mp_gateway::{error::SequencerError, user_transaction::UserTransactionConversionError};
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };

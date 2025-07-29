@@ -1,8 +1,9 @@
-use crate::versions::user::v0_8_0::{ContractStorageKeysItem, GetStorageProofResult, StarknetReadRpcApiV0_8_0Server};
+use crate::versions::user::v0_8_0::StarknetReadRpcApiV0_8_0Server;
 use crate::Starknet;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
+use mp_rpc::v0_8_1::{ContractStorageKeysItem, GetStorageProofResult};
 use starknet_types_core::felt::Felt;
 
 pub mod get_compiled_casm;

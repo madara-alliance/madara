@@ -3,7 +3,7 @@ use mp_block::{
     event_with_info::{drain_block_events, event_match_filter},
     BlockId,
 };
-use mp_rpc::EmittedEvent;
+use mp_rpc::v0_7_1::EmittedEvent;
 use starknet_types_core::felt::Felt;
 
 use super::BLOCK_PAST_LIMIT;
@@ -85,7 +85,7 @@ mod test {
     use crate::test_utils::rpc_test_setup;
     use jsonrpsee::ws_client::WsClientBuilder;
     use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
-    use mp_rpc::{EmittedEvent, Event, EventContent};
+    use mp_rpc::v0_7_1::{EmittedEvent, Event, EventContent};
 
     /// Generates a transaction receipt with predictable event values for testing purposes.
     /// Values are generated using binary patterns for easy verification.

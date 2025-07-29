@@ -20,8 +20,8 @@ pub use event_with_info::EventWithInfo;
 pub use header::Header;
 pub use primitive_types::{H160, U256};
 
-pub type BlockId = mp_rpc::BlockId;
-pub type BlockTag = mp_rpc::BlockTag;
+pub type BlockId = mp_rpc::v0_7_1::BlockId;
+pub type BlockTag = mp_rpc::v0_7_1::BlockTag;
 
 // TODO: where should we put that?
 #[derive(Debug, Clone)]
@@ -141,7 +141,7 @@ impl From<MadaraBlockInfo> for MadaraMaybePendingBlockInfo {
     }
 }
 
-impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
+impl From<MadaraBlockInfo> for mp_rpc::v0_7_1::BlockHeader {
     fn from(info: MadaraBlockInfo) -> Self {
         let MadaraBlockInfo {
             header:
@@ -172,16 +172,75 @@ impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
             block_hash,
             block_number,
             l1_da_mode: match l1_da_mode {
-                L1DataAvailabilityMode::Blob => mp_rpc::L1DaMode::Blob,
-                L1DataAvailabilityMode::Calldata => mp_rpc::L1DaMode::Calldata,
+                L1DataAvailabilityMode::Blob => mp_rpc::v0_7_1::L1DaMode::Blob,
+                L1DataAvailabilityMode::Calldata => mp_rpc::v0_7_1::L1DaMode::Calldata,
             },
-            l1_data_gas_price: mp_rpc::ResourcePrice {
+            l1_data_gas_price: mp_rpc::v0_7_1::ResourcePrice {
                 price_in_fri: Felt::from(strk_l1_data_gas_price),
                 price_in_wei: Felt::from(eth_l1_data_gas_price),
             },
-            l1_gas_price: mp_rpc::ResourcePrice {
+            l1_gas_price: mp_rpc::v0_7_1::ResourcePrice {
                 price_in_fri: Felt::from(strk_l1_gas_price),
                 price_in_wei: Felt::from(eth_l1_gas_price),
+            },
+            new_root,
+            parent_hash,
+            sequencer_address,
+            starknet_version: if protocol_version < StarknetVersion::V0_9_1 {
+                "".to_string()
+            } else {
+                protocol_version.to_string()
+            },
+            timestamp: timestamp.0,
+        }
+    }
+}
+
+impl From<MadaraBlockInfo> for mp_rpc::v0_8_1::BlockHeader {
+    fn from(info: MadaraBlockInfo) -> Self {
+        let MadaraBlockInfo {
+            header:
+                Header {
+                    parent_block_hash: parent_hash,
+                    block_number,
+                    global_state_root: new_root,
+                    sequencer_address,
+                    block_timestamp: timestamp,
+                    protocol_version,
+                    gas_prices,
+                    l1_da_mode,
+                    ..
+                },
+            block_hash,
+            ..
+        } = info;
+        let GasPrices {
+            eth_l1_gas_price,
+            strk_l1_gas_price,
+            eth_l1_data_gas_price,
+            strk_l1_data_gas_price,
+            eth_l2_gas_price,
+            strk_l2_gas_price,
+        } = gas_prices;
+
+        Self {
+            block_hash,
+            block_number,
+            l1_da_mode: match l1_da_mode {
+                L1DataAvailabilityMode::Blob => mp_rpc::v0_7_1::L1DaMode::Blob,
+                L1DataAvailabilityMode::Calldata => mp_rpc::v0_7_1::L1DaMode::Calldata,
+            },
+            l1_data_gas_price: mp_rpc::v0_7_1::ResourcePrice {
+                price_in_fri: Felt::from(strk_l1_data_gas_price),
+                price_in_wei: Felt::from(eth_l1_data_gas_price),
+            },
+            l1_gas_price: mp_rpc::v0_7_1::ResourcePrice {
+                price_in_fri: Felt::from(strk_l1_gas_price),
+                price_in_wei: Felt::from(eth_l1_gas_price),
+            },
+            l2_gas_price: mp_rpc::v0_7_1::ResourcePrice {
+                price_in_fri: Felt::from(strk_l2_gas_price),
+                price_in_wei: Felt::from(eth_l2_gas_price),
             },
             new_root,
             parent_hash,
