@@ -253,14 +253,14 @@ impl AggregatorJobHandler {
         storage_path: &str,
     ) -> Result<Vec<u8>, JobError> {
         tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
-        let cairo_pie = config.prover_client().get_task_artifacts(task_id, file_name).await.map_err(|e| {
+        let artifact = config.prover_client().get_task_artifacts(task_id, file_name).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to download {}", file_name);
             JobError::Other(OtherError(eyre!(e)))
         })?;
 
-        config.storage().put_data(bytes::Bytes::from(cairo_pie.clone()), storage_path).await?;
+        config.storage().put_data(bytes::Bytes::from(artifact.clone()), storage_path).await?;
 
-        Ok(cairo_pie)
+        Ok(artifact)
     }
 
     pub async fn store_program_output(
