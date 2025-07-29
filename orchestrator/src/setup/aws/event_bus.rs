@@ -127,9 +127,12 @@ impl Resource for InnerAWSEventBridge {
     ///
     /// # Returns
     /// * `OrchestratorResult<bool>` - A result indicating if the event bridge rule is ready to use
-    async fn is_ready_to_use(&self, _layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
+    async fn is_ready_to_use(&self, layer: &Layer, args: &Self::SetupArgs) -> OrchestratorResult<bool> {
         let mut flag = true;
         for trigger_type in WORKER_TRIGGERS.iter() {
+            if *layer == Layer::L2 && *trigger_type == WorkerTriggerType::ProofRegistration {
+                continue;
+            }
             let trigger_name = Self::get_trigger_name_from_trigger_type(&args.trigger_rule_template_name, trigger_type);
             flag = flag && self.eb_client.describe_rule().name(trigger_name).send().await.is_ok()
         }
