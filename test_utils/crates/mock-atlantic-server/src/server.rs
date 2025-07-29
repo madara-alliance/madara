@@ -11,10 +11,6 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
-use std::fs;
-use std::path::Path as stdPath;
-use tokio::fs::File;
-use tokio::io::AsyncWriteExt;
 
 use crate::types::{
     AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticChain, AtlanticClient,
@@ -216,81 +212,90 @@ pub async fn add_job_handler(
 
     let mut layout = Some("dynamic".to_string());
     let mut network = Some("TESTNET".to_string());
-    // let mut declared_job_size = None;
-    // let mut cairo_version = None;
-    // let mut cairo_vm = None;
-    // let mut result_type = None;
+    let mut declared_job_size = None;
+    let mut cairo_version = None;
+    let mut cairo_vm = None;
+    let mut result_type = None;
+    let mut external_id = None;
 
-    // while let Some(field) = multipart.next_field().await.map_err(|e| {
-    //     info!("Other #2 : {}", e);
-    //     StatusCode::BAD_REQUEST
-    // })? {
-    //     match field.name() {
-    //         Some("layout") => {
-    //             layout = Some(field.text().await.map_err(|_| {
-    //                 info!("Layout");
-    //                 StatusCode::BAD_REQUEST
-    //             })?);
-    //         }
-    //         Some("network") => {
-    //             network = Some(field.text().await.map_err(|_| {
-    //                 info!("Network");
-    //                 StatusCode::BAD_REQUEST
-    //             }
-    //             )?);
-    //         }
-    //         // Some("declaredJobSize") => {
-    //         //     declared_job_size = Some(field.text().await.map_err(|_| {
-    //         //         info!("declaredJobSize");
-    //         //         StatusCode::BAD_REQUEST
-    //         //     })?);
-    //         // }
-    //         // Some("cairoVersion") => {
-    //         //     cairo_version = Some(field.text().await.map_err(|_| {
-    //         //         info!("cairoVersion");
-    //         //         StatusCode::BAD_REQUEST
-    //         //     })?);
-    //         // }
-    //         // Some("cairoVm") => {
-    //         //     cairo_vm = Some(field.text().await.map_err(|_| {
-    //         //         info!("cairoVm");
-    //         //         StatusCode::BAD_REQUEST
-    //         //     })?);
-    //         // }
-    //         // Some("result") => {
-    //         //     result_type = Some(field.text().await.map_err(|_| {
-    //         //         info!("result");
-    //         //         StatusCode::BAD_REQUEST
-    //         //     })?);
-    //         // }
-    //         // Some("pieFile") | Some("inputFile") | Some("programFile") => {
-    //         //     // let data = field.bytes().await.map_err(|_| {
-    //         //     //     StatusCode::BAD_REQUEST
-    //         //     // })?;
-    //         //     // let upload_dir = "./directory";
-    //         //     // if !stdPath::new(upload_dir).exists() {
-    //         //     //     fs::create_dir_all(upload_dir).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    //         //     // }
-    //         //     // let file_name = "pie.zip";
-    //         //     // let file_path = format!("{}/{}", upload_dir, file_name);
-    //         //     // let mut file = File::create(&file_path).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    //         //     // file.write_all(&data).await.map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-    //         //     // info!("Received file data of {} bytes", data.len());
-    //         // }
-    //         _ => {
-    //             let name = field.name().map(|s| s.to_string());
-    //             // let value = field.text().await.map_err(|_| {
-    //             //     info!("Other");
-    //             //     StatusCode::BAD_REQUEST
-    //             // })?;
+    while let Some(field) = multipart.next_field().await.map_err(|e| {
+        warn!("Failed to get multipart field: {}", e);
+        StatusCode::BAD_REQUEST
+    })? {
+        let field_name = field.name().map(|s| s.to_string());
 
-    //             if let Some(name) = name {
-    //                 info!("Name : {}", name);
-    //                 // debug!("Received form field: {} = {}", name, value);
-    //             }
-    //         }
-    //     }
-    // }
+        match field_name.as_deref() {
+            Some("layout") => {
+                layout = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse layout field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed layout: {:?}", layout);
+            }
+            Some("network") => {
+                network = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse network field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed network: {:?}", network);
+            }
+            Some("declaredJobSize") => {
+                declared_job_size = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse declaredJobSize field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed declaredJobSize: {:?}", declared_job_size);
+            }
+            Some("cairoVersion") => {
+                cairo_version = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse cairoVersion field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed cairoVersion: {:?}", cairo_version);
+            }
+            Some("cairoVm") => {
+                cairo_vm = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse cairoVm field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed cairoVm: {:?}", cairo_vm);
+            }
+            Some("result") => {
+                result_type = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse result field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed result: {:?}", result_type);
+            }
+            Some("externalId") => {
+                external_id = Some(field.text().await.map_err(|e| {
+                    warn!("Failed to parse externalId field: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?);
+                debug!("Parsed externalId: {:?}", external_id);
+            }
+            Some("pieFile") | Some("inputFile") | Some("programFile") => {
+                let data = field.bytes().await.map_err(|e| {
+                    warn!("Failed to read file data: {}", e);
+                    StatusCode::BAD_REQUEST
+                })?;
+                info!("Received file data of {} bytes for field {:?}", data.len(), field_name);
+                // For mock server, we just log the file data but don't process it
+            }
+            Some(name) => {
+                // Handle any other fields by consuming them
+                let value = field.text().await.map_err(|e| {
+                    warn!("Failed to parse field {}: {}", name, e);
+                    StatusCode::BAD_REQUEST
+                })?;
+                debug!("Parsed field {}: {}", name, value);
+            }
+            None => {
+                warn!("Received field with no name");
+                let _ = field.bytes().await;
+            }
+        }
+    }
 
     // Determine job ID based on layout
     let job_id = match layout.as_deref() {
@@ -303,8 +308,8 @@ pub async fn add_job_handler(
         }
     };
 
-    // debug!("Creating job with layout: {:?}, network: {:?}, job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, job_id: {}",
-    //        layout, network, cairo_version, cairo_vm, result_type, job_id);
+    info!("Creating job with layout: {:?}, network: {:?}, declared_job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, external_id: {:?}, job_id: {}",
+           layout, network, declared_job_size, cairo_version, cairo_vm, result_type, external_id, job_id);
 
     let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
     let job_layout = job_data.query.layout.clone();
