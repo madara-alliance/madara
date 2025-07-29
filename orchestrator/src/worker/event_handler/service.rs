@@ -11,6 +11,7 @@ use crate::core::config::Config;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
+use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
