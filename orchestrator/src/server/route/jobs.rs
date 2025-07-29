@@ -1,16 +1,24 @@
 use std::sync::Arc;
 
-use axum::extract::{Path, State};
+use axum::extract::{Json, Path, State};
 use axum::response::IntoResponse;
-use axum::routing::get;
-use axum::{Json, Router};
+use axum::routing::{get, post};
+use axum::Router;
 use opentelemetry::KeyValue;
+use serde::Deserialize;
 use tracing::{error, info, instrument};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
-use super::super::types::{ApiResponse, BlockJobStatusResponse, JobId, JobRouteResult, JobStatusResponseItem};
+use super::super::types::{ApiResponse, BlockJobStatusResponse, JobRouteResult, JobStatusResponseItem};
+
+/// Request body for job operations that require a job ID
+#[derive(Deserialize)]
+struct JobRequest {
+    pub id: String,
+}
 use crate::core::config::Config;
+use crate::types::jobs::job_item::JobItem;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::service::JobService;
@@ -19,13 +27,13 @@ use crate::worker::service::JobService;
 ///
 /// This endpoint initiates the processing of a job identified by its UUID. It performs the
 /// following:
-/// 1. Validates and parses the job ID from the URL path parameter
+/// 1. Validates and parses the job ID from the request body
 /// 2. Calls the job processing logic
 /// 3. Records metrics for successful/failed operations
 /// 4. Returns an appropriate API response
 ///
 /// # Arguments
-/// * `Path(JobId { id })` - The job ID extracted from the URL path
+/// * `Json(JobRequest { id })` - The job ID from the request body
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
@@ -34,10 +42,11 @@ use crate::worker::service::JobService;
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If job processing fails
+#[cfg_attr(debug_assertions, axum::debug_handler)]
 #[instrument(skip(config), fields(job_id = %id))]
 async fn handle_process_job_request(
-    Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
+    Json(JobRequest { id }): Json<JobRequest>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
@@ -68,7 +77,7 @@ async fn handle_process_job_request(
 /// 5. Returns immediate response
 ///
 /// # Arguments
-/// * `Path(JobId { id })` - The job ID extracted from the URL path
+/// * `Json(JobRequest { id })` - The job ID from the request body
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
@@ -77,10 +86,11 @@ async fn handle_process_job_request(
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If queueing for verification fails
+#[cfg_attr(debug_assertions, axum::debug_handler)]
 #[instrument(skip(config), fields(job_id = %id))]
 async fn handle_verify_job_request(
-    Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
+    Json(JobRequest { id }): Json<JobRequest>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
@@ -108,7 +118,7 @@ async fn handle_verify_job_request(
 /// 4. Returns the retry attempt result
 ///
 /// # Arguments
-/// * `Path(JobId { id })` - The job ID extracted from the URL path
+/// * `Json(JobRequest { id })` - The job ID from the request body
 /// * `State(config)` - Shared application configuration
 ///
 /// # Returns
@@ -119,8 +129,8 @@ async fn handle_verify_job_request(
 /// * `JobRouteError::ProcessingError` - If retry attempt fails
 #[instrument(skip(config), fields(job_id = %id))]
 async fn handle_retry_job_request(
-    Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
+    Json(JobRequest { id }): Json<JobRequest>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
 
@@ -157,7 +167,7 @@ async fn handle_retry_job_request(
 /// * `Router` - Configured router with all job endpoints
 pub fn job_router(config: Arc<Config>) -> Router {
     Router::new()
-        .nest("/:id", job_trigger_router(config.clone()))
+        .nest("/", job_trigger_router(config.clone()))
         .route("/block/:block_number/status", get(handle_get_job_status_by_block_request).with_state(config))
 }
 
@@ -197,10 +207,40 @@ async fn handle_get_job_status_by_block_request(
     }
 }
 
+/// Get all failed job, support to return all the Failed job in the application
+///
+///
+/// # Arguments
+/// * `Json(JobRequest { id })` - The job ID from the request body
+/// * `State(config)` - Shared application configuration
+///
+/// # Returns
+/// * `JobRouteResult` - Success response or error details
+///
+/// # Errors
+/// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
+/// * `JobRouteError::ProcessingError` - If retry attempt fails
+#[instrument(skip(config))]
+async fn get_failed_job(State(config): State<Arc<Config>>) -> JobRouteResult {
+    match JobHandlerService::get_failed_jobs(config.clone()).await {
+        Ok(jobs) => {
+            info!("Successfully fetched failed jobs");
+            Ok(Json(ApiResponse::<Vec<JobItem>>::success_with_data(
+                jobs,
+                Some("Successfully fetched failed jobs".to_string()),
+            ))
+            .into_response())
+        }
+        Err(e) => {
+            error!(error = %e, "Failed to fetch failed jobs");
+            Err(JobRouteError::ProcessingError(e.to_string()))
+        }
+    }
+}
+
 /// Creates the nested router for job trigger endpoints.
 ///
 /// Sets up specific routes for processing, verifying, and retrying jobs.
-/// All endpoints are configured as GET requests and share the application config.
 ///
 /// # Arguments
 /// * `config` - Shared application configuration
@@ -209,8 +249,9 @@ async fn handle_get_job_status_by_block_request(
 /// * `Router` - Configured router with trigger endpoints
 pub(super) fn job_trigger_router(config: Arc<Config>) -> Router {
     Router::new()
-        .route("/process", get(handle_process_job_request))
-        .route("/verify", get(handle_verify_job_request))
-        .route("/retry", get(handle_retry_job_request))
+        .route("/process", post(handle_process_job_request))
+        .route("/verify", post(handle_verify_job_request))
+        .route("/retry", post(handle_retry_job_request))
+        .route("/status/failed", get(get_failed_job))
         .with_state(config)
 }

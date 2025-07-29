@@ -636,4 +636,9 @@ impl JobHandlerService {
             WorkerTriggerType::Batching => Box::new(BatchingTrigger),
         }
     }
+
+    pub(crate) async fn get_failed_jobs(config: Arc<Config>) -> Result<Vec<JobItem>, JobError> {
+        let jobs = config.database().get_jobs_by_types_and_statuses(vec![], vec![JobStatus::Failed], None).await?;
+        Ok(jobs)
+    }
 }
