@@ -124,18 +124,26 @@ pub fn init_logging() {
     color_eyre::install().expect("Unable to install color_eyre");
 
     // Read from RUST_LOG environment variable, with fallback to default
-    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        // Fallback if RUST_LOG is not set or invalid
-        EnvFilter::builder()
-            .with_default_directive(Level::DEBUG.into())
-            .parse("orchestrator=trace")
-            .expect("Invalid filter directive and Logger control")
-    });
+    let env_filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| {
+            // Fallback if RUST_LOG is not set or invalid
+            EnvFilter::builder()
+                .with_default_directive(Level::DEBUG.into())
+                .parse("orchestrator=trace")
+                .expect("Invalid filter directive and Logger control")
+        });
 
-    let fmt_layer =
-        fmt::layer().with_thread_names(true).with_thread_ids(true).with_target(false).event_format(PrettyFormatter);
+    let fmt_layer = fmt::layer()
+        .with_thread_names(true)
+        .with_thread_ids(true)
+        .with_target(false)
+        .event_format(PrettyFormatter);
 
-    let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+    let subscriber = Registry::default()
+        .with(env_filter)
+        .with(fmt_layer)
+        .with(ErrorLayer::default());
 
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+    tracing::subscriber::set_global_default(subscriber)
+        .expect("Failed to set global default subscriber");
 }
