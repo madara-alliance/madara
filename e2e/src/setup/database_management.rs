@@ -2,16 +2,14 @@
 // DATABASE MANAGEMENT
 // =============================================================================
 
+use fs_extra::dir::{copy, CopyOptions};
 use std::path::{Path, PathBuf};
 use tokio::fs;
-use fs_extra::dir::{copy, CopyOptions};
 // Import all the services we've created
-use crate::services::{constants::*, helpers::get_file_path};
 pub use super::config::*;
+use crate::services::{constants::*, helpers::get_file_path};
 
-
-pub struct DatabaseManager {
-}
+pub struct DatabaseManager {}
 
 impl DatabaseManager {
     pub fn new() -> Self {
@@ -71,8 +69,7 @@ impl DatabaseManager {
         let data_directory = get_file_path(DATA_DIR);
         let data_test_directory = get_file_path(&dir_name);
 
-        copy(&data_directory, &data_test_directory, &options)
-            .map_err(|e| SetupError::OtherError(e.to_string()))?;
+        copy(&data_directory, &data_test_directory, &options).map_err(|e| SetupError::OtherError(e.to_string()))?;
 
         Ok(())
     }
@@ -82,11 +79,13 @@ impl DatabaseManager {
         let status_file = data_dir.join("STATUS");
 
         // Create the directory if it doesn't exist
-        fs::create_dir_all(&data_dir).await
+        fs::create_dir_all(&data_dir)
+            .await
             .map_err(|e| SetupError::OtherError(format!("Failed to create data directory: {}", e)))?;
 
         // Write the status file (this will create the file if it doesn't exist)
-        fs::write(&status_file, "READY").await
+        fs::write(&status_file, "READY")
+            .await
             .map_err(|e| SetupError::OtherError(format!("Failed to write status file: {}", e)))?;
 
         Ok(())
@@ -107,7 +106,5 @@ impl DatabaseManager {
         //     ))
         // }
         Ok(())
-
-
     }
 }

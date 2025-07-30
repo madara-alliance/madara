@@ -1,20 +1,17 @@
-use rstest::*;
-use crate::setup::SetupConfigBuilder;
 use crate::setup::ChainSetup;
+use crate::setup::SetupConfigBuilder;
+use rstest::*;
 
 // Async fixture that takes arguments from the test
 #[fixture]
-async fn setup_chain(
-    #[default("")] test_name: &str,
-) -> ChainSetup {
+async fn setup_chain(#[default("")] test_name: &str) -> ChainSetup {
     // Load environment variables from .env.e2e file
     // This loads .env.e2e from the current directory
     dotenv::from_filename(".env.e2e").ok();
 
     // Setting Config!
     println!("Running {}", test_name);
-    let setup_config = SetupConfigBuilder::new(None)
-        .test_config_l2(test_name).unwrap();
+    let setup_config = SetupConfigBuilder::new(None).test_config_l2(test_name).unwrap();
     println!("Running setup");
 
     // Running Chain
@@ -27,8 +24,8 @@ async fn setup_chain(
         }
     }
 
-    use tokio::time::Duration;
     use tokio::time::sleep;
+    use tokio::time::Duration;
     sleep(Duration::from_secs(4000)).await;
     setup_struct
 }
@@ -38,7 +35,9 @@ async fn setup_chain(
 #[tokio::test]
 async fn e2e_test_setup(
     #[case] test_name: &str,
-    #[future] #[with(test_name)] setup_chain: ChainSetup,
+    #[future]
+    #[with(test_name)]
+    setup_chain: ChainSetup,
 ) {
     // Ensuring setup stays in scope
     let _setup = setup_chain.await;

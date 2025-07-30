@@ -1,10 +1,10 @@
+use crate::services::constants::DEFAULT_SERVICE_HOST;
 use async_trait::async_trait;
 use serde_json::json;
-use url::Url;
+use std::io;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use crate::services::constants::DEFAULT_SERVICE_HOST;
-use std::io;
+use url::Url;
 
 use super::constants::{BINARY_DIR, REPO_ROOT};
 
@@ -52,7 +52,8 @@ pub trait NodeRpcMethods: Send + Sync {
         if let Some(error) = json.get("error") {
             // Check for specific "Block not found" error (code 24)
             if let (Some(code), Some(message)) = (error.get("code"), error.get("message")) {
-                if code.as_u64() == Some(BLOCK_NOT_FOUND_ERROR_CODE) && message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false)
+                if code.as_u64() == Some(BLOCK_NOT_FOUND_ERROR_CODE)
+                    && message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false)
                 {
                     println!("No blocks mined yet, returning -1");
                     return Ok(-1);

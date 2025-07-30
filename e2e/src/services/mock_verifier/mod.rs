@@ -42,9 +42,7 @@ impl MockVerifierDeployerService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(MockVerifierDeployerError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(MockVerifierDeployerError::Server)?;
 
         Ok(Self { server, config })
     }
@@ -101,5 +99,4 @@ impl MockVerifierDeployerService {
             .map(|s| s.trim().to_string())
             .map_err(|e| MockVerifierDeployerError::FileSystem(e))
     }
-
 }

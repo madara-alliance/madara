@@ -86,7 +86,6 @@ impl MongoConfig {
         Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, self.port()).as_str()).unwrap()
     }
 
-
     /// Build the Docker command for MongoDB
     pub fn to_command(&self) -> Command {
         let mut command = Command::new("docker");
@@ -137,7 +136,7 @@ impl MongoConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

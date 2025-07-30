@@ -2,12 +2,12 @@
 // to use a builder pattern that ensures immutability after building while providing
 // a clean, fluent API for configuration.
 
-use tokio::process::Command;
-use crate::services::helpers::{docker_url_conversion, get_container_name, NodeRpcError};
-use url::Url;
-use crate::services::docker::DockerError;
-use crate::services::server::ServerError;
 use crate::services::constants::*;
+use crate::services::docker::DockerError;
+use crate::services::helpers::{docker_url_conversion, get_container_name, NodeRpcError};
+use crate::services::server::ServerError;
+use tokio::process::Command;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PathfinderError {
@@ -157,7 +157,6 @@ impl PathfinderConfig {
         // Port mappings
         command.arg("-p").arg(format!("{}:{}", self.port(), PATHFINDER_PORT));
 
-
         // Add custom environment variables
         for (key, value) in self.environment_vars() {
             command.arg("-e").arg(format!("{}={}", key, value));
@@ -190,7 +189,6 @@ impl PathfinderConfig {
 
         command
     }
-
 }
 
 // Builder type that allows configuration
@@ -202,9 +200,7 @@ pub struct PathfinderConfigBuilder {
 impl PathfinderConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: PathfinderConfig::default(),
-        }
+        Self { config: PathfinderConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -285,7 +281,7 @@ impl PathfinderConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

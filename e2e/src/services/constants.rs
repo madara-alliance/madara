@@ -10,10 +10,7 @@ use tokio::time::Duration;
 // GENERAL / SHARED
 // =============================================================================
 pub static REPO_ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("Failed to get workspace root")
-        .to_path_buf()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).parent().expect("Failed to get workspace root").to_path_buf()
 });
 pub const DEFAULT_SERVICE_HOST: &str = "127.0.0.1";
 pub const BINARY_DIR: &str = "target/release";
@@ -39,7 +36,8 @@ pub const BOOTSTRAPPER_ADDRESSES_FILE: &str = "addresses.json";
 // =============================================================================
 // LOCALSTACK SERVICE
 // =============================================================================
-pub const LOCALSTACK_IMAGE: &str = "localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314";
+pub const LOCALSTACK_IMAGE: &str =
+    "localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314";
 pub const LOCALSTACK_PORT: u16 = 4566;
 pub const LOCALSTACK_CONTAINER: &str = "localstack-service";
 

@@ -2,9 +2,9 @@
 // DOCKER SERVER HELPER - For Docker-based services
 // =============================================================================
 
+use crate::services::constants::DEFAULT_SERVICE_HOST;
 use crate::services::server::ServerError;
 use tokio::process::Command;
-use crate::services::constants::DEFAULT_SERVICE_HOST;
 
 #[derive(Debug, thiserror::Error)]
 pub enum DockerError {

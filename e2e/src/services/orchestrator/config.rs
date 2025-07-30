@@ -1,8 +1,8 @@
+use crate::services::constants::*;
 use crate::services::{helpers::get_binary_path, server::ServerError};
 use std::path::PathBuf;
 use strum_macros::Display;
 use tokio::process::Command;
-use crate::services::constants::*;
 use url::Url;
 
 // TODO: options are currently limited to per-usages bases
@@ -106,7 +106,9 @@ impl Default for OrchestratorConfig {
             additional_args: vec![],
             environment_vars: vec![],
             mongodb: true,
-            mongodb_connection_url: Some(Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, MONGODB_PORT).as_str()).unwrap()),
+            mongodb_connection_url: Some(
+                Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, MONGODB_PORT).as_str()).unwrap(),
+            ),
             aws: true,
             event_bridge_type: AWSEventBridgeType::Rule,
             database_name: String::from(ORCHESTRATOR_DATABASE_NAME),
@@ -134,9 +136,7 @@ impl OrchestratorConfig {
 
     /// Create a builder for OrchestratorConfig from the current state
     pub fn builder(self) -> OrchestratorConfigBuilder {
-        OrchestratorConfigBuilder {
-            config: self,
-        }
+        OrchestratorConfigBuilder { config: self }
     }
 
     // Getter methods (immutable access)
@@ -180,7 +180,6 @@ impl OrchestratorConfig {
     pub fn event_bridge_type(&self) -> &AWSEventBridgeType {
         &self.event_bridge_type
     }
-
 
     /// Check if settlement on Ethereum is enabled
     pub fn is_settle_on_ethereum_enabled(&self) -> bool {
@@ -358,9 +357,7 @@ pub struct OrchestratorConfigBuilder {
 impl OrchestratorConfigBuilder {
     /// Create a new builder with default configuration
     pub fn new() -> Self {
-        Self {
-            config: OrchestratorConfig::default(),
-        }
+        Self { config: OrchestratorConfig::default() }
     }
 
     /// Build the final configuration
@@ -380,9 +377,7 @@ impl OrchestratorConfigBuilder {
     }
 
     pub fn setup_l2() -> Self {
-        Self::new()
-            .layer(Layer::L2)
-            .mode(OrchestratorMode::Setup)
+        Self::new().layer(Layer::L2).mode(OrchestratorMode::Setup)
     }
 
     pub fn run_l3() -> Self {
@@ -396,9 +391,7 @@ impl OrchestratorConfigBuilder {
     }
 
     pub fn setup_l3() -> Self {
-        Self::new()
-            .layer(Layer::L3)
-            .mode(OrchestratorMode::Setup)
+        Self::new().layer(Layer::L3).mode(OrchestratorMode::Setup)
     }
 
     /// Set the binary path
@@ -483,7 +476,6 @@ impl OrchestratorConfigBuilder {
         self
     }
 
-
     /// Enable/disable settlement on Ethereum
     pub fn settle_on_ethereum(mut self, enabled: bool) -> Self {
         self.config.settle_on_ethereum = enabled;
@@ -533,11 +525,10 @@ impl OrchestratorConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }
-
 }
 
 impl Default for OrchestratorConfigBuilder {

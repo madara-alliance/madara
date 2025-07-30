@@ -3,17 +3,17 @@
 // =============================================================================
 
 pub mod config;
-pub mod dependency_validation;
 pub mod database_management;
+pub mod dependency_validation;
 pub mod lifecycle_management;
 pub mod service_management;
 
-pub use service_management::*;
-pub use dependency_validation::*;
-use std::sync::Arc;
 use crate::services::constants::DATA_DIR;
 use crate::setup::database_management::DatabaseManager;
 use crate::setup::lifecycle_management::ServiceLifecycleManager;
+pub use dependency_validation::*;
+pub use service_management::*;
+use std::sync::Arc;
 
 // =============================================================================
 // MAIN SETUP FACADE
@@ -35,11 +35,8 @@ impl ChainSetup {
             service_manager: ServiceManager::new(config.clone()),
             database_manager: DatabaseManager::new(),
             lifecycle_manager: ServiceLifecycleManager::new(),
-            validator: DependencyValidator::new(
-                config.layer.clone(),
-                config.get_timeouts().validate_dependencies
-            ),
-            config
+            validator: DependencyValidator::new(config.layer.clone(), config.get_timeouts().validate_dependencies),
+            config,
         })
     }
 
@@ -54,12 +51,12 @@ impl ChainSetup {
             DBState::ReadyToUse => {
                 println!("✅ Chain state exists, starting servers...");
                 self.start_existing_chain(test_name).await?;
-            },
+            }
             DBState::Locked => {
                 println!("⚠️ Chain state is locked, waiting for unlock...");
                 // TODO: incomplete code here
                 self.wait_for_unlock_and_retry().await?;
-            },
+            }
             DBState::NotReady => {
                 println!("❌ Chain state does not exist, setting up new chain...");
                 let test_config = self.config.to_owned();
@@ -70,7 +67,7 @@ impl ChainSetup {
                 self.config = test_config;
                 self.service_manager = ServiceManager::new(self.config.clone());
                 self.start_existing_chain(test_name).await?;
-            },
+            }
             DBState::Error => {
                 return Err(SetupError::OtherError("Invalid DB status".to_string()));
             }

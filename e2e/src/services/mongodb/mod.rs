@@ -5,11 +5,11 @@
 pub mod config;
 
 // Re-export common utilities
-pub use config::*;
 use crate::services::constants::*;
 use crate::services::docker::{DockerError, DockerServer};
 use crate::services::helpers::get_file_path;
 use crate::services::server::{Server, ServerConfig};
+pub use config::*;
 use reqwest::Url;
 
 use tokio::process::Command;
@@ -86,9 +86,7 @@ impl MongoService {
         println!("☠️ Stopping MongoDB");
         self.server.stop().map_err(|err| MongoError::Server(err))
     }
-
 }
-
 
 // MongoDump and MongoRestore impl from within the docker container
 impl MongoService {
@@ -141,12 +139,8 @@ impl MongoService {
 
         // Step 1: Copy the backup from host machine to docker container
         // docker cp <host_path>/database_name <container_name>:/tmp
-        let command = format!(
-            "docker cp {}/{} {}:/tmp",
-            database_dir_path,
-            database_name,
-            self.config().container_name(),
-        );
+        let command =
+            format!("docker cp {}/{} {}:/tmp", database_dir_path, database_name, self.config().container_name(),);
 
         Command::new("sh")
             .arg("-c")
@@ -165,7 +159,6 @@ impl MongoService {
             database_name,
             database_name
         );
-
 
         Command::new("sh")
             .arg("-c")

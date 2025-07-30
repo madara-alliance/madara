@@ -1,6 +1,6 @@
+use crate::services::{constants::*, helpers::get_binary_path};
 use std::path::PathBuf;
 use tokio::process::Command;
-use crate::services::{constants::*, helpers::get_binary_path};
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]
@@ -18,24 +18,16 @@ pub struct MockProverConfig {
     logs: (bool, bool),
 }
 
-
 impl Default for MockProverConfig {
     fn default() -> Self {
-        Self {
-            binary_path: get_binary_path(MOCK_PROVER_BINARY),
-            port: MOCK_PROVER_PORT,
-            logs: (true, true),
-        }
+        Self { binary_path: get_binary_path(MOCK_PROVER_BINARY), port: MOCK_PROVER_PORT, logs: (true, true) }
     }
 }
 
 impl MockProverConfig {
     /// Create a new configuration with the specified port
     pub fn new(port: u16) -> Self {
-        Self {
-            port,
-            ..Default::default()
-        }
+        Self { port, ..Default::default() }
     }
 
     /// Create a builder for MockProverConfig
@@ -80,9 +72,7 @@ pub struct MockProverConfigBuilder {
 impl MockProverConfigBuilder {
     /// Create a new builder
     pub fn new() -> Self {
-        Self {
-            config: MockProverConfig::default(),
-        }
+        Self { config: MockProverConfig::default() }
     }
 
     /// Set the binary path
@@ -98,7 +88,7 @@ impl MockProverConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

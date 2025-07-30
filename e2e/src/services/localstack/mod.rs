@@ -7,8 +7,8 @@ pub mod config;
 // Re-export common utilities
 pub use config::*;
 
-use crate::services::server::{Server, ServerConfig};
 use crate::services::docker::{DockerError, DockerServer};
+use crate::services::server::{Server, ServerConfig};
 use url::Url;
 
 pub struct LocalstackService {
@@ -80,10 +80,8 @@ impl LocalstackService {
         self.server.stop().map_err(|err| LocalstackError::Server(err))
     }
 
-
     /// Get the endpoint URL for the Localstack server
     pub fn endpoint(&self) -> Url {
         self.server().endpoint().expect("Localstack server endpoint not found!")
     }
-
 }

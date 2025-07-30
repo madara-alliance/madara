@@ -4,8 +4,8 @@
 
 pub mod config;
 // Re-export common utilities
-pub use config::*;
 use crate::services::constants::*;
+pub use config::*;
 
 use crate::services::helpers::get_file_path;
 use crate::services::server::{Server, ServerConfig};
@@ -71,9 +71,9 @@ impl BootstrapperService {
                     Ok(exit_status)
                 } else {
                     let error_msg = if let Some(code) = exit_status.code() {
-                            format!("Process exited with code: {}", code)
-                        } else {
-                            format!("Process terminated by signal: {}", exit_status)
+                        format!("Process exited with code: {}", code)
+                    } else {
+                        format!("Process terminated by signal: {}", exit_status)
                     };
                     Err(BootstrapperError::SetupFailed(error_msg))
                 }
@@ -119,8 +119,7 @@ impl BootstrapperService {
 
         std::fs::write(
             bootstrapper_config_file,
-            serde_json::to_string_pretty(&config)
-                .map_err(|e| BootstrapperError::ConfigParseError(e))?,
+            serde_json::to_string_pretty(&config).map_err(|e| BootstrapperError::ConfigParseError(e))?,
         )
         .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?;
 

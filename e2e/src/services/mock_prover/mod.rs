@@ -31,9 +31,7 @@ impl MockProverService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(MockProverError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(MockProverError::Server)?;
 
         Ok(Self { server, config })
     }

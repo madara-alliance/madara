@@ -4,7 +4,7 @@
 
 use crate::setup::service_management::RunningServices;
 use crate::setup::SetupError;
-use tokio::time::{sleep,Duration};
+use tokio::time::{sleep, Duration};
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
@@ -14,9 +14,7 @@ pub struct ServiceLifecycleManager {
 
 impl ServiceLifecycleManager {
     pub fn new() -> Self {
-        Self {
-            services: None,
-        }
+        Self { services: None }
     }
 
     pub fn register_services(&mut self, services: RunningServices) {

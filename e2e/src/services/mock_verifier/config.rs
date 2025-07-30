@@ -1,12 +1,11 @@
 use url::Url;
 
+use crate::services::constants::*;
 use crate::services::helpers::{get_database_path, get_file_path};
 use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
-use crate::services::constants::*;
-
 
 #[derive(Debug, thiserror::Error)]
 pub enum MockVerifierDeployerError {
@@ -181,7 +180,7 @@ impl MockVerifierDeployerConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

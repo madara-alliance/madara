@@ -93,7 +93,6 @@ impl Server {
 
         // Extract stdout and stderr for log monitoring
         if config.logs.0 {
-
             let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Failed to capture stdout",
@@ -117,7 +116,6 @@ impl Server {
         }
 
         if config.logs.1 {
-
             let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(std::io::Error::new(
                 std::io::ErrorKind::Other,
                 "Failed to capture stderr",
@@ -175,7 +173,6 @@ impl Server {
             Err(_) => None,
         }
     }
-
 
     /// Wait until the server is ready to accept connections
     async fn wait_till_started(&mut self) -> Result<(), ServerError> {

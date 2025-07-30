@@ -1,8 +1,8 @@
-use crate::services::{constants::*, server::ServerError};
-use tokio::process::Command;
 use crate::services::constants::DEFAULT_SERVICE_HOST;
-use url::Url;
+use crate::services::{constants::*, server::ServerError};
 use std::path::PathBuf;
+use tokio::process::Command;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnvilError {
@@ -118,9 +118,7 @@ pub struct AnvilConfigBuilder {
 impl AnvilConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: AnvilConfig::default(),
-        }
+        Self { config: AnvilConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -161,7 +159,7 @@ impl AnvilConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

@@ -1,11 +1,11 @@
 // Can be extened to support all the args present in configs/args/config.json
 
+use crate::services::constants::*;
+use crate::services::helpers::{get_binary_path, get_database_path, get_file_path, NodeRpcError};
 use crate::services::server::ServerError;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use tokio::process::Command;
-use crate::services::helpers::{get_binary_path, get_database_path, get_file_path, NodeRpcError};
-use crate::services::constants::*;
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]
@@ -232,7 +232,6 @@ impl MadaraConfig {
         self.logs
     }
 
-
     /// Get the rpc endpoint
     pub fn rpc_endpoint(&self) -> Url {
         Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.rpc_port())).unwrap()
@@ -344,9 +343,7 @@ pub struct MadaraConfigBuilder {
 impl MadaraConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: MadaraConfig::default(),
-        }
+        Self { config: MadaraConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -461,7 +458,7 @@ impl MadaraConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

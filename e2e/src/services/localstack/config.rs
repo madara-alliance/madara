@@ -1,6 +1,6 @@
-use tokio::process::Command;
 use crate::services::helpers::get_container_name;
 use crate::services::server::ServerError;
+use tokio::process::Command;
 use url::Url;
 
 #[derive(Debug, thiserror::Error)]
@@ -15,8 +15,8 @@ pub enum LocalstackError {
     Server(#[from] ServerError),
 }
 
-use crate::services::docker::DockerError;
 use crate::services::constants::*;
+use crate::services::docker::DockerError;
 
 // Final immutable configuration
 #[derive(Debug, Clone)]
@@ -35,9 +35,7 @@ impl Default for LocalstackConfig {
         Self {
             image: LOCALSTACK_IMAGE.to_string(),
             container_name: get_container_name(LOCALSTACK_CONTAINER),
-            environment_vars: vec![
-                ("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string()),
-            ],
+            environment_vars: vec![("SERVICES".to_string(), "iam,s3,eventbridge,events,sqs,sns".to_string())],
 
             port: LOCALSTACK_PORT,
             logs: (false, true),
@@ -115,9 +113,7 @@ pub struct LocalstackConfigBuilder {
 impl LocalstackConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: LocalstackConfig::default(),
-        }
+        Self { config: LocalstackConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -150,7 +146,7 @@ impl LocalstackConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }

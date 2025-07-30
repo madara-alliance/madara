@@ -6,11 +6,11 @@ pub mod config;
 
 use crate::services::helpers::NodeRpcMethods;
 // Re-export common utilities
-pub use config::*;
-use tokio::time::Duration;
 use crate::services::docker::{DockerError, DockerServer};
 use crate::services::server::{Server, ServerConfig};
+pub use config::*;
 use reqwest::Url;
+use tokio::time::Duration;
 
 pub struct PathfinderService {
     server: Server,
@@ -85,8 +85,7 @@ impl PathfinderService {
 
     /// Get the RPC endpoint URL
     pub fn endpoint(&self) -> Url {
-        self.server().endpoint()
-            .expect("Failed to get endpoint")
+        self.server().endpoint().expect("Failed to get endpoint")
     }
 
     /// Get the network name
@@ -123,8 +122,7 @@ impl PathfinderService {
         tokio::time::sleep(Duration::from_secs(1)).await;
         println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
 
-        while self.get_latest_block_number().await
-            .map_err(|err| PathfinderError::RpcError(err))? < 0 {
+        while self.get_latest_block_number().await.map_err(|err| PathfinderError::RpcError(err))? < 0 {
             println!("⏳ Checking Pathfinder block status...");
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }
@@ -133,7 +131,6 @@ impl PathfinderService {
         Ok(())
     }
 }
-
 
 impl NodeRpcMethods for PathfinderService {
     fn get_endpoint(&self) -> Url {

@@ -1,13 +1,23 @@
-use crate::services::{anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError}, bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode}, helpers::{get_database_path, get_free_port}, localstack::{LocalstackConfig, LocalstackError}, madara::{MadaraConfig, MadaraConfigBuilder, MadaraError}, mock_prover::{MockProverConfigBuilder, MockProverError}, mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError}, mongodb::{MongoConfig, MongoError}, orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode}, pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError}};
-use std::time::Duration;
-use crate::services::server::ServerError;
-use crate::services::mock_prover::MockProverConfig;
 use crate::services::localstack::LocalstackConfigBuilder;
+use crate::services::mock_prover::MockProverConfig;
 use crate::services::mongodb::MongoConfigBuilder;
+use crate::services::server::ServerError;
+use crate::services::{
+    anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError},
+    bootstrapper::{BootstrapperConfig, BootstrapperConfigBuilder, BootstrapperError, BootstrapperMode},
+    helpers::{get_database_path, get_free_port},
+    localstack::{LocalstackConfig, LocalstackError},
+    madara::{MadaraConfig, MadaraConfigBuilder, MadaraError},
+    mock_prover::{MockProverConfigBuilder, MockProverError},
+    mock_verifier::{MockVerifierDeployerConfig, MockVerifierDeployerConfigBuilder, MockVerifierDeployerError},
+    mongodb::{MongoConfig, MongoError},
+    orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode},
+    pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError},
+};
+use std::time::Duration;
 // TODO: write layer here and use there
-use crate::services::orchestrator::Layer;
 use crate::services::constants::*;
-
+use crate::services::orchestrator::Layer;
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {
@@ -68,8 +78,6 @@ pub enum SetupError {
     OtherError(String),
 }
 
-
-
 // =============================================================================
 // TIMEOUT STRUCT
 // =============================================================================
@@ -109,12 +117,11 @@ impl Default for Timeouts {
 // CONFIG (READ-ONLY RUNTIME CONTEXT)
 // =============================================================================
 
-
 #[derive(Debug, Clone)]
 pub struct SetupConfig {
     // General Configurations
     pub layer: Layer,
-    pub timeouts : Timeouts,
+    pub timeouts: Timeouts,
 
     // Individual Component Configurations
     pub anvil_config: AnvilConfig,
@@ -153,9 +160,7 @@ impl Default for SetupConfig {
 impl SetupConfig {
     /// Get the builder
     pub fn builder(&self) -> SetupConfigBuilder {
-        SetupConfigBuilder::new(
-            Some(self.clone()),
-        )
+        SetupConfigBuilder::new(Some(self.clone()))
     }
 
     /// Get Layer Config
@@ -198,7 +203,6 @@ impl SetupConfig {
         &self.mock_verifier_deployer_config
     }
 
-
     /// Get the Orchestrator Config
     pub fn get_orchestrator_setup_config(&self) -> &OrchestratorConfig {
         &self.orchestrator_setup_config
@@ -223,7 +227,6 @@ impl SetupConfig {
     pub fn get_orchestrator_run_config(&self) -> &OrchestratorConfig {
         &self.orchestrator_run_config
     }
-
 }
 
 // =============================================================================
@@ -236,11 +239,8 @@ pub struct SetupConfigBuilder {
 }
 
 impl SetupConfigBuilder {
-
     pub fn new(config: Option<SetupConfig>) -> Self {
-        Self {
-            config: config.unwrap_or_else(SetupConfig::default)
-        }
+        Self { config: config.unwrap_or_else(SetupConfig::default) }
     }
 
     /// Set Layer
@@ -273,7 +273,6 @@ impl SetupConfigBuilder {
         self
     }
 
-
     /// Set the Orchestrator Run Config
     pub fn orchestrator_run_config(mut self, orchestrator_run_config: OrchestratorConfig) -> Self {
         self.config.orchestrator_run_config = orchestrator_run_config;
@@ -285,7 +284,6 @@ impl SetupConfigBuilder {
         self.config.orchestrator_setup_config = orchestrator_setup_config;
         self
     }
-
 
     /// Set the Madara Config
     pub fn madara_config(mut self, madara_config: MadaraConfig) -> Self {
@@ -327,13 +325,8 @@ impl SetupConfigBuilder {
         self.config
     }
 
-
     pub fn build_l2_setup_config(self) -> Result<SetupConfig, SetupError> {
-
-        let mongodb_config = MongoConfigBuilder::new()
-            .port(get_free_port()?)
-            .logs((false, true))
-            .build();
+        let mongodb_config = MongoConfigBuilder::new().port(get_free_port()?).logs((false, true)).build();
 
         let localstack_port = get_free_port()?;
         let localstack_host = format!("{}:{}", DEFAULT_SERVICE_HOST, localstack_port);
@@ -355,10 +348,8 @@ impl SetupConfigBuilder {
             .logs((false, true))
             .build();
 
-        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
-            .l1_url(anvil_config.endpoint())
-            .logs((true, true))
-            .build();
+        let mock_verifier_deployer_config =
+            MockVerifierDeployerConfigBuilder::new().l1_url(anvil_config.endpoint()).logs((true, true)).build();
 
         let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
             .mode(BootstrapperMode::SetupL1)
@@ -395,10 +386,7 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let mock_prover_config = MockProverConfigBuilder::new()
-            .port(get_free_port()?)
-            .logs((true, true))
-            .build();
+        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((true, true)).build();
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port()?)
@@ -417,7 +405,8 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let sconfig = self.anvil_config(anvil_config)
+        let sconfig = self
+            .anvil_config(anvil_config)
             .madara_config(madara_config)
             .pathfinder_config(pathfinder_config)
             .mock_verifier_deployer_config(mock_verifier_deployer_config)
@@ -431,16 +420,10 @@ impl SetupConfigBuilder {
             .build();
 
         Ok(sconfig)
-
     }
 
-
-    pub fn test_config_l2(self, test_name: &str ) -> Result<SetupConfig, SetupError> {
-
-        let mongodb_config = MongoConfigBuilder::new()
-            .port(get_free_port()?)
-            .logs((false, true))
-            .build();
+    pub fn test_config_l2(self, test_name: &str) -> Result<SetupConfig, SetupError> {
+        let mongodb_config = MongoConfigBuilder::new().port(get_free_port()?).logs((false, true)).build();
 
         let localstack_port = get_free_port()?;
         let localstack_host = format!("{}:{}", DEFAULT_SERVICE_HOST, localstack_port);
@@ -462,10 +445,8 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let mock_verifier_deployer_config = MockVerifierDeployerConfigBuilder::new()
-            .l1_url(anvil_config.endpoint())
-            .logs((true, true))
-            .build();
+        let mock_verifier_deployer_config =
+            MockVerifierDeployerConfigBuilder::new().l1_url(anvil_config.endpoint()).logs((true, true)).build();
 
         let bootstrapper_l1_config = BootstrapperConfigBuilder::new()
             .mode(BootstrapperMode::SetupL1)
@@ -496,10 +477,7 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let mock_prover_config = MockProverConfigBuilder::new()
-            .port(get_free_port()?)
-            .logs((true, true))
-            .build();
+        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((true, true)).build();
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port()?)
@@ -518,7 +496,8 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let sconfig = self.anvil_config(anvil_config)
+        let sconfig = self
+            .anvil_config(anvil_config)
             .madara_config(madara_config)
             .pathfinder_config(pathfinder_config)
             .mock_verifier_deployer_config(mock_verifier_deployer_config)
@@ -533,7 +512,6 @@ impl SetupConfigBuilder {
 
         Ok(sconfig)
     }
-
 }
 
 impl Default for SetupConfigBuilder {

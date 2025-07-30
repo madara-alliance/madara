@@ -147,9 +147,7 @@ pub struct BootstrapperConfigBuilder {
 impl BootstrapperConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: BootstrapperConfig::default(),
-        }
+        Self { config: BootstrapperConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -182,7 +180,7 @@ impl BootstrapperConfigBuilder {
     }
 
     /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
         self.config.logs = logs;
         self
     }
