@@ -126,4 +126,4 @@ jobs:
         run: |
           RUST_LOG=info cargo test \
           --package e2e  e2e_test_setup \
-          -- --test-threads=1 --nocapture
+          -- --test-threads=10 --nocapture

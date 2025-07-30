@@ -1,4 +1,4 @@
-.env*
+.env
 orchestrator/.env*
 nohup.log
 
