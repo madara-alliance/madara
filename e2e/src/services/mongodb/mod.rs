@@ -88,7 +88,6 @@ impl MongoService {
     }
 }
 
-
 // MongoDump and MongoRestore impl from within the docker container
 impl MongoService {
     /// MongoDump

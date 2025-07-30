@@ -7,8 +7,7 @@ use std::path::PathBuf;
 use url::Url;
 use std::net::TcpListener;
 use std::path::PathBuf;
-use crate::services::constants::DEFAULT_SERVICE_HOST;
-use std::io;
+use url::Url;
 
 use super::constants::*;
 

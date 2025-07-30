@@ -181,7 +181,6 @@ impl OrchestratorConfig {
         &self.event_bridge_type
     }
 
-
     /// Check if settlement on Ethereum is enabled
     pub fn is_settle_on_ethereum_enabled(&self) -> bool {
         self.settle_on_ethereum
@@ -476,7 +475,6 @@ impl OrchestratorConfigBuilder {
         self.config.event_bridge_type = event_bridge_type;
         self
     }
-
 
     /// Enable/disable settlement on Ethereum
     pub fn settle_on_ethereum(mut self, enabled: bool) -> Self {

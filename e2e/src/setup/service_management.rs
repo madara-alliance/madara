@@ -295,7 +295,8 @@ impl ServiceManager {
                 mongo.restore_db(DATA_DIR, ORCHESTRATOR_DATABASE_NAME).await?;
             }
             Ok(())
-        }).await
+        })
+        .await
         .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
     }
 

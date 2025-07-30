@@ -1,4 +1,3 @@
-
 use crate::error::event::EventSystemError;
 use crate::types::jobs::types::JobType;
 use strum_macros::{Display, EnumIter};
