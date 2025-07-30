@@ -20,7 +20,6 @@ impl DatabaseManager {
 
     pub async fn create_data_directory(&self, dir_name: &str) -> Result<(), SetupError> {
         let data_dump_dir = REPO_ROOT.join(dir_name);
-        println!("{:?} data_dump_dirdata_dump_dir ", data_dump_dir);
         if !data_dump_dir.exists() {
             fs::create_dir_all(data_dump_dir).await.map_err(|e| SetupError::OtherError(e.to_string()))?;
         }
@@ -29,7 +28,6 @@ impl DatabaseManager {
 
     pub fn check_data_directory(&self, dir_name: &str) -> Result<(), SetupError> {
         let data_dump_dir = REPO_ROOT.join(dir_name);
-        println!("{:?} data_dump_dirdata_dump_dir ", data_dump_dir);
         if !data_dump_dir.exists() {
             return Err(SetupError::OtherError("Data directory does not exist".to_string()));
         }
@@ -80,9 +78,14 @@ impl DatabaseManager {
     }
 
     pub async fn mark_as_ready(&self) -> Result<(), SetupError> {
-        let data_dir = Path::new(DATA_DIR);
+        let data_dir = get_file_path(DATA_DIR);
         let status_file = data_dir.join("STATUS");
 
+        // Create the directory if it doesn't exist
+        fs::create_dir_all(&data_dir).await
+            .map_err(|e| SetupError::OtherError(format!("Failed to create data directory: {}", e)))?;
+
+        // Write the status file (this will create the file if it doesn't exist)
         fs::write(&status_file, "READY").await
             .map_err(|e| SetupError::OtherError(format!("Failed to write status file: {}", e)))?;
 

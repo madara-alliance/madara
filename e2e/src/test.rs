@@ -44,7 +44,7 @@ async fn e2e_test_setup(
     let _setup = setup_chain.await;
     // Testing begins here!
     // Test here!
-    // sleep(Duration::from_secs(500)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(500)).await;
 
     // Delete the created directory
     if let Err(err) = std::fs::remove_dir_all(&format!("data_{}", test_name)) {

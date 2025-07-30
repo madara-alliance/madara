@@ -252,11 +252,18 @@ impl ServiceManager {
     }
 
     async fn dump_databases(&self, services: &RunningServices) -> Result<(), SetupError> {
-        if let (Some(mongo), Some(orchestrator)) = (&services.mongo_service, &services.orchestrator_service) {
-            println!("Dumping MongoDB database...");
-            mongo.dump_db(DATA_DIR, orchestrator.config().database_name()).await?;
-        }
-        Ok(())
+        println!("🏗️ Dumping databases...");
+
+        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
+
+        timeout(duration, async {
+            if let Some(mongo) = &services.mongo_service {
+                println!("Dumping MongoDB database...");
+                mongo.dump_db(DATA_DIR, ORCHESTRATOR_DATABASE_NAME).await?;
+            }
+            Ok(())
+        }).await
+        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
     }
 
     async fn restore_mongodb_database(&self, services: &RunningServices) -> Result<(), SetupError> {
