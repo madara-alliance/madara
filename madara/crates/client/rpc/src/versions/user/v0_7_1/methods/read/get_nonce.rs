@@ -1,9 +1,8 @@
-use mp_block::BlockId;
-use starknet_types_core::felt::Felt;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
+use mp_block::BlockId;
+use starknet_types_core::felt::Felt;
 
 /// Get the nonce associated with the given address in the given block.
 ///
@@ -22,28 +21,13 @@ use crate::Starknet;
 /// `BLOCK_NOT_FOUND` or `CONTRACT_NOT_FOUND`, returns a `StarknetRpcApiError` indicating the
 /// specific issue.
 pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
-    // Check if block exists. We have to return a different error in that case.
-    let block_exists =
-        starknet.backend.contains_block(&block_id).or_internal_server_error("Checking if block is in database")?;
-    if !block_exists {
-        return Err(StarknetRpcApiError::BlockNotFound);
-    }
+    let view = starknet.backend.view_on(&block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    if !starknet
-        .backend
-        .is_contract_deployed_at(&block_id, &contract_address)
-        .or_internal_server_error("Error checking if contract exists")?
-    {
-        return Err(StarknetRpcApiError::contract_not_found());
-    }
+    // if !view.is_contract_deployed(contract_address)? {
+    //     return Err(StarknetRpcApiError::contract_not_found().into())
+    // }
 
-    let nonce = starknet
-        .backend
-        .get_contract_nonce_at(&block_id, &contract_address)
-        .or_internal_server_error("Error getting nonce")?
-        .unwrap_or(Felt::ZERO);
-
-    Ok(nonce)
+    Ok(view.get_contract_nonce(contract_address)?.unwrap_or(Felt::ZERO))
 }
 
 #[cfg(test)]

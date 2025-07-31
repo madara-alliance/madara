@@ -1,11 +1,10 @@
+use crate::errors::StarknetRpcResult;
+use crate::{Starknet, StarknetRpcApiError};
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
     PendingBlockWithTxHashes,
 };
-
-use crate::errors::StarknetRpcResult;
-use crate::Starknet;
 
 /// Get block information with transaction hashes given the block id.
 ///
@@ -23,11 +22,13 @@ pub fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithTxHashes> {
-    let block = starknet.get_block_info(&block_id)?;
+    let view = starknet.backend.view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = view.into_block_view().ok_or(StarknetRpcApiError::NoBlocks)?;
 
-    let block_txs_hashes = block.tx_hashes().to_vec();
+    let block_info = view.get_block_info()?;
+    let is_on_l1 = view.is_on_l1();
 
-    match block {
+    match block_info {
         MadaraMaybePendingBlockInfo::Pending(block) => {
             Ok(MaybePendingBlockWithTxHashes::Pending(PendingBlockWithTxHashes {
                 transactions: block_txs_hashes,
@@ -43,11 +44,7 @@ pub fn get_block_with_tx_hashes(
             }))
         }
         MadaraMaybePendingBlockInfo::NotPending(block) => {
-            let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
-                BlockStatus::AcceptedOnL1
-            } else {
-                BlockStatus::AcceptedOnL2
-            };
+            let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
                 transactions: block_txs_hashes,
                 status,

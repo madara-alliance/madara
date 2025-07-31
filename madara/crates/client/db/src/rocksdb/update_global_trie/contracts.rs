@@ -1,6 +1,5 @@
-use crate::db_block_id::RawDbBlockId;
-use crate::MadaraBackend;
-use crate::{bonsai_identifier, MadaraStorageError};
+use crate::rocksdb::trie::WrappedBonsaiError;
+use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
@@ -29,13 +28,13 @@ struct ContractLeaf {
 ///
 /// The contract root.
 pub fn contract_trie_root(
-    backend: &MadaraBackend,
+    backend: &RocksDBStorage,
     deployed_contracts: &[DeployedContractItem],
     replaced_classes: &[ReplacedClassItem],
     nonces: &[NonceUpdate],
     storage_diffs: &[ContractStorageDiffItem],
     block_number: u64,
-) -> Result<Felt, MadaraStorageError> {
+) -> Result<Felt> {
     let mut contract_leafs: HashMap<Felt, ContractLeaf> = HashMap::new();
 
     let mut contract_storage_trie = backend.contract_storage_trie();
@@ -47,7 +46,7 @@ pub fn contract_trie_root(
         for StorageEntry { key, value } in storage_entries {
             let bytes = key.to_bytes_be();
             let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-            contract_storage_trie.insert(&address.to_bytes_be(), &bv, value)?;
+            contract_storage_trie.insert(&address.to_bytes_be(), &bv, value).map_err(WrappedBonsaiError)?;
         }
         // insert the contract address in the contract_leafs to put the storage root later
         contract_leafs.insert(*address, Default::default());
@@ -56,7 +55,7 @@ pub fn contract_trie_root(
     tracing::trace!("contract_storage_trie commit");
 
     // Then we commit them
-    contract_storage_trie.commit(BasicId::new(block_number))?;
+    contract_storage_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
 
     for NonceUpdate { contract_address, nonce } in nonces {
         contract_leafs.entry(*contract_address).or_default().nonce = Some(*nonce);
@@ -75,23 +74,23 @@ pub fn contract_trie_root(
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
-            let storage_root = contract_storage_trie.root_hash(&contract_address.to_bytes_be())?;
+            let storage_root = contract_storage_trie.root_hash(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
             let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-            Ok((bv, leaf_hash))
+            anyhow::Ok((bv, leaf_hash))
         })
-        .collect::<Result<_, MadaraStorageError>>()?;
+        .collect::<Result<_>>()?;
 
     for (k, v) in leaf_hashes {
-        contract_trie.insert(bonsai_identifier::CONTRACT, &k, &v)?;
+        contract_trie.insert(super::bonsai_identifier::CONTRACT, &k, &v).map_err(WrappedBonsaiError)?;
     }
 
     tracing::trace!("contract_trie committing");
 
-    contract_trie.commit(BasicId::new(block_number))?;
-    let root_hash = contract_trie.root_hash(bonsai_identifier::CONTRACT)?;
+    contract_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
+    let root_hash = contract_trie.root_hash(super::bonsai_identifier::CONTRACT).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("contract_trie committed");
 
@@ -110,24 +109,20 @@ pub fn contract_trie_root(
 ///
 /// The contract state leaf hash.
 fn contract_state_leaf_hash(
-    backend: &MadaraBackend,
+    backend: &RocksDBStorage,
     contract_address: &Felt,
     contract_leaf: &ContractLeaf,
     block_number: u64,
-) -> Result<Felt, MadaraStorageError> {
-    let nonce = contract_leaf.nonce.unwrap_or(
-        backend.get_contract_nonce_at(&RawDbBlockId::Number(block_number), contract_address)?.unwrap_or(Felt::ZERO),
-    );
+) -> Result<Felt> {
+    let nonce = contract_leaf
+        .nonce
+        .unwrap_or(backend.0.get_contract_nonce_at(block_number, contract_address)?.unwrap_or(Felt::ZERO));
 
-    let class_hash = contract_leaf.class_hash.unwrap_or(
-        backend
-            .get_contract_class_hash_at(&RawDbBlockId::Number(block_number), contract_address)?
-            .unwrap_or(Felt::ZERO), // .ok_or(MadaraStorageError::InconsistentStorage("Class hash not found".into()))?
-    );
+    let class_hash = if let Some(class_hash) = contract_leaf.class_hash {class_hash} else {
+        backend.0.get_contract_class_hash_at(block_number, contract_address)?.unwrap_or(Felt::ZERO)
+    };
 
-    let storage_root = contract_leaf
-        .storage_root
-        .ok_or(MadaraStorageError::InconsistentStorage("Storage root need to be set".into()))?;
+    let storage_root = contract_leaf.storage_root.context("Storage root need to be set")?;
 
     tracing::trace!("contract is {contract_address:#x} block_n={block_number} nonce={nonce:#x} class_hash={class_hash:#x} storage_root={storage_root:#x}");
 
@@ -137,9 +132,8 @@ fn contract_state_leaf_hash(
 
 #[cfg(test)]
 mod contract_trie_root_tests {
-    use crate::update_global_trie::tests::setup_test_backend;
+    use crate::{rocksdb::update_global_trie::tests::setup_test_backend, MadaraBackend};
     use mp_chain_config::ChainConfig;
-
     use super::*;
     use rstest::*;
     use std::sync::Arc;
@@ -179,7 +173,7 @@ mod contract_trie_root_tests {
 
         // Call the function and print the result
         let result =
-            contract_trie_root(&backend, &deployed_contracts, &replaced_classes, &nonces, &storage_diffs, block_number)
+            contract_trie_root(&backend.db, &deployed_contracts, &replaced_classes, &nonces, &storage_diffs, block_number)
                 .unwrap();
 
         assert_eq!(
@@ -208,7 +202,7 @@ mod contract_trie_root_tests {
 
         // Call the function and print the result
         let result =
-            contract_state_leaf_hash(&backend, &contract_address, &contract_leaf, /* block_number */ 0).unwrap();
+            contract_state_leaf_hash(&backend.db, &contract_address, &contract_leaf, /* block_number */ 0).unwrap();
         assert_eq!(
             result,
             Felt::from_hex_unchecked("0x6bbd8d4b5692148f83c38e19091f64381b5239e2a73f53b59be3ec3efb41143")

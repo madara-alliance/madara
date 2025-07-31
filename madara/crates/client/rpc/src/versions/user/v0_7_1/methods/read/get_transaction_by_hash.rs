@@ -1,9 +1,8 @@
-use mp_rpc::TxnWithHash;
-use starknet_types_core::felt::Felt;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
+use mp_rpc::TxnWithHash;
+use starknet_types_core::felt::Felt;
 
 /// Get the details and status of a submitted transaction.
 ///
@@ -33,19 +32,9 @@ use crate::Starknet;
 /// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
 ///   system's capacity.
 pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TxnWithHash> {
-    let (block, tx_index) = starknet
-        .backend
-        .find_tx_hash_block(&transaction_hash)
-        .or_internal_server_error("Error getting block from tx hash")?
-        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    let transaction = block
-        .inner
-        .transactions
-        .into_iter()
-        .nth(tx_index.0 as usize)
-        .ok_or_internal_server_error("Storage block transaction mismatch")?;
-
-    Ok(TxnWithHash { transaction: transaction.into(), transaction_hash })
+    let view = starknet.backend.view_on_preconfirmed();
+    let (_, tx) = view.get_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    Ok(TxnWithHash { transaction: tx.transaction.into(), transaction_hash })
 }
 
 #[cfg(test)]

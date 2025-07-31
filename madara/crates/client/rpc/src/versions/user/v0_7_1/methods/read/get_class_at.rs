@@ -1,10 +1,9 @@
-use mp_block::BlockId;
-use mp_rpc::MaybeDeprecatedContractClass;
-use starknet_types_core::felt::Felt;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
+use mp_block::BlockId;
+use mp_rpc::MaybeDeprecatedContractClass;
+use starknet_types_core::felt::Felt;
 
 /// Get the Contract Class Definition at a Given Address in a Specific Block
 ///
@@ -30,23 +29,9 @@ pub fn get_class_at(
     block_id: BlockId,
     contract_address: Felt,
 ) -> StarknetRpcResult<MaybeDeprecatedContractClass> {
-    let resolved_block_id = starknet
-        .backend
-        .resolve_block_id(&block_id)
-        .or_internal_server_error("Error resolving block id")?
-        .ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = starknet.backend.view_on(&block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let class_hash = view.get_contract_class_hash(contract_address)?.ok_or(StarknetRpcApiError::contract_not_found())?;
+    let class_info = view.get_class(&class_hash)?.ok_or_internal_server_error("Class info should exist")?;
 
-    let class_hash = starknet
-        .backend
-        .get_contract_class_hash_at(&resolved_block_id, &contract_address)
-        .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or(StarknetRpcApiError::contract_not_found())?;
-
-    let class_data = starknet
-        .backend
-        .get_class_info(&resolved_block_id, &class_hash)
-        .or_internal_server_error("Error getting contract class info")?
-        .ok_or_internal_server_error("Class has no info")?;
-
-    Ok(class_data.contract_class().into())
+    Ok(class_info.contract_class().into())
 }

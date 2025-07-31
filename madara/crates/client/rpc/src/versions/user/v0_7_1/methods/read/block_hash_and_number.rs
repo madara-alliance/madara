@@ -1,8 +1,8 @@
+use crate::errors::StarknetRpcResult;
+use crate::StarknetRpcApiError;
+use crate::{utils::OptionExt, Starknet};
 use mp_block::{BlockId, BlockTag};
 use mp_rpc::BlockHashAndNumber;
-
-use crate::errors::StarknetRpcResult;
-use crate::{utils::OptionExt, Starknet};
 
 /// Get the Most Recent Accepted Block Hash and Number
 ///
@@ -15,16 +15,14 @@ use crate::{utils::OptionExt, Starknet};
 /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the current
 ///   network.
 pub fn block_hash_and_number(starknet: &Starknet) -> StarknetRpcResult<BlockHashAndNumber> {
-    let block_info = starknet.get_block_info(&BlockId::Tag(BlockTag::Latest))?;
-    let block_info = block_info.as_closed().ok_or_internal_server_error("Latest block is pending")?;
+    let view = starknet.backend.block_view_on_latest().ok_or(StarknetRpcApiError::NoBlocks);
+    let block_info = view.get_block_info()?.as_closed().ok_or_internal_server_error("Latest block is pending")?;
 
     Ok(BlockHashAndNumber { block_hash: block_info.block_hash, block_number: block_info.header.block_number })
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
     use crate::{errors::StarknetRpcApiError, test_utils::rpc_test_setup};
     use mc_db::MadaraBackend;
@@ -35,6 +33,7 @@ mod tests {
     use mp_state_update::StateDiff;
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
+    use std::sync::Arc;
 
     #[rstest]
     fn test_block_hash_and_number(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {

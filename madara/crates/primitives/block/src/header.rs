@@ -58,6 +58,8 @@ impl fmt::Display for BlockTimestamp {
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct PendingHeader {
+    /// The block number for this block.
+    pub block_number: u64,
     /// The hash of this block’s parent.
     pub parent_block_hash: Felt,
     /// The Starknet address of the sequencer who created this block.

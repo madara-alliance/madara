@@ -38,37 +38,15 @@ pub fn get_storage_at(
     key: Felt,
     block_id: BlockId,
 ) -> StarknetRpcResult<Felt> {
-    // Check if block exists. We have to return a different error in that case.
-    let block_exists =
-        starknet.backend.contains_block(&block_id).or_internal_server_error("Checking if block is in database")?;
-    if !block_exists {
-        return Err(StarknetRpcApiError::BlockNotFound);
-    }
+    let view = starknet.backend.view_on(&block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
 
-    let block_number = block_id.resolve_db_block_id(&starknet.backend)?;
+    // // Felt::ONE is a special contract address that is a mapping of the block number to the block hash.
+    // // no contract is deployed at this address, so we skip the contract check.
+    // if contract_address != Felt::ONE && !view.is_contract_deployed(contract_address)? {
+    //     return Err(StarknetRpcApiError::contract_not_found().into())
+    // }
 
-    // Felt::ONE is a special contract address that is a mapping of the block number to the block hash.
-    // no contract is deployed at this address, so we skip the contract check.
-    let skip_contract_check = matches!(
-        block_number,
-        Some(RawDbBlockId::Number(num)) if num >= 10 && contract_address == Felt::ONE
-    );
-
-    if !skip_contract_check {
-        starknet
-            .backend
-            .get_contract_class_hash_at(&block_id, &contract_address)
-            .or_internal_server_error("Failed to check if contract is deployed")?
-            .ok_or(StarknetRpcApiError::contract_not_found())?;
-    }
-
-    let storage = starknet
-        .backend
-        .get_contract_storage_at(&block_id, &contract_address, &key)
-        .or_internal_server_error("Error getting contract storage at")?
-        .unwrap_or(Felt::ZERO);
-
-    Ok(storage)
+    Ok(view.get_contract_storage(contract_address, key)?.unwrap_or(Felt::ZERO))
 }
 
 #[cfg(test)]

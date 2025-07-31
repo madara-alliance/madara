@@ -1,8 +1,7 @@
-use mp_block::BlockId;
-use mp_rpc::TxnWithHash;
-
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
+use mp_block::BlockId;
+use mp_rpc::TxnWithHash;
 
 /// Get the details of a transaction by a given block id and index.
 ///
@@ -29,12 +28,10 @@ pub fn get_transaction_by_block_id_and_index(
     block_id: BlockId,
     index: u64,
 ) -> StarknetRpcResult<TxnWithHash> {
-    let block = starknet.get_block(&block_id)?;
-    let transaction_hash = block.info.tx_hashes().get(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
-    let transaction =
-        block.inner.transactions.into_iter().nth(index as usize).ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+    let view = starknet.backend.block_view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let tx = view.get_transaction(index)?.ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
-    Ok(TxnWithHash { transaction: transaction.into(), transaction_hash: *transaction_hash })
+    Ok(TxnWithHash { transaction: tx.transaction.into(), transaction_hash: *tx.receipt.transaction_hash() })
 }
 
 #[cfg(test)]
