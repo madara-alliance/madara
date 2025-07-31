@@ -13,6 +13,8 @@ use serde::Serialize;
 use starknet_types_core::felt::Felt;
 use std::{collections::HashMap, sync::Arc};
 
+const DB_UPDATES_BATCH_SIZE: usize = 1024;
+
 #[derive(Debug)]
 pub(crate) struct ContractDbBlockUpdate {
     contract_class_updates: Vec<(Felt, Felt)>,

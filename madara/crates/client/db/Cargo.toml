@@ -56,7 +56,8 @@ tokio = { workspace = true, features = [
   "signal",
 ] }
 smallvec = { version = "1.15.0", features = ["write"] }
-itertools = "0.14.0"
+itertools.workspace = true
+dashmap.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

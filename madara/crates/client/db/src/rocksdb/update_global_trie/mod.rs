@@ -1,48 +1,49 @@
-use crate::{MadaraBackend, MadaraStorageError};
+use crate::{prelude::*, rocksdb::{RocksDBStorage}};
 use mp_state_update::StateDiff;
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
 
-pub mod classes;
-pub mod contracts;
+mod classes;
+mod contracts;
 
-impl MadaraBackend {
-    /// Update the global tries.
-    /// Returns the new global state root. Multiple state diffs can be applied at once, only the latest state root will
-    /// be returned.
-    /// Errors if the batch is empty.
-    pub fn apply_to_global_trie<'a>(
-        &self,
-        start_block_n: u64,
-        state_diffs: impl IntoIterator<Item = &'a StateDiff>,
-    ) -> Result<Felt, MadaraStorageError> {
-        let mut state_root = None;
-        for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
-            tracing::debug!("applying state_diff block_n={block_n}");
 
-            let (contract_trie_root, class_trie_root) = rayon::join(
-                || {
-                    crate::update_global_trie::contracts::contract_trie_root(
-                        self,
-                        &state_diff.deployed_contracts,
-                        &state_diff.replaced_classes,
-                        &state_diff.nonces,
-                        &state_diff.storage_diffs,
-                        block_n,
-                    )
-                },
-                || crate::update_global_trie::classes::class_trie_root(self, &state_diff.declared_classes, block_n),
-            );
+pub mod bonsai_identifier {
+    pub const CONTRACT: &[u8] = b"0xcontract";
+    pub const CLASS: &[u8] = b"0xclass";
+}
 
-            state_root = Some(crate::update_global_trie::calculate_state_root(contract_trie_root?, class_trie_root?));
+/// Update the global tries.
+/// Returns the new global state root. Multiple state diffs can be applied at once, only the latest state root will
+/// be returned.
+/// Errors if the batch is empty.
+pub fn apply_to_global_trie<'a>(
+    backend: &RocksDBStorage,
+    start_block_n: u64,
+    state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+) -> Result<Felt> {
+    let mut state_root = None;
+    for (block_n, state_diff) in (start_block_n..).zip(state_diffs) {
+        tracing::debug!("applying state_diff block_n={block_n}");
 
-            self.head_status().global_trie.set_current(Some(block_n));
-            self.save_head_status_to_db()?;
-        }
-        state_root.ok_or(MadaraStorageError::EmptyBatch)
+        let (contract_trie_root, class_trie_root) = rayon::join(
+            || {
+                contracts::contract_trie_root(
+                    backend,
+                    &state_diff.deployed_contracts,
+                    &state_diff.replaced_classes,
+                    &state_diff.nonces,
+                    &state_diff.storage_diffs,
+                    block_n,
+                )
+            },
+            || classes::class_trie_root(backend, &state_diff.declared_classes, block_n),
+        );
+
+        state_root = Some(calculate_state_root(contract_trie_root?, class_trie_root?));
     }
+    state_root.context("Applying an empty batch to the global trie")
 }
 
 /// "STARKNET_STATE_V0"

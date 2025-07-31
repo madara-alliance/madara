@@ -1,4 +1,3 @@
-use crate::DatabaseExt;
 use crate::{Column, MadaraBackend, MadaraStorageError};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;

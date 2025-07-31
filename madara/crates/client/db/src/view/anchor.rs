@@ -1,7 +1,8 @@
 use crate::{
-    db::DBBackend,
+    storage::MadaraStorageRead,
+    prelude::*,
     view::{PreconfirmedBlock, PreconfirmedBlockInnerView, PreconfirmedBlockTransaction},
-    MadaraBackend, MadaraStorageError,
+    MadaraBackend,
 };
 use std::sync::Arc;
 
@@ -100,17 +101,14 @@ impl Anchor {
 }
 
 pub trait IntoAnchor: Sized {
-    fn into_anchor<DB: DBBackend>(self, backend: &MadaraBackend<DB>) -> Result<Option<Anchor>, MadaraStorageError>;
-    fn into_block_anchor<DB: DBBackend>(
-        self,
-        backend: &MadaraBackend<DB>,
-    ) -> Result<Option<BlockAnchor>, MadaraStorageError> {
+    fn into_anchor<DB: MadaraStorageRead>(self, backend: &MadaraBackend<DB>) -> Result<Option<Anchor>>;
+    fn into_block_anchor<DB: MadaraStorageRead>(self, backend: &MadaraBackend<DB>) -> Result<Option<BlockAnchor>> {
         Ok(self.into_anchor(backend)?.and_then(|anchor| anchor.into_block_anchor()))
     }
 }
 
 impl IntoAnchor for mp_block::BlockId {
-    fn into_anchor<DB: DBBackend>(self, backend: &MadaraBackend<DB>) -> Result<Option<Anchor>, MadaraStorageError> {
+    fn into_anchor<DB: MadaraStorageRead>(self, backend: &MadaraBackend<DB>) -> Result<Option<Anchor>> {
         match self {
             mp_rpc::BlockId::Tag(mp_rpc::BlockTag::Pending) => {
                 let block = backend.get_preconfirmed().clone();

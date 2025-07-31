@@ -1,7 +1,7 @@
 #![allow(clippy::identity_op)] // allow 1 * MiB
 #![allow(non_upper_case_globals)] // allow KiB/MiB/GiB names
 
-use crate::rocksdb::{Column, ColumnMemoryBudget};
+use crate::rocksdb::column::{Column, ColumnMemoryBudget};
 use anyhow::{Context, Result};
 use rocksdb::{DBCompressionType, Env, Options, SliceTransform};
 
@@ -27,6 +27,13 @@ pub struct RocksDBConfig {
     pub memtable_other_budget_bytes: usize,
     /// Ratio of the buffer size dedicated to bloom filters for a column
     pub memtable_prefix_bloom_filter_ratio: f64,
+
+    /// Maximum number of trie logs
+    pub max_saved_trie_logs: Option<usize>,
+    /// Maximum number of kept snapshots
+    pub max_kept_snapshots: Option<usize>,
+    /// Number of blocks between snapshots
+    pub snapshot_interval: u64,
 }
 
 impl Default for RocksDBConfig {
@@ -40,6 +47,9 @@ impl Default for RocksDBConfig {
             memtable_contracts_budget_bytes: 128 * MiB,
             memtable_other_budget_bytes: 128 * MiB,
             memtable_prefix_bloom_filter_ratio: 0.0,
+            max_saved_trie_logs: None,
+            max_kept_snapshots: None,
+            snapshot_interval: 5
         }
     }
 }

@@ -3,34 +3,6 @@ use starknet_types_core::felt::Felt;
 use crate::Column;
 use std::borrow::Cow;
 
-#[derive(thiserror::Error, Debug)]
-pub enum MadaraStorageError {
-    #[error("Bonsai error: {0}")]
-    BonsaiStorageError(bonsai_trie::BonsaiStorageError<DbError>),
-    #[error("Rocksdb error: {0:#}")]
-    RocksDB(#[from] rocksdb::Error),
-    #[error("Bincode error: {0}")]
-    Bincode(#[from] bincode::Error),
-    #[error("Failed to compile class: {0}")]
-    CompilationClassError(String),
-    #[error("Invalid block number")]
-    InvalidBlockNumber,
-    #[error("Invalid tx index")]
-    InvalidTxIndex,
-    #[error("Chain info is missing from the database")]
-    MissingChainInfo,
-    #[error("Inconsistent storage")]
-    InconsistentStorage(Cow<'static, str>),
-    #[error("Cannot create a pending block of the genesis block of a chain")]
-    PendingCreationNoGenesis,
-    #[error(
-        "Missing compiled class for class with hash {class_hash:#x} (compiled_class_hash={compiled_class_hash:#x}"
-    )]
-    MissingCompiledClass { class_hash: Felt, compiled_class_hash: Felt },
-    #[error("Batch is empty")]
-    EmptyBatch,
-}
-
 pub type BonsaiStorageError = bonsai_trie::BonsaiStorageError<DbError>;
 
 impl From<bonsai_trie::BonsaiStorageError<DbError>> for MadaraStorageError {

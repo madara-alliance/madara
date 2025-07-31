@@ -1,6 +1,8 @@
 use crate::rocksdb::DB;
 use rocksdb::{AsColumnFamilyRef, DBRawIteratorWithThreadMode, Direction, IteratorMode, ReadOptions};
 
+/// A copy of [`rocksdb::DBIterator`] but supporting pinned iteration. This avoids an allocation for the byte buffer of
+/// every key and value that the iterator returns from the db.
 pub struct DBIterator<'a> {
     raw: DBRawIteratorWithThreadMode<'a, DB>,
     should_advance: bool,
@@ -71,12 +73,20 @@ impl<'a> DBIterator<'a> {
         }
     }
 
+    /// This function requires a mapping function, because std Iterator are not lending iterators, meaning, they don't support returning
+    /// values with a lifetime associated to itself. You probably want to use this `map` function for deserialization.
     pub fn into_iter_keys<R, F: FnMut(&[u8]) -> R>(self, map: F) -> DBKeyIterator<'a, R, F> {
         DBKeyIterator { iter: self, map }
     }
+
+    /// This function requires a mapping function, because std Iterator are not lending iterators, meaning, they don't support returning
+    /// values with a lifetime associated to itself. You probably want to use this `map` function for deserialization.
     pub fn into_iter_values<R, F: FnMut(&[u8]) -> R>(self, map: F) -> DBValueIterator<'a, R, F> {
         DBValueIterator { iter: self, map }
     }
+
+    /// This function requires a mapping function, because std Iterator are not lending iterators, meaning, they don't support returning
+    /// values with a lifetime associated to itself. You probably want to use this `map` function for deserialization.
     pub fn into_iter_items<R, F: FnMut((&[u8], &[u8])) -> R>(self, map: F) -> DBItemsIterator<'a, R, F> {
         DBItemsIterator { iter: self, map }
     }
