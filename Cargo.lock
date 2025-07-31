@@ -8016,6 +8016,7 @@ dependencies = [
  "tempfile",
  "thiserror 2.0.3",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-error",
  "tracing-opentelemetry",

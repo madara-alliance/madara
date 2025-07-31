@@ -6,8 +6,7 @@ use hyper::body::Buf;
 use hyper::{Body, Request};
 use rstest::*;
 use std::io::Read;
-use std::sync::Arc;
-use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 
 #[rstest]
 #[tokio::test]
@@ -41,7 +40,7 @@ async fn test_health_endpoint() {
 async fn test_init_consumer() {
     let services = TestConfigBuilder::new().configure_queue_client(ConfigType::Actual).build().await;
 
-    let result = initialize_worker(services.config, Arc::new(Notify::new())).await;
+    let result = initialize_worker(services.config, CancellationToken::new()).await;
 
     assert!(result.is_ok(), "Failed to initialize consumers: {:?}", result.err());
 }

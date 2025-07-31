@@ -76,10 +76,10 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     // Set up comprehensive signal handling for Docker/Kubernetes
     info!("Setting up signal handler for graceful shutdown");
     let mut signal_handler = SignalHandler::new();
-    let shutdown_trigger = signal_handler.get_shutdown_trigger();
+    let shutdown_token = signal_handler.get_shutdown_token();
 
     // Initialize workers and keep the controller for shutdown
-    let worker_controller = initialize_worker(config.clone(), shutdown_trigger).await?;
+    let worker_controller = initialize_worker(config.clone(), shutdown_token).await?;
 
     let shutdown_signal = signal_handler.wait_for_shutdown().await;
 

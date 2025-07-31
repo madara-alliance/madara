@@ -1,7 +1,6 @@
 use anyhow::{anyhow, Result};
-use std::sync::Arc;
 use tokio::signal;
-use tokio::sync::Notify;
+use tokio_util::sync::CancellationToken;
 use tracing::{error, info, warn};
 
 #[cfg(unix)]
@@ -34,18 +33,23 @@ impl std::fmt::Display for ShutdownSignal {
 /// Signal handler for graceful shutdown
 pub struct SignalHandler {
     shutdown_signal: Option<ShutdownSignal>,
-    internal_shutdown_notify: Arc<Notify>,
+    cancellation_token: CancellationToken,
 }
 
 impl SignalHandler {
     /// Create a new signal handler
     pub fn new() -> Self {
-        Self { shutdown_signal: None, internal_shutdown_notify: Arc::new(Notify::new()) }
+        Self { shutdown_signal: None, cancellation_token: CancellationToken::new() }
     }
 
-    /// Get a handle to trigger internal shutdown
-    pub fn get_shutdown_trigger(&self) -> Arc<Notify> {
-        self.internal_shutdown_notify.clone()
+    /// Get a cancellation token for shutdown coordination
+    ///
+    /// Use this to create child tokens for different subsystems:
+    /// ```rust
+    /// let worker_token = signal_handler.get_shutdown_token().child_token();
+    /// ```
+    pub fn get_shutdown_token(&self) -> CancellationToken {
+        self.cancellation_token.clone()
     }
 
     /// Wait for any shutdown signal and return which one was received
@@ -53,12 +57,21 @@ impl SignalHandler {
         let signal = self.wait_for_signal().await;
         self.shutdown_signal = Some(signal);
         info!("🛑 Received shutdown signal: {}", signal);
+
+        // Cancel the token to notify all subsystems
+        self.cancellation_token.cancel();
+
         signal
     }
 
     /// Get the signal that triggered shutdown (if any)
     pub fn shutdown_signal(&self) -> Option<ShutdownSignal> {
         self.shutdown_signal
+    }
+
+    /// Check if shutdown has been requested (non-blocking)
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.cancellation_token.is_cancelled()
     }
 
     #[cfg(unix)]
@@ -83,7 +96,7 @@ impl SignalHandler {
                 warn!("Force quit signal received (SIGQUIT)");
                 ShutdownSignal::Quit
             }
-            _ = self.internal_shutdown_notify.notified() => {
+            _ = self.cancellation_token.cancelled() => {
                 warn!("Internal application shutdown requested (worker error or system inconsistency)");
                 ShutdownSignal::Internal
             }
@@ -100,7 +113,7 @@ impl SignalHandler {
                 info!("Interactive shutdown initiated (Ctrl+C)");
                 ShutdownSignal::Interrupt
             }
-            _ = self.internal_shutdown_notify.notified() => {
+            _ = self.cancellation_token.cancelled() => {
                 warn!("Internal application shutdown requested (worker error or system inconsistency)");
                 ShutdownSignal::Internal
             }
@@ -138,7 +151,7 @@ impl SignalHandler {
                 match signal {
                     ShutdownSignal::Quit => {
                         warn!("💥 SIGQUIT received - forcing immediate exit");
-                        std::process::exit(1);
+                        std::process::exit(130); // Unix convention for SIGQUIT
                     }
                     _ => {
                         warn!("🔌 Shutdown timeout reached - this may leave some tasks incomplete");
@@ -147,6 +160,12 @@ impl SignalHandler {
                 }
             }
         }
+    }
+
+    /// Trigger shutdown programmatically (for internal errors)
+    pub fn trigger_shutdown(&self) {
+        warn!("🚨 Internal shutdown triggered");
+        self.cancellation_token.cancel();
     }
 }
 

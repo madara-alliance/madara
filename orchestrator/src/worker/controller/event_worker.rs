@@ -9,12 +9,11 @@ use crate::worker::traits::message::{MessageParser, ParsedMessage};
 use color_eyre::eyre::eyre;
 use omniqueue::backends::SqsConsumer;
 use omniqueue::{Delivery, QueueError};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::Notify;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
+use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, info_span, warn};
 
 pub enum MessageType {
@@ -27,8 +26,7 @@ pub struct EventWorker {
     config: Arc<Config>,
     queue_type: QueueType,
     queue_control: QueueControlConfig,
-    shutdown_notify: Arc<Notify>,
-    is_shutdown: Arc<AtomicBool>,
+    cancellation_token: CancellationToken,
 }
 
 impl EventWorker {
@@ -37,26 +35,35 @@ impl EventWorker {
     /// It returns a new EventWorker instance
     /// # Arguments
     /// * `config` - The configuration for the EventWorker
+    /// * `cancellation_token` - Token for coordinated shutdown
     /// # Returns
     /// * `EventSystemResult<EventWorker>` - A Result indicating whether the operation was successful or not
-    pub fn new(queue_type: QueueType, config: Arc<Config>) -> EventSystemResult<Self> {
+    pub fn new(
+        queue_type: QueueType,
+        config: Arc<Config>,
+        cancellation_token: CancellationToken,
+    ) -> EventSystemResult<Self> {
         info!("Kicking in the Worker to Queue {:?}", queue_type);
         let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
         let queue_control = queue_config.queue_control.clone();
-        Ok(Self {
-            queue_type,
-            config,
-            queue_control,
-            shutdown_notify: Arc::new(Notify::new()),
-            is_shutdown: Arc::new(AtomicBool::new(false)),
-        })
+        Ok(Self { queue_type, config, queue_control, cancellation_token })
+    }
+
+    /// Create a child token for this worker's specific operations
+    pub fn child_token(&self) -> CancellationToken {
+        self.cancellation_token.child_token()
     }
 
     /// Triggers a graceful shutdown
     pub async fn shutdown(&self) -> EventSystemResult<()> {
-        self.is_shutdown.store(true, Ordering::SeqCst);
-        self.shutdown_notify.notify_waiters();
+        info!("Triggering shutdown for {} worker", self.queue_type);
+        self.cancellation_token.cancel();
         Ok(())
+    }
+
+    /// Check if shutdown has been requested (non-blocking)
+    pub fn is_shutdown_requested(&self) -> bool {
+        self.cancellation_token.is_cancelled()
     }
 
     async fn consumer(&self) -> EventSystemResult<SqsConsumer> {
@@ -309,7 +316,7 @@ impl EventWorker {
 
         loop {
             // Check if shutdown was requested at the start of each loop iteration
-            if self.is_shutdown.load(Ordering::SeqCst) {
+            if self.is_shutdown_requested() {
                 info!("Shutdown requested, stopping message processing");
                 break;
             }
@@ -329,7 +336,7 @@ impl EventWorker {
                 }
 
                 // Handle shutdown signal
-                _ = self.shutdown_notify.notified() => {
+                _ = self.cancellation_token.cancelled() => {
                     info!("Shutdown signal received, breaking from main loop");
                     break;
                 }

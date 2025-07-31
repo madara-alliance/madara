@@ -8,12 +8,14 @@ use crate::worker::controller::event_worker::EventWorker;
 use futures::future::try_join_all;
 use std::sync::Arc;
 use std::sync::Mutex;
+use tokio_util::sync::CancellationToken;
 use tracing::{info, info_span};
 
 #[derive(Clone)]
 pub struct WorkerController {
     config: Arc<Config>,
     workers: Arc<Mutex<Vec<Arc<EventWorker>>>>,
+    cancellation_token: CancellationToken,
 }
 
 impl WorkerController {
@@ -22,10 +24,11 @@ impl WorkerController {
     /// It returns a new WorkerController instance
     /// # Arguments
     /// * `config` - The configuration for the WorkerController
+    /// * `cancellation_token` - Token for coordinated shutdown
     /// # Returns
     /// * `WorkerController` - A new WorkerController instance
-    pub fn new(config: Arc<Config>) -> Self {
-        Self { config, workers: Arc::new(Mutex::new(Vec::new())) }
+    pub fn new(config: Arc<Config>, cancellation_token: CancellationToken) -> Self {
+        Self { config, workers: Arc::new(Mutex::new(Vec::new())), cancellation_token }
     }
 
     /// workers - Get the list of workers
@@ -74,7 +77,9 @@ impl WorkerController {
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
-        let worker = Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())?);
+        // Create a child token for this specific worker
+        let worker_token = self.cancellation_token.child_token();
+        let worker = Arc::new(EventWorker::new(queue_type.clone(), self.config.clone(), worker_token)?);
 
         // Fix: Properly store the worker by modifying the vector directly
         let mut workers = self.workers.lock().map_err(|e| EventSystemError::MutexPoisonError(e.to_string()))?;
