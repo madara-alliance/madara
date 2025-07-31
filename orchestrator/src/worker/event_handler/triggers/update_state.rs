@@ -93,7 +93,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         };
 
-        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>().unwrap()).collect();
+        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).collect()?;
         to_process.sort();
 
         // no parent jobs completed after the last settled block

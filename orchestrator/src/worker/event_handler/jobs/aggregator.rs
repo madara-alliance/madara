@@ -144,8 +144,6 @@ impl JobHandlerTrait for AggregatorJobHandler {
                         },
                     )?;
 
-                // TODO: Update the aggregator job metadata with the above query ID
-
                 // Fetch aggregator cairo pie and store it in storage
                 let cairo_pie_bytes = AggregatorJobHandler::fetch_and_store_artifact(
                     &config,
@@ -156,7 +154,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 .await?;
 
                 // Fetch aggregator snos output and store it in storage
-                // TODO: Check if Atlantic provide this or if we need this
+                // TODO: Uncomment this code when atlantic provides the snos output for aggregator jobs
                 // AggregatorJobHandler::fetch_and_store_artifact(
                 //     &config,
                 //     &aggregator_query_id,

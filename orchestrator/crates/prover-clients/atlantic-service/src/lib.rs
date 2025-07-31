@@ -236,15 +236,10 @@ impl ProverClient for AtlanticProverService {
 }
 
 impl AtlanticProverService {
-    #[allow(clippy::too_many_arguments)]
-    // TODO: Create a struct for this
     pub fn new(
         atlantic_client: AtlanticClient,
         atlantic_api_key: String,
-        proof_layout: &LayoutName,
-        cairo_vm: AtlanticCairoVm,
-        result: AtlanticQueryStep,
-        atlantic_network: String,
+        job_config: AtlanticJobConfig,
         fact_checker: Option<FactChecker>,
         cairo_verifier_program_hash: Option<String>,
     ) -> Self {
@@ -252,7 +247,7 @@ impl AtlanticProverService {
             atlantic_client,
             fact_checker,
             atlantic_api_key,
-            proof_layout: proof_layout.to_owned(),
+            proof_layout: job_config.proof_layout.to_owned(),
             cairo_vm,
             atlantic_network,
             result,
@@ -278,10 +273,12 @@ impl AtlanticProverService {
         Self::new(
             atlantic_client,
             atlantic_params.atlantic_api_key.clone(),
-            proof_layout,
-            atlantic_params.atlantic_cairo_vm.clone(),
-            atlantic_params.atlantic_result.clone(),
-            atlantic_params.atlantic_network.clone(),
+            AtlanticJobConfig {
+                proof_layout: *proof_layout,
+                cairo_vm: atlantic_params.atlantic_cairo_vm.clone(),
+                result: atlantic_params.atlantic_result.clone(),
+                network: atlantic_params.atlantic_network.clone(),
+            },
             fact_checker,
             atlantic_params.cairo_verifier_program_hash.clone(),
         )
@@ -296,10 +293,12 @@ impl AtlanticProverService {
         Self::new(
             atlantic_client,
             "random_api_key".to_string(),
-            proof_layout,
-            AtlanticCairoVm::Rust,
-            AtlanticQueryStep::ProofVerificationOnL1,
-            "TESTNET".to_string(),
+            AtlanticJobConfig {
+                proof_layout: *proof_layout,
+                cairo_vm: AtlanticCairoVm::Rust,
+                result: AtlanticQueryStep::ProofVerificationOnL1,
+                network: "TESTNET".to_string(),
+            },
             fact_checker,
             None,
         )

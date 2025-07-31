@@ -95,6 +95,13 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
+    /// Fetch an artifact from the given path
+    ///
+    /// # Arguments
+    /// `artifact_path` - the path of the artifact to get
+    ///
+    /// # Returns
+    /// The artifact as a byte array if the request is successful, otherwise an error is returned
     pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, AtlanticError> {
         debug!("Getting artifacts from {}", artifact_path);
         let client = reqwest::Client::new();
@@ -180,7 +187,6 @@ impl AtlanticClient {
         }
     }
 
-    #[allow(clippy::too_many_arguments)]
     /// Submits request to the prover client
     /// `bucket_id` and `bucket_job_id` are `None` for L3 (or L2 when AR is not needed)
     pub async fn add_job(
