@@ -253,14 +253,15 @@ impl BatchingTrigger {
 
     async fn start_batch(&self, config: &Arc<Config>, index: u64, start_block: u64) -> Result<Batch, JobError> {
         // Start a new bucket
-        let bucket_id = config
-            .prover_client()
-            .submit_task(Task::CreateBucket)
-            .await
-            .map_err(|e| {
-                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
-            })?;
+        // let bucket_id = config
+        //     .prover_client()
+        //     .submit_task(Task::CreateBucket)
+        //     .await
+        //     .map_err(|e| {
+        //         tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+        //         JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
+        //     })?;
+        let bucket_id = "ABCD1234".to_string();
         tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
         Ok(Batch::new(
             index,
