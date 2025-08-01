@@ -103,7 +103,7 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
   "cairo-1-hints",
   "extensive_hints",
   "mod_builtin",
@@ -317,7 +317,7 @@ starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branc
 
 starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
 
-cairo-vm = { git = "https://github.com/Mohiiit/cairo-vm", branch = "tmp/mohit/paradex", features = [
+cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
   "cairo-1-hints",
   "extensive_hints",
   "mod_builtin",

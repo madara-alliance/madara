@@ -248,9 +248,9 @@ impl AtlanticProverService {
             fact_checker,
             atlantic_api_key,
             proof_layout: job_config.proof_layout.to_owned(),
-            cairo_vm,
-            atlantic_network,
-            result,
+            cairo_vm: job_config.cairo_vm,
+            atlantic_network: job_config.network,
+            result: job_config.result,
             cairo_verifier_program_hash,
         }
     }
