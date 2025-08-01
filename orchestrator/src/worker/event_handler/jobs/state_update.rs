@@ -70,13 +70,22 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         Ok(job_item)
     }
 
-    /// This method is for processing state transition jobs
+    /// This method is for processing state transition jobs.
+    /// It handles both L2 and L3 state update.
+    /// For L2, it does the state update using blobs.
+    /// For L3, it does the state update using call data.
     /// 1. Get the blocks/batches to do state transition for
     /// 2. Filter these if state transition jobs failed for some blocks/batches before
     /// 3. Fetch snos output, program output and blob data from storage
     /// 4. Perform state transition for all blocks/batches one by one
     #[tracing::instrument(fields(category = "state_update"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
+        // Note: This function handles for L2 and L3 state update
+        // Throughout the function,
+        // to_settle is the batch num or the block num to settle
+        // last_failed is the batch num or the block num for which we failed to do the state update
+        // last time
+
         let internal_id = job.internal_id.clone();
         info!(
             log_type = "starting",
@@ -97,7 +106,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 (data.to_settle, data.last_failed.unwrap_or(0))
             }
             SettlementContext::Batch(data) => {
-                // TODO: Validate if the batch numbers are correct
                 (data.to_settle, data.last_failed.unwrap_or(1)) // The lowest possible batch number is 1
             }
         };
