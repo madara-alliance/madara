@@ -20,6 +20,10 @@ on:
         description: "Hash used to retrieve the bootstrapper artifact"
         required: true
         type: string
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the cairo artifacts"
+        required: true
+        type: string
 
 jobs:
   e2e-full:
@@ -42,7 +46,7 @@ jobs:
           echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
           docker pull localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
           docker pull mongo:latest
-          docker pull prkpandey942/pathfinder:549aa84_2025-05-29_appchain-vers-cons_amd
+          docker pull eqlabs/pathfinder:latest
 
       - name: Rust setup
         uses: ./.github/actions/setup-rust
@@ -76,6 +80,12 @@ jobs:
 
       - name: Make Bootstrapper binary executable
         run: chmod +x target/release/bootstrapper
+
+      - name: Download Cairo artiracts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
+          path: build-artifacts/
 
       - name: Check Docker Installation
         run: |

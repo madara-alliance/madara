@@ -133,7 +133,7 @@ jobs:
   # TODO: maybe we can remove the check, if we are building the binary ourselves ?
   # Build Orchestrator binary
   build-orchestrator:
-    needs: [lint-code-style, check-orchestrator]
+    needs: lint-code-style
     uses: ./.github/workflows/task-build-orchestrator.yml
     secrets: inherit
 
@@ -166,7 +166,7 @@ jobs:
 
   # Build Bootstrapper binary
   build-bootstrapper:
-    needs: [lint-code-style, check-bootstrapper]
+    needs: lint-code-style
     uses: ./.github/workflows/task-build-bootstrapper.yml
     secrets: inherit
 
@@ -190,6 +190,7 @@ jobs:
       madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
       orchestrator-binary-hash: ${{ needs.build-orchestrator.outputs.orchestrator-binary-hash }}
       bootstrapper-binary-hash: ${{ needs.build-bootstrapper.outputs.bootstrapper-binary-hash }}
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     secrets: inherit
 
   # ========================================================================= #
