@@ -13,6 +13,7 @@ name = "e2e"
 path = "src/mod.rs"
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 dotenvy = { workspace = true }
 env_logger = { workspace = true }
