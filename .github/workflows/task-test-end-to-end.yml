@@ -110,7 +110,7 @@ jobs:
           tar -xzf pathfinder.tar.gz -C target/release/
           chmod +x target/release/pathfinder
           rm pathfinder.tar.gz
-      
+
       - name: Check Docker Installation
         run: |
           if command -v docker &> /dev/null
