@@ -19,12 +19,30 @@ ENV RUSTC_WRAPPER=/bin/sccache
 
 ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-RUN apt-get update -y && \
-    apt-get install -y \
-    wget \
-    clang \
-    nodejs \
-    npm
+# Install system dependencies including OpenSSL
+RUN apt-get update && apt-get install -y \
+    git libgmp3-dev wget bash curl \
+    build-essential clang \
+    libssl-dev openssl \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install BLST from source
+RUN git clone --depth 1 --branch v0.3.15 https://github.com/supranational/blst.git /tmp/blst && \
+    cd /tmp/blst && \
+    ./build.sh && \
+    mkdir -p /usr/local/lib /usr/local/include && \
+    cp libblst.a /usr/local/lib/ && \
+    cp bindings/blst.h /usr/local/include/ && \
+    cp bindings/blst_aux.h /usr/local/include/ && \
+    rm -rf /tmp/blst
+
+# ENV to link BLST dependency
+ENV RUSTFLAGS="-L /usr/local/lib -l blst"
+
+# Update linker cache
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
 
 RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
 RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
@@ -32,7 +50,6 @@ RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
 # Step 1: Cache dependencies
 FROM base-rust AS planner
 
-WORKDIR /app
 COPY . .
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
@@ -41,24 +58,20 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
 # Step 2: Build crate
 FROM base-rust AS builder-rust
 
-WORKDIR /app
-
 COPY --from=planner /app/recipe.json recipe.json
-
-COPY Cargo.toml Cargo.lock .
-COPY build-artifacts build-artifacts
-COPY orchestrator orchestrator
 
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
+COPY Cargo.toml Cargo.lock .
+COPY orchestrator orchestrator
+COPY build-artifacts build-artifacts
+
+# Build with verbose output to see linking details
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
-    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --bin orchestrator --release
-
-# Install Node.js dependencies for migrations
-RUN cd orchestrator && npm install
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path orchestrator/Cargo.toml --release
 
 # Dump information where kzg files must be copied
 RUN mkdir -p /tmp && \
@@ -71,12 +84,6 @@ FROM debian:bookworm-slim AS runner
 
 RUN apt-get -y update && \
     apt-get install -y openssl ca-certificates tini curl jq && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/* && \
-
-    echo "deb http://security.debian.org/debian-security bullseye-security main" > /etc/apt/sources.list.d/bullseye-security.list && \
-    apt-get update && \
-    apt-get install -y libssl1.1 && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get update && \
     apt-get install -y nodejs && \
@@ -84,9 +91,9 @@ RUN apt-get -y update && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
-WORKDIR /usr/local/bin
+WORKDIR /app
 
-COPY --from=builder-rust /app/target/release/orchestrator .
+COPY --from=builder-rust /app/target/release/orchestrator /bin
 COPY --from=builder-rust /app/orchestrator/node_modules ./node_modules
 COPY --from=builder-rust /app/orchestrator/package.json .
 COPY --from=builder-rust /app/orchestrator/migrate-mongo-config.js .
@@ -108,4 +115,6 @@ ENV TINI_VERSION=v0.19.0
 ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
 RUN chmod +x /bin/tini
 
-ENTRYPOINT ["tini", "--", "./orchestrator"]
+# Set the entrypoint
+ENTRYPOINT ["tini", "--", "orchestrator"]
+CMD ["--help"]
