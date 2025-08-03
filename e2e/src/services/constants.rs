@@ -70,8 +70,7 @@ pub const MOCK_PROVER_PORT: u16 = 3001;
 // PATHFINDER SERVICE
 // =============================================================================
 pub const PATHFINDER_PORT: u16 = 9545;
-pub const PATHFINDER_IMAGE: &str = "prkpandey942/pathfinder:549aa84_2025-05-29_appchain-vers-cons_amd";
-pub const PATHFINDER_CONTAINER: &str = "pathfinder-service";
+pub const PATHFINDER_BINARY: &str = "pathfinder";
 
 // =============================================================================
 // ORCHESTRATOR SERVICE

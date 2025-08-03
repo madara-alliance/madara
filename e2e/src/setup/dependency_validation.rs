@@ -79,7 +79,6 @@ impl DependencyValidator {
         let images = vec![
             ("mongo", MONGODB_IMAGE),
             ("localstack/localstack", LOCALSTACK_IMAGE),
-            ("pathfinder", PATHFINDER_IMAGE),
         ];
 
         let mut join_set = JoinSet::new();
