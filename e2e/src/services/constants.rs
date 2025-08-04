@@ -66,7 +66,7 @@ pub const MADARA_BINARY: &str = "madara";
 pub const MADARA_CONFIG: &str = "e2e/config/madara.yaml";
 pub const MADARA_RPC_PORT: u16 = 9944;
 pub const MADARA_RPC_ADMIN_PORT: u16 = 9943;
-pub const MADARA_GATEWAY_PORT: u16 = 9944;
+pub const MADARA_GATEWAY_PORT: u16 = 8080;
 
 // =============================================================================
 // MOCK PROVER SERVICE
