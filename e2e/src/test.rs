@@ -7,7 +7,7 @@ use rstest::*;
 async fn setup_chain(#[default("")] test_name: &str) -> ChainSetup {
     // Load environment variables from .env.e2e file
     // This loads .env.e2e from the current directory
-    dotenv::from_filename(".env.e2e").ok();
+    dotenvy::from_filename_override(".env.e2e").expect("Failed to load the .env file");
 
     // Setting Config!
     println!("Running {}", test_name);
