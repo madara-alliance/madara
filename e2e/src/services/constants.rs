@@ -15,6 +15,15 @@ pub static REPO_ROOT: LazyLock<PathBuf> = LazyLock::new(|| {
 pub const DEFAULT_SERVICE_HOST: &str = "127.0.0.1";
 pub const BINARY_DIR: &str = "target/release";
 pub const DATA_DIR: &str = "e2e_data";
+pub const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
+
+// =============================================================================
+// SERVER
+// =============================================================================
+pub const BUFFER_CAPACITY: usize = 65536;
+pub const FALLBACK_PORT: u16 = 8080;
+pub const CONNECTION_ATTEMPTS: usize = 30;
+pub const CONNECTION_DELAY_MS: u64 = 1000;
 
 // =============================================================================
 // ANVIL SERVICE
