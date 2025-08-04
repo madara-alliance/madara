@@ -1,5 +1,8 @@
-use crate::services::{constants::DEFAULT_ANIVL_PORT, server::ServerError};
+use crate::services::constants::DEFAULT_SERVICE_HOST;
+use crate::services::{constants::*, server::ServerError};
+use std::path::PathBuf;
 use tokio::process::Command;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AnvilError {
@@ -12,11 +15,11 @@ pub enum AnvilError {
 // Final immutable configuration
 #[derive(Debug, Clone)]
 pub struct AnvilConfig {
-    fork_url: Option<String>,
-    load_state: Option<String>,
-    dump_state: Option<String>,
+    fork_url: Option<Url>,
+    load_state: Option<PathBuf>,
+    dump_state: Option<PathBuf>,
     block_time: Option<f64>,
-    // Server Configs
+    // Server Config
     port: u16,
     logs: (bool, bool),
 }
@@ -27,10 +30,9 @@ impl Default for AnvilConfig {
             fork_url: None,
             load_state: None,
             dump_state: None,
-            block_time: None,
-
+            block_time: Some(ANVIL_BLOCK_TIME),
             // Server Config
-            port: DEFAULT_ANIVL_PORT,
+            port: ANVIL_PORT,
             logs: (true, true),
         }
     }
@@ -58,23 +60,28 @@ impl AnvilConfig {
     }
 
     /// Get the fork URL
-    pub fn fork_url(&self) -> Option<&str> {
-        self.fork_url.as_deref()
+    pub fn fork_url(&self) -> Option<&Url> {
+        self.fork_url.as_ref()
     }
 
     /// Get the load state path
-    pub fn load_state(&self) -> Option<&str> {
-        self.load_state.as_deref()
+    pub fn load_state(&self) -> Option<&PathBuf> {
+        self.load_state.as_ref()
     }
 
     /// Get the dump state path
-    pub fn dump_state(&self) -> Option<&str> {
-        self.dump_state.as_deref()
+    pub fn dump_state(&self) -> Option<&PathBuf> {
+        self.dump_state.as_ref()
     }
 
     /// Get the block time in seconds
     pub fn block_time(&self) -> Option<f64> {
         self.block_time
+    }
+
+    /// Get the endpoint
+    pub fn endpoint(&self) -> Url {
+        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.port())).unwrap()
     }
 
     /// Build the final immutable configuration
@@ -83,7 +90,7 @@ impl AnvilConfig {
         command.arg("--port").arg(self.port().to_string());
 
         if let Some(fork_url) = self.fork_url() {
-            command.arg("--fork-url").arg(fork_url);
+            command.arg("--fork-url").arg(fork_url.to_string());
         }
 
         if let Some(load_state) = self.load_state() {
@@ -111,9 +118,7 @@ pub struct AnvilConfigBuilder {
 impl AnvilConfigBuilder {
     /// Create a new configuration builder with default values
     pub fn new() -> Self {
-        Self {
-            config: AnvilConfig::default(),
-        }
+        Self { config: AnvilConfig::default() }
     }
 
     /// Build the final immutable configuration
@@ -128,20 +133,20 @@ impl AnvilConfigBuilder {
     }
 
     /// Set the fork URL for forking from an existing network
-    pub fn fork_url<S: Into<String>>(mut self, url: S) -> Self {
-        self.config.fork_url = Some(url.into());
+    pub fn fork_url(mut self, url: &Url) -> Self {
+        self.config.fork_url = Some(url.to_owned());
         self
     }
 
     /// Set the database file to load state from
-    pub fn load_state<S: Into<String>>(mut self, path: S) -> Self {
-        self.config.load_state = Some(path.into());
+    pub fn load_state<S: AsRef<std::path::Path>>(mut self, path: S) -> Self {
+        self.config.load_state = Some(REPO_ROOT.clone().join(path));
         self
     }
 
     /// Set the database file to dump state to
-    pub fn dump_state<S: Into<String>>(mut self, path: S) -> Self {
-        self.config.dump_state = Some(path.into());
+    pub fn dump_state<S: AsRef<std::path::Path>>(mut self, path: S) -> Self {
+        self.config.dump_state = Some(REPO_ROOT.clone().join(path));
         self
     }
 
@@ -150,6 +155,12 @@ impl AnvilConfigBuilder {
         if seconds >= 0.0 {
             self.config.block_time = Some(seconds);
         }
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 }
