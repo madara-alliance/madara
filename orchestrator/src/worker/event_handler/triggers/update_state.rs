@@ -1,9 +1,3 @@
-use async_trait::async_trait;
-use color_eyre::eyre::eyre;
-use opentelemetry::KeyValue;
-use orchestrator_utils::layer::Layer;
-use std::sync::Arc;
-
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
     AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
@@ -13,6 +7,12 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
+use async_trait::async_trait;
+use color_eyre::eyre::eyre;
+use itertools::Itertools;
+use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
+use std::sync::Arc;
 
 pub struct UpdateStateJobTrigger;
 
@@ -93,7 +93,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         };
 
-        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).collect()?;
+        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).try_collect()?;
         to_process.sort();
 
         // no parent jobs completed after the last settled block
