@@ -19,7 +19,6 @@ pub struct AnvilService {
 impl AnvilService {
     /// Start a new Anvil service with the given configuration
     pub async fn start(config: AnvilConfig) -> Result<Self, AnvilError> {
-
         // Build the anvil command
         let command = config.to_command();
 
@@ -32,9 +31,7 @@ impl AnvilService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(AnvilError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(AnvilError::Server)?;
 
         Ok(Self { server, config })
     }
