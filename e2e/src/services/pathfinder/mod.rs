@@ -84,7 +84,7 @@ impl PathfinderService {
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
-        tokio::time::sleep(Duration::from_secs(2)).await;
+        tokio::time::sleep(Duration::from_secs(1)).await;
         println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
 
         let poll_interval = Duration::from_millis(500); // Configurable interval
