@@ -300,7 +300,7 @@ impl MadaraConfig {
                 cmd.arg("--sequencer");
             }
             MadaraMode::FullNode => {
-                cmd.arg("--full-node");
+                cmd.arg("--full");
             }
         }
 
