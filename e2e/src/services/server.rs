@@ -9,10 +9,7 @@ use tokio::task;
 
 use super::constants::*;
 
-const BUFFER_CAPACITY: usize = 65536;
-const FALLBACK_PORT: u16 = 8080;
-const CONNECTION_ATTEMPTS: usize = 30;
-const CONNECTION_DELAY_MS: u64 = 1000;
+
 
 // Custom error type
 #[derive(Debug, thiserror::Error)]
