@@ -206,6 +206,7 @@ contract Factory is Ownable, Pausable, Implementations {
     IRoles(proxyContract).registerUpgradeGovernor(governanceAdmin);
     IRoles(proxyContract).registerAppRoleAdmin(governanceAdmin);
     IRoles(proxyContract).registerAppGovernor(governanceAdmin);
+    IRoles(proxyContract).registerUpgradeGovernor(governanceAdmin);
   }
 
   function pause() external onlyOwner {
