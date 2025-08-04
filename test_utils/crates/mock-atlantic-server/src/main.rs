@@ -1,7 +1,7 @@
-use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 use std::env;
 use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
+use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
