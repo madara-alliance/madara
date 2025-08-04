@@ -9,17 +9,17 @@ path = "src/main.rs"
 
 [dependencies]
 axum = { workspace = true, features = ["multipart"] }
-tokio = { workspace = true, features = ["full"] }
+chrono = { workspace = true, features = ["serde"] }
+rand.workspace = true
+reqwest = { workspace = true, features = ["json", "multipart"] }
 serde = { workspace = true, features = ["derive"] }
 serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 uuid.workspace = true
-thiserror.workspace = true
-chrono = { workspace = true, features = ["serde"] }
-reqwest = { workspace = true, features = ["json", "multipart"] }
-tempfile.workspace = true
-rand.workspace = true
 
 [dev-dependencies]
 tokio.workspace = true
