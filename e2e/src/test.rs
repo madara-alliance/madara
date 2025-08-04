@@ -1,46 +1,52 @@
-use rstest::rstest;
+use crate::setup::ChainSetup;
+use crate::setup::SetupConfigBuilder;
+use rstest::*;
 
-#[rstest]
-#[tokio::test]
-async fn e2e_test_setup() {
-    use crate::setup::{Setup,SetupConfigBuilder};
-    use tokio::time::Duration;
-    use tokio::time::sleep;
-    use crate::services::anvil::AnvilConfigBuilder;
-    use crate::services::constants::*;
+// Async fixture that takes arguments from the test
+#[fixture]
+async fn setup_chain(#[default("")] test_name: &str) -> ChainSetup {
+    // Load environment variables from .env.e2e file
+    // This loads .env.e2e from the current directory
+    dotenv::from_filename(".env.e2e").ok();
 
-    let anvil_config = AnvilConfigBuilder::new()
-        .port(8545)
-        .block_time(1_f64)
-        .load_state(format!("{}/anvil.json", DEFAULT_DATA_DIR))
-        .build();
-
-    let setup_config = SetupConfigBuilder::new(None).build_l2_config().unwrap()
-        .builder().anvil_config(anvil_config).build();
-
+    // Setting Config!
+    println!("Running {}", test_name);
+    let setup_config = SetupConfigBuilder::new(None).test_config_l2(test_name).unwrap();
     println!("Running setup");
 
-    // This will panic with the actual error message if it fails
-    let mut setup_struct = Setup::new(setup_config).unwrap();
-
-    match setup_struct.setup().await {
+    // Running Chain
+    let mut setup_struct = ChainSetup::new(setup_config).unwrap();
+    match setup_struct.setup(test_name).await {
         Ok(()) => println!("✅ Setup completed successfully"),
         Err(e) => {
             println!("❌ Setup failed: {}", e);
-            // Manual cleanup before panic
-            // if let Err(cleanup_err) = setup_struct.stop_all().await {
-            //     eprintln!("Failed to cleanup: {}", cleanup_err);
-            // }
-            panic!("Setup failed: {}", e); // This will show your actual error
+            panic!("Setup failed: {}", e);
         }
     }
 
+    use tokio::time::sleep;
+    use tokio::time::Duration;
+    sleep(Duration::from_secs(4000)).await;
+    setup_struct
+}
+
+#[rstest]
+#[case("e2esetup")]
+#[tokio::test]
+async fn e2e_test_setup(
+    #[case] test_name: &str,
+    #[future]
+    #[with(test_name)]
+    setup_chain: ChainSetup,
+) {
+    // Ensuring setup stays in scope
+    let _setup = setup_chain.await;
+    // Testing begins here!
     // Test here!
-    sleep(Duration::from_secs(500)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(500)).await;
 
     // Delete the created directory
-    if let Err(err) = std::fs::remove_dir_all("data_e2e_test_setup") {
+    if let Err(err) = std::fs::remove_dir_all(&format!("data_{}", test_name)) {
         eprintln!("Failed to delete directory: {}", err);
     }
-
 }
