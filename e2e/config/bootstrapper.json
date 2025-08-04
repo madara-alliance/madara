@@ -13,7 +13,7 @@
   "l1_wait_time": "15",
   "l2_multisig_address": "0x556455b8ac8bc00e0ad061d7df5458fa3c372304877663fa21d492a8d5e9435",
   "native_fee_token_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
-  "operator_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffF b92266",
+  "operator_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
   "rollup_seq_url": "http://127.0.0.1:9944",
