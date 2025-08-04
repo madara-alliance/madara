@@ -15,7 +15,6 @@ use crate::services::{
     pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError},
 };
 use std::time::Duration;
-// TODO: write layer here and use there
 use crate::services::constants::*;
 use crate::services::orchestrator::Layer;
 
