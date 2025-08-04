@@ -51,6 +51,8 @@ pub struct LockInfo {
     pub _id: String, // Unique Identifier
     pub value: LockValue,
     pub expires_at: Option<DateTime<Utc>>,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
     pub owner: Option<String>,
 }
 
@@ -58,7 +60,7 @@ pub struct LockInfo {
 #[derive(Debug, Clone, PartialEq)]
 pub enum LockResult {
     Acquired,
-    AlreadyHeld(String), // Contains current owner
+    AlreadyHeld(String), // Contains the current owner
     Expired,
     Extended,
     Released,
