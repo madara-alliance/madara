@@ -249,7 +249,7 @@ impl MadaraConfig {
 
     /// Get the feeder gateway endpoint
     pub fn feeder_gateway_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}/{}", DEFAULT_SERVICE_HOST, self.gateway_port(), "feeder-gateway")).unwrap()
+        Url::parse(&format!("http://{}:{}/{}", DEFAULT_SERVICE_HOST, self.gateway_port(), "feeder_gateway")).unwrap()
     }
 
     /// Convert the configuration to a command
