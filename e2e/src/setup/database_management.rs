@@ -3,7 +3,7 @@
 // =============================================================================
 
 use fs_extra::dir::{copy, CopyOptions};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use tokio::fs;
 // Import all the services we've created
 pub use super::config::*;
