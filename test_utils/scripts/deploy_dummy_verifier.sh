@@ -92,7 +92,7 @@ if [ $? -ne 0 ]; then
 fi
 
 # Extract contract address from forge create output
-VERIFIER_ADDRESS=$(echo "$VERIFIER_RESULT" | grep "to" | awk '{print $3}')
+VERIFIER_ADDRESS=$(echo "$VERIFIER_RESULT" | grep "Deployed to:" | awk '{print $3}')
 echo -e "📦 Verifier deployed at: $VERIFIER_ADDRESS\n"
 
 # Write only the address to the specified file on success

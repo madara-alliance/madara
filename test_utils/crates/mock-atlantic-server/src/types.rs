@@ -1,7 +1,8 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-// TODO: ideally would want to use these types 
+// TODO: ideally would want to use the types from the `atlantic` crate in orchestrator
+// We currently have to clone these due to lack of common types trait
 
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
