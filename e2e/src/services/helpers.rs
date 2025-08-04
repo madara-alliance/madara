@@ -6,9 +6,8 @@ use std::net::TcpListener;
 use std::path::PathBuf;
 use url::Url;
 
-use super::constants::{BINARY_DIR, REPO_ROOT};
+use super::constants::*;
 
-const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeRpcError {
