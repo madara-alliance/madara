@@ -308,7 +308,7 @@ pub async fn add_job_handler(
         }
     };
 
-    info!("Creating job with layout: {:?}, network: {:?}, declared_job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, external_id: {:?}, job_id: {}",
+    debug!("Creating job with layout: {:?}, network: {:?}, declared_job_size: {:?}, cairo_version: {:?}, cairo_vm: {:?}, result_type: {:?}, external_id: {:?}, job_id: {}",
            layout, network, declared_job_size, cairo_version, cairo_vm, result_type, external_id, job_id);
 
     let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
@@ -333,7 +333,7 @@ pub async fn get_job_status_handler(
         Some(job_data) => {
             info!("Returning status for job {}: {:?}", job_id, job_data.query.status);
             Ok(Json(AtlanticGetStatusResponse {
-                atlantic_query: job_data.query.clone(),
+                atlantic_query: job_data.query.to_owned(),
                 metadata_urls: vec![format!("https://mock-atlantic.example.com/metadata/{}", job_id)],
             }))
         }
@@ -351,26 +351,33 @@ pub async fn get_proof_handler(
     debug!("Received get_proof request for task: {}", task_id);
 
     let jobs = state.jobs.read().await;
-    match jobs.get(&task_id) {
-        Some(job_data) => {
-            if job_data.query.status == AtlanticQueryStatus::Done {
-                if let Some(ref proof_data) = job_data.proof_data {
-                    info!("Returning proof data for task: {}", task_id);
-                    Ok(proof_data.clone())
-                } else {
-                    warn!("Proof data not available for task: {}", task_id);
-                    Err(StatusCode::NOT_FOUND)
-                }
-            } else {
-                warn!("Task not completed yet: {}", task_id);
-                Err(StatusCode::NOT_FOUND)
-            }
-        }
+
+    // Guard: Check if job exists
+    let job_data = match jobs.get(&task_id) {
+        Some(job) => job,
         None => {
             warn!("Task not found: {}", task_id);
-            Err(StatusCode::NOT_FOUND)
+            return Err(StatusCode::NOT_FOUND);
         }
+    };
+
+    // Guard: Check if task is completed
+    if job_data.query.status != AtlanticQueryStatus::Done {
+        warn!("Task not completed yet: {}", task_id);
+        return Err(StatusCode::NOT_FOUND);
     }
+
+    // Guard: Check if proof data exists
+    let proof_data = match job_data.proof_data.as_ref() {
+        Some(proof) => proof,
+        None => {
+            warn!("Proof data not available for task: {}", task_id);
+            return Err(StatusCode::NOT_FOUND);
+        }
+    };
+
+    info!("Returning proof data for task: {}", task_id);
+    Ok(proof_data.clone())
 }
 
 pub async fn health_check() -> Result<Json<serde_json::Value>, StatusCode> {
