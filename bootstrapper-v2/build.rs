@@ -4,12 +4,15 @@ use std::path::Path;
 fn main() {
     build_version::get_or_compile_artifacts(1).expect("Failed to load artifacts");
 
+    const BOOTSTRAPPER_DIR: &str = "../build-artifacts/bootstrapper";
+    const CONTRACTS_DIR: &str = "./contracts";
+
     // Copy build artifacts to the appropriate locations
     let copy_dirs = [
-        ("../build-artifacts/bootstrapper/solidity/starkware", "./contracts/ethereum/src/starkware"),
-        ("../build-artifacts/bootstrapper/solidity/third_party", "./contracts/ethereum/src/third_party"),
-        ("../build-artifacts/bootstrapper/solidity/out", "./contracts/ethereum/out"),
-        ("../build-artifacts/bootstrapper/cairo/target", "./contracts/madara/target"),
+        (format!("{}/solidity/starkware", BOOTSTRAPPER_DIR), format!("{}/ethereum/src/starkware", CONTRACTS_DIR)),
+        (format!("{}/solidity/third_party", BOOTSTRAPPER_DIR), format!("{}/ethereum/src/third_party", CONTRACTS_DIR)),
+        (format!("{}/solidity/out", BOOTSTRAPPER_DIR), format!("{}/ethereum/out", CONTRACTS_DIR)),
+        (format!("{}/cairo/target", BOOTSTRAPPER_DIR), format!("{}/madara/target", CONTRACTS_DIR)),
     ];
 
     for (src, dst) in copy_dirs.iter() {

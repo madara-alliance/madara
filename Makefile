@@ -307,3 +307,13 @@ run-orchestrator-l3:
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
 	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1
+
+
+.PHONY: setup-bootstrapper
+setup-bootstrapper:
+	@echo -e "$(DIM)Setting up bootstrapper...$(RESET)"
+	@cp -r ./build-artifacts/bootstrapper/solidity/starkware/ ./bootstrapper-v2/contracts/ethereum/src/starkware/
+	@cp -r ./build-artifacts/bootstrapper/solidity/third_party/ ./bootstrapper-v2/contracts/ethereum/src/third_party/
+	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
+	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
+	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"

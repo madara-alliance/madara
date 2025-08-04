@@ -58,9 +58,8 @@ jobs:
             --exclude build.docker \
             --exclude cairo_artifacts \
             --exclude Cargo.toml \
-            --exclude build-artifacts/src \
-            -czvf artifacts.tar.gz \
-            build-artifacts/
+            --exclude src \
+            -czvf artifacts.tar.gz build-artifacts/
 
       - name: Tags
         id: tag

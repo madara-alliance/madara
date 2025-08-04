@@ -17,4 +17,10 @@ interface IRoles {
   function registerSecurityAgent(address account) external;
 
   function registerOperator(address account) external;
+
+  function revokeAppGovernor(address account) external;
+
+  function revokeAppRoleAdmin(address account) external;
+
+  function revokeOperator(address account) external;
 }
