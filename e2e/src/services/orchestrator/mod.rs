@@ -8,8 +8,8 @@ pub mod config;
 pub use config::*;
 
 use crate::services::server::{Server, ServerConfig};
-use std::process::ExitStatus;
 use reqwest::Url;
+use std::process::ExitStatus;
 use std::time::Duration;
 
 pub struct OrchestratorService {
@@ -18,7 +18,6 @@ pub struct OrchestratorService {
 }
 
 impl OrchestratorService {
-
     pub async fn run(config: OrchestratorConfig) -> Result<Self, OrchestratorError> {
         // TODO: config mode should only be run
 
@@ -39,9 +38,7 @@ impl OrchestratorService {
         };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(OrchestratorError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(OrchestratorError::Server)?;
 
         Ok(Self { server, config })
     }
@@ -52,7 +49,6 @@ impl OrchestratorService {
         let mut service = Self::start_setup_mode(config).await?;
         service.wait_for_completion().await
     }
-
 
     /// Wait for the bootstrapper to complete execution
     pub async fn wait_for_completion(&mut self) -> Result<ExitStatus, OrchestratorError> {
@@ -90,23 +86,17 @@ impl OrchestratorService {
         }
     }
 
-
     /// Run in setup mode (blocking, returns when complete)
     async fn start_setup_mode(config: OrchestratorConfig) -> Result<Self, OrchestratorError> {
         let command = config.to_command();
 
         println!("Running orchestrator in setup mode with command : {:?}", command);
 
-        let server_config = ServerConfig {
-            service_name: format!("Orchestrator-{}", config.mode().to_string()),
-            ..Default::default()
-
-        };
+        let server_config =
+            ServerConfig { service_name: format!("Orchestrator-{}", config.mode().to_string()), ..Default::default() };
 
         // Start the server using the generic Server::start_process
-        let server = Server::start_process(command, server_config)
-            .await
-            .map_err(OrchestratorError::Server)?;
+        let server = Server::start_process(command, server_config).await.map_err(OrchestratorError::Server)?;
 
         Ok(Self { server, config })
     }
@@ -146,7 +136,6 @@ impl OrchestratorService {
     }
 }
 
-
 impl OrchestratorService {
     /// Check if State Update for specified block completed or not
     ///
@@ -163,42 +152,29 @@ impl OrchestratorService {
 
         println!("Orchestrator URL: {}", url);
 
-        let response = client.get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| {
-                println!("Failed to send request to orchestrator: {}", e);
-                OrchestratorError::NetworkError(e.to_string())
-            })?;
-        let response_clone = client.get(&url)
-            .header("accept", "application/json")
-            .send()
-            .await
-            .map_err(|e| {
-                println!("Failed to send request to orchestrator: {}", e);
-                OrchestratorError::NetworkError(e.to_string())
-            })?;
+        let response = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
+            println!("Failed to send request to orchestrator: {}", e);
+            OrchestratorError::NetworkError(e.to_string())
+        })?;
+        let response_clone = client.get(&url).header("accept", "application/json").send().await.map_err(|e| {
+            println!("Failed to send request to orchestrator: {}", e);
+            OrchestratorError::NetworkError(e.to_string())
+        })?;
 
         println!("Orchestrator URL: {:?}", response_clone.text().await);
 
-        let json = response.json::<serde_json::Value>().await
-            .map_err(|e| {
-                println!("Failed to parse JSON response: {}", e);
-                OrchestratorError::InvalidResponse(e.to_string())
-            })?;
+        let json = response.json::<serde_json::Value>().await.map_err(|e| {
+            println!("Failed to parse JSON response: {}", e);
+            OrchestratorError::InvalidResponse(e.to_string())
+        })?;
 
         println!("JSON RESPONSE : {}", json);
 
         // Check if the API call was successful
-        let success = json.get("success")
-            .and_then(|v| v.as_bool())
-            .unwrap_or(false);
+        let success = json.get("success").and_then(|v| v.as_bool()).unwrap_or(false);
 
         if !success {
-            let message = json.get("message")
-                .and_then(|v| v.as_str())
-                .unwrap_or("Unknown error");
+            let message = json.get("message").and_then(|v| v.as_str()).unwrap_or("Unknown error");
             println!("Orchestrator API error: {}", message);
             return Err(OrchestratorError::InvalidResponse(message.to_string()));
         }
@@ -206,17 +182,14 @@ impl OrchestratorService {
         let empty_vec = vec![];
 
         // Extract jobs array from the response
-        let jobs = json.get("data")
-            .and_then(|data| data.get("jobs"))
-            .and_then(|jobs| jobs.as_array())
-            .unwrap_or(&empty_vec);
+        let jobs =
+            json.get("data").and_then(|data| data.get("jobs")).and_then(|jobs| jobs.as_array()).unwrap_or(&empty_vec);
 
         // Look for StateTransition job and check its status
         for job in jobs {
-            if let (Some(job_type), Some(status)) = (
-                job.get("job_type").and_then(|v| v.as_str()),
-                job.get("status").and_then(|v| v.as_str())
-            ) {
+            if let (Some(job_type), Some(status)) =
+                (job.get("job_type").and_then(|v| v.as_str()), job.get("status").and_then(|v| v.as_str()))
+            {
                 if job_type == "StateTransition" {
                     let is_completed = status == "Completed";
                     println!("StateTransition job for block {}: {}", block_number, status);

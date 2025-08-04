@@ -1,8 +1,9 @@
-use crate::services::server::ServerError;
+use crate::services::constants::*;
+use crate::services::{helpers::get_binary_path, server::ServerError};
 use std::path::PathBuf;
 use strum_macros::Display;
 use tokio::process::Command;
-use crate::services::constants::*;
+use url::Url;
 
 // TODO: options are currently limited to per-usages bases
 
@@ -63,7 +64,8 @@ pub struct OrchestratorConfig {
     // External Service
     // Database
     mongodb: bool,
-    database_name : String,
+    mongodb_connection_url: Option<Url>,
+    database_name: String,
 
     // AWS Configuration
     aws: bool,
@@ -77,11 +79,14 @@ pub struct OrchestratorConfig {
 
     // Data Availability (exclusive)
     da_on_ethereum: bool,
+    ethereum_rpc_url: Option<Url>,
+
     da_on_starknet: bool,
 
     // Prover (exclusive)
     sharp: bool,
     atlantic: bool,
+    atlantic_service_url: Option<Url>,
 
     // Block Processing
     max_block_to_process: Option<u64>,
@@ -94,23 +99,27 @@ pub struct OrchestratorConfig {
 impl Default for OrchestratorConfig {
     fn default() -> Self {
         Self {
-            binary_path: PathBuf::from(DEFAULT_ORCHESTRATOR_BINARY),
+            binary_path: get_binary_path(ORCHESTRATOR_BINARY),
             mode: OrchestratorMode::Run,
             layer: Layer::L2,
             port: None,
             additional_args: vec![],
             environment_vars: vec![],
             mongodb: true,
+            mongodb_connection_url: Some(
+                Url::parse(format!("mongodb://{}:{}", DEFAULT_SERVICE_HOST, MONGODB_PORT).as_str()).unwrap(),
+            ),
             aws: true,
             event_bridge_type: AWSEventBridgeType::Rule,
-            database_name: String::from(DEFAULT_ORCHESTRATOR_DATABASE_NAME),
-
+            database_name: String::from(ORCHESTRATOR_DATABASE_NAME),
             settle_on_ethereum: false,
             settle_on_starknet: false,
             da_on_ethereum: false,
+            ethereum_rpc_url: None,
             da_on_starknet: false,
             sharp: false,
             atlantic: false,
+            atlantic_service_url: None,
 
             max_block_to_process: None,
             min_block_to_process: None,
@@ -127,9 +136,7 @@ impl OrchestratorConfig {
 
     /// Create a builder for OrchestratorConfig from the current state
     pub fn builder(self) -> OrchestratorConfigBuilder {
-        OrchestratorConfigBuilder {
-            config: self,
-        }
+        OrchestratorConfigBuilder { config: self }
     }
 
     // Getter methods (immutable access)
@@ -189,6 +196,11 @@ impl OrchestratorConfig {
         self.da_on_ethereum
     }
 
+    /// Get the Ethereum data availability RPC URL
+    pub fn ethereum_rpc_url(&self) -> Option<&Url> {
+        self.ethereum_rpc_url.as_ref()
+    }
+
     /// Check if data availability on Starknet is enabled
     pub fn is_da_on_starknet_enabled(&self) -> bool {
         self.da_on_starknet
@@ -204,9 +216,19 @@ impl OrchestratorConfig {
         self.mongodb
     }
 
+    /// Get the MongoDB connection string
+    pub fn mongodb_connection_url(&self) -> Option<&Url> {
+        self.mongodb_connection_url.as_ref()
+    }
+
     /// Check if Atlantic is enabled
     pub fn is_atlantic_enabled(&self) -> bool {
         self.atlantic
+    }
+
+    /// Get the Atlantic service URL
+    pub fn atlantic_service_url(&self) -> Option<&Url> {
+        self.atlantic_service_url.as_ref()
     }
 
     /// Get the binary path
@@ -245,6 +267,16 @@ impl OrchestratorConfig {
         command.arg("--aws-event-bridge");
         command.arg("--event-bridge-type").arg(self.event_bridge_type.to_string());
 
+        // Add environment variables
+        for (key, value) in &self.environment_vars {
+            command.env(key, value);
+        }
+
+        // Add additional arguments
+        for arg in &self.additional_args {
+            command.arg(arg);
+        }
+
         command
     }
 
@@ -257,11 +289,17 @@ impl OrchestratorConfig {
         if self.mongodb {
             command.arg("--mongodb");
             command.arg("--mongodb-database-name").arg(self.database_name());
+            if let Some(connection_url) = self.mongodb_connection_url() {
+                command.arg("--mongodb-connection-url").arg(connection_url.as_str());
+            }
         }
 
         // Add settlement flags
         if self.settle_on_ethereum {
             command.arg("--settle-on-ethereum");
+            if let Some(rpc_url) = self.ethereum_rpc_url() {
+                command.arg("--ethereum-rpc-url").arg(rpc_url.to_string());
+            }
         }
         if self.settle_on_starknet {
             command.arg("--settle-on-starknet");
@@ -270,6 +308,9 @@ impl OrchestratorConfig {
         // Add data availability flags
         if self.da_on_ethereum {
             command.arg("--da-on-ethereum");
+            if let Some(rpc_url) = self.ethereum_rpc_url() {
+                command.arg("--ethereum-da-rpc-url").arg(rpc_url.to_string());
+            }
         }
         if self.da_on_starknet {
             command.arg("--da-on-starknet");
@@ -281,6 +322,9 @@ impl OrchestratorConfig {
         }
         if self.atlantic {
             command.arg("--atlantic");
+            if let Some(service_url) = self.atlantic_service_url() {
+                command.arg("--atlantic-service-url").arg(service_url.to_string());
+            }
         }
 
         if let Some(max_block) = self.max_block_to_process {
@@ -289,7 +333,6 @@ impl OrchestratorConfig {
         if let Some(min_block) = self.min_block_to_process {
             command.arg("--min-block-to-process").arg(min_block.to_string());
         }
-
 
         // Add environment variables
         for (key, value) in &self.environment_vars {
@@ -314,9 +357,7 @@ pub struct OrchestratorConfigBuilder {
 impl OrchestratorConfigBuilder {
     /// Create a new builder with default configuration
     pub fn new() -> Self {
-        Self {
-            config: OrchestratorConfig::default(),
-        }
+        Self { config: OrchestratorConfig::default() }
     }
 
     /// Build the final configuration
@@ -336,9 +377,7 @@ impl OrchestratorConfigBuilder {
     }
 
     pub fn setup_l2() -> Self {
-        Self::new()
-            .layer(Layer::L2)
-            .mode(OrchestratorMode::Setup)
+        Self::new().layer(Layer::L2).mode(OrchestratorMode::Setup)
     }
 
     pub fn run_l3() -> Self {
@@ -352,9 +391,7 @@ impl OrchestratorConfigBuilder {
     }
 
     pub fn setup_l3() -> Self {
-        Self::new()
-            .layer(Layer::L3)
-            .mode(OrchestratorMode::Setup)
+        Self::new().layer(Layer::L3).mode(OrchestratorMode::Setup)
     }
 
     /// Set the binary path
@@ -421,6 +458,12 @@ impl OrchestratorConfigBuilder {
         self
     }
 
+    /// Set the MongoDB connection URL
+    pub fn mongodb_connection_url(mut self, url: Url) -> Self {
+        self.config.mongodb_connection_url = Some(url);
+        self
+    }
+
     /// Enable/disable AWS integration
     pub fn aws(mut self, enabled: bool) -> Self {
         self.config.aws = enabled;
@@ -436,6 +479,12 @@ impl OrchestratorConfigBuilder {
     /// Enable/disable settlement on Ethereum
     pub fn settle_on_ethereum(mut self, enabled: bool) -> Self {
         self.config.settle_on_ethereum = enabled;
+        self
+    }
+
+    /// Set the Ethereum data availability RPC URL
+    pub fn ethereum_rpc_url(mut self, url: Url) -> Self {
+        self.config.ethereum_rpc_url = Some(url);
         self
     }
 
@@ -466,6 +515,18 @@ impl OrchestratorConfigBuilder {
     /// Enable/disable Atlantic prover
     pub fn atlantic(mut self, enabled: bool) -> Self {
         self.config.atlantic = enabled;
+        self
+    }
+
+    /// Set the Atlantic service URL
+    pub fn atlantic_service_url(mut self, url: Url) -> Self {
+        self.config.atlantic_service_url = Some(url);
+        self
+    }
+
+    /// Set the logs
+    pub fn logs(mut self, logs: (bool, bool)) -> Self {
+        self.config.logs = logs;
         self
     }
 }
