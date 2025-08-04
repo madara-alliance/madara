@@ -159,7 +159,7 @@ impl LockClient for MongoLockClient {
         }
     }
 
-    async fn release_lock(&self, key: &str, owner: Option<&str>) -> Result<LockResult, LockError> {
+    async fn release_lock(&self, key: &str, owner: Option<String>) -> Result<LockResult, LockError> {
         let collection = self.get_cache_collection();
 
         let filter = match owner {
