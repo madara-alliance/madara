@@ -83,6 +83,7 @@ impl MongoDbClient {
     pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
+
     pub fn jobs_collection(&self) -> Collection<JobItem> {
         self.get_collection::<JobItem>("jobs")
     }
