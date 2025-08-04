@@ -4,7 +4,7 @@ use std::path::Path;
 fn main() {
     build_version::get_or_compile_artifacts(1).expect("Failed to load artifacts");
 
-    const BOOTSTRAPPER_DIR: &str = "../build-artifacts/bootstrapper-v2";
+    const BOOTSTRAPPER_DIR: &str = "../build-artifacts/bootstrapper";
     const CONTRACTS_DIR: &str = "./contracts";
 
     // Copy build artifacts to the appropriate locations
