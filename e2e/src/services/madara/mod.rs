@@ -13,7 +13,6 @@ use std::path::PathBuf;
 
 use crate::services::constants::*;
 use crate::services::helpers::NodeRpcMethods;
-use tokio::time::Duration;
 
 pub struct MadaraService {
     server: Server,
@@ -125,7 +124,7 @@ impl MadaraService {
 
         while self.get_latest_block_number().await.map_err(|err| MadaraError::RpcError(err))? < 0 {
             println!("⏳ Checking Madara block status...");
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            tokio::time::sleep(MADARA_WAITING_DURATION.to_owned()).await;
         }
         println!("🔔 Madara block {} is mined", block_number);
 

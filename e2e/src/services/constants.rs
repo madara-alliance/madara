@@ -67,6 +67,7 @@ pub const MADARA_CONFIG: &str = "e2e/config/madara.yaml";
 pub const MADARA_RPC_PORT: u16 = 9944;
 pub const MADARA_RPC_ADMIN_PORT: u16 = 9943;
 pub const MADARA_GATEWAY_PORT: u16 = 8080;
+pub static MADARA_WAITING_DURATION: LazyLock<Duration> = LazyLock::new(|| Duration::from_secs(1));
 
 // =============================================================================
 // MOCK PROVER SERVICE
