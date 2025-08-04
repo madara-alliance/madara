@@ -54,15 +54,6 @@ impl MadaraService {
         Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().rpc_port())).unwrap()
     }
 
-    /// Get the Gateway endpoint URL
-    pub fn gateway_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().gateway_port())).unwrap()
-    }
-
-    /// Get the Feeder Gateway endpoint URL
-    pub fn feeder_gateway_endpoint(&self) -> Url {
-        Url::parse(&format!("http://{}:{}/feeder_gateway", DEFAULT_SERVICE_HOST, self.config().gateway_port())).unwrap()
-    }
 
     /// Get the main endpoint URL (alias for rpc_endpoint)
     pub fn endpoint(&self) -> Url {
