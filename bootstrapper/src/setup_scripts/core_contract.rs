@@ -33,12 +33,6 @@ impl<'a> CoreContractStarknetL1<'a> {
         save_to_json("l1_core_contract_address", &JsonValueType::EthAddress(core_contract_client.address())).unwrap();
         let (program_hash, config_hash) = get_bridge_init_configs(self.arg_config);
 
-        log::info!("📦 &self.arg_config.verifier_address : {:?}", &self.arg_config.verifier_address);
-        log::info!("📦 &self.arg_config.verifier_address : {:?}", &self.arg_config.verifier_address);
-        log::info!("📦 &self.arg_config.l1_multisig_address : {:?}", &self.arg_config.l1_multisig_address);
-        log::info!("📦 &self.arg_config.operator_address : {:?}", &self.arg_config.operator_address);
-
-
         // add_implementation(
         //      call_data : [
         //        0, : block number
