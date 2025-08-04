@@ -4713,10 +4713,8 @@ name = "e2e"
 version = "0.8.0"
 dependencies = [
  "async-trait",
- "dotenv",
  "dotenvy",
  "env_logger",
- "fs_extra",
  "httpmock",
  "log",
  "reqwest 0.12.8",
