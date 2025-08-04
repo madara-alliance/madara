@@ -5,7 +5,6 @@
 pub mod config;
 
 use crate::services::helpers::NodeRpcMethods;
-// Re-export common utilities
 use crate::services::server::{Server, ServerConfig};
 pub use config::*;
 use reqwest::Url;
@@ -46,13 +45,6 @@ impl PathfinderService {
             Ok(_) => Ok(true),
             Err(e) => Err(PathfinderError::ConnectionFailed(e.to_string())),
         }
-    }
-
-    /// Check if Pathfinder is syncing by making an RPC call
-    pub async fn get_sync_status(&self) -> Result<bool, PathfinderError> {
-        // In a real implementation, you would make an RPC call to check sync status
-        // For now, we'll just check if the connection is available
-        self.validate_connection().await
     }
 
     /// Get the RPC endpoint URL
