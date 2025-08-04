@@ -153,9 +153,9 @@ impl PathfinderConfig {
         command.arg("--storage.state-tries").arg(self.storage_state_tries());
         command.arg("--gateway.request-timeout").arg(self.gateway_request_timeout().to_string());
 
-        // Add environment variables
-        for (key, value) in self.environment_vars() {
-            command.arg("-e").arg(format!("{}={}", key, value));
+        // Environment variables
+        for (key, value) in &self.environment_vars {
+            command.env(key, value);
         }
 
         command
