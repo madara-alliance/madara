@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 use tokio::net::TcpStream;
@@ -39,6 +40,8 @@ pub struct ServerConfig {
     pub service_name: String,
     // stdout, stderr
     pub logs: (bool, bool),
+    // Environment variables to pass to the process
+    pub env_vars: Option<HashMap<String, String>>,
 }
 
 impl Default for ServerConfig {
@@ -49,7 +52,17 @@ impl Default for ServerConfig {
             connection_attempts: CONNECTION_ATTEMPTS,
             connection_delay_ms: CONNECTION_DELAY_MS,
             logs: (true, true),
+            env_vars: None,
         }
+    }
+}
+
+impl ServerConfig {
+    /// Helper method to inherit current process environment variables
+    pub fn with_current_env(mut self) -> Self {
+        let current_env: HashMap<String, String> = std::env::vars().collect();
+        self.env_vars = Some(current_env);
+        self
     }
 }
 
@@ -65,6 +78,8 @@ impl Server {
     /// Start a process with the given command and wait for it to be ready
     pub async fn start_process(mut command: Command, config: ServerConfig) -> Result<Self, ServerError> {
         println!("🔔 Starting {} service", config.service_name);
+
+        let config = config.with_current_env();
 
         if config.logs.0 {
             command.stdout(Stdio::piped());

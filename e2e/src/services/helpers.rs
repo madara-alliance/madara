@@ -13,6 +13,8 @@ use super::constants::*;
 pub enum NodeRpcError {
     #[error("Invalid response")]
     InvalidResponse,
+    #[error("RPC error : {0}")]
+    RpcError(String),
 }
 
 #[async_trait]
@@ -43,7 +45,7 @@ pub trait NodeRpcMethods: Send + Sync {
             }))
             .send()
             .await
-            .map_err(|_| NodeRpcError::InvalidResponse)?;
+            .map_err(|e| NodeRpcError::RpcError(e.to_string()))?;
 
         let json = response.json::<serde_json::Value>().await.map_err(|_| NodeRpcError::InvalidResponse)?;
 
@@ -59,7 +61,6 @@ pub trait NodeRpcMethods: Send + Sync {
                 }
             }
 
-            println!("RPC Error: {:?}", error);
             return Err(NodeRpcError::InvalidResponse);
         }
 
@@ -67,8 +68,6 @@ pub trait NodeRpcMethods: Send + Sync {
         let block_number = json.get("result").and_then(|v| v.as_u64()).ok_or(NodeRpcError::InvalidResponse)?;
 
         let block_num_i64 = block_number as i64;
-
-        println!("Madara Block Number: {}", block_num_i64);
 
         Ok(block_num_i64)
     }
