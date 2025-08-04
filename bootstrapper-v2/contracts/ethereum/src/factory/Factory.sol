@@ -9,8 +9,8 @@ import {ProxySetup} from "./libraries/ProxySetup.sol";
 import {Implementations} from "./Implementations.sol";
 
 import {IOperator} from "./interfaces/IOperator.sol";
+import {IBridge} from "./interfaces/IBridge.sol";
 import {IRoles} from "./interfaces/IRoles.sol";
-import {IGovernor} from "./interfaces/IGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 
 contract Factory is Ownable, Pausable, Implementations {
@@ -106,7 +106,6 @@ contract Factory is Ownable, Pausable, Implementations {
     );
 
     IOperator(address(coreContractProxy)).registerOperator(operator);
-    IGovernor(address(coreContractProxy)).starknetNominateNewGovernor(governor);
     IProxyRoles(address(coreContractProxy)).registerGovernanceAdmin(governor);
 
     return address(coreContractProxy);
@@ -195,6 +194,27 @@ contract Factory is Ownable, Pausable, Implementations {
       upgradeData
     );
     registerAdmins(managerProxy, governor);
+  }
+
+  // Ensure to remove the governance admin role post setup,
+  // As this function can be rerun 
+  function set_l2_bridge(
+    uint256 l2_eth_bridge_address,
+    uint256 l2_erc20_bridge_address,
+    address ethTokenBridge,
+    address tokenBridge
+  ) onlyOwner whenNotPaused public {
+    IRoles(ethTokenBridge).registerAppRoleAdmin(address(this));
+    IRoles(ethTokenBridge).registerAppGovernor(address(this));
+    IBridge(ethTokenBridge).setL2TokenBridge(l2_eth_bridge_address);
+    IRoles(ethTokenBridge).revokeAppGovernor(address(this));
+    IRoles(ethTokenBridge).revokeAppRoleAdmin(address(this));
+
+    IRoles(tokenBridge).registerAppRoleAdmin(address(this));
+    IRoles(tokenBridge).registerAppGovernor(address(this));
+    IBridge(tokenBridge).setL2TokenBridge(l2_erc20_bridge_address);
+    IRoles(tokenBridge).revokeAppGovernor(address(this));
+    IRoles(tokenBridge).revokeAppRoleAdmin(address(this));
   }
 
   function registerAdmins(
