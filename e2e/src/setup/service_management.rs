@@ -285,21 +285,6 @@ impl ServiceManager {
         .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
     }
 
-    async fn restore_mongodb_database(&self, services: &RunningServices) -> Result<(), SetupError> {
-        println!("🏗️ Setting up mongodb infrastructure...");
-
-        let duration = self.config.get_timeouts().setup_mongodb_infrastructure_services;
-
-        timeout(duration, async {
-            if let Some(ref mongo) = services.mongo_service {
-                mongo.restore_db(DATA_DIR, ORCHESTRATOR_DATABASE_NAME).await?;
-            }
-            Ok(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Mongodb Infrastructure setup timed out".to_string()))?
-    }
-
     // Individual service startup methods
     async fn start_anvil(&self, services: &mut RunningServices) -> Result<(), SetupError> {
         let anvil_config = self.config.get_anvil_config().clone();

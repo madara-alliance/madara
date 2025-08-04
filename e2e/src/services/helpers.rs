@@ -5,9 +5,6 @@ use std::io;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use url::Url;
-use std::net::TcpListener;
-use std::path::PathBuf;
-use url::Url;
 
 use super::constants::*;
 

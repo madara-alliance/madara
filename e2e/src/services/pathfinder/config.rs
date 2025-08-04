@@ -243,12 +243,6 @@ impl PathfinderConfigBuilder {
         self
     }
 
-    /// Set the logs
-    pub fn logs(mut self, logs:(bool, bool)) -> Self {
-        self.config.logs = logs;
-        self
-    }
-
     /// Add an environment variable
     pub fn env_var<K: Into<String>, V: Into<String>>(mut self, key: K, value: V) -> Self {
         self.config.environment_vars.push((key.into(), value.into()));
