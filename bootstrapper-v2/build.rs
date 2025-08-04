@@ -28,8 +28,6 @@ fn main() {
                 &fs_extra::dir::CopyOptions::new().skip_exist(true),
             )
             .unwrap_or_else(|_| panic!("Failed to copy from {} to {}", src, dst));
-        } else {
-            panic!("Artifacts source directory {} does not exist", src);
         }
     }
 }
