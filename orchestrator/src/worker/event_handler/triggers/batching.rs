@@ -342,7 +342,7 @@ impl BatchingTrigger {
         // Get a vector of felts from the compressed state update
         let vec_felts = state_update_to_blob_data(state_update, madara_version).await?;
         // Perform stateless compression
-        if madara_version >= StarknetVersion::V0_13_2 {
+        if madara_version >= StarknetVersion::V0_13_3 {
             stateless_compress(&vec_felts).map_err(|err| JobError::Other(OtherError(err)))
         } else {
             Ok(vec_felts)
