@@ -3,7 +3,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use color_eyre::eyre::eyre;
 use opentelemetry::KeyValue;
-use orchestrator_utils::layer::Layer;
 
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
