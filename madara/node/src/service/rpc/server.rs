@@ -242,7 +242,7 @@ pub(crate) fn rpc_api_build<M: Send + Sync + 'static>(
     // The "rpc_methods" is defined below and we want it to be part of the reported methods.
     // The available methods will be prefixed by their version, example:
     // * rpc/v0_7_1/starknet_blockNumber,
-    // * rpc/v0_8_0/starknet_blockNumber (...)
+    // * rpc/v0_8_1/starknet_blockNumber (...)
     available_methods.push(format!("{service}/rpc_methods"));
     available_methods.sort();
 

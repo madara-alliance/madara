@@ -34,6 +34,8 @@ fn map_gateway_error(err: SequencerError) -> SubmitTransactionError {
             GWErrCode::UndeclaredClass => rejected(UndeclaredClass, e.message),
             GWErrCode::TransactionLimitExceeded => rejected(TransactionLimitExceeded, e.message),
             GWErrCode::InvalidTransactionNonce => rejected(InvalidTransactionNonce, e.message),
+            GWErrCode::ReplacementTransactionUnderpriced => rejected(ReplacementTransactionUnderpriced, e.message),
+            GWErrCode::FeeBelowMinimum => rejected(FeeBelowMinimum, e.message),
             GWErrCode::OutOfRangeFee => rejected(OutOfRangeFee, e.message),
             GWErrCode::InvalidTransactionVersion => rejected(InvalidTransactionVersion, e.message),
             GWErrCode::InvalidProgram => rejected(InvalidProgram, e.message),
