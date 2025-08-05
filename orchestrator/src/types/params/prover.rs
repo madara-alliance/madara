@@ -2,7 +2,6 @@ use crate::cli::RunCmd;
 use crate::OrchestratorError;
 use orchestrator_atlantic_service::AtlanticValidatedArgs;
 use orchestrator_sharp_service::SharpValidatedArgs;
-use orchestrator_utils::layer::Layer;
 
 #[derive(Debug, Clone)]
 pub enum ProverConfig {
@@ -54,43 +53,80 @@ impl TryFrom<RunCmd> for ProverConfig {
             }
             (false, true) => {
                 let atlantic_args = run_cmd.atlantic_args;
-                // NOTE: Just making sure Cairo Verifier Program Hash is there for L3
-                if run_cmd.layer == Layer::L3 && atlantic_args.cairo_verifier_program_hash.is_none() {
-                    return Err(OrchestratorError::RunCommandError(
-                        "Cairo verifier program hash is required for L3".to_string(),
-                    ));
-                }
-                Ok(Self::Atlantic(AtlanticValidatedArgs {
-                    atlantic_api_key: atlantic_args.atlantic_api_key.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic API key is required".to_string())
-                    })?,
-                    atlantic_service_url: atlantic_args
-                        .atlantic_service_url
-                        .ok_or_else(|| OrchestratorError::RunCommandError("Atlantic URL is required".to_string()))?,
-                    atlantic_rpc_node_url: atlantic_args.atlantic_rpc_node_url.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic RPC node URL is required".to_string())
-                    })?,
-                    atlantic_verifier_contract_address: atlantic_args.atlantic_verifier_contract_address.ok_or_else(
-                        || {
+
+                // Check if mock mode is enabled
+                let mock_fact_hash = atlantic_args.atlantic_mock_fact_hash.ok_or_else(|| {
+                    OrchestratorError::RunCommandError("Atlantic mock fact hash is required".to_string())
+                })?;
+
+                let is_mock_mode = mock_fact_hash.eq("true");
+
+                if is_mock_mode {
+                    // Mock mode: provide sensible defaults for missing parameters
+                    Ok(Self::Atlantic(AtlanticValidatedArgs {
+                        atlantic_api_key: atlantic_args.atlantic_api_key.unwrap_or_else(|| "mock-api-key".to_string()),
+                        atlantic_service_url: atlantic_args
+                            .atlantic_service_url
+                            .unwrap_or_else(|| "http://unused-in-mock-mode.com".parse().unwrap()),
+                        atlantic_rpc_node_url: atlantic_args
+                            .atlantic_rpc_node_url
+                            .unwrap_or_else(|| "http://unused-in-mock-mode.com".parse().unwrap()),
+                        atlantic_verifier_contract_address: atlantic_args
+                            .atlantic_verifier_contract_address
+                            .unwrap_or_else(|| "0x0000000000000000000000000000000000000000".to_string()),
+                        atlantic_settlement_layer: atlantic_args
+                            .atlantic_settlement_layer
+                            .unwrap_or_else(|| "ethereum".to_string()),
+                        atlantic_mock_fact_hash: mock_fact_hash,
+                        atlantic_prover_type: atlantic_args
+                            .atlantic_prover_type
+                            .unwrap_or_else(|| "starkware".to_string()),
+                        atlantic_network: atlantic_args.atlantic_network.unwrap_or_else(|| "TESTNET".to_string()),
+                        cairo_verifier_program_hash: None,
+                    }))
+                } else {
+                    Ok(Self::Atlantic(AtlanticValidatedArgs {
+                        atlantic_api_key: atlantic_args.atlantic_api_key.ok_or_else(|| {
                             OrchestratorError::RunCommandError(
-                                "Atlantic verifier contract address is required".to_string(),
+                                "Atlantic API key is required for production mode".to_string(),
                             )
-                        },
-                    )?,
-                    atlantic_settlement_layer: atlantic_args.atlantic_settlement_layer.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic settlement layer is required".to_string())
-                    })?,
-                    atlantic_mock_fact_hash: atlantic_args.atlantic_mock_fact_hash.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic mock fact hash is required".to_string())
-                    })?,
-                    atlantic_prover_type: atlantic_args.atlantic_prover_type.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic prover type is required".to_string())
-                    })?,
-                    atlantic_network: atlantic_args.atlantic_network.ok_or_else(|| {
-                        OrchestratorError::RunCommandError("Atlantic network is required".to_string())
-                    })?,
-                    cairo_verifier_program_hash: atlantic_args.cairo_verifier_program_hash,
-                }))
+                        })?,
+                        atlantic_service_url: atlantic_args.atlantic_service_url.ok_or_else(|| {
+                            OrchestratorError::RunCommandError(
+                                "Atlantic service URL is required for production mode".to_string(),
+                            )
+                        })?,
+                        atlantic_rpc_node_url: atlantic_args.atlantic_rpc_node_url.ok_or_else(|| {
+                            OrchestratorError::RunCommandError(
+                                "Atlantic RPC node URL is required for production mode".to_string(),
+                            )
+                        })?,
+                        atlantic_verifier_contract_address: atlantic_args
+                            .atlantic_verifier_contract_address
+                            .ok_or_else(|| {
+                                OrchestratorError::RunCommandError(
+                                    "Atlantic verifier contract address is required for production mode".to_string(),
+                                )
+                            })?,
+                        atlantic_settlement_layer: atlantic_args.atlantic_settlement_layer.ok_or_else(|| {
+                            OrchestratorError::RunCommandError(
+                                "Atlantic settlement layer is required for production mode".to_string(),
+                            )
+                        })?,
+                        atlantic_mock_fact_hash: mock_fact_hash,
+                        atlantic_prover_type: atlantic_args.atlantic_prover_type.ok_or_else(|| {
+                            OrchestratorError::RunCommandError(
+                                "Atlantic prover type is required for production mode".to_string(),
+                            )
+                        })?,
+                        atlantic_network: atlantic_args.atlantic_network.ok_or_else(|| {
+                            OrchestratorError::RunCommandError(
+                                "Atlantic network is required for production mode".to_string(),
+                            )
+                        })?,
+                        cairo_verifier_program_hash: atlantic_args.cairo_verifier_program_hash,
+                    }))
+                }
             }
         }
     }
