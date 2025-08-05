@@ -9,7 +9,7 @@ use starknet_api::core::{ChainId, ContractAddress};
 
 use mp_chain_config::{
     deserialize_starknet_version, serialize_starknet_version, BlockProductionConfig, ChainConfig,
-    L1DataAvailabilityMode, StarknetVersion,
+    L1DataAvailabilityMode, MempoolMode, StarknetVersion,
 };
 use mp_utils::parsers::parse_key_value_yaml;
 use mp_utils::serde::{
@@ -68,13 +68,13 @@ pub struct ChainConfigOverrideParams {
     ///   * private_key: private key used by the node in sequencer mode to sign
     ///     the blocks it provides. This is zeroed.
     ///
-    ///   * mempool_tx_limit: max number of transactions allowed in the mempool
+    ///   * mempool_max_transactions: max number of transactions allowed in the mempool
     ///     in sequencer mode.
     ///
-    ///   * mempool_declare_tx_limit: max number of declare transactions allowed
+    ///   * mempool_max_declare_transactions: max number of declare transactions allowed
     ///     in sequencer mode.
     ///
-    ///   * mempool_tx_max_age: max age of transactions in the mempool.
+    ///   * mempool_ttl: max age of transactions in the mempool.
     ///     Transactions which are too old will be removed.
     #[clap(env = "MADARA_CHAIN_CONFIG_OVERRIDE", long = "chain-config-override", value_parser = parse_key_value_yaml, use_value_delimiter = true, value_delimiter = ',')]
     pub overrides: Vec<(String, Value)>,
@@ -99,10 +99,14 @@ pub struct ChainConfigOverridesInner {
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: String,
     pub eth_gps_statement_verifier: String,
-    pub mempool_tx_limit: usize,
-    pub mempool_declare_tx_limit: usize,
+    #[serde(default)]
+    pub mempool_mode: MempoolMode,
+    #[serde(default)]
+    pub mempool_min_tip_bump: f64,
+    pub mempool_max_transactions: usize,
+    pub mempool_max_declare_transactions: Option<usize>,
     #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
-    pub mempool_tx_max_age: Option<Duration>,
+    pub mempool_ttl: Option<Duration>,
     pub no_empty_blocks: bool,
     pub block_production_concurrency: BlockProductionConfig,
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
@@ -126,9 +130,11 @@ impl ChainConfigOverrideParams {
             sequencer_address: chain_config.sequencer_address,
             eth_core_contract_address: chain_config.eth_core_contract_address,
             eth_gps_statement_verifier: chain_config.eth_gps_statement_verifier,
-            mempool_tx_limit: chain_config.mempool_tx_limit,
-            mempool_declare_tx_limit: chain_config.mempool_declare_tx_limit,
-            mempool_tx_max_age: chain_config.mempool_tx_max_age,
+            mempool_mode: chain_config.mempool_mode,
+            mempool_min_tip_bump: chain_config.mempool_min_tip_bump,
+            mempool_max_transactions: chain_config.mempool_max_transactions,
+            mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
+            mempool_ttl: chain_config.mempool_ttl,
             feeder_gateway_url: chain_config.feeder_gateway_url,
             gateway_url: chain_config.gateway_url,
             no_empty_blocks: chain_config.no_empty_blocks,
@@ -183,9 +189,11 @@ impl ChainConfigOverrideParams {
             versioned_constants,
             eth_gps_statement_verifier: chain_config_overrides.eth_gps_statement_verifier,
             private_key: chain_config.private_key,
-            mempool_tx_limit: chain_config_overrides.mempool_tx_limit,
-            mempool_declare_tx_limit: chain_config_overrides.mempool_declare_tx_limit,
-            mempool_tx_max_age: chain_config_overrides.mempool_tx_max_age,
+            mempool_mode: chain_config.mempool_mode,
+            mempool_min_tip_bump: chain_config.mempool_min_tip_bump,
+            mempool_max_transactions: chain_config.mempool_max_transactions,
+            mempool_max_declare_transactions: chain_config.mempool_max_declare_transactions,
+            mempool_ttl: chain_config.mempool_ttl,
             no_empty_blocks: chain_config_overrides.no_empty_blocks,
             block_production_concurrency: chain_config_overrides.block_production_concurrency,
             l1_messages_replay_max_duration: chain_config_overrides.l1_messages_replay_max_duration,

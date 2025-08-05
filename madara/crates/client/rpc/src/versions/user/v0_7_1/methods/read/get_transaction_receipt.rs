@@ -33,6 +33,7 @@ pub fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
+    tracing::debug!("get_transaction_receipt {:#x}", transaction_hash);
     let (block, tx_index) = starknet
         .backend
         .find_tx_hash_block(&transaction_hash)
