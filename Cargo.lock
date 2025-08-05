@@ -1213,7 +1213,7 @@ checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 [[package]]
 name = "appchain-core-contract-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
+source = "git+https://github.com/karnotxyz/zaun#edb5da9ef64670e10ad5f9feb4590bc950644acd"
 dependencies = [
  "appchain-utils",
  "async-trait",
@@ -1233,7 +1233,7 @@ dependencies = [
 [[package]]
 name = "appchain-utils"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
+source = "git+https://github.com/karnotxyz/zaun#edb5da9ef64670e10ad5f9feb4590bc950644acd"
 dependencies = [
  "async-trait",
  "color-eyre",
