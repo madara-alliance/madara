@@ -107,6 +107,27 @@ pub struct PendingBlockWithTxHashes {
     pub pending_block_header: PendingBlockHeader,
 }
 
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum StarknetGetBlockWithTxsAndReceiptsResult {
+    Block(BlockWithReceipts),
+    Pending(PendingBlockWithReceipts),
+}
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum MaybePendingBlockWithTxHashes {
+    Block(BlockWithTxHashes),
+    Pending(PendingBlockWithTxHashes),
+}
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(untagged)]
+pub enum MaybePendingBlockWithTxs {
+    Block(BlockWithTxs),
+    Pending(PendingBlockWithTxs),
+}
+
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct FeeEstimate {
     /// The Ethereum gas consumption of the transaction, charged for L1->L2 messages and, depending on the block's DA_MODE, state diffs

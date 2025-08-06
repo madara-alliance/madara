@@ -4,9 +4,11 @@ pub use crate::custom::{
 };
 
 mod starknet_api_openrpc;
+mod starknet_trace_api_openrpc;
 mod starknet_ws_api;
 
 pub use self::starknet_api_openrpc::*;
+pub use self::starknet_trace_api_openrpc::*;
 pub use self::starknet_ws_api::*;
 
 pub use crate::v0_8_1::{
@@ -33,9 +35,8 @@ pub use crate::v0_8_1::{
     NodeHashToNodeMappingItem, NonceUpdate, OrderedEvent, OrderedMessage, PendingBlockHeader, PendingBlockWithReceipts,
     PendingBlockWithTxHashes, PendingBlockWithTxs, PendingStateUpdate, ReplacedClass, ResourceBounds,
     ResourceBoundsMapping, ResourcePrice, RevertedInvocation, SierraEntryPoint, Signature, SimulateTransactionsParams,
-    SimulateTransactionsResult, SimulationFlag, SimulationFlagForEstimateFee, SpecVersionParams,
-    StarknetGetBlockWithTxsAndReceiptsResult, StateDiff, StateUpdate, StorageKey, StructAbiEntry, StructAbiType,
-    StructMember, SyncStatus, SyncingParams, TraceBlockTransactionsParams, TraceBlockTransactionsResult,
-    TraceTransactionParams, TraceTransactionResult, TransactionAndReceipt, TransactionTrace, Txn, TxnHash, TxnReceipt,
-    TxnWithHash, TypedParameter,
+    SimulationFlag, SimulationFlagForEstimateFee, SpecVersionParams, StarknetGetBlockWithTxsAndReceiptsResult,
+    StateDiff, StateUpdate, StorageKey, StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams,
+    TraceBlockTransactionsParams, TraceBlockTransactionsResult, TraceTransactionParams, TraceTransactionResult,
+    TransactionAndReceipt, TransactionTrace, Txn, TxnHash, TxnReceipt, TxnWithHash, TypedParameter,
 };

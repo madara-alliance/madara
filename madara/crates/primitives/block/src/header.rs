@@ -156,6 +156,13 @@ impl GasPrices {
         }
     }
 
+    pub fn l2_gas_price(&self) -> mp_rpc::v0_7_1::ResourcePrice {
+        mp_rpc::v0_7_1::ResourcePrice {
+            price_in_fri: self.strk_l2_gas_price.into(),
+            price_in_wei: self.eth_l2_gas_price.into(),
+        }
+    }
+
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self) -> Felt {
         Poseidon::hash_array(&[

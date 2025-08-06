@@ -119,7 +119,8 @@ async fn send_block_header(
     block_n: u64,
 ) -> Result<(), StarknetWsApiError> {
     let header = mp_rpc::v0_8_1::BlockHeader::from(block_info);
-    let msg = jsonrpsee::SubscriptionMessage::from_json(&header)
+    let item = super::SubscriptionItem::new(sink.subscription_id(), header);
+    let msg = jsonrpsee::SubscriptionMessage::from_json(&item)
         .or_else_internal_server_error(|| format!("Failed to create response message for block {block_n}"))?;
 
     sink.send(msg).await.or_internal_server_error("Failed to respond to websocket request")?;
