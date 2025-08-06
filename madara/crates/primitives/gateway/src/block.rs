@@ -98,6 +98,7 @@ pub struct ProviderBlock {
     pub parent_block_hash: Felt,
     pub timestamp: u64,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sequencer_address: Option<Felt>,
     pub state_root: Felt,
     pub transaction_commitment: Felt,
@@ -109,14 +110,17 @@ pub struct ProviderBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_commitment: Option<Felt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_length: Option<u64>,
     pub status: BlockStatus,
     pub l1_da_mode: L1DataAvailabilityMode,
     pub l1_gas_price: ResourcePrice,
     pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
     pub transactions: Vec<Transaction>,
     pub transaction_receipts: Vec<ConfirmedReceipt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub starknet_version: Option<String>,
 }
 
@@ -167,12 +171,16 @@ impl ProviderBlock {
             status,
             l1_da_mode: block.info.header.l1_da_mode,
             l1_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.l1_gas_price.eth_l1_gas_price,
-                price_in_fri: block.info.header.l1_gas_price.strk_l1_gas_price,
+                price_in_wei: block.info.header.gas_prices.eth_l1_gas_price,
+                price_in_fri: block.info.header.gas_prices.strk_l1_gas_price,
             },
             l1_data_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.l1_gas_price.eth_l1_data_gas_price,
-                price_in_fri: block.info.header.l1_gas_price.strk_l1_data_gas_price,
+                price_in_wei: block.info.header.gas_prices.eth_l1_data_gas_price,
+                price_in_fri: block.info.header.gas_prices.strk_l1_data_gas_price,
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_wei: block.info.header.gas_prices.eth_l2_gas_price,
+                price_in_fri: block.info.header.gas_prices.strk_l2_gas_price,
             },
             transactions,
             transaction_receipts,
@@ -196,11 +204,13 @@ impl ProviderBlock {
             sequencer_address: self.sequencer_address.unwrap_or_default(),
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
             protocol_version: protocol_version(self.starknet_version.as_deref(), self.block_number, self.block_hash)?,
-            l1_gas_price: mp_block::header::GasPrices {
+            gas_prices: mp_block::header::GasPrices {
                 eth_l1_gas_price: self.l1_gas_price.price_in_wei,
                 strk_l1_gas_price: self.l1_gas_price.price_in_fri,
                 eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
                 strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+                eth_l2_gas_price: self.l2_gas_price.price_in_wei,
+                strk_l2_gas_price: self.l2_gas_price.price_in_fri,
             },
             l1_da_mode: self.l1_da_mode,
             block_number: self.block_number,
@@ -225,6 +235,7 @@ pub struct ProviderBlockPending {
     pub l1_da_mode: L1DataAvailabilityMode,
     pub l1_gas_price: ResourcePrice,
     pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
     pub transactions: Vec<Transaction>,
     pub timestamp: u64,
     #[serde(default)]
@@ -256,12 +267,16 @@ impl ProviderBlockPending {
             status: BlockStatus::Pending,
             l1_da_mode: block.info.header.l1_da_mode,
             l1_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.l1_gas_price.eth_l1_gas_price,
-                price_in_fri: block.info.header.l1_gas_price.strk_l1_gas_price,
+                price_in_wei: block.info.header.gas_prices.eth_l1_gas_price,
+                price_in_fri: block.info.header.gas_prices.strk_l1_gas_price,
             },
             l1_data_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.l1_gas_price.eth_l1_data_gas_price,
-                price_in_fri: block.info.header.l1_gas_price.strk_l1_data_gas_price,
+                price_in_wei: block.info.header.gas_prices.eth_l1_data_gas_price,
+                price_in_fri: block.info.header.gas_prices.strk_l1_data_gas_price,
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_wei: block.info.header.gas_prices.eth_l2_gas_price,
+                price_in_fri: block.info.header.gas_prices.strk_l2_gas_price,
             },
             transactions,
             timestamp: block.info.header.block_timestamp.0,
@@ -277,11 +292,13 @@ impl ProviderBlockPending {
             sequencer_address: self.sequencer_address,
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
             protocol_version: protocol_version_pending(self.starknet_version.as_deref())?,
-            l1_gas_price: mp_block::header::GasPrices {
+            gas_prices: mp_block::header::GasPrices {
                 eth_l1_gas_price: self.l1_gas_price.price_in_wei,
                 strk_l1_gas_price: self.l1_gas_price.price_in_fri,
                 eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
                 strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+                eth_l2_gas_price: self.l2_gas_price.price_in_wei,
+                strk_l2_gas_price: self.l2_gas_price.price_in_fri,
             },
             l1_da_mode: self.l1_da_mode,
         })
