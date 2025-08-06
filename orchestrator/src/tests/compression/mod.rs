@@ -3,74 +3,90 @@ use crate::compression::squash::squash;
 use crate::compression::stateful::compress as stateful_compress;
 use crate::compression::stateless::compress as stateless_compress;
 use crate::core::config::StarknetVersion;
+use crate::tests::config::TestConfigBuilderReturns;
 use crate::tests::utils::{
     build_test_config_with_real_provider, read_felt_vec_from_file, read_file_to_string, read_state_update_from_file,
     read_state_updates_vec_from_file,
 };
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use color_eyre::eyre::Result;
+use orchestrator_utils::test_utils::setup_test_data;
 use rstest::*;
 use starknet_core::types::Felt;
+use tracing::info;
 
 #[rstest]
+#[case(StarknetVersion::V0_13_5)]
 #[tokio::test]
-async fn test_squash_state_updates() -> Result<()> {
+async fn test_state_update_to_blob_data_flow(#[case] version: StarknetVersion) -> Result<()> {
     let services = build_test_config_with_real_provider().await?;
 
-    let state_updates_vector = read_state_updates_vec_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/state_updates.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
+    info!("Running test_state_update_to_blob_data_flow");
+    let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await?;
 
-    let expected_squashed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/squashed_state_update.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
+    let state_updates_path = data_dir.path().join("8373665/state_updates.json").to_str().unwrap().to_string();
+    let squashed_state_update_path =
+        data_dir.path().join("8373665/squashed_state_update.json").to_str().unwrap().to_string();
+    let comp_state_update_path =
+        data_dir.path().join("8373665/stateful_compressed_state_update.json").to_str().unwrap().to_string();
+    let stateless_comp_path =
+        data_dir.path().join("8373665/stateless_compressed_state_update.json").to_str().unwrap().to_string();
+    let blob_paths = vec![
+        data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap().to_string(),
+        data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap().to_string(),
+    ];
+
+    test_squash_state_updates(&services, &state_updates_path, &squashed_state_update_path).await?;
+    test_stateful_compression(&services, &squashed_state_update_path, &comp_state_update_path).await?;
+    test_stateless_compression(&comp_state_update_path, &stateless_comp_path, version).await?;
+    test_felt_vec_to_blob_data(&stateless_comp_path, blob_paths).await?;
+
+    Ok(())
+}
+
+async fn test_squash_state_updates(
+    services: &TestConfigBuilderReturns,
+    state_updates_path: &str,
+    squashed_state_update_path: &str,
+) -> Result<()> {
+    let state_updates_vector = read_state_updates_vec_from_file(state_updates_path)?;
+    let expected_squashed_state_update = read_state_update_from_file(squashed_state_update_path)?;
 
     let squashed_state_update =
         squash(state_updates_vector.iter().collect::<Vec<_>>(), Some(789877), services.config.madara_client()).await?;
 
     assert_eq!(squashed_state_update, expected_squashed_state_update);
 
+    info!("[Tested] state updates to squash logic");
+
     Ok(())
 }
 
-#[rstest]
-#[tokio::test]
-async fn test_stateful_compression() -> Result<()> {
-    let services = build_test_config_with_real_provider().await?;
-
-    let uncompressed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/squashed_state_update.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
-
-    let expected_compressed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/stateful_compressed_state_update.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
+async fn test_stateful_compression(
+    services: &TestConfigBuilderReturns,
+    squashed_state_update_path: &str,
+    stateful_comp_path: &str,
+) -> Result<()> {
+    let uncompressed_state_update = read_state_update_from_file(squashed_state_update_path)?;
+    let expected_compressed_state_update = read_state_update_from_file(stateful_comp_path)?;
 
     let compressed_state_update =
         stateful_compress(&uncompressed_state_update, 789877, services.config.madara_client()).await?;
 
     assert_eq!(compressed_state_update, expected_compressed_state_update);
 
+    info!("[Tested] squashed state update to stateful compressed state updated logic");
+
     Ok(())
 }
 
-#[rstest]
-#[case(StarknetVersion::V0_13_5)]
-#[tokio::test]
-async fn test_stateless_compression(#[case] version: StarknetVersion) -> Result<()> {
-    let uncompressed_state_update = read_state_update_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/stateful_compressed_state_update.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
-
-    let expected_compressed_state_update = read_felt_vec_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/stateless_compressed_state_update.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
+async fn test_stateless_compression(
+    stateful_comp_path: &str,
+    stateless_comp_path: &str,
+    version: StarknetVersion,
+) -> Result<()> {
+    let uncompressed_state_update = read_state_update_from_file(stateful_comp_path)?;
+    let expected_compressed_state_update = read_felt_vec_from_file(stateless_comp_path)?;
 
     // Get a vector of felts from the compressed state update
     let vec_felts = state_update_to_blob_data(uncompressed_state_update, version).await?;
@@ -80,28 +96,20 @@ async fn test_stateless_compression(#[case] version: StarknetVersion) -> Result<
 
     assert_eq!(compressed_state_update, expected_compressed_state_update);
 
+    info!("[Tested] stateful compressed state update to stateless compressed state update logic");
+
     Ok(())
 }
 
-#[rstest]
-#[tokio::test]
-async fn test_felt_vec_to_blob_data() -> Result<()> {
-    let vec_felts = read_felt_vec_from_file(&format!(
-        "{}/src/tests/artifacts/8373665/stateless_compressed_state_update.json",
-        env!("CARGO_MANIFEST_DIR")
-    ))?;
+async fn test_felt_vec_to_blob_data(stateless_comp_path: &str, blob_paths: Vec<String>) -> Result<()> {
+    let vec_felts = read_felt_vec_from_file(stateless_comp_path)?;
 
     let blobs = convert_felt_vec_to_blob_data(&vec_felts)?;
     for (index, blob) in blobs.iter().enumerate() {
-        assert_eq!(
-            hex::encode(biguint_vec_to_u8_vec(blob.as_slice())),
-            read_file_to_string(&format!(
-                "{}/src/tests/artifacts/8373665/blobs/{}.txt",
-                env!("CARGO_MANIFEST_DIR"),
-                index + 1
-            ))?
-        );
+        assert_eq!(hex::encode(biguint_vec_to_u8_vec(blob.as_slice())), read_file_to_string(&blob_paths[index])?);
     }
+
+    info!("[Tested] stateless compressed state update to blob data logic");
 
     Ok(())
 }
