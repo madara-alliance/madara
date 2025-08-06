@@ -1,7 +1,7 @@
 pub mod contract_clients;
 pub mod helpers;
 mod setup_scripts;
-#[cfg(test)]
+#[cfg(any(test, feature = "tests"))]
 pub mod tests;
 pub mod utils;
 
@@ -100,6 +100,9 @@ pub struct ConfigBuilder {
     pub l1_eth_bridge_address: Option<String>,
     pub l2_eth_token_proxy_address: Option<String>,
     pub l2_eth_bridge_proxy_address: Option<String>,
+    pub l1_erc20_token_address: Option<String>,
+    pub l1_erc20_bridge_address: Option<String>,
+    pub l2_erc20_token_address: Option<String>,
 }
 
 impl Default for ConfigBuilder {
@@ -132,6 +135,9 @@ impl Default for ConfigBuilder {
             l1_eth_bridge_address: None,
             l2_eth_token_proxy_address: None,
             l2_eth_bridge_proxy_address: None,
+            l1_erc20_token_address: None,
+            l1_erc20_bridge_address: None,
+            l2_erc20_token_address: None,
         }
     }
 }
@@ -210,6 +216,10 @@ impl ConfigBuilder {
             l1_eth_bridge_address: self.l1_eth_bridge_address,
             l2_eth_token_proxy_address: self.l2_eth_token_proxy_address,
             l2_eth_bridge_proxy_address: self.l2_eth_bridge_proxy_address,
+            l1_erc20_token_address: self.l1_erc20_token_address,
+            l1_erc20_bridge_address: self.l1_erc20_bridge_address,
+            l2_erc20_token_address: self.l2_erc20_token_address,
+
         })
     }
 }
@@ -242,6 +252,9 @@ pub struct ConfigFile {
     pub l1_eth_bridge_address: Option<String>,
     pub l2_eth_token_proxy_address: Option<String>,
     pub l2_eth_bridge_proxy_address: Option<String>,
+    pub l1_erc20_token_address: Option<String>,
+    pub l1_erc20_bridge_address: Option<String>,
+    pub l2_erc20_token_address: Option<String>,
 }
 
 #[tokio::main]
