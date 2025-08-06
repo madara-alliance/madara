@@ -407,7 +407,14 @@ impl SettlementClient for EthereumSettlementClient {
 
 impl EthereumSettlementClient {
     pub async fn build_input_bytes(program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
-        let n_blobs = u64::from_be_bytes(program_output[N_BLOBS_OFFSET][24..32].try_into()?);
+        let n_blobs = match program_output.get(N_BLOBS_OFFSET) {
+            Some(n_blobs) => u64::from_be_bytes(n_blobs[24..32].try_into()?),
+            None => bail!("Failed to get n_blobs from program output"),
+        };
+
+        if program_output.len() <= N_BLOBS_OFFSET + 2 * n_blobs as usize {
+            bail!("Malformed program output");
+        }
 
         let mut y_0_values: Vec<Bytes32> = vec![];
         for i in 0..n_blobs {
