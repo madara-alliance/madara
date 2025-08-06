@@ -1,20 +1,28 @@
 pub mod constants;
-mod erc20_bridge;
-mod eth_bridge;
+pub mod erc20_bridge;
+pub mod eth_bridge;
 
 use std::env;
 use std::future::Future;
 use std::path::PathBuf;
 use std::process::Command;
+use std::str::FromStr;
 use std::time::Duration;
 
+use ethers::types::Address;
 use rstest::rstest;
+use starkgate_manager_client::clients::StarkgateManagerContractClient;
+use starkgate_registry_client::clients::StarkgateRegistryContractClient;
+use starknet_erc20_client::clients::ERC20ContractClient;
+use starknet_eth_bridge_client::clients::eth_bridge::StarknetEthBridgeContractClient;
+use starknet_token_bridge_client::clients::StarknetTokenBridgeContractClient;
 use url::Url;
 
 use crate::contract_clients::config::Clients;
+use crate::contract_clients::utils::read_erc20_balance;
 use crate::tests::erc20_bridge::erc20_bridge_test_helper;
-use crate::tests::eth_bridge::eth_bridge_test_helper;
-use crate::{bootstrap, setup_core_contract, setup_l2, BootstrapperOutput, ConfigBuilder, ConfigFile};
+use crate::tests::eth_bridge::*;
+use crate::{bootstrap, get_core_contract_client, setup_core_contract, setup_l2, BootstrapperOutput, ConfigBuilder, ConfigFile};
 
 async fn test_setup(args: &ConfigFile, clients: &Clients) -> BootstrapperOutput {
     // Setup L1 (core contract)
@@ -252,3 +260,174 @@ pub async fn wait_for_cond<F: Future<Output = color_eyre::Result<bool>>>(
         tokio::time::sleep(duration).await;
     }
 }
+
+
+//////////////////////////////////////////////////////////////////////////////////////
+/// E2E
+//////////////////////////////////////////////////////////////////////////////////////
+
+
+use ethereum_instance::EthereumClient;
+use crate::tests::constants::L2_DEPLOYER_ADDRESS;
+use crate::contract_clients::token_bridge::StarknetTokenBridge;
+use crate::contract_clients::eth_bridge::StarknetLegacyEthBridge;
+use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
+use starknet::core::types::Felt;
+
+/// From L1 -> L2
+/// Deposit doesn't require state update!
+/// Transaction happens on L1 core contract,
+/// after which sequencer listens to it.
+/// When listened, executes a transaction on L2.
+/// After few mined blocks on L2, check balance of both account
+/// It will be changed!
+///
+/// Fetch Before_Balance of L2 Account, Store in-memory
+/// Call (ETH/ERC) Bridge Deposit from L1 Account
+/// Wait for Madara to mint some blocks
+/// Wait Emperical Delay
+/// Fetch After_Balance of L1 Account, Store in-memory
+/// Fetch After_Balance of L2 Account, Store in-memory
+/// Compare the Before_Balances with the After_Balances
+/// It should balance!
+pub async fn deposit_both_bridges(file_path: PathBuf) -> color_eyre::Result<()> {
+    let _ = orchestrate_deposit_to_eth_bridge(file_path.clone()).await?;
+    let _ = orchestrate_deposit_to_erc20_bridge(file_path).await;
+
+    Ok(())
+
+}
+
+use ethers::prelude::H160;
+
+async fn get_eth_bridge(config: &ConfigFile, clients: &Clients) -> StarknetLegacyEthBridge {
+    let core_contract_output = get_core_contract_client(config, clients);
+
+    let eth_bridge_address_string = config.l1_eth_bridge_address.clone().unwrap();
+    let eth_bridge_address = H160::from_str(eth_bridge_address_string.as_str()).expect("Failed to parse eth bridge address");
+
+    let eth_bridge = StarknetEthBridgeContractClient::new(
+        eth_bridge_address,
+        core_contract_output.core_contract_client.client(),
+        // IMP! We are not using Implementation, so we can put any address
+        Address::default(),
+    );
+
+    StarknetLegacyEthBridge {
+        eth_bridge
+    }
+}
+
+async fn orchestrate_deposit_to_eth_bridge(config_file_path: PathBuf) -> color_eyre::Result<()> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+    // let l1_provider: &EthereumClient = clients.eth_client();
+    let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
+
+    let l2_eth_address = Felt::from_str(&bootstrapper_config.l2_eth_token_proxy_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
+
+    let eth_bridge = get_eth_bridge(&bootstrapper_config, &clients).await;
+
+    let balance_before: Vec<Felt> = read_erc20_balance(l2_provider, l2_eth_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await;
+
+    let result_deposit_eth_bridge = deposit_to_eth_bridge(
+        bootstrapper_config.cross_chain_wait_time,
+        bootstrapper_config.l1_wait_time,
+        eth_bridge
+    ).await;
+
+    let balance_after: Vec<Felt> = read_erc20_balance(l2_provider, l2_eth_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await;
+    assert_eq!(balance_before[0] + Felt::from_dec_str("10")?, balance_after[0]);
+
+    Ok(())
+}
+
+async fn get_erc20_bridge(config: &ConfigFile, clients: &Clients) -> StarknetTokenBridge {
+    let core_contract_output = get_core_contract_client(config, clients);
+
+    let erc20_bridge_address_string = config.l1_erc20_bridge_address.clone().unwrap();
+    let erc20_bridge_address = H160::from_str(erc20_bridge_address_string.as_str()).expect("Failed to parse eth bridge address");
+
+    let l2_erc20_address = H160::from_str(config.l1_erc20_token_address.clone().unwrap().as_str()).expect("Failed to parse eth bridge address");
+
+    // IMP! We are not using this, so we can put any values
+    let manager = StarkgateManagerContractClient::new(
+       Address::default(),
+       core_contract_output.core_contract_client.client(),
+       // IMP! We are not using Implementation, so we can put any address
+       Address::default(),
+    );
+
+    // IMP! We are not using this, so we can put any values
+    let registry = StarkgateRegistryContractClient::new(
+       Address::default(),
+       core_contract_output.core_contract_client.client(),
+       // IMP! We are not using Implementation, so we can put any address
+       Address::default(),
+    );
+
+    let token_bridge = StarknetTokenBridgeContractClient::new(
+       erc20_bridge_address,
+       core_contract_output.core_contract_client.client(),
+       // IMP! We are not using Implementation, so we can put any address
+       Address::default(),
+    );
+
+    let erc20 = ERC20ContractClient::new(
+       l2_erc20_address,
+       core_contract_output.core_contract_client.client(),
+    );
+
+    StarknetTokenBridge {
+        manager,
+        registry,
+        token_bridge,
+        erc20
+    }
+}
+
+async fn orchestrate_deposit_to_erc20_bridge(config_file_path: PathBuf) -> color_eyre::Result<()> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+    let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
+
+    let l2_erc20_token_address = Felt::from_str(&bootstrapper_config.l2_erc20_token_address.clone().unwrap()).expect("Failed to parse l2_test_erc20_token_address");
+    let token_bridge: StarknetTokenBridge = get_erc20_bridge(&bootstrapper_config, &clients).await;
+
+    let balance_before: Vec<Felt> = read_erc20_balance(l2_provider, l2_erc20_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await;
+
+    let result_deposit_erc20_bridge = deposit_to_erc20_bridge(
+        bootstrapper_config.cross_chain_wait_time,
+        bootstrapper_config.l1_wait_time,
+        token_bridge
+    ).await;
+
+    let balance_after: Vec<Felt> = read_erc20_balance(l2_provider, l2_erc20_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await;
+    assert_eq!(balance_before[0] + Felt::from_dec_str("10")?, balance_after[0]);
+    Ok(())
+}
+
+
+// /// From L2 -> L1
+// /// Withdraw Requires state update!
+// /// Transactions happen on L2
+// /// And are submitted to L1 core contract
+// /// via state update of that block.
+// /// Will need to wait for state update of the block
+// /// the transaction occured in.
+// /// After a emperical block number delay,
+// /// check the balance for both, it will be changed!
+// async fn withdraw() -> Result<(), Error> {
+//     // Withdraw logic here
+//     // Step Wise Implementation
+//     // Fetch Before_Balance of L1 Account, Store in-memory
+//     // Fetch Before_Balance of L2 Account, Store in-memory
+//     // Call (ETH/ERC) Bridge Withdraw from L2 Account
+//     // Wait for Orchestrator to settle that block
+//     // Wait Emperical Delay
+//     // Fetch After_Balance of L1 Account, Store in-memory
+//     // Fetch After_Balance of L2 Account, Store in-memory
+//     // Compare the Before_Balances with the After_Balances
+//     // It should balance!
+//     Ok(())
+// }
