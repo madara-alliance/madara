@@ -199,24 +199,44 @@ pub fn get_fact_info(
 /// This is because it is used further by applicative bootloader which requires it.
 /// This function is used to filter the output from the complete output
 pub fn filter_output_from_program_output(program_output: Vec<Felt252>) -> Result<Vec<Felt252>, FactError> {
+    // Length needs to be at least 1 so that we can get the number of blocks
+    if program_output.is_empty() {
+        return Err(FactError::AggregatorOutputParsingError);
+    }
+
     let num_blocks = program_output[0].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
 
     let mut output_start = 1;
     for _ in 0..num_blocks {
-        let block_size = program_output[output_start].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
+        let block_size = program_output
+            .get(output_start)
+            .ok_or(FactError::AggregatorOutputParsingError)?
+            .to_usize()
+            .ok_or(FactError::FeltToUsizeConversionError)?;
         output_start += block_size;
     }
 
-    let n_blobs =
-        program_output[output_start + N_BLOBS_OFFSET].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
+    let n_blobs = program_output
+        .get(output_start + N_BLOBS_OFFSET)
+        .ok_or(FactError::AggregatorOutputParsingError)?
+        .to_usize()
+        .ok_or(FactError::FeltToUsizeConversionError)?;
     let message_start = output_start + N_BLOBS_OFFSET + n_blobs * 2 * 2 + 1;
-    let n_l2_to_l1_messages = program_output[message_start].to_usize().ok_or(FactError::FeltToUsizeConversionError)?;
-    let n_l1_to_l2_messages = program_output[message_start + n_l2_to_l1_messages + 1]
+    let n_l2_to_l1_messages = program_output
+        .get(message_start)
+        .ok_or(FactError::AggregatorOutputParsingError)?
+        .to_usize()
+        .ok_or(FactError::FeltToUsizeConversionError)?;
+    let n_l1_to_l2_messages = program_output
+        .get(message_start + n_l2_to_l1_messages + 1)
+        .ok_or(FactError::AggregatorOutputParsingError)?
         .to_usize()
         .ok_or(FactError::FeltToUsizeConversionError)?;
     let message_end = message_start + n_l2_to_l1_messages + 1 + n_l1_to_l2_messages;
 
-    assert!(message_end < program_output.len());
+    if message_end >= program_output.len() {
+        return Err(FactError::AggregatorOutputParsingError);
+    }
 
     Ok(program_output[output_start..(message_end + 1)].to_vec())
 }
