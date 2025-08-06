@@ -16,19 +16,8 @@ impl<const LENGTH: usize> TryFrom<Felt> for BitsArray<LENGTH> {
 
     fn try_from(felt: Felt) -> color_eyre::Result<Self, Self::Error> {
         let n_bits_felt = felt.bits();
-        if n_bits_felt > LENGTH {
-            // Special case for Felt::ZERO
-            if felt == Felt::ZERO && LENGTH >= 1 {
-                // Allow zero if LENGTH is enough
-            } else {
-                bail!(
-                    "Value {} requires {} bits, exceeding limit {} for BitsArray<{}>",
-                    felt,
-                    n_bits_felt,
-                    LENGTH,
-                    LENGTH
-                );
-            }
+        if n_bits_felt > LENGTH && !(felt == Felt::ZERO && LENGTH >= 1) {
+            bail!("Value {} requires {} bits, exceeding limit {} for BitsArray<{}>", felt, n_bits_felt, LENGTH, LENGTH);
         }
         // Original used felt.to_bits_le()[0..LENGTH]. Let's stick to a BigUint method if to_bits_le isn't ideal/available
         let felt_as_biguint = felt.to_biguint();
