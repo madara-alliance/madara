@@ -2,6 +2,7 @@ use std::fmt;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use mp_convert::FixedPoint;
 use mp_utils::serde::{deserialize_url, serialize_url};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
@@ -52,29 +53,29 @@ impl PragmaOracle {
 
 #[async_trait]
 impl Oracle for PragmaOracle {
-    /// Methods to retrieve ETH/STRK price from Pragma Oracle
+    /// Methods to retrieve STRK/ETH price from Pragma Oracle
     ///
     /// Return values:
-    /// Ok((u128, u32)) : return the price tuple as (price, decimals)
-    /// Err(e) : return an error if anything went wrong in the fetching process or eth/strk price is 0
-    async fn fetch_eth_strk_price(&self) -> anyhow::Result<(u128, u32)> {
+    /// Ok(FixedPoint) : return the price tuple as (price, decimals)
+    /// Err(e) : return an error if anything went wrong in the fetching process or STRK/ETH price is 0
+    async fn fetch_strk_per_eth(&self) -> anyhow::Result<FixedPoint> {
         let response = reqwest::Client::new()
-            .get(self.get_fetch_url(String::from("eth"), String::from("strk")))
+            .get(self.get_fetch_url(String::from("strk"), String::from("eth")))
             .header("x-api-key", self.api_key.clone())
             .send()
             .await
             .context("failed to retrieve price from pragma oracle")?;
 
         let oracle_api_response = response.json::<PragmaApiResponse>().await.context("failed to parse api response")?;
-        let eth_strk_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16)
+        let strk_eth_price = u128::from_str_radix(oracle_api_response.price.trim_start_matches("0x"), 16)
             .context("failed to parse price")?;
-        if eth_strk_price == 0 {
-            bail!("Pragma api returned 0 for eth/strk price");
+        if strk_eth_price == 0 {
+            bail!("Pragma api returned 0 for STRK/ETH price");
         }
-        if !self.is_in_bounds(eth_strk_price) {
-            bail!("ETH/STRK price outside of bounds");
+        if !self.is_in_bounds(strk_eth_price) {
+            bail!("STRK/ETH price outside of bounds");
         }
-        Ok((eth_strk_price, oracle_api_response.decimals))
+        Ok(FixedPoint::new(strk_eth_price, oracle_api_response.decimals))
     }
 }
 
