@@ -73,7 +73,7 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(estimate_message_fee(self, message, block_id).await?)
     }
 
-    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
+    fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
         Ok(get_block_with_receipts(self, block_id)?)
     }
 
@@ -82,7 +82,7 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
     }
 
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-        get_block_with_txs(self, block_id)
+        Ok(get_block_with_txs(self, block_id)?)
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<MaybeDeprecatedContractClass> {

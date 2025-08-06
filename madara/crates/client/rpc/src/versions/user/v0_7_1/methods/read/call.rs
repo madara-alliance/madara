@@ -5,9 +5,9 @@ use mp_block::BlockId;
 use mp_rpc::v0_7_1::FunctionCall;
 use starknet_types_core::felt::Felt;
 
+use crate::constants::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
-use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::Starknet;
 
 /// Call a Function in a Contract Without Creating a Transaction

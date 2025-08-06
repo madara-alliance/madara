@@ -6,7 +6,7 @@ use mp_rpc::v0_7_1::TraceBlockTransactionsResult;
 use starknet_api::transaction::TransactionHash;
 use std::sync::Arc;
 
-use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
+use crate::constants::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;

@@ -1,7 +1,6 @@
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::MadaraMaybePendingBlockInfo;
 use mp_rpc::v0_7_1::{
-    BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
-    PendingBlockWithTxHashes,
+    BlockId, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockWithTxHashes,
 };
 
 use crate::errors::StarknetRpcResult;
@@ -28,22 +27,14 @@ pub fn get_block_with_tx_hashes(
     let block_txs_hashes = block.tx_hashes().to_vec();
 
     match block {
-        MadaraMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePendingBlockInfo::Pending(block_info) => {
             Ok(MaybePendingBlockWithTxHashes::Pending(PendingBlockWithTxHashes {
                 transactions: block_txs_hashes,
-                pending_block_header: PendingBlockHeader {
-                    parent_hash: block.header.parent_block_hash,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                pending_block_header: block_info.into(),
             }))
         }
-        MadaraMaybePendingBlockInfo::NotPending(block) => {
-            let status = if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
+        MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+            let status = if block_info.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                 BlockStatus::AcceptedOnL1
             } else {
                 BlockStatus::AcceptedOnL2
@@ -51,18 +42,7 @@ pub fn get_block_with_tx_hashes(
             Ok(MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
                 transactions: block_txs_hashes,
                 status,
-                block_header: BlockHeader {
-                    block_hash: block.block_hash,
-                    parent_hash: block.header.parent_block_hash,
-                    block_number: block.header.block_number,
-                    new_root: block.header.global_state_root,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                block_header: block_info.into(),
             }))
         }
     }
@@ -76,7 +56,7 @@ mod tests {
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mp_block::BlockTag;
-    use mp_rpc::v0_7_1::{BlockHeader, L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{BlockHeader, L1DaMode, PendingBlockHeader, ResourcePrice};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
 

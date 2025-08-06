@@ -1,7 +1,7 @@
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::MadaraMaybePendingBlockInfo;
 use mp_rpc::v0_7_1::{
-    BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
-    StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
+    BlockId, BlockStatus, BlockWithReceipts, PendingBlockWithReceipts, StarknetGetBlockWithTxsAndReceiptsResult,
+    TransactionAndReceipt, TxnFinalityStatus,
 };
 
 use crate::errors::StarknetRpcResult;
@@ -31,37 +31,18 @@ pub fn get_block_with_receipts(
         .collect();
 
     match block.info {
-        MadaraMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePendingBlockInfo::Pending(block_info) => {
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,
-                pending_block_header: PendingBlockHeader {
-                    parent_hash: block.header.parent_block_hash,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                pending_block_header: block_info.into(),
             }))
         }
-        MadaraMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePendingBlockInfo::NotPending(block_info) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
                 transactions: transactions_with_receipts,
                 status,
-                block_header: BlockHeader {
-                    block_hash: block.block_hash,
-                    parent_hash: block.header.parent_block_hash,
-                    block_number: block.header.block_number,
-                    new_root: block.header.global_state_root,
-                    timestamp: block.header.block_timestamp.0,
-                    sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
-                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
-                    l1_da_mode: block.header.l1_da_mode.into(),
-                    starknet_version: block.header.protocol_version.to_string(),
-                },
+                block_header: block_info.into(),
             }))
         }
     }
@@ -83,7 +64,7 @@ mod tests {
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
-    use mp_rpc::v0_7_1::{L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{BlockHeader, L1DaMode, PendingBlockHeader, ResourcePrice};
     use mp_state_update::StateDiff;
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
