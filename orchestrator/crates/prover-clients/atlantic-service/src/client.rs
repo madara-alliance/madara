@@ -116,17 +116,18 @@ impl AtlanticClient {
     }
 
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
-        let response =
-            self.client.request().method(Method::GET).path("buckets").path(bucket_id).send().await.map_err(|e| {
-                tracing::error!("Failed to get bucket status, {}", e);
-                AtlanticError::GetBucketStatusFailure(e)
-            })?;
+        let response = self
+            .client
+            .request()
+            .method(Method::GET)
+            .path("buckets")
+            .path(bucket_id)
+            .send()
+            .await
+            .map_err(|e| AtlanticError::GetBucketStatusFailure(e))?;
 
         match response.status().is_success() {
-            true => response.json().await.map_err(|e| {
-                tracing::error!("Failed to parse bucket status, {}", e);
-                AtlanticError::GetBucketStatusFailure(e)
-            }),
+            true => response.json().await.map_err(|e| AtlanticError::GetBucketStatusFailure(e)),
             false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }
@@ -204,7 +205,7 @@ impl AtlanticClient {
         debug!(
             "Submitting job with layout: {}, n_steps: {}, network: {}, ",
             proof_layout,
-            self.n_steps_to_job_size(job_info.n_steps),
+            Self::n_steps_to_job_size(job_info.n_steps),
             &job_config.network
         );
 
@@ -215,7 +216,7 @@ impl AtlanticClient {
                 .method(Method::POST)
                 .path("atlantic-query")
                 .query_param("apiKey", api_key.as_ref())
-                .form_text("declaredJobSize", self.n_steps_to_job_size(job_info.n_steps))
+                .form_text("declaredJobSize", Self::n_steps_to_job_size(job_info.n_steps))
                 .form_text("result", &job_config.result.to_string())
                 .form_text("network", job_config.network.as_ref())
                 .form_text("cairoVersion", &AtlanticCairoVersion::Cairo0.as_str())
@@ -294,7 +295,7 @@ impl AtlanticClient {
             .form_file_bytes("inputFile", proof.as_bytes().to_vec(), "proof.json", Some("application/json"))?
             .form_text("programHash", program_hash)
             .form_text("layout", LayoutName::recursive_with_poseidon.to_str())
-            .form_text("declaredJobSize", self.n_steps_to_job_size(n_steps))
+            .form_text("declaredJobSize", Self::n_steps_to_job_size(n_steps))
             .form_text("network", atlantic_network.as_ref())
             .form_text("result", &AtlanticQueryStep::ProofVerificationOnL2.to_string())
             .form_text("cairoVm", &AtlanticCairoVm::Python.as_str())
@@ -310,7 +311,7 @@ impl AtlanticClient {
     }
 
     // https://docs.herodotus.cloud/atlantic/sending-query#sending-query
-    fn n_steps_to_job_size(&self, n_steps: Option<usize>) -> &'static str {
+    fn n_steps_to_job_size(n_steps: Option<usize>) -> &'static str {
         let n_steps = n_steps.unwrap_or(40_000_000) / 1_000_000;
 
         match n_steps {
