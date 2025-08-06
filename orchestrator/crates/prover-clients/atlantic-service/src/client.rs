@@ -124,10 +124,10 @@ impl AtlanticClient {
             .path(bucket_id)
             .send()
             .await
-            .map_err(|e| AtlanticError::GetBucketStatusFailure(e))?;
+            .map_err(AtlanticError::GetBucketStatusFailure)?;
 
         match response.status().is_success() {
-            true => response.json().await.map_err(|e| AtlanticError::GetBucketStatusFailure(e)),
+            true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
             false => Err(AtlanticError::AtlanticService(response.status())),
         }
     }

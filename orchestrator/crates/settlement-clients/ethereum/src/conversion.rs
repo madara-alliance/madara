@@ -4,7 +4,7 @@ use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::primitives::{FixedBytes, U256};
 use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::ContextCompat;
+use color_eyre::eyre::{eyre, ContextCompat};
 use color_eyre::Result as EyreResult;
 
 /// Converts a `&[[u8; 32]]` to `Vec<U256>`.
@@ -132,7 +132,6 @@ mod tests {
     use std::fs;
     use std::path::Path;
 
-    use color_eyre::eyre::eyre;
     use rstest::rstest;
 
     use super::*;
