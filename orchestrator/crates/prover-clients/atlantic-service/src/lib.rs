@@ -10,7 +10,9 @@ use alloy::primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus, TaskType};
+use orchestrator_prover_client_interface::{
+    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+};
 use swiftness_proof_parser::{parse, StarkProof};
 use tempfile::NamedTempFile;
 use url::Url;
@@ -57,7 +59,7 @@ impl ProverClient for AtlanticProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(cairo_pie, bucket_id, bucket_job_index, n_steps) => {
+            Task::CreateJob(CreateJobInfo { cairo_pie, bucket_id, bucket_job_index, num_steps: n_steps }) => {
                 let temp_file =
                     NamedTempFile::new().map_err(|e| ProverClientError::FailedToCreateTempFile(e.to_string()))?;
                 let pie_file_path = temp_file.path();

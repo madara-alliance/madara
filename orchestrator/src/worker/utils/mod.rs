@@ -9,8 +9,8 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
-use starknet_os::io::output::StarknetOsOutput;
 pub(crate) use orchestrator_ethereum_settlement_client::conversion::hex_string_to_u8_vec;
+use starknet_os::io::output::StarknetOsOutput;
 
 pub mod fact_info;
 pub mod fact_node;

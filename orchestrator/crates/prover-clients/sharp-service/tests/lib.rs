@@ -3,7 +3,7 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
 // ProverClient
-use orchestrator_prover_client_interface::{ProverClient, TaskType};
+use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, TaskType};
 use orchestrator_prover_client_interface::{Task, TaskStatus};
 use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -49,8 +49,15 @@ async fn prover_client_submit_task_works() {
         then.status(200).body(serde_json::to_vec(&sharp_response).unwrap());
     });
 
-    let cairo_pie = Box::new(cairo_pie);
-    assert!(sharp_service.submit_task(Task::CreateJob(cairo_pie, None, None, None)).await.is_ok());
+    assert!(sharp_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+        }))
+        .await
+        .is_ok());
 
     sharp_add_job_call.assert();
 }

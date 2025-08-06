@@ -34,14 +34,16 @@ pub trait ProverClient: Send + Sync {
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError>;
 }
 
+pub struct CreateJobInfo {
+    pub cairo_pie: Box<CairoPie>,
+    pub bucket_id: Option<String>,
+    pub bucket_job_index: Option<u64>,
+    pub num_steps: Option<usize>,
+}
+
 pub enum Task {
     /// For creating a new job
-    /// Requires:
-    /// 1. CairoPie
-    /// 2. Bucket ID
-    /// 3. Bucket Job Index
-    /// 4. Num steps
-    CreateJob(Box<CairoPie>, Option<String>, Option<u64>, Option<usize>),
+    CreateJob(CreateJobInfo),
     /// For creating a new bucket
     CreateBucket,
     /// For closing a bucket

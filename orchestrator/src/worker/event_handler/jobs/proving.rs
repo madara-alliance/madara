@@ -1,7 +1,7 @@
 use async_trait::async_trait;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
-use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
+use orchestrator_prover_client_interface::{CreateJobInfo, Task, TaskStatus, TaskType};
 use std::sync::Arc;
 
 use crate::core::config::Config;
@@ -62,12 +62,12 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         let external_id = config
             .prover_client()
-            .submit_task(Task::CreateJob(
+            .submit_task(Task::CreateJob(CreateJobInfo {
                 cairo_pie,
-                proving_metadata.bucket_id,
-                proving_metadata.bucket_job_index,
-                proving_metadata.n_steps,
-            ))
+                bucket_id: proving_metadata.bucket_id,
+                bucket_job_index: proving_metadata.bucket_job_index,
+                num_steps: proving_metadata.n_steps,
+            }))
             .await
             .inspect_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit task to prover client");

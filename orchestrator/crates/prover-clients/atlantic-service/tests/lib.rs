@@ -4,7 +4,7 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
 use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticQueryStatus, AtlanticValidatedArgs};
-use orchestrator_prover_client_interface::{ProverClient, Task};
+use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
 mod constants;
@@ -47,7 +47,14 @@ async fn atlantic_client_submit_task_when_mock_works() {
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
 
     // We don't need to send the steps because it's a mock fact hash.
-    let task_result = atlantic_service.submit_task(Task::CreateJob(Box::new(cairo_pie), None, None, None)).await;
+    let task_result = atlantic_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+        }))
+        .await;
 
     assert!(task_result.is_ok());
     submit_mock.assert();
@@ -137,7 +144,12 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
         // We don't need to send the steps because it's a mock fact hash.
-        .submit_task(Task::CreateJob(Box::new(cairo_pie), None, None, None))
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+        }))
         .await
         .expect("Failed to submit task to Atlantic service");
 

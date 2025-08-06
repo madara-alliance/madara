@@ -8,7 +8,9 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus, TaskType};
+use orchestrator_prover_client_interface::{
+    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 
@@ -49,7 +51,7 @@ impl ProverClient for SharpProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CreateJob(cairo_pie, _, _, _) => {
+            Task::CreateJob(CreateJobInfo { cairo_pie, .. }) => {
                 let encoded_pie =
                     starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
                 let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
