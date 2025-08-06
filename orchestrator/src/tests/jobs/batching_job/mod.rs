@@ -11,13 +11,13 @@ use rstest::*;
 use starknet_core::types::Felt;
 use tracing::warn;
 use url::Url;
+use orchestrator_utils::test_utils::setup_test_data;
 
 #[rstest]
-#[case("src/tests/artifacts/8373665/blobs/", 789878, 790377)]
+#[case(789878, 790377)]
 #[ignore = "Ignoring this test because it takes a long time on CI and we have individual tests for all the steps - squash, stateless, stateful, blob, etc."]
 #[tokio::test]
 async fn test_assign_batch_to_block_new_batch(
-    #[case] blob_dir: String,
     #[case] min_block_to_process: u64,
     #[case] max_block_to_process: u64,
 ) -> Result<()> {
@@ -44,6 +44,10 @@ async fn test_assign_batch_to_block_new_batch(
 
     let generated_blobs =
         get_blobs_from_s3_paths(vec!["blob/batch/1/1.txt", "blob/batch/1/2.txt"], services.config.storage()).await?;
+
+    // Fetch real blobs from test data
+    let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await?;
+    let blob_dir = data_dir.path().join("8373665/blobs/").to_str().unwrap().to_string();
 
     let real_blobs = get_blobs_from_files(vec![&format!("{blob_dir}1.txt"), &format!("{blob_dir}2.txt")])?;
 
