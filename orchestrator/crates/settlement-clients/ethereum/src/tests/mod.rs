@@ -138,7 +138,7 @@ mod settlement_client_tests {
     use tokio::time::sleep;
 
     use super::{BLOCK_TIME, ENV_FILE_PATH};
-    use crate::conversion::to_padded_hex;
+    use crate::conversion::{hex_string_to_u8_vec, to_padded_hex};
     use crate::tests::{
         DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS,
         STARKNET_CORE_CONTRACT, STARKNET_CORE_CONTRACT_ADDRESS,
@@ -448,23 +448,6 @@ mod settlement_client_tests {
         let blob_data = fs::read_to_string(blob_data_file_path).expect("Failed to read the blob data txt file");
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
         blob_data_vec
-    }
-
-    fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
-        // Remove any spaces or non-hex characters from the input string
-        let cleaned_str: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-
-        // Convert the cleaned hex string to a Vec<u8>
-        let mut result = Vec::new();
-        for chunk in cleaned_str.as_bytes().chunks(2) {
-            if let Ok(byte_val) = u8::from_str_radix(std::str::from_utf8(chunk)?, 16) {
-                result.push(byte_val);
-            } else {
-                return Err(eyre!("Error parsing hex string: {}", cleaned_str));
-            }
-        }
-
-        Ok(result)
     }
 
     fn bytes_to_u32(bytes: &[u8]) -> Result<u32, &'static str> {

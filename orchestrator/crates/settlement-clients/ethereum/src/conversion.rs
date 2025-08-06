@@ -126,6 +126,24 @@ pub(crate) async fn prepare_sidecar(
     Ok((sidecar_blobs, sidecar_commitments, sidecar_proofs))
 }
 
+/// Convert hex string data into Vec<u8>
+pub fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
+    // Remove any spaces or non-hex characters from the input string
+    let cleaned_str: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+
+    // Convert the cleaned hex string to a Vec<u8>
+    let mut result = Vec::new();
+    for chunk in cleaned_str.as_bytes().chunks(2) {
+        if let Ok(byte_val) = u8::from_str_radix(std::str::from_utf8(chunk)?, 16) {
+            result.push(byte_val);
+        } else {
+            return Err(eyre!("Error parsing hex string: {}", cleaned_str));
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
 
@@ -273,23 +291,6 @@ mod tests {
         let blob_proof_file_path =
             format!("{}{}{}{}", current_path.clone(), "/src/test_data/blob_proof/", fork_block_no, ".txt");
         let blob_proof = fs::read_to_string(blob_proof_file_path).expect("Failed to read the blob data txt file");
-
-        fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
-            // Remove any spaces or non-hex characters from the input string
-            let cleaned_str: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-
-            // Convert the cleaned hex string to a Vec<u8>
-            let mut result = Vec::new();
-            for chunk in cleaned_str.as_bytes().chunks(2) {
-                if let Ok(byte_val) = u8::from_str_radix(std::str::from_utf8(chunk)?, 16) {
-                    result.push(byte_val);
-                } else {
-                    return Err(eyre!("Error parsing hex string: {}", cleaned_str));
-                }
-            }
-
-            Ok(result)
-        }
 
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
 
