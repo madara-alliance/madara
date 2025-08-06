@@ -1,6 +1,10 @@
+use crate::services::helpers::get_file_path;
 use crate::setup::ChainSetup;
 use crate::setup::SetupConfigBuilder;
+use bootstrapper::contract_clients::eth_bridge::StarknetLegacyEthBridge;
+use bootstrapper::contract_clients::utils::read_erc20_balance;
 use rstest::*;
+use crate::services::constants::*;
 use anyhow::Error;
 
 // Async fixture that takes arguments from the test
@@ -25,9 +29,6 @@ async fn setup_chain(#[default("")] test_name: &str) -> ChainSetup {
         }
     }
 
-    use tokio::time::sleep;
-    use tokio::time::Duration;
-    sleep(Duration::from_secs(4000)).await;
     setup_struct
 }
 
@@ -40,14 +41,31 @@ async fn e2e_test_setup(
     #[with(test_name)]
     setup_chain: ChainSetup,
 ) {
+    use bootstrapper::tests::deposit_both_bridges;
+
     // Ensuring setup stays in scope
     let _setup = setup_chain.await;
+    println!("Begining Test...");
     // Testing begins here!
     // Test here!
-    tokio::time::sleep(tokio::time::Duration::from_secs(500)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(3)).await;
+
+    // Deposit Both Bridges test here!
+    let x = get_file_path(BOOTSTRAPPER_CONFIG);
+    let y = deposit_both_bridges(x).await;
+
+    match y {
+        Ok(_) => println!("✅ Deposit Both Bridges completed successfully"),
+        Err(e) => {
+            println!("❌ Deposit Both Bridges failed: {}", e);
+            panic!("Deposit Both Bridges failed: {}", e);
+        }
+    }
+
+    println!("Test Completed");
 
     // Delete the created directory
-    if let Err(err) = std::fs::remove_dir_all(&format!("data_{}", test_name)) {
+    if let Err(err) = std::fs::remove_dir_all(&test_name) {
         eprintln!("Failed to delete directory: {}", err);
     }
 }
