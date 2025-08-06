@@ -7,11 +7,11 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use alloy::hex;
 use color_eyre::Result;
 use num_bigint::BigUint;
+use orchestrator_utils::test_utils::setup_test_data;
 use rstest::*;
 use starknet_core::types::Felt;
 use tracing::warn;
 use url::Url;
-use orchestrator_utils::test_utils::setup_test_data;
 
 #[rstest]
 #[case(789878, 790377)]
