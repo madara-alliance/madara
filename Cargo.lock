@@ -8147,6 +8147,7 @@ dependencies = [
  "cairo-vm 1.0.1 (git+https://github.com/karnotxyz/cairo-vm?branch=release%2F0.13.2)",
  "color-eyre",
  "dotenvy",
+ "hex",
  "lazy_static",
  "log",
  "mockall",

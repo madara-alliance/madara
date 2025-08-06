@@ -148,36 +148,27 @@ mod settlement_client_tests {
     use std::io;
 
     fn get_program_output_from_file(file_path: &str) -> Result<Vec<[u8; 32]>, Box<dyn std::error::Error>> {
-        let content = fs::read_to_string(file_path)?;
-        let mut result = Vec::new();
+        let file = File::open(file_path)?;
+        let reader = BufReader::new(file);
 
-        for (line_num, line) in content.lines().enumerate() {
-            let trimmed = line.trim();
-
-            // Skip empty lines
-            if trimmed.is_empty() {
-                continue;
-            }
-
-            let bytes = hex_string_to_u8_vec(trimmed)?;
-
-            result.push(bytes);
-        }
-
-        Ok(result.into_iter().map(|x| x.try_into().unwrap()).collect())
-    }
-
-    fn read_file_to_chunks(filename: &str) -> io::Result<Vec<[u8; 32]>> {
-        let data = fs::read(filename)?;
-
-        let mut chunks = Vec::new();
-        for chunk in data.chunks_exact(32) {
-            let mut array = [0u8; 32];
-            array.copy_from_slice(chunk);
-            chunks.push(array);
-        }
-
-        Ok(chunks)
+        reader
+            .lines()
+            .filter_map(|line| match line {
+                Ok(line) => {
+                    let trimmed = line.trim();
+                    if trimmed.is_empty() {
+                        None
+                    } else {
+                        let mut buf = [0u8; 32];
+                        match hex::decode_to_slice(trimmed, &mut buf) {
+                            Ok(_) => Some(Ok(buf)),
+                            Err(e) => Some(Err(e.into())),
+                        }
+                    }
+                }
+                Err(e) => Some(Err(e.into())),
+            })
+            .collect()
     }
 
     fn get_blob_data_from_file(file_path: &str) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
