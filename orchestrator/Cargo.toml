@@ -61,6 +61,7 @@ orchestrator-settlement-client-interface = { workspace = true }
 orchestrator-sharp-service = { workspace = true }
 orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
+utils-mock-atlantic-server = { workspace = true }
 orchestrator-utils = { workspace = true }
 prove_block = { workspace = true }
 rand = { workspace = true }
