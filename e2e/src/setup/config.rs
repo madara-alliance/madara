@@ -495,6 +495,11 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
+        // Setting some envs
+        std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
+        std::env::set_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY);
+        std::env::set_var("ROLLUP_SEQ_URL", madara_config.rpc_endpoint().to_string());
+
         let sconfig = self
             .anvil_config(anvil_config)
             .madara_config(madara_config)
