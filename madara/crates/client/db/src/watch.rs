@@ -17,7 +17,7 @@ fn make_fake_pending_block(parent_block: Option<&MadaraBlockInfo>) -> Arc<Madara
             sequencer_address: parent_block.header.sequencer_address,
             block_timestamp: parent_block.header.block_timestamp, // Junk timestamp: unix epoch
             protocol_version: parent_block.header.protocol_version,
-            l1_gas_price: parent_block.header.l1_gas_price.clone(),
+            gas_prices: parent_block.header.gas_prices.clone(),
             l1_da_mode: parent_block.header.l1_da_mode,
         },
         tx_hashes: vec![],

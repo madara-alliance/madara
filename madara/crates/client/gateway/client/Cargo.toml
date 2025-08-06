@@ -49,3 +49,4 @@ url.workspace = true
 [dev-dependencies]
 rstest.workspace = true
 flate2.workspace = true
+reqwest = { workspace = true, features = ["json"] }
