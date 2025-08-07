@@ -3,6 +3,7 @@ pub mod env_utils;
 pub mod http_client;
 pub mod layer;
 pub mod metrics;
+pub mod test_utils;
 
 use alloy_primitives::Address;
 use std::str::FromStr;

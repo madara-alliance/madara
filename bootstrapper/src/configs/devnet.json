@@ -6,7 +6,6 @@
   "l1_deployer_address": "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266",
   "l1_wait_time": "15",
   "sn_os_program_hash": "0x41fc2a467ef8649580631912517edcab7674173f1dbfa2e9b64fbcd82bc4d79",
-  "config_hash_version": "StarknetOsConfig2",
   "app_chain_id": "MADARA_DEVNET",
   "fee_token_address": "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7",
   "native_fee_token_address": "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d",
