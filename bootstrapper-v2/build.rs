@@ -12,6 +12,7 @@ fn main() {
         (format!("{}/solidity/starkware", BOOTSTRAPPER_DIR), format!("{}/ethereum/src/starkware", CONTRACTS_DIR)),
         (format!("{}/solidity/third_party", BOOTSTRAPPER_DIR), format!("{}/ethereum/src/third_party", CONTRACTS_DIR)),
         (format!("{}/solidity/out", BOOTSTRAPPER_DIR), format!("{}/ethereum/out", CONTRACTS_DIR)),
+        (format!("{}/cairo/target", BOOTSTRAPPER_DIR), format!("{}/madara/target", CONTRACTS_DIR)),
     ];
 
     for (src, dst) in copy_dirs.iter() {

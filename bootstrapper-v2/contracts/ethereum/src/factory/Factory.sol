@@ -11,6 +11,7 @@ import {Implementations} from "./Implementations.sol";
 import {IOperator} from "./interfaces/IOperator.sol";
 import {IBridge} from "./interfaces/IBridge.sol";
 import {IRoles} from "./interfaces/IRoles.sol";
+import {IStarknetGovernor} from "./interfaces/IStarknetGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 
 contract Factory is Ownable, Pausable, Implementations {
@@ -106,6 +107,7 @@ contract Factory is Ownable, Pausable, Implementations {
     );
 
     IOperator(address(coreContractProxy)).registerOperator(operator);
+    IStarknetGovernor(address(coreContractProxy)).starknetNominateNewGovernor(governor);
     IProxyRoles(address(coreContractProxy)).registerGovernanceAdmin(governor);
 
     return address(coreContractProxy);
