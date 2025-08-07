@@ -1,4 +1,5 @@
 include = ["**/*.toml"]
+exclude = ["**/lib/**/*foundry.toml"]
 
 [formatting]
 align_entries = false
