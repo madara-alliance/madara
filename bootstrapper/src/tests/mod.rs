@@ -13,10 +13,12 @@ use ethers::types::Address;
 use rstest::rstest;
 use starkgate_manager_client::clients::StarkgateManagerContractClient;
 use starkgate_registry_client::clients::StarkgateRegistryContractClient;
+use starknet::accounts::Account;
 use starknet_erc20_client::clients::ERC20ContractClient;
 use starknet_eth_bridge_client::clients::eth_bridge::StarknetEthBridgeContractClient;
 use starknet_token_bridge_client::clients::StarknetTokenBridgeContractClient;
 use url::Url;
+use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::read_erc20_balance;
@@ -290,12 +292,18 @@ use starknet::core::types::Felt;
 /// Fetch After_Balance of L2 Account, Store in-memory
 /// Compare the Before_Balances with the After_Balances
 /// It should balance!
-pub async fn deposit_both_bridges(file_path: PathBuf) -> color_eyre::Result<()> {
+pub async fn deposit_and_call_withdraw_for_eth(file_path: PathBuf) -> color_eyre::Result<(Felt, Felt)> {
     let _ = orchestrate_deposit_to_eth_bridge(file_path.clone()).await?;
-    let _ = orchestrate_deposit_to_erc20_bridge(file_path).await;
+    let call_withdraw_output = call_eth_withdraw_on_l2(file_path.clone()).await?;
 
-    Ok(())
+    Ok(call_withdraw_output)
 
+}
+pub async fn deposit_and_call_withdraw_for_erc20(file_path: PathBuf) -> color_eyre::Result<(Felt, Felt)> {
+    let _ = orchestrate_deposit_to_erc20_bridge(file_path.clone()).await?;
+    let call_withdraw_output = call_erc20_withdraw_on_l2(file_path.clone()).await?;
+
+    Ok(call_withdraw_output)
 }
 
 use ethers::prelude::H160;
@@ -339,6 +347,7 @@ async fn orchestrate_deposit_to_eth_bridge(config_file_path: PathBuf) -> color_e
     let balance_after: Vec<Felt> = read_erc20_balance(l2_provider, l2_eth_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await;
     assert_eq!(balance_before[0] + Felt::from_dec_str("10")?, balance_after[0]);
 
+    println!("Deposit ETH Bridge test passed!");
     Ok(())
 }
 
@@ -404,6 +413,8 @@ async fn orchestrate_deposit_to_erc20_bridge(config_file_path: PathBuf) -> color
 
     let balance_after: Vec<Felt> = read_erc20_balance(l2_provider, l2_erc20_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await;
     assert_eq!(balance_before[0] + Felt::from_dec_str("10")?, balance_after[0]);
+    println!("Deposit ERC20 Bridge test passed!");
+
     Ok(())
 }
 
@@ -431,3 +442,145 @@ async fn orchestrate_deposit_to_erc20_bridge(config_file_path: PathBuf) -> color
 //     // It should balance!
 //     Ok(())
 // }
+
+use crate::build_single_owner_account;
+use crate::utils::invoke_contract;
+use ethers::types::U256;
+
+/// L2 -> L1
+/// Call initiate_withdraw on L2 Bridge with L1 Recipient Address and Amount
+async fn call_eth_withdraw_on_l2(config_file_path: PathBuf) -> color_eyre::Result<(Felt, Felt)> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+
+    println!("l1_account_address is #1 {:?}", &bootstrapper_config.l1_deployer_address);
+    let l1_account_address = Address::from_str(&bootstrapper_config.l1_deployer_address).unwrap();
+    println!("l1_account_address is #2 {}", l1_account_address);
+    let l1_account_address_felt = Felt::from_str(&bootstrapper_config.l1_deployer_address).unwrap();
+    println!("l1_account_address_felt is #3 {}", l1_account_address_felt);
+
+    let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
+    let l2_bridge_address = Felt::from_str(&bootstrapper_config.l2_eth_bridge_proxy_address.clone().unwrap()).expect("Failed to parse l2_bridge_address");
+    let l2_eth_token_address = Felt::from_str(&bootstrapper_config.l2_eth_token_proxy_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
+    let l2_account = build_single_owner_account(l2_provider, &bootstrapper_config.rollup_priv_key, L2_DEPLOYER_ADDRESS, false).await;
+    let l2_account_balance_before_withdraw = read_erc20_balance(l2_provider, l2_eth_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await[0];
+
+    let txn_result = invoke_contract(
+        l2_bridge_address,
+        "initiate_withdraw",
+        vec![l1_account_address_felt, Felt::from(5),
+        Felt::ZERO], &l2_account
+    ).await;
+
+    let transaction_hash = txn_result.transaction_hash.clone();
+
+    Ok((l2_account_balance_before_withdraw,  transaction_hash))
+}
+
+/// L2 -> L1
+/// Call initiate_withdraw on L2 Bridge with L1 Recipient Address and Amount
+async fn call_erc20_withdraw_on_l2(config_file_path: PathBuf) -> color_eyre::Result<(Felt, Felt)> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+
+    println!("l1_account_address is #1 {:?}", &bootstrapper_config.l1_deployer_address);
+    let l1_account_address = Address::from_str(&bootstrapper_config.l1_deployer_address).unwrap();
+    println!("l1_account_address is #2 {}", l1_account_address);
+    let l1_account_address_felt = Felt::from_str(&bootstrapper_config.l1_deployer_address).unwrap();
+    println!("l1_account_address_felt is #3 {}", l1_account_address_felt);
+
+    let l1_erc20_bridge = get_erc20_bridge(&bootstrapper_config, &clients).await;
+    let l2_erc20_bridge_address = l1_erc20_bridge.address();
+    let l2_erc20_bridge_felt = Felt::from_bytes_be_slice(l2_erc20_bridge_address.as_bytes());
+    println!("l2_erc20_bridge_felt is #4 {}", l2_erc20_bridge_felt);
+
+    let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
+    let l2_bridge_address = Felt::from_str(&bootstrapper_config.l2_erc20_bridge_proxy_address.clone().unwrap()).expect("Failed to parse l2_erc20_bridge_proxy_address");
+    let l2_eth_token_address = Felt::from_str(&bootstrapper_config.l2_erc20_token_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
+    let l2_account = build_single_owner_account(l2_provider, &bootstrapper_config.rollup_priv_key, L2_DEPLOYER_ADDRESS, false).await;
+    let l2_account_balance_before_withdraw = read_erc20_balance(l2_provider, l2_eth_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await[0];
+
+    let txn_result = invoke_contract(
+        l2_bridge_address,
+        "initiate_token_withdraw",
+        vec![
+            l2_erc20_bridge_felt,
+            l1_account_address_felt,
+            Felt::from_dec_str("5").unwrap(),
+            Felt::ZERO,
+        ],
+        &l2_account
+    ).await;
+
+    let transaction_hash = txn_result.transaction_hash.clone();
+
+    Ok((l2_account_balance_before_withdraw,  transaction_hash))
+}
+
+
+pub async fn get_l1_account_eth_balance(config_file_path: PathBuf) -> color_eyre::Result<U256> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+
+    let l1_eth_bridge = get_eth_bridge(&bootstrapper_config, &clients).await;
+    let l1_account_address = Address::from_str(&bootstrapper_config.l1_deployer_address).unwrap();
+    let l1_account_balance = l1_eth_bridge.eth_balance(l1_account_address).await;
+
+    Ok(l1_account_balance)
+}
+
+pub async fn get_l2_account_eth_balance(config_file_path: PathBuf) -> color_eyre::Result<Felt> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+
+    let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
+    let l2_eth_token_address = Felt::from_str(&bootstrapper_config.l2_eth_token_proxy_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
+    let l2_account = build_single_owner_account(l2_provider, &bootstrapper_config.rollup_priv_key, L2_DEPLOYER_ADDRESS, false).await;
+    let l2_account_balance_before_withdraw = read_erc20_balance(l2_provider, l2_eth_token_address, l2_account.address()).await[0];
+
+    Ok(l2_account_balance_before_withdraw)
+}
+
+
+pub async fn get_l1_account_erc20_balance(config_file_path: PathBuf) -> color_eyre::Result<U256> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+
+    let l1_erc20_bridge = get_erc20_bridge(&bootstrapper_config, &clients).await;
+    let l1_account_address = Address::from_str(&bootstrapper_config.l1_deployer_address).unwrap();
+    let l1_account_balance = l1_erc20_bridge.token_balance(l1_account_address).await;
+
+    Ok(l1_account_balance)
+}
+
+pub async fn get_l2_account_erc20_balance(config_file_path: PathBuf) -> color_eyre::Result<Felt> {
+    let bootstrapper_config: ConfigFile = ConfigBuilder::from_file(config_file_path)?.merge_with_env().build().expect("Failed to convert config builder to final config");
+    let clients = Clients::init_from_config(&bootstrapper_config).await;
+
+    let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
+    let l2_erc20_token_address = Felt::from_str(&bootstrapper_config.l2_erc20_token_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
+    let l2_account = build_single_owner_account(l2_provider, &bootstrapper_config.rollup_priv_key, L2_DEPLOYER_ADDRESS, false).await;
+    let l2_account_balance_before_withdraw = read_erc20_balance(l2_provider, l2_erc20_token_address, l2_account.address()).await[0];
+
+    Ok(l2_account_balance_before_withdraw)
+}
+
+// println!("ETH withdrawal initiated on l2 [💰]");
+// println!("Waiting for message to be consumed on l2 [⏳]");
+// sleep(Duration::from_secs(bootstrapper_config.cross_chain_wait_time)).await;
+// sleep(Duration::from_secs((bootstrapper_config.l1_wait_time).parse()?)).await;
+
+
+// println!("Withdraw initiated on ETH Bridge [⏳]");
+// eth_bridge.withdraw(5.into(), Address::from_str(&bootstrapper_config.l1_deployer_address).unwrap()).await;
+// println!("Withdraw completed on ETH Bridge [✅]");
+
+// let balance_after =
+// eth_bridge.eth_balance(Address::from_str(&bootstrapper_config.l1_deployer_address).unwrap()).await;
+
+// let decimals_eth = U256::from_dec_str("1000000000000000000").unwrap();
+
+// assert_eq!(
+//     U256::checked_div(balance_before + U256::from_dec_str("5").unwrap(), decimals_eth).unwrap(),
+//     U256::checked_div(balance_after, decimals_eth).unwrap()
+// );

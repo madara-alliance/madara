@@ -422,7 +422,7 @@ impl SetupConfigBuilder {
     }
 
     pub fn test_config_l2(self, test_name: &str) -> Result<SetupConfig, SetupError> {
-        let mongodb_config = MongoConfigBuilder::new().port(get_free_port()?).logs((false, true)).build();
+        let mongodb_config = MongoConfigBuilder::new().port(MONGODB_PORT).logs((false, true)).build();
 
         let localstack_port = get_free_port()?;
         let localstack_host = format!("{}:{}", DEFAULT_SERVICE_HOST, localstack_port);
@@ -441,7 +441,7 @@ impl SetupConfigBuilder {
         let anvil_config = AnvilConfigBuilder::new()
             .port(get_free_port()?)
             .load_state(get_database_path(test_name, ANVIL_DATABASE_FILE))
-            .logs((true, true))
+            .logs((false, true))
             .build();
 
         let mock_verifier_deployer_config =
@@ -476,7 +476,7 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((true, true)).build();
+        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((false, true)).build();
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
             .port(get_free_port()?)
@@ -492,7 +492,7 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", anvil_config.endpoint().as_str())
-            .logs((true, true))
+            .logs((false, true))
             .build();
 
         // Setting some envs
