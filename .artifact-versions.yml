@@ -1,5 +1,7 @@
 current_version: 2
 versions:
+  - version: 3
+    pr: 714
   - version: 2
     pr: 678
   - version: 1

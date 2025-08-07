@@ -2888,8 +2888,10 @@ name = "bootstrapper-v2"
 version = "0.8.0"
 dependencies = [
  "anyhow",
+ "build-version",
  "clap",
  "dotenvy",
+ "fs_extra",
  "serde",
  "serde_json",
  "starknet 0.14.0",
