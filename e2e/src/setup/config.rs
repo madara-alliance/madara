@@ -427,7 +427,7 @@ impl SetupConfigBuilder {
         let anvil_config = AnvilConfigBuilder::new()
             .port(get_free_port()?)
             .load_state(get_database_path(test_name, ANVIL_DATABASE_FILE))
-            .logs((true, true))
+            .logs((false, true))
             .build();
 
         let sconfig = self
