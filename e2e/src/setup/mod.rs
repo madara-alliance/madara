@@ -24,7 +24,7 @@ pub struct ChainSetup {
     validator: DependencyValidator,
     database_manager: DatabaseManager,
     service_manager: ServiceManager,
-    lifecycle_manager: ServiceLifecycleManager,
+    pub lifecycle_manager: ServiceLifecycleManager,
 }
 
 impl ChainSetup {

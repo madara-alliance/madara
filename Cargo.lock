@@ -4753,7 +4753,9 @@ checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 name = "e2e"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
  "async-trait",
+ "bootstrapper",
  "dotenvy",
  "env_logger",
  "fs_extra",
