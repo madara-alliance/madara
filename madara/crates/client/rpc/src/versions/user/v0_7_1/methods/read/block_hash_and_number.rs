@@ -1,5 +1,5 @@
 use mp_block::{BlockId, BlockTag};
-use mp_rpc::BlockHashAndNumber;
+use mp_rpc::v0_7_1::BlockHashAndNumber;
 
 use crate::errors::StarknetRpcResult;
 use crate::{utils::OptionExt, Starknet};

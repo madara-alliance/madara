@@ -1062,7 +1062,7 @@ mod test_rpc_read_calls {
         let client = reqwest::Client::new();
 
         // use the v0.8.0 rpc endpoint
-        let url = madara.rpc_url.clone().unwrap().join("rpc/v0_8_0/").unwrap();
+        let url = madara.rpc_url.clone().unwrap().join("rpc/v0_8_1/").unwrap();
 
         let res = client
             .post(url)

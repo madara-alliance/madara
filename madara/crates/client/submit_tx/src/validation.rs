@@ -16,9 +16,10 @@ use mc_db::MadaraBackend;
 use mc_exec::MadaraBackendExecutionExt;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{
     validated::{TxTimestamp, ValidatedMempoolTx},

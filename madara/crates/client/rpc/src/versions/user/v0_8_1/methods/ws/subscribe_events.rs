@@ -3,7 +3,7 @@ use mp_block::{
     event_with_info::{drain_block_events, event_match_filter},
     BlockId,
 };
-use mp_rpc::EmittedEvent;
+use mp_rpc::v0_8_1::EmittedEvent;
 use starknet_types_core::felt::Felt;
 
 use super::BLOCK_PAST_LIMIT;
@@ -77,7 +77,7 @@ async fn send_event(
 #[cfg(test)]
 mod test {
     use crate::{
-        versions::user::v0_8_0::{StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server},
+        versions::user::v0_8_1::{StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server},
         Starknet,
     };
 
@@ -85,7 +85,7 @@ mod test {
     use crate::test_utils::rpc_test_setup;
     use jsonrpsee::ws_client::WsClientBuilder;
     use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
-    use mp_rpc::{EmittedEvent, Event, EventContent};
+    use mp_rpc::v0_8_1::{EmittedEvent, Event, EventContent};
 
     /// Generates a transaction receipt with predictable event values for testing purposes.
     /// Values are generated using binary patterns for easy verification.
@@ -186,7 +186,7 @@ mod test {
         let (backend, starknet) = rpc_test_setup;
         let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
 
         let mut generator = block_generator(&backend);
@@ -215,7 +215,7 @@ mod test {
         let (backend, starknet) = rpc_test_setup;
         let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
 
         let mut generator = block_generator(&backend);
@@ -248,7 +248,7 @@ mod test {
         let (backend, starknet) = rpc_test_setup;
         let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
 
         let mut generator = block_generator(&backend);
@@ -308,7 +308,7 @@ mod test {
         let (backend, starknet) = rpc_test_setup;
         let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
 
         let mut generator = block_generator(&backend);
@@ -343,7 +343,7 @@ mod test {
         let (backend, starknet) = rpc_test_setup;
         let server = jsonrpsee::server::Server::builder().build("127.0.0.1:0").await.expect("Starting server");
         let server_url = format!("ws://{}", server.local_addr().expect("Retrieving server local address"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
         let client = WsClientBuilder::default().build(&server_url).await.expect("Building client");
 
         let mut generator = block_generator(&backend);

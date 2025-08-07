@@ -1,5 +1,5 @@
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
     StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
 };
@@ -83,7 +83,7 @@ mod tests {
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
-    use mp_rpc::{L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{L1DaMode, ResourcePrice};
     use mp_state_update::StateDiff;
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;

@@ -1,5 +1,5 @@
 use mp_block::{BlockId, BlockTag};
-use mp_rpc::{SyncStatus, SyncingStatus};
+use mp_rpc::v0_7_1::{SyncStatus, SyncingStatus};
 use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcResult;

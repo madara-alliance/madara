@@ -7,36 +7,38 @@ use crate::{
     LegacyTypedParameter, SierraEntryPoint,
 };
 
-impl TryFrom<mp_rpc::MaybeDeprecatedContractClass> for ContractClass {
+impl TryFrom<mp_rpc::v0_7_1::MaybeDeprecatedContractClass> for ContractClass {
     type Error = std::io::Error;
 
-    fn try_from(contract_class: mp_rpc::MaybeDeprecatedContractClass) -> Result<Self, Self::Error> {
+    fn try_from(contract_class: mp_rpc::v0_7_1::MaybeDeprecatedContractClass) -> Result<Self, Self::Error> {
         match contract_class {
-            mp_rpc::MaybeDeprecatedContractClass::ContractClass(flattened_sierra_class) => {
+            mp_rpc::v0_7_1::MaybeDeprecatedContractClass::ContractClass(flattened_sierra_class) => {
                 Ok(ContractClass::Sierra(Arc::new(flattened_sierra_class.into())))
             }
-            mp_rpc::MaybeDeprecatedContractClass::Deprecated(compressed_legacy_contract_class) => {
+            mp_rpc::v0_7_1::MaybeDeprecatedContractClass::Deprecated(compressed_legacy_contract_class) => {
                 Ok(ContractClass::Legacy(Arc::new(compressed_legacy_contract_class.try_into()?)))
             }
         }
     }
 }
 
-impl From<ContractClass> for mp_rpc::MaybeDeprecatedContractClass {
+impl From<ContractClass> for mp_rpc::v0_7_1::MaybeDeprecatedContractClass {
     fn from(contract_class: ContractClass) -> Self {
         match contract_class {
             ContractClass::Sierra(flattened_sierra_class) => {
-                mp_rpc::MaybeDeprecatedContractClass::ContractClass((*flattened_sierra_class).clone().into())
+                mp_rpc::v0_7_1::MaybeDeprecatedContractClass::ContractClass((*flattened_sierra_class).clone().into())
             }
             ContractClass::Legacy(compressed_legacy_contract_class) => {
-                mp_rpc::MaybeDeprecatedContractClass::Deprecated((*compressed_legacy_contract_class).clone().into())
+                mp_rpc::v0_7_1::MaybeDeprecatedContractClass::Deprecated(
+                    (*compressed_legacy_contract_class).clone().into(),
+                )
             }
         }
     }
 }
 
-impl From<mp_rpc::ContractClass> for FlattenedSierraClass {
-    fn from(flattened_sierra_class: mp_rpc::ContractClass) -> Self {
+impl From<mp_rpc::v0_7_1::ContractClass> for FlattenedSierraClass {
+    fn from(flattened_sierra_class: mp_rpc::v0_7_1::ContractClass) -> Self {
         FlattenedSierraClass {
             sierra_program: flattened_sierra_class.sierra_program,
             contract_class_version: flattened_sierra_class.contract_class_version,
@@ -46,9 +48,9 @@ impl From<mp_rpc::ContractClass> for FlattenedSierraClass {
     }
 }
 
-impl From<FlattenedSierraClass> for mp_rpc::ContractClass {
+impl From<FlattenedSierraClass> for mp_rpc::v0_7_1::ContractClass {
     fn from(flattened_sierra_class: FlattenedSierraClass) -> Self {
-        mp_rpc::ContractClass {
+        mp_rpc::v0_7_1::ContractClass {
             sierra_program: flattened_sierra_class.sierra_program,
             contract_class_version: flattened_sierra_class.contract_class_version,
             entry_points_by_type: flattened_sierra_class.entry_points_by_type.into(),
@@ -57,8 +59,8 @@ impl From<FlattenedSierraClass> for mp_rpc::ContractClass {
     }
 }
 
-impl From<mp_rpc::EntryPointsByType> for EntryPointsByType {
-    fn from(entry_points_by_type: mp_rpc::EntryPointsByType) -> Self {
+impl From<mp_rpc::v0_7_1::EntryPointsByType> for EntryPointsByType {
+    fn from(entry_points_by_type: mp_rpc::v0_7_1::EntryPointsByType) -> Self {
         EntryPointsByType {
             constructor: entry_points_by_type
                 .constructor
@@ -79,9 +81,9 @@ impl From<mp_rpc::EntryPointsByType> for EntryPointsByType {
     }
 }
 
-impl From<EntryPointsByType> for mp_rpc::EntryPointsByType {
+impl From<EntryPointsByType> for mp_rpc::v0_7_1::EntryPointsByType {
     fn from(entry_points_by_type: EntryPointsByType) -> Self {
-        mp_rpc::EntryPointsByType {
+        mp_rpc::v0_7_1::EntryPointsByType {
             constructor: entry_points_by_type
                 .constructor
                 .into_iter()
@@ -101,25 +103,27 @@ impl From<EntryPointsByType> for mp_rpc::EntryPointsByType {
     }
 }
 
-impl From<mp_rpc::SierraEntryPoint> for SierraEntryPoint {
-    fn from(sierra_entry_point: mp_rpc::SierraEntryPoint) -> Self {
+impl From<mp_rpc::v0_7_1::SierraEntryPoint> for SierraEntryPoint {
+    fn from(sierra_entry_point: mp_rpc::v0_7_1::SierraEntryPoint) -> Self {
         SierraEntryPoint { selector: sierra_entry_point.selector, function_idx: sierra_entry_point.function_idx }
     }
 }
 
-impl From<SierraEntryPoint> for mp_rpc::SierraEntryPoint {
+impl From<SierraEntryPoint> for mp_rpc::v0_7_1::SierraEntryPoint {
     fn from(sierra_entry_point: SierraEntryPoint) -> Self {
-        mp_rpc::SierraEntryPoint {
+        mp_rpc::v0_7_1::SierraEntryPoint {
             selector: sierra_entry_point.selector,
             function_idx: sierra_entry_point.function_idx,
         }
     }
 }
 
-impl TryFrom<mp_rpc::DeprecatedContractClass> for CompressedLegacyContractClass {
+impl TryFrom<mp_rpc::v0_7_1::DeprecatedContractClass> for CompressedLegacyContractClass {
     type Error = std::io::Error;
 
-    fn try_from(compressed_legacy_contract_class: mp_rpc::DeprecatedContractClass) -> Result<Self, Self::Error> {
+    fn try_from(
+        compressed_legacy_contract_class: mp_rpc::v0_7_1::DeprecatedContractClass,
+    ) -> Result<Self, Self::Error> {
         use base64::Engine;
 
         let decoded_program = base64::engine::general_purpose::STANDARD
@@ -136,14 +140,14 @@ impl TryFrom<mp_rpc::DeprecatedContractClass> for CompressedLegacyContractClass 
     }
 }
 
-impl From<CompressedLegacyContractClass> for mp_rpc::DeprecatedContractClass {
+impl From<CompressedLegacyContractClass> for mp_rpc::v0_7_1::DeprecatedContractClass {
     fn from(compressed_legacy_contract_class: CompressedLegacyContractClass) -> Self {
         use base64::Engine;
 
         let encoded_program =
             base64::engine::general_purpose::STANDARD.encode(&compressed_legacy_contract_class.program);
 
-        mp_rpc::DeprecatedContractClass {
+        mp_rpc::v0_7_1::DeprecatedContractClass {
             program: encoded_program,
             entry_points_by_type: compressed_legacy_contract_class.entry_points_by_type.into(),
             abi: compressed_legacy_contract_class
@@ -153,8 +157,8 @@ impl From<CompressedLegacyContractClass> for mp_rpc::DeprecatedContractClass {
     }
 }
 
-impl From<mp_rpc::DeprecatedEntryPointsByType> for LegacyEntryPointsByType {
-    fn from(legacy_entry_points_by_type: mp_rpc::DeprecatedEntryPointsByType) -> Self {
+impl From<mp_rpc::v0_7_1::DeprecatedEntryPointsByType> for LegacyEntryPointsByType {
+    fn from(legacy_entry_points_by_type: mp_rpc::v0_7_1::DeprecatedEntryPointsByType) -> Self {
         LegacyEntryPointsByType {
             constructor: legacy_entry_points_by_type
                 .constructor
@@ -175,9 +179,9 @@ impl From<mp_rpc::DeprecatedEntryPointsByType> for LegacyEntryPointsByType {
     }
 }
 
-impl From<LegacyEntryPointsByType> for mp_rpc::DeprecatedEntryPointsByType {
+impl From<LegacyEntryPointsByType> for mp_rpc::v0_7_1::DeprecatedEntryPointsByType {
     fn from(legacy_entry_points_by_type: LegacyEntryPointsByType) -> Self {
-        mp_rpc::DeprecatedEntryPointsByType {
+        mp_rpc::v0_7_1::DeprecatedEntryPointsByType {
             constructor: legacy_entry_points_by_type
                 .constructor
                 .into_iter()
@@ -197,8 +201,8 @@ impl From<LegacyEntryPointsByType> for mp_rpc::DeprecatedEntryPointsByType {
     }
 }
 
-impl From<mp_rpc::DeprecatedCairoEntryPoint> for LegacyContractEntryPoint {
-    fn from(legacy_contract_entry_point: mp_rpc::DeprecatedCairoEntryPoint) -> Self {
+impl From<mp_rpc::v0_7_1::DeprecatedCairoEntryPoint> for LegacyContractEntryPoint {
+    fn from(legacy_contract_entry_point: mp_rpc::v0_7_1::DeprecatedCairoEntryPoint) -> Self {
         LegacyContractEntryPoint {
             offset: legacy_contract_entry_point.offset,
             selector: legacy_contract_entry_point.selector,
@@ -206,49 +210,49 @@ impl From<mp_rpc::DeprecatedCairoEntryPoint> for LegacyContractEntryPoint {
     }
 }
 
-impl From<LegacyContractEntryPoint> for mp_rpc::DeprecatedCairoEntryPoint {
+impl From<LegacyContractEntryPoint> for mp_rpc::v0_7_1::DeprecatedCairoEntryPoint {
     fn from(legacy_contract_entry_point: LegacyContractEntryPoint) -> Self {
-        mp_rpc::DeprecatedCairoEntryPoint {
+        mp_rpc::v0_7_1::DeprecatedCairoEntryPoint {
             offset: legacy_contract_entry_point.offset,
             selector: legacy_contract_entry_point.selector,
         }
     }
 }
 
-impl From<mp_rpc::ContractAbiEntry> for LegacyContractAbiEntry {
-    fn from(legacy_contract_abi_entry: mp_rpc::ContractAbiEntry) -> Self {
+impl From<mp_rpc::v0_7_1::ContractAbiEntry> for LegacyContractAbiEntry {
+    fn from(legacy_contract_abi_entry: mp_rpc::v0_7_1::ContractAbiEntry) -> Self {
         match legacy_contract_abi_entry {
-            mp_rpc::ContractAbiEntry::Function(legacy_function_abi_entry) => {
+            mp_rpc::v0_7_1::ContractAbiEntry::Function(legacy_function_abi_entry) => {
                 LegacyContractAbiEntry::Function(legacy_function_abi_entry.into())
             }
-            mp_rpc::ContractAbiEntry::Event(legacy_event_abi_entry) => {
+            mp_rpc::v0_7_1::ContractAbiEntry::Event(legacy_event_abi_entry) => {
                 LegacyContractAbiEntry::Event(legacy_event_abi_entry.into())
             }
-            mp_rpc::ContractAbiEntry::Struct(legacy_struct_abi_entry) => {
+            mp_rpc::v0_7_1::ContractAbiEntry::Struct(legacy_struct_abi_entry) => {
                 LegacyContractAbiEntry::Struct(legacy_struct_abi_entry.into())
             }
         }
     }
 }
 
-impl From<LegacyContractAbiEntry> for mp_rpc::ContractAbiEntry {
+impl From<LegacyContractAbiEntry> for mp_rpc::v0_7_1::ContractAbiEntry {
     fn from(legacy_contract_abi_entry: LegacyContractAbiEntry) -> Self {
         match legacy_contract_abi_entry {
             LegacyContractAbiEntry::Function(legacy_function_abi_entry) => {
-                mp_rpc::ContractAbiEntry::Function(legacy_function_abi_entry.into())
+                mp_rpc::v0_7_1::ContractAbiEntry::Function(legacy_function_abi_entry.into())
             }
             LegacyContractAbiEntry::Event(legacy_event_abi_entry) => {
-                mp_rpc::ContractAbiEntry::Event(legacy_event_abi_entry.into())
+                mp_rpc::v0_7_1::ContractAbiEntry::Event(legacy_event_abi_entry.into())
             }
             LegacyContractAbiEntry::Struct(legacy_struct_abi_entry) => {
-                mp_rpc::ContractAbiEntry::Struct(legacy_struct_abi_entry.into())
+                mp_rpc::v0_7_1::ContractAbiEntry::Struct(legacy_struct_abi_entry.into())
             }
         }
     }
 }
 
-impl From<mp_rpc::FunctionAbiEntry> for LegacyFunctionAbiEntry {
-    fn from(legacy_function_abi_entry: mp_rpc::FunctionAbiEntry) -> Self {
+impl From<mp_rpc::v0_7_1::FunctionAbiEntry> for LegacyFunctionAbiEntry {
+    fn from(legacy_function_abi_entry: mp_rpc::v0_7_1::FunctionAbiEntry) -> Self {
         LegacyFunctionAbiEntry {
             r#type: legacy_function_abi_entry.ty.into(),
             name: legacy_function_abi_entry.name,
@@ -261,9 +265,9 @@ impl From<mp_rpc::FunctionAbiEntry> for LegacyFunctionAbiEntry {
     }
 }
 
-impl From<LegacyFunctionAbiEntry> for mp_rpc::FunctionAbiEntry {
+impl From<LegacyFunctionAbiEntry> for mp_rpc::v0_7_1::FunctionAbiEntry {
     fn from(legacy_function_abi_entry: LegacyFunctionAbiEntry) -> Self {
-        mp_rpc::FunctionAbiEntry {
+        mp_rpc::v0_7_1::FunctionAbiEntry {
             ty: legacy_function_abi_entry.r#type.into(),
             name: legacy_function_abi_entry.name,
             inputs: legacy_function_abi_entry.inputs.into_iter().map(|abi_entry| abi_entry.into()).collect(),
@@ -275,8 +279,8 @@ impl From<LegacyFunctionAbiEntry> for mp_rpc::FunctionAbiEntry {
     }
 }
 
-impl From<mp_rpc::EventAbiEntry> for LegacyEventAbiEntry {
-    fn from(legacy_event_abi_entry: mp_rpc::EventAbiEntry) -> Self {
+impl From<mp_rpc::v0_7_1::EventAbiEntry> for LegacyEventAbiEntry {
+    fn from(legacy_event_abi_entry: mp_rpc::v0_7_1::EventAbiEntry) -> Self {
         LegacyEventAbiEntry {
             r#type: legacy_event_abi_entry.ty.into(),
             name: legacy_event_abi_entry.name,
@@ -286,9 +290,9 @@ impl From<mp_rpc::EventAbiEntry> for LegacyEventAbiEntry {
     }
 }
 
-impl From<LegacyEventAbiEntry> for mp_rpc::EventAbiEntry {
+impl From<LegacyEventAbiEntry> for mp_rpc::v0_7_1::EventAbiEntry {
     fn from(legacy_event_abi_entry: LegacyEventAbiEntry) -> Self {
-        mp_rpc::EventAbiEntry {
+        mp_rpc::v0_7_1::EventAbiEntry {
             ty: legacy_event_abi_entry.r#type.into(),
             name: legacy_event_abi_entry.name,
             keys: legacy_event_abi_entry.keys.into_iter().map(|abi_entry| abi_entry.into()).collect(),
@@ -297,8 +301,8 @@ impl From<LegacyEventAbiEntry> for mp_rpc::EventAbiEntry {
     }
 }
 
-impl From<mp_rpc::StructAbiEntry> for LegacyStructAbiEntry {
-    fn from(legacy_struct_abi_entry: mp_rpc::StructAbiEntry) -> Self {
+impl From<mp_rpc::v0_7_1::StructAbiEntry> for LegacyStructAbiEntry {
+    fn from(legacy_struct_abi_entry: mp_rpc::v0_7_1::StructAbiEntry) -> Self {
         LegacyStructAbiEntry {
             r#type: legacy_struct_abi_entry.ty.into(),
             name: legacy_struct_abi_entry.name,
@@ -308,9 +312,9 @@ impl From<mp_rpc::StructAbiEntry> for LegacyStructAbiEntry {
     }
 }
 
-impl From<LegacyStructAbiEntry> for mp_rpc::StructAbiEntry {
+impl From<LegacyStructAbiEntry> for mp_rpc::v0_7_1::StructAbiEntry {
     fn from(legacy_struct_abi_entry: LegacyStructAbiEntry) -> Self {
-        mp_rpc::StructAbiEntry {
+        mp_rpc::v0_7_1::StructAbiEntry {
             ty: legacy_struct_abi_entry.r#type.into(),
             name: legacy_struct_abi_entry.name,
             size: legacy_struct_abi_entry.size,
@@ -319,8 +323,8 @@ impl From<LegacyStructAbiEntry> for mp_rpc::StructAbiEntry {
     }
 }
 
-impl From<mp_rpc::StructMember> for LegacyStructMember {
-    fn from(legacy_struct_member: mp_rpc::StructMember) -> Self {
+impl From<mp_rpc::v0_7_1::StructMember> for LegacyStructMember {
+    fn from(legacy_struct_member: mp_rpc::v0_7_1::StructMember) -> Self {
         LegacyStructMember {
             name: legacy_struct_member.typed_parameter.name,
             r#type: legacy_struct_member.typed_parameter.ty,
@@ -329,10 +333,10 @@ impl From<mp_rpc::StructMember> for LegacyStructMember {
     }
 }
 
-impl From<LegacyStructMember> for mp_rpc::StructMember {
+impl From<LegacyStructMember> for mp_rpc::v0_7_1::StructMember {
     fn from(legacy_struct_member: LegacyStructMember) -> Self {
-        mp_rpc::StructMember {
-            typed_parameter: mp_rpc::TypedParameter {
+        mp_rpc::v0_7_1::StructMember {
+            typed_parameter: mp_rpc::v0_7_1::TypedParameter {
                 name: legacy_struct_member.name,
                 ty: legacy_struct_member.r#type,
             },
@@ -341,45 +345,45 @@ impl From<LegacyStructMember> for mp_rpc::StructMember {
     }
 }
 
-impl From<mp_rpc::TypedParameter> for LegacyTypedParameter {
-    fn from(legacy_typed_parameter: mp_rpc::TypedParameter) -> Self {
+impl From<mp_rpc::v0_7_1::TypedParameter> for LegacyTypedParameter {
+    fn from(legacy_typed_parameter: mp_rpc::v0_7_1::TypedParameter) -> Self {
         LegacyTypedParameter { r#type: legacy_typed_parameter.ty, name: legacy_typed_parameter.name }
     }
 }
 
-impl From<LegacyTypedParameter> for mp_rpc::TypedParameter {
+impl From<LegacyTypedParameter> for mp_rpc::v0_7_1::TypedParameter {
     fn from(legacy_typed_parameter: LegacyTypedParameter) -> Self {
-        mp_rpc::TypedParameter { ty: legacy_typed_parameter.r#type, name: legacy_typed_parameter.name }
+        mp_rpc::v0_7_1::TypedParameter { ty: legacy_typed_parameter.r#type, name: legacy_typed_parameter.name }
     }
 }
 
-impl From<mp_rpc::FunctionAbiType> for LegacyFunctionAbiType {
-    fn from(legacy_function_abi_type: mp_rpc::FunctionAbiType) -> Self {
+impl From<mp_rpc::v0_7_1::FunctionAbiType> for LegacyFunctionAbiType {
+    fn from(legacy_function_abi_type: mp_rpc::v0_7_1::FunctionAbiType) -> Self {
         match legacy_function_abi_type {
-            mp_rpc::FunctionAbiType::Function => LegacyFunctionAbiType::Function,
-            mp_rpc::FunctionAbiType::L1Handler => LegacyFunctionAbiType::L1Handler,
-            mp_rpc::FunctionAbiType::Constructor => LegacyFunctionAbiType::Constructor,
+            mp_rpc::v0_7_1::FunctionAbiType::Function => LegacyFunctionAbiType::Function,
+            mp_rpc::v0_7_1::FunctionAbiType::L1Handler => LegacyFunctionAbiType::L1Handler,
+            mp_rpc::v0_7_1::FunctionAbiType::Constructor => LegacyFunctionAbiType::Constructor,
         }
     }
 }
 
-impl From<LegacyFunctionAbiType> for mp_rpc::FunctionAbiType {
+impl From<LegacyFunctionAbiType> for mp_rpc::v0_7_1::FunctionAbiType {
     fn from(legacy_function_abi_type: LegacyFunctionAbiType) -> Self {
         match legacy_function_abi_type {
-            LegacyFunctionAbiType::Function => mp_rpc::FunctionAbiType::Function,
-            LegacyFunctionAbiType::L1Handler => mp_rpc::FunctionAbiType::L1Handler,
-            LegacyFunctionAbiType::Constructor => mp_rpc::FunctionAbiType::Constructor,
+            LegacyFunctionAbiType::Function => mp_rpc::v0_7_1::FunctionAbiType::Function,
+            LegacyFunctionAbiType::L1Handler => mp_rpc::v0_7_1::FunctionAbiType::L1Handler,
+            LegacyFunctionAbiType::Constructor => mp_rpc::v0_7_1::FunctionAbiType::Constructor,
         }
     }
 }
 
-impl From<mp_rpc::EventAbiType> for LegacyEventAbiType {
-    fn from(_: mp_rpc::EventAbiType) -> Self {
+impl From<mp_rpc::v0_7_1::EventAbiType> for LegacyEventAbiType {
+    fn from(_: mp_rpc::v0_7_1::EventAbiType) -> Self {
         LegacyEventAbiType::Event
     }
 }
 
-impl From<LegacyEventAbiType> for mp_rpc::EventAbiType {
+impl From<LegacyEventAbiType> for mp_rpc::v0_7_1::EventAbiType {
     fn from(legacy_event_abi_type: LegacyEventAbiType) -> Self {
         match legacy_event_abi_type {
             LegacyEventAbiType::Event => "event".to_string(),
@@ -387,13 +391,13 @@ impl From<LegacyEventAbiType> for mp_rpc::EventAbiType {
     }
 }
 
-impl From<mp_rpc::StructAbiType> for LegacyStructAbiType {
-    fn from(_: mp_rpc::StructAbiType) -> Self {
+impl From<mp_rpc::v0_7_1::StructAbiType> for LegacyStructAbiType {
+    fn from(_: mp_rpc::v0_7_1::StructAbiType) -> Self {
         LegacyStructAbiType::Struct
     }
 }
 
-impl From<LegacyStructAbiType> for mp_rpc::StructAbiType {
+impl From<LegacyStructAbiType> for mp_rpc::v0_7_1::StructAbiType {
     fn from(legacy_struct_abi_type: LegacyStructAbiType) -> Self {
         match legacy_struct_abi_type {
             LegacyStructAbiType::Struct => "struct".to_string(),
@@ -401,13 +405,13 @@ impl From<LegacyStructAbiType> for mp_rpc::StructAbiType {
     }
 }
 
-impl From<mp_rpc::FunctionStateMutability> for FunctionStateMutability {
-    fn from(_: mp_rpc::FunctionStateMutability) -> Self {
+impl From<mp_rpc::v0_7_1::FunctionStateMutability> for FunctionStateMutability {
+    fn from(_: mp_rpc::v0_7_1::FunctionStateMutability) -> Self {
         FunctionStateMutability::View
     }
 }
 
-impl From<FunctionStateMutability> for mp_rpc::FunctionStateMutability {
+impl From<FunctionStateMutability> for mp_rpc::v0_7_1::FunctionStateMutability {
     fn from(function_state_mutability: FunctionStateMutability) -> Self {
         match function_state_mutability {
             FunctionStateMutability::View => "view".to_string(),
@@ -424,7 +428,7 @@ mod tests {
         LegacyStructMember, LegacyTypedParameter, SierraEntryPoint,
     };
     use mp_convert::test::assert_consistent_conversion;
-    use mp_rpc::MaybeDeprecatedContractClass as StarknetContractClass;
+    use mp_rpc::v0_7_1::MaybeDeprecatedContractClass as StarknetContractClass;
     use starknet_types_core::felt::Felt;
 
     #[test]

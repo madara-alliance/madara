@@ -18,9 +18,9 @@ use crate::errors::ErrorExtWs;
 /// This subscription will automatically close once a transaction has reached [`AcceptedOnL1`].
 ///
 /// [specs]: https://github.com/starkware-libs/starknet-specs/blob/a2d10fc6cbaddbe2d3cf6ace5174dd0a306f4885/api/starknet_ws_api.json#L127C5-L168C7
-/// [`Received`]: mp_rpc::v0_7_1::TxnStatus::Received
-/// [`AcceptedOnL2`]: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
-/// [`AcceptedOnL1`]: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
+/// [`Received`]: mp_rpc::v0_8_1::TxnStatus::Received
+/// [`AcceptedOnL2`]: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
+/// [`AcceptedOnL1`]: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1
 pub async fn subscribe_transaction_status(
     starknet: &crate::Starknet,
     subscription_sink: jsonrpsee::PendingSubscriptionSink,
@@ -93,14 +93,14 @@ impl<'a> SubscriptionState<'a> {
                 let block_number = common
                     .starknet
                     .backend
-                    .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                    .get_block_n(&mp_rpc::v0_8_1::BlockId::Hash(block_info.header.parent_block_hash))
                     .or_else_internal_server_error(|| {
                         format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
                     })?
                     .map(|n| n + 1)
                     .unwrap_or(0);
                 tracing::debug!("WaitAcceptedOnL1");
-                common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2).await?;
                 Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel_confirmed }))
             }
             Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
@@ -114,14 +114,14 @@ impl<'a> SubscriptionState<'a> {
                 // stage of the transaction so the state machine is put in its end state.
                 if confirmed.is_some_and(|n| block_number <= n) {
                     tracing::debug!("WaitNone");
-                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
+                    common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1).await?;
                     Ok(Self::None)
                 }
                 // Tx has not yet been accepted on L1 but is included on L2, hence it is marked
                 // as accepted on L2. We wait for it to be accepted on L1
                 else {
                     tracing::debug!("WaitAcceptedOnL1");
-                    common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                    common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2).await?;
                     Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel_confirmed }))
                 }
             }
@@ -146,7 +146,7 @@ impl<'a> SubscriptionState<'a> {
                     // assume the transaction has been received). We wait for it to be accepted on L2.
                     _ => {
                         tracing::debug!("WaitAcceptedOnL2");
-                        common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
+                        common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::Received).await?;
                         Ok(Self::WaitAcceptedOnL2(StateTransitionAcceptedOnL2 { common, channel_pending_tx }))
                     }
                 }
@@ -189,11 +189,11 @@ impl<'a> SubscriptionState<'a> {
                     };
                     match s {
                         TransitionMatrixReceived::WaitAcceptedOnL2(s) => {
-                            s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::Received).await?;
+                            s.common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::Received).await?;
                             *self = Self::WaitAcceptedOnL2(s);
                         }
                         TransitionMatrixReceived::WaitAcceptedOnL1(s) => {
-                            s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                            s.common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2).await?;
                             *self = Self::WaitAcceptedOnL1(s);
                         }
                     }
@@ -204,7 +204,7 @@ impl<'a> SubscriptionState<'a> {
                         _ = state.common.ctx.cancelled() => break Err(crate::errors::StarknetWsApiError::Internal),
                         s = state.transition() => s?,
                     };
-                    s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
+                    s.common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2).await?;
                     *self = Self::WaitAcceptedOnL1(s);
                 }
                 Self::WaitAcceptedOnL1(state) => {
@@ -213,7 +213,7 @@ impl<'a> SubscriptionState<'a> {
                         _ = state.common.ctx.cancelled() => break Err(crate::errors::StarknetWsApiError::Internal),
                         s = state.transition() => s?,
                     };
-                    s.common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1).await?;
+                    s.common.send_txn_status(mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1).await?;
                     break Ok(());
                 }
             }
@@ -251,9 +251,9 @@ enum TransitionMatrixReceived<'a> {
 impl StateTransitionCommon<'_> {
     async fn send_txn_status(
         &self,
-        status: mp_rpc::v0_7_1::TxnStatus,
+        status: mp_rpc::v0_8_1::TxnStatus,
     ) -> Result<(), crate::errors::StarknetWsApiError> {
-        let txn_status = mp_rpc::v0_8_1::TxnStatus { transaction_hash: self.tx_hash, status };
+        let txn_status = mp_rpc::v0_8_1::NewTxnStatus { transaction_hash: self.tx_hash, status };
         let item = super::SubscriptionItem::new(self.sink.subscription_id(), txn_status);
         let msg = jsonrpsee::SubscriptionMessage::from_json(&item).or_else_internal_server_error(|| {
             format!("SubscribeTransactionStatus failed to create response for tx hash {:#x}", self.tx_hash)
@@ -353,7 +353,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                     break common
                         .starknet
                         .backend
-                        .get_block_n(&mp_rpc::BlockId::Hash(block_info.header.parent_block_hash))
+                        .get_block_n(&mp_rpc::v0_8_1::BlockId::Hash(block_info.header.parent_block_hash))
                         .or_else_internal_server_error(|| {
                             format!("SubscribeTransactionStatus failed to retrieve block number for tx {tx_hash:#x}")
                         })?
@@ -403,8 +403,8 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL1<'a> {
 #[cfg(test)]
 mod test {
     use crate::{
-        versions::user::v0_8_0::{
-            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server,
+        versions::user::v0_8_1::{
+            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server,
         },
         Starknet,
     };
@@ -430,8 +430,8 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx() -> mp_rpc::BroadcastedInvokeTxn {
-        mp_rpc::BroadcastedInvokeTxn::V0(mp_rpc::InvokeTxnV0 {
+    fn tx() -> mp_rpc::v0_8_1::BroadcastedInvokeTxn {
+        mp_rpc::v0_8_1::BroadcastedInvokeTxn::V0(mp_rpc::v0_8_1::InvokeTxnV0 {
             calldata: Default::default(),
             contract_address: Default::default(),
             entry_point_selector: Default::default(),
@@ -441,7 +441,7 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn tx_with_receipt(tx: mp_rpc::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
+    fn tx_with_receipt(tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
         mp_block::TransactionWithReceipt {
             transaction: mp_transactions::Transaction::Invoke(tx.into()),
             receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
@@ -499,14 +499,14 @@ mod test {
     async fn subscribe_transaction_status_received_before(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
 
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -520,9 +520,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::Received
+                    status: mp_rpc::v0_8_1::TxnStatus::Received
                 });
             }
         );
@@ -533,14 +533,14 @@ mod test {
     async fn subscribe_transaction_status_received_after(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
 
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -554,9 +554,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::Received
+                    status: mp_rpc::v0_8_1::TxnStatus::Received
                 });
             }
         );
@@ -574,7 +574,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -588,9 +588,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
                 });
             }
         );
@@ -601,7 +601,7 @@ mod test {
     async fn subscribe_transaction_status_accepted_on_l2_after(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
         tx_with_receipt: mp_block::TransactionWithReceipt,
         pending: mp_block::PendingFullBlock,
     ) {
@@ -611,7 +611,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -625,9 +625,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::Received
+                    status: mp_rpc::v0_8_1::TxnStatus::Received
                 });
             }
         );
@@ -637,9 +637,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
                 });
             }
         );
@@ -657,7 +657,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -674,9 +674,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1
                 });
             }
         );
@@ -694,7 +694,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -710,9 +710,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
                 });
             }
         );
@@ -724,9 +724,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1
                 });
             }
         );
@@ -737,7 +737,7 @@ mod test {
     async fn subscribe_transaction_status_full_flow(
         _logs: (),
         starknet: Starknet,
-        tx: mp_rpc::BroadcastedInvokeTxn,
+        tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
         tx_with_receipt: mp_block::TransactionWithReceipt,
         pending: mp_block::PendingFullBlock,
         block: mp_block::MadaraMaybePendingBlock,
@@ -748,7 +748,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -762,9 +762,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::Received
+                    status: mp_rpc::v0_8_1::TxnStatus::Received
                 });
             }
         );
@@ -776,9 +776,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL2
                 });
             }
         );
@@ -792,9 +792,9 @@ mod test {
 
         assert_matches::assert_matches!(
             sub.next().await, Some(Ok(SubscriptionItem { result: status, .. })) => {
-                assert_eq!(status, mp_rpc::v0_8_1::TxnStatus {
+                assert_eq!(status, mp_rpc::v0_8_1::NewTxnStatus {
                     transaction_hash: TX_HASH,
-                    status: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
+                    status: mp_rpc::v0_8_1::TxnStatus::AcceptedOnL1
                 });
             }
         );
@@ -804,13 +804,17 @@ mod test {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn subscribe_transaction_status_unsubscribe(_logs: (), starknet: Starknet, tx: mp_rpc::BroadcastedInvokeTxn) {
+    async fn subscribe_transaction_status_unsubscribe(
+        _logs: (),
+        starknet: Starknet,
+        tx: mp_rpc::v0_8_1::BroadcastedInvokeTxn,
+    ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
 
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 

@@ -545,7 +545,7 @@ pub(crate) mod tests {
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
-    use mp_rpc::{
+    use mp_rpc::v0_7_1::{
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };

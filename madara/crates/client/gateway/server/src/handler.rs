@@ -30,7 +30,7 @@ use mp_gateway::{
     error::{StarknetError, StarknetErrorCode},
     user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult},
 };
-use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
+use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedMempoolTx;
 use mp_utils::service::ServiceContext;
 use serde::Serialize;
