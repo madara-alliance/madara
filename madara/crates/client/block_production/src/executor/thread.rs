@@ -20,7 +20,6 @@ use tokio::{
 
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
-use mc_mempool::L1DataProvider;
 use mp_convert::{Felt, ToFelt};
 
 use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
@@ -79,7 +78,6 @@ impl ExecutorThreadState {
 /// This thread becomes the blockifier executor scheduler thread (via TransactionExecutor), which will internally spawn worker threads.
 pub struct ExecutorThread {
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
 
     incoming_batches: mpsc::Receiver<super::BatchToExecute>,
     replies_sender: mpsc::Sender<super::ExecutorMessage>,
@@ -102,14 +100,12 @@ enum WaitTxBatchOutcome {
 impl ExecutorThread {
     pub fn new(
         backend: Arc<MadaraBackend>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
         incoming_batches: mpsc::Receiver<super::BatchToExecute>,
         replies_sender: mpsc::Sender<super::ExecutorMessage>,
         commands: mpsc::UnboundedReceiver<super::ExecutorCommand>,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             backend,
-            l1_data_provider,
             incoming_batches,
             replies_sender,
             commands,
@@ -223,8 +219,15 @@ impl ExecutorThread {
     fn create_execution_state(
         &mut self,
         state: ExecutorStateNewBlock,
+        previous_l2_gas_used: u64,
     ) -> anyhow::Result<(ExecutorStateExecuting, HashMap<StorageEntry, Felt>)> {
-        let exec_ctx = create_execution_context(&self.l1_data_provider, &self.backend, state.state_adaptor.block_n());
+        let previous_l2_gas_price = state.state_adaptor.latest_gas_prices().strk_l2_gas_price;
+        let exec_ctx = create_execution_context(
+            &self.backend,
+            state.state_adaptor.block_n(),
+            previous_l2_gas_price,
+            previous_l2_gas_used,
+        )?;
 
         // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
@@ -282,6 +285,7 @@ impl ExecutorThread {
         let mut next_block_deadline = Instant::now() + block_time;
         let mut force_close = false;
         let mut block_empty = true;
+        let mut l2_gas_consumed_block = 0;
 
         tracing::debug!("Starting executor thread.");
 
@@ -337,8 +341,10 @@ impl ExecutorThread {
                 ExecutorThreadState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorThreadState::NewBlock(state_new_block) => {
                     // Create new execution state.
-                    let (execution_state, initial_state_diffs_storage) =
-                        self.create_execution_state(state_new_block).context("Creating execution state")?;
+                    let (execution_state, initial_state_diffs_storage) = self
+                        .create_execution_state(state_new_block, l2_gas_consumed_block)
+                        .context("Creating execution state")?;
+                    l2_gas_consumed_block = 0;
 
                     tracing::debug!("Starting new block, block_n={}", execution_state.exec_ctx.block_n);
                     if self
@@ -388,6 +394,7 @@ impl ExecutorThread {
                         tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
 
                         stats.n_added_to_block += 1;
+                        stats.l2_gas_consumed += execution_info.receipt.gas.l2_gas.0;
                         block_empty = false;
                         if execution_info.is_reverted() {
                             stats.n_reverted += 1;
@@ -410,6 +417,7 @@ impl ExecutorThread {
                     }
                 }
             }
+            l2_gas_consumed_block += stats.l2_gas_consumed;
 
             tracing::debug!("Finished batch execution.");
             tracing::debug!("Stats: {:?}", stats);
