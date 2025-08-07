@@ -1,5 +1,5 @@
 use mp_block::{BlockId, BlockTag};
-use mp_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
+use mp_rpc::v0_7_1::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};

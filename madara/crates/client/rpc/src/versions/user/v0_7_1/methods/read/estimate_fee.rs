@@ -1,14 +1,14 @@
+use crate::constants::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::tx_api_to_blockifier;
 use crate::utils::ResultExt;
-use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::Starknet;
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use mp_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
+use mp_rpc::v0_7_1::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 use std::sync::Arc;
 
@@ -64,7 +64,7 @@ pub async fn estimate_fee(
                 });
             }
             let tip = tips[index];
-            acc.push(exec_context.execution_result_to_fee_estimate(result, tip));
+            acc.push(exec_context.execution_result_to_fee_estimate_legacy(result, tip));
             Ok(acc)
         },
     )?;

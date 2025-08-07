@@ -3,15 +3,15 @@ use std::sync::Arc;
 use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use mp_rpc::{FeeEstimate, MsgFromL1};
+use mp_rpc::v0_7_1::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
 
+use crate::constants::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::OptionExt;
-use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::Starknet;
 
 /// Estimate the L2 fee of a message sent on L1
@@ -50,7 +50,7 @@ pub async fn estimate_message_fee(
         .pop()
         .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result, tip);
+    let fee_estimate = exec_context.execution_result_to_fee_estimate_legacy(&execution_result, tip);
 
     Ok(fee_estimate)
 }

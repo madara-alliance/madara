@@ -22,13 +22,13 @@ pub enum BlockStatus {
     Rejected,
 }
 
-impl From<BlockStatus> for mp_rpc::BlockStatus {
+impl From<BlockStatus> for mp_rpc::v0_7_1::BlockStatus {
     fn from(status: BlockStatus) -> Self {
         match status {
-            BlockStatus::Pending => mp_rpc::BlockStatus::Pending,
-            BlockStatus::AcceptedOnL2 => mp_rpc::BlockStatus::AcceptedOnL2,
-            BlockStatus::AcceptedOnL1 => mp_rpc::BlockStatus::AcceptedOnL1,
-            BlockStatus::Rejected => mp_rpc::BlockStatus::Rejected,
+            BlockStatus::Pending => mp_rpc::v0_7_1::BlockStatus::Pending,
+            BlockStatus::AcceptedOnL2 => mp_rpc::v0_7_1::BlockStatus::AcceptedOnL2,
+            BlockStatus::AcceptedOnL1 => mp_rpc::v0_7_1::BlockStatus::AcceptedOnL1,
+            BlockStatus::Rejected => mp_rpc::v0_7_1::BlockStatus::Rejected,
         }
     }
 }
@@ -142,17 +142,24 @@ impl From<&GasPrices> for starknet_api::block::GasPrices {
 }
 
 impl GasPrices {
-    pub fn l1_gas_price(&self) -> mp_rpc::ResourcePrice {
-        mp_rpc::ResourcePrice {
+    pub fn l1_gas_price(&self) -> mp_rpc::v0_7_1::ResourcePrice {
+        mp_rpc::v0_7_1::ResourcePrice {
             price_in_fri: self.strk_l1_gas_price.into(),
             price_in_wei: self.eth_l1_gas_price.into(),
         }
     }
 
-    pub fn l1_data_gas_price(&self) -> mp_rpc::ResourcePrice {
-        mp_rpc::ResourcePrice {
+    pub fn l1_data_gas_price(&self) -> mp_rpc::v0_7_1::ResourcePrice {
+        mp_rpc::v0_7_1::ResourcePrice {
             price_in_fri: self.strk_l1_data_gas_price.into(),
             price_in_wei: self.eth_l1_data_gas_price.into(),
+        }
+    }
+
+    pub fn l2_gas_price(&self) -> mp_rpc::v0_7_1::ResourcePrice {
+        mp_rpc::v0_7_1::ResourcePrice {
+            price_in_fri: self.strk_l2_gas_price.into(),
+            price_in_wei: self.eth_l2_gas_price.into(),
         }
     }
 

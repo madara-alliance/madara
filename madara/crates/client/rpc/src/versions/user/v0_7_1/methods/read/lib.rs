@@ -1,13 +1,13 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     BlockHashAndNumber, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall,
     MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
     MsgFromL1, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus,
     TxnReceiptWithBlockInfo, TxnWithHash,
 };
-use mp_rpc::{BroadcastedTxn, SimulationFlagForEstimateFee};
+use mp_rpc::v0_7_1::{BroadcastedTxn, SimulationFlagForEstimateFee};
 use starknet_types_core::felt::Felt;
 
 use super::block_hash_and_number::*;
@@ -73,7 +73,7 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(estimate_message_fee(self, message, block_id).await?)
     }
 
-    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
+    fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult> {
         Ok(get_block_with_receipts(self, block_id)?)
     }
 
@@ -82,7 +82,7 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
     }
 
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-        get_block_with_txs(self, block_id)
+        Ok(get_block_with_txs(self, block_id)?)
     }
 
     fn get_class_at(&self, block_id: BlockId, contract_address: Felt) -> RpcResult<MaybeDeprecatedContractClass> {

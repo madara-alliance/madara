@@ -139,6 +139,10 @@ pub enum StarknetErrorCode {
     TransactionLimitExceeded,
     #[serde(rename = "StarknetErrorCode.INVALID_TRANSACTION_NONCE")]
     InvalidTransactionNonce,
+    #[serde(rename = "StarknetErrorCode.REPLACEMENT_TRANSACTION_UNDERPRICED")]
+    ReplacementTransactionUnderpriced,
+    #[serde(rename = "StarknetErrorCode.FEE_BELOW_MINIMUM")]
+    FeeBelowMinimum,
     #[serde(rename = "StarknetErrorCode.OUT_OF_RANGE_FEE")]
     OutOfRangeFee,
     #[serde(rename = "StarknetErrorCode.INVALID_TRANSACTION_VERSION")]

@@ -1,9 +1,10 @@
 use crate::{utils::ResultExt, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_submit_tx::SubmitTransaction;
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 
 #[async_trait]

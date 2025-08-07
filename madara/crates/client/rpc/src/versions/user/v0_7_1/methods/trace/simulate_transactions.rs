@@ -1,4 +1,4 @@
-use super::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
+use crate::constants::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{tx_api_to_blockifier, ResultExt};
 use crate::Starknet;
@@ -6,7 +6,7 @@ use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::execution::TxInfo;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
-use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
+use mp_rpc::v0_7_1::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 use std::sync::Arc;
 
@@ -49,7 +49,7 @@ pub async fn simulate_transactions(
             Ok(SimulateTransactionsResult {
                 transaction_trace: execution_result_to_tx_trace(result)
                     .or_internal_server_error("Converting execution infos to tx trace")?,
-                fee_estimation: exec_context.execution_result_to_fee_estimate(result, tips[index]),
+                fee_estimation: exec_context.execution_result_to_fee_estimate_legacy(result, tips[index]),
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;
