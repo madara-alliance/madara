@@ -64,11 +64,10 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
-COPY Cargo.toml Cargo.lock .
+COPY Cargo.toml Cargo.lock ./
 COPY orchestrator orchestrator
 COPY build-artifacts build-artifacts
 
-# Build with verbose output to see linking details
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path orchestrator/Cargo.toml --release
@@ -87,8 +86,8 @@ RUN apt-get -y update && \
     curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
     apt-get update && \
     apt-get install -y nodejs && \
-    apt-get autoremove -y && \
-    apt-get clean && \
+    apt-get autoremove -y; \
+    apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

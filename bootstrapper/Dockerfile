@@ -36,11 +36,12 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
 FROM base-rust AS builder-rust
 
 COPY --from=planner /app/recipe.json recipe.json
+
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
-COPY Cargo.toml Cargo.lock .
+COPY Cargo.toml Cargo.lock ./
 COPY bootstrapper bootstrapper
 COPY build-artifacts build-artifacts
 
@@ -48,8 +49,8 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
     --mount=type=cache,target=/usr/local/cargo/registry \
     CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path bootstrapper/Cargo.toml --release
 
-# Step 5: runner
-FROM debian:bookworm-slim
+# Step 3: runner
+FROM debian:bookworm-slim AS runner
 
 RUN apt-get -y update && \
     apt-get install -y openssl ca-certificates tini curl &&\

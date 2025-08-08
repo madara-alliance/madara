@@ -5,15 +5,17 @@
 # Ignore editor and IDE files
 .vscode/
 .idea/
+.cursor/
 *.swp
 *.swo
 
 # Ignore scripts and target directory
-scripts
+scripts/
 target/
 
 # Ignore dockerfiles
 *dockerfile
+*Dockerfile
 
 # Ignore OS specific files
 .DS_Store
