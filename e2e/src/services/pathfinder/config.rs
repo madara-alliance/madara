@@ -2,6 +2,7 @@ use crate::services::constants::*;
 use crate::services::helpers::{get_binary_path, NodeRpcError};
 use crate::services::server::ServerError;
 use tokio::process::Command;
+use crate::services::helpers::get_database_path;
 use url::Url;
 use std::path::PathBuf;
 
@@ -28,6 +29,7 @@ pub enum PathfinderError {
 pub struct PathfinderConfig {
     binary_path: PathBuf,
     port: u16,
+    database_path: PathBuf,
     ethereum_url: Url,
     rpc_root_version: String,
     network: String,
@@ -44,6 +46,7 @@ impl Default for PathfinderConfig {
     fn default() -> Self {
         Self {
             port: PATHFINDER_PORT,
+            database_path: get_database_path(DATA_DIR, PATHFINDER_DATABASE_DIR),
             binary_path: get_binary_path(PATHFINDER_BINARY),
             ethereum_url: Url::parse("https://ethereum-sepolia-rpc.publicnode.com").unwrap(),
             rpc_root_version: "v07".to_string(),
@@ -83,6 +86,11 @@ impl PathfinderConfig {
     /// Get the Ethereum URL
     pub fn ethereum_url(&self) -> &Url {
         &self.ethereum_url
+    }
+
+    /// Get the database path
+    pub fn database_path(&self) -> &PathBuf {
+        &self.database_path
     }
 
     /// Get the RPC root version
@@ -137,6 +145,7 @@ impl PathfinderConfig {
 
         // Core arguments
         command.arg("--ethereum.url").arg(self.ethereum_url().to_string());
+        command.arg("--data-directory").arg(&self.database_path);
         command.arg("--http-rpc").arg(format!("{}:{}", DEFAULT_SERVICE_HOST, self.port()));
         command.arg("--rpc.root-version").arg(self.rpc_root_version());
         command.arg("--network").arg(self.network());
@@ -188,6 +197,11 @@ impl PathfinderConfigBuilder {
     /// Set the Ethereum URL
     pub fn ethereum_url(mut self, url: Url) -> Self {
         self.config.ethereum_url = url;
+        self
+    }
+
+    pub fn database_path<S: AsRef<std::path::Path>>(mut self, path: S) -> Self {
+        self.config.database_path = path.as_ref().to_path_buf();
         self
     }
 
