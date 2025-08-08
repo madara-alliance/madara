@@ -55,10 +55,7 @@ async fn test_assign_batch_to_block_new_batch(
     // Contains the following files:
     // blobs/1.txt
     // blobs/2.txt
-    // state_updates.json
-    // squashed_state_update.json
-    // stateful_compressed_state_update.json
-    // stateless_compressed_state_update.json
+    // ... other files
     let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await?;
     let blob_dir = data_dir.path().join("8373665/blobs/").to_str().unwrap().to_string();
 

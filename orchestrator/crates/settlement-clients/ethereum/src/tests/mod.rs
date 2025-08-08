@@ -131,7 +131,6 @@ mod settlement_client_tests {
     use alloy::providers::Provider;
     use alloy::sol_types::private::U256;
     use alloy_primitives::B256;
-    use color_eyre::eyre::eyre;
     use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
     use orchestrator_utils::env_utils::get_env_var_or_panic;
     use rstest::rstest;
@@ -143,9 +142,9 @@ mod settlement_client_tests {
         DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS,
         STARKNET_CORE_CONTRACT, STARKNET_CORE_CONTRACT_ADDRESS,
     };
-    use crate::{EthereumSettlementClient, EthereumSettlementValidatedArgs, Y_HIGH_POINT_OFFSET, Y_LOW_POINT_OFFSET};
+    use crate::{EthereumSettlementClient, EthereumSettlementValidatedArgs};
 
-    use std::io;
+    use orchestrator_utils::test_utils::setup_test_data;
 
     fn get_program_output_from_file(file_path: &str) -> Result<Vec<[u8; 32]>, Box<dyn std::error::Error>> {
         let file = File::open(file_path)?;
@@ -372,25 +371,27 @@ mod settlement_client_tests {
     // Starknet L1 Transaction - https://sepolia.voyager.online/l1/tx/0x09ad9c188b1abb9f27509eaa0c12aada6b3f446b70319da6d555b49af8cf2c8e
     #[case::basic(8373665)]
     async fn creating_input_data_works(#[case] fork_block_no: u64) {
+        // Download test data
+        // The test data contains state update information about block 8373665 on Ethereum Sepolia
+        // Contains the following files:
+        // blobs/1.txt
+        // blobs/2.txt
+        // program_output.txt
+        // ... other files
+        let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await.expect("unable to get test data");
+
+        let program_output_path = data_dir.path().join("8373665/program_output.txt").to_str().unwrap().to_string();
+
         // get program output from the file
-        let program_output = get_program_output_from_file(&format!(
-            "{}/{}/{}.txt",
-            *CURRENT_PATH, "src/test_data/program_output", fork_block_no
-        ))
-        .expect("unable to get program output from the file");
+        let program_output = get_program_output_from_file(&program_output_path.to_string())
+            .expect("unable to get program output from the file");
 
         // get blob data from the file
         let blob_data_vec = vec![
-            get_blob_data_from_file(&format!(
-                "{}/{}/{}/1.txt",
-                *CURRENT_PATH, "src/test_data/blob_data", fork_block_no
-            ))
-            .expect("unable to get blob data from the file"),
-            get_blob_data_from_file(&format!(
-                "{}/{}/{}/2.txt",
-                *CURRENT_PATH, "src/test_data/blob_data", fork_block_no
-            ))
-            .expect("unable to get blob data from the file"),
+            get_blob_data_from_file(&data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap().to_string())
+                .expect("unable to get blob data from the file"),
+            get_blob_data_from_file(&data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap().to_string())
+                .expect("unable to get blob data from the file"),
         ];
 
         // build input bytes
