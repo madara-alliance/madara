@@ -4753,9 +4753,10 @@ checksum = "0d6ef0072f8a535281e4876be788938b528e9a1d43900b82c2569af7da799125"
 name = "e2e"
 version = "0.8.0"
 dependencies = [
+ "alloy 0.8.3",
  "anyhow",
  "async-trait",
- "bootstrapper",
+ "color-eyre",
  "dotenvy",
  "env_logger",
  "fs_extra",
@@ -4765,6 +4766,13 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
+ "starknet 0.14.0",
+ "starknet-accounts 0.13.0",
+ "starknet-contract 0.13.0",
+ "starknet-core 0.13.0",
+ "starknet-crypto 0.7.4",
+ "starknet-providers 0.13.0",
+ "starknet-signers 0.11.0",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "testcontainers",
