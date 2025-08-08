@@ -115,6 +115,12 @@ impl ChainSetup {
     pub async fn shutdown(&mut self) -> Result<(), SetupError> {
         self.lifecycle_manager.shutdown_all().await
     }
+
+    /// Get the config
+    pub fn config(&self) -> &SetupConfig {
+        &self.config
+    }
+
 }
 
 impl Drop for ChainSetup {
