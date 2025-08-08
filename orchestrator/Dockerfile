@@ -93,11 +93,8 @@ RUN apt-get -y update && \
 WORKDIR /app
 
 COPY --from=builder-rust /app/target/release/orchestrator /bin
-COPY --from=builder-rust /app/orchestrator/node_modules ./node_modules
-COPY --from=builder-rust /app/orchestrator/package.json .
-COPY --from=builder-rust /app/orchestrator/migrate-mongo-config.js .
-COPY --from=builder-rust /app/orchestrator/migrations ./migrations
 
+# Copy trusted setup files
 COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt \
     /app/orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
 COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt /tmp/trusted_setup.txt

@@ -12,6 +12,10 @@
 # Ignore scripts and target directory
 scripts/
 target/
+**/target/**
+**/node_modules/**
+.venv/
+
 
 # Ignore dockerfiles
 *dockerfile
