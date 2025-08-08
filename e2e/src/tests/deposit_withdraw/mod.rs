@@ -1,28 +1,22 @@
+pub mod utils;
+
 use alloy::primitives::Address;
-use alloy::providers::Provider;
 use rstest::*;
 use starknet::accounts::Call;
 use starknet_signers::{LocalWallet, SigningKey};
 use tokio::time::sleep;
-use tokio::time::Instant;
 use std::str::FromStr;
 use std::time::Duration;
-use crate::services::helpers::NodeRpcMethods;
-use crate::services::helpers::TransactionFinalityStatus;
 use starknet::accounts::ConnectedAccount;
 use alloy::network::EthereumWallet;
 use alloy::providers::ProviderBuilder;
 use starknet::accounts::Account;
 use alloy::signers::local::PrivateKeySigner;
-use crate::services::constants::*;
-use crate::services::helpers::get_database_path;
-use crate::services::helpers::get_file_path;
 use crate::setup::SetupConfig;
-use starknet_core::types::FunctionCall;
 use starknet_core::types::BlockTag;
 use starknet_core::types::BlockId;
 use starknet_core::utils::get_selector_from_name;
-use super::utils::*;
+use utils::*;
 
 use alloy::{
     primitives::U256,
@@ -32,11 +26,9 @@ use alloy::{
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::Felt,
-    providers::{
-        jsonrpc::{HttpTransport, JsonRpcClient},
-        Url,
-    },
+    providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
+
 
 use super::setup::setup_chain;
 use crate::setup::ChainSetup;
@@ -411,7 +403,6 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
     Ok(())
 }
 
-
 async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     let l1_recipient_felt = Felt::from_hex(L1_ACCOUNT_ADDRESS)
         .map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
@@ -442,8 +433,6 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     println!("ETH Withdrawal transaction hash: {:#x}", result.transaction_hash);
     Ok(result.transaction_hash)
 }
-
-
 
 async fn execute_erc20_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     let l1_recipient_felt = Felt::from_hex(L1_ACCOUNT_ADDRESS)
