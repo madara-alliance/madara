@@ -169,10 +169,11 @@ impl ServiceManager {
 
             // Get the block number for syncing
             if let Some(madara) = &services.madara_service {
+                // TODO: change bootstrapped_madara_block_number to block number and remove i64
                 self.bootstrapped_madara_block_number = madara
                     .get_latest_block_number()
                     .await
-                    .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
+                    .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))? as i64;
             }
 
             println!("✅ L2 Setup completed");

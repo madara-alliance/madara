@@ -5,11 +5,12 @@
 use crate::setup::service_management::RunningServices;
 use crate::setup::SetupError;
 use tokio::time::{sleep, Duration};
+use crate::services::madara::MadaraService;
 
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(10);
 
 pub struct ServiceLifecycleManager {
-    services: Option<RunningServices>,
+    pub services: Option<RunningServices>,
 }
 
 impl ServiceLifecycleManager {
@@ -69,6 +70,14 @@ impl ServiceLifecycleManager {
 
         Ok(())
     }
+
+    // Getter for madara_service
+    // TODO: might be a very good reason to use arc!
+    pub fn madara_service(&self) -> &Option<MadaraService> {
+        self.services.as_ref().map_or(&None, |s| &s.madara_service)
+    }
+
+
 }
 
 impl Default for ServiceLifecycleManager {
