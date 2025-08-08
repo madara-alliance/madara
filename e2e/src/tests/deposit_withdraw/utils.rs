@@ -1,43 +1,22 @@
 use alloy::primitives::Address;
-use rstest::*;
-use starknet::accounts::Call;
-use starknet_signers::{LocalWallet, SigningKey};
+use starknet_signers::LocalWallet;
 use tokio::time::sleep;
 use tokio::time::Instant;
-use std::str::FromStr;
 use std::time::Duration;
 use crate::services::helpers::NodeRpcMethods;
 use crate::services::helpers::TransactionFinalityStatus;
-use starknet::accounts::ConnectedAccount;
-use alloy::network::EthereumWallet;
-use alloy::providers::ProviderBuilder;
-use starknet::accounts::Account;
-use alloy::signers::local::PrivateKeySigner;
-use crate::services::constants::*;
-use crate::services::helpers::get_database_path;
 use crate::services::helpers::get_file_path;
-use crate::setup::SetupConfig;
 use starknet_core::types::FunctionCall;
 use starknet_core::types::BlockTag;
 use starknet::providers::Provider;
 use starknet_core::types::BlockId;
 use starknet_core::utils::get_selector_from_name;
-use super::setup::setup_chain;
-
 use crate::setup::ChainSetup;
 
-use alloy::{
-    primitives::U256,
-    sol,
-};
-
 use starknet::{
-    accounts::{ExecutionEncoding, SingleOwnerAccount},
+    accounts::SingleOwnerAccount,
     core::types::Felt,
-    providers::{
-        jsonrpc::{HttpTransport, JsonRpcClient},
-        Url,
-    },
+    providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
 
 
