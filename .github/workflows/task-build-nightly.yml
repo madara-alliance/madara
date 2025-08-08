@@ -18,10 +18,6 @@ on:
         required: false
         default: ghcr.io
         type: string
-      cairo-artifacts-hash:
-        description: "Hash used to retrieve the cairo artifacts"
-        required: true
-        type: string
     outputs:
       nightly:
         description: Nightly image tag

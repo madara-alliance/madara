@@ -16,7 +16,6 @@ jobs:
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     permissions:
       contents: read
       attestations: write
@@ -35,7 +34,6 @@ jobs:
     with:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     permissions:
       contents: read
       attestations: write
@@ -47,7 +45,6 @@ jobs:
     with:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
-      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     permissions:
       contents: read
       attestations: write
