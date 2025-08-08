@@ -3,9 +3,9 @@ name = "bootstrapper"
 version = "0.1.0"
 edition.workspace = true
 
-[lib]
+[[bin]]
 name = "bootstrapper"
-path = "src/main.rs"  # Make sure this file exists
+path = "src/main.rs"
 
 [dependencies]
 anyhow = "1.0.80"
