@@ -80,6 +80,7 @@ pub const MOCK_PROVER_PORT: u16 = 3001;
 // =============================================================================
 pub const PATHFINDER_PORT: u16 = 9545;
 pub const PATHFINDER_BINARY: &str = "pathfinder";
+pub const PATHFINDER_DATABASE_DIR: &str = "pathfinder-db";
 
 // =============================================================================
 // ORCHESTRATOR SERVICE
