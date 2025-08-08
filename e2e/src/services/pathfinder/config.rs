@@ -167,6 +167,8 @@ impl PathfinderConfig {
             command.env(key, value);
         }
 
+        println!("Command for Pathfinder: {:?}", command);
+
         command
     }
 }
