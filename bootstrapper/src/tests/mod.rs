@@ -490,21 +490,21 @@ async fn call_erc20_withdraw_on_l2(config_file_path: PathBuf) -> color_eyre::Res
     println!("l1_account_address_felt is #3 {}", l1_account_address_felt);
 
     let l1_erc20_bridge = get_erc20_bridge(&bootstrapper_config, &clients).await;
-    let l2_erc20_bridge_address = l1_erc20_bridge.address();
-    let l2_erc20_bridge_felt = Felt::from_bytes_be_slice(l2_erc20_bridge_address.as_bytes());
-    println!("l2_erc20_bridge_felt is #4 {}", l2_erc20_bridge_felt);
+    let l1_erc20_bridge_address = l1_erc20_bridge.address();
+    let l1_erc20_bridge_felt = Felt::from_bytes_be_slice(l1_erc20_bridge_address.as_bytes());
+    println!("l1_erc20_bridge_felt is #4 {}", l1_erc20_bridge_felt);
 
     let l2_provider: &JsonRpcClient<HttpTransport> = clients.provider_l2();
     let l2_bridge_address = Felt::from_str(&bootstrapper_config.l2_erc20_bridge_proxy_address.clone().unwrap()).expect("Failed to parse l2_erc20_bridge_proxy_address");
-    let l2_eth_token_address = Felt::from_str(&bootstrapper_config.l2_erc20_token_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
+    let l2_erc20_token_address = Felt::from_str(&bootstrapper_config.l2_erc20_token_address.clone().unwrap()).expect("Failed to parse l2_eth_token_proxy_address");
     let l2_account = build_single_owner_account(l2_provider, &bootstrapper_config.rollup_priv_key, L2_DEPLOYER_ADDRESS, false).await;
-    let l2_account_balance_before_withdraw = read_erc20_balance(l2_provider, l2_eth_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await[0];
+    let l2_account_balance_before_withdraw = read_erc20_balance(l2_provider, l2_erc20_token_address, Felt::from_hex(L2_DEPLOYER_ADDRESS)?).await[0];
 
     let txn_result = invoke_contract(
         l2_bridge_address,
         "initiate_token_withdraw",
         vec![
-            l2_erc20_bridge_felt,
+            l1_erc20_bridge_felt,
             l1_account_address_felt,
             Felt::from_dec_str("5").unwrap(),
             Felt::ZERO,
