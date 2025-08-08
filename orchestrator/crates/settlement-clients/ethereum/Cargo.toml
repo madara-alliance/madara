@@ -32,6 +32,7 @@ tokio = { workspace = true }
 url = { workspace = true }
 
 #Instrumentation
+hex = "0.4.3"
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
@@ -46,7 +47,6 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-hex = "0.4.3"
 
 
 [dev-dependencies]
