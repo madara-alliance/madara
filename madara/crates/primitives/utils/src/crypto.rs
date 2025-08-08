@@ -24,8 +24,11 @@ impl ZeroingPrivateKey {
 
     // Implementation taken from starknet-signers
     // https://github.com/xJonathanLEI/starknet-rs/blob/1b1071e2c5975c8810c1b05b776aaa58cb172037/starknet-signers/src/key_pair.rs#L113
-    pub fn sign(&self, hash: &Felt) -> Result<starknet_core::crypto::Signature, starknet_core::crypto::EcdsaSignError> {
-        starknet_core::crypto::ecdsa_sign(&self.private, hash).map(Into::into)
+    pub fn sign(
+        &self,
+        hash: &Felt,
+    ) -> Result<starknet::core::crypto::Signature, starknet::core::crypto::EcdsaSignError> {
+        starknet::core::crypto::ecdsa_sign(&self.private, hash).map(Into::into)
     }
 }
 
@@ -73,7 +76,7 @@ impl core::fmt::Debug for ZeroingPrivateKey {
 }
 
 impl TryFrom<String> for ZeroingPrivateKey {
-    type Error = starknet_core::types::FromStrError;
+    type Error = starknet::core::types::FromStrError;
 
     fn try_from(s: String) -> Result<Self, Self::Error> {
         let s = zeroize::Zeroizing::new(s);

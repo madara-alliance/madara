@@ -13,7 +13,7 @@ use mp_gateway::{
 };
 use mp_state_update::StateDiff;
 use mp_utils::AbortOnDrop;
-use starknet_core::types::Felt;
+use starknet::core::types::Felt;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 pub type GatewayBlockSync = PipelineController<GatewaySyncSteps>;

@@ -1,7 +1,7 @@
 use mp_chain_config::StarknetVersion;
 use serde::{Deserialize, Serialize};
 use sha3::{Digest, Keccak256};
-use starknet_core::utils::starknet_keccak;
+use starknet::core::utils::starknet_keccak;
 use starknet_types_core::{
     felt::Felt,
     hash::{Pedersen, Poseidon, StarkHash},
@@ -12,7 +12,7 @@ pub mod from_blockifier;
 mod to_starknet_types;
 
 pub use from_blockifier::from_blockifier_execution_info;
-pub use starknet_core::types::Hash256;
+pub use starknet::core::types::Hash256;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TransactionReceipt {

@@ -117,12 +117,8 @@ mc-e2e-tests = { path = "crates/tests" }
 build-version = { path = "../build-artifacts" }
 
 # Starknet dependencies
-starknet-accounts = "0.11.0"
-starknet-core = "0.12"
 starknet-crypto = "0.7"
-starknet-providers = "0.12"
-starknet-signers = "0.10"
-starknet = "0.12.0"
+starknet = "0.13.0"
 
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
@@ -265,4 +261,4 @@ chrono = { version = "0.4", features = ["serde"] }
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", rev = "70e1ee45dc701afc2a7629bf88bb5d90a93d51a7" }
+# starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", rev = "70e1ee45dc701afc2a7629bf88bb5d90a93d51a7" }

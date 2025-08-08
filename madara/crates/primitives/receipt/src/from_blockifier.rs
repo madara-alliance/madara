@@ -10,11 +10,11 @@ use blockifier::transaction::{
     transaction_execution::Transaction,
 };
 use cairo_vm::types::builtin_name::BuiltinName;
+use starknet::core::types::Hash256;
 use starknet_api::block::FeeType;
 use starknet_api::executable_transaction::AccountTransaction as ApiAccountTransaction;
 use starknet_api::execution_resources::GasVector as ApiGasVector;
 use starknet_api::transaction::L1HandlerTransaction;
-use starknet_core::types::Hash256;
 use starknet_types_core::felt::Felt;
 use std::convert::TryFrom;
 use thiserror::Error;

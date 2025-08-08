@@ -15,8 +15,8 @@ use mp_chain_config::ChainConfig;
 use mp_state_update::DeclaredClassItem;
 use mp_utils::{service::ServiceContext, AbortOnDrop};
 use rstest::{fixture, rstest};
+use starknet::core::types::Felt;
 use starknet_api::felt;
-use starknet_core::types::Felt;
 use std::sync::Arc;
 use tokio::sync::mpsc::UnboundedReceiver;
 

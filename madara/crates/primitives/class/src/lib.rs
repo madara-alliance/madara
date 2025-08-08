@@ -291,9 +291,9 @@ pub struct CompressedLegacyContractClass {
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct LegacyContractClass {
-    pub entry_points_by_type: starknet_core::types::contract::legacy::RawLegacyEntryPoints,
-    pub abi: Option<Vec<starknet_core::types::contract::legacy::RawLegacyAbiEntry>>,
-    pub program: starknet_core::types::contract::legacy::LegacyProgram,
+    pub entry_points_by_type: starknet::core::types::contract::legacy::RawLegacyEntryPoints,
+    pub abi: Option<Vec<starknet::core::types::contract::legacy::RawLegacyAbiEntry>>,
+    pub program: starknet::core::types::contract::legacy::LegacyProgram,
 }
 
 #[derive(Clone, Debug, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

@@ -1,7 +1,7 @@
 use flate2::read::GzDecoder;
-use starknet_core::types::contract::legacy::LegacyContractClass as SnCoreLegacyContractClass;
-use starknet_core::types::LegacyContractEntryPoint;
-use starknet_core::types::{
+use starknet::core::types::contract::legacy::LegacyContractClass as SnCoreLegacyContractClass;
+use starknet::core::types::LegacyContractEntryPoint;
+use starknet::core::types::{
     contract::legacy::{LegacyEntrypointOffset, LegacyProgram, RawLegacyEntryPoint, RawLegacyEntryPoints},
     CompressedLegacyContractClass,
 };
@@ -80,7 +80,7 @@ pub(crate) fn parse_compressed_legacy_class(
 impl LegacyContractClass {
     pub fn compress(
         &self,
-    ) -> Result<CompressedLegacyContractClass, starknet_core::types::contract::CompressProgramError> {
+    ) -> Result<CompressedLegacyContractClass, starknet::core::types::contract::CompressProgramError> {
         Ok(CompressedLegacyContractClass {
             program: self.program.compress()?,
             entry_points_by_type: self.entry_points_by_type.clone().into(),

@@ -4,7 +4,7 @@ use mp_class::{
     LegacyContractClass, SierraClassInfo,
 };
 use mp_state_update::DeclaredClassItem;
-use starknet_core::types::contract::SierraClass;
+use starknet::core::types::contract::SierraClass;
 use starknet_types_core::felt::Felt;
 use std::collections::HashMap;
 
