@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   build-nightly:
-    runs-on: ubuntu-latest
+    runs-on: karnot-arc-runner-set
     outputs:
       nightly: ${{ steps.tag.outputs.nightly }}
       nightly-sha: ${{ steps.tag.outputs.nightly-sha }}
