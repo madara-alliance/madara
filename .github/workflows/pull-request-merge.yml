@@ -15,7 +15,8 @@ jobs:
     uses: ./.github/workflows/task-build-nightly.yml
     with:
       image-name: madara
-      image-file: ./madara.dockerfile
+      image-file: ./madara/Dockerfile
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     permissions:
       contents: read
       attestations: write
@@ -26,7 +27,8 @@ jobs:
     uses: ./.github/workflows/task-build-nightly.yml
     with:
       image-name: orchestrator
-      image-file: ./orchestrator.dockerfile
+      image-file: ./orchestrator/Dockerfile
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     permissions:
       contents: read
       attestations: write
@@ -37,7 +39,8 @@ jobs:
     uses: ./.github/workflows/task-build-nightly.yml
     with:
       image-name: bootstrapper
-      image-file: ./bootstrapper.dockerfile
+      image-file: ./bootstrapper/Dockerfile
+      cairo-artifacts-hash: ${{ needs.build-madara.outputs.cairo-artifacts-hash }}
     permissions:
       contents: read
       attestations: write
