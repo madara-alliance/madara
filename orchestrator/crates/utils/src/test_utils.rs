@@ -1,4 +1,5 @@
 use color_eyre::eyre::{eyre, Result};
+use reqwest::Client;
 use rstest::fixture;
 use std::fs;
 use std::path::Path;
@@ -32,6 +33,8 @@ pub async fn setup_test_data(#[default(vec![])] files: Vec<(&str, bool)>) -> Res
     // Create a temporary directory
     let temp_dir = tempfile::tempdir()?;
 
+    let client = Client::new();
+
     // Download each file
     for (path, should_decompress) in files {
         let filename = extract_filename_from_url(path)?;
@@ -39,7 +42,7 @@ pub async fn setup_test_data(#[default(vec![])] files: Vec<(&str, bool)>) -> Res
 
         if !file_path.exists() {
             debug!("Downloading {}", filename);
-            download_file(base_url.join(path)?.as_str(), &file_path).await?;
+            download_file(&client, base_url.join(path)?.as_str(), &file_path).await?;
 
             debug!("Downloaded {}", filename);
 
@@ -69,10 +72,9 @@ fn extract_filename_from_url(url: &str) -> Result<String> {
 }
 
 /// Download a file from URL to the specified path
-async fn download_file(url: &str, dest_path: &Path) -> Result<()> {
+async fn download_file(client: &Client, url: &str, dest_path: &Path) -> Result<()> {
     info!("Downloading {} to {}", url, dest_path.display());
 
-    let client = reqwest::Client::new();
     let response = client.get(url).send().await?;
 
     if !response.status().is_success() {

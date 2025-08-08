@@ -22,6 +22,16 @@ async fn test_state_update_to_blob_data_flow(#[case] version: StarknetVersion) -
     let services = build_test_config_with_real_provider().await?;
 
     info!("Running test_state_update_to_blob_data_flow");
+
+    // Download test data
+    // The test data contains state update information about block 8373665 on Ethereum Sepolia
+    // Contains the following files:
+    // blobs/1.txt
+    // blobs/2.txt
+    // state_updates.json
+    // squashed_state_update.json
+    // stateful_compressed_state_update.json
+    // stateless_compressed_state_update.json
     let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await?;
 
     let state_updates_path = data_dir.path().join("8373665/state_updates.json").to_str().unwrap().to_string();

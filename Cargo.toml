@@ -308,6 +308,7 @@ orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
+zip = "4.3.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

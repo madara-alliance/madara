@@ -37,4 +37,4 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
-zip = "4.3.0"
+zip = { workspace = true }

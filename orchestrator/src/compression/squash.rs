@@ -32,9 +32,9 @@ pub async fn squash(
     }
 
     // Take the last block hash and number from the last update as our "latest"
-    let last_update = state_updates.last().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?;
-    let block_hash = last_update.block_hash;
-    let new_root = last_update.new_root;
+    let last_state_update = state_updates.last().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?;
+    let block_hash = last_state_update.block_hash;
+    let new_root = last_state_update.new_root;
     let old_root = state_updates.first().ok_or(JobError::Other(OtherError(eyre!("Invalid state updates"))))?.old_root;
 
     // Collecting a simplified squashed state diff map

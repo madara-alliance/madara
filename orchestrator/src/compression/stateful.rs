@@ -17,6 +17,7 @@ use std::time::Duration;
 const STATEFUL_SPECIAL_ADDRESS: Felt = Felt::from_hex_unchecked("0x2");
 const STATEFUL_MAPPING_START: Felt = Felt::from_hex_unchecked("0x80"); // 128
 const MAX_GET_STORAGE_AT_CALL_RETRY: u64 = 3;
+const MAX_CONCURRENT_GET_STORAGE_AT_CALLS: usize = 3000;
 
 /// Compresses a state update using stateful compression
 ///
@@ -128,7 +129,7 @@ impl CompressedKeyValues {
                     }
                 }
             })
-            .buffer_unordered(3000)
+            .buffer_unordered(MAX_CONCURRENT_GET_STORAGE_AT_CALLS)
             .collect::<Vec<_>>()
             .await
             .into_iter()
