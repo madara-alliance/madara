@@ -21,7 +21,9 @@ use crate::error::job::JobError;
 use crate::tests::common::default_job_item;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{
+    CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
@@ -44,12 +46,11 @@ async fn test_process_job_attempt_not_present_fails() {
 
     // Update job metadata to use the proper structure
     job.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-        blocks_to_settle: vec![],
         snos_output_paths: vec![],
         program_output_paths: vec![],
         blob_data_paths: vec![],
-        last_failed_block_no: None,
         tx_hashes: vec![],
+        context: SettlementContext::Block(SettlementContextData { to_settle: vec![], last_failed: None }),
     });
 
     let res = StateUpdateJobHandler.process_job(services.config, &mut job).await.unwrap_err();
@@ -164,12 +165,14 @@ async fn test_process_job_works(
     let mut metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            blocks_to_settle: block_numbers.clone(),
             snos_output_paths,
             program_output_paths,
             blob_data_paths,
-            last_failed_block_no: failed_block_number,
             tx_hashes: Vec::new(), // Start with empty tx_hashes, they'll be populated during processing
+            context: SettlementContext::Block(SettlementContextData {
+                to_settle: block_numbers.clone(),
+                last_failed: failed_block_number,
+            }),
         }),
     };
 
@@ -194,12 +197,11 @@ async fn create_job_works() {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            blocks_to_settle: vec![1],
             snos_output_paths: vec![format!("1/{}", SNOS_OUTPUT_FILE_NAME)],
             program_output_paths: vec![format!("1/{}", PROGRAM_OUTPUT_FILE_NAME)],
             blob_data_paths: vec![format!("1/{}", BLOB_DATA_FILE_NAME)],
-            last_failed_block_no: None,
             tx_hashes: vec![],
+            context: SettlementContext::Block(SettlementContextData { to_settle: vec![1], last_failed: None }),
         }),
     };
 
@@ -296,7 +298,6 @@ async fn process_job_works_unit_test() {
     let mut metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            blocks_to_settle: block_numbers.iter().map(|b| b.parse::<u64>().unwrap()).collect(),
             snos_output_paths: block_numbers
                 .iter()
                 .map(|block| format!("{}/{}", block, SNOS_OUTPUT_FILE_NAME))
@@ -306,8 +307,11 @@ async fn process_job_works_unit_test() {
                 .map(|block| format!("{}/{}", block, PROGRAM_OUTPUT_FILE_NAME))
                 .collect(),
             blob_data_paths: block_numbers.iter().map(|block| format!("{}/{}", block, BLOB_DATA_FILE_NAME)).collect(),
-            last_failed_block_no: None,
             tx_hashes: vec![],
+            context: SettlementContext::Block(SettlementContextData {
+                to_settle: block_numbers.iter().map(|b| b.parse::<u64>().unwrap()).collect(),
+                last_failed: None,
+            }),
         }),
     };
 
@@ -349,12 +353,11 @@ async fn process_job_invalid_inputs_errors(#[case] block_numbers: Vec<u64>, #[ca
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            blocks_to_settle: block_numbers,
             snos_output_paths,
             program_output_paths,
             blob_data_paths,
-            last_failed_block_no: None,
             tx_hashes: vec![],
+            context: SettlementContext::Block(SettlementContextData { to_settle: block_numbers, last_failed: None }),
         }),
     };
 
@@ -394,7 +397,6 @@ async fn process_job_invalid_input_gap_panics() {
     let metadata = JobMetadata {
         common: CommonMetadata { process_attempt_no: 0, ..CommonMetadata::default() },
         specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-            blocks_to_settle: vec![6, 7, 8], // Gap between 4 and 6
             snos_output_paths: vec![
                 format!("{}/{}", 6, SNOS_OUTPUT_FILE_NAME),
                 format!("{}/{}", 7, SNOS_OUTPUT_FILE_NAME),
@@ -410,8 +412,11 @@ async fn process_job_invalid_input_gap_panics() {
                 format!("{}/{}", 7, BLOB_DATA_FILE_NAME),
                 format!("{}/{}", 8, BLOB_DATA_FILE_NAME),
             ],
-            last_failed_block_no: None,
             tx_hashes: vec![],
+            context: SettlementContext::Block(SettlementContextData {
+                to_settle: vec![6, 7, 8], // Gap between 4 and 6
+                last_failed: None,
+            }),
         }),
     };
 

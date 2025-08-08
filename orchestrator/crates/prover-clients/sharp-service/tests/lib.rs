@@ -2,7 +2,8 @@ use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
-use orchestrator_prover_client_interface::ProverClient;
+// ProverClient
+use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, TaskType};
 use orchestrator_prover_client_interface::{Task, TaskStatus};
 use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -11,7 +12,7 @@ use serde_json::json;
 use starknet_os::sharp::CairoJobStatus;
 use url::Url;
 
-use crate::constants::TEST_FACT;
+use crate::constants::{TEST_FACT, TEST_JOB_ID};
 
 mod constants;
 
@@ -33,7 +34,7 @@ async fn prover_client_submit_task_works() {
     };
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params, &LayoutName::dynamic);
     let cairo_pie_path = env!("CARGO_MANIFEST_DIR").to_string() + CAIRO_PIE_PATH;
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).unwrap();
 
@@ -48,8 +49,15 @@ async fn prover_client_submit_task_works() {
         then.status(200).body(serde_json::to_vec(&sharp_response).unwrap());
     });
 
-    let cairo_pie = Box::new(cairo_pie);
-    assert!(sharp_service.submit_task(Task::CairoPie(cairo_pie), LayoutName::all_cairo, None).await.is_ok());
+    assert!(sharp_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+        }))
+        .await
+        .is_ok());
 
     sharp_add_job_call.assert();
 }
@@ -80,7 +88,7 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
     };
 
     let server = MockServer::start();
-    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params);
+    let sharp_service = SharpProverService::with_test_params(server.port(), &sharp_params, &LayoutName::dynamic);
     let customer_id = get_env_var_or_panic("MADARA_ORCHESTRATOR_SHARP_CUSTOMER_ID");
 
     let sharp_add_job_call = server.mock(|when, then| {
@@ -88,10 +96,8 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
         then.status(200).body(serde_json::to_vec(&get_task_status_sharp_response(&cairo_job_status)).unwrap());
     });
 
-    let task_status = sharp_service
-        .get_task_status("c31381bf-4739-4667-b5b8-b08af1c6b1c7", Some(TEST_FACT.to_string()), false)
-        .await
-        .unwrap();
+    let task_status =
+        sharp_service.get_task_status(TaskType::Job, TEST_JOB_ID, Some(TEST_FACT.to_string()), false).await.unwrap();
     assert_eq!(task_status, get_task_status_expectation(&cairo_job_status), "Cairo Job Status assertion failed");
 
     sharp_add_job_call.assert();

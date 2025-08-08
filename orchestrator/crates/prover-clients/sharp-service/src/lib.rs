@@ -8,7 +8,9 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
+use orchestrator_prover_client_interface::{
+    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+};
 use starknet_os::sharp::CairoJobStatus;
 use uuid::Uuid;
 
@@ -35,17 +37,13 @@ pub struct SharpValidatedArgs {
 pub struct SharpProverService {
     sharp_client: SharpClient,
     fact_checker: FactChecker,
+    proof_layout: LayoutName,
 }
 
 #[async_trait]
 impl ProverClient for SharpProverService {
     #[tracing::instrument(skip(self, task), ret, err)]
-    async fn submit_task(
-        &self,
-        task: Task,
-        proof_layout: LayoutName,
-        _n_steps: Option<usize>,
-    ) -> Result<String, ProverClientError> {
+    async fn submit_task(&self, task: Task) -> Result<String, ProverClientError> {
         tracing::info!(
             log_type = "starting",
             category = "submit_task",
@@ -53,10 +51,10 @@ impl ProverClient for SharpProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CairoPie(cairo_pie) => {
+            Task::CreateJob(CreateJobInfo { cairo_pie, .. }) => {
                 let encoded_pie =
                     starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
-                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, proof_layout).await?;
+                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",
@@ -65,12 +63,19 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(job_key.to_string())
             }
+            Task::CreateBucket => {
+                todo!()
+            }
+            Task::CloseBucket(_) => {
+                todo!()
+            }
         }
     }
 
     #[tracing::instrument(skip(self), ret, err)]
     async fn get_task_status(
         &self,
+        _task: TaskType,
         job_key: &str,
         fact: Option<String>,
         _cross_verify: bool,
@@ -175,24 +180,32 @@ impl ProverClient for SharpProverService {
     ) -> Result<String, ProverClientError> {
         todo!()
     }
+
+    async fn get_task_artifacts(&self, _: &str, _: &str) -> Result<Vec<u8>, ProverClientError> {
+        todo!()
+    }
+
+    async fn get_aggregator_task_id(&self, _: &str, _: u64) -> Result<String, ProverClientError> {
+        todo!()
+    }
 }
 
 impl SharpProverService {
-    pub fn new(sharp_client: SharpClient, fact_checker: FactChecker) -> Self {
-        Self { sharp_client, fact_checker }
+    pub fn new(sharp_client: SharpClient, fact_checker: FactChecker, proof_layout: &LayoutName) -> Self {
+        Self { sharp_client, fact_checker, proof_layout: proof_layout.to_owned() }
     }
 
-    pub fn new_with_args(sharp_params: &SharpValidatedArgs) -> Self {
+    pub fn new_with_args(sharp_params: &SharpValidatedArgs, proof_layout: &LayoutName) -> Self {
         let sharp_client = SharpClient::new_with_args(sharp_params.sharp_url.clone(), sharp_params);
         let fact_checker = FactChecker::new(
             sharp_params.sharp_rpc_node_url.clone(),
             sharp_params.gps_verifier_contract_address.clone(),
             sharp_params.sharp_settlement_layer.clone(),
         );
-        Self::new(sharp_client, fact_checker)
+        Self::new(sharp_client, fact_checker, proof_layout)
     }
 
-    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs) -> Self {
+    pub fn with_test_params(port: u16, sharp_params: &SharpValidatedArgs, proof_layout: &LayoutName) -> Self {
         let sharp_client = SharpClient::new_with_args(
             format!("http://127.0.0.1:{}", port).parse().expect("Failed to create sharp client with the given params"),
             sharp_params,
@@ -202,6 +215,6 @@ impl SharpProverService {
             sharp_params.gps_verifier_contract_address.clone(),
             sharp_params.sharp_settlement_layer.clone(),
         );
-        Self::new(sharp_client, fact_checker)
+        Self::new(sharp_client, fact_checker, proof_layout)
     }
 }

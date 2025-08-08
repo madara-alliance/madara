@@ -1,4 +1,5 @@
 use crate::cli::SetupCmd;
+use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::cloud::CloudProvider;
 use crate::setup::factory::ResourceFactory;
 use crate::types::params::{AlertArgs, CronArgs, MiscellaneousArgs, QueueArgs, StorageArgs};
@@ -23,11 +24,14 @@ pub async fn setup(setup_cmd: &SetupCmd) -> OrchestratorResult<()> {
     let alert_params = AlertArgs::try_from(setup_cmd.clone())?;
     let cron_params = CronArgs::try_from(setup_cmd.clone())?;
     let miscellaneous_params = MiscellaneousArgs::try_from(setup_cmd.clone())?;
+    let lock_client = MongoLockClient::from_setup_cmd(setup_cmd.clone()).await?;
 
     debug!("Queue Params: {:?}", queue_params);
     debug!("Storage Params: {:?}", storage_params);
     debug!("Alert Params: {:?}", alert_params);
     debug!("Cron Params: {:?}", cron_params);
+
+    lock_client.initialize().await.map_err(|e| OrchestratorError::SetupError(e.to_string()))?;
 
     let resources = match cloud_provider.clone().get_provider_name().as_str() {
         "AWS" => ResourceFactory::new_with_aws(

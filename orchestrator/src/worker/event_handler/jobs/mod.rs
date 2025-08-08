@@ -1,3 +1,4 @@
+pub mod aggregator;
 pub mod da;
 pub mod proof_registration;
 pub mod proving;
