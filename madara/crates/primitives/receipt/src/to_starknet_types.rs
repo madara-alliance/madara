@@ -187,7 +187,7 @@ impl From<ExecutionResult> for mp_rpc::ExecutionStatus {
 #[cfg(test)]
 mod test {
     use crate::L1HandlerTransactionReceipt;
-    use starknet_core::types::Hash256;
+    use starknet::core::types::Hash256;
 
     #[test]
     fn test_hash_as_string() {

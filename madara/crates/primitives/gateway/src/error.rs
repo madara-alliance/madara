@@ -24,7 +24,7 @@ pub enum SequencerError {
     #[error("Serialization or deserialization error: {0:#}")]
     SerializeRequest(#[from] serde_json::Error),
     #[error("Error compressing class: {0:#}")]
-    CompressError(#[from] starknet_core::types::contract::CompressProgramError),
+    CompressError(#[from] starknet::core::types::contract::CompressProgramError),
     #[error("Failed to parse returned error with http status {http_status}: {serde_error:#}")]
     InvalidStarknetError { http_status: StatusCode, serde_error: serde_json::Error },
 }

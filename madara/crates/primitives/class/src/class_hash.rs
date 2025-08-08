@@ -8,7 +8,7 @@ use crate::{
     mainnet_legacy_class_hashes::get_real_class_hash_for_any_block,
     CompressedLegacyContractClass, ContractClass, FlattenedSierraClass, LegacyContractClass, SierraEntryPoint,
 };
-use starknet_core::types::contract::ComputeClassHashError as StarknetComputeClassHashError;
+use starknet::core::types::contract::ComputeClassHashError as StarknetComputeClassHashError;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ComputeClassHashError {
@@ -40,7 +40,7 @@ impl FlattenedSierraClass {
         let external_hash = compute_hash_entries_point(&self.entry_points_by_type.external);
         let l1_handler_hash = compute_hash_entries_point(&self.entry_points_by_type.l1_handler);
         let constructor_hash = compute_hash_entries_point(&self.entry_points_by_type.constructor);
-        let abi_hash = starknet_core::utils::starknet_keccak(self.abi.as_bytes());
+        let abi_hash = starknet::core::utils::starknet_keccak(self.abi.as_bytes());
         let program_hash = Poseidon::hash_array(&self.sierra_program);
 
         Ok(Poseidon::hash_array(&[
@@ -64,7 +64,7 @@ fn compute_hash_entries_point(entry_points: &[SierraEntryPoint]) -> Felt {
 
 impl LegacyContractClass {
     pub fn class_hash(&self) -> Result<Felt, ComputeClassHashError> {
-        let computed_class_hash = starknet_core::types::contract::legacy::LegacyContractClass {
+        let computed_class_hash = starknet::core::types::contract::legacy::LegacyContractClass {
             abi: self.abi.clone().unwrap_or_default(),
             entry_points_by_type: self.entry_points_by_type.clone(),
             program: self.program.clone(),
@@ -87,9 +87,9 @@ impl CompressedLegacyContractClass {
 
 #[cfg(test)]
 mod tests {
-    use starknet_core::types::BlockId;
-    use starknet_core::types::BlockTag;
-    use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet::core::types::BlockId;
+    use starknet::core::types::BlockTag;
+    use starknet::providers::{Provider, SequencerGatewayProvider};
     use starknet_types_core::felt::Felt;
 
     use crate::ContractClass;
@@ -102,7 +102,7 @@ mod tests {
 
         let class = provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap();
 
-        let starknet_core::types::ContractClass::Sierra(_) = class else { panic!("Not a Sierra contract") };
+        let starknet::core::types::ContractClass::Sierra(_) = class else { panic!("Not a Sierra contract") };
 
         let class: ContractClass = class.into();
 

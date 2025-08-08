@@ -4,13 +4,13 @@ use primitive_types::H160;
 use core::fmt;
 use std::ops::Deref;
 
+use starknet::core::types::EthAddress;
 use starknet_api::block::BlockHash;
 use starknet_api::core::{
     ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
 };
 use starknet_api::transaction::fields::ContractAddressSalt;
 use starknet_api::transaction::{EventKey, TransactionHash};
-use starknet_core::types::EthAddress;
 
 pub use starknet_types_core::felt::Felt;
 
@@ -134,7 +134,7 @@ impl fmt::Debug for DisplayFeltAsHex {
 mod tests {
     use super::*;
     use rstest::*;
-    use starknet_core::types::EthAddress;
+    use starknet::core::types::EthAddress;
 
     #[test]
     fn test_eth_address_to_felt() {

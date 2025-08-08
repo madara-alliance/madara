@@ -1,5 +1,5 @@
 use mp_chain_config::StarknetVersion;
-use starknet_core::utils::starknet_keccak;
+use starknet::core::utils::starknet_keccak;
 
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};

@@ -10,16 +10,16 @@
 use crate::state_update::StateUpdate;
 use assert_matches::assert_matches;
 use m_cairo_test_contracts::{APPCHAIN_CONTRACT_SIERRA, MESSAGING_CONTRACT_SIERRA};
-use starknet_accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
-use starknet_core::types::contract::SierraClass;
-use starknet_core::types::{
+use starknet::accounts::{Account, ConnectedAccount, ExecutionEncoding, SingleOwnerAccount};
+use starknet::core::types::contract::SierraClass;
+use starknet::core::types::{
     BlockId, BlockTag, Call, ExecuteInvocation, ExecutionResult, TransactionReceipt, TransactionReceiptWithBlockInfo,
     TransactionTrace,
 };
-use starknet_core::utils::get_selector_from_name;
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::{JsonRpcClient, Provider, ProviderError};
-use starknet_signers::{LocalWallet, SigningKey};
+use starknet::core::utils::get_selector_from_name;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider, ProviderError};
+use starknet::signers::{LocalWallet, SigningKey};
 use starknet_types_core::felt::Felt;
 use std::future::Future;
 use std::str::FromStr;

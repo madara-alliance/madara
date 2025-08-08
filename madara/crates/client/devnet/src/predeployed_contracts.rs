@@ -2,8 +2,8 @@ use anyhow::Context;
 use core::fmt;
 use mc_db::MadaraBackend;
 use mp_block::{BlockId, BlockTag};
+use starknet::signers::SigningKey;
 use starknet_api::abi::abi_utils::get_fee_token_var_address;
-use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
 
 use crate::{

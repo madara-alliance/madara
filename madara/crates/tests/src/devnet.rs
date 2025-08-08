@@ -1,10 +1,10 @@
 use crate::{wait_for_cond, MadaraCmdBuilder};
 use rstest::rstest;
 use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
+use starknet::core::types::{BlockId, BlockTag, Call, Felt, ReceiptBlock};
+use starknet::core::utils::starknet_keccak;
+use starknet::providers::Provider;
 use starknet::signers::{LocalWallet, SigningKey};
-use starknet_core::types::{BlockId, BlockTag, Call, Felt, ReceiptBlock};
-use starknet_core::utils::starknet_keccak;
-use starknet_providers::Provider;
 use std::time::Duration;
 
 pub const SEQUENCER_ADDRESS: Felt = Felt::from_hex_unchecked("0x123");

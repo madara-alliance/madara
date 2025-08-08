@@ -3708,7 +3708,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "starknet-curve 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-curve",
  "starknet-types-core",
  "stats_alloc",
  "tempfile",
@@ -3744,7 +3744,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "sha3",
- "starknet-crypto 0.7.4",
+ "starknet-crypto",
  "starknet-types-core",
  "thiserror 2.0.12",
  "zip",
@@ -6466,8 +6466,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_yaml",
- "starknet-core 0.12.0",
- "starknet-providers",
+ "starknet",
  "starknet_api",
  "thiserror 2.0.12",
  "tokio",
@@ -6570,7 +6569,7 @@ dependencies = [
  "proptest-derive",
  "rstest 0.18.2",
  "serde_json",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
@@ -6665,8 +6664,7 @@ dependencies = [
  "proptest-derive",
  "rstest 0.18.2",
  "serde_json",
- "starknet-core 0.12.0",
- "starknet-signers",
+ "starknet",
  "starknet-types-core",
  "starknet_api",
  "tokio",
@@ -6694,8 +6692,6 @@ dependencies = [
  "rstest 0.18.2",
  "serde_json",
  "starknet",
- "starknet-core 0.12.0",
- "starknet-providers",
  "starknet-types-core",
  "starknet_api",
  "tempfile",
@@ -6763,7 +6759,7 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet-types-core",
  "tokio",
  "tower 0.4.13",
@@ -6924,11 +6920,8 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_json",
- "starknet-accounts",
- "starknet-core 0.12.0",
- "starknet-crypto 0.7.4",
- "starknet-providers",
- "starknet-signers",
+ "starknet",
+ "starknet-crypto",
  "starknet-types-core",
  "starknet_api",
  "tempfile",
@@ -6998,7 +6991,7 @@ dependencies = [
  "regex",
  "rstest 0.18.2",
  "serde_json",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet_api",
  "tempfile",
  "thiserror 2.0.12",
@@ -7278,8 +7271,7 @@ dependencies = [
  "num-bigint",
  "serde",
  "serde_json",
- "starknet-core 0.12.0",
- "starknet-providers",
+ "starknet",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
@@ -7297,7 +7289,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
@@ -7319,7 +7311,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet-types-core",
  "thiserror 2.0.12",
  "url",
@@ -7353,7 +7345,7 @@ dependencies = [
  "serde",
  "serde_with",
  "sha3",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
@@ -7398,7 +7390,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.12.0",
+ "starknet",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
@@ -7425,8 +7417,8 @@ dependencies = [
  "rstest 0.18.2",
  "serde",
  "serde_yaml",
- "starknet-core 0.12.0",
- "starknet-crypto 0.7.4",
+ "starknet",
+ "starknet-crypto",
  "starknet-types-core",
  "tokio",
  "tokio-util",
@@ -9718,14 +9710,15 @@ checksum = "a8f112729512f8e442d81f95a8a7ddf2b7c6b8a1a6f509a95864142b30cab2d3"
 
 [[package]]
 name = "starknet"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6f0c9ac3809cc7630784e8c8565fa3013af819d83c97aa2720d566016d439011"
+checksum = "bc9b221c99a1ea1d65fb130e5b0dbaa6d362698430232902ebeb2a898a1ab531"
 dependencies = [
  "starknet-accounts",
  "starknet-contract",
- "starknet-core 0.12.0",
- "starknet-crypto 0.7.4",
+ "starknet-core 0.12.3",
+ "starknet-core-derive",
+ "starknet-crypto",
  "starknet-macros",
  "starknet-providers",
  "starknet-signers",
@@ -9733,14 +9726,14 @@ dependencies = [
 
 [[package]]
 name = "starknet-accounts"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ee27ded58ade61da410fccafd57ed5429b0e79a9d62a4ae8b65818cb9d6f400"
+checksum = "b3fc4364f5684e4a5dcb100847a9ea023deae3815f45526721a6fa94ab595651"
 dependencies = [
  "async-trait",
  "auto_impl",
- "starknet-core 0.12.0",
- "starknet-crypto 0.7.4",
+ "starknet-core 0.12.3",
+ "starknet-crypto",
  "starknet-providers",
  "starknet-signers",
  "thiserror 1.0.69",
@@ -9748,34 +9741,39 @@ dependencies = [
 
 [[package]]
 name = "starknet-contract"
-version = "0.11.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bd6ee5762d24c4f06ab7e9406550925df406712e73719bd2de905c879c674a87"
+checksum = "3f2102b8f763477a1bdece683da51514bc73829d5dcc3bbe75ff1b6aca6d4e02"
 dependencies = [
  "serde",
  "serde_json",
  "serde_with",
  "starknet-accounts",
- "starknet-core 0.12.0",
+ "starknet-core 0.12.3",
  "starknet-providers",
  "thiserror 1.0.69",
 ]
 
 [[package]]
 name = "starknet-core"
-version = "0.12.0"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?rev=70e1ee45dc701afc2a7629bf88bb5d90a93d51a7#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
+version = "0.12.3"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "977ce5d61089de1f4e425ad033162154a0da2cf000f0ed100484ebcbc54b6ff4"
 dependencies = [
  "base64 0.21.7",
  "crypto-bigint",
  "flate2",
+ "foldhash",
  "hex",
+ "indexmap 2.9.0",
+ "num-traits",
  "serde",
  "serde_json",
  "serde_json_pythonic",
  "serde_with",
  "sha3",
- "starknet-crypto 0.7.2",
+ "starknet-core-derive",
+ "starknet-crypto",
  "starknet-types-core",
 ]
 
@@ -9798,7 +9796,7 @@ dependencies = [
  "serde_with",
  "sha3",
  "starknet-core-derive",
- "starknet-crypto 0.7.4",
+ "starknet-crypto",
  "starknet-types-core",
 ]
 
@@ -9815,24 +9813,6 @@ dependencies = [
 
 [[package]]
 name = "starknet-crypto"
-version = "0.7.2"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?rev=70e1ee45dc701afc2a7629bf88bb5d90a93d51a7#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
-dependencies = [
- "crypto-bigint",
- "hex",
- "hmac",
- "num-bigint",
- "num-integer",
- "num-traits",
- "rfc6979",
- "sha2",
- "starknet-curve 0.5.1 (git+https://github.com/kasarlabs/starknet-rs.git?rev=70e1ee45dc701afc2a7629bf88bb5d90a93d51a7)",
- "starknet-types-core",
- "zeroize",
-]
-
-[[package]]
-name = "starknet-crypto"
 version = "0.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "039a3bad70806b494c9e6b21c5238a6c8a373d66a26071859deb0ccca6f93634"
@@ -9845,7 +9825,7 @@ dependencies = [
  "num-traits",
  "rfc6979",
  "sha2",
- "starknet-curve 0.5.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "starknet-curve",
  "starknet-types-core",
  "zeroize",
 ]
@@ -9855,14 +9835,6 @@ name = "starknet-curve"
 version = "0.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "bcde6bd74269b8161948190ace6cf069ef20ac6e79cd2ba09b320efa7500b6de"
-dependencies = [
- "starknet-types-core",
-]
-
-[[package]]
-name = "starknet-curve"
-version = "0.5.1"
-source = "git+https://github.com/kasarlabs/starknet-rs.git?rev=70e1ee45dc701afc2a7629bf88bb5d90a93d51a7#70e1ee45dc701afc2a7629bf88bb5d90a93d51a7"
 dependencies = [
  "starknet-types-core",
 ]
@@ -9879,9 +9851,9 @@ dependencies = [
 
 [[package]]
 name = "starknet-providers"
-version = "0.12.0"
+version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60e8e69ba7a36dea2d28333be82b4011f8784333d3ae5618482b6587c1ffb66c"
+checksum = "a9256247f718564b3e4c73cc941735012691c14903fbc25cea306745bcbfa384"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -9893,16 +9865,16 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_with",
- "starknet-core 0.12.0",
+ "starknet-core 0.12.3",
  "thiserror 1.0.69",
  "url",
 ]
 
 [[package]]
 name = "starknet-signers"
-version = "0.10.0"
+version = "0.10.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b9e01b61ae51d722e2b100d6ef913c5a2e70d1ea672733d385f7296d6055ef"
+checksum = "518c7de189cd4158d45d33067c580094ad5cd2f027a90ac76d49a81c89fa37bc"
 dependencies = [
  "async-trait",
  "auto_impl",
@@ -9910,8 +9882,8 @@ dependencies = [
  "eth-keystore",
  "getrandom 0.2.16",
  "rand 0.8.5",
- "starknet-core 0.12.0",
- "starknet-crypto 0.7.4",
+ "starknet-core 0.12.3",
+ "starknet-crypto",
  "thiserror 1.0.69",
 ]
 
@@ -9962,7 +9934,7 @@ dependencies = [
  "serde_json",
  "sha3",
  "size-of",
- "starknet-crypto 0.7.4",
+ "starknet-crypto",
  "starknet-types-core",
  "strum 0.25.0",
  "strum_macros 0.25.3",

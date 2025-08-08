@@ -558,8 +558,8 @@ pub(crate) mod tests {
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee, Transaction};
     use mp_utils::service::ServiceContext;
     use mp_utils::AbortOnDrop;
+    use starknet::core::utils::get_selector_from_name;
     use starknet_api::core::{ClassHash, CompiledClassHash, Nonce};
-    use starknet_core::utils::get_selector_from_name;
     use starknet_types_core::felt::Felt;
     use std::{collections::HashMap, sync::Arc, time::Duration};
 
@@ -747,7 +747,7 @@ pub(crate) mod tests {
         backend: &Arc<MadaraBackend>,
         nonce: Felt,
     ) -> BroadcastedDeclareTxn {
-        let sierra_class: starknet_core::types::contract::SierraClass =
+        let sierra_class: starknet::core::types::contract::SierraClass =
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class: mp_class::FlattenedSierraClass = sierra_class.clone().flatten().unwrap().into();
 

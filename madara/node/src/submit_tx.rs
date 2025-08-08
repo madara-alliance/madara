@@ -6,7 +6,7 @@ use mp_rpc::{
 };
 use mp_transactions::validated::ValidatedMempoolTx;
 use mp_utils::service::{MadaraServiceId, ServiceContext};
-use starknet_core::types::Felt;
+use starknet::core::types::Felt;
 use std::sync::Arc;
 
 pub const ERROR: &str =
