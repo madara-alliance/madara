@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   build-nightly:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     outputs:
       nightly: ${{ steps.tag.outputs.nightly }}
       nightly-sha: ${{ steps.tag.outputs.nightly-sha }}
@@ -49,7 +49,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}-rust-1.86
+          cache-key: madara-${{ runner.os }}
 
       - name: Download artifacts
         run: cargo check
@@ -77,7 +77,7 @@ jobs:
 
       - name: Build Docker image
         id: push
-        uses: docker/build-push-action@v6
+        uses: useblacksmith/build-push-action@v1.2
         with:
           context: .
           push: false
@@ -86,8 +86,6 @@ jobs:
             ${{ steps.tag.outputs.nightly }}
             ${{ steps.tag.outputs.nightly-sha }}
           outputs: type=docker,dest=${{ runner.temp }}/${{ inputs.image-name }}.tar
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
