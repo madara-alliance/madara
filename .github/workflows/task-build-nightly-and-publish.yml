@@ -33,7 +33,7 @@ permissions:
   id-token: write
 
 jobs:
-  build-nightly:
+  build-nightly-and-publish:
     runs-on: karnot-arc-runner-set
     outputs:
       nightly: ${{ steps.tag.outputs.nightly }}
@@ -73,7 +73,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build Docker image
+      - name: Build Docker Image and Publish
         id: push
         uses: docker/build-push-action@v6
         with:
