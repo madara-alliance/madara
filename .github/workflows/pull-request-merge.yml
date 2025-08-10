@@ -4,7 +4,9 @@ name: Workflow - Pull Request Main (merge)
 
 on:
   workflow_dispatch:
-  merge_group:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
 
 jobs:
   # ========================================================================= #
