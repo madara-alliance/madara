@@ -86,8 +86,8 @@ jobs:
             ${{ steps.tag.outputs.nightly }}
             ${{ steps.tag.outputs.nightly-sha }}
           outputs: type=docker,dest=${{ runner.temp }}/${{ inputs.image-name }}.tar
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+      #          cache-from: type=gha
+      #          cache-to: type=gha,mode=max
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
