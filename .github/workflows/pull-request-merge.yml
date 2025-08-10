@@ -14,7 +14,7 @@ jobs:
   # ========================================================================= #
 
   build-nightly-madara:
-    uses: ./.github/workflows/task-build-nightly.yml
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
@@ -32,7 +32,7 @@ jobs:
   #   secrets: inherit
 
   build-nightly-orchestrator:
-    uses: ./.github/workflows/task-build-nightly.yml
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: orchestrator
       image-file: ./orchestrator/Dockerfile
@@ -43,54 +43,12 @@ jobs:
     secrets: inherit
 
   build-nightly-bootstrapper:
-    uses: ./.github/workflows/task-build-nightly.yml
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: bootstrapper
       image-file: ./bootstrapper/Dockerfile
     permissions:
       contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-madara:
-    needs: build-nightly-madara
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: madara
-      tag: ${{ needs.build-nightly-madara.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-madara.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-orchestrator:
-    needs: build-nightly-orchestrator
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: orchestrator
-      tag: ${{ needs.build-nightly-orchestrator.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-orchestrator.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-bootstrapper:
-    needs: build-nightly-bootstrapper
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: bootstrapper
-      tag: ${{ needs.build-nightly-bootstrapper.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-bootstrapper.outputs.nightly-sha }}
-    permissions:
-      contents: read
-      packages: write
       attestations: write
       id-token: write
     secrets: inherit
