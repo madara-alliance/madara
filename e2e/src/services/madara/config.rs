@@ -61,10 +61,9 @@ pub struct MadaraConfig {
     gateway_port: u16,
     charge_fee: bool,
     l1_endpoint: Option<Url>,
-    strk_gas_price: u64,
-    strk_blob_gas_price: u64,
-    gas_price: u64,
+    l1_gas_price: u64,
     blob_gas_price: u64,
+    strk_per_eth: u64,
     environment_vars: HashMap<String, String>,
     additional_args: Vec<String>,
     logs: (bool, bool),
@@ -90,10 +89,9 @@ impl Default for MadaraConfig {
             charge_fee: false,
             block_time: None,
             l1_endpoint: None,
-            strk_gas_price: 0,
-            strk_blob_gas_price: 0,
-            gas_price: 0,
+            l1_gas_price: 0,
             blob_gas_price: 0,
+            strk_per_eth: 1,
             environment_vars: HashMap::new(),
             additional_args: Vec::new(),
             logs: (true, true),
@@ -198,19 +196,10 @@ impl MadaraConfig {
     }
 
     /// Get STRK gas price
-    pub fn strk_gas_price(&self) -> u64 {
-        self.strk_gas_price
+    pub fn l1_gas_price(&self) -> u64 {
+        self.l1_gas_price
     }
 
-    /// Get STRK blob gas price
-    pub fn strk_blob_gas_price(&self) -> u64 {
-        self.strk_blob_gas_price
-    }
-
-    /// Get gas price
-    pub fn gas_price(&self) -> u64 {
-        self.gas_price
-    }
 
     /// Get blob gas price
     pub fn blob_gas_price(&self) -> u64 {
@@ -267,10 +256,9 @@ impl MadaraConfig {
         cmd.arg("--gateway-port").arg(self.gateway_port.to_string());
 
         // Gas prices
-        cmd.arg("--strk-gas-price").arg(self.strk_gas_price.to_string());
-        cmd.arg("--strk-blob-gas-price").arg(self.strk_blob_gas_price.to_string());
-        cmd.arg("--gas-price").arg(self.gas_price.to_string());
+        cmd.arg("---l1-gas-price").arg(self.l1_gas_price.to_string());
         cmd.arg("--blob-gas-price").arg(self.blob_gas_price.to_string());
+        cmd.arg("--strk-per-eth").arg(self.strk_per_eth.to_string());
 
         // Charge fee flag (inverted logic)
         if !self.charge_fee {
@@ -437,23 +425,18 @@ impl MadaraConfigBuilder {
         self
     }
 
-    pub fn strk_gas_price(mut self, price: u64) -> Self {
-        self.config.strk_gas_price = price;
-        self
-    }
-
-    pub fn strk_blob_gas_price(mut self, price: u64) -> Self {
-        self.config.strk_blob_gas_price = price;
-        self
-    }
-
-    pub fn gas_price(mut self, price: u64) -> Self {
-        self.config.gas_price = price;
+    pub fn l1_gas_price(mut self, price: u64) -> Self {
+        self.config.l1_gas_price = price;
         self
     }
 
     pub fn blob_gas_price(mut self, price: u64) -> Self {
         self.config.blob_gas_price = price;
+        self
+    }
+
+    pub fn strk_per_eth(mut self, price: u64) -> Self {
+        self.config.strk_per_eth = price;
         self
     }
 
