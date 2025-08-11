@@ -45,8 +45,6 @@ impl ChainSetup {
 
         let db_status = self.database_manager.check_existing_state().await?;
 
-        println!("{:?} db_statusdb_statusdb_statusdb_status", db_status);
-
         match db_status {
             DBState::ReadyToUse => {
                 println!("✅ Chain state exists, starting servers...");
