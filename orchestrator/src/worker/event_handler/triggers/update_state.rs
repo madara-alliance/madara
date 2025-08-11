@@ -51,14 +51,14 @@ impl JobTrigger for UpdateStateJobTrigger {
                 }
 
                 // Extract blocks/batches from state transition metadata
-                let state_metadata: StateUpdateMetadata = job.metadata.specific
+                let state_update_metadata: StateUpdateMetadata = job.metadata.specific
                     .try_into()
                     .map_err(|e| {
                         tracing::error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for state transition job");
                         e
                     })?;
 
-                let mut processed = match state_metadata.context {
+                let mut processed = match state_update_metadata.context {
                     SettlementContext::Block(block) => block.to_settle,
                     SettlementContext::Batch(batch) => batch.to_settle,
                 };
@@ -81,7 +81,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                 )
             }
             None => {
-                tracing::warn!("No previous state transition job found, fetching latest data submission job");
+                tracing::warn!("No previous state transition job found, fetching latest parent job");
                 // Getting the latest parent job in case no latest state update job is present
                 (
                     config
@@ -107,7 +107,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             Some(last_block) => {
                 if to_process[0] != last_block + 1 {
                     tracing::warn!(
-                        "Parent job for the block just after the last settled block/batch ({}) is not yet completed. Returning safely...", last_block
+                        "Parent job for the block/batch just after the last settled block/batch ({}) is not yet completed. Returning safely...", last_block
                     );
                     return Ok(());
                 }

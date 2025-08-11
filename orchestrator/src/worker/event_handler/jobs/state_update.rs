@@ -71,7 +71,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     }
 
     /// This method is for processing state transition jobs.
-    /// It handles both L2 and L3 state update.
+    /// It handles both L2 and L3 state updates.
     /// For L2, it does the state update using blobs.
     /// For L3, it does the state update using call data.
     /// 1. Get the blocks/batches to do state transition for
