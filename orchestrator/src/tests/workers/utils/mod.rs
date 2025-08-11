@@ -8,8 +8,8 @@ use crate::types::constant::{
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SettlementContext,
-    SettlementContextData, SnosMetadata, StateUpdateMetadata,
+    AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType,
+    ProvingMetadata, SettlementContext, SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::MockJobHandlerTrait;
@@ -114,6 +114,14 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
             specific: JobSpecificMetadata::Proving(ProvingMetadata {
                 block_number,
                 input_path: Some(ProvingInputType::CairoPie(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME))),
+                ..Default::default()
+            }),
+        },
+        JobType::Aggregator => JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
+                batch_num: block_number,
+                num_blocks: 1,
                 ..Default::default()
             }),
         },
