@@ -142,7 +142,7 @@ mod settlement_client_tests {
         DummyCoreContract, EthereumTestBuilder, Pipe, CURRENT_PATH, MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS,
         STARKNET_CORE_CONTRACT, STARKNET_CORE_CONTRACT_ADDRESS,
     };
-    use crate::{EthereumSettlementClient, EthereumSettlementValidatedArgs};
+    use crate::{EthereumSettlementClient, EthereumSettlementValidatedArgs, N_BLOBS_OFFSET};
 
     use orchestrator_utils::test_utils::setup_test_data;
 
@@ -215,7 +215,9 @@ mod settlement_client_tests {
         let nonce = ethereum_settlement_client.get_nonce().await.expect("Unable to fetch nonce");
 
         // keeping 16 elements because the code accesses 10th index as program output
-        let program_output = vec![[0; 32]; 16];
+        let mut program_output = vec![[0; 32]; 16];
+        program_output[N_BLOBS_OFFSET][31] = 1; // number of blobs == 1
+
         // keeping one element as we've a check in build_proof
         let blob_data_vec = vec![vec![0; BYTES_PER_BLOB]];
 
@@ -370,7 +372,8 @@ mod settlement_client_tests {
     // Ethereum Block - https://sepolia.etherscan.io/block/8373665
     // Starknet L1 Transaction - https://sepolia.voyager.online/l1/tx/0x09ad9c188b1abb9f27509eaa0c12aada6b3f446b70319da6d555b49af8cf2c8e
     #[case::basic(8373665)]
-    async fn creating_input_data_works(#[case] fork_block_no: u64) {
+    async fn creating_input_data_works(#[case] _fork_block_no: u64) {
+        dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
         // Download test data
         // The test data contains state update information about block 8373665 on Ethereum Sepolia
         // Contains the following files:
