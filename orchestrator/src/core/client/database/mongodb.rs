@@ -1059,6 +1059,7 @@ impl DatabaseClient for MongoDbClient {
                     mongodb::bson::to_bson(&JobType::ProofCreation)?,
                     mongodb::bson::to_bson(&JobType::ProofRegistration)?,
                     mongodb::bson::to_bson(&JobType::DataSubmission)?,
+                    mongodb::bson::to_bson(&JobType::Aggregator)?,
                 ]
             }
         };
@@ -1066,7 +1067,7 @@ impl DatabaseClient for MongoDbClient {
         // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
         let query2 = doc! {
             "job_type": mongodb::bson::to_bson(&JobType::StateTransition)?,
-            "metadata.specific.blocks_to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
+            "metadata.specific.context.to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
         };
 
         let mut results: Vec<JobItem> = Vec::new();
