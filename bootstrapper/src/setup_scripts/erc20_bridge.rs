@@ -9,8 +9,6 @@ use starknet_core::utils::get_selector_from_name;
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::{JsonRpcClient, Provider};
 use tokio::time::sleep;
-use zaun_utils::StarknetContractClient;
-
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::core_contract::CoreContract;
@@ -72,7 +70,6 @@ impl<'a> Erc20Bridge<'a> {
         save_to_json("ERC20_l1_bridge_address", &JsonValueType::EthAddress(token_bridge.bridge_address())).unwrap();
         save_to_json("ERC20_l1_registry_address", &JsonValueType::EthAddress(token_bridge.registry_address())).unwrap();
         save_to_json("ERC20_l1_manager_address", &JsonValueType::EthAddress(token_bridge.manager_address())).unwrap();
-        save_to_json("ERC_l1_token_address",&JsonValueType::EthAddress(token_bridge.erc20.address())).unwrap();
 
         let l2_bridge_address = StarknetTokenBridge::deploy_l2_contracts(
             self.clients.provider_l2(),

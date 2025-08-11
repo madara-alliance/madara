@@ -3,10 +3,6 @@ name = "bootstrapper"
 version = "0.1.0"
 edition.workspace = true
 
-[[bin]]
-name = "bootstrapper"
-path = "src/main.rs"
-
 [dependencies]
 anyhow = "1.0.80"
 base64 = "0.22"
@@ -19,6 +15,7 @@ serde_json = { version = "1.0.108", default-features = false, features = [
 ] }
 serde_with = { version = "2.3.3", default-features = false }
 url = "2.4.1"
+
 
 # Zaun Deps
 ethereum-instance = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "ethereum-instance" }
@@ -73,7 +70,3 @@ tempfile = "3.10.1"
 
 [build-dependencies]
 build-version.workspace = true
-
-
-[features]
-tests = []
