@@ -19,12 +19,11 @@ use crate::services::orchestrator::OrchestratorService;
 use crate::services::helpers::NodeRpcMethods;
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
-
-use tokio::time::{timeout, Duration, Instant};
+use tokio::time::{timeout, Duration, Instant, sleep};
 
 pub struct ServiceManager {
     config: Arc<SetupConfig>,
-    bootstrapped_madara_block_number: i64,
+    bootstrapped_madara_block_number: Option<u64>,
 }
 
 #[derive(Default)]
@@ -40,7 +39,7 @@ pub struct RunningServices {
 
 impl ServiceManager {
     pub fn new(config: Arc<SetupConfig>) -> Self {
-        Self { config, bootstrapped_madara_block_number: i64::MIN }
+        Self { config, bootstrapped_madara_block_number: None }
     }
 
     pub async fn setup_new_chain(&mut self) -> Result<(), SetupError> {
@@ -160,7 +159,7 @@ impl ServiceManager {
 
         timeout(duration, async {
             self.start_madara(services).await?;
-
+            // sleep(Duration::from_secs(12)).await;
             if let Some(madara) = &services.madara_service {
                 madara.wait_for_block_mined(0).await?;
             }
@@ -169,9 +168,7 @@ impl ServiceManager {
 
             // Get the block number for syncing
             if let Some(madara) = &services.madara_service {
-                self.bootstrapped_madara_block_number = madara
-                    .get_latest_block_number()
-                    .await
+                self.bootstrapped_madara_block_number = madara.get_latest_block_number().await
                     .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
             }
 
@@ -183,7 +180,7 @@ impl ServiceManager {
     }
 
     async fn setup_full_node_syncing(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        println!("🎯 Starting Pathfinder syncing till # Block {}", self.bootstrapped_madara_block_number);
+        println!("🎯 Starting Pathfinder syncing till # Block {:?}", self.bootstrapped_madara_block_number);
 
         let duration = self.config.get_timeouts().start_full_node_syncing;
 
@@ -191,8 +188,9 @@ impl ServiceManager {
             self.start_pathfinder(services).await?;
 
             if let Some(pathfinder) = &services.pathfinder_service {
-                let sync_block = self.bootstrapped_madara_block_number.max(0) as u64;
-                pathfinder.wait_for_block_synced(sync_block).await?;
+                if let Some(sync_block) = self.bootstrapped_madara_block_number {
+                    pathfinder.wait_for_block_synced(sync_block).await?;
+                }
             }
 
             // Stop Madara after Pathfinder syncs
@@ -236,9 +234,11 @@ impl ServiceManager {
             println!("⏳ Checking orchestrator state update... (attempt {})", retry + 1);
 
             if let Some(orchestrator) = &services.orchestrator_service {
-                let sync_block = self.bootstrapped_madara_block_number.max(0) as u64;
-                let is_synced =
-                    orchestrator.check_state_update(sync_block).await.map_err(|err| SetupError::Orchestrator(err))?;
+                let mut is_synced = false;
+                if let Some(sync_block) = self.bootstrapped_madara_block_number {
+                    is_synced = orchestrator.check_state_update(sync_block).await
+                        .map_err(|err| SetupError::Orchestrator(err))?;
+                }
 
                 if is_synced {
                     return Ok(());
