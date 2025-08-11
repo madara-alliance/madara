@@ -54,7 +54,9 @@ async fn madara_devnet_add_transaction() {
     let args = &[
         "--devnet",
         "--no-l1-sync",
-        "--gas-price",
+        "--l1-gas-price",
+        "0",
+        "--blob-gas-price",
         "0",
         // only produce blocks no pending txs
         "--chain-config-override",
@@ -125,7 +127,9 @@ async fn madara_devnet_mempool_saving() {
     let cmd_builder = MadaraCmdBuilder::new().args([
         "--devnet",
         "--no-l1-sync",
-        "--gas-price",
+        "--l1-gas-price",
+        "0",
+        "--blob-gas-price",
         "0",
         // never produce blocks & pending txs
         "--chain-config-path",
@@ -160,7 +164,9 @@ async fn madara_devnet_mempool_saving() {
     let cmd_builder = cmd_builder.args([
         "--devnet",
         "--no-l1-sync",
-        "--gas-price",
+        "--l1-gas-price",
+        "0",
+        "--blob-gas-price",
         "0",
         // never produce blocks but produce pending txs
         "--chain-config-path",

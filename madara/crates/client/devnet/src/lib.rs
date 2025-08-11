@@ -171,11 +171,13 @@ impl ChainGenesisDescription {
                             .as_secs(),
                     ),
                     protocol_version: chain_config.latest_protocol_version,
-                    l1_gas_price: GasPrices {
-                        eth_l1_gas_price: 5,
-                        strk_l1_gas_price: 5,
-                        eth_l1_data_gas_price: 5,
-                        strk_l1_data_gas_price: 5,
+                    gas_prices: GasPrices {
+                        eth_l1_gas_price: 128,
+                        strk_l1_gas_price: 128,
+                        eth_l1_data_gas_price: 128,
+                        strk_l1_data_gas_price: 128,
+                        eth_l2_gas_price: 128,
+                        strk_l2_gas_price: 128,
                     },
                     l1_da_mode: chain_config.l1_da_mode,
                 },
@@ -214,7 +216,7 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
     use mc_db::MadaraBackend;
-    use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mc_submit_tx::{
         RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
         TransactionValidator, TransactionValidatorConfig,
@@ -349,17 +351,10 @@ mod tests {
 
         let chain_config = Arc::new(chain_config);
         let backend = MadaraBackend::open_for_testing(chain_config.clone());
+        backend.set_l1_gas_quote_for_testing();
         g.build_and_store(&backend).await.unwrap();
         tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
 
-        let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-            eth_l1_gas_price: 128,
-            strk_l1_gas_price: 128,
-            eth_l1_data_gas_price: 128,
-            strk_l1_data_gas_price: 128,
-        });
-        let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let metrics = BlockProductionMetrics::register();
 
@@ -367,7 +362,6 @@ mod tests {
             Arc::clone(&backend),
             Arc::clone(&mempool),
             Arc::new(metrics),
-            Arc::clone(&l1_data_provider),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
         );
 
@@ -460,7 +454,7 @@ mod tests {
     #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
     // FIXME: flaky
     // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
-    #[ignore = "should_work_across_block_boundary"]
+    // #[ignore = "should_work_across_block_boundary"]
     #[tokio::test]
     async fn test_account_deploy(
         #[case] transfer_fees: bool,
