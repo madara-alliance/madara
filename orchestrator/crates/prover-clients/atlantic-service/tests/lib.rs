@@ -107,7 +107,7 @@ async fn atlantic_client_get_bucket_status_works() {
     };
     let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
 
-    let bucket_id = "01JY1P1NFSJC6T2G14H3MQKP3P";
+    let bucket_id = "01K0RN2JFJW3382CZPHRBC48NR";
     let task_result = atlantic_service.atlantic_client.get_bucket(bucket_id).await;
     assert!(task_result.is_ok());
 }
