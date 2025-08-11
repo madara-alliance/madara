@@ -1,92 +1,116 @@
-FROM rust:1.81 AS builder
+# Step 0: setup tooling (rust)
+FROM rust:1.86 AS base-rust
+WORKDIR /app
 
-# Set the working directory in the container
-WORKDIR /usr/src/madara-orchestrator
+# Note that we do not install cargo chef and sccache through docker to avoid
+# having to compile them from source
+ENV SCCACHE_VERSION=v0.10.0
+ENV SCCACHE_URL=https://github.com/mozilla/sccache/releases/download/${SCCACHE_VERSION}/sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_TAR=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl.tar.gz
+ENV SCCACHE_BIN=/bin/sccache
+ENV SCCACHE_DIR=/sccache
+ENV SCCACHE=sccache-${SCCACHE_VERSION}-x86_64-unknown-linux-musl/sccache
 
-# Install system dependencies
-RUN apt update && apt install -y  \
-    libgmp3-dev \
-    software-properties-common \
-    wget \
-    bash \
-    nodejs \
-    npm
+ENV CHEF_VERSION=v0.1.71
+ENV CHEF_URL=https://github.com/LukeMathWalker/cargo-chef/releases/download/${CHEF_VERSION}/cargo-chef-x86_64-unknown-linux-gnu.tar.gz
+ENV CHEF_TAR=cargo-chef-x86_64-unknown-linux-gnu.tar.gz
 
-# Install Python 3.9
-RUN wget https://www.python.org/ftp/python/3.9.16/Python-3.9.16.tgz \
-    && tar xzf Python-3.9.16.tgz \
-    && cd Python-3.9.16 \
-    && ./configure --enable-optimizations \
-    && make altinstall \
-    && cd .. \
-    && rm -rf Python-3.9.16 Python-3.9.16.tgz
+ENV RUSTC_WRAPPER=/bin/sccache
 
-# Install pip and venv for Python 3.9
-RUN wget https://bootstrap.pypa.io/get-pip.py \
-    && python3.9 get-pip.py \
-    && rm get-pip.py \
-    && python3.9 -m pip install virtualenv
+ENV WGET="-O- --timeout=10 --waitretry=3 --retry-connrefused --progress=dot:mega"
 
-# Copy the current directory contents into the container
+# Install system dependencies including OpenSSL
+RUN apt-get update && apt-get install -y \
+    git libgmp3-dev wget bash curl \
+    build-essential clang \
+    libssl-dev openssl \
+    ca-certificates \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install BLST from source
+RUN git clone --depth 1 --branch v0.3.15 https://github.com/supranational/blst.git /tmp/blst && \
+    cd /tmp/blst && \
+    ./build.sh && \
+    mkdir -p /usr/local/lib /usr/local/include && \
+    cp libblst.a /usr/local/lib/ && \
+    cp bindings/blst.h /usr/local/include/ && \
+    cp bindings/blst_aux.h /usr/local/include/ && \
+    rm -rf /tmp/blst
+
+# ENV to link BLST dependency
+ENV RUSTFLAGS="-L /usr/local/lib -l blst"
+
+# Update linker cache
+RUN echo "/usr/local/lib" > /etc/ld.so.conf.d/blst.conf && ldconfig
+
+RUN wget $SCCACHE_URL && tar -xvpf $SCCACHE_TAR && mv $SCCACHE $SCCACHE_BIN && mkdir sccache
+RUN wget $CHEF_URL && tar -xvpf $CHEF_TAR && mv cargo-chef /bin
+
+# Step 1: Cache dependencies
+FROM base-rust AS planner
+
 COPY . .
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    RUST_BUILD_DOCKER=1 cargo chef prepare --recipe-path recipe.json
 
+# Step 2: Build crate
+FROM base-rust AS builder-rust
 
-# Check rust version (this also installs version from rust-toolchain file)
-RUN rustup show
+COPY --from=planner /app/recipe.json recipe.json
 
-# #############################################################
-# TODO : remove this step after snos build is sorted
-# Build cairo lang
-RUN cargo fetch
-RUN python3.9 -m venv orchestrator_venv
-RUN . ./orchestrator_venv/bin/activate
-RUN pip install cairo-lang==0.13.2 "sympy<1.13.0"
-RUN mkdir -p build
-RUN git submodule update --init --recursive
-RUN cd cairo-lang
-RUN cd ..
-RUN cairo-compile cairo-lang/src/starkware/starknet/core/os/os.cairo --output build/os_latest.json --cairo_path cairo-lang/src
-# #############################################################
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo chef cook --release --recipe-path recipe.json
 
-WORKDIR /usr/src/madara-orchestrator
+COPY Cargo.toml Cargo.lock ./
+COPY orchestrator orchestrator
+COPY build-artifacts build-artifacts
 
-# Build the project
-RUN cargo build --release
+RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
+    --mount=type=cache,target=/usr/local/cargo/registry \
+    CARGO_TARGET_DIR=target RUST_BUILD_DOCKER=1 cargo build --manifest-path orchestrator/Cargo.toml --release
 
-# Install Node.js dependencies for migrations
-RUN npm install
+# Dump information where kzg files must be copied
+RUN mkdir -p /tmp && \
+    (find /usr/local/cargo -type d -path "*/crates/starknet-os/kzg" > /tmp/kzg_dirs.txt 2>/dev/null || \
+     find $HOME/.cargo -type d -path "*/crates/starknet-os/kzg" >> /tmp/kzg_dirs.txt 2>/dev/null || \
+     touch /tmp/kzg_dirs.txt)
 
+# Step 3: runner
+FROM debian:bookworm-slim AS runner
 
-FROM debian:bookworm
-
-# Install runtime dependencies
 RUN apt-get -y update && \
-    apt-get install -y openssl ca-certificates nodejs npm &&\
+    apt-get install -y openssl ca-certificates tini curl jq && \
+    curl -fsSL https://deb.nodesource.com/setup_18.x | bash - && \
+    apt-get update && \
+    apt-get install -y nodejs && \
     apt-get autoremove -y; \
     apt-get clean; \
     rm -rf /var/lib/apt/lists/*
 
-# Set the working directory
-WORKDIR /usr/local/bin
+WORKDIR /app
 
-# Copy the compiled binary from the builder stage
-COPY --from=builder /usr/src/madara-orchestrator/target/release/orchestrator .
+COPY --from=builder-rust /app/target/release/orchestrator /bin
 
-# Copy Node.js files and dependencies
-COPY --from=builder /usr/src/madara-orchestrator/node_modules ./node_modules
-COPY --from=builder /usr/src/madara-orchestrator/package.json .
-COPY --from=builder /usr/src/madara-orchestrator/migrate-mongo-config.js .
-COPY --from=builder /usr/src/madara-orchestrator/migrations ./migrations
+# Copy trusted setup files
+COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt \
+    /app/orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
+COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt /tmp/trusted_setup.txt
+COPY --from=builder-rust /tmp/kzg_dirs.txt /tmp/kzg_dirs.txt
 
-# To be fixed by this https://github.com/keep-starknet-strange/snos/issues/404
-RUN mkdir -p /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/662d170/crates/starknet-os/kzg
-COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/local/cargo/git/checkouts/snos-59fe8329bb16fe65/662d170/crates/starknet-os/kzg/trusted_setup.txt
-COPY ./crates/da-clients/ethereum/trusted_setup.txt /usr/src/madara-orchestrator/crates/settlement-clients/ethereum/src/trusted_setup.txt
+RUN while read dir; do \
+    mkdir -p "$dir" && \
+    cp /tmp/trusted_setup.txt "$dir/trusted_setup.txt"; \
+    done < /tmp/kzg_dirs.txt
 
-# Create a startup script
-RUN echo '#!/bin/bash\n\
-    npm run migrate up\n\
-    ./orchestrator' > start.sh && chmod +x start.sh
+EXPOSE 3000
 
-# Set the entrypoint to the startup script
-ENTRYPOINT ["./start.sh"]
+ENV TINI_VERSION=v0.19.0
+ADD https://github.com/krallin/tini/releases/download/${TINI_VERSION}/tini /bin/tini
+RUN chmod +x /bin/tini
+
+# Set the entrypoint
+ENTRYPOINT ["tini", "--", "orchestrator"]
+CMD ["--help"]
