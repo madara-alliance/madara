@@ -3,7 +3,7 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 
 use crate::core::client::database::MockDatabaseClient;
-use crate::core::client::lock::LockClient;
+use crate::core::client::lock::{LockClient, MockLockClient};
 use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
@@ -86,6 +86,7 @@ macro_rules! impl_mock_from {
 impl_mock_from! {
     MockProverClient => ProverClient,
     MockDatabaseClient => Database,
+    MockLockClient => Lock,
     MockDaClient => DaClient,
     MockQueueClient => Queue,
     MockStorageClient => Storage,
@@ -199,8 +200,14 @@ impl TestConfigBuilder {
         self.queue_type = queue_type;
         self
     }
+
     pub fn configure_database(mut self, database_type: ConfigType) -> TestConfigBuilder {
         self.database_type = database_type;
+        self
+    }
+
+    pub fn configure_lock_client(mut self, lock_type: ConfigType) -> TestConfigBuilder {
+        self.lock_type = lock_type;
         self
     }
 
