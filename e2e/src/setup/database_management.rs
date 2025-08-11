@@ -92,19 +92,19 @@ impl DatabaseManager {
     }
 
     fn validate_required_files(&self, data_dir: &PathBuf) -> Result<(), SetupError> {
-        // TODO: fix these based on path
-        // let anvil_json_exists = data_dir.join(ANVIL_DEFAULT_DATABASE_NAME).exists();
-        // let madara_db_exists = data_dir.join(MADARA_DEFAULT_DATABASE_NAME).exists();
-        // let address_json_exists = data_dir.join(BOOTSTRAPPER_DEFAULT_ADDRESS_PATH).exists();
-        // let mock_verifier_exists = data_dir.join(DEFAULT_VERIFIER_FILE_NAME).exists();
+        let anvil_json_exists = data_dir.join(ANVIL_DATABASE_FILE).exists();
+        let madara_db_exists = data_dir.join(MADARA_DATABASE_DIR).exists();
+        let mock_verifier_exists = data_dir.join(MOCK_VERIFIER_ADDRESS_FILE).exists();
+        let orchestrator_dir_exists = data_dir.join(ORCHESTRATOR_DATABASE_NAME).exists();
 
-        // if anvil_json_exists && madara_db_exists && address_json_exists && mock_verifier_exists {
-        //     Ok(())
-        // } else {
-        //     Err(SetupError::OtherError(
-        //         "Database files missing despite ReadyToUse status".to_string()
-        //     ))
-        // }
+
+        if anvil_json_exists && madara_db_exists && address_json_exists && mock_verifier_exists {
+            Ok(())
+        } else {
+            Err(SetupError::OtherError(
+                "Database files missing despite ReadyToUse status".to_string()
+            ))
+        }
         Ok(())
     }
 }
