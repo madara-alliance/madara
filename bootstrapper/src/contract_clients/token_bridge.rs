@@ -4,24 +4,24 @@ use async_trait::async_trait;
 use ethers::addressbook::Address;
 use ethers::prelude::U256;
 use ethers::types::Bytes;
-pub use starkgate_manager_client::clients::starkgate_manager::StarkgateManagerContractClient;
+use starkgate_manager_client::clients::starkgate_manager::StarkgateManagerContractClient;
 use starkgate_manager_client::interfaces::manager::StarkgateManagerTrait;
 use starkgate_manager_client::{
     deploy_starkgate_manager_behind_safe_proxy, deploy_starkgate_manager_behind_unsafe_proxy,
 };
-pub use starkgate_registry_client::clients::starkgate_registry::StarkgateRegistryContractClient;
+use starkgate_registry_client::clients::starkgate_registry::StarkgateRegistryContractClient;
 use starkgate_registry_client::{
     deploy_starkgate_registry_behind_safe_proxy, deploy_starkgate_registry_behind_unsafe_proxy,
 };
 use starknet::accounts::{Account, ConnectedAccount};
 use starknet_core::types::Felt;
-pub use starknet_erc20_client::clients::erc20::ERC20ContractClient;
+use starknet_erc20_client::clients::erc20::ERC20ContractClient;
 use starknet_erc20_client::deploy_dai_test_erc20_behind_unsafe_proxy;
 use starknet_erc20_client::interfaces::erc20::ERC20TokenTrait;
 use starknet_providers::jsonrpc::HttpTransport;
 use starknet_providers::JsonRpcClient;
 use starknet_proxy_client::interfaces::proxy::ProxySupport5_0_0Trait;
-pub use starknet_token_bridge_client::clients::token_bridge::StarknetTokenBridgeContractClient;
+use starknet_token_bridge_client::clients::token_bridge::StarknetTokenBridgeContractClient;
 use starknet_token_bridge_client::interfaces::token_bridge::StarknetTokenBridgeTrait;
 use starknet_token_bridge_client::{
     deploy_starknet_token_bridge_behind_safe_proxy, deploy_starknet_token_bridge_behind_unsafe_proxy,
@@ -38,10 +38,10 @@ use crate::utils::{invoke_contract, pad_bytes, save_to_json, wait_for_transactio
 
 #[derive(Clone)]
 pub struct StarknetTokenBridge {
-    pub manager: StarkgateManagerContractClient,
-    pub registry: StarkgateRegistryContractClient,
-    pub token_bridge: StarknetTokenBridgeContractClient,
-    pub erc20: ERC20ContractClient,
+    manager: StarkgateManagerContractClient,
+    registry: StarkgateRegistryContractClient,
+    token_bridge: StarknetTokenBridgeContractClient,
+    erc20: ERC20ContractClient,
 }
 
 #[async_trait]

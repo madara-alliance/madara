@@ -26,7 +26,7 @@ pub trait BridgeDeployable {
 
 #[derive(Clone)]
 pub struct StarknetLegacyEthBridge {
-    pub eth_bridge: StarknetEthBridgeContractClient,
+    eth_bridge: StarknetEthBridgeContractClient,
 }
 
 #[async_trait]

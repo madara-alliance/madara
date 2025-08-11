@@ -7,7 +7,6 @@ use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::eth_bridge::StarknetLegacyEthBridge;
-use crate::contract_clients::token_bridge::StarknetTokenBridge;
 use crate::contract_clients::utils::read_erc20_balance;
 use crate::tests::constants::L2_DEPLOYER_ADDRESS;
 use crate::ConfigFile;
@@ -68,42 +67,5 @@ pub async fn eth_bridge_test_helper(
     //     U256::checked_div(balance_after, decimals_eth).unwrap()
     // );
 
-    Ok(())
-}
-
-pub async fn deposit_to_eth_bridge(
-    cross_chain_wait_time: u64,
-    l1_wait_time: String,
-    eth_bridge: StarknetLegacyEthBridge,
-) -> Result<(), anyhow::Error> {
-    eth_bridge.deposit(10.into(), U256::from_str(L2_DEPLOYER_ADDRESS)?, 1000.into()).await;
-
-    sleep(Duration::from_secs(cross_chain_wait_time)).await;
-    sleep(Duration::from_secs((l1_wait_time).parse()?)).await;
-    Ok(())
-}
-
-
-pub async fn deposit_to_erc20_bridge(
-    cross_chain_wait_time: u64,
-    l1_wait_time: String,
-    token_bridge: StarknetTokenBridge,
-) -> Result<(), anyhow::Error> {
-    // Approve and Deposit
-
-    token_bridge.approve(token_bridge.bridge_address(), 100000000.into()).await;
-    sleep(Duration::from_secs(l1_wait_time.parse().unwrap())).await;
-    sleep(Duration::from_secs(cross_chain_wait_time)).await;
-
-    token_bridge
-        .deposit(
-            token_bridge.address(),
-            10.into(),
-            U256::from_str(L2_DEPLOYER_ADDRESS).unwrap(),
-            U256::from_dec_str("100000000000000").unwrap(),
-        )
-        .await;
-
-    sleep(Duration::from_secs(l1_wait_time.parse().unwrap())).await;
     Ok(())
 }
