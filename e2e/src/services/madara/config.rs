@@ -256,7 +256,7 @@ impl MadaraConfig {
         cmd.arg("--gateway-port").arg(self.gateway_port.to_string());
 
         // Gas prices
-        cmd.arg("---l1-gas-price").arg(self.l1_gas_price.to_string());
+        cmd.arg("--l1-gas-price").arg(self.l1_gas_price.to_string());
         cmd.arg("--blob-gas-price").arg(self.blob_gas_price.to_string());
         cmd.arg("--strk-per-eth").arg(self.strk_per_eth.to_string());
 
