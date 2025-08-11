@@ -24,6 +24,8 @@ pub enum MadaraError {
     FileSystem(#[from] std::io::Error),
     #[error("RPC error: {0}")]
     RpcError(#[from] NodeRpcError),
+    #[error("Timeout waiting for block {0} after {1} retries. Last error: {2}")]
+    TimeoutWaitingForBlock(u64, u32, String),
 }
 
 #[derive(Debug, Clone, PartialEq)]
