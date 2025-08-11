@@ -49,11 +49,6 @@ impl EventWorker {
         Ok(Self { queue_type, config, queue_control, cancellation_token })
     }
 
-    /// Create a child token for this worker's specific operations
-    pub fn child_token(&self) -> CancellationToken {
-        self.cancellation_token.child_token()
-    }
-
     /// Triggers a graceful shutdown
     pub async fn shutdown(&self) -> EventSystemResult<()> {
         info!("Triggering shutdown for {} worker", self.queue_type);
@@ -292,7 +287,7 @@ impl EventWorker {
                         error!("Failed to handle job {msg:?}. Error: {e:?}");
                     }
                 }
-                let _ = eyre!("Failed to process message: {:?}", e);
+                // Error already logged above, no additional action needed
                 error!("Failed to process message: {:?}", e);
                 Err(e)
             }
@@ -323,12 +318,10 @@ impl EventWorker {
 
             tokio::select! {
                 biased;
-
-                // Immediate cleanup when tasks complete
                 Some(result) = tasks.join_next(), if !tasks.is_empty() => {
                     Self::handle_task_result(result);
 
-                    if tasks.len() >= max_concurrent_tasks - 1 {
+                    if tasks.len() > max_concurrent_tasks {
                         warn!("Backpressure activated - waiting for tasks to complete. Active: {}", tasks.len());
                     } else {
                         debug!("Task completed, active tasks: {}", tasks.len());

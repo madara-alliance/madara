@@ -16,6 +16,11 @@ use tracing::{debug, error, info};
 #[global_allocator]
 static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 
+/// Default graceful shutdown timeout in seconds
+/// This matches Docker's default graceful shutdown period and provides sufficient time
+/// for workers to complete their current tasks before forcing termination
+const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
+
 /// Start the server
 #[tokio::main]
 async fn main() {
@@ -98,7 +103,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
                 info!("All components shutdown successfully");
                 Ok(())
             },
-            300, // 300 seconds timeout - matches Docker's default graceful shutdown period
+            DEFAULT_SHUTDOWN_TIMEOUT_SECS,
         )
         .await;
 
