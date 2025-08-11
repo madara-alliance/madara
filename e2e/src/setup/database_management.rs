@@ -43,8 +43,6 @@ impl DatabaseManager {
         let data_dir = REPO_ROOT.join(DATA_DIR);
         let status_file = data_dir.join("STATUS");
 
-        println!("{:?} status_filestatus_filestatus_filestatus_file ", status_file);
-
         let status = match fs::read_to_string(&status_file).await {
             Ok(s) => s.into(),
             Err(_) => DBState::NotReady,
@@ -97,14 +95,12 @@ impl DatabaseManager {
         let mock_verifier_exists = data_dir.join(MOCK_VERIFIER_ADDRESS_FILE).exists();
         let orchestrator_dir_exists = data_dir.join(ORCHESTRATOR_DATABASE_NAME).exists();
 
-
-        if anvil_json_exists && madara_db_exists && address_json_exists && mock_verifier_exists {
+        if anvil_json_exists && madara_db_exists && mock_verifier_exists && orchestrator_dir_exists {
             Ok(())
         } else {
             Err(SetupError::OtherError(
                 "Database files missing despite ReadyToUse status".to_string()
             ))
         }
-        Ok(())
     }
 }
