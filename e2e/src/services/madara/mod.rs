@@ -106,8 +106,8 @@ impl MadaraService {
     }
 
     /// Check if the service is running
-    pub fn is_running(&mut self) -> bool {
-        self.server.has_exited().is_none()
+    pub fn is_running(&mut self) -> Result<bool, MadaraError> {
+        Ok(self.server.has_exited()?.is_none())
     }
 
     pub async fn wait_for_block_mined(&self, block_number: u64) -> Result<(), MadaraError> {
