@@ -6,6 +6,7 @@ use std::net::TcpListener;
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use url::Url;
+use tokio::time::Duration;
 use thiserror::Error;
 
 /// Error code returned by Starknet RPC when a block is not found
@@ -20,6 +21,8 @@ pub enum NodeRpcError {
     RpcError(String),
     #[error("Block not found")]
     BlockNotFound,
+    #[error("Timeout waiting for block {0} after {1} retries. Last error: {2}")]
+    TimeoutWaitingForBlock(u64, u32, String),
 }
 
 /// Transaction finality status from Starknet
@@ -103,6 +106,67 @@ pub trait NodeRpcMethods: Send + Sync {
             }
             Err(NodeRpcError::BlockNotFound) => Ok(None),
             Err(other_error) => Err(other_error),
+        }
+    }
+
+    /// Waits for a specific block to be mined on the Starknet network.
+    ///
+    /// This method polls the latest block number at regular intervals until the specified
+    /// block number is reached or exceeded, or until a timeout occurs.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The block number to wait for
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - When the specified block has been mined
+    /// * `Err(NodeRpcError::TimeoutWaitingForBlock)` - When the timeout is reached
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # async fn example(node: impl NodeRpcMethods) -> Result<(), NodeRpcError> {
+    /// // Wait for block 100 to be mined
+    /// node.wait_for_block_mined(100).await?;
+    /// println!("Block 100 has been mined!");
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn wait_for_block(&self, block_number: u64) -> Result<(), NodeRpcError> {
+        println!("⏳ Waiting for block {} to be mined", block_number);
+
+        let poll_interval = Duration::from_millis(500); // Configurable interval
+        let mut retry_count = 0;
+        const MAX_RETRIES: u32 = 1200; // 10 minutes with 500ms intervals
+
+        loop {
+            match self.get_latest_block_number().await {
+                Ok(Some(latest)) => {
+                    if latest >= block_number {
+                        println!("🔔 Block {} is mined (latest: {})", block_number, latest);
+                        return Ok(());
+                    }
+                }
+                Ok(None) => {
+                    // No blocks mined yet, continue waiting
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= MAX_RETRIES {
+                        return Err(NodeRpcError::TimeoutWaitingForBlock(block_number, MAX_RETRIES, e.to_string()));
+                    }
+
+                    // Log error but continue retrying
+                    if retry_count % 20 == 0 {
+                        // Log every ~10 seconds
+                        println!("⚠️  Error fetching block number (retry {}/{}): {}",
+                                retry_count, MAX_RETRIES, e.to_string());
+                    }
+                }
+            }
+
+            tokio::time::sleep(poll_interval).await;
         }
     }
 
