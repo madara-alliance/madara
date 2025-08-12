@@ -200,9 +200,9 @@ contract Factory is Ownable, Pausable, Implementations {
 
   // Ensure to remove the governance admin role post setup,
   // As this function can be rerun 
-  function set_l2_bridge(
-    uint256 l2_eth_bridge_address,
-    uint256 l2_erc20_bridge_address,
+  function setL2Bridge(
+    uint256 l2EthBridgeAddress,
+    uint256 l2Erc20BridgeAddress,
     address ethTokenBridge,
     address tokenBridge
   ) onlyOwner whenNotPaused public {
