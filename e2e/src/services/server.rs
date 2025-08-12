@@ -57,15 +57,6 @@ impl Default for ServerConfig {
     }
 }
 
-impl ServerConfig {
-    /// Helper method to inherit current process environment variables
-    pub fn with_current_env(mut self) -> Self {
-        let current_env: HashMap<String, String> = std::env::vars().collect();
-        self.env_vars = Some(current_env);
-        self
-    }
-}
-
 // Generic server struct that can be used by any service
 pub struct Server {
     config: ServerConfig,
@@ -78,8 +69,6 @@ impl Server {
     /// Start a process with the given command and wait for it to be ready
     pub async fn start_process(mut command: Command, config: ServerConfig) -> Result<Self, ServerError> {
         println!("🔔 Starting {} service", config.service_name);
-
-        let config = config.with_current_env();
 
         if config.logs.0 {
             command.stdout(Stdio::piped());
