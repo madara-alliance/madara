@@ -255,9 +255,11 @@ COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
 
 WORKDIR ../bootstrapper
+ENV BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY="/contracts"
+
 COPY --from=starkgate-latest $STARKGATE_DIR/starkware ./solidity/starkware/
 COPY --from=starkgate-latest $STARKGATE_DIR/third_party ./solidity/third_party/
-COPY --from=bootstrapper "/contracts/out" ./solidity/out/
+COPY --from=bootstrapper $BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY/out ./solidity/out/
 
 WORKDIR ../starkgate_legacy
 

@@ -1,16 +1,14 @@
-use crate::gas_price::L1BlockMetrics;
+use std::sync::Arc;
+
+use crate::gas_price::{gas_price_worker, GasPriceProviderConfig, L1BlockMetrics};
 use crate::messaging::sync;
 use crate::state_update::{state_update_worker, L1HeadSender};
 use crate::L1ClientImpl;
-use mc_mempool::GasPriceProvider;
+
 use mp_utils::service::ServiceContext;
-use std::sync::Arc;
-use std::time::Duration;
 
 pub struct SyncWorkerConfig {
-    pub l1_gas_provider: GasPriceProvider,
-    pub gas_price_sync_disabled: bool,
-    pub gas_price_poll: Duration,
+    pub gas_provider_config: Option<GasPriceProviderConfig>,
     pub l1_block_metrics: Arc<L1BlockMetrics>,
     pub l1_head_sender: L1HeadSender,
 }
@@ -34,18 +32,16 @@ impl L1ClientImpl {
             ctx.clone(),
         ));
 
-        if !config.gas_price_sync_disabled {
-            let client_ = self.clone();
-            join_set.spawn(async move {
-                client_
-                    .gas_price_worker(
-                        config.l1_gas_provider,
-                        config.gas_price_poll,
-                        ctx.clone(),
-                        config.l1_block_metrics,
-                    )
-                    .await
-            });
+        if let Some(gas_provider_config) = config.gas_provider_config {
+            if !gas_provider_config.all_is_fixed() {
+                join_set.spawn(gas_price_worker(
+                    self.provider.clone(),
+                    Arc::clone(&self.backend),
+                    ctx.clone(),
+                    gas_provider_config,
+                    config.l1_block_metrics,
+                ));
+            }
         }
 
         while let Some(res) = join_set.join_next().await {

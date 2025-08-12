@@ -27,6 +27,8 @@ use starknet_core::{
 use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, SequencerGatewayProvider};
 use std::time::Duration;
 
+const GAS_PRICE: u128 = 128;
+
 enum TestSetup {
     /// Sequencer only, offering a jsonrpc and gateway interface. Transactions are validated and executed on the same node.
     SequencerOnly,
@@ -78,7 +80,7 @@ impl SetupBuilder {
         [
             "--devnet".into(),
             "--no-l1-sync".into(),
-            "--gas-price".into(),
+            "--l1-gas-price".into(),
             "0".into(),
             "--chain-config-path".into(),
             "test_devnet.yaml".into(),
@@ -120,7 +122,7 @@ impl SetupBuilder {
             .args([
                 "--full",
                 "--no-l1-sync",
-                "--gas-price",
+                "--l1-gas-price",
                 "0",
                 "--chain-config-path",
                 "test_devnet.yaml",
@@ -151,7 +153,7 @@ impl SetupBuilder {
             .args([
                 "--full",
                 "--no-l1-sync",
-                "--gas-price",
+                "--l1-gas-price",
                 "0",
                 "--chain-config-path",
                 "test_devnet.yaml",
@@ -314,8 +316,8 @@ async fn normal_transfer(#[case] setup: TestSetup) {
 
         let res = account
             .execute_v3(make_transfer_call(recipient, amount))
-            .gas_price(0x50) // we have to do this as gateway doesn't have the estimate_fee or get nonce method.
-            .gas(0x100)
+            .gas_price(GAS_PRICE) // we have to do this as gateway doesn't have the estimate_fee or get nonce method.
+            .gas(30_000)
             .nonce(init_nonce)
             .send()
             .await
@@ -393,8 +395,8 @@ async fn more_transfers(#[case] setup: TestSetup) {
                     for _ in 0..n_txs {
                         let res = account
                             .execute_v3(make_transfer_call(recipient, 10))
-                            .gas_price(0x50)
-                            .gas(0x100)
+                            .gas_price(GAS_PRICE)
+                            .gas(30_000)
                             .nonce(*nonce)
                             .send()
                             .await
@@ -462,6 +464,8 @@ async fn invalid_nonce(#[case] setup: TestSetup, #[case] wait_for_initial_transf
         .account(setup.json_rpc())
         .await
         .execute_v3(make_transfer_call(ACCOUNTS[4], 1418283))
+        .gas_price(GAS_PRICE)
+        .gas(30_000)
         .send()
         .await
         .unwrap();
@@ -473,8 +477,8 @@ async fn invalid_nonce(#[case] setup: TestSetup, #[case] wait_for_initial_transf
         let account = setup.account(provider).await;
         let res = account
             .execute_v3(make_transfer_call(ACCOUNTS[2], 1232))
-            .gas_price(0x50)
-            .gas(0x100)
+            .gas_price(GAS_PRICE)
+            .gas(30_000)
             .nonce(invalid_nonce)
             .send()
             .await;
@@ -508,8 +512,8 @@ async fn duplicate_txn(#[case] setup: TestSetup) {
         .await
         .execute_v3(call.clone())
         .nonce(nonce)
-        .gas_price(0x50)
-        .gas(0x100)
+        .gas_price(GAS_PRICE)
+        .gas(30_000)
         .send()
         .await
         .unwrap();
@@ -521,7 +525,7 @@ async fn duplicate_txn(#[case] setup: TestSetup) {
         call: Vec<Call>,
     ) {
         let account = setup.account(provider).await;
-        let res = account.execute_v3(call).nonce(nonce).gas_price(0x50).gas(0x100).send().await;
+        let res = account.execute_v3(call).nonce(nonce).gas_price(GAS_PRICE).gas(30_000).send().await;
         assert_matches!(
             res.unwrap_err(),
             AccountError::Provider(ProviderError::StarknetError(StarknetError::DuplicateTx))
@@ -562,7 +566,7 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
         .unwrap();
         factory.set_block_id(BlockId::Tag(BlockTag::Pending));
 
-        let deploy = factory.deploy_v3(salt).nonce(Felt::ZERO).gas_price(0x50).gas(0x10000);
+        let deploy = factory.deploy_v3(salt).nonce(Felt::ZERO).gas_price(GAS_PRICE).gas(0x10000);
 
         // Calculate contract address.
         let deployed_contract_address = deploy.address();
@@ -571,7 +575,7 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
         let res = account
             .execute_v3(make_transfer_call(deployed_contract_address, 0x21536523))
             .nonce(nonce)
-            .gas_price(0x5000)
+            .gas_price(GAS_PRICE)
             .gas(0x10000000000)
             .send()
             .await
@@ -595,7 +599,7 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
         let res_invoke = deployed_account
             .execute_v3(make_transfer_call(recipient, amount))
             .nonce(Felt::ONE) // Note: Nonce is ONE here
-            .gas_price(0x50)
+            .gas_price(GAS_PRICE)
             .gas(0x10000)
             .send()
             .await
@@ -680,7 +684,7 @@ async fn declare_sierra_then_deploy(
         let res = account
             .declare_v3(flattened_class.clone().into(), compiled_class_hash)
             .nonce(nonce)
-            .gas_price(0x5000)
+            .gas_price(GAS_PRICE)
             .gas(0x10000000000)
             .send()
             .await
@@ -731,7 +735,7 @@ async fn declare_sierra_then_deploy(
         let res = ContractFactory::new(class_hash, account.clone())
             .deploy_v3(vec![key.verifying_key().scalar()], /* salt */ Felt::TWO, /* unique */ true)
             .nonce(nonce)
-            .gas_price(0x5000)
+            .gas_price(GAS_PRICE)
             .gas(0x10000000000)
             .send()
             .await
@@ -753,7 +757,7 @@ async fn declare_sierra_then_deploy(
         let res = account
             .execute_v3(make_transfer_call(deployed_contract_address, 0x21536523))
             .nonce(nonce)
-            .gas_price(0x5000)
+            .gas_price(GAS_PRICE)
             .gas(0x10000000000)
             .send()
             .await
@@ -768,7 +772,7 @@ async fn declare_sierra_then_deploy(
         let res = deployed_account
             .execute_v3(make_transfer_call(recipient, amount))
             .nonce(Felt::ZERO)
-            .gas_price(0x50)
+            .gas_price(GAS_PRICE)
             .gas(0x10000)
             .send()
             .await
@@ -790,7 +794,7 @@ async fn declare_sierra_then_deploy(
         .unwrap();
         factory.set_block_id(BlockId::Tag(BlockTag::Pending));
 
-        let deploy = factory.deploy_v3(/* salt */ Felt::THREE).nonce(Felt::ZERO).gas_price(0x50).gas(0x10000);
+        let deploy = factory.deploy_v3(/* salt */ Felt::THREE).nonce(Felt::ZERO).gas_price(GAS_PRICE).gas(0x10000);
 
         // Calculate contract address.
         let deployed_contract_address = deploy.address();
@@ -799,7 +803,7 @@ async fn declare_sierra_then_deploy(
         let res = account
             .execute_v3(make_transfer_call(deployed_contract_address, 0x21536523))
             .nonce(nonce)
-            .gas_price(0x5000)
+            .gas_price(GAS_PRICE)
             .gas(0x10000000000)
             .send()
             .await
@@ -817,7 +821,7 @@ async fn declare_sierra_then_deploy(
         let res = deployed_account
             .execute_v3(make_transfer_call(recipient, amount))
             .nonce(Felt::ONE) // Note: Nonce is ONE in case of counter-factual deploy.
-            .gas_price(0x50)
+            .gas_price(GAS_PRICE)
             .gas(0x10000)
             .send()
             .await

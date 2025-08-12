@@ -28,6 +28,13 @@ fn main() {
                 &fs_extra::dir::CopyOptions::new().skip_exist(true),
             )
             .unwrap_or_else(|_| panic!("Failed to copy from {} to {}", src, dst));
+        } else {
+            // TODO: Convert this warning to an error
+            // Kept a wanring right now to pass CI and publish the artifacts for the first time.
+            println!(
+                "cargo:warning=Source path {} does not exist. Run `make artifacts` to generate build artifacts.",
+                src
+            );
         }
     }
 }

@@ -33,7 +33,6 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-
 anyhow = { workspace = true }
 itertools = { workspace = true }
 thiserror = { workspace = true }

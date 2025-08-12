@@ -1,14 +1,10 @@
+use crate::types::batch::Batch;
 use chrono::{SubsecRound, Utc};
 use rstest::fixture;
 use uuid::Uuid;
 
-// use crate::constants::{BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-// use crate::jobs::metadata::{
-//     CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputTypePath, ProvingMetadata, SnosMetadata,
-//     StateUpdateMetadata,
-// };
-// use crate::jobs::types::{ExternalId, JobItem, JobStatus, JobType};
-use crate::types::batch::Batch;
+use crate::tests::config::{ConfigType, MockType, TestConfigBuilder, TestConfigBuilderReturns};
+use crate::tests::jobs::snos_job::SNOS_PATHFINDER_RPC_URL_ENV;
 use crate::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -19,8 +15,11 @@ use crate::types::jobs::metadata::{
     StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
-// Test Util Functions
-// ==========================================
+use color_eyre::Result;
+use starknet_core::types::{Felt, StateUpdate};
+use std::fs::File;
+use std::io::Read;
+use url::Url;
 
 pub fn build_job_item(job_type: JobType, job_status: JobStatus, internal_id: u64) -> JobItem {
     let metadata = match job_type {
@@ -86,12 +85,46 @@ pub fn build_batch(
     Batch {
         id: Uuid::new_v4(),
         index,
-        size: end_block - start_block + 1,
+        num_blocks: end_block - start_block + 1,
         start_block,
         end_block,
         is_batch_ready: false,
         squashed_state_updates_path: String::from("path/to/file.json"),
+        blob_path: String::from("path/to/file.json"),
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
     }
+}
+
+pub async fn build_test_config_with_real_provider() -> Result<TestConfigBuilderReturns> {
+    let pathfinder_url: Url = match std::env::var(SNOS_PATHFINDER_RPC_URL_ENV) {
+        Ok(url) => url.parse()?,
+        Err(_) => {
+            return Err(color_eyre::eyre::eyre!("{} environment variable is not set", SNOS_PATHFINDER_RPC_URL_ENV));
+        }
+    };
+
+    Ok(TestConfigBuilder::new().configure_rpc_url(ConfigType::Mock(MockType::RpcUrl(pathfinder_url))).build().await)
+}
+
+pub fn read_felt_vec_from_file(file_path: &str) -> Result<Vec<Felt>> {
+    serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse felt vector file: {}", e))
+}
+
+pub fn read_state_updates_vec_from_file(file_path: &str) -> Result<Vec<StateUpdate>> {
+    serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update vector file: {}", e))
+}
+
+pub fn read_state_update_from_file(file_path: &str) -> Result<StateUpdate> {
+    serde_json::from_str(&read_file_to_string(file_path)?)
+        .map_err(|e| color_eyre::eyre::eyre!("Failed to parse state update file: {}", e))
+}
+
+pub fn read_file_to_string(file_path: &str) -> Result<String> {
+    let mut string = String::new();
+    let mut file = File::open(file_path)?;
+    file.read_to_string(&mut string)?;
+    Ok(string)
 }
