@@ -108,12 +108,13 @@ jobs:
           mkdir -p target/release/
           curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.13.2.1/pathfinder-x86_64-unknown-linux-gnu.tar.gz
           tar -xf pathfinder.tar.gz -C target/release/
-          chmod +x target/release/pathfinder
           rm pathfinder.tar.gz
 
       - name: Build Mock Atlantic Server
         run: CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml --bin mock-atlantic-server --release
 
+      - name: Make binaries executable
+        run: chmod +x target/release/madara target/release/bootstrapper target/release/pathfinder target/release/mock-atlantic-server target/release/orchestrator
       - name: Check Docker Installation
         run: |
           if command -v docker &> /dev/null
