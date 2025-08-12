@@ -54,7 +54,7 @@ impl BootstrapperService {
         let result = tokio::time::timeout(self.config.timeout(), async {
             // Keep checking if the process has exited
             loop {
-                if let Some(exit_status) = self.server.has_exited() {
+                if let Some(exit_status) = self.server.has_exited()? {
                     return Ok::<ExitStatus, BootstrapperError>(exit_status);
                 }
 
