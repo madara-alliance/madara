@@ -90,9 +90,14 @@ impl MongoService {
 
 // MongoDump and MongoRestore impl from within the docker container
 impl MongoService {
-    /// MongoDump
-    /// docker exec <container_name> mongodump --host "localhost:27017" --db orchestrator --out /tmp
-    /// docker cp <container_name>:/tmp/orchestrator <host_path>
+    /// Creates a backup of the specified MongoDB database.
+    /// 
+    /// Executes `mongodump` inside the Docker container to create a backup in `/tmp`,
+    /// then copies the dump to the host machine at the specified path.
+    /// 
+    /// # Arguments
+    /// * `database_path` - Host directory path where the backup will be stored
+    /// * `database_name` - Name of the database to backup
     pub async fn dump_db(&self, database_path: &str, database_name: &str) -> Result<(), MongoError> {
         // Step 1: Dump database inside container to /tmp
         let command = format!(
@@ -130,9 +135,14 @@ impl MongoService {
         Ok(())
     }
 
-    /// MongoRestore
-    /// docker cp <host_path>/database_name <container_name>:/tmp
-    /// docker exec <container_name> mongorestore --host "localhost:27017" --db database_name --dir /tmp/database_name
+    /// Restores a MongoDB database from a backup.
+    /// 
+    /// Copies backup files from the host machine to the Docker container's `/tmp` directory,
+    /// then executes `mongorestore` to restore the database.
+    /// 
+    /// # Arguments
+    /// * `database_path` - Host directory path where the backup is stored
+    /// * `database_name` - Name of the database to restore
     pub async fn restore_db(&self, database_path: &str, database_name: &str) -> Result<(), MongoError> {
         // Get system's db storage directory
         let database_dir_path = get_file_path(database_path).to_string_lossy().into_owned();
