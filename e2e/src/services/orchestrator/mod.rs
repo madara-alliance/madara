@@ -58,7 +58,7 @@ impl OrchestratorService {
         let result = tokio::time::timeout(Duration::from_secs(360), async {
             // Keep checking if the process has exited
             loop {
-                if let Some(exit_status) = self.server.has_exited() {
+                if let Some(exit_status) = self.server.has_exited()? {
                     return Ok::<ExitStatus, OrchestratorError>(exit_status);
                 }
 
