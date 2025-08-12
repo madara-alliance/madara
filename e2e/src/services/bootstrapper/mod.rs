@@ -70,19 +70,16 @@ impl BootstrapperService {
                     println!("✅ Bootstrapper {} completed successfully with {}", self.config.mode(), exit_status);
                     Ok(exit_status)
                 } else {
-                    let error_msg = if let Some(code) = exit_status.code() {
-                        format!("Process exited with code: {}", code)
+                    let error = if let Some(code) = exit_status.code() {
+                        BootstrapperError::SetupFailedWithCode(code)
                     } else {
-                        format!("Process terminated by signal: {}", exit_status)
+                        BootstrapperError::SetupFailedWithSignal(exit_status.to_string())
                     };
-                    Err(BootstrapperError::SetupFailed(error_msg))
+                    Err(error)
                 }
             }
             Ok(Err(e)) => Err(BootstrapperError::ExecutionFailed(e.to_string())),
-            Err(_) => Err(BootstrapperError::ExecutionFailed(format!(
-                "Bootstrapper timed out after {:?}",
-                self.config.timeout()
-            ))),
+            Err(_) => Err(BootstrapperError::ExecutionTimedOut(self.config.timeout())),
         }
     }
 

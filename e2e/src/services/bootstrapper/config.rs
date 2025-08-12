@@ -33,8 +33,12 @@ pub enum BootstrapperError {
     InvalidConfig(String),
     #[error("Bootstrapper execution failed: {0}")]
     ExecutionFailed(String),
-    #[error("Setup failed with exit message: {0}")]
-    SetupFailed(String),
+    #[error("Bootstrapper execution timed out after {0:?}")]
+    ExecutionTimedOut(Duration),
+    #[error("Setup failed with exit code: {0}")]
+    SetupFailedWithCode(i32),
+    #[error("Setup failed - process terminated by signal: {0}")]
+    SetupFailedWithSignal(String),
     #[error("Config read error: {0}")]
     ConfigReadWriteError(#[from] std::io::Error),
     #[error("Config parse error: {0}")]
