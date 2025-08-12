@@ -10,7 +10,6 @@ pub use config::*;
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
 use std::path::PathBuf;
-use tokio::time::Duration;
 use crate::services::constants::*;
 use crate::services::helpers::NodeRpcMethods;
 
@@ -111,40 +110,7 @@ impl MadaraService {
     }
 
     pub async fn wait_for_block_mined(&self, block_number: u64) -> Result<(), MadaraError> {
-        println!("⏳ Waiting for Madara block {} to be mined", block_number);
-
-        let poll_interval = Duration::from_millis(500); // Configurable interval
-        let mut retry_count = 0;
-        const MAX_RETRIES: u32 = 1200; // 10 minutes with 500ms intervals
-
-        loop {
-            match self.get_latest_block_number().await {
-                Ok(Some(latest)) => {
-                    if latest >= block_number {
-                        println!("🔔 Madara block {} is mined (latest: {})", block_number, latest);
-                        return Ok(());
-                    }
-                }
-                Ok(None) => {
-                    // No blocks mined yet, continue waiting
-                }
-                Err(e) => {
-                    retry_count += 1;
-                    if retry_count >= MAX_RETRIES {
-                        return Err(MadaraError::TimeoutWaitingForBlock(block_number, MAX_RETRIES, e.to_string()));
-                    }
-
-                    // Log error but continue retrying
-                    if retry_count % 20 == 0 {
-                        // Log every ~10 seconds
-                        println!("⚠️  Error fetching block number (retry {}/{}): {}",
-                                retry_count, MAX_RETRIES, e.to_string());
-                    }
-                }
-            }
-
-            tokio::time::sleep(poll_interval).await;
-        }
+        self.wait_for_block(block_number).await.map_err(|err| MadaraError::RpcError(err))
     }
 }
 

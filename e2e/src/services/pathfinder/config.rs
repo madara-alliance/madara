@@ -22,8 +22,6 @@ pub enum PathfinderError {
     RpcError(#[from] NodeRpcError),
     #[error("Server error: {0}")]
     Server(#[from] ServerError),
-    #[error("Timeout waiting for block {0} after {1} retries. Last error: {2}")]
-    TimeoutWaitingForBlock(u64, u32, String),
 }
 
 // Final immutable configuration
