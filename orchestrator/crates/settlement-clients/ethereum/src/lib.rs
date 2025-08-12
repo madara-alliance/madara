@@ -61,6 +61,7 @@ lazy_static! {
         &PROJECT_ROOT.join("crates/settlement-clients/ethereum/src/trusted_setup.txt")
     )
     .expect("Error loading trusted setup file");
+    pub static ref TX_WAIT_SLEEP_DELAY_SECS: u64 = env!("MADARA_ORCHESTRATOR_ETHEREUM_TX_WAIT_SLEEP_DELAY_SECS").parse().unwrap_or(60);
 }
 
 #[derive(Clone, Debug)]
