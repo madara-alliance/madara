@@ -17,8 +17,6 @@ pub struct MockVerifierDeployerService {
     config: MockVerifierDeployerConfig,
 }
 
-// I don't need to return the ExitStatus on completion, I can also return the verifier address
-
 impl MockVerifierDeployerService {
     /// Run the mock verifier deployment and wait for completion (convenience method)
     pub async fn run(config: MockVerifierDeployerConfig) -> Result<VerifierAddress, MockVerifierDeployerError> {
