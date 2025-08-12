@@ -8,7 +8,6 @@ use crate::services::helpers::NodeRpcMethods;
 use crate::services::server::{Server, ServerConfig};
 pub use config::*;
 use reqwest::Url;
-use tokio::time::Duration;
 
 pub struct PathfinderService {
     server: Server,
@@ -84,41 +83,7 @@ impl PathfinderService {
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
-        tokio::time::sleep(Duration::from_secs(1)).await;
-        println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
-
-        let poll_interval = Duration::from_millis(500); // Configurable interval
-        let mut retry_count = 0;
-        const MAX_RETRIES: u32 = 1200; // 10 minutes with 500ms intervals
-
-        loop {
-            match self.get_latest_block_number().await {
-                Ok(Some(latest)) => {
-                    if latest >= block_number {
-                        println!("🔔 Pathfinder block {} is synced (latest: {})", block_number, latest);
-                        return Ok(());
-                    }
-                }
-                Ok(None) => {
-                    // No blocks mined yet, continue waiting
-                }
-                Err(e) => {
-                    retry_count += 1;
-                    if retry_count >= MAX_RETRIES {
-                        return Err(PathfinderError::TimeoutWaitingForBlock(block_number, MAX_RETRIES, e.to_string()));
-                    }
-
-                    // Log error but continue retrying
-                    if retry_count % 20 == 0 {
-                        // Log every ~10 seconds
-                        println!("⚠️  Error fetching block number (retry {}/{}): {}",
-                                retry_count, MAX_RETRIES, e.to_string());
-                    }
-                }
-            }
-
-            tokio::time::sleep(poll_interval).await;
-        }
+        self.wait_for_block(block_number).await.map_err(|err| PathfinderError::RpcError(err))
     }
 }
 
