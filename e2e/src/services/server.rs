@@ -37,6 +37,7 @@ pub struct ServerConfig {
     pub rpc_port: Option<u16>,
     pub connection_attempts: usize,
     pub connection_delay_ms: u64,
+    pub buffer_capacity: usize,
     pub service_name: String,
     // stdout, stderr
     pub logs: (bool, bool),
@@ -51,6 +52,7 @@ impl Default for ServerConfig {
             rpc_port: None,
             connection_attempts: CONNECTION_ATTEMPTS,
             connection_delay_ms: CONNECTION_DELAY_MS,
+            buffer_capacity: BUFFER_CAPACITY,
             logs: (true, true),
             env_vars: None,
         }
@@ -100,7 +102,7 @@ impl Server {
             let service_name = config.service_name.clone();
             let stdout_task_inner = task::spawn(async move {
                 // Keeping a large buffer capacity for stdout, to not have buffer overflow
-                let reader = BufReader::with_capacity(BUFFER_CAPACITY, stdout);
+                let reader = BufReader::with_capacity(config.buffer_capacity, stdout);
                 let mut lines = reader.lines();
 
                 while let Ok(Some(line)) = lines.next_line().await {
@@ -166,10 +168,10 @@ impl Server {
     }
 
     /// Check if the process has exited
-    pub fn has_exited(&mut self) -> Option<ExitStatus> {
+    pub fn has_exited(&mut self) -> Result<Option<ExitStatus>, ServerError> {
         match self.process.try_wait() {
-            Ok(status) => status,
-            Err(_) => None,
+            Ok(status) => Ok(status),
+            Err(_) => Err(ServerError::ProcessNotRunning),
         }
     }
 
@@ -181,7 +183,7 @@ impl Server {
         if let Some(addr) = addr {
             // Extract just the socket address from the URL
             let socket_addr = if let Some(host) = addr.host_str() {
-                let port = addr.port().unwrap_or(FALLBACK_PORT); // Default to 80 if no port
+                let port = addr.port().expect("Port cannot be None!");
                 format!("{}:{}", host, port)
             } else {
                 return Err(ServerError::EndpointNotAvailable);
@@ -192,7 +194,7 @@ impl Server {
                     Ok(_) => return Ok(()),
                     Err(_) => {
                         // Check if process has exited
-                        if let Some(status) = self.has_exited() {
+                        if let Some(status) = self.has_exited()? {
                             return Err(ServerError::ProcessExited(status));
                         }
 
@@ -217,7 +219,7 @@ impl Server {
         if !self.config.rpc_port.is_some() {
             return Ok(());
         }
-        if self.has_exited().is_some() {
+        if self.has_exited()?.is_some() {
             return Ok(());
         }
 

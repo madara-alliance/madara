@@ -21,7 +21,6 @@ pub const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
 // SERVER
 // =============================================================================
 pub const BUFFER_CAPACITY: usize = 65536;
-pub const FALLBACK_PORT: u16 = 8080;
 pub const CONNECTION_ATTEMPTS: usize = 30;
 pub const CONNECTION_DELAY_MS: u64 = 1000;
 
