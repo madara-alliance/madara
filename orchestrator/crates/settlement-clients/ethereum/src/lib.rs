@@ -420,15 +420,25 @@ impl EthereumSettlementClient {
         for i in 0..n_blobs {
             y_0_values.push(Bytes32::from(
                 convert_stark_bigint_to_u256(
-                    bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET]),
-                    bytes_be_to_u128(&program_output[2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET]),
+                    bytes_be_to_u128(
+                        &program_output
+                            .get(2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET)
+                            .ok_or(eyre!("Malformed program output"))?,
+                    ),
+                    bytes_be_to_u128(
+                        &program_output
+                            .get(2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET)
+                            .ok_or(eyre!("Malformed program output"))?,
+                    ),
                 )
                 .to_be_bytes(),
             ));
         }
 
-        let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
-            .map_err(|e| eyre!("Failed to get x_0 point params: {}", e))?;
+        let x_0_point = Bytes32::from_bytes(
+            program_output.get(X_0_POINT_OFFSET).ok_or(eyre!("Malformed program output"))?.as_slice(),
+        )
+        .map_err(|e| eyre!("Failed to get x_0 point params: {}", e))?;
 
         let kzg_proofs = Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values)
             .map_err(|e| eyre!("Failed to build KZG proofs: {}", e))?;
