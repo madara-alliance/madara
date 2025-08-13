@@ -1,0 +1,14 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build And Publish Nightly Docker Image
+
+on:
+  workflow_call:
+
+jobs:
+  build-nightly-and-publish:
+    runs-on: karnot-arc-runner-set
+
+    steps:
+      - name: Stub
+        run: exit 0
