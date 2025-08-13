@@ -1,4 +1,5 @@
 pub mod cli;
+pub mod compression;
 pub mod core;
 pub mod error;
 pub mod server;

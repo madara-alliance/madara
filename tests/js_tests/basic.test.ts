@@ -180,7 +180,7 @@ async function deployAccount({ provider, account }: TestContext) {
     entrypoint: "transfer",
     calldata: CallData.compile({
       recipient: accountAddress,
-      amount: cairo.uint256(10000),
+      amount: cairo.uint256(100000000000),
     }),
   });
 

@@ -11,46 +11,11 @@ jobs:
   #                              NIGHTLY RELEASE                              #
   # ========================================================================= #
 
-  build-nightly-madara:
-    uses: ./.github/workflows/task-build-nightly.yml
+  build-nightly-and-publish-madara:
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: madara
-      image-file: ./madara.dockerfile
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  build-nightly-orchestrator:
-    uses: ./.github/workflows/task-build-nightly.yml
-    with:
-      image-name: orchestrator
-      image-file: ./orchestrator.dockerfile
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  build-nightly-bootstrapper:
-    uses: ./.github/workflows/task-build-nightly.yml
-    with:
-      image-name: bootstrapper
-      image-file: ./bootstrapper.dockerfile
-    permissions:
-      contents: read
-      attestations: write
-      id-token: write
-    secrets: inherit
-
-  publish-nightly-madara:
-    needs: build-nightly-madara
-    uses: ./.github/workflows/task-publish-image.yml
-    with:
-      image-name: madara
-      tag: ${{ needs.build-nightly-madara.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-madara.outputs.nightly-sha }}
+      image-file: ./madara/Dockerfile
     permissions:
       contents: read
       packages: write
@@ -58,13 +23,18 @@ jobs:
       id-token: write
     secrets: inherit
 
-  publish-nightly-orchestrator:
-    needs: build-nightly-orchestrator
-    uses: ./.github/workflows/task-publish-image.yml
+  # test-hive:
+  #   needs: [build-nightly]
+  #   uses: ./.github/workflows/task-test-hive.yml
+  #   with:
+  #     nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
+  #   secrets: inherit
+
+  build-nightly-and-publish-orchestrator:
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: orchestrator
-      tag: ${{ needs.build-nightly-orchestrator.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-orchestrator.outputs.nightly-sha }}
+      image-file: ./orchestrator/Dockerfile
     permissions:
       contents: read
       packages: write
@@ -72,13 +42,11 @@ jobs:
       id-token: write
     secrets: inherit
 
-  publish-nightly-bootstrapper:
-    needs: build-nightly-bootstrapper
-    uses: ./.github/workflows/task-publish-image.yml
+  build-nightly-and-publish-bootstrapper:
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: bootstrapper
-      tag: ${{ needs.build-nightly-bootstrapper.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly-bootstrapper.outputs.nightly-sha }}
+      image-file: ./bootstrapper/Dockerfile
     permissions:
       contents: read
       packages: write

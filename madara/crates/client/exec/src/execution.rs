@@ -1,10 +1,9 @@
 use crate::{Error, ExecutionContext, ExecutionResult, TxExecError};
-use blockifier::fee::fee_utils::get_fee_by_gas_vector;
 use blockifier::fee::gas_usage::estimate_minimal_gas_vector;
 use blockifier::state::cached_state::TransactionalState;
 use blockifier::transaction::account_transaction::AccountTransaction;
 use blockifier::transaction::errors::TransactionExecutionError;
-use blockifier::transaction::objects::{HasRelatedFeeType, TransactionExecutionInfo};
+use blockifier::transaction::objects::HasRelatedFeeType;
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
 use mp_convert::ToFelt;
@@ -46,14 +45,9 @@ impl ExecutionContext {
                 tracing::debug!("executing {:#x} (trace)", hash.to_felt());
                 let tx_type = tx.tx_type();
                 let fee_type = tx.fee_type();
-                let tip = match &tx {
-                    // Accessing tip may panic if the transaction is not version 3, so we check the version explicitly.
-                    Transaction::Account(tx) if tx.version() == TransactionVersion::THREE => tx.tip(),
-                    _ => Tip::ZERO,
-                };
 
                 // We need to estimate gas too.
-                let minimal_gas = match &tx {
+                let minimal_l1_gas = match &tx {
                     Transaction::Account(tx) => {
                         Some(estimate_minimal_gas_vector(&self.block_context, tx, &GasVectorComputationMode::All))
                     }
@@ -69,25 +63,8 @@ impl ExecutionContext {
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut cached_state);
                 // NB: We use execute_raw because execute already does transaactional state.
-                let execution_info = tx
-                    .execute_raw(&mut transactional_state, &self.block_context, false)
-                    .map(|mut tx_info: TransactionExecutionInfo| {
-                        // TODO: why was this here again?
-                        if tx_info.receipt.fee.0 == 0 {
-                            let gas_vector = tx_info.receipt.resources.to_gas_vector(
-                                self.block_context.versioned_constants(),
-                                self.block_context.block_info().use_kzg_da,
-                                &GasVectorComputationMode::NoL2Gas,
-                            );
-                            // TODO
-                            let real_fees =
-                                get_fee_by_gas_vector(self.block_context.block_info(), gas_vector, &fee_type, tip);
-
-                            tx_info.receipt.fee = real_fees;
-                        }
-                        tx_info
-                    })
-                    .map_err(make_reexec_error)?;
+                let execution_info =
+                    tx.execute_raw(&mut transactional_state, &self.block_context, false).map_err(make_reexec_error)?;
 
                 let state_diff = transactional_state
                     .to_state_diff()
@@ -99,7 +76,7 @@ impl ExecutionContext {
                     hash,
                     tx_type,
                     fee_type,
-                    minimal_l1_gas: minimal_gas,
+                    minimal_l1_gas,
                     execution_info,
                     state_diff: state_diff.state_maps.into(),
                 })
@@ -114,6 +91,7 @@ pub trait TxInfo {
     fn tx_nonce(&self) -> Option<Nonce>;
     fn tx_type(&self) -> TransactionType;
     fn fee_type(&self) -> FeeType;
+    fn tip(&self) -> Option<Tip>;
     fn is_only_query(&self) -> bool;
     fn deployed_contract_address(&self) -> Option<ContractAddress>;
     fn declared_class_hash(&self) -> Option<ClassHash>;
@@ -149,6 +127,14 @@ impl TxInfo for Transaction {
         match self {
             Self::Account(tx) => tx.tx_type(),
             Self::L1Handler(_) => TransactionType::L1Handler,
+        }
+    }
+
+    fn tip(&self) -> Option<Tip> {
+        match self {
+            // function tip() is only available for Account transactions with version 3 otherwise it panics.
+            Self::Account(tx) if tx.version() >= TransactionVersion::THREE => Some(tx.tip()),
+            _ => None,
         }
     }
 

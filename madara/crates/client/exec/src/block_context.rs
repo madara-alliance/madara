@@ -64,7 +64,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
                         .sequencer_address
                         .try_into()
                         .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
-                    gas_prices: (&pending_block.header.l1_gas_price).into(),
+                    gas_prices: (&pending_block.header.gas_prices).into(),
                     use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
                 },
                 self.chain_config().blockifier_chain_info(),
@@ -171,14 +171,14 @@ impl ExecutionContext {
                 block.header.protocol_version,
                 block.header.block_timestamp,
                 block.header.sequencer_address,
-                block.header.l1_gas_price.clone(),
+                block.header.gas_prices.clone(),
                 block.header.l1_da_mode,
             ),
             MadaraMaybePendingBlockInfo::NotPending(block) => (
                 block.header.protocol_version,
                 block.header.block_timestamp,
                 block.header.sequencer_address,
-                block.header.l1_gas_price.clone(),
+                block.header.gas_prices.clone(),
                 block.header.l1_da_mode,
             ),
         };

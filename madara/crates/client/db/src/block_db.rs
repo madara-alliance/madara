@@ -144,11 +144,13 @@ impl MadaraBackend {
                         sequencer_address: **self.chain_config().sequencer_address,
                         block_timestamp: Default::default(), // Junk timestamp: unix epoch
                         protocol_version: self.chain_config.latest_protocol_version,
-                        l1_gas_price: GasPrices {
+                        gas_prices: GasPrices {
                             eth_l1_gas_price: 1,
                             strk_l1_gas_price: 1,
                             eth_l1_data_gas_price: 1,
                             strk_l1_data_gas_price: 1,
+                            eth_l2_gas_price: 1,
+                            strk_l2_gas_price: 1,
                         },
                         l1_da_mode: self.chain_config.l1_da_mode,
                     },
@@ -165,7 +167,7 @@ impl MadaraBackend {
                     sequencer_address: latest_block_info.header.sequencer_address,
                     block_timestamp: latest_block_info.header.block_timestamp,
                     protocol_version: latest_block_info.header.protocol_version,
-                    l1_gas_price: latest_block_info.header.l1_gas_price.clone(),
+                    gas_prices: latest_block_info.header.gas_prices,
                     l1_da_mode: latest_block_info.header.l1_da_mode,
                 },
                 tx_hashes: vec![],

@@ -43,6 +43,10 @@ impl L1ClientImpl {
         Self { provider, backend, notify_new_message_to_l2: Default::default() }
     }
 
+    pub fn provider(&self) -> Arc<dyn SettlementLayerProvider> {
+        self.provider.clone()
+    }
+
     pub async fn new_ethereum(
         backend: Arc<MadaraBackend>,
         rpc_url: Url,

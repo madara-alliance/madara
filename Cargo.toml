@@ -316,6 +316,7 @@ orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atl
 orchestrator-mock-atlantic-server = { path = "orchestrator/crates/prover-clients/mock-atlantic-server" }
 orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
+zip = "4.3.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

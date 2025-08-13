@@ -37,3 +37,47 @@ where
         }
     }
 }
+
+/// retry_async - Retry an async function up to a specified number of times with optional delay between retries
+///
+/// # Arguments
+/// * `mut f` - The async function to call (should return Result<T, E>)
+/// * `max_retries` - Maximum number of attempts (including the first)
+/// * `delay` - Optional delay between retries (Duration)
+///
+/// # Returns
+/// * `Result<T, E>` - The result of the function or the last error if all retries fail
+///
+/// # Examples
+/// ```
+/// use std::time::Duration;
+/// use orchestrator::utils::helpers::retry_async;
+///
+/// async fn might_fail() -> Result<u32, &'static str> {
+///     Err("fail")
+/// }
+///
+/// // let result = retry_async(|| Box::pin(might_fail()), 3, Some(Duration::from_secs(1)));
+/// // assert!(result.is_err());
+/// ```
+pub async fn retry_async<F, Fut, T, E>(mut func: F, max_retries: u64, delay: Option<Duration>) -> Result<T, E>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, E>>,
+{
+    let mut attempts = 0;
+    loop {
+        match func().await {
+            Ok(val) => return Ok(val),
+            Err(e) => {
+                attempts += 1;
+                if attempts >= max_retries {
+                    return Err(e);
+                }
+                if let Some(d) = delay {
+                    tokio::time::sleep(d).await;
+                }
+            }
+        }
+    }
+}
