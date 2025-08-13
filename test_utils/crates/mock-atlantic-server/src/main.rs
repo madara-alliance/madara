@@ -5,16 +5,7 @@ use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 
 const DEFAULT_SERVER_PORT: u16 = 4001;
 
-// Usage examples in comments:
-//
-// Run with default settings (port 4001, no failures):
-// cargo run --bin mock-atlantic-server
-//
-// Run on port 8080:
-// cargo run --bin mock-atlantic-server 8080
-//
-// Run on port 8080 with 10% failure rate:
-// cargo run --bin mock-atlantic-server 8080 0.1
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing

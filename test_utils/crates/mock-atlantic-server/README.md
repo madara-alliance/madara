@@ -17,6 +17,37 @@ various scenarios including failures and processing delays.
 - 🏥 **Health Checks**: Built-in health check endpoint for monitoring
 - 🧪 **Testing Support**: Easy integration for unit and integration tests
 
+// Usage examples in comments:
+//
+// Run with default settings (port 4001, no failures):
+// cargo run --bin mock-atlantic-server
+//
+// Run on port 8080:
+// cargo run --bin mock-atlantic-server 8080
+//
+// Run on port 8080 with 10% failure rate:
+// cargo run --bin mock-atlantic-server 8080 0.1
+
+## How to Spin the Server
+
+- Run with default settings (port 4001, no failures):
+
+  ```bash
+  cargo run --bin utils-mock-atlantic-server
+  ```
+
+- Run on port 8080:
+
+  ```bash
+  cargo run --bin utils-mock-atlantic-server 8080
+  ```
+
+- Run on port 8080 with 10% failure rate:
+
+  ```bash
+  cargo run --bin utils-mock-atlantic-server 8080 0.1
+  ```
+
 ## API Endpoints
 
 ### Job Management
