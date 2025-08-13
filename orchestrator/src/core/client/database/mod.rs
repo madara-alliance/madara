@@ -1,6 +1,6 @@
+pub mod constant;
 pub mod error;
 pub mod mongodb;
-pub mod constant;
 
 use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;

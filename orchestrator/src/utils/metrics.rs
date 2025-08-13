@@ -1,10 +1,10 @@
+use crate::core::client::database::constant::JOBS_COLLECTION;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::{Counter, Gauge};
 use opentelemetry::{global, KeyValue};
 use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
 use orchestrator_utils::register_metric;
-use crate::core::client::database::constant::JOBS_COLLECTION;
 
 register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
 
