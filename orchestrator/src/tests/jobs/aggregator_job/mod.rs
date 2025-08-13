@@ -13,6 +13,7 @@ use chrono::{SubsecRound, Utc};
 use httpmock::prelude::*;
 use mockall::predicate::eq;
 use orchestrator_prover_client_interface::{MockProverClient, TaskStatus, TaskType};
+use orchestrator_utils::test_utils::setup_test_data;
 use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
@@ -56,9 +57,13 @@ async fn test_verify_job(#[from(default_job_item)] mut job_item: JobItem) {
     // 4. Store the artifacts in the storage client
     // 5. Update the job status in the database
 
-    // Fetching the aggregator cairo pie
-    let mut file =
-        File::open(Path::new(&format!("{}/src/tests/artifacts/aggregator.zip", env!("CARGO_MANIFEST_DIR")))).unwrap();
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
+
+    // Fetch a sample aggregator cairo pie
+    let data_dir = setup_test_data(vec![("aggregator.zip", false)]).await.expect("Failed to setup test data");
+
+    // Fetching the aggregator cairo pie from the file
+    let mut file = File::open(Path::new(data_dir.path().join("aggregator.zip").to_str().unwrap())).unwrap();
     let mut buffer = Vec::new();
     file.read_to_end(&mut buffer).unwrap();
     let buffer_bytes = Bytes::from(buffer);
