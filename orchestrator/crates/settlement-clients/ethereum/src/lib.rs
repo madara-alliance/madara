@@ -421,12 +421,12 @@ impl EthereumSettlementClient {
             y_0_values.push(Bytes32::from(
                 convert_stark_bigint_to_u256(
                     bytes_be_to_u128(
-                        &program_output
+                        program_output
                             .get(2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET)
                             .ok_or(eyre!("Malformed program output"))?,
                     ),
                     bytes_be_to_u128(
-                        &program_output
+                        program_output
                             .get(2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET)
                             .ok_or(eyre!("Malformed program output"))?,
                     ),
