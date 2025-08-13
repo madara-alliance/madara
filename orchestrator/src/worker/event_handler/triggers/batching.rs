@@ -25,6 +25,10 @@ use tokio::try_join;
 
 pub struct BatchingTrigger;
 
+// This lock ensures that only one Batching Worker is running at a time.
+// The lock is acquired for 1 hour.
+const BATCHING_WORKER_LOCK_DURATION: u64 = 60 * 60;
+
 // Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
 
 #[async_trait::async_trait]
@@ -36,7 +40,11 @@ impl JobTrigger for BatchingTrigger {
         tracing::info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
 
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
-        match config.lock().acquire_lock("BatchingWorker", LockValue::Boolean(false), 60 * 60, None).await {
+        match config
+            .lock()
+            .acquire_lock("BatchingWorker", LockValue::Boolean(false), BATCHING_WORKER_LOCK_DURATION, None)
+            .await
+        {
             Ok(_) => {
                 // Lock acquired successfully
                 tracing::info!("BatchingWorker acquired lock");
