@@ -82,6 +82,7 @@ tokio = { workspace = true, features = [
   "rt-multi-thread",
   "rt",
 ] }
+tokio-util = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
