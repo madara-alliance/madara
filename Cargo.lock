@@ -13076,6 +13076,24 @@ dependencies = [
 ]
 
 [[package]]
+name = "utils-mock-atlantic-server"
+version = "0.8.0"
+dependencies = [
+ "axum 0.7.7",
+ "chrono",
+ "rand",
+ "reqwest 0.12.8",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "thiserror 2.0.3",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "uuid 1.12.0",
+]
+
+[[package]]
 name = "uuid"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
