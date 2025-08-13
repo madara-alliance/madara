@@ -134,13 +134,6 @@ alloy = { version = "0.8.3", features = [
   "rpc-types",
   "provider-http",
   "contract",
-  "consensus",
-  "providers",
-  "rpc-client",
-  "transport-http",
-  "network",
-  "eips",
-  "signers",
 ] }
 
 # Instrumentation
@@ -314,11 +307,8 @@ orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clie
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
-orchestrator-mock-atlantic-server = { path = "orchestrator/crates/prover-clients/mock-atlantic-server" }
-orchestrator = { path = "orchestrator" }
-
 utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
-
+orchestrator = { path = "orchestrator" }
 base64ct = "=1.6.0"
 zip = "4.3.0"
 

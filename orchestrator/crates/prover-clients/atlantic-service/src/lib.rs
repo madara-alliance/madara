@@ -74,6 +74,7 @@ impl ProverClient for AtlanticProverService {
                     .await?;
 
                 tracing::debug!("Successfully submitted task to atlantic: {:?}", atlantic_job_response);
+                // The temporary file will be automatically deleted when `temp_file` goes out of scope
                 Ok(atlantic_job_response.atlantic_query_id)
             }
         }

@@ -85,6 +85,14 @@ pub async fn start_mock_server_background(port: u16) -> tokio::task::JoinHandle<
     })
 }
 
+/// Start the mock Atlantic server with default configuration
+/// This function will block until the server is shut down
+pub async fn start_mock_atlantic_server() -> Result<(), Box<dyn std::error::Error>> {
+    let port = 4001; // Default Atlantic mock server port
+    let server = MockAtlanticServer::with_test_config(port);
+    server.run().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -157,6 +157,11 @@ pub struct RunCmd {
     pub service_args: service::ServiceCliArgs,
     #[clap(flatten)]
     pub instrumentation_args: instrumentation::InstrumentationCliArgs,
+
+    /// Run the mock Atlantic server for testing purposes.
+    /// This starts a local mock server that simulates the Atlantic prover service.
+    #[clap(long)]
+    pub mock_atlantic_server: bool,
 }
 
 #[derive(Parser, Debug, Clone)]

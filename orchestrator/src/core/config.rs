@@ -3,11 +3,10 @@ use alloy::providers::RootProvider;
 
 use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
-use orchestrator_atlantic_service::{AtlanticProverService, AtlanticValidatedArgs};
+use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
-use orchestrator_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
@@ -17,6 +16,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
+use tracing::{error, info};
 use url::Url;
 
 use crate::core::error::OrchestratorCoreResult;
@@ -201,7 +201,7 @@ impl Config {
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(&prover_config).await;
+        let prover_client = Self::build_prover_service(&prover_config, run_cmd.mock_atlantic_server).await;
         let da_client = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -258,65 +258,33 @@ impl Config {
     ///
     /// # Arguments
     /// * `prover_params` - The proving service parameters
+    /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
-    pub(crate) async fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
+    pub(crate) async fn build_prover_service(
+        prover_params: &ProverConfig,
+        allow_mock_hash_server: bool,
+    ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
             ProverConfig::Atlantic(atlantic_params) => {
-                // If mock_fact_hash is "true", start the mock Atlantic server
-                if atlantic_params.atlantic_mock_fact_hash.eq("true") {
-                    tracing::info!("Starting Mock Atlantic Server for testing...");
+                // Start mock Atlantic server if flag is enabled and we're in testnet
+                if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
+                    info!("Mock Atlantic server flag is enabled, starting mock server...");
 
-                    let mock_port = 3001; // Default port for mock server
-                    let config = MockServerConfig {
-                        simulate_failures: false,
-                        processing_delay_ms: 1000,
-                        failure_rate: 0.0,
-                        auto_complete_jobs: true,
-                        completion_delay_ms: 3000,
-                    };
-
-                    // Start the mock server in the background
-                    let server_addr = std::net::SocketAddr::from(([127, 0, 0, 1], mock_port));
-                    let mock_server = MockAtlanticServer::new(server_addr, config);
-
+                    // Start the mock server in a background task
                     tokio::spawn(async move {
-                        if let Err(e) = mock_server.run().await {
-                            tracing::error!("Mock Atlantic server failed: {}", e);
+                        info!("Starting mock Atlantic server on port 4001");
+                        if let Err(e) = utils_mock_atlantic_server::start_mock_atlantic_server().await {
+                            error!("Failed to start mock Atlantic server: {}", e);
                         }
                     });
 
-                    // Give the server a moment to start up
-                    tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-
-                    tracing::info!("Mock Atlantic Server started on port {}", mock_port);
-
-                    // Create modified Atlantic params that point to the mock server
-                    let mock_atlantic_params = AtlanticValidatedArgs {
-                        atlantic_api_key: atlantic_params.atlantic_api_key.clone(),
-                        atlantic_service_url: format!("http://127.0.0.1:{}", mock_port)
-                            .parse()
-                            .expect("Failed to parse mock server URL"),
-                        atlantic_rpc_node_url: atlantic_params.atlantic_rpc_node_url.clone(),
-                        atlantic_verifier_contract_address:
-                            "0x007a9a039a9471a7bea2962695cebc03f01a702ffa848763a6749052b0396ccc".to_string(), // Hard-coded for mock mode
-                        atlantic_settlement_layer: atlantic_params.atlantic_settlement_layer.clone(),
-                        atlantic_mock_fact_hash: atlantic_params.atlantic_mock_fact_hash.clone(),
-                        atlantic_prover_type: atlantic_params.atlantic_prover_type.clone(),
-                        atlantic_network: atlantic_params.atlantic_network.clone(),
-                        cairo_verifier_program_hash: None,
-                    };
-
-                    tracing::info!("Configured Atlantic client to use mock server at http://127.0.0.1:{}", mock_port);
-                    tracing::info!("Using hardcoded verifier contract address for mock mode: 0x007a9a039a9471a7bea2962695cebc03f01a702ffa848763a6749052b0396ccc");
-
-                    // Create the Atlantic service with mock server configuration
-                    Box::new(AtlanticProverService::new_with_args(&mock_atlantic_params))
-                } else {
-                    // Use the real Atlantic service
-                    Box::new(AtlanticProverService::new_with_args(atlantic_params))
+                    // Give the mock server time to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    info!("Mock Atlantic server started successfully");
                 }
+                Box::new(AtlanticProverService::new_with_args(atlantic_params))
             }
         }
     }

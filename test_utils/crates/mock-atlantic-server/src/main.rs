@@ -5,7 +5,6 @@ use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 
 const DEFAULT_SERVER_PORT: u16 = 4001;
 
-
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing

@@ -56,7 +56,6 @@ orchestrator-atlantic-service = { workspace = true }
 orchestrator-da-client-interface = { workspace = true }
 orchestrator-ethereum-da-client = { workspace = true, optional = true }
 orchestrator-ethereum-settlement-client = { workspace = true }
-orchestrator-mock-atlantic-server = { workspace = true }
 orchestrator-prover-client-interface = { workspace = true }
 orchestrator-settlement-client-interface = { workspace = true }
 orchestrator-sharp-service = { workspace = true }
@@ -84,6 +83,7 @@ tokio = { workspace = true, features = [
 ] }
 tokio-util = { workspace = true }
 url = { workspace = true }
+utils-mock-atlantic-server = { workspace = true }
 uuid = { workspace = true, features = ["v4", "serde"] }
 
 aws-sdk-iam = { workspace = true }
