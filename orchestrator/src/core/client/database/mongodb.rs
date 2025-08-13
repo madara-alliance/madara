@@ -1,5 +1,7 @@
 use super::error::DatabaseError;
+use crate::core::client::database::constant::{BATCHES_COLLECTION, JOBS_COLLECTION};
 use crate::core::client::database::DatabaseClient;
+use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
@@ -73,11 +75,11 @@ impl MongoDbClient {
     }
 
     fn get_job_collection(&self) -> Collection<JobItem> {
-        self.database.collection("jobs")
+        self.database.collection(JOBS_COLLECTION)
     }
 
     fn get_batch_collection(&self) -> Collection<Batch> {
-        self.database.collection("batches")
+        self.database.collection(BATCHES_COLLECTION)
     }
 
     pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
@@ -85,11 +87,11 @@ impl MongoDbClient {
     }
 
     pub fn jobs_collection(&self) -> Collection<JobItem> {
-        self.get_collection::<JobItem>("jobs")
+        self.get_collection::<JobItem>(JOBS_COLLECTION)
     }
 
     pub fn locks_collection(&self) -> Collection<JobItem> {
-        self.get_collection("locks")
+        self.get_collection(LOCKS_COLLECTION)
     }
 
     /// find_one - Find one document in a collection
@@ -488,7 +490,7 @@ impl DatabaseClient for MongoDbClient {
             // Stage 2: Lookup to find corresponding job_b_type jobs
             doc! {
                 "$lookup": {
-                    "from": "jobs",
+                    "from": JOBS_COLLECTION,
                     "let": { "internal_id": "$internal_id" },
                     "pipeline": [
                         {

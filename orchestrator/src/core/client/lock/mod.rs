@@ -1,5 +1,6 @@
 pub mod error;
 pub mod mongodb;
+pub mod constant;
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};

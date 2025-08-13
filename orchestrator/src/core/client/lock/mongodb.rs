@@ -1,4 +1,5 @@
 use crate::cli::SetupCmd;
+use crate::core::client::lock::constant::LOCKS_COLLECTION;
 use crate::core::client::lock::error::LockError;
 use crate::core::client::lock::{LockClient, LockInfo, LockResult, LockValue};
 use crate::types::params::database::DatabaseArgs;
@@ -44,7 +45,10 @@ impl MongoLockClient {
         // Create a new MongoClient instance
         let client = Client::with_uri_str(&connection_uri).await?;
 
-        Ok(Self { database: Arc::new(client.database(&database_name)), collection_name: "locks".to_string() })
+        Ok(Self {
+            database: Arc::new(client.database(&database_name)),
+            collection_name: String::from(LOCKS_COLLECTION),
+        })
     }
 
     /// Creates a new MongolockClient instance
@@ -52,7 +56,7 @@ impl MongoLockClient {
         let client = Client::with_uri_str(&args.connection_uri).await?;
         let database = Arc::new(client.database(&args.database_name));
 
-        Ok(Self { database, collection_name: "locks".to_string() })
+        Ok(Self { database, collection_name: String::from(LOCKS_COLLECTION) })
     }
 
     /// Creates a new MongolockClient with custom collection name and limits
