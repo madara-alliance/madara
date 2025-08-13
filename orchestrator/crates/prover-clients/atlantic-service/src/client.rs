@@ -95,7 +95,10 @@ impl AtlanticClient {
         Self { client, proving_layer }
     }
 
-    /// Fetch an artifact from the given path
+    /// Fetch an artifact from the given path.
+    /// This expects a URL from which it'll try to fetch the artifact.
+    /// It's called by `get_artifacts` service function in `lib.rs`.
+    /// Artifacts can be proof, snos output, cairo pie (aggregator's), program output, etc.
     ///
     /// # Arguments
     /// `artifact_path` - the path of the artifact to get
@@ -115,6 +118,7 @@ impl AtlanticClient {
         }
     }
 
+    /// Fetch the details of a bucket from
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
         let response = self
             .client
@@ -132,6 +136,10 @@ impl AtlanticClient {
         }
     }
 
+    /// Create a new bucket for Applicative Recursion.
+    /// Initially, the bucket will be empty when created.
+    /// The `bucket_id` returned from here will be used to add child jobs to this bucket.
+    /// A new bucket is created when creating a new batch in Batching worker.
     pub async fn create_bucket(
         &self,
         atlantic_api_key: impl AsRef<str>,
@@ -165,6 +173,10 @@ impl AtlanticClient {
         }
     }
 
+    /// Close a bucket.
+    /// No new child job can be added once the bucket is closed.
+    /// We make sure that all the child jobs are completed before closing the bucket.
+    /// It's closed in Aggregator job.
     pub async fn close_bucket(
         &self,
         bucket_id: &str,
@@ -240,6 +252,7 @@ impl AtlanticClient {
         }
     }
 
+    /// Fetch the status of a job
     pub async fn get_job_status(&self, job_key: &str) -> Result<AtlanticGetStatusResponse, AtlanticError> {
         let response = self
             .client
@@ -258,13 +271,15 @@ impl AtlanticClient {
         }
     }
 
-    // get_proof_by_task_id - is a endpoint to get the proof from the herodotus service
-    // Args:
-    // task_id - the task id of the proof to get
-    // Returns:
-    // The proof as a string if the request is successful, otherwise an error is returned
+    /// Fetch proof from herodotus service.
+    ///
+    /// # Arguments
+    /// task_id - the task id of the proof to get
+    ///
+    /// # Returns
+    /// The proof as a string if the request is successful, otherwise an error is returned
     pub async fn get_proof_by_task_id(&self, task_id: &str) -> Result<String, AtlanticError> {
-        // Note: It seems this code will be replaced by the proper API once it is available
+        // TODO: Update the code once a proper API is available for this
         debug!("Getting proof for task_id: {}", task_id);
         let proof_path = ATLANTIC_PROOF_URL.replace("{}", task_id);
         let client = reqwest::Client::new();

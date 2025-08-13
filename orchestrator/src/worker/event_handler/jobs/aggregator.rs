@@ -48,8 +48,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     ///
     /// So all the Aggregator jobs have the above conditions satisfied.
     /// Now, we follow the following logic:
-    /// 1. Calculate the fact for the batch and save it in job metadata
-    /// 2. Call close batch for the bucket
+    /// 1. Call close batch for the bucket
     #[tracing::instrument(fields(category = "aggregator"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
@@ -250,6 +249,7 @@ impl AggregatorJobHandler {
         file_name: &str,
         storage_path: &str,
     ) -> Result<Vec<u8>, JobError> {
+        // TODO: Check if we can optimize the memory usage here
         tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
         let artifact = config.prover_client().get_task_artifacts(task_id, file_name).await.map_err(|e| {
             tracing::error!(error = %e, "Failed to download {}", file_name);

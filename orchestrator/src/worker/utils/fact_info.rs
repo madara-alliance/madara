@@ -198,6 +198,22 @@ pub fn get_fact_info(
 /// The output of the aggregator program returns both the input and the output to it.
 /// This is because it is used further by applicative bootloader which requires it.
 /// This function is used to filter the output from the complete output
+/// The program output contains an array of Felts. We filter out the output part from this file.
+/// The data is in the following format (Let P = Program output array)
+///
+/// 0 = Number of blocks. Let it be `m`. \
+/// 1 = The input size of the first block. Let it be N1. \
+/// The next N1 indexes contain input data for block 1. \
+/// 1 + N1 + 1 = The input size of the second block. Let it be N2. \
+/// The next N2 indexes contain input data for block 2. \
+/// And so on till `m` blocks. \
+/// After that starts the output which we extract.
+///
+/// Since there can be 0s appended at the end, we carefully extract the information in the output
+/// and don't touch the trailing 0s.
+///
+/// Check any transaction on the Starknet core contract to see the program output format.
+/// For eg. https://sepolia.etherscan.io/tx/0x30c2280d308948aa727b9345752cc71c099a09612227ccc908a216fd06195001
 pub fn filter_output_from_program_output(program_output: Vec<Felt252>) -> Result<Vec<Felt252>, FactError> {
     // Length needs to be at least 1 so that we can get the number of blocks
     if program_output.is_empty() {

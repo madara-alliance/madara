@@ -99,6 +99,16 @@ impl ProverClient for AtlanticProverService {
         }
     }
 
+    /// Fetch the status of a task from the Atlantic service.
+    ///
+    /// # Arguments
+    /// task - specifies the task type which can be a job or a bucket
+    /// job_key - job ID
+    /// fact - optional fact string to verify
+    /// cross_verify - boolean to specify if we should cross verify the fact calculated and registered
+    ///
+    /// # Returns
+    /// Status of the task
     #[tracing::instrument(skip(self))]
     async fn get_task_status(
         &self,
@@ -229,6 +239,18 @@ impl ProverClient for AtlanticProverService {
             .clone())
     }
 
+    /// Fetch artifacts from the Atlantic service.
+    /// It tries to fetch the artifact for the given task ID from
+    /// [ATLANTIC_FETCH_ARTIFACTS_BASE_URL] S3 bucket.
+    /// The type of artifacts to be fetched is defined by the `file_name` parameter.
+    ///
+    /// Calls the `get_artifacts` method of `AtlanticClient` defined in `client.rs`
+    /// # Arguments
+    /// `task_id` - the ID of the task for which the artifacts need to be fetched
+    /// `file_name` - the name of the file which is to be fetched
+    ///
+    /// # Returns
+    /// The artifact as a byte array if the request is successful, otherwise an error is returned
     async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
         Ok(self
             .atlantic_client
