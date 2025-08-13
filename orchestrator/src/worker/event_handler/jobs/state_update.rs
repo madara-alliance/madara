@@ -86,12 +86,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// TODO: Update the code in the future releases to fix this.
     #[tracing::instrument(fields(category = "state_update"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
-        // Note: This function handles for L2 and L3 state update
-        // Throughout the function,
-        // to_settle is the batch num or the block num to settle
-        // last_failed is the batch num or the block num for which we failed to do the state update
-        // last time
-
         let internal_id = job.internal_id.clone();
         info!(
             log_type = "starting",
@@ -105,7 +99,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
-        let (to_settle, last_failed) = match state_metadata.context.clone() {
+        let (block_or_batch_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
                 self.validate_block_numbers(config.clone(), &data.to_settle).await?;
                 debug!(job_id = %job.internal_id, blocks = ?data.to_settle, "Validated block numbers");
@@ -117,8 +111,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         };
 
         // Filter block numbers if there was a previous failure
-        let filtered_indices: Vec<usize> =
-            to_settle.iter().enumerate().filter(|(_, &num)| num >= last_failed).map(|(i, _)| i).collect();
+        let filtered_indices: Vec<usize> = block_or_batch_to_settle
+            .iter()
+            .enumerate()
+            .filter(|(_, &num)| num >= last_failed_block_or_batch)
+            .map(|(i, _)| i)
+            .collect();
 
         let snos_output_paths = state_metadata.snos_output_paths.clone();
         let program_output_paths = state_metadata.program_output_paths.clone();
@@ -130,7 +128,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         // Loop over the indices to process
         for &i in &filtered_indices {
-            let to_settle_num = to_settle[i];
+            let to_settle_num = block_or_batch_to_settle[i];
             debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
 
             // Get the artifacts for the block/batch
@@ -174,7 +172,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             nonce += 1;
         }
 
-        let val = to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
+        let val = block_or_batch_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
 
         info!(
             log_type = "completed",
