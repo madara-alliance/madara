@@ -136,6 +136,7 @@ impl AtlanticClient {
         &self,
         atlantic_api_key: impl AsRef<str>,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
+        // TODO: Use the aggregator version calculated from Madara Version being passed through ENV
         let response = self
             .client
             .request()

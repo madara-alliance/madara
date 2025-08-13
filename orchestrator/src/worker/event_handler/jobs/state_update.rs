@@ -78,6 +78,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 2. Filter these if state transition jobs failed for some blocks/batches before
     /// 3. Fetch snos output, program output and blob data from storage
     /// 4. Perform state transition for all blocks/batches one by one
+    ///
+    /// NOTE: Right now, if any job fails, the whole orchestrator halts.
+    /// So, the retry logic added here (for restarting the state update from the block which failed
+    /// last time) will not actually work.
+    ///
+    /// TODO: Update the code in the future releases to fix this.
     #[tracing::instrument(fields(category = "state_update"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         // Note: This function handles for L2 and L3 state update

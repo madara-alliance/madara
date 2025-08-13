@@ -68,6 +68,7 @@ pub async fn fetch_blob_data_for_batch(
     config: Arc<Config>,
     blob_data_paths: &[String],
 ) -> Result<Vec<Vec<u8>>, JobError> {
+    // TODO: Check if we can optimize the memory usage here
     tracing::debug!("Fetching blob data for batch index {}", index);
 
     let storage_client = config.storage();
