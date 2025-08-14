@@ -200,8 +200,13 @@ impl Config {
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
+        // Start mock Atlantic server if flag is enabled
+        if run_cmd.mock_atlantic_server {
+            Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
+        }
+
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(&prover_config, run_cmd.mock_atlantic_server).await;
+        let prover_client = Self::build_prover_service(&prover_config).await;
         let da_client = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -261,12 +266,26 @@ impl Config {
     /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
-    pub(crate) async fn build_prover_service(
-        prover_params: &ProverConfig,
-        allow_mock_hash_server: bool,
-    ) -> Box<dyn ProverClient + Send + Sync> {
+    pub(crate) async fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
             ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
+            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
+        }
+    }
+
+    /// start_mock_atlantic_server - Start the mock Atlantic server
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `allow_mock_hash_server` - Whether to allow the mock Atlantic server
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    ///
+    /// # Notes
+    /// This function is used to start the mock Atlantic server if the flag is enabled and we're in testnet.
+    /// It starts the mock server in a background task and gives it time to start.
+    async fn start_mock_atlantic_server(prover_params: &ProverConfig, allow_mock_hash_server: bool) {
+        match prover_params {
             ProverConfig::Atlantic(atlantic_params) => {
                 // Start mock Atlantic server if flag is enabled and we're in testnet
                 if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
@@ -284,7 +303,9 @@ impl Config {
                     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
                     info!("Mock Atlantic server started successfully");
                 }
-                Box::new(AtlanticProverService::new_with_args(atlantic_params))
+            }
+            ProverConfig::Sharp(_) => {
+                tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }
     }

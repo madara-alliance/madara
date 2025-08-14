@@ -96,7 +96,6 @@ pub async fn start_mock_atlantic_server() -> Result<(), Box<dyn std::error::Erro
 #[cfg(test)]
 mod tests {
     use super::*;
-    use reqwest;
     use tokio::time::{sleep, Duration};
 
     #[tokio::test]
@@ -111,7 +110,7 @@ mod tests {
         let base_url = format!("http://127.0.0.1:{}", port);
 
         // Test health check
-        let response = client.get(&format!("{}/health", base_url)).send().await.expect("Health check failed");
+        let response = client.get(format!("{}/health", base_url)).send().await.expect("Health check failed");
 
         assert!(response.status().is_success());
 
@@ -122,7 +121,7 @@ mod tests {
             .text("declaredJobSize", "S");
 
         let response = client
-            .post(&format!("{}/atlantic-query?apiKey=test", base_url))
+            .post(format!("{}/atlantic-query?apiKey=test", base_url))
             .multipart(form)
             .send()
             .await
@@ -133,7 +132,7 @@ mod tests {
 
         // Test job status
         let response = client
-            .get(&format!("{}/atlantic-query/{}", base_url, job_response.atlantic_query_id))
+            .get(format!("{}/atlantic-query/{}", base_url, job_response.atlantic_query_id))
             .send()
             .await
             .expect("Status check failed");
