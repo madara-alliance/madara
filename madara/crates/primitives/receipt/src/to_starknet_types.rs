@@ -1,6 +1,6 @@
 use crate::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, Event, ExecutionResources,
-    ExecutionResult, FeePayment, InvokeTransactionReceipt, L1Gas, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
+    ExecutionResult, FeePayment, GasVector, InvokeTransactionReceipt, L1HandlerTransactionReceipt, MsgToL1, PriceUnit,
     TransactionReceipt,
 };
 
@@ -169,8 +169,8 @@ fn nullify_zero(u: u64) -> Option<u64> {
     }
 }
 
-impl From<L1Gas> for mp_rpc::DataAvailability {
-    fn from(resources: L1Gas) -> Self {
+impl From<GasVector> for mp_rpc::DataAvailability {
+    fn from(resources: GasVector) -> Self {
         Self { l1_gas: resources.l1_gas, l1_data_gas: resources.l1_data_gas }
     }
 }
