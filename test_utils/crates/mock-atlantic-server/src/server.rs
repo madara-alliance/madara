@@ -302,7 +302,6 @@ pub async fn add_job_handler(
     // Determine job ID based on layout
     let job_id = match layout.as_deref() {
         Some("recursive_with_poseidon") => "01JXMXQAX4KNNSQDKDZTSHG8FC".to_string(),
-        Some("dynamic") => "01JXMTC7TZMSNDTJ88212KTH7W".to_string(),
         _ => {
             // Default to dynamic layout ID for other layouts
             debug!("Using default job ID for layout: {:?}", layout);
@@ -346,42 +345,6 @@ pub async fn get_job_status_handler(
     }
 }
 
-pub async fn get_proof_handler(
-    State(state): State<MockAtlanticState>,
-    Path(task_id): Path<String>,
-) -> Result<String, StatusCode> {
-    debug!("Received get_proof request for task: {}", task_id);
-
-    let jobs = state.jobs.read().await;
-
-    // Guard: Check if job exists
-    let job_data = match jobs.get(&task_id) {
-        Some(job) => job,
-        None => {
-            warn!("Task not found: {}", task_id);
-            return Err(StatusCode::NOT_FOUND);
-        }
-    };
-
-    // Guard: Check if task is completed
-    if job_data.query.status != AtlanticQueryStatus::Done {
-        warn!("Task not completed yet: {}", task_id);
-        return Err(StatusCode::NOT_FOUND);
-    }
-
-    // Guard: Check if proof data exists
-    let proof_data = match job_data.proof_data.as_ref() {
-        Some(proof) => proof,
-        None => {
-            warn!("Proof data not available for task: {}", task_id);
-            return Err(StatusCode::NOT_FOUND);
-        }
-    };
-
-    info!("Returning proof data for task: {}", task_id);
-    Ok(proof_data.clone())
-}
-
 pub async fn health_check() -> Result<Json<serde_json::Value>, StatusCode> {
     Ok(Json(serde_json::json!({
       "alive": true
@@ -392,7 +355,6 @@ pub fn create_router(state: MockAtlanticState) -> Router {
     Router::new()
         .route("/atlantic-query", post(add_job_handler))
         .route("/atlantic-query/:job_id", get(get_job_status_handler))
-        .route("/queries/:task_id/proof.json", get(get_proof_handler))
         .route("/is-alive", get(health_check))
         // Amounting to accept at max of 100MB of data as a part of the API call
         .layer(DefaultBodyLimit::max(100000000))
