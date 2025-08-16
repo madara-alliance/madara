@@ -67,7 +67,7 @@ impl DockerServer {
     }
 
     /// Check if a port is in use
-    pub fn is_port_in_use(port: u16) -> bool {
-        std::net::TcpListener::bind(format!("{}:{}", DEFAULT_SERVICE_HOST, port)).is_err()
+    pub async fn is_port_in_use(port: u16) -> bool {
+        tokio::net::TcpListener::bind(format!("{}:{}", DEFAULT_SERVICE_HOST, port)).await.is_err()
     }
 }

@@ -38,7 +38,7 @@ impl MongoService {
         }
 
         // Check if port is in use
-        if DockerServer::is_port_in_use(config.port()) {
+        if DockerServer::is_port_in_use(config.port()).await {
             return Err(MongoError::PortInUse(config.port()));
         }
 
@@ -91,10 +91,10 @@ impl MongoService {
 // MongoDump and MongoRestore impl from within the docker container
 impl MongoService {
     /// Creates a backup of the specified MongoDB database.
-    /// 
+    ///
     /// Executes `mongodump` inside the Docker container to create a backup in `/tmp`,
     /// then copies the dump to the host machine at the specified path.
-    /// 
+    ///
     /// # Arguments
     /// * `database_path` - Host directory path where the backup will be stored
     /// * `database_name` - Name of the database to backup
@@ -136,10 +136,10 @@ impl MongoService {
     }
 
     /// Restores a MongoDB database from a backup.
-    /// 
+    ///
     /// Copies backup files from the host machine to the Docker container's `/tmp` directory,
     /// then executes `mongorestore` to restore the database.
-    /// 
+    ///
     /// # Arguments
     /// * `database_path` - Host directory path where the backup is stored
     /// * `database_name` - Name of the database to restore

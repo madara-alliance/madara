@@ -35,7 +35,7 @@ impl LocalstackService {
         }
 
         // Check if port is in use
-        if DockerServer::is_port_in_use(config.port()) {
+        if DockerServer::is_port_in_use(config.port()).await {
             return Err(LocalstackError::PortInUse(config.port()));
         }
 
