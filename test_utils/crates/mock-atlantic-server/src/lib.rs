@@ -96,7 +96,6 @@ pub async fn start_mock_atlantic_server() -> Result<(), Box<dyn std::error::Erro
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use tokio::time::{sleep, Duration};
 
     #[tokio::test]

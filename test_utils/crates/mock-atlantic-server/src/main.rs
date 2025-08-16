@@ -45,14 +45,3 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Ok(())
 }
-
-// Usage examples in comments:
-//
-// Run with default settings (port 3001, no failures):
-// cargo run --bin mock-atlantic-server
-//
-// Run on port 8080:
-// cargo run --bin mock-atlantic-server 8080
-//
-// Run on port 8080 with 10% failure rate:
-// cargo run --bin mock-atlantic-server 8080 0.1
