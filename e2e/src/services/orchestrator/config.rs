@@ -318,7 +318,7 @@ impl OrchestratorConfig {
             command.arg("--da-on-starknet");
         }
 
-        command.arg("--madara-version").arg(self.madara_version);
+        command.arg("--madara-version").arg(&self.madara_version);
 
         // Add prover flags
         if self.sharp {
@@ -422,7 +422,7 @@ impl OrchestratorConfigBuilder {
         self
     }
 
-    pub fn madara_version(mut self, version: str) -> Self {
+    pub fn madara_version(mut self, version: &str) -> Self {
         self.config.madara_version = version.to_string();
         self
     }
