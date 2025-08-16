@@ -23,7 +23,7 @@ pub struct AtlanticCliArgs {
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_rpc_node_url: Option<Url>,
 
-    /// Whether to use mock fact registry.
+    /// Enable mock mode for Atlantic prover (set to "true" to enable).
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH", long)]
     #[arg(required_if_eq("atlantic", "true"))]
     pub atlantic_mock_fact_hash: Option<String>,

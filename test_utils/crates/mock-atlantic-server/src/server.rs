@@ -20,6 +20,9 @@ use crate::types::{
     MockServerConfig,
 };
 
+/// Maximum number of jobs to keep in memory to prevent unbounded growth
+const MAX_JOBS_IN_MEMORY: usize = 50;
+
 #[derive(Clone)]
 pub struct MockAtlanticState {
     pub jobs: Arc<RwLock<HashMap<String, MockJobData>>>,
@@ -314,7 +317,39 @@ pub async fn add_job_handler(
 
     let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
     let job_layout = job_data.query.layout.clone();
-    state.jobs.write().await.insert(job_id.clone(), job_data);
+    
+    // Insert job with cleanup of old jobs if we're at capacity
+    {
+        let mut jobs = state.jobs.write().await;
+        
+        // If we're at capacity, remove the oldest completed job
+        if jobs.len() >= MAX_JOBS_IN_MEMORY {
+            // Find oldest completed or failed job
+            let oldest_done = jobs
+                .iter()
+                .filter(|(_, job)| {
+                    matches!(job.query.status, AtlanticQueryStatus::Done | AtlanticQueryStatus::Failed)
+                })
+                .min_by_key(|(_, job)| job.created_at);
+            
+            if let Some((id_to_remove, _)) = oldest_done {
+                let id_to_remove = id_to_remove.clone();
+                jobs.remove(&id_to_remove);
+                debug!("Removed old job {} to maintain memory limit", id_to_remove);
+            } else {
+                // If no completed jobs, remove the oldest job regardless of status
+                let oldest = jobs.iter().min_by_key(|(_, job)| job.created_at);
+                if let Some((id_to_remove, _)) = oldest {
+                    let id_to_remove = id_to_remove.clone();
+                    jobs.remove(&id_to_remove);
+                    warn!("Removed active job {} to maintain memory limit", id_to_remove);
+                }
+            }
+        }
+        
+        jobs.insert(job_id.clone(), job_data);
+        debug!("Current number of jobs in memory: {}", jobs.len());
+    }
 
     info!("Created mock job with ID: {} for layout: {:?}", job_id, job_layout);
 
