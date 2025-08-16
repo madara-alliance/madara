@@ -148,7 +148,7 @@ impl MockAtlanticState {
     /// Get job status with atomic update - prevents race conditions by updating and reading in one lock
     async fn get_job_with_update(&self, job_id: &str) -> Option<MockJobData> {
         let mut jobs = self.jobs.write().await;
-        
+
         // Skip update for the pre-completed job
         if job_id != "01JXMTC7TZMSNDTJ88212KTH7W" {
             if let Some(job_data) = jobs.get_mut(job_id) {
@@ -187,7 +187,7 @@ impl MockAtlanticState {
                 }
             }
         }
-        
+
         // Return a clone of the job data
         jobs.get(job_id).cloned()
     }
@@ -302,21 +302,19 @@ pub async fn add_job_handler(
 
     let job_data = state.create_mock_job(job_id.clone(), layout.clone(), network).await;
     let job_layout = job_data.query.layout.clone();
-    
+
     // Insert job with cleanup of old jobs if we're at capacity
     {
         let mut jobs = state.jobs.write().await;
-        
+
         // If we're at capacity, remove the oldest completed job
         if jobs.len() >= MAX_JOBS_IN_MEMORY {
             // Find oldest completed or failed job
             let oldest_done = jobs
                 .iter()
-                .filter(|(_, job)| {
-                    matches!(job.query.status, AtlanticQueryStatus::Done | AtlanticQueryStatus::Failed)
-                })
+                .filter(|(_, job)| matches!(job.query.status, AtlanticQueryStatus::Done | AtlanticQueryStatus::Failed))
                 .min_by_key(|(_, job)| job.created_at);
-            
+
             if let Some((id_to_remove, _)) = oldest_done {
                 let id_to_remove = id_to_remove.clone();
                 jobs.remove(&id_to_remove);
@@ -331,7 +329,7 @@ pub async fn add_job_handler(
                 }
             }
         }
-        
+
         jobs.insert(job_id.clone(), job_data);
         debug!("Current number of jobs in memory: {}", jobs.len());
     }
