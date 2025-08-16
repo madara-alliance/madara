@@ -24,7 +24,7 @@ pub struct ChainSetup {
     validator: DependencyValidator,
     database_manager: DatabaseManager,
     service_manager: ServiceManager,
-    lifecycle_manager: ServiceLifecycleManager,
+    pub lifecycle_manager: ServiceLifecycleManager,
 }
 
 impl ChainSetup {
@@ -115,6 +115,12 @@ impl ChainSetup {
     pub async fn shutdown(&mut self) -> Result<(), SetupError> {
         self.lifecycle_manager.shutdown_all().await
     }
+
+    /// Get the config
+    pub fn config(&self) -> &SetupConfig {
+        &self.config
+    }
+
 }
 
 impl Drop for ChainSetup {

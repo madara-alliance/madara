@@ -3,27 +3,97 @@ use async_trait::async_trait;
 use serde_json::json;
 use std::io;
 use std::net::TcpListener;
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use url::Url;
+use tokio::time::Duration;
+use thiserror::Error;
 
-#[derive(Debug, thiserror::Error)]
+/// Error code returned by Starknet RPC when a block is not found
+const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
+
+/// Errors that can occur when interacting with a Starknet node RPC
+#[derive(Debug, Error)]
 pub enum NodeRpcError {
-    #[error("Invalid response")]
+    #[error("Invalid response from RPC endpoint")]
     InvalidResponse,
-    #[error("RPC error : {0}")]
+    #[error("RPC error: {0}")]
     RpcError(String),
+    #[error("Block not found")]
+    BlockNotFound,
+    #[error("Timeout waiting for block {0} after {1} retries. Last error: {2}")]
+    TimeoutWaitingForBlock(u64, u32, String),
 }
 
+/// Transaction finality status from Starknet
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum TransactionFinalityStatus {
+    /// Transaction has been accepted on L2 but not yet on L1
+    AcceptedOnL2,
+    /// Transaction has been accepted on both L2 and L1
+    AcceptedOnL1,
+    /// Transaction has been rejected
+    Rejected,
+}
+
+
+/// The status of a block in the Starknet blockchain
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum BlockStatus {
+    /// Block is pending and not yet included in L2
+    Pending,
+    /// Block has been accepted on L2 but not yet on L1
+    AcceptedOnL2,
+    /// Block has been accepted on both L2 and L1
+    AcceptedOnL1,
+    /// Block has been rejected
+    Rejected,
+}
+
+/// Block identifier for RPC calls
+#[derive(Debug, Clone, Serialize)]
+#[serde(untagged)]
+pub enum BlockId {
+    /// Reference to the pending block
+    Pending,
+    /// Reference to the latest block
+    Latest,
+    /// Reference to a specific block number
+    Number { block_number: u64 },
+    /// Reference to a specific block hash
+    Hash { block_hash: String },
+}
+
+impl From<u64> for BlockId {
+    fn from(block_number: u64) -> Self {
+        BlockId::Number { block_number }
+    }
+}
+
+impl From<&str> for BlockId {
+    fn from(s: &str) -> Self {
+        match s {
+            "latest" => BlockId::Latest,
+            "pending" => BlockId::Pending,
+            hash if hash.starts_with("0x") => BlockId::Hash {
+                block_hash: hash.to_string(),
+            },
+            _ => panic!("Invalid block identifier: {}", s),
+        }
+    }
+}
+
+/// Trait defining RPC methods for interacting with a Starknet node
 #[async_trait]
 pub trait NodeRpcMethods: Send + Sync {
+    /// Returns the RPC endpoint URL for this node
     fn get_endpoint(&self) -> Url;
 
     /// Fetches the latest block number from the Starknet RPC endpoint.
     ///
-    /// Returns:
-    /// - `Ok(-1)` when no blocks have been mined yet (RPC returns "Block not found" error with code 24)
-    /// - `Ok(block_number)` when blocks exist
-    /// - `Err(NodeRpcError::InvalidResponse)` for other RPC errors or parsing failures
+    /// # Returns
     ///
     /// * `Ok(block_number)` - The latest block number when blocks exist
     /// * `Err(NodeRpcError::BlockNotFound)` - When no blocks have been mined yet
@@ -36,6 +106,67 @@ pub trait NodeRpcMethods: Send + Sync {
             }
             Err(NodeRpcError::BlockNotFound) => Ok(None),
             Err(other_error) => Err(other_error),
+        }
+    }
+
+    /// Waits for a specific block to be mined on the Starknet network.
+    ///
+    /// This method polls the latest block number at regular intervals until the specified
+    /// block number is reached or exceeded, or until a timeout occurs.
+    ///
+    /// # Arguments
+    ///
+    /// * `block_number` - The block number to wait for
+    ///
+    /// # Returns
+    ///
+    /// * `Ok(())` - When the specified block has been mined
+    /// * `Err(NodeRpcError::TimeoutWaitingForBlock)` - When the timeout is reached
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # async fn example(node: impl NodeRpcMethods) -> Result<(), NodeRpcError> {
+    /// // Wait for block 100 to be mined
+    /// node.wait_for_block_mined(100).await?;
+    /// println!("Block 100 has been mined!");
+    /// # Ok(())
+    /// # }
+    /// ```
+    async fn wait_for_block(&self, block_number: u64) -> Result<(), NodeRpcError> {
+        println!("⏳ Waiting for block {} to be mined", block_number);
+
+        let poll_interval = Duration::from_millis(500); // Configurable interval
+        let mut retry_count = 0;
+        const MAX_RETRIES: u32 = 1200; // 10 minutes with 500ms intervals
+
+        loop {
+            match self.get_latest_block_number().await {
+                Ok(Some(latest)) => {
+                    if latest >= block_number {
+                        println!("🔔 Block {} is mined (latest: {})", block_number, latest);
+                        return Ok(());
+                    }
+                }
+                Ok(None) => {
+                    // No blocks mined yet, continue waiting
+                }
+                Err(e) => {
+                    retry_count += 1;
+                    if retry_count >= MAX_RETRIES {
+                        return Err(NodeRpcError::TimeoutWaitingForBlock(block_number, MAX_RETRIES, e.to_string()));
+                    }
+
+                    // Log error but continue retrying
+                    if retry_count % 20 == 0 {
+                        // Log every ~10 seconds
+                        println!("⚠️  Error fetching block number (retry {}/{}): {}",
+                                retry_count, MAX_RETRIES, e.to_string());
+                    }
+                }
+            }
+
+            tokio::time::sleep(poll_interval).await;
         }
     }
 
@@ -133,39 +264,50 @@ pub trait NodeRpcMethods: Send + Sync {
     ) -> Result<serde_json::Value, NodeRpcError> {
         let url = self.get_endpoint();
         let client = reqwest::Client::new();
+
+        let request_body = json!({
+            "id": 1,
+            "jsonrpc": "2.0",
+            "method": method,
+            "params": params
+        });
+
         let response = client
             .post(url)
             .header("accept", "application/json")
             .header("content-type", "application/json")
-            .json(&json!({
-                "id": 1,
-                "jsonrpc": "2.0",
-                "method": "starknet_blockNumber",
-                "params": []
-            }))
+            .json(&request_body)
             .send()
             .await
             .map_err(|e| NodeRpcError::RpcError(e.to_string()))?;
 
-        let json = response.json::<serde_json::Value>().await.map_err(|_| NodeRpcError::InvalidResponse)?;
+        let json = response
+            .json::<serde_json::Value>()
+            .await
+            .map_err(|_| NodeRpcError::InvalidResponse)?;
 
-        // Check if there's an error in the JSON-RPC response
+        // Check for JSON-RPC errors
         if let Some(error) = json.get("error") {
-            // Check for specific "Block not found" error (code 24)
             if let (Some(code), Some(message)) = (error.get("code"), error.get("message")) {
                 if code.as_u64() == Some(BLOCK_NOT_FOUND_ERROR_CODE)
-                    && message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false)
+                    && message
+                        .as_str()
+                        .map(|s| s.contains("Block not found"))
+                        .unwrap_or(false)
                 {
-                    println!("No blocks mined yet, returning -1");
-                    return Ok(-1);
+                    return Err(NodeRpcError::BlockNotFound);
                 }
             }
 
-            return Err(NodeRpcError::InvalidResponse);
+            let error_msg = error
+                .get("message")
+                .and_then(|m| m.as_str())
+                .unwrap_or("Unknown RPC error");
+            return Err(NodeRpcError::RpcError(error_msg.to_string()));
         }
 
-        // Extract block number directly from result (it's just an integer now)
-        let block_number = json.get("result").and_then(|v| v.as_u64()).ok_or(NodeRpcError::InvalidResponse)?;
+        Ok(json)
+    }
 
     /// Extracts block number from RPC response
     fn extract_block_number_from_response(
@@ -178,7 +320,36 @@ pub trait NodeRpcMethods: Send + Sync {
             .ok_or(NodeRpcError::InvalidResponse)
     }
 
-        Ok(block_num_i64)
+    /// Extracts block status from RPC response
+    fn extract_block_status_from_response(
+        &self,
+        response: &serde_json::Value,
+    ) -> Result<BlockStatus, NodeRpcError> {
+        let status_str = response
+            .get("result")
+            .and_then(|result| result.get("status"))
+            .and_then(|status| status.as_str())
+            .ok_or(NodeRpcError::InvalidResponse)?;
+
+        // Parse the status string into our enum
+        serde_json::from_str(&format!("\"{}\"", status_str))
+            .map_err(|_| NodeRpcError::InvalidResponse)
+    }
+
+    /// Extracts transaction finality status from RPC response
+    fn extract_transaction_finality_from_response(
+        &self,
+        response: &serde_json::Value,
+    ) -> Result<TransactionFinalityStatus, NodeRpcError> {
+        let finality_str = response
+            .get("result")
+            .and_then(|result| result.get("finality_status"))
+            .and_then(|status| status.as_str())
+            .ok_or(NodeRpcError::InvalidResponse)?;
+
+        // Parse the finality status string into our enum
+        serde_json::from_str(&format!("\"{}\"", finality_str))
+            .map_err(|_| NodeRpcError::InvalidResponse)
     }
 }
 
