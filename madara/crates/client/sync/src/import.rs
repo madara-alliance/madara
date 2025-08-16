@@ -199,8 +199,8 @@ impl BlockImporterCtx {
         const MAINNET_FIRST_V0_13_2: u64 = 671813;
 
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
-            && ((self.db.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
-                || (self.db.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
+            // && ((self.db.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
+            //     || (self.db.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
         {
             // Skip integrity check.
             return Ok(());
