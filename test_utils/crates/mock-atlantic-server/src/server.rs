@@ -145,66 +145,51 @@ impl MockAtlanticState {
         MockJobData { query, proof_data, created_at: now }
     }
 
-    async fn update_job_status(&self, job_id: &str) {
-        // Skip dynamic status updates for the realistic job - it's already completed
-        if job_id == "01JXMTC7TZMSNDTJ88212KTH7W" {
-            return;
-        }
-
+    /// Get job status with atomic update - prevents race conditions by updating and reading in one lock
+    async fn get_job_with_update(&self, job_id: &str) -> Option<MockJobData> {
         let mut jobs = self.jobs.write().await;
-        if let Some(job_data) = jobs.get_mut(job_id) {
-            let elapsed = Utc::now().signed_duration_since(job_data.created_at);
+        
+        // Skip update for the pre-completed job
+        if job_id != "01JXMTC7TZMSNDTJ88212KTH7W" {
+            if let Some(job_data) = jobs.get_mut(job_id) {
+                let elapsed = Utc::now().signed_duration_since(job_data.created_at);
 
-            if elapsed.num_milliseconds() > self.config.completion_delay_ms as i64 {
-                if self.config.simulate_failures && rand::random::<f32>() < self.config.failure_rate {
-                    job_data.query.status = AtlanticQueryStatus::Failed;
-                    job_data.query.error_reason = Some("Simulated failure".to_string());
-                } else {
-                    job_data.query.status = AtlanticQueryStatus::Done;
-                    job_data.query.step = Some(AtlanticQueryStep::ProofVerificationOnL1);
-                    job_data.query.completed_at = Some(Utc::now().to_rfc3339());
-
-                    // Add mock proof data - use realistic data for the dynamic layout job
-                    let proof_data = if job_id == "01JXMTC7TZMSNDTJ88212KTH7W" {
-                        r#"{
-                        "config": {
-                            "cairo_version": "cairo0",
-                            "layout": "dynamic",
-                            "memory_layout": "standard"
-                        },
-                        "proof": {
-                            "proof_a": ["0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4", "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"],
-                            "proof_b": [["0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123", "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4"], ["0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d", "0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123"]],
-                            "proof_c": ["0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4", "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"],
-                            "public_inputs": ["0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123", "0x1362a28327fd37cc0c430f427208d530fbde13465a975df82339f070d2dafd4"]
-                        },
-                        "fact_hash": "0x19acd3ad63c7ea36e23a869c40d721e4963e9fc2add5521149be462e10492123",
-                        "verification_result": "VALID"
-                    }"#
+                if elapsed.num_milliseconds() > self.config.completion_delay_ms as i64 {
+                    if self.config.simulate_failures && rand::random::<f32>() < self.config.failure_rate {
+                        job_data.query.status = AtlanticQueryStatus::Failed;
+                        job_data.query.error_reason = Some("Simulated failure".to_string());
                     } else {
-                        r#"{
-                        "config": {
-                            "cairo_version": "0.12.0",
-                            "layout": "dynamic",
-                            "memory_layout": "standard"
-                        },
-                        "proof": {
-                            "proof_a": ["0x123...", "0x456..."],
-                            "proof_b": [["0x789...", "0xabc..."], ["0xdef...", "0x012..."]],
-                            "proof_c": ["0x345...", "0x678..."],
-                            "public_inputs": ["0x90ab...", "0xcdef..."]
-                        },
-                        "fact_hash": "0xfedcba9876543210abcdef1234567890",
-                        "verification_result": "VALID"
-                    }"#
-                    };
-                    job_data.proof_data = Some(proof_data.to_string());
+                        job_data.query.status = AtlanticQueryStatus::Done;
+                        job_data.query.step = Some(AtlanticQueryStep::ProofVerificationOnL1);
+                        job_data.query.completed_at = Some(Utc::now().to_rfc3339());
+
+                        // Add mock proof data
+                        let proof_data = r#"{
+                            "config": {
+                                "cairo_version": "0.12.0",
+                                "layout": "dynamic",
+                                "memory_layout": "standard"
+                            },
+                            "proof": {
+                                "proof_a": ["0x123...", "0x456..."],
+                                "proof_b": [["0x789...", "0xabc..."], ["0xdef...", "0x012..."]],
+                                "proof_c": ["0x345...", "0x678..."],
+                                "public_inputs": ["0x90ab...", "0xcdef..."]
+                            },
+                            "fact_hash": "0xfedcba9876543210abcdef1234567890",
+                            "verification_result": "VALID"
+                        }"#;
+                        job_data.proof_data = Some(proof_data.to_string());
+                    }
+                } else if elapsed.num_milliseconds() > self.config.processing_delay_ms as i64 {
+                    job_data.query.status = AtlanticQueryStatus::InProgress;
+                    job_data.query.step = Some(AtlanticQueryStep::ProofGeneration);
                 }
-            } else if elapsed.num_milliseconds() > self.config.processing_delay_ms as i64 {
-                job_data.query.status = AtlanticQueryStatus::InProgress;
-                job_data.query.step = Some(AtlanticQueryStep::ProofGeneration);
             }
         }
+        
+        // Return a clone of the job data
+        jobs.get(job_id).cloned()
     }
 }
 
@@ -362,14 +347,12 @@ pub async fn get_job_status_handler(
 ) -> Result<Json<AtlanticGetStatusResponse>, StatusCode> {
     debug!("Received get_job_status request for job: {}", job_id);
 
-    state.update_job_status(&job_id).await;
-
-    let jobs = state.jobs.read().await;
-    match jobs.get(&job_id) {
+    // Use the atomic update method to prevent race conditions
+    match state.get_job_with_update(&job_id).await {
         Some(job_data) => {
             info!("Returning status for job {}: {:?}", job_id, job_data.query.status);
             Ok(Json(AtlanticGetStatusResponse {
-                atlantic_query: job_data.query.to_owned(),
+                atlantic_query: job_data.query,
                 metadata_urls: vec![format!("{}/{}", MOCK_ATLANTIC_METADATA_URL, job_id)],
             }))
         }
