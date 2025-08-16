@@ -24,9 +24,6 @@ async fn setup_chain(#[default("")] test_name: &str) -> ChainSetup {
         }
     }
 
-    use tokio::time::sleep;
-    use tokio::time::Duration;
-    sleep(Duration::from_secs(4000)).await;
     setup_struct
 }
 
@@ -41,9 +38,12 @@ async fn e2e_test_setup(
 ) {
     // Ensuring setup stays in scope
     let _setup = setup_chain.await;
+    println!("Begining Test...");
     // Testing begins here!
     // Test here!
-    tokio::time::sleep(tokio::time::Duration::from_secs(500)).await;
+    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+
+    println!("Test Completed");
 
     // Delete the created directory
     if let Err(err) = std::fs::remove_dir_all(&format!("data_{}", test_name)) {
