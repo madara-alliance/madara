@@ -1,10 +1,10 @@
 use crate::services::constants::*;
+use crate::services::helpers::get_database_path;
 use crate::services::helpers::{get_binary_path, NodeRpcError};
 use crate::services::server::ServerError;
-use tokio::process::Command;
-use crate::services::helpers::get_database_path;
-use url::Url;
 use std::path::PathBuf;
+use tokio::process::Command;
+use url::Url;
 
 #[derive(Debug, thiserror::Error)]
 pub enum PathfinderError {
@@ -53,7 +53,9 @@ impl Default for PathfinderConfig {
             network: "custom".to_string(),
             chain_id: "MADARA_DEVNET".to_string(),
             gateway_url: Some(Url::parse(format!("http://{}:8080/feeder", DEFAULT_SERVICE_HOST).as_str()).unwrap()),
-            feeder_gateway_url: Some(Url::parse(format!("http://{}:8080/feeder_gateway", DEFAULT_SERVICE_HOST).as_str()).unwrap()),
+            feeder_gateway_url: Some(
+                Url::parse(format!("http://{}:8080/feeder_gateway", DEFAULT_SERVICE_HOST).as_str()).unwrap(),
+            ),
             storage_state_tries: "archive".to_string(),
             gateway_request_timeout: 1000,
             environment_vars: vec![],

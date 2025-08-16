@@ -200,7 +200,6 @@ impl MadaraConfig {
         self.l1_gas_price
     }
 
-
     /// Get blob gas price
     pub fn blob_gas_price(&self) -> u64 {
         self.blob_gas_price

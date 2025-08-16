@@ -54,7 +54,6 @@ impl MadaraService {
         Url::parse(&format!("http://{}:{}", DEFAULT_SERVICE_HOST, self.config().rpc_port())).unwrap()
     }
 
-
     /// Get the main endpoint URL (alias for rpc_endpoint)
     pub fn endpoint(&self) -> Url {
         self.rpc_endpoint()
