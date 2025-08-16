@@ -113,14 +113,11 @@ impl MockVerifierDeployerConfig {
 
     /// Convert the configuration to a tokio command
     pub fn to_command(&self) -> tokio::process::Command {
-        let script_path_str = self.script_path.to_string_lossy();
+        let mut command_string = self.script_path.to_string_lossy().to_string();
 
         // Create command that first makes the script executable, then runs it
         let mut cmd = tokio::process::Command::new("sh");
         cmd.arg("-c");
-
-        // Build the command string: chmod +x script && script args
-        let mut command_string = format!("chmod +x {} && {}", script_path_str, script_path_str);
 
         // Add script arguments
         command_string.push_str(&format!(" --private-key '{}'", self.private_key));
