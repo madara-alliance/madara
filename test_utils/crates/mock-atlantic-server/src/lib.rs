@@ -88,7 +88,7 @@ pub async fn start_mock_server_background(port: u16) -> tokio::task::JoinHandle<
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     use tokio::time::{sleep, Duration};
 
     #[tokio::test]
