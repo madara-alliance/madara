@@ -91,7 +91,7 @@ pub struct OrchestratorConfig {
     // Block Processing
     max_block_to_process: Option<u64>,
     min_block_to_process: Option<u64>,
-    madara_version : str,
+    madara_version : String,
 
     environment_vars: Vec<(String, String)>,
     additional_args: Vec<String>,
@@ -124,7 +124,7 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            madara_version : "0.13.2",
+            madara_version : "0.13.2".to_string(),
             logs: (false, true),
         }
     }
@@ -423,7 +423,7 @@ impl OrchestratorConfigBuilder {
     }
 
     pub fn madara_version(mut self, version: str) -> Self {
-        self.config.madara_version = version;
+        self.config.madara_version = version.to_string();
         self
     }
 
