@@ -85,6 +85,14 @@ pub async fn start_mock_server_background(port: u16) -> tokio::task::JoinHandle<
     })
 }
 
+/// Start the mock Atlantic server with default configuration
+/// This function will block until the server is shut down
+pub async fn start_mock_atlantic_server() -> Result<(), Box<dyn std::error::Error>> {
+    let port = 4001; // Default Atlantic mock server port
+    let server = MockAtlanticServer::with_test_config(port);
+    server.run().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -92,45 +100,45 @@ mod tests {
 
     #[tokio::test]
     async fn test_mock_server_basic_flow() {
-            let port = 8080;
-            let _handle = start_mock_server_background(port).await;
+        let port = 8080;
+        let _handle = start_mock_server_background(port).await;
 
-            // Give the server time to start
-            sleep(Duration::from_millis(100)).await;
+        // Give the server time to start
+        sleep(Duration::from_millis(100)).await;
 
-            let client = reqwest::Client::new();
-            let base_url = format!("http://127.0.0.1:{}", port);
+        let client = reqwest::Client::new();
+        let base_url = format!("http://127.0.0.1:{}", port);
 
-            // Test health check
-            let response = client.get(format!("{}/health", base_url)).send().await.expect("Health check failed");
+        // Test health check
+        let response = client.get(format!("{}/health", base_url)).send().await.expect("Health check failed");
 
-            assert!(response.status().is_success());
+        assert!(response.status().is_success());
 
-            // Test job submission (simplified - real test would use multipart)
-            let form = reqwest::multipart::Form::new()
-                .text("layout", "dynamic")
-                .text("network", "TESTNET")
-                .text("declaredJobSize", "S");
+        // Test job submission (simplified - real test would use multipart)
+        let form = reqwest::multipart::Form::new()
+            .text("layout", "dynamic")
+            .text("network", "TESTNET")
+            .text("declaredJobSize", "S");
 
-            let response = client
-                .post(format!("{}/atlantic-query?apiKey=test", base_url))
-                .multipart(form)
-                .send()
-                .await
-                .expect("Job submission failed");
+        let response = client
+            .post(format!("{}/atlantic-query?apiKey=test", base_url))
+            .multipart(form)
+            .send()
+            .await
+            .expect("Job submission failed");
 
-            assert!(response.status().is_success());
-            let job_response: AtlanticAddJobResponse = response.json().await.expect("Failed to parse response");
+        assert!(response.status().is_success());
+        let job_response: AtlanticAddJobResponse = response.json().await.expect("Failed to parse response");
 
-            // Test job status
-            let response = client
-                .get(format!("{}/atlantic-query/{}", base_url, job_response.atlantic_query_id))
-                .send()
-                .await
-                .expect("Status check failed");
+        // Test job status
+        let response = client
+            .get(format!("{}/atlantic-query/{}", base_url, job_response.atlantic_query_id))
+            .send()
+            .await
+            .expect("Status check failed");
 
-            assert!(response.status().is_success());
-            let status_response: AtlanticGetStatusResponse = response.json().await.expect("Failed to parse status");
-            assert_eq!(status_response.atlantic_query.id, job_response.atlantic_query_id);
-        }
+        assert!(response.status().is_success());
+        let status_response: AtlanticGetStatusResponse = response.json().await.expect("Failed to parse status");
+        assert_eq!(status_response.atlantic_query.id, job_response.atlantic_query_id);
+    }
 }

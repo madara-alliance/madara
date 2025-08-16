@@ -19,16 +19,11 @@ use std::sync::{Arc, RwLock};
 use std::time::Duration;
 
 mod inner;
-mod l1;
 mod notify;
 
 pub use inner::*;
-#[cfg(any(test, feature = "testing"))]
-pub use l1::MockL1DataProvider;
-pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolWriteAccess;
 
-pub mod header;
 pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]

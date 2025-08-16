@@ -1,3 +1,4 @@
+use crate::core::config::StarknetVersion;
 use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
@@ -148,11 +149,19 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 
+    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
+    pub madara_version: StarknetVersion,
+
     // Service
     #[clap(flatten)]
     pub service_args: service::ServiceCliArgs,
     #[clap(flatten)]
     pub instrumentation_args: instrumentation::InstrumentationCliArgs,
+
+    /// Run the mock Atlantic server for testing purposes.
+    /// This starts a local mock server that simulates the Atlantic prover service.
+    #[clap(long)]
+    pub mock_atlantic_server: bool,
 }
 
 #[derive(Parser, Debug, Clone)]

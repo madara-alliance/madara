@@ -12,6 +12,8 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info, warn};
 
+const MOCK_ATLANTIC_METADATA_URL: &str = "https://mock-atlantic.example.com/metadata";
+
 use crate::types::{
     AtlanticAddJobResponse, AtlanticCairoVersion, AtlanticCairoVm, AtlanticChain, AtlanticClient,
     AtlanticGetStatusResponse, AtlanticJobSize, AtlanticQuery, AtlanticQueryStatus, AtlanticQueryStep, MockJobData,
@@ -334,7 +336,7 @@ pub async fn get_job_status_handler(
             info!("Returning status for job {}: {:?}", job_id, job_data.query.status);
             Ok(Json(AtlanticGetStatusResponse {
                 atlantic_query: job_data.query.to_owned(),
-                metadata_urls: vec![format!("https://mock-atlantic.example.com/metadata/{}", job_id)],
+                metadata_urls: vec![format!("{}/{}", MOCK_ATLANTIC_METADATA_URL, job_id)],
             }))
         }
         None => {

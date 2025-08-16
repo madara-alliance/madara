@@ -3,6 +3,8 @@ use std::net::SocketAddr;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
 
+const DEFAULT_SERVER_PORT: u16 = 4001;
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Initialize tracing
@@ -14,7 +16,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Vec<String> = env::args().collect();
 
     // Parse command line arguments
-    let port = if args.len() > 1 { args[1].parse::<u16>().unwrap_or(4001) } else { 4001 };
+    let port = if args.len() > 1 { args[1].parse::<u16>().unwrap_or(DEFAULT_SERVER_PORT) } else { DEFAULT_SERVER_PORT };
 
     let failure_rate = if args.len() > 2 { args[2].parse::<f32>().unwrap_or(0.0).clamp(0.0, 1.0) } else { 0.0 };
 

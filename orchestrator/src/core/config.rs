@@ -15,7 +15,9 @@ use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use utils_mock_atlantic_server::{MockAtlanticServer, MockServerConfig};
+use std::str::FromStr;
 use std::sync::Arc;
+use tracing::{error, info};
 use url::Url;
 
 use crate::core::error::OrchestratorCoreResult;
@@ -37,9 +39,65 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+/// Starknet versions supported by the service
+macro_rules! versions {
+    ($(($variant:ident, $version:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub enum StarknetVersion {
+            $($variant),*
+        }
+
+        impl StarknetVersion {
+            pub fn to_string(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $version),*
+                }
+            }
+
+            pub fn supported() -> &'static [StarknetVersion] {
+                &[$(Self::$variant),*]
+            }
+
+            pub fn is_supported(&self) -> bool {
+                Self::supported().contains(self)
+            }
+        }
+
+        impl FromStr for StarknetVersion {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($version => Ok(Self::$variant),)*
+                    _ => Err(format!("Unknown version: {}", s)),
+                }
+            }
+        }
+
+        /// Making 0.13.3 as the default version for now
+        impl Default for StarknetVersion {
+            fn default() -> Self {
+                Self::V0_13_3
+            }
+        }
+
+        impl std::fmt::Display for StarknetVersion {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.to_string())
+            }
+        }
+    }
+}
+
+// Add more versions here whenever necessary. Follow the following rules:
+// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
+// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
+
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
+    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
@@ -50,11 +108,11 @@ pub struct ConfigParam {
 }
 
 /// The app config. It can be accessed from anywhere inside the service
-/// by calling `config` function. 33
+/// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
     /// The orchestrator config
-    params: ConfigParam,
+    pub params: ConfigParam,
     /// The Madara client to get data from the node
     madara_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -127,6 +185,7 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
@@ -141,6 +200,11 @@ impl Config {
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
+
+        // Start mock Atlantic server if flag is enabled
+        if run_cmd.mock_atlantic_server {
+            Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
+        }
 
         // External Clients Initialization
         let prover_client = Self::build_prover_service(&prover_config).await;
@@ -259,6 +323,43 @@ impl Config {
                     // Use the real Atlantic service
                     Box::new(AtlanticProverService::new_with_args(atlantic_params))
                 }
+            }
+        }
+    }
+
+    /// start_mock_atlantic_server - Start the mock Atlantic server
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `allow_mock_hash_server` - Whether to allow the mock Atlantic server
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    ///
+    /// # Notes
+    /// This function is used to start the mock Atlantic server if the flag is enabled and we're in testnet.
+    /// It starts the mock server in a background task and gives it time to start.
+    async fn start_mock_atlantic_server(prover_params: &ProverConfig, allow_mock_hash_server: bool) {
+        match prover_params {
+            ProverConfig::Atlantic(atlantic_params) => {
+                // Start mock Atlantic server if flag is enabled and we're in testnet
+                if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
+                    info!("Mock Atlantic server flag is enabled, starting mock server...");
+
+                    // Start the mock server in a background task
+                    tokio::spawn(async move {
+                        info!("Starting mock Atlantic server on port 4001");
+                        if let Err(e) = utils_mock_atlantic_server::start_mock_atlantic_server().await {
+                            error!("Failed to start mock Atlantic server: {}", e);
+                        }
+                    });
+
+                    // Give the mock server time to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    info!("Mock Atlantic server started successfully");
+                }
+            }
+            ProverConfig::Sharp(_) => {
+                tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }
     }

@@ -286,7 +286,7 @@ swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx" }
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tagged = "v1.0.9" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
@@ -307,11 +307,13 @@ orchestrator-prover-client-interface = { path = "orchestrator/crates/prover-clie
 orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps-fact-checker" }
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
+utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
 orchestrator = { path = "orchestrator" }
 
 utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
 
 base64ct = "=1.6.0"
+zip = "4.3.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }

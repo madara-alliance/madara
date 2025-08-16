@@ -18,7 +18,7 @@ pub struct Batch {
     /// Index of the batch
     pub index: u64,
     /// Number of blocks in the batch
-    pub size: u64,
+    pub num_blocks: u64,
     /// Start and end block numbers of the batch (both inclusive)
     pub start_block: u64,
     pub end_block: u64,
@@ -28,6 +28,8 @@ pub struct Batch {
     /// Path to the squashed state updates file,
     /// This is done for optimization so we don't have to create a new squashed state update from scratch
     pub squashed_state_updates_path: String,
+    /// Path to the compressed state update converted to a blob
+    pub blob_path: String,
     /// timestamp when the batch was created
     #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
     pub created_at: DateTime<Utc>,
@@ -37,15 +39,16 @@ pub struct Batch {
 }
 
 impl Batch {
-    pub fn create(index: u64, start_block: u64, squashed_state_updates_path: String) -> Self {
+    pub fn new(index: u64, start_block: u64, squashed_state_updates_path: String, blob_path: String) -> Self {
         Self {
             id: Uuid::new_v4(),
             index,
-            size: 1,
+            num_blocks: 1,
             start_block,
             end_block: start_block,
             is_batch_ready: false,
             squashed_state_updates_path,
+            blob_path,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
         }
