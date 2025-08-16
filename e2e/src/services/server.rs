@@ -1,16 +1,14 @@
+use super::constants::*;
 use std::collections::HashMap;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 use tokio::net::TcpStream;
+use tokio::runtime::Handle;
 use url::Url;
 
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::{Child, Command};
 use tokio::task;
-
-use super::constants::*;
-
-
 
 // Custom error type
 #[derive(Debug, thiserror::Error)]
@@ -227,7 +225,7 @@ impl Server {
     /// This function should not be turned async since it's used within Drop.
     /// And drop impl doesn't handle async functions.
     pub fn stop(&mut self) -> Result<(), ServerError> {
-        if !self.config.rpc_port.is_some() {
+        if self.config.rpc_port.is_none() {
             return Ok(());
         }
         if let Some(task) = self.stderr_task.take() {
@@ -235,27 +233,30 @@ impl Server {
         }
 
         // Check if already exited
-        if self.has_exited().is_some() {
+        if self.has_exited()?.is_some() {
             return Ok(());
         }
 
         // Try to terminate gracefully first
         let pid = self.process.id();
         if let Some(pid) = pid {
-            let kill_result = Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn();
+            let kill_result = tokio::process::Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn();
 
             match kill_result {
                 Ok(mut kill_process) => {
-                    let _ = kill_process.wait();
+                    // Block on the async wait
+                    if let Ok(handle) = Handle::try_current() {
+                        let _ = handle.block_on(kill_process.wait());
+                    }
                 }
                 Err(_) => {
                     // If kill command fails, try to kill the process directly
-                    let _ = self.process.kill();
+                    let _ = self.process.start_kill(); // Use start_kill instead of kill
                 }
             }
 
-            // Wait for the process to actually exit
-            let _ = self.process.wait();
+            // Use try_wait instead of wait (non-blocking)
+            let _ = self.process.try_wait();
         }
 
         if let Some(task) = self.stdout_task.take() {

@@ -1,13 +1,10 @@
-use crate::services::constants::DEFAULT_SERVICE_HOST;
+use super::constants::*;
 use async_trait::async_trait;
 use serde_json::json;
 use std::io;
 use std::net::TcpListener;
 use std::path::PathBuf;
 use url::Url;
-
-use super::constants::*;
-
 
 #[derive(Debug, thiserror::Error)]
 pub enum NodeRpcError {
