@@ -61,7 +61,7 @@ impl Default for BootstrapperConfig {
     fn default() -> Self {
         Self {
             mode: BootstrapperMode::SetupL1,
-            timeout: BOOTSTRAPPER_SETUP_L1_TIMEOUT.clone(),
+            timeout: *BOOTSTRAPPER_SETUP_L1_TIMEOUT,
             config_path: None,
             binary_path: get_binary_path(BOOTSTRAPPER_BINARY),
             logs: (true, true),

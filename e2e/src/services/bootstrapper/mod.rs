@@ -36,7 +36,7 @@ impl BootstrapperService {
         let server_config = ServerConfig {
             connection_attempts: CONNECTION_ATTEMPTS, // No connection check needed
             connection_delay_ms: CONNECTION_DELAY_MS,
-            service_name: format!("Bootstrapper-{}", config.mode().to_string()),
+            service_name: format!("Bootstrapper-{}", config.mode()),
             ..Default::default()
         };
 
@@ -95,7 +95,8 @@ impl BootstrapperService {
 
     pub fn stop(&mut self) -> Result<(), BootstrapperError> {
         println!("☠️ Stopping Bootstrapper");
-        self.server.stop().map_err(|err| BootstrapperError::Server(err))
+        self.server.stop().map_err(BootstrapperError::Server)?;
+        Ok(())
     }
 
     /// Get logs
@@ -108,17 +109,17 @@ impl BootstrapperService {
         let bootstrapper_config_file = get_file_path(BOOTSTRAPPER_CONFIG);
         let mut config: serde_json::Value = serde_json::from_str(
             &std::fs::read_to_string(bootstrapper_config_file.clone())
-                .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?,
+                .map_err(BootstrapperError::ConfigReadWriteError)?,
         )
-        .map_err(|e| BootstrapperError::ConfigParseError(e))?;
+        .map_err(BootstrapperError::ConfigParseError)?;
 
         config[key] = serde_json::Value::String(value.to_string());
 
         std::fs::write(
             bootstrapper_config_file,
-            serde_json::to_string_pretty(&config).map_err(|e| BootstrapperError::ConfigParseError(e))?,
+            serde_json::to_string_pretty(&config).map_err(BootstrapperError::ConfigParseError)?,
         )
-        .map_err(|e| BootstrapperError::ConfigReadWriteError(e))?;
+        .map_err(BootstrapperError::ConfigReadWriteError)?;
 
         println!("✅ Updated bootstrapper config with {} value: {}", key, value);
         Ok(())

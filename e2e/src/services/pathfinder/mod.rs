@@ -24,7 +24,7 @@ impl PathfinderService {
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
             rpc_port: Some(config.port()),
-            service_name: format!("Pathfinder"),
+            service_name: "Pathfinder".to_string(),
             connection_attempts: 60, // Pathfinder takes time to sync
             connection_delay_ms: 2000,
             logs: config.logs(),
@@ -79,14 +79,15 @@ impl PathfinderService {
 
     pub fn stop(&mut self) -> Result<(), PathfinderError> {
         println!("☠️ Stopping Pathfinder");
-        self.server.stop().map_err(|err| PathfinderError::Server(err))
+        self.server.stop().map_err(PathfinderError::Server)?;
+        Ok(())
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
         tokio::time::sleep(Duration::from_secs(1)).await;
         println!("⏳ Waiting for Pathfinder block {} to be synced", block_number);
 
-        while self.get_latest_block_number().await.map_err(|err| PathfinderError::RpcError(err))? < 0 {
+        while self.get_latest_block_number().await.map_err(PathfinderError::RpcError)? < 0 {
             println!("⏳ Checking Pathfinder block status...");
             tokio::time::sleep(Duration::from_millis(1000)).await;
         }

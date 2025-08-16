@@ -30,7 +30,7 @@ impl MadaraService {
         // Create server config using the immutable config getters
         let server_config = ServerConfig {
             rpc_port: Some(config.rpc_port()),
-            service_name: format!("Madara-{}", config.mode().to_string()),
+            service_name: format!("Madara-{}", config.mode()),
             connection_attempts: 60, // Madara might take time to start
             connection_delay_ms: 2000,
             logs: config.logs(),
@@ -96,7 +96,8 @@ impl MadaraService {
 
     pub fn stop(&mut self) -> Result<(), MadaraError> {
         println!("☠️ Stopping Madara");
-        self.server.stop().map_err(|err| MadaraError::Server(err))
+        self.server.stop().map_err(MadaraError::Server)?;
+        Ok(())
     }
 
     /// Get the process ID
@@ -112,7 +113,7 @@ impl MadaraService {
     pub async fn wait_for_block_mined(&self, block_number: u64) -> Result<(), MadaraError> {
         println!("⏳ Waiting for Madara block {} to be mined", block_number);
 
-        while self.get_latest_block_number().await.map_err(|err| MadaraError::RpcError(err))? < 0 {
+        while self.get_latest_block_number().await.map_err(MadaraError::RpcError)? < 0 {
             println!("⏳ Checking Madara block status...");
             tokio::time::sleep(MADARA_WAITING_DURATION.to_owned()).await;
         }

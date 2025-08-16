@@ -30,7 +30,7 @@ impl OrchestratorService {
         // Create server config
         let server_config = ServerConfig {
             rpc_port: Some(port),
-            service_name: format!("Orchestrator-{}", config.mode().to_string()),
+            service_name: format!("Orchestrator-{}", config.mode()),
             connection_attempts: 60, // Orchestrator might take time to start
             connection_delay_ms: 2000,
             logs: config.logs(),
@@ -93,7 +93,7 @@ impl OrchestratorService {
         println!("Running orchestrator in setup mode with command : {:?}", command);
 
         let server_config =
-            ServerConfig { service_name: format!("Orchestrator-{}", config.mode().to_string()), ..Default::default() };
+            ServerConfig { service_name: format!("Orchestrator-{}", config.mode()), ..Default::default() };
 
         // Start the server using the generic Server::start_process
         let server = Server::start_process(command, server_config).await.map_err(OrchestratorError::Server)?;
@@ -127,7 +127,8 @@ impl OrchestratorService {
 
     pub fn stop(&mut self) -> Result<(), OrchestratorError> {
         println!("☠️ Stopping Orchestrator");
-        self.server.stop().map_err(|err| OrchestratorError::Server(err))
+        self.server.stop().map_err(OrchestratorError::Server)?;
+        Ok(())
     }
 
     /// Get the underlying server (run mode only)

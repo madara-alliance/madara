@@ -93,8 +93,9 @@ impl MockVerifierDeployerService {
 
     /// Get the deployed verifier address from the output file
     pub fn get_verifier_address_from_output_file(&self) -> Result<String, MockVerifierDeployerError> {
-        std::fs::read_to_string(&self.config.verifier_file_path())
+        let verifier_address = std::fs::read_to_string(self.config.verifier_file_path())
             .map(|s| s.trim().to_string())
-            .map_err(|e| MockVerifierDeployerError::FileSystem(e))
+            .map_err(MockVerifierDeployerError::FileSystem)?;
+        Ok(verifier_address)
     }
 }

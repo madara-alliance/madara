@@ -77,7 +77,8 @@ impl LocalstackService {
 
     pub fn stop(&mut self) -> Result<(), LocalstackError> {
         println!("☠️ Stopping Localstack");
-        self.server.stop().map_err(|err| LocalstackError::Server(err))
+        self.server.stop().map_err(LocalstackError::Server)?;
+        Ok(())
     }
 
     /// Get the endpoint URL for the Localstack server

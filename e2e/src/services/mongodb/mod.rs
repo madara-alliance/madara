@@ -84,7 +84,8 @@ impl MongoService {
 
     pub fn stop(&mut self) -> Result<(), MongoError> {
         println!("☠️ Stopping MongoDB");
-        self.server.stop().map_err(|err| MongoError::Server(err))
+        self.server.stop().map_err(MongoError::Server)?;
+        Ok(())
     }
 }
 
