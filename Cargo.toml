@@ -2,10 +2,12 @@
 members = [
   # "madara",
   "orchestrator",
+  "e2e",
   "e2e-tests",
   "bootstrapper",
   "build-artifacts",
   "bootstrapper-v2",
+  "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
@@ -307,6 +309,9 @@ orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator = { path = "orchestrator" }
+
+utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
+
 base64ct = "=1.6.0"
 zip = "4.3.0"
 
