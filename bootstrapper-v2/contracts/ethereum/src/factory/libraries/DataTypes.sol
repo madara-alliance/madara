@@ -5,17 +5,17 @@ struct ImplementationContracts {
   address coreContract;
   address manager;
   address registry;
-  address multipBridge;
+  address multiBridge;
   address ethBridge;
   address ethBridgeEIC;
 }
 
 struct BaseLayerContracts {
   address coreContract;
-  address ethTokenBridge;
-  address tokenBridge;
   address manager;
   address registry;
+  address tokenBridge;
+  address ethTokenBridge;
 }
 
 struct State {

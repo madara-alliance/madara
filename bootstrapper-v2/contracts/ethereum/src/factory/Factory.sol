@@ -44,7 +44,7 @@ contract Factory is Ownable, Pausable, Implementations {
 
     // Deploy and setup MuiltiBridge
     address multiBridgeProxy = setupMultiBridge(
-      implementationContracts.multipBridge,
+      implementationContracts.multiBridge,
       address(baseLayerContracts.manager),
       address(baseLayerContracts.coreContract),
       governor
@@ -199,20 +199,20 @@ contract Factory is Ownable, Pausable, Implementations {
   // Ensure to remove the governance admin role post setup,
   // As this function can be rerun 
   function set_l2_bridge(
-    uint256 l2_eth_bridge_address,
-    uint256 l2_erc20_bridge_address,
+    uint256 l2EthBridgeAddress,
+    uint256 l2Erc20BridgeAddress,
     address ethTokenBridge,
     address tokenBridge
   ) onlyOwner whenNotPaused public {
     IRoles(ethTokenBridge).registerAppRoleAdmin(address(this));
     IRoles(ethTokenBridge).registerAppGovernor(address(this));
-    IBridge(ethTokenBridge).setL2TokenBridge(l2_eth_bridge_address);
+    IBridge(ethTokenBridge).setL2TokenBridge(l2EthBridgeAddress);
     IRoles(ethTokenBridge).revokeAppGovernor(address(this));
     IRoles(ethTokenBridge).revokeAppRoleAdmin(address(this));
 
     IRoles(tokenBridge).registerAppRoleAdmin(address(this));
     IRoles(tokenBridge).registerAppGovernor(address(this));
-    IBridge(tokenBridge).setL2TokenBridge(l2_erc20_bridge_address);
+    IBridge(tokenBridge).setL2TokenBridge(l2Erc20BridgeAddress);
     IRoles(tokenBridge).revokeAppGovernor(address(this));
     IRoles(tokenBridge).revokeAppRoleAdmin(address(this));
   }
