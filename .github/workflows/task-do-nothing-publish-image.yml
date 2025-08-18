@@ -7,7 +7,7 @@ on:
 
 jobs:
   publish-image:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
 
     steps:
       - name: Stub
