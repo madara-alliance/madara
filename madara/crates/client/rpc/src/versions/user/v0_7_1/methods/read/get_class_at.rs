@@ -31,7 +31,7 @@ pub fn get_class_at(
 ) -> StarknetRpcResult<MaybeDeprecatedContractClass> {
     let view = starknet.backend.view_on(&block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
     let class_hash = view.get_contract_class_hash(contract_address)?.ok_or(StarknetRpcApiError::contract_not_found())?;
-    let class_info = view.get_class(&class_hash)?.ok_or_internal_server_error("Class info should exist")?;
+    let class_info = view.get_class_info(&class_hash)?.ok_or_internal_server_error("Class info should exist")?;
 
     Ok(class_info.contract_class().into())
 }

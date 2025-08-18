@@ -452,8 +452,8 @@ mod test {
     }
 
     #[rstest::fixture]
-    fn pending(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PendingFullBlock {
-        mp_block::PendingFullBlock {
+    fn pending(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PreconfirmedFullBlock {
+        mp_block::PreconfirmedFullBlock {
             header: Default::default(),
             state_diff: Default::default(),
             transactions: vec![tx_with_receipt],
@@ -567,7 +567,7 @@ mod test {
     async fn subscribe_transaction_status_accepted_on_l2_before(
         _logs: (),
         starknet: Starknet,
-        pending: mp_block::PendingFullBlock,
+        pending: mp_block::PreconfirmedFullBlock,
     ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
 
@@ -603,7 +603,7 @@ mod test {
         starknet: Starknet,
         tx: mp_rpc::BroadcastedInvokeTxn,
         tx_with_receipt: mp_block::TransactionWithReceipt,
-        pending: mp_block::PendingFullBlock,
+        pending: mp_block::PreconfirmedFullBlock,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
         let backend = std::sync::Arc::clone(&starknet.backend);
@@ -739,7 +739,7 @@ mod test {
         starknet: Starknet,
         tx: mp_rpc::BroadcastedInvokeTxn,
         tx_with_receipt: mp_block::TransactionWithReceipt,
-        pending: mp_block::PendingFullBlock,
+        pending: mp_block::PreconfirmedFullBlock,
         block: mp_block::MadaraMaybePendingBlock,
     ) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);

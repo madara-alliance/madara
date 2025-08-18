@@ -13,7 +13,7 @@ use blockifier::{
     },
 };
 use mc_db::MadaraBackend;
-use mc_exec::MadaraBackendExecutionExt;
+use mc_exec::MadaraBlockViewExecutionExt;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_rpc::{
@@ -158,7 +158,7 @@ impl From<mc_exec::Error> for SubmitTransactionError {
             E::Reexecution(_) | E::FeeEstimation(_) | E::MessageFeeEstimation(_) | E::CallContract(_) => {
                 rejected(ValidateFailure, format!("{value:#}"))
             }
-            E::UnsupportedProtocolVersion(_) | E::Storage(_) | E::InvalidSequencerAddress(_) => {
+            E::UnsupportedProtocolVersion(_) | E::Internal(_) | E::InvalidSequencerAddress(_) => {
                 Internal(anyhow::anyhow!(value))
             }
         }
@@ -242,7 +242,8 @@ impl TransactionValidator {
 
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
-            let mut validator = self.backend.new_transaction_validator()?;
+            let mut validator =
+                self.backend.block_view_on_preconfirmed().new_execution_context()?.into_transaction_validator();
             validator.perform_validations(account_tx.clone())?
         }
 

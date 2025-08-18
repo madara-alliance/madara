@@ -1,4 +1,4 @@
-use mp_convert::Felt;
+use crate::prelude::*;
 
 #[derive(Debug, Default, Clone)]
 pub enum SyncStatus {
@@ -13,10 +13,10 @@ pub enum SyncStatus {
 #[derive(Debug, Default)]
 pub(super) struct SyncStatusCell(std::sync::RwLock<SyncStatus>);
 impl SyncStatusCell {
-    fn set(&self, sync_status: SyncStatus) {
+    pub fn set(&self, sync_status: SyncStatus) {
         *self.0.write().expect("Poisoned lock") = sync_status;
     }
-    fn get(&self) -> SyncStatus {
+    pub fn get(&self) -> SyncStatus {
         self.0.read().expect("Poisoned lock").clone()
     }
 }

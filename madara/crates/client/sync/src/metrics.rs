@@ -1,7 +1,6 @@
 use crate::counter::ThroughputCounter;
 use anyhow::Context;
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
-use mc_db::db_block_id::RawDbBlockId;
 use mc_db::MadaraBackend;
 use num_traits::cast::FromPrimitive;
 use opentelemetry::{

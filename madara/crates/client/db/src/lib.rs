@@ -39,24 +39,22 @@ use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::rocksdb::RocksDBConfig;
 use crate::rocksdb::RocksDBStorage;
-use crate::storage::MadaraStorage;
-use crate::storage::MadaraStorageRead;
 use crate::storage::StoredChainInfo;
 use crate::storage::StoredChainTip;
+use crate::sync_status::SyncStatus;
 use crate::sync_status::SyncStatusCell;
-use crate::view::Anchor;
-use crate::view::PreconfirmedBlockAnchor;
-// use db_metrics::DbMetrics;
-use itertools::Itertools;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::header::PreconfirmedHeader;
 use mp_block::BlockHeaderWithSignatures;
-use mp_block::FullBlock;
-use mp_block::PendingFullBlock;
+use mp_block::PreconfirmedFullBlock;
+use mp_block::TransactionWithReceipt;
 use mp_chain_config::ChainConfig;
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
+use mp_state_update::StateDiff;
+use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::L1HandlerTransactionWithFee;
 use mp_transactions::TransactionWithHash;
 use prelude::*;
 use std::path::Path;
@@ -64,14 +62,20 @@ use std::path::Path;
 // mod db_metrics;
 mod db_version;
 mod prelude;
-mod rocksdb;
 mod storage;
 mod subscription;
 mod sync_status;
 
+pub mod rocksdb;
 pub mod preconfirmed;
-pub mod view;
+mod view;
 // pub mod tests;
+
+pub use storage::{
+    DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
+    MadaraStorageWrite, TxIndex,
+};
+pub use view::*;
 
 /// Madara client database backend singleton.
 #[derive(Debug)]
@@ -83,10 +87,12 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
 
-    /// Current chain tip. Contains the current pre-confirmed block when one is present.
+    /// Current chain tip. Contains:
+    /// - the current preconfirmed block, when one is present.
+    /// - the
     chain_tip: tokio::sync::watch::Sender<Anchor>,
 
-    /// Current finalized block on L1.
+    /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
 
     /// Keep the TempDir instance around so that the directory is not deleted until the MadaraBackend struct is dropped.
@@ -102,10 +108,6 @@ pub struct MadaraBackendConfig {
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
-    pub fn chain_config(&self) -> &Arc<ChainConfig> {
-        &self.chain_config
-    }
-
     fn new_and_init(db: D, chain_config: Arc<ChainConfig>, config: MadaraBackendConfig) -> Result<Self> {
         let mut backend = Self {
             db,
@@ -164,7 +166,20 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         Ok(())
     }
 
-    // TODO: ensure exclusive access?
+    /// Get a write handle for the backend. This is the function you need to call to save new blocks, modify the preconfirmed block,
+    /// and do any other such thing. The backend chain_tip can only be modified through this.
+    ///
+    /// As a caller, you are responsible for ensuring the backend is not being concurrently
+    /// modified in an unexpected way. In practice, this means:
+    /// - You are allowed to use the `write_*` low-level functions to write block parts concurrently.
+    /// - You are not allowed to use the other functions to advance the chain tip
+    /// Failure to do so could result in errors and/or invalid state, which includes invalid state being saved to the database.
+    /// The functions are still safe to use, since it's a logic error and not a memory safety issue.
+    ///
+    /// In addition, all of the associated functions need to be called in a rayon thread pool context. **Do not call
+    /// them from the tokio pool!**
+    // TODO: ensure exclusive access? all of these requirements could be checked relatively cheaply. There are also
+    // ways to make the aforementioned logic errors unrepreasentable by designing the API a little better.
     pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
         MadaraBackendWriter { inner: self.clone() }
     }
@@ -189,6 +204,31 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().preconfirmed().map(|p| p.block.clone())
+    }
+
+    /// Set the current latest block confirmed on L1. This will also wake watchers to L1 head changes.
+    ///
+    /// Warning: It is invalid to set this new `latest_l1_confirmed` to a lower value than the current one, or
+    /// to a higher value than the current block on l2.
+    // FIXME: In these cases, the update should not succeed and an error should be returned.
+    pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
+        self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
+        Ok(())
+    }
+
+    pub fn set_sync_status(&self, sync_status: SyncStatus) {
+        self.sync_status.set(sync_status);
+    }
+    pub fn get_sync_status(&self) -> SyncStatus {
+        self.sync_status.get()
+    }
+    /// Get the latest block_n that was in the db when this backend instance was initialized.
+    pub fn get_starting_block(&self) -> Option<u64> {
+        self.starting_block
+    }
+
+    pub fn chain_config(&self) -> &Arc<ChainConfig> {
+        &self.chain_config
     }
 }
 
@@ -221,13 +261,20 @@ impl MadaraBackend<RocksDBStorage> {
 }
 
 /// Structure holding exclusive access to write the blocks and the tip of the chain.
+///
+/// Note: All of the associated functions need to be called in a rayon thread pool context.
 pub struct MadaraBackendWriter<D: MadaraStorage> {
     inner: Arc<MadaraBackend<D>>,
 }
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
     fn replace_chain_tip(&self, new_tip: Anchor) -> Result<()> {
+        // Note: while you could think it is possible for the `chain_tip` to change between this next line when we
+        // originally get it, and when we save the replace it to a new one, leading to possible corruption in this
+        // race condition, we have explicitely forbidden `MadaraBackendWriter` as a whole to be used concurrently.
         let current_tip = self.inner.chain_tip.borrow().clone();
+
+        // TODO: detect if the transition is valid, throw an error otherwise
 
         // Write to db if needed.
         let saved_tip = if self.inner.config.save_preconfirmed {
@@ -265,17 +312,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(())
     }
 
-    /// Does nothing when the backend has no preconfirmed block.
-    pub fn clear_preconfirmed(&self) -> Result<()> {
-        self.replace_chain_tip(self.inner.chain_tip.borrow().latest_confirmed())
-    }
-
-    /// Deletes the current preconfirmed block if present.
-    pub fn new_preconfirmed(&self, header: PreconfirmedHeader) -> Result<()> {
-        self.replace_chain_tip(Anchor::new_on_preconfirmed(Arc::new(PreconfirmedBlock::new(header))))
-    }
-
-    /// Close the current preconfirmed block. Returns an error if there is no preconfirmed block.
+    /// Returns an error if there is no preconfirmed block.
     pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<()> {
         let block = self.inner.preconfirmed_block().context("There is no current preconfirmed block")?;
 
@@ -285,15 +322,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let block_n = header.block_number;
 
         // We don't care about the candidate transactions.
-        let executed_transactions: Vec<_> = block.content.borrow().executed_transactions().cloned().collect();
+        let mut executed_transactions: Vec<_> = block.content.borrow().executed_transactions().cloned().collect();
 
         let state_diff = self
             .inner
             .preconfirmed_view_on_anchor(PreconfirmedBlockAnchor::new(block))
             .get_normalized_state_diff()
             .context("Creating normalized state diff")?;
+        let classes: Vec<_> = executed_transactions.iter_mut().filter_map(|tx| tx.declared_class.take()).collect();
         let transactions: Vec<_> = executed_transactions.into_iter().map(|tx| tx.transaction.clone()).collect();
-        let events: Vec<_> = transactions
+        let events = transactions
             .iter()
             .flat_map(|tx| {
                 tx.receipt
@@ -304,33 +342,165 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
             })
             .collect();
 
+        // Write the block & apply to global trie
+
+        self.write_preconfirmed_full_with_classes_inner(
+            &PreconfirmedFullBlock { header, state_diff, transactions, events },
+            &classes,
+            pre_v0_13_2_hash_override,
+        )?;
+
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(Anchor::new_on_confirmed(Some(block_n)))?;
+
+        self.on_new_block_imported(block_n)
+    }
+
+    /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
+    pub fn clear_preconfirmed(&self) -> Result<()> {
+        self.replace_chain_tip(self.inner.chain_tip.borrow().latest_confirmed())
+    }
+
+    /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
+    /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
+    pub fn new_preconfirmed(&self, header: PreconfirmedHeader) -> Result<()> {
+        self.replace_chain_tip(Anchor::new_on_preconfirmed(Arc::new(PreconfirmedBlock::new(header))))
+    }
+
+    /// Add a block.
+    /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
+    pub fn add_full_block_with_classes(
+        &self,
+        block: &PreconfirmedFullBlock,
+        classes: &[ConvertedClass],
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<()> {
+        let block_n = block.header.block_number;
+        self.write_preconfirmed_full_with_classes_inner(block, classes, pre_v0_13_2_hash_override)?;
+
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(Anchor::new_on_confirmed(Some(block_n)))?;
+
+        self.on_new_block_imported(block_n)
+    }
+
+    /// Does not change the chain tip.
+    fn write_preconfirmed_full_with_classes_inner(
+        &self,
+        block: &PreconfirmedFullBlock,
+        classes: &[ConvertedClass],
+        pre_v0_13_2_hash_override: bool,
+    ) -> Result<()> {
         let commitments = BlockCommitments::compute(
             &CommitmentComputationContext {
                 protocol_version: self.inner.chain_config.latest_protocol_version,
                 chain_id: self.inner.chain_config.chain_id.to_felt(),
             },
-            &transactions,
-            &state_diff,
-            &events,
+            &block.transactions,
+            &block.state_diff,
+            &block.events,
         );
 
         // Global state root and block hash.
+        let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
-        let global_state_root = self.inner.db.apply_to_global_trie(block_n, [&state_diff])?;
-
-        let header = header.into_confirmed_header(commitments, global_state_root);
+        let header = block.header.clone().into_confirmed_header(commitments, global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
         // Save the block.
 
-        self.inner.db.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
-        self.inner.db.write_transactions(block_n, &transactions)?;
-        self.inner.db.write_state_diff(block_n, &state_diff)?;
-        self.inner.db.write_events(block_n, &events)?;
+        self.write_header(BlockHeaderWithSignatures { header, block_hash, consensus_signatures: vec![] })?;
+        self.write_transactions(block.header.block_number, &block.transactions)?;
+        self.write_state_diff(block.header.block_number, &block.state_diff)?;
+        self.write_events(block.header.block_number, &block.events)?;
+        self.write_classes(block.header.block_number, &classes)?;
 
-        // Advance chain tip.
+        Ok(())
+    }
 
-        self.replace_chain_tip(Anchor::new_on_confirmed(Some(block_n)))?;
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()> {
+        self.inner.db.write_header(header)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
+        self.inner.db.write_transactions(block_n, txs)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
+        self.inner.db.write_state_diff(block_n, value)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()> {
+        self.inner.db.write_events(block_n, txs)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
+        self.inner.db.write_classes(block_n, converted_classes)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// Write a state diff to the global tries.
+    /// Returns the new state root.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn apply_to_global_trie<'a>(
+        &self,
+        start_block_n: u64,
+        state_diffs: impl IntoIterator<Item = &'a StateDiff>,
+    ) -> Result<Felt> {
+        self.inner.db.apply_to_global_trie(start_block_n, state_diffs)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    /// This function in particular marks a fully imported block as confirmed.
+    ///
+    /// **Warning**: The caller must ensure this new imported block is the one following the current confirmed block.
+    /// You are not allowed to call this function with earlier or later blocks.
+    /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
+    /// parts.
+    pub fn on_new_block_imported(&self, block_n: u64) -> Result<()> {
+        if self
+            .inner
+            .config
+            .flush_every_n_blocks
+            .is_some_and(|flush_every_n_blocks| block_n.checked_rem(flush_every_n_blocks) == Some(0))
+        {
+            tracing::debug!("Flushing.");
+            self.inner.db.flush()?;
+        }
+
+        self.inner.db.on_new_confirmed_head(block_n)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+
+        // self.update_metrics();
 
         Ok(())
     }
@@ -339,10 +509,50 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     // pub fn update_metrics(&self) -> u64 {
     //     self.db_metrics.update(&self.db)
     // }
+}
 
-    pub fn add_full_block_with_classes(&self, block: PendingFullBlock, classes: &[ConvertedClass]) -> Result<()> {
-        
-
-        Ok(())
+// Delegate secondary db reads/writes. These are relative to specific services, and are not specific to a block view / the chain tip writer handle.
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    pub fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
+        self.db.get_l1_messaging_sync_tip()
+    }
+    pub fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
+        self.db.get_pending_message_to_l2(core_contract_nonce)
+    }
+    pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
+        self.db.get_next_pending_message_to_l2(start_nonce)
+    }
+    pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
+        self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
+    }
+    pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedMempoolTx>> + '_ {
+        self.db.get_mempool_transactions()
+    }
+    pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
+        self.db.get_devnet_predeployed_keys()
+    }
+}
+// Delegate secondary db reads/writes. These are relative to specific services, and are not specific to a block view / the chain tip writer handle.
+impl<D: MadaraStorageWrite> MadaraBackend<D> {
+    pub fn write_l1_messaging_sync_tip(&self, l1_block_n: u64) -> Result<()> {
+        self.db.write_l1_messaging_sync_tip(l1_block_n)
+    }
+    pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
+        self.db.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash)
+    }
+    pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
+        self.db.write_pending_message_to_l2(msg)
+    }
+    pub fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
+        self.db.remove_pending_message_to_l2(core_contract_nonce)
+    }
+    pub fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
+        self.db.write_devnet_predeployed_keys(devnet_keys)
+    }
+    pub fn remove_saved_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
+        self.db.remove_mempool_transactions(tx_hashes)
+    }
+    pub fn write_saved_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()> {
+        self.db.write_mempool_transaction(tx)
     }
 }

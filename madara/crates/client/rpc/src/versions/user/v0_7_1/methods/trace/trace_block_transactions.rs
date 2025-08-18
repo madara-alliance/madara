@@ -28,9 +28,23 @@ pub async fn trace_block_transactions(
         .transactions
         .into_iter()
         .zip(block.info.tx_hashes())
-        .map(|(tx, hash)| {
-            to_blockifier_transaction(starknet.clone_backend(), block_id.clone(), tx, &TransactionHash(*hash))
-                .or_internal_server_error("Failed to convert transaction to blockifier format")
+        .map(|(tx, tx_hash)| {
+            let class = if let Some(tx) = tx.as_declare() {
+                Some(
+                    backend
+                        .get_converted_class(&block_id, tx.class_hash())?
+                        .or_internal_server_error("Error getting class")
+                        .ok_or_else_internal_server_error(|| {
+                            format!("No class found for class_hash={:#x}", tx.class_hash()).into()
+                        }),
+                )
+            } else {
+                None
+            };
+
+            TransactionWithHash::new(tx, *tx_hash)
+                .into_blockifier(class.as_ref())
+                .or_internal_server_error("Error converting transaction to blockifier format")
         })
         .collect::<Result<_, _>>()?;
 

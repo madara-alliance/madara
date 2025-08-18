@@ -11,6 +11,7 @@ use crate::{
     }, view::Anchor
 };
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
+use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransactionWithFee};
@@ -291,6 +292,10 @@ impl MadaraStorageWrite for RocksDBStorage {
             .with_context(|| format!("Storing events bloom filter for block_n={block_n}"))
     }
 
+    fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
+        self.inner.store_classes(block_n, converted_classes)
+    }
+
     fn replace_chain_tip(&self, chain_tip: &Anchor) -> Result<()> {
         self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
     }
@@ -349,6 +354,11 @@ impl MadaraStorageWrite for RocksDBStorage {
 
     fn flush(&self) -> Result<()> {
         self.inner.flush().context("Flushing RocksDB database")?;
-        self.backup.backup_if_enabled(&self.inner)
+        self.backup.backup_if_enabled(&self.inner).context("Backing up RocksDB database")
+    }
+
+    fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
+        self.snapshots.set_new_head(block_n);
+        Ok(())
     }
 }

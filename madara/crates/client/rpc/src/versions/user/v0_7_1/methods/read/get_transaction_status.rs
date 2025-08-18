@@ -102,8 +102,8 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn pending(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PendingFullBlock {
-        mp_block::PendingFullBlock {
+    fn pending(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PreconfirmedFullBlock {
+        mp_block::PreconfirmedFullBlock {
             header: Default::default(),
             state_diff: Default::default(),
             transactions: vec![tx_with_receipt],
@@ -160,7 +160,7 @@ mod tests {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn get_transaction_status_accepted_on_l2(_logs: (), starknet: Starknet, pending: mp_block::PendingFullBlock) {
+    async fn get_transaction_status_accepted_on_l2(_logs: (), starknet: Starknet, pending: mp_block::PreconfirmedFullBlock) {
         let backend = std::sync::Arc::clone(&starknet.backend);
         backend.store_pending_block(pending).expect("Failed to store pending block");
 

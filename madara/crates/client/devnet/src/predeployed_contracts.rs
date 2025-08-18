@@ -1,10 +1,10 @@
 use anyhow::Context;
 use core::fmt;
-use mc_db::MadaraBackend;
-use mp_block::{BlockId, BlockTag};
+use mc_db::{DevnetPredeployedContractAccount, DevnetPredeployedKeys, MadaraBackend, MadaraView};
 use starknet_api::abi::abi_utils::get_fee_token_var_address;
 use starknet_signers::SigningKey;
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 use crate::{
     ContractFeeTokensBalance, ERC20_ETH_CONTRACT_ADDRESS, ERC20_STRK_CONTRACT_ADDRESS, ETH_WEI_DECIMALS,
@@ -43,25 +43,15 @@ impl fmt::Display for DevnetKeys {
 }
 
 /// Returns an `u128`. This is for tests only as an ERC20 contract may have a higher balance than an u128.
-pub fn get_bal_contract(
-    backend: &MadaraBackend,
-    contract_address: Felt,
-    fee_token_address: Felt,
-) -> anyhow::Result<Felt> {
+pub fn get_bal_contract(view: &MadaraView, contract_address: Felt, fee_token_address: Felt) -> anyhow::Result<Felt> {
     let low_key = get_fee_token_var_address(
         contract_address
             .try_into()
             .with_context(|| format!("Converting felt {:#x} to contract address", contract_address))?,
     );
     let high_key = low_key.next_storage_key().unwrap();
-    let low = backend
-        .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &low_key)
-        .unwrap()
-        .unwrap_or(Felt::ZERO);
-    let high = backend
-        .get_contract_storage_at(&BlockId::Tag(BlockTag::Pending), &fee_token_address, &high_key)
-        .unwrap()
-        .unwrap_or(Felt::ZERO);
+    let low = view.get_contract_storage(&fee_token_address, &low_key).unwrap().unwrap_or(Felt::ZERO);
+    let high = view.get_contract_storage(&fee_token_address, &high_key).unwrap().unwrap_or(Felt::ZERO);
     tracing::debug!("get_fee_token_balance contract_address={contract_address:#x} fee_token_address={fee_token_address:#x} low_key={low_key:?}, got {low:#x} {high:#x}");
 
     assert_eq!(high, Felt::ZERO); // for now we never use high let's keep it out of the api
@@ -72,7 +62,7 @@ pub fn get_bal_contract(
 
 /// (STRK in FRI, ETH in WEI)
 pub fn get_fee_tokens_balance(
-    backend: &MadaraBackend,
+    backend: &MadaraView,
     contract_address: Felt,
 ) -> anyhow::Result<ContractFeeTokensBalance> {
     Ok(ContractFeeTokensBalance {
@@ -83,7 +73,7 @@ pub fn get_fee_tokens_balance(
 
 impl DevnetKeys {
     #[tracing::instrument(skip(backend), fields(module = "DevnetKeys"))]
-    pub fn from_db(backend: &MadaraBackend) -> anyhow::Result<Self> {
+    pub fn from_db(backend: &Arc<MadaraBackend>) -> anyhow::Result<Self> {
         let keys = backend
             .get_devnet_predeployed_keys()
             .context("Getting the devnet predeployed keys from db")?
@@ -97,7 +87,7 @@ impl DevnetKeys {
                     address: k.address,
                     secret: SigningKey::from_secret_scalar(k.secret),
                     pubkey: k.pubkey,
-                    balance: get_fee_tokens_balance(backend, k.address)?,
+                    balance: get_fee_tokens_balance(&backend.view_on_preconfirmed().into_view(), k.address)?,
                     class_hash: k.class_hash,
                 })
             })
@@ -108,10 +98,10 @@ impl DevnetKeys {
 
     #[tracing::instrument(skip(self, backend), fields(module = "DevnetKeys"))]
     pub fn save_to_db(&self, backend: &MadaraBackend) -> anyhow::Result<()> {
-        let keys = mc_db::devnet_db::DevnetPredeployedKeys(
+        let keys = DevnetPredeployedKeys(
             self.0
                 .iter()
-                .map(|k| mc_db::devnet_db::DevnetPredeployedContractAccount {
+                .map(|k| DevnetPredeployedContractAccount {
                     address: k.address,
                     secret: k.secret.secret_scalar(),
                     pubkey: k.pubkey,
@@ -119,7 +109,7 @@ impl DevnetKeys {
                 })
                 .collect(),
         );
-        backend.set_devnet_predeployed_keys(keys).context("Saving devnet predeployed contracts keys to database")?;
+        backend.write_devnet_predeployed_keys(&keys)?;
 
         Ok(())
     }

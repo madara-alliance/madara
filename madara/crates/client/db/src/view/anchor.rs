@@ -1,12 +1,11 @@
-use mp_transactions::TransactionWithHash;
-
 use crate::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedBlockInner, PreconfirmedExecutedTransaction},
     prelude::*,
     storage::MadaraStorageRead,
     MadaraBackend,
 };
-use std::sync::Arc;
+use mp_transactions::TransactionWithHash;
+use std::fmt;
 
 /// Lock guard on the content of a preconfirmed block. Only the first [`n_txs_visible`] executed transactions
 /// are visible.
@@ -60,10 +59,7 @@ impl PreconfirmedBlockAnchor {
     }
     /// Returns a lock guard into the current block content.
     pub(crate) fn borrow_content(&self) -> PreconfirmedBlockAnchorRef<'_> {
-        PreconfirmedBlockAnchorRef {
-            view: self.block_content.borrow(),
-            n_txs_visible: self.n_txs_visible,
-        }
+        PreconfirmedBlockAnchorRef { view: self.block_content.borrow(), n_txs_visible: self.n_txs_visible }
     }
 
     /// Make the new executed transactions visible.
@@ -80,7 +76,7 @@ impl PreconfirmedBlockAnchor {
         self.candidates.extend(borrow.candidate_transactions().cloned());
     }
 
-    /// Returns when the block content has changed. Returns immediately if the view is 
+    /// Returns when the block content has changed. Returns immediately if the view is
     /// already outdated. The view is not updated; you need to call [`Self::refresh`] or
     /// [`Self::refresh_with_candidates`] when this function returns.
     pub(crate) async fn wait_until_outdated(&mut self) {
@@ -190,6 +186,43 @@ pub enum Anchor {
     #[default]
     Empty,
     Block(BlockAnchor),
+}
+
+impl fmt::Display for Anchor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "[Empty pre-genesis state]"),
+            Self::Block(block_anchor) => write!(f, "{block_anchor}"),
+        }
+    }
+}
+impl fmt::Display for BlockAnchor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Preconfirmed(preconfirmed_block_anchor) => write!(f, "{preconfirmed_block_anchor}"),
+            Self::Confirmed(confirmed) => write!(f, "[Confirmed block at height #{confirmed}]"),
+        }
+    }
+}
+impl fmt::Display for PreconfirmedBlockAnchor {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.candidates.is_empty() {
+            write!(
+                f,
+                "[Preconfirmed block at height #{} with {} transactions]",
+                self.block.header.block_number,
+                self.n_executed()
+            )
+        } else {
+            write!(
+                f,
+                "[Preconfirmed block at height #{} with {} transactions and {} candidates]",
+                self.block.header.block_number,
+                self.n_executed(),
+                self.candidates.len()
+            )
+        }
+    }
 }
 
 impl Anchor {

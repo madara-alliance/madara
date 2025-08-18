@@ -11,7 +11,7 @@ pub fn get_class(
     class_hash: Felt,
 ) -> StarknetRpcResult<MaybeDeprecatedContractClass> {
     let view = starknet.backend.view_on(&block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
-    let class_info = view.get_class(&class_hash)?.ok_or(StarknetRpcApiError::class_hash_not_found())?;
+    let class_info = view.get_class_info(&class_hash)?.ok_or(StarknetRpcApiError::class_hash_not_found())?;
 
     Ok(class_info.contract_class().into())
 }

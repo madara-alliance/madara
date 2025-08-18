@@ -1,8 +1,4 @@
-use std::{
-    collections::{HashMap, HashSet, VecDeque},
-    sync::Arc,
-};
-
+use crate::BlockifierStateAdapter;
 use blockifier::{
     execution::contract_class::RunnableCompiledClass,
     state::{
@@ -11,16 +7,17 @@ use blockifier::{
         state_api::{StateReader, StateResult},
     },
 };
+use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead};
+use mp_convert::Felt;
 use starknet_api::{
     contract_class::ContractClass as ApiContractClass,
     core::{ClassHash, CompiledClassHash, ContractAddress, Nonce},
     state::StorageKey,
 };
-
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_convert::Felt;
-
-use crate::BlockifierStateAdapter;
+use std::{
+    collections::{HashMap, HashSet, VecDeque},
+    sync::Arc,
+};
 
 #[derive(Debug)]
 struct CacheByBlock {
@@ -35,19 +32,16 @@ struct CacheByBlock {
 /// We need this because when a block is produced, saving it do the database is done asynchronously by another task. This means
 /// that we need to keep the state of the previous block around to execute the next one. We can only remove the cached state of the
 /// previous blocks once we know they are imported into the database.
-pub struct LayeredStateAdapter {
-    inner: BlockifierStateAdapter,
+pub struct LayeredStateAdapter<D: MadaraStorageRead = RocksDBStorage> {
+    inner: BlockifierStateAdapter<D>,
     cached_states_by_block_n: VecDeque<CacheByBlock>,
-    backend: Arc<MadaraBackend>,
 }
-impl LayeredStateAdapter {
-    pub fn new(backend: Arc<MadaraBackend>) -> Result<Self, crate::Error> {
-        let on_top_of_block_n = backend.get_latest_block_n()?;
-        let block_number = on_top_of_block_n.map(|n| n + 1).unwrap_or(/* genesis */ 0);
-
+impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
+    pub fn new(backend: Arc<MadaraBackend<D>>) -> Result<Self, crate::Error> {
+        let view = backend.view_on_latest_confirmed();
+        let block_number = view.anchor().block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
         Ok(Self {
-            inner: BlockifierStateAdapter::new(backend.clone(), block_number, on_top_of_block_n.map(DbBlockId::Number)),
-            backend,
+            inner: BlockifierStateAdapter::new(view, block_number),
             cached_states_by_block_n: Default::default(),
         })
     }
@@ -80,7 +74,9 @@ impl LayeredStateAdapter {
         classes: HashMap<ClassHash, ApiContractClass>,
         l1_to_l2_messages: HashSet<u64>,
     ) -> Result<(), crate::Error> {
-        let latest_db_block = self.backend.get_latest_block_n()?;
+        let new_view = self.inner.view.backend().view_on_latest_confirmed();
+        let latest_db_block = new_view.anchor().block_n();
+
         // Remove outdated cache entries
         self.remove_cache_before_including(latest_db_block);
 
@@ -90,11 +86,7 @@ impl LayeredStateAdapter {
         self.cached_states_by_block_n.push_front(CacheByBlock { block_n, state_diff, classes, l1_to_l2_messages });
 
         // Update the inner state adaptor to update its block_n to the next one.
-        self.inner = BlockifierStateAdapter::new(
-            self.backend.clone(),
-            block_n + 1,
-            /* on top of */ latest_db_block.map(DbBlockId::Number),
-        );
+        self.inner = BlockifierStateAdapter::new(new_view, block_n + 1);
 
         Ok(())
     }
@@ -107,7 +99,7 @@ impl LayeredStateAdapter {
     }
 }
 
-impl StateReader for LayeredStateAdapter {
+impl<D: MadaraStorageRead> StateReader for LayeredStateAdapter<D> {
     fn get_storage_at(&self, contract_address: ContractAddress, key: StorageKey) -> StateResult<Felt> {
         if let Some(el) =
             self.cached_states_by_block_n.iter().find_map(|s| s.state_diff.storage.get(&(contract_address, key)))
@@ -155,7 +147,7 @@ mod tests {
     use mc_db::MadaraBackend;
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
-        PendingFullBlock,
+        PreconfirmedFullBlock,
     };
     use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
     use mp_convert::{Felt, ToFelt};
@@ -211,9 +203,11 @@ mod tests {
         // block is now in db
 
         backend
+            .write_access()
             .add_full_block_with_classes(
-                PendingFullBlock {
+                &PreconfirmedFullBlock {
                     header: PreconfirmedHeader {
+                        block_number: 0,
                         parent_block_hash: Felt::ZERO,
                         sequencer_address: backend.chain_config().sequencer_address.to_felt(),
                         block_timestamp: BlockTimestamp::now(),
@@ -232,11 +226,9 @@ mod tests {
                     transactions: vec![],
                     events: vec![],
                 },
-                /* block_n */ 0,
                 /* classes */ &[],
                 /* pre_v0_13_2_hash_override */ false,
             )
-            .await
             .unwrap();
 
         assert_eq!(adaptor.block_n(), 1);

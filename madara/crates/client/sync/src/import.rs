@@ -1,8 +1,8 @@
 use anyhow::Context;
-use mc_db::{db_block_id::RawDbBlockId, MadaraBackend, MadaraStorageError};
+use mc_db::MadaraBackend;
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
-    BlockHeaderWithSignatures, Header, PendingFullBlock, TransactionWithReceipt,
+    BlockHeaderWithSignatures, Header, PreconfirmedFullBlock, TransactionWithReceipt,
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -12,6 +12,7 @@ use mp_class::{
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
+use mp_transactions::validated::ValidatedMempoolTx;
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
@@ -88,7 +89,7 @@ pub enum BlockImportError {
     GlobalStateRoot { got: Felt, expected: Felt },
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal database error while {context}: {error:#}")]
-    InternalDb { context: Cow<'static, str>, error: MadaraStorageError },
+    InternalDb { context: Cow<'static, str>, error: anyhow::Error },
     /// Internal error, see [`BlockImportError::is_internal`].
     #[error("Internal error: {0}")]
     Internal(#[from] anyhow::Error),
@@ -145,17 +146,15 @@ pub struct BlockImporterCtx {
 impl BlockImporterCtx {
     // Pending block
 
-    pub fn save_pending_block(&self, block: PendingFullBlock) -> Result<(), BlockImportError> {
-        self.db
-            .store_pending_block(block)
-            .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending block".into() })?;
-        Ok(())
-    }
-
-    pub fn save_pending_classes(&self, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
-        self.db
-            .class_db_store_pending(&classes)
-            .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending classes".into() })?;
+    pub fn save_preconfirmed(
+        &self,
+        block: PreconfirmedFullBlock,
+        classes: Vec<ConvertedClass>,
+        candidates: &[ValidatedMempoolTx],
+    ) -> Result<(), BlockImportError> {
+        // self.db
+        //     .write_access()
+        //     .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending block".into() })?;
         Ok(())
     }
 
@@ -218,7 +217,7 @@ impl BlockImporterCtx {
     }
 
     pub fn save_header(&self, block_n: u64, signed_header: BlockHeaderWithSignatures) -> Result<(), BlockImportError> {
-        self.db.store_block_header(signed_header).map_err(|error| BlockImportError::InternalDb {
+        self.db.write_access().write_header(signed_header).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing block header for {block_n}").into(),
         })?;
@@ -292,9 +291,8 @@ impl BlockImporterCtx {
         transactions: Vec<TransactionWithReceipt>,
     ) -> Result<(), BlockImportError> {
         tracing::debug!("Storing transactions for {block_n:?}");
-        self.db.store_transactions(block_n, transactions).map_err(|error| BlockImportError::InternalDb {
-            error,
-            context: format!("Storing transactions for {block_n}").into(),
+        self.db.write_access().write_transactions(block_n, &transactions).map_err(|error| {
+            BlockImportError::InternalDb { error, context: format!("Storing transactions for {block_n}").into() }
         })?;
         Ok(())
     }
@@ -429,7 +427,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_classes(&self, block_n: u64, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
-        self.db.store_block_classes(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
+        self.db.write_access().write_classes(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing classes for {block_n}").into(),
         })?;
@@ -468,9 +466,8 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
-        self.db.store_state_diff(block_n, state_diff).map_err(|error| BlockImportError::InternalDb {
-            error,
-            context: format!("Storing state_diff for {block_n}").into(),
+        self.db.write_access().write_state_diff(block_n, &state_diff).map_err(|error| {
+            BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }
         })?;
         Ok(())
     }
@@ -513,7 +510,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_events(&self, block_n: u64, events: Vec<EventWithTransactionHash>) -> Result<(), BlockImportError> {
-        self.db.store_events(block_n, events).map_err(|error| BlockImportError::InternalDb {
+        self.db.write_access().write_events(block_n, &events).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing events for {block_n}").into(),
         })?;
@@ -626,7 +623,8 @@ mod tests {
         // GIVEN: We have a test backend and a block with specified parameters
         let backend = MadaraBackend::open_for_testing(Arc::new(ChainConfig::madara_test()));
         backend
-            .store_block_header(BlockHeaderWithSignatures {
+            .write_access()
+            .write_header(BlockHeaderWithSignatures {
                 block_hash: felt!("0x123123"),
                 consensus_signatures: vec![],
                 header: Header {

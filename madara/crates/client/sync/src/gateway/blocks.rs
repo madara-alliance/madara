@@ -6,7 +6,7 @@ use crate::{
 use anyhow::Context;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header, PendingFullBlock};
+use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header, PreconfirmedFullBlock};
 use mp_gateway::{
     error::{SequencerError, StarknetErrorCode},
     state_update::ProviderStateUpdateWithBlockPendingMaybe,
@@ -132,14 +132,6 @@ impl PipelineSteps for GatewaySyncSteps {
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
         tracing::debug!("Gateway sync sequential step: {block_range:?}");
-        if let Some(block_n) = block_range.last() {
-            self.backend.clear_pending_block().context("Clearing pending block")?;
-            self.backend.head_status().headers.set_current(Some(block_n));
-            self.backend.head_status().state_diffs.set_current(Some(block_n));
-            self.backend.head_status().transactions.set_current(Some(block_n));
-            self.backend.head_status().events.set_current(Some(block_n));
-            self.backend.save_head_status_to_db()?;
-        }
         Ok(ApplyOutcome::Success(input))
     }
 }
@@ -155,81 +147,79 @@ pub fn gateway_pending_block_sync(
             let importer = importer.clone();
             let backend = backend.clone();
             async move {
-                let block = match client.get_state_update_with_block(BlockId::Tag(BlockTag::Pending)).await {
-                    Ok(block) => block,
-                    // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
-                    // Deserialization fails in this case.
-                    Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
-                    Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
-                        tracing::debug!("Pending block not found.");
-                        return Ok(None);
-                    }
-                    Err(other) => {
-                        // non-compliant gateway?
-                        tracing::warn!("Could not parse the pending block returned by the gateway: {other:#}");
-                        return Ok(None);
-                    }
-                };
+                // let block = match client.get_state_update_with_block(BlockId::Tag(BlockTag::Pending)).await {
+                //     Ok(block) => block,
+                //     // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
+                //     // Deserialization fails in this case.
+                //     Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
+                //     Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
+                //         tracing::debug!("Pending block not found.");
+                //         return Ok(None);
+                //     }
+                //     Err(other) => {
+                //         // non-compliant gateway?
+                //         tracing::warn!("Could not parse the pending block returned by the gateway: {other:#}");
+                //         return Ok(None);
+                //     }
+                // };
 
-                let ProviderStateUpdateWithBlockPendingMaybe::Pending(block) = block else {
-                    tracing::debug!("Asked for a pending block, got a closed one");
-                    return Ok(None);
-                };
+                // let ProviderStateUpdateWithBlockPendingMaybe::Pending(block) = block else {
+                //     tracing::debug!("Asked for a pending block, got a closed one");
+                //     return Ok(None);
+                // };
 
-                let parent_hash = backend
-                    .get_block_hash(&BlockId::Tag(BlockTag::Latest))
-                    .context("Getting latest block hash")?
-                    .unwrap_or(Felt::ZERO);
+                // // let parent_hash = if let Some(parent_hash) = backend.block_view_on_latest_confirmed()
+                // //     .get_block_info()?
+                // //     .unwrap_or(Felt::ZERO);
 
-                if block.block.parent_block_hash != parent_hash {
-                    tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
-                    return Ok(None);
-                }
+                // // if block.block.parent_block_hash != parent_hash {
+                // //     tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
+                // //     return Ok(None);
+                // // }
 
-                if backend.has_pending_block().context("Checking if db has a pending block")? {
-                    let db_block = backend
-                        .get_block_info(&BlockId::Tag(BlockTag::Pending))
-                        .context("Getting latest block hash")?
-                        .context("Backend should have a pending block")?;
-                    let db_block = db_block.as_pending().context("Asked for a pending block, got a closed one.")?;
+                // if backend.has_pending_block().context("Checking if db has a pending block")? {
+                //     let db_block = backend
+                //         .get_block_info(&BlockId::Tag(BlockTag::Pending))
+                //         .context("Getting latest block hash")?
+                //         .context("Backend should have a pending block")?;
+                //     let db_block = db_block.as_pending().context("Asked for a pending block, got a closed one.")?;
 
-                    // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
-                    let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
-                        == db_block.header
-                        && block.block.transaction_receipts.len() == db_block.tx_hashes.len()
-                        && block
-                            .block
-                            .transaction_receipts
-                            .iter()
-                            .map(|tx| &tx.transaction_hash)
-                            .eq(db_block.tx_hashes.iter());
+                //     // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
+                //     let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
+                //         == db_block.header
+                //         && block.block.transaction_receipts.len() == db_block.tx_hashes.len()
+                //         && block
+                //             .block
+                //             .transaction_receipts
+                //             .iter()
+                //             .map(|tx| &tx.transaction_hash)
+                //             .eq(db_block.tx_hashes.iter());
 
-                    if block_has_not_changed {
-                        return Ok(None);
-                    }
-                }
+                //     if block_has_not_changed {
+                //         return Ok(None);
+                //     }
+                // }
 
-                tracing::debug!("Importing pending block with parent_hash {parent_hash:#x}");
+                // tracing::debug!("Importing pending block with parent_hash {parent_hash:#x}");
 
-                let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
+                // let block: PreconfirmedFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
 
-                let classes = super::classes::get_classes(
-                    &client,
-                    BlockId::Tag(BlockTag::Pending),
-                    &block.state_diff.all_declared_classes(),
-                )
-                .await
-                .context("Getting pending block classes")?;
+                // let classes = super::classes::get_classes(
+                //     &client,
+                //     BlockId::Tag(BlockTag::Pending),
+                //     &block.state_diff.all_declared_classes(),
+                // )
+                // .await
+                // .context("Getting pending block classes")?;
 
-                importer
-                    .run_in_rayon_pool(move |importer| {
-                        let classes =
-                            importer.verify_compile_classes(None, classes, &block.state_diff.all_declared_classes())?;
-                        importer.save_pending_classes(classes)?;
-                        importer.save_pending_block(block)?;
-                        anyhow::Ok(())
-                    })
-                    .await?;
+                // importer
+                //     .run_in_rayon_pool(move |importer| {
+                //         let classes =
+                //             importer.verify_compile_classes(None, classes, &block.state_diff.all_declared_classes())?;
+                //         importer.save_preconfirmed(block, classes, /* candidates */ vec![])?;
+                //         anyhow::Ok(())
+                //     })
+                //     .await?;
 
                 Ok(Some(()))
             }

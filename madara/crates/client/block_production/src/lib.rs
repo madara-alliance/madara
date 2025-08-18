@@ -6,13 +6,12 @@ use anyhow::Context;
 use blockifier::state::cached_state::{StateMaps, StorageEntry};
 use executor::{BatchExecutionResult, ExecutorMessage};
 use futures::future::OptionFuture;
-use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
 use mc_mempool::{L1DataProvider, Mempool};
 use mc_settlement_client::SettlementClient;
 use mp_block::header::PreconfirmedHeader;
-use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
+use mp_block::{BlockId, BlockTag, PreconfirmedFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
@@ -73,10 +72,10 @@ impl PendingBlockState {
         self,
         backend: &MadaraBackend,
         block_n: u64,
-    ) -> anyhow::Result<(PendingFullBlock, Vec<ConvertedClass>)> {
+    ) -> anyhow::Result<(PreconfirmedFullBlock, Vec<ConvertedClass>)> {
         let on_top_of_block_id = block_n.checked_sub(1).map(DbBlockId::Number);
         Ok((
-            PendingFullBlock {
+            PreconfirmedFullBlock {
                 header: self.header,
                 state_diff: mc_exec::state_diff::create_normalized_state_diff(backend, &on_top_of_block_id, self.state)
                     .context("Converting state map to state diff")?,
@@ -89,7 +88,9 @@ impl PendingBlockState {
 }
 
 // TODO: move to backend
-pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(PendingFullBlock, Vec<ConvertedClass>)> {
+pub fn get_pending_block_from_db(
+    backend: &MadaraBackend,
+) -> anyhow::Result<(PreconfirmedFullBlock, Vec<ConvertedClass>)> {
     let pending_block = backend
         .get_block(&DbBlockId::Pending)
         .context("Getting pending block")?
@@ -111,7 +112,7 @@ pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(Pen
         .collect::<Result<_, _>>()?;
 
     // Close and import the pending block
-    let block = PendingFullBlock {
+    let block = PreconfirmedFullBlock {
         header: pending_block.info.header,
         events: pending_block.inner.events().collect(),
         transactions: pending_block
@@ -290,7 +291,7 @@ impl BlockProductionTask {
     async fn close_and_save_block(
         &mut self,
         block_n: u64,
-        block: PendingFullBlock,
+        block: PreconfirmedFullBlock,
         classes: Vec<ConvertedClass>,
         _txs_executed: Vec<Felt>,
     ) -> anyhow::Result<Felt> {
@@ -1195,10 +1196,12 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
-                        header: mp_block::header::PreconfirmedHeader::default(),
-                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-                    }),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
+                        mp_block::MadaraPreconfirmedBlockInfo {
+                            header: mp_block::header::PreconfirmedHeader::default(),
+                            tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                        },
+                    ),
                     inner: pending_inner.clone(),
                 },
                 pending_state_diff.clone(),
@@ -1441,10 +1444,12 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
-                        header: mp_block::header::PreconfirmedHeader::default(),
-                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-                    }),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
+                        mp_block::MadaraPreconfirmedBlockInfo {
+                            header: mp_block::header::PreconfirmedHeader::default(),
+                            tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                        },
+                    ),
                     inner: pending_inner.clone(),
                 },
                 pending_state_diff.clone(),
@@ -1611,10 +1616,12 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
-                        header: mp_block::header::PreconfirmedHeader::default(),
-                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-                    }),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
+                        mp_block::MadaraPreconfirmedBlockInfo {
+                            header: mp_block::header::PreconfirmedHeader::default(),
+                            tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                        },
+                    ),
                     inner: pending_inner.clone(),
                 },
                 pending_state_diff.clone(),
@@ -1706,10 +1713,12 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
-                        header: mp_block::header::PreconfirmedHeader::default(),
-                        tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-                    }),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
+                        mp_block::MadaraPreconfirmedBlockInfo {
+                            header: mp_block::header::PreconfirmedHeader::default(),
+                            tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+                        },
+                    ),
                     inner: pending_inner.clone(),
                 },
                 pending_state_diff.clone(),

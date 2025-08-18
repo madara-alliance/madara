@@ -58,65 +58,85 @@ pub enum MadaraMaybePreconfirmedBlockInfo {
 impl MadaraMaybePreconfirmedBlockInfo {
     pub fn as_closed(&self) -> Option<&MadaraBlockInfo> {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => None,
-            MadaraMaybePreconfirmedBlockInfo::Closed(v) => Some(v),
+            Self::Preconfirmed(_) => None,
+            Self::Closed(v) => Some(v),
         }
     }
 
     pub fn into_closed(self) -> Option<MadaraBlockInfo> {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => None,
-            MadaraMaybePreconfirmedBlockInfo::Closed(v) => Some(v),
+            Self::Preconfirmed(_) => None,
+            Self::Closed(v) => Some(v),
         }
     }
 
     pub fn as_pending(&self) -> Option<&MadaraPreconfirmedBlockInfo> {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(v) => Some(v),
-            MadaraMaybePreconfirmedBlockInfo::Closed(_) => None,
+            Self::Preconfirmed(v) => Some(v),
+            Self::Closed(_) => None,
         }
     }
 
     pub fn into_pending(self) -> Option<MadaraPreconfirmedBlockInfo> {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(v) => Some(v),
-            MadaraMaybePreconfirmedBlockInfo::Closed(_) => None,
+            Self::Preconfirmed(v) => Some(v),
+            Self::Closed(_) => None,
         }
     }
 
     pub fn block_id(&self) -> BlockId {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => BlockId::Tag(BlockTag::Pending),
-            MadaraMaybePreconfirmedBlockInfo::Closed(info) => BlockId::Number(info.header.block_number),
+            Self::Preconfirmed(_) => BlockId::Tag(BlockTag::Pending),
+            Self::Closed(info) => BlockId::Number(info.header.block_number),
         }
     }
 
-    pub fn block_n(&self) -> Option<u64> {
-        self.as_closed().map(|v| v.header.block_number)
+    pub fn block_number(&self) -> u64 {
+        match self {
+            Self::Preconfirmed(info) => info.header.block_number,
+            Self::Closed(info) => info.header.block_number,
+        }
     }
 
-    pub fn block_hash(&self) -> Option<Felt> {
-        self.as_closed().map(|v| v.block_hash)
+    pub fn block_hash(&self) -> Option<&Felt> {
+        self.as_closed().map(|v| &v.block_hash)
     }
 
     pub fn tx_hashes(&self) -> &[Felt] {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Closed(block) => &block.tx_hashes,
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => &block.tx_hashes,
+            Self::Closed(block) => &block.tx_hashes,
+            Self::Preconfirmed(block) => &block.tx_hashes,
         }
     }
 
     pub fn protocol_version(&self) -> &StarknetVersion {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Closed(block) => &block.header.protocol_version,
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => &block.header.protocol_version,
+            Self::Closed(block) => &block.header.protocol_version,
+            Self::Preconfirmed(block) => &block.header.protocol_version,
         }
     }
-
-    pub fn block_timestamp(&self) -> BlockTimestamp {
+    pub fn sequencer_address(&self) -> &Felt {
         match self {
-            MadaraMaybePreconfirmedBlockInfo::Closed(block) => block.header.block_timestamp,
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => block.header.block_timestamp,
+            Self::Closed(block) => &block.header.sequencer_address,
+            Self::Preconfirmed(block) => &block.header.sequencer_address,
+        }
+    }
+    pub fn l1_da_mode(&self) -> &L1DataAvailabilityMode {
+        match self {
+            Self::Closed(block) => &block.header.l1_da_mode,
+            Self::Preconfirmed(block) => &block.header.l1_da_mode,
+        }
+    }
+    pub fn l1_gas_price(&self) -> &GasPrices {
+        match self {
+            Self::Closed(block) => &block.header.l1_gas_price,
+            Self::Preconfirmed(block) => &block.header.l1_gas_price,
+        }
+    }
+    pub fn block_timestamp(&self) -> &BlockTimestamp {
+        match self {
+            Self::Closed(block) => &block.header.block_timestamp,
+            Self::Preconfirmed(block) => &block.header.block_timestamp,
         }
     }
 }
@@ -363,14 +383,14 @@ pub struct FullBlock {
 
 /// A pending block is a block that has not yet been closed.
 #[derive(Clone, Debug)]
-pub struct PendingFullBlock {
+pub struct PreconfirmedFullBlock {
     pub header: PreconfirmedHeader,
     pub state_diff: StateDiff,
     pub transactions: Vec<TransactionWithReceipt>,
     pub events: Vec<EventWithTransactionHash>,
 }
 
-impl PendingFullBlock {
+impl PreconfirmedFullBlock {
     /// Uses the rayon thread pool.
     pub fn close_block(
         self,
@@ -413,8 +433,8 @@ mod tests {
         assert_eq!(pending_as_maybe_pending.block_id(), BlockId::Tag(BlockTag::Pending));
         assert_eq!(not_pending_as_maybe_pending.block_id(), BlockId::Number(0));
 
-        assert_eq!(pending_as_maybe_pending.block_n(), None);
-        assert_eq!(not_pending_as_maybe_pending.block_n(), Some(0));
+        assert_eq!(pending_as_maybe_pending.block_number(), 0);
+        assert_eq!(not_pending_as_maybe_pending.block_number(), 0);
 
         assert_eq!(pending_as_maybe_pending.tx_hashes(), &tx_hashes_pending);
         assert_eq!(not_pending_as_maybe_pending.tx_hashes(), &tx_hashes_not_pending);

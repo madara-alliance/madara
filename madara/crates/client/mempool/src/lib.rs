@@ -1,7 +1,6 @@
 use anyhow::Context;
 use async_trait::async_trait;
-use mc_db::db_block_id::DbBlockId;
-use mc_db::{MadaraBackend, MadaraStorageError};
+use mc_db::MadaraBackend;
 use mc_submit_tx::{
     RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError, SubmitValidatedTransaction,
 };
@@ -28,15 +27,12 @@ pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolWriteAccess;
 
-pub mod header;
 pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]
 pub enum MempoolError {
-    #[error("Storage error: {0:#}")]
-    StorageError(#[from] MadaraStorageError),
     #[error(transparent)]
-    Internal(anyhow::Error),
+    Internal(#[from] anyhow::Error),
     #[error(transparent)]
     InnerMempool(#[from] TxInsertionError),
     #[error("Converting validated transaction: {0:#}")]
@@ -89,7 +85,7 @@ impl From<MempoolError> for SubmitTransactionError {
         }
 
         match value {
-            err @ (E::StorageError(_) | E::ValidatedToBlockifier(_) | E::Internal(_)) => Internal(anyhow::anyhow!(err)),
+            err @ (E::Internal(_) | E::ValidatedToBlockifier(_)) => Internal(anyhow::anyhow!(err)),
             err @ E::InnerMempool(TxInsertionError::TooOld { .. }) => Internal(anyhow::anyhow!(err)),
             E::InnerMempool(TxInsertionError::DuplicateTxn) => {
                 rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
@@ -153,7 +149,7 @@ impl Mempool {
             // everytime we restart the node, but will never be removed from db once they're consumed.
             return Ok(());
         }
-        for res in self.backend.get_mempool_transactions() {
+        for res in self.backend.get_saved_mempool_transactions() {
             let tx = res.context("Getting mempool transactions")?;
             let is_new_tx = false; // do not trigger metrics update and db update.
             if let Err(err) = self.add_tx(tx, is_new_tx).await {
@@ -176,8 +172,12 @@ impl Mempool {
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.tx_hash);
 
         let now = TxTimestamp::now();
-        let account_nonce =
-            self.backend.get_contract_nonce_at(&DbBlockId::Pending, &tx.contract_address)?.unwrap_or(Felt::ZERO);
+        let account_nonce = self
+            .backend
+            .view_on_preconfirmed()
+            .into_view()
+            .get_contract_nonce(&tx.contract_address)?
+            .unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedMempoolTx; 1]>::new();
         // Lock is acquired here and dropped immediately after.
         let ret = self.inner.write().await.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
@@ -195,7 +195,7 @@ impl Mempool {
         if is_new_tx {
             self.metrics.accepted_transaction_counter.add(1, &[]);
             if self.config.save_to_db {
-                if let Err(err) = self.backend.save_mempool_transaction(tx) {
+                if let Err(err) = self.backend.write_saved_mempool_transaction(tx) {
                     tracing::error!("Could not add mempool transaction to database: {err:#}");
                 }
             }
@@ -207,7 +207,7 @@ impl Mempool {
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
     fn on_txs_removed(&self, removed: &[ValidatedMempoolTx]) {
         if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_mempool_transactions(removed.iter().map(|tx| tx.tx_hash)) {
+            if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.tx_hash)) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
         }
@@ -222,7 +222,7 @@ impl Mempool {
     /// Temporary: this will move to the backend. Called by block production & locally when txs are added to the chain.
     fn remove_from_received(&self, txs: &[Felt]) {
         if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_mempool_transactions(txs.iter().copied()) {
+            if let Err(err) = self.backend.remove_saved_mempool_transactions(txs.iter().copied()) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
             // TODO: tell self.tx_sender about the removal

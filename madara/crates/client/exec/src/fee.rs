@@ -1,7 +1,8 @@
 use crate::{ExecutionContext, ExecutionResult};
+use mc_db::MadaraStorageRead;
 use starknet_api::block::{FeeType, GasPriceVector};
 
-impl ExecutionContext {
+impl<D: MadaraStorageRead> ExecutionContext<D> {
     pub fn execution_result_to_fee_estimate(&self, executions_result: &ExecutionResult) -> mp_rpc::FeeEstimate {
         let GasPriceVector { l1_gas_price, l1_data_gas_price, .. } =
             self.block_context.block_info().gas_prices.gas_price_vector(&executions_result.fee_type);

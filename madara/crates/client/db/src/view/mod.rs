@@ -1,11 +1,15 @@
 use crate::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction, PreconfirmedTransaction},
     prelude::*,
+    rocksdb::RocksDBStorage,
     storage::{EventFilter, MadaraStorageRead, TxIndex},
     MadaraBackend,
 };
-use mp_block::{EventWithInfo, MadaraMaybePreconfirmedBlockInfo, MadaraPreconfirmedBlockInfo, TransactionWithReceipt};
-use mp_class::{ClassInfo, CompiledSierra};
+use mp_block::{
+    header::PreconfirmedHeader, EventWithInfo, MadaraMaybePreconfirmedBlockInfo, MadaraPreconfirmedBlockInfo,
+    TransactionWithReceipt,
+};
+use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use mp_transactions::TransactionWithHash;
@@ -19,7 +23,7 @@ mod state_diff;
 
 pub use anchor::*;
 
-pub struct MadaraView<D: MadaraStorageRead> {
+pub struct MadaraView<D: MadaraStorageRead = RocksDBStorage> {
     pub(crate) backend: Arc<MadaraBackend<D>>,
     pub(crate) anchor: Anchor,
 }
@@ -33,6 +37,13 @@ impl<D: MadaraStorageRead> Clone for MadaraView<D> {
 impl<D: MadaraStorageRead> MadaraView<D> {
     fn new(backend: Arc<MadaraBackend<D>>, anchor: Anchor) -> Self {
         Self { backend, anchor }
+    }
+
+    pub fn backend(&self) -> &Arc<MadaraBackend<D>> {
+        &self.backend
+    }
+    pub fn anchor(&self) -> &Anchor {
+        &self.anchor
     }
 
     pub fn into_block_view_on(self, block_n: u64) -> Option<MadaraBlockView<D>> {
@@ -99,7 +110,7 @@ impl<D: MadaraStorageRead> MadaraView<D> {
         self.backend.db.is_contract_deployed_at(block_n, contract_address)
     }
 
-    pub fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfo>> {
+    pub fn get_class_info(&self, class_hash: &Felt) -> Result<Option<ClassInfo>> {
         if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| {
             s.declared_class.as_ref().filter(|c| c.class_hash() == class_hash).map(|c| c.info())
         }) {
@@ -131,6 +142,26 @@ impl<D: MadaraStorageRead> MadaraView<D> {
         } else {
             Ok(None)
         }
+    }
+
+    pub fn get_class_info_and_compiled(&self, class_hash: &Felt) -> Result<Option<ConvertedClass>> {
+        let Some(class_info) = self.get_class_info(class_hash).context("Getting class info from class_hash")? else {
+            return Ok(None);
+        };
+        let compiled = match class_info {
+            ClassInfo::Sierra(sierra_class_info) => ConvertedClass::Sierra(SierraConvertedClass {
+                class_hash: *class_hash,
+                compiled: self
+                    .get_class_compiled(&sierra_class_info.compiled_class_hash)
+                    .context("Getting class compiled from class_hash")?
+                    .context("Class info found, compiled class should be found")?,
+                info: sierra_class_info,
+            }),
+            ClassInfo::Legacy(legacy_class_info) => {
+                ConvertedClass::Legacy(LegacyConvertedClass { class_hash: *class_hash, info: legacy_class_info })
+            }
+        };
+        Ok(Some(compiled))
     }
 
     pub fn get_transaction_by_hash(&self, tx_hash: &Felt) -> Result<Option<(TxIndex, TransactionWithReceipt)>> {
@@ -237,12 +268,6 @@ pub struct MadaraBlockView<D: MadaraStorageRead> {
     pub(crate) anchor: BlockAnchor,
 }
 
-impl<D: MadaraStorageRead> MadaraBlockView<D> {
-    pub(crate) fn new(backend: Arc<MadaraBackend<D>>, anchor: BlockAnchor) -> Self {
-        Self { backend, anchor }
-    }
-}
-
 // derive(Clone) will put a D: Clone bounds which we don't want, so we have to implement clone by hand :(
 impl<D: MadaraStorageRead> Clone for MadaraBlockView<D> {
     fn clone(&self) -> Self {
@@ -251,6 +276,17 @@ impl<D: MadaraStorageRead> Clone for MadaraBlockView<D> {
 }
 
 impl<D: MadaraStorageRead> MadaraBlockView<D> {
+    pub(crate) fn new(backend: Arc<MadaraBackend<D>>, anchor: BlockAnchor) -> Self {
+        Self { backend, anchor }
+    }
+    pub fn backend(&self) -> &Arc<MadaraBackend<D>> {
+        &self.backend
+    }
+
+    pub fn anchor(&self) -> &BlockAnchor {
+        &self.anchor
+    }
+
     pub fn is_preconfirmed(&self) -> bool {
         self.anchor.as_preconfirmed().is_some()
     }
@@ -356,6 +392,15 @@ impl<D: MadaraStorageRead> MadaraBlockView<D> {
             .cloned()
             .map(|anchor| MadaraPreconfirmedBlockView::new(self.backend.clone(), anchor))
     }
+
+    pub fn into_view(self) -> MadaraView<D> {
+        MadaraView::new(self.backend, Anchor::Block(self.anchor))
+    }
+
+    /// Make a view on the parent block of this view. The view will always be either on a confirmed block, or the empty state prior to the genesis block.
+    pub fn view_on_parent(&self) -> MadaraView<D> {
+        MadaraView::new(self.backend.clone(), Anchor::new_on_confirmed(self.anchor.block_n().checked_sub(1)))
+    }
 }
 
 pub struct MadaraPreconfirmedBlockView<D: MadaraStorageRead> {
@@ -376,8 +421,15 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
 }
 
 impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
+    pub fn into_view(self) -> MadaraView<D> {
+        self.into_block_view().into_view()
+    }
     pub fn into_block_view(self) -> MadaraBlockView<D> {
         MadaraBlockView::new(self.backend, BlockAnchor::Preconfirmed(self.anchor))
+    }
+
+    pub fn header(&self) -> &PreconfirmedHeader {
+        &self.anchor.block.header
     }
 
     /// Make none of the transactions visible.
@@ -480,8 +532,8 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         self.view_on_anchor(Anchor::new_on_confirmed(self.latest_confirmed_block_n()))
     }
     /// May return a view on a fake preconfirmed block if none was found.
-    pub fn view_on_preconfirmed(self: &Arc<Self>) -> MadaraView<D> {
-        self.view_on_anchor(Anchor::new_on_preconfirmed(self.get_preconfirmed_or_fake().clone()))
+    pub fn view_on_preconfirmed(self: &Arc<Self>) -> MadaraPreconfirmedBlockView<D> {
+        self.preconfirmed_view_on_anchor(PreconfirmedBlockAnchor::new(self.get_preconfirmed_or_fake()))
     }
 
     pub fn block_view_on_confirmed(self: &Arc<Self>, block_n: u64) -> MadaraBlockView<D> {

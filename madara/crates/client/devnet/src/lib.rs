@@ -2,7 +2,7 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_block::{
     header::{GasPrices, PreconfirmedHeader},
-    PendingFullBlock,
+    PreconfirmedFullBlock,
 };
 use mp_chain_config::ChainConfig;
 use mp_class::ClassInfoWithHash;
@@ -15,7 +15,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::{collections::HashMap, time::SystemTime};
+use std::{collections::HashMap, sync::Arc, time::SystemTime};
 
 mod balances;
 mod classes;
@@ -156,11 +156,11 @@ impl ChainGenesisDescription {
     pub fn into_block(
         mut self,
         chain_config: &ChainConfig,
-    ) -> anyhow::Result<(PendingFullBlock, Vec<ClassInfoWithHash>)> {
+    ) -> anyhow::Result<(PreconfirmedFullBlock, Vec<ClassInfoWithHash>)> {
         self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 
         Ok((
-            PendingFullBlock {
+            PreconfirmedFullBlock {
                 header: PreconfirmedHeader {
                     block_number: 0,
                     parent_block_hash: Felt::ZERO,
@@ -195,15 +195,14 @@ impl ChainGenesisDescription {
         ))
     }
 
-    pub async fn build_and_store(self, backend: &MadaraBackend) -> anyhow::Result<()> {
+    pub async fn build_and_store(self, backend: &Arc<MadaraBackend>) -> anyhow::Result<()> {
         let (block, classes) = self.into_block(backend.chain_config()).unwrap();
 
-        let block_number = 0;
         let classes: Vec<_> = classes.into_iter().map(|class| class.convert()).collect::<Result<_, _>>()?;
 
-        let _block_hash = backend
-            .add_full_block_with_classes(block, block_number, &classes, /* pre_v0_13_2_hash_override */ true)
-            .await?;
+        backend
+            .write_access()
+            .add_full_block_with_classes(&block, &classes, /* pre_v0_13_2_hash_override */ true)?;
         Ok(())
     }
 }

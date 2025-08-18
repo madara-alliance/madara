@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use mp_block::{FullBlock, PendingFullBlock};
+use mp_block::{FullBlock, PreconfirmedFullBlock};
 use mp_state_update::{DeclaredClassItem, DeployedContractItem, StorageEntry};
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -209,7 +209,7 @@ pub struct ProviderStateUpdateWithBlockPending {
 }
 
 impl ProviderStateUpdateWithBlockPending {
-    pub fn into_full_block(self) -> Result<PendingFullBlock, FromGatewayError> {
+    pub fn into_full_block(self) -> Result<PreconfirmedFullBlock, FromGatewayError> {
         self.block.into_full_block(self.state_update.state_diff.into())
     }
 }

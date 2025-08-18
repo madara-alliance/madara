@@ -1,11 +1,16 @@
 //! Executor thread internal logic.
 
+use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
 use blockifier::{
     blockifier::transaction_executor::TransactionExecutor,
     state::{cached_state::StorageEntry, state_api::State},
 };
 use futures::future::OptionFuture;
+use mc_db::MadaraBackend;
+use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
+use mc_mempool::L1DataProvider;
+use mp_convert::{Felt, ToFelt};
 use starknet_api::contract_class::ContractClass;
 use starknet_api::core::ClassHash;
 use std::{
@@ -17,13 +22,6 @@ use tokio::{
     sync::{broadcast, mpsc},
     time::Instant,
 };
-
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
-use mc_mempool::L1DataProvider;
-use mp_convert::{Felt, ToFelt};
-
-use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
 
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
@@ -175,8 +173,10 @@ impl ExecutorThread {
 
         let get_hash_from_db = || {
             self.backend
-                .get_block_hash(&DbBlockId::Number(block_n_min_10))
+                .block_view_on_confirmed(block_n_min_10)
+                .get_block_info()
                 .context("Getting block hash of block_n - 10")
+                .and_then(|n| n.block_hash().context("Block should be confirmed"))
         };
 
         // Optimistically get the hash from database without subscribing to the closed_blocks channel.

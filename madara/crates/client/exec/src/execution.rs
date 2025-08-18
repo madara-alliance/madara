@@ -7,6 +7,7 @@ use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{HasRelatedFeeType, TransactionExecutionInfo};
 use blockifier::transaction::transaction_execution::Transaction;
 use blockifier::transaction::transactions::ExecutableTransaction;
+use mc_db::MadaraStorageRead;
 use mp_convert::ToFelt;
 use starknet_api::block::FeeType;
 use starknet_api::contract_class::ContractClass;
@@ -15,22 +16,21 @@ use starknet_api::executable_transaction::{AccountTransaction as ApiAccountTrans
 use starknet_api::transaction::fields::{GasVectorComputationMode, Tip};
 use starknet_api::transaction::{TransactionHash, TransactionVersion};
 
-impl ExecutionContext {
+impl<D: MadaraStorageRead> ExecutionContext<D> {
     /// Execute transactions. The returned `ExecutionResult`s are the results of the `transactions_to_trace`. The results of `transactions_before` are discarded.
     /// This function is useful for tracing trasaction execution, by reexecuting the block.
     pub fn re_execute_transactions(
-        &self,
+        &mut self,
         transactions_before: impl IntoIterator<Item = Transaction>,
         transactions_to_trace: impl IntoIterator<Item = Transaction>,
     ) -> Result<Vec<ExecutionResult>, Error> {
-        let mut cached_state = self.init_cached_state();
 
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
             tracing::debug!("executing {:#x}", hash.to_felt());
-            tx.execute(&mut cached_state, &self.block_context).map_err(|err| TxExecError {
-                block_n: self.latest_visible_block.into(),
+            tx.execute(&mut self.state, &self.block_context).map_err(|err| TxExecError {
+                anchor: self.anchor().clone(),
                 hash,
                 index,
                 err,
@@ -60,14 +60,15 @@ impl ExecutionContext {
                     Transaction::L1Handler(_) => None, // There is no minimal_l1_gas field for L1 handler transactions.
                 };
 
+                let anchor = self.anchor().clone();
                 let make_reexec_error = |err| TxExecError {
-                    block_n: self.latest_visible_block.into(),
+                    anchor: anchor.clone(),
                     hash,
                     index: executed_prev + index,
                     err,
                 };
 
-                let mut transactional_state = TransactionalState::create_transactional(&mut cached_state);
+                let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.
                 let execution_info = tx
                     .execute_raw(&mut transactional_state, &self.block_context, false)

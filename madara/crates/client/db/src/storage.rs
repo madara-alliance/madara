@@ -3,7 +3,7 @@ use anyhow::Result;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
 };
-use mp_class::{ClassInfo, CompiledSierra};
+use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use mp_convert::Felt;
 use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
@@ -133,6 +133,7 @@ pub trait MadaraStorageWrite {
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()>;
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
+    fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
 
     /// Clears the preconfirmed block, and sets the chain tip in db.
     fn replace_chain_tip(&self, chain_tip: &Anchor) -> Result<()>;
@@ -161,6 +162,9 @@ pub trait MadaraStorageWrite {
     ) -> Result<Felt>;
 
     fn flush(&self) -> Result<()>;
+
+    /// Called everytime a new block_n is fully saved and marked as confirmed.
+    fn on_new_confirmed_head(&self, block_n: u64) -> Result<()>;
 }
 
 /// Trait alias for `MadaraStorageRead + MadaraStorageWrite`.
