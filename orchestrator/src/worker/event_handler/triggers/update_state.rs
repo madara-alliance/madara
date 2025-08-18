@@ -208,7 +208,8 @@ mod test_update_state_worker_utils {
 
     #[rstest]
     #[case(vec![], Some(3), vec![])]
-    #[case(vec![1], Some(3), vec![1])]
+    #[case(vec![1], None, vec![1])]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], None, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])]
     #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], Some(10), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]
     #[case(vec![1, 2, 3, 4, 5], Some(3), vec![1, 2, 3])] // limit smaller than available
     #[case(vec![1, 2, 3], Some(5), vec![1, 2, 3])] // limit larger than available
