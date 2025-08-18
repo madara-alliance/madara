@@ -33,7 +33,7 @@ permissions:
 
 jobs:
   build-nightly:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     outputs:
       nightly: ${{ steps.tag.outputs.nightly }}
       nightly-sha: ${{ steps.tag.outputs.nightly-sha }}
