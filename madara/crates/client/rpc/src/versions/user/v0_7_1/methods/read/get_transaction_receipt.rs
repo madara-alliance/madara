@@ -1,7 +1,7 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 use mp_rpc::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
 

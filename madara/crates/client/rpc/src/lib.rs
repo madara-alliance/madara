@@ -14,7 +14,7 @@ use jsonrpsee::RpcModule;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
 use mc_submit_tx::SubmitTransaction;
-use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePreconfirmedBlockInfo};
 use mp_chain_config::ChainConfig;
 use mp_convert::ToFelt;
 use mp_utils::service::ServiceContext;
@@ -75,7 +75,7 @@ impl Starknet {
     pub fn get_block_info(
         &self,
         block_id: &impl DbBlockIdResolvable,
-    ) -> StarknetRpcResult<MadaraMaybePendingBlockInfo> {
+    ) -> StarknetRpcResult<MadaraMaybePreconfirmedBlockInfo> {
         self.backend
             .get_block_info(block_id)
             .or_internal_server_error("Error getting block from storage")?

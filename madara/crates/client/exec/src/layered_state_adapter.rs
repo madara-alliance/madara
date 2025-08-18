@@ -154,7 +154,7 @@ mod tests {
     use blockifier::state::{cached_state::StateMaps, state_api::StateReader};
     use mc_db::MadaraBackend;
     use mp_block::{
-        header::{BlockTimestamp, GasPrices, PendingHeader},
+        header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
         PendingFullBlock,
     };
     use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
@@ -213,7 +213,7 @@ mod tests {
         backend
             .add_full_block_with_classes(
                 PendingFullBlock {
-                    header: PendingHeader {
+                    header: PreconfirmedHeader {
                         parent_block_hash: Felt::ZERO,
                         sequencer_address: backend.chain_config().sequencer_address.to_felt(),
                         block_timestamp: BlockTimestamp::now(),

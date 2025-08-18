@@ -87,7 +87,7 @@ impl<'a> SubscriptionState<'a> {
         })?;
 
         match block_info {
-            Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
+            Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block_info), _idx)) => {
                 // Tx has not yet been accepted on L1 but is included on L2, hence it is marked
                 // as accepted on L2. We wait for it to be accepted on L1
                 let block_number = common
@@ -103,7 +103,7 @@ impl<'a> SubscriptionState<'a> {
                 common.send_txn_status(mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2).await?;
                 Ok(Self::WaitAcceptedOnL1(StateTransitionAcceptedOnL1 { common, block_number, channel_confirmed }))
             }
-            Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
+            Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(block_info), _idx)) => {
                 let block_number = block_info.header.block_number;
                 let confirmed =
                     common.starknet.backend.get_l1_last_confirmed_block().or_internal_server_error(
@@ -307,7 +307,7 @@ impl<'a> StateTransition for StateTransitionReceived<'a> {
                             format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}")
                         })?;
 
-                    let Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) = block_info else {
+                    let Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(block_info), _idx)) = block_info else {
                         continue;
                     };
 
@@ -349,7 +349,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                     || format!("SubscribeTransactionStatus failed to retrieve block info for tx {tx_hash:#x}"),
                 )?;
             match block_info {
-                Some((mp_block::MadaraMaybePendingBlockInfo::Pending(block_info), _idx)) => {
+                Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block_info), _idx)) => {
                     break common
                         .starknet
                         .backend
@@ -360,7 +360,7 @@ impl<'a> StateTransition for StateTransitionAcceptedOnL2<'a> {
                         .map(|n| n + 1)
                         .unwrap_or(0);
                 }
-                Some((mp_block::MadaraMaybePendingBlockInfo::NotPending(block_info), _idx)) => {
+                Some((mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(block_info), _idx)) => {
                     break block_info.header.block_number;
                 }
                 None => channel_pending_block
@@ -464,7 +464,7 @@ mod test {
     #[rstest::fixture]
     fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::MadaraMaybePendingBlock {
         mp_block::MadaraMaybePendingBlock {
-            info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
+            info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(mp_block::MadaraBlockInfo {
                 tx_hashes: vec![TX_HASH],
                 ..Default::default()
             }),

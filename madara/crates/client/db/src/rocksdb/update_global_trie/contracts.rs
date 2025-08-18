@@ -116,10 +116,10 @@ fn contract_state_leaf_hash(
 ) -> Result<Felt> {
     let nonce = contract_leaf
         .nonce
-        .unwrap_or(backend.0.get_contract_nonce_at(block_number, contract_address)?.unwrap_or(Felt::ZERO));
+        .unwrap_or(backend.inner.get_contract_nonce_at(block_number, contract_address)?.unwrap_or(Felt::ZERO));
 
     let class_hash = if let Some(class_hash) = contract_leaf.class_hash {class_hash} else {
-        backend.0.get_contract_class_hash_at(block_number, contract_address)?.unwrap_or(Felt::ZERO)
+        backend.inner.get_contract_class_hash_at(block_number, contract_address)?.unwrap_or(Felt::ZERO)
     };
 
     let storage_root = contract_leaf.storage_root.context("Storage root need to be set")?;

@@ -125,7 +125,7 @@ mod tests {
     use blockifier::state::cached_state::StateMaps;
     use itertools::Itertools;
     use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-    use mp_block::{header::PendingHeader, PendingFullBlock};
+    use mp_block::{header::PreconfirmedHeader, PendingFullBlock};
     use mp_chain_config::ChainConfig;
     use mp_convert::{Felt, ToFelt};
     use mp_state_update::{
@@ -156,7 +156,7 @@ mod tests {
         backend
             .add_full_block_with_classes(
                 PendingFullBlock {
-                    header: PendingHeader::default(),
+                    header: PreconfirmedHeader::default(),
                     state_diff: StateDiff {
                         storage_diffs: vec![
                             ContractStorageDiffItem {

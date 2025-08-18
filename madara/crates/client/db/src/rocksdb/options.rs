@@ -1,6 +1,8 @@
 #![allow(clippy::identity_op)] // allow 1 * MiB
 #![allow(non_upper_case_globals)] // allow KiB/MiB/GiB names
 
+use std::path::PathBuf;
+
 use crate::rocksdb::column::{Column, ColumnMemoryBudget};
 use anyhow::{Context, Result};
 use rocksdb::{DBCompressionType, Env, Options, SliceTransform};
@@ -34,6 +36,11 @@ pub struct RocksDBConfig {
     pub max_kept_snapshots: Option<usize>,
     /// Number of blocks between snapshots
     pub snapshot_interval: u64,
+
+    /// When present, every flush will create a backup.
+    pub backup_dir: Option<PathBuf>,
+    /// When true, the latest backup will be restored on startup.
+    pub restore_from_latest_backup: bool,
 }
 
 impl Default for RocksDBConfig {
@@ -49,7 +56,9 @@ impl Default for RocksDBConfig {
             memtable_prefix_bloom_filter_ratio: 0.0,
             max_saved_trie_logs: None,
             max_kept_snapshots: None,
-            snapshot_interval: 5
+            snapshot_interval: 5,
+            backup_dir: None,
+            restore_from_latest_backup: false,
         }
     }
 }

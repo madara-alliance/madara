@@ -11,7 +11,7 @@ use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
 use mc_mempool::{L1DataProvider, Mempool};
 use mc_settlement_client::SettlementClient;
-use mp_block::header::PendingHeader;
+use mp_block::header::PreconfirmedHeader;
 use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
@@ -40,7 +40,7 @@ pub use handle::BlockProductionHandle;
 
 #[derive(Debug, Clone)]
 struct PendingBlockState {
-    pub header: PendingHeader,
+    pub header: PreconfirmedHeader,
     pub transactions: Vec<TransactionWithReceipt>,
     pub events: Vec<EventWithTransactionHash>,
     pub declared_classes: Vec<ConvertedClass>,
@@ -58,7 +58,7 @@ impl PendingBlockState {
         Self::new(exec_ctx.into_header(parent_block_hash), initial_state_diffs_storage)
     }
 
-    pub fn new(header: PendingHeader, initial_state_diffs_storage: HashMap<StorageEntry, Felt>) -> Self {
+    pub fn new(header: PreconfirmedHeader, initial_state_diffs_storage: HashMap<StorageEntry, Felt>) -> Self {
         Self {
             header,
             state: StateMaps { storage: initial_state_diffs_storage, ..Default::default() },
@@ -1195,8 +1195,8 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
-                        header: mp_block::header::PendingHeader::default(),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
+                        header: mp_block::header::PreconfirmedHeader::default(),
                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
                     }),
                     inner: pending_inner.clone(),
@@ -1360,7 +1360,7 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(mp_block::MadaraBlockInfo {
                         header: mp_block::Header::default(),
                         block_hash: Felt::ZERO,
                         tx_hashes: vec![Felt::ZERO, Felt::ONE, Felt::TWO],
@@ -1441,8 +1441,8 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
-                        header: mp_block::header::PendingHeader::default(),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
+                        header: mp_block::header::PreconfirmedHeader::default(),
                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
                     }),
                     inner: pending_inner.clone(),
@@ -1611,8 +1611,8 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
-                        header: mp_block::header::PendingHeader::default(),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
+                        header: mp_block::header::PreconfirmedHeader::default(),
                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
                     }),
                     inner: pending_inner.clone(),
@@ -1706,8 +1706,8 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
-                        header: mp_block::header::PendingHeader::default(),
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(mp_block::MadaraPreconfirmedBlockInfo {
+                        header: mp_block::header::PreconfirmedHeader::default(),
                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
                     }),
                     inner: pending_inner.clone(),

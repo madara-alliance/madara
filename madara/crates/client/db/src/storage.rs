@@ -1,7 +1,7 @@
-use crate::view::PreconfirmedBlockTransaction;
+use crate::{preconfirmed::PreconfirmedExecutedTransaction, view::Anchor};
 use anyhow::Result;
 use mp_block::{
-    header::PendingHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
+    header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
 };
 use mp_class::{ClassInfo, CompiledSierra};
 use mp_convert::Felt;
@@ -31,13 +31,6 @@ impl EventFilter {
             })
         })
     }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub struct GetEventContinuation {
-    pub block: u64,
-    pub transaction_index: u64,
-    pub event_index: u64,
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
@@ -70,11 +63,11 @@ pub struct DevnetPredeployedContractAccount {
 pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractAccount>);
 
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum ChainTip {
+pub enum StoredChainTip {
     /// Latest block is closed.
     BlockN(u64),
     /// Latest block is a preconfirmed block.
-    Preconfirmed(PendingHeader),
+    Preconfirmed(PreconfirmedHeader),
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -117,8 +110,8 @@ pub trait MadaraStorageRead {
     // Meta
 
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>>;
-    fn get_chain_tip(&self) -> Result<Option<ChainTip>>;
-    fn get_preconfirmed_content(&self) -> impl Iterator<Item = Result<PreconfirmedBlockTransaction>> + '_;
+    fn get_chain_tip(&self) -> Result<Option<StoredChainTip>>;
+    fn get_preconfirmed_content(&self) -> impl Iterator<Item = Result<PreconfirmedExecutedTransaction>> + '_;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
@@ -142,18 +135,19 @@ pub trait MadaraStorageWrite {
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
 
     /// Clears the preconfirmed block, and sets the chain tip in db.
-    fn write_chain_tip(&self, chain_tip: &ChainTip) -> Result<()>;
-    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedBlockTransaction]) -> Result<()>;
+    fn replace_chain_tip(&self, chain_tip: &Anchor) -> Result<()>;
+    fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
     /// Set the latest block confirmed on l1.
     fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()>;
+    /// Write the latest l1_block synced for the messaging worker.
     fn write_l1_messaging_sync_tip(&self, l1_block_n: u64) -> Result<()>;
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()>;
 
-    /// Write the latest l1_block synced for the messaging worker.
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()>;
+    fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()>;
@@ -169,7 +163,6 @@ pub trait MadaraStorageWrite {
     fn flush(&self) -> Result<()>;
 }
 
-/// Trait alias
+/// Trait alias for `MadaraStorageRead + MadaraStorageWrite`.
 pub trait MadaraStorage: MadaraStorageRead + MadaraStorageWrite {}
-impl<T: MadaraStorageRead + MadaraStorageWrite> MadaraStorage for T {
-}
+impl<T: MadaraStorageRead + MadaraStorageWrite> MadaraStorage for T {}

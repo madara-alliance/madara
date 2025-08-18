@@ -1,5 +1,5 @@
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
-use mp_block::{header::PendingHeader, FullBlock, PendingFullBlock, TransactionWithReceipt};
+use mp_block::{header::PreconfirmedHeader, FullBlock, PendingFullBlock, TransactionWithReceipt};
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
@@ -271,8 +271,8 @@ impl ProviderBlockPending {
         }
     }
 
-    pub fn header(&self) -> Result<PendingHeader, FromGatewayError> {
-        Ok(PendingHeader {
+    pub fn header(&self) -> Result<PreconfirmedHeader, FromGatewayError> {
+        Ok(PreconfirmedHeader {
             parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address,
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),

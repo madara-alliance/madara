@@ -12,7 +12,7 @@ use blockifier::{
 use starknet_api::block::{BlockInfo, BlockNumber, BlockTimestamp};
 
 use mc_db::{db_block_id::DbBlockId, MadaraBackend};
-use mp_block::MadaraMaybePendingBlockInfo;
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_chain_config::L1DataAvailabilityMode;
 
 use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdapter};
@@ -117,10 +117,10 @@ impl ExecutionContext {
     #[tracing::instrument(skip(backend, block_info), fields(module = "ExecutionContext"))]
     pub fn new_at_block_start(
         backend: Arc<MadaraBackend>,
-        block_info: &MadaraMaybePendingBlockInfo,
+        block_info: &MadaraMaybePreconfirmedBlockInfo,
     ) -> Result<Self, Error> {
         let (latest_visible_block, header_block_id) = match block_info {
-            MadaraMaybePendingBlockInfo::Pending(_block) => {
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_block) => {
                 let latest_block_n = backend.get_latest_block_n()?;
                 (
                     latest_block_n.map(DbBlockId::Number),
@@ -129,7 +129,7 @@ impl ExecutionContext {
                     latest_block_n.map(|el| el + 1).unwrap_or(0),
                 )
             }
-            MadaraMaybePendingBlockInfo::NotPending(block) => {
+            MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
                 // If the block is genesis, latest visible block is None.
                 (block.header.block_number.checked_sub(1).map(DbBlockId::Number), block.header.block_number)
             }
@@ -146,14 +146,14 @@ impl ExecutionContext {
     #[tracing::instrument(skip(backend, block_info), fields(module = "ExecutionContext"))]
     pub fn new_at_block_end(
         backend: Arc<MadaraBackend>,
-        block_info: &MadaraMaybePendingBlockInfo,
+        block_info: &MadaraMaybePreconfirmedBlockInfo,
     ) -> Result<Self, Error> {
         let (latest_visible_block, header_block_id) = match block_info {
-            MadaraMaybePendingBlockInfo::Pending(_block) => {
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_block) => {
                 let latest_block_n = backend.get_latest_block_n()?;
                 (Some(DbBlockId::Pending), latest_block_n.map(|el| el + 1).unwrap_or(0))
             }
-            MadaraMaybePendingBlockInfo::NotPending(block) => {
+            MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
                 (Some(DbBlockId::Number(block.header.block_number)), block.header.block_number)
             }
         };
@@ -162,19 +162,19 @@ impl ExecutionContext {
 
     fn new(
         backend: Arc<MadaraBackend>,
-        block_info: &MadaraMaybePendingBlockInfo,
+        block_info: &MadaraMaybePreconfirmedBlockInfo,
         latest_visible_block: Option<DbBlockId>,
         block_number: u64,
     ) -> Result<Self, Error> {
         let (protocol_version, block_timestamp, sequencer_address, l1_gas_price, l1_da_mode) = match block_info {
-            MadaraMaybePendingBlockInfo::Pending(block) => (
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => (
                 block.header.protocol_version,
                 block.header.block_timestamp,
                 block.header.sequencer_address,
                 block.header.l1_gas_price.clone(),
                 block.header.l1_da_mode,
             ),
-            MadaraMaybePendingBlockInfo::NotPending(block) => (
+            MadaraMaybePreconfirmedBlockInfo::Closed(block) => (
                 block.header.protocol_version,
                 block.header.block_timestamp,
                 block.header.sequencer_address,

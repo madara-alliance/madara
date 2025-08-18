@@ -1,6 +1,6 @@
 use crate::Starknet;
 use jsonrpsee::core::RpcResult;
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockHeader, PendingBlockWithTxs,
     TxnWithHash,
@@ -38,7 +38,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
         .collect();
 
     match block_info {
-        MadaraMaybePendingBlockInfo::Pending(block) => Ok(MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => Ok(MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
             transactions: transactions_with_hash,
             pending_block_header: PendingBlockHeader {
                 parent_hash: block.header.parent_block_hash,
@@ -50,7 +50,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                 starknet_version: block.header.protocol_version.to_string(),
             },
         })),
-        MadaraMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxs::Block(BlockWithTxs {
                 transactions: transactions_with_hash,

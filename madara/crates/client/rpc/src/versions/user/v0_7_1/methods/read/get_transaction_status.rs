@@ -1,7 +1,7 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::utils::ResultExt;
 use crate::Starknet;
-use mp_block::MadaraMaybePendingBlockInfo;
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_receipt::ExecutionResult;
 use mp_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 use starknet_types_core::felt::Felt;
@@ -37,8 +37,8 @@ pub async fn get_transaction_status(
         };
 
         let finality_status = match block.info {
-            MadaraMaybePendingBlockInfo::Pending(_) => TxnStatus::AcceptedOnL2,
-            MadaraMaybePendingBlockInfo::NotPending(block) => {
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => TxnStatus::AcceptedOnL2,
+            MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
                 if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                     TxnStatus::AcceptedOnL1
                 } else {
@@ -114,7 +114,7 @@ mod tests {
     #[rstest::fixture]
     fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::MadaraMaybePendingBlock {
         mp_block::MadaraMaybePendingBlock {
-            info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
+            info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(mp_block::MadaraBlockInfo {
                 tx_hashes: vec![TX_HASH],
                 ..Default::default()
             }),

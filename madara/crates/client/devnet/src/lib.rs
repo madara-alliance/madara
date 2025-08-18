@@ -1,7 +1,7 @@
 use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_block::{
-    header::{GasPrices, PendingHeader},
+    header::{GasPrices, PreconfirmedHeader},
     PendingFullBlock,
 };
 use mp_chain_config::ChainConfig;
@@ -161,7 +161,8 @@ impl ChainGenesisDescription {
 
         Ok((
             PendingFullBlock {
-                header: PendingHeader {
+                header: PreconfirmedHeader {
+                    block_number: 0,
                     parent_block_hash: Felt::ZERO,
                     sequencer_address: chain_config.sequencer_address.to_felt(),
                     block_timestamp: mp_block::header::BlockTimestamp(

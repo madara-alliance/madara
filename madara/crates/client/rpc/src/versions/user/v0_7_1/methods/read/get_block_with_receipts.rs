@@ -1,6 +1,6 @@
 use crate::errors::StarknetRpcResult;
 use crate::{Starknet, StarknetRpcApiError};
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
     StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
@@ -27,7 +27,7 @@ pub fn get_block_with_receipts(
         .collect();
 
     match block_info {
-        MadaraMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,
                 pending_block_header: PendingBlockHeader {
@@ -41,7 +41,7 @@ pub fn get_block_with_receipts(
                 },
             }))
         }
-        MadaraMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
                 transactions: transactions_with_receipts,
@@ -201,7 +201,7 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,

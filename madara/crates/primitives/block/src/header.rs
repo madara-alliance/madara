@@ -57,7 +57,7 @@ impl fmt::Display for BlockTimestamp {
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct PendingHeader {
+pub struct PreconfirmedHeader {
     /// The block number for this block.
     pub block_number: u64,
     /// The hash of this block’s parent.

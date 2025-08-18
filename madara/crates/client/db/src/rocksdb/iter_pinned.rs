@@ -75,6 +75,7 @@ impl<'a> DBIterator<'a> {
 
     /// This function requires a mapping function, because std Iterator are not lending iterators, meaning, they don't support returning
     /// values with a lifetime associated to itself. You probably want to use this `map` function for deserialization.
+    #[allow(unused)]
     pub fn into_iter_keys<R, F: FnMut(&[u8]) -> R>(self, map: F) -> DBKeyIterator<'a, R, F> {
         DBKeyIterator { iter: self, map }
     }

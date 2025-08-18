@@ -3,9 +3,9 @@ use jsonrpsee::core::async_trait;
 use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
 use mp_block::{
-    header::{BlockTimestamp, GasPrices, PendingHeader},
-    Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
-    MadaraPendingBlockInfo,
+    header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
+    Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePreconfirmedBlockInfo,
+    MadaraPreconfirmedBlockInfo,
 };
 use mp_chain_config::ChainConfig;
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
@@ -203,7 +203,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,
@@ -256,7 +256,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             block_number: 1,
@@ -279,7 +279,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             block_number: 2,
@@ -346,8 +346,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
-                        header: PendingHeader {
+                    info: MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
+                        header: PreconfirmedHeader {
                             parent_block_hash: block_hashes[2],
                             protocol_version: StarknetVersion::V0_13_2,
                             l1_da_mode: L1DataAvailabilityMode::Blob,
@@ -541,7 +541,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             global_state_root: state_roots[0],
@@ -563,7 +563,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             global_state_root: state_roots[1],
@@ -585,7 +585,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             global_state_root: state_roots[2],
@@ -607,8 +607,8 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
-                        header: PendingHeader {
+                    info: MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
+                        header: PreconfirmedHeader {
                             parent_block_hash: block_hashes[2],
                             protocol_version: StarknetVersion::V0_13_2,
                             ..Default::default()

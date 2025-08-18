@@ -15,7 +15,7 @@ use mp_rpc::BlockHashAndNumber;
 /// * `block_hash_and_number` - A tuple containing the latest block hash and number of the current
 ///   network.
 pub fn block_hash_and_number(starknet: &Starknet) -> StarknetRpcResult<BlockHashAndNumber> {
-    let view = starknet.backend.block_view_on_latest().ok_or(StarknetRpcApiError::NoBlocks);
+    let view = starknet.backend.block_view_on_latest_confirmed().ok_or(StarknetRpcApiError::NoBlocks);
     let block_info = view.get_block_info()?.as_closed().ok_or_internal_server_error("Latest block is pending")?;
 
     Ok(BlockHashAndNumber { block_hash: block_info.block_hash, block_number: block_info.header.block_number })
@@ -27,8 +27,8 @@ mod tests {
     use crate::{errors::StarknetRpcApiError, test_utils::rpc_test_setup};
     use mc_db::MadaraBackend;
     use mp_block::{
-        header::PendingHeader, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
-        MadaraMaybePendingBlockInfo, MadaraPendingBlockInfo,
+        header::PreconfirmedHeader, Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock,
+        MadaraMaybePreconfirmedBlockInfo, MadaraPreconfirmedBlockInfo,
     };
     use mp_state_update::StateDiff;
     use rstest::rstest;
@@ -42,7 +42,7 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header { parent_block_hash: Felt::ZERO, block_number: 0, ..Default::default() },
                         block_hash: Felt::ONE,
                         tx_hashes: vec![],
@@ -59,7 +59,7 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::NotPending(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
                         header: Header { parent_block_hash: Felt::ONE, block_number: 1, ..Default::default() },
                         block_hash: Felt::from_hex_unchecked("0x12345"),
                         tx_hashes: vec![],
@@ -80,8 +80,8 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
-                        header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
+                    info: MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
+                        header: PreconfirmedHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
                         tx_hashes: vec![],
                     }),
                     inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
@@ -107,8 +107,8 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePendingBlockInfo::Pending(MadaraPendingBlockInfo {
-                        header: PendingHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
+                    info: MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
+                        header: PreconfirmedHeader { parent_block_hash: Felt::ZERO, ..Default::default() },
                         tx_hashes: vec![],
                     }),
                     inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },

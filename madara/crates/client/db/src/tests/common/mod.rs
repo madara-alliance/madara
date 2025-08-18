@@ -1,5 +1,5 @@
-use mp_block::header::PendingHeader;
-use mp_block::{Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraPendingBlockInfo};
+use mp_block::header::PreconfirmedHeader;
+use mp_block::{Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraPreconfirmedBlockInfo};
 use mp_receipt::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, InvokeTransactionReceipt,
     L1HandlerTransactionReceipt,
@@ -101,7 +101,7 @@ pub fn pending_block_one() -> MadaraMaybePendingBlock {
     let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(20), Felt::from(21), Felt::from(22), Felt::from(23), Felt::from(24)];
-    let block_info = MadaraPendingBlockInfo::new(PendingHeader::default(), tx_hashes);
+    let block_info = MadaraPreconfirmedBlockInfo::new(PreconfirmedHeader::default(), tx_hashes);
 
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }
@@ -130,8 +130,8 @@ pub fn pending_block_two() -> MadaraMaybePendingBlock {
     let block_inner = MadaraBlockInner::new(transactions, transaction_receipts);
 
     let tx_hashes = vec![Felt::from(20), Felt::from(21), Felt::from(22), Felt::from(23), Felt::from(24)];
-    let header = PendingHeader { parent_block_hash: Felt::from(1), ..Default::default() };
-    let block_info = MadaraPendingBlockInfo::new(header, tx_hashes);
+    let header = PreconfirmedHeader { parent_block_hash: Felt::from(1), ..Default::default() };
+    let block_info = MadaraPreconfirmedBlockInfo::new(header, tx_hashes);
 
     MadaraMaybePendingBlock { info: block_info.into(), inner: block_inner }
 }

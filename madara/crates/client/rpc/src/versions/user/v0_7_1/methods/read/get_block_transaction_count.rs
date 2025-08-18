@@ -1,5 +1,5 @@
 use crate::{errors::StarknetRpcResult, Starknet, StarknetRpcApiError};
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 
 /// Get the Number of Transactions in a Given Block
 ///

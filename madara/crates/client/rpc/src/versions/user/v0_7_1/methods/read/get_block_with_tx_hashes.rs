@@ -1,6 +1,6 @@
 use crate::errors::StarknetRpcResult;
 use crate::{Starknet, StarknetRpcApiError};
-use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
+use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
     PendingBlockWithTxHashes,
@@ -29,7 +29,7 @@ pub fn get_block_with_tx_hashes(
     let is_on_l1 = view.is_on_l1();
 
     match block_info {
-        MadaraMaybePendingBlockInfo::Pending(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
             Ok(MaybePendingBlockWithTxHashes::Pending(PendingBlockWithTxHashes {
                 transactions: block_txs_hashes,
                 pending_block_header: PendingBlockHeader {
@@ -43,7 +43,7 @@ pub fn get_block_with_tx_hashes(
                 },
             }))
         }
-        MadaraMaybePendingBlockInfo::NotPending(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
                 transactions: block_txs_hashes,

@@ -1,4 +1,4 @@
-use crate::{header::PendingHeader, Header, TransactionWithReceipt};
+use crate::{header::PreconfirmedHeader, Header, TransactionWithReceipt};
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
 use mp_receipt::EventWithTransactionHash;
@@ -103,11 +103,11 @@ impl BlockCommitments {
     }
 }
 
-impl PendingHeader {
-    pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64) -> Header {
+impl PreconfirmedHeader {
+    pub fn into_confirmed_header(self, commitments: BlockCommitments, global_state_root: Felt) -> Header {
         Header {
             parent_block_hash: self.parent_block_hash,
-            block_number,
+            block_number: self.block_number,
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp,
             protocol_version: self.protocol_version,
@@ -204,8 +204,9 @@ mod tests {
         assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
     }
 
-    fn dummy_header() -> PendingHeader {
-        PendingHeader {
+    fn dummy_header() -> PreconfirmedHeader {
+        PreconfirmedHeader {
+            block_number: 0,
             parent_block_hash: Felt::ZERO,
             sequencer_address: Felt::ZERO,
             block_timestamp: BlockTimestamp(0),
@@ -226,8 +227,8 @@ mod tests {
         felt!("0x1d34b8dac9b07ed61607e909ec2de11fc7d61d3899ebc59ca44f188ba4b7391"),
     )]
     fn test_block_hash(
-        #[case] header: PendingHeader,
-        #[case] block_number: u64,
+        #[case] header: PreconfirmedHeader,
+        #[case] _block_number: u64,
         #[case] global_state_root: Felt,
         #[case] chain_id: ChainId,
         #[case] pre_v0_13_2_override: bool,
@@ -237,7 +238,7 @@ mod tests {
             CommitmentComputationContext { protocol_version: header.protocol_version, chain_id: chain_id.to_felt() };
         let commitments = BlockCommitments::compute(&ctx, &[], &StateDiff::default(), &[]);
 
-        let closed_header = header.to_closed_header(commitments, global_state_root, block_number);
+        let closed_header = header.into_confirmed_header(commitments, global_state_root);
         let block_hash = closed_header.compute_hash(chain_id.to_felt(), pre_v0_13_2_override);
         assert_eq!(expected, block_hash);
     }

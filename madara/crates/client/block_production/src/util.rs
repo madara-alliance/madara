@@ -1,7 +1,7 @@
 use blockifier::transaction::transaction_execution::Transaction;
 use mc_db::MadaraBackend;
 use mc_mempool::L1DataProvider;
-use mp_block::header::{BlockTimestamp, GasPrices, PendingHeader};
+use mp_block::header::{BlockTimestamp, GasPrices, PreconfirmedHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
@@ -136,8 +136,8 @@ pub(crate) struct BlockExecutionContext {
 }
 
 impl BlockExecutionContext {
-    pub fn into_header(self, parent_block_hash: Felt) -> PendingHeader {
-        PendingHeader {
+    pub fn into_header(self, parent_block_hash: Felt) -> PreconfirmedHeader {
+        PreconfirmedHeader {
             parent_block_hash,
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp.into(),

@@ -27,7 +27,7 @@ pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
 /// TODO: Remove that upstream in bonsai-trie, this is dumb.
 #[derive(thiserror::Error, Debug)]
 #[error(transparent)]
-struct TrieError(#[from] rocksdb::Error);
+pub struct TrieError(#[from] rocksdb::Error);
 impl DBError for TrieError {}
 
 /// Wrapper because bonsai's error type does not implement [std::error::Error].
@@ -44,11 +44,11 @@ impl RocksDBStorage {
         let mut write_opt = WriteOptions::default();
         write_opt.disable_wal(true);
         BonsaiStorage::new(
-            BonsaiDB { backend: self.0.clone(), column_mapping, snapshots: self.1.clone() },
+            BonsaiDB { backend: self.inner.clone(), column_mapping, snapshots: self.snapshots.clone() },
             BonsaiStorageConfig {
-                max_saved_trie_logs: self.0.config.max_saved_trie_logs,
-                max_saved_snapshots: self.0.config.max_kept_snapshots,
-                snapshot_interval: self.0.config.snapshot_interval,
+                max_saved_trie_logs: self.inner.config.max_saved_trie_logs,
+                max_saved_snapshots: self.inner.config.max_kept_snapshots,
+                snapshot_interval: self.inner.config.snapshot_interval,
             },
             // Every global tree has keys of 251 bits.
             251,

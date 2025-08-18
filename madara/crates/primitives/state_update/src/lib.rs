@@ -9,7 +9,7 @@ mod into_starknet_types;
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct TransactionStateUpdate {
     pub nonces: HashMap<Felt, Felt>,
-    pub class_hashes: HashMap<Felt, Felt>,
+    pub contract_class_hashes: HashMap<Felt, Felt>,
     pub storage: HashMap<(Felt, Felt), Felt>,
 }
 

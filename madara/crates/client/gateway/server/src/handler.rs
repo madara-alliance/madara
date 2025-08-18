@@ -16,7 +16,7 @@ use mc_rpc::{
     Starknet,
 };
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
-use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePendingBlockInfo, MadaraPendingBlock};
+use mp_block::{BlockId, BlockTag, MadaraBlock, MadaraMaybePreconfirmedBlockInfo, MadaraPendingBlock};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::user_transaction::{
     AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
@@ -56,10 +56,10 @@ pub async fn handle_get_block(
             .ok_or(StarknetError::block_not_found())?;
 
         match block_info {
-            MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => Err(GatewayError::InternalServerError(format!(
                 "Retrieved pending block info from db for non-pending block {block_id:?}"
             ))),
-            MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+            MadaraMaybePreconfirmedBlockInfo::Closed(block_info) => {
                 let body = json!({
                     "block_hash": block_info.block_hash,
                     "block_number": block_info.header.block_number
@@ -111,10 +111,10 @@ pub async fn handle_get_signature(
         .ok_or(StarknetError::block_not_found())?;
 
     match block_info {
-        MadaraMaybePendingBlockInfo::Pending(_) => Err(GatewayError::InternalServerError(format!(
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => Err(GatewayError::InternalServerError(format!(
             "Retrieved pending block info from db for non-pending block {block_id:?}"
         ))),
-        MadaraMaybePendingBlockInfo::NotPending(block_info) => {
+        MadaraMaybePreconfirmedBlockInfo::Closed(block_info) => {
             let private_key = &backend.chain_config().private_key;
             let signature = private_key
                 .sign(&block_info.block_hash)

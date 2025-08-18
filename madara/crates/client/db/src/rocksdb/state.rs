@@ -56,11 +56,12 @@ const CONTRACT_NONCES_PREFIX_LEN: usize = 32;
 const CONTRACT_CLASS_HASH_PREFIX_LEN: usize = 32;
 
 pub(crate) const CONTRACT_STORAGE_COLUMN: Column =
-    Column::new("contract_storage").with_prefix_extractor_len(CONTRACT_STORAGE_PREFIX_LEN);
+    Column::new("contract_storage").with_prefix_extractor_len(CONTRACT_STORAGE_PREFIX_LEN).use_contracts_mem_budget();
 pub(crate) const CONTRACT_NONCE_COLUMN: Column =
-    Column::new("contract_nonces").with_prefix_extractor_len(CONTRACT_NONCES_PREFIX_LEN);
-pub(crate) const CONTRACT_CLASS_HASH_COLUMN: Column =
-    Column::new("contract_class_hashes").with_prefix_extractor_len(CONTRACT_CLASS_HASH_PREFIX_LEN);
+    Column::new("contract_nonces").with_prefix_extractor_len(CONTRACT_NONCES_PREFIX_LEN).use_contracts_mem_budget();
+pub(crate) const CONTRACT_CLASS_HASH_COLUMN: Column = Column::new("contract_class_hashes")
+    .with_prefix_extractor_len(CONTRACT_CLASS_HASH_PREFIX_LEN)
+    .use_contracts_mem_budget();
 
 // prefix [<contract_address 32 bytes> | <storage_key 32 bytes>] | <block_n 4 bytes>
 const STORAGE_KEY_LEN: usize = 32 * 2 + size_of::<u32>();
@@ -108,12 +109,7 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn get_storage_at(
-        &self,
-        block_n: u64,
-        contract_address: &Felt,
-        key: &Felt,
-    ) -> Result<Option<Felt>> {
+    pub(super) fn get_storage_at(&self, block_n: u64, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
         let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
         let prefix = make_storage_column_key(contract_address, key, block_n);
         self.db_history_kv_resolve(&prefix, CONTRACT_STORAGE_COLUMN)
@@ -127,11 +123,7 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn get_contract_class_hash_at(
-        &self,
-        block_n: u64,
-        contract_address: &Felt,
-    ) -> Result<Option<Felt>> {
+    pub(super) fn get_contract_class_hash_at(&self, block_n: u64, contract_address: &Felt) -> Result<Option<Felt>> {
         let block_n = u32::try_from(block_n).unwrap_or(u32::MAX); // We can't store blocks past u32::MAX.
         let prefix = make_contract_column_key(contract_address, block_n);
         self.db_history_kv_resolve(&prefix, CONTRACT_CLASS_HASH_COLUMN)
