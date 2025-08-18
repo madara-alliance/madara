@@ -3,6 +3,7 @@ pub mod constants;
 pub mod instrument;
 pub mod logging;
 pub mod metrics;
+pub mod signal_handler;
 
 /// TODO: This is super Awkward to have this code here
 /// but will try to remove this and move it to the config from the root path

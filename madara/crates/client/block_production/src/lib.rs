@@ -9,7 +9,7 @@ use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
-use mc_mempool::{L1DataProvider, Mempool};
+use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::header::PendingHeader;
 use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
@@ -209,7 +209,6 @@ pub(crate) enum TaskState {
 /// documentation.
 pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     mempool: Arc<Mempool>,
     current_state: Option<TaskState>,
     metrics: Arc<BlockProductionMetrics>,
@@ -225,14 +224,12 @@ impl BlockProductionTask {
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
         l1_client: Arc<dyn SettlementClient>,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
         Self {
             backend: backend.clone(),
-            l1_data_provider,
             mempool,
             current_state: None,
             metrics,
@@ -471,7 +468,6 @@ impl BlockProductionTask {
 
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
-            Arc::clone(&self.l1_data_provider),
             self.executor_commands_recv.take().context("Task already started")?,
         )
         .context("Starting executor thread")?;
@@ -542,10 +538,9 @@ pub(crate) mod tests {
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
     };
-    use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::header::GasPrices;
     use mp_block::{BlockId, BlockTag};
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
@@ -592,7 +587,6 @@ pub(crate) mod tests {
     pub struct DevnetSetup {
         pub backend: Arc<MadaraBackend>,
         pub metrics: Arc<BlockProductionMetrics>,
-        pub l1_data_provider: Arc<MockL1DataProvider>,
         pub mempool: Arc<Mempool>,
         pub tx_validator: Arc<TransactionValidator>,
         pub contracts: DevnetKeys,
@@ -605,7 +599,6 @@ pub(crate) mod tests {
                 self.backend.clone(),
                 self.mempool.clone(),
                 self.metrics.clone(),
-                self.l1_data_provider.clone(),
                 Arc::new(self.l1_client.clone()),
             )
         }
@@ -638,16 +631,8 @@ pub(crate) mod tests {
         };
 
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
         genesis.build_and_store(&backend).await.unwrap();
-
-        let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-            eth_l1_gas_price: 128,
-            strk_l1_gas_price: 128,
-            eth_l1_data_gas_price: 128,
-            strk_l1_data_gas_price: 128,
-        });
-        let l1_data_provider = Arc::new(l1_data_provider);
 
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let tx_validator = Arc::new(TransactionValidator::new(
@@ -662,7 +647,6 @@ pub(crate) mod tests {
             metrics: Arc::new(BlockProductionMetrics::register()),
             tx_validator,
             contracts,
-            l1_data_provider,
             l1_client: L1ClientMock::new(),
         }
     }
