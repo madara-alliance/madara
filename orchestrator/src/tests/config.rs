@@ -246,7 +246,7 @@ impl TestConfigBuilder {
         let (_starknet_rpc_url, starknet_client, starknet_server) =
             implement_client::init_starknet_client(starknet_rpc_url_type, starknet_client_type).await;
 
-        let prover_client = implement_client::init_prover_client(prover_client_type, &params.clone()).await;
+        let prover_client = implement_client::init_prover_client(prover_client_type, &params.clone());
 
         // init alerts
         let alerts = implement_client::init_alerts(alerts_type, &params.alert_params, provider_config.clone()).await;
@@ -395,10 +395,10 @@ pub mod implement_client {
         }
     }
 
-    pub(crate) async fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
+    pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params).await,
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
