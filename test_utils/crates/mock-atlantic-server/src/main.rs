@@ -29,6 +29,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         failure_rate,
         auto_complete_jobs: true,
         completion_delay_ms: 3000,
+        max_jobs_in_memory: 100,
     };
 
     println!("🚀 Mock Atlantic Server");

@@ -20,9 +20,6 @@ use crate::types::{
     MockServerConfig,
 };
 
-/// Maximum number of jobs to keep in memory to prevent unbounded growth
-const MAX_JOBS_IN_MEMORY: usize = 50;
-
 #[derive(Clone)]
 pub struct MockAtlanticState {
     pub jobs: Arc<RwLock<HashMap<String, MockJobData>>>,
@@ -308,7 +305,7 @@ pub async fn add_job_handler(
         let mut jobs = state.jobs.write().await;
 
         // If we're at capacity, remove the oldest completed job
-        if jobs.len() >= MAX_JOBS_IN_MEMORY {
+        if jobs.len() >= state.config.max_jobs_in_memory {
             // Find oldest completed or failed job
             let oldest_done = jobs
                 .iter()
