@@ -813,18 +813,23 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "_id": batch.id,
         };
-        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
 
-        let updates = update.to_document()?;
+        let updates = batch.to_document()?;
 
         // remove null values from the updates
         let mut non_null_updates = Document::new();
         updates.iter().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+        update.to_document()?.iter_mut().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
             }
@@ -836,7 +841,7 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Add additional fields that are always updated
-        non_null_updates.insert("size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
+        non_null_updates.insert("num_blocks", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
@@ -962,6 +967,40 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(results)
+    }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        // Calculate the cutoff time (current time - timeout)
+        let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
+
+        // Query for jobs of specific type in LockedForProcessing status with process_started_at older than cutoff
+        let filter = doc! {
+            "job_type": mongodb::bson::to_bson(job_type)?,
+            "status": mongodb::bson::to_bson(&JobStatus::LockedForProcessing)?,
+            "metadata.common.process_started_at": {
+                "$lt": cutoff_time.timestamp()
+            }
+        };
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            timeout_seconds = timeout_seconds,
+            cutoff_time = %cutoff_time,
+            orphaned_count = jobs.len(),
+            category = "db_call",
+            "Found orphaned jobs in LockedForProcessing status"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_orphaned_jobs")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
     }
 }
 

@@ -140,6 +140,7 @@ async fn test_snos_worker(
         when.path("/").body_includes("starknet_blockNumber");
         then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
     });
+    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
 
     // Mock latest SNOS job
     let latest_snos_job = latest_snos_completed.map(|block_num| {

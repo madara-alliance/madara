@@ -14,6 +14,7 @@ use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
@@ -37,9 +38,65 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+/// Starknet versions supported by the service
+macro_rules! versions {
+    ($(($variant:ident, $version:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub enum StarknetVersion {
+            $($variant),*
+        }
+
+        impl StarknetVersion {
+            pub fn to_string(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $version),*
+                }
+            }
+
+            pub fn supported() -> &'static [StarknetVersion] {
+                &[$(Self::$variant),*]
+            }
+
+            pub fn is_supported(&self) -> bool {
+                Self::supported().contains(self)
+            }
+        }
+
+        impl FromStr for StarknetVersion {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($version => Ok(Self::$variant),)*
+                    _ => Err(format!("Unknown version: {}", s)),
+                }
+            }
+        }
+
+        /// Making 0.13.3 as the default version for now
+        impl Default for StarknetVersion {
+            fn default() -> Self {
+                Self::V0_13_3
+            }
+        }
+
+        impl std::fmt::Display for StarknetVersion {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.to_string())
+            }
+        }
+    }
+}
+
+// Add more versions here whenever necessary. Follow the following rules:
+// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
+// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
+
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
+    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
@@ -50,11 +107,11 @@ pub struct ConfigParam {
 }
 
 /// The app config. It can be accessed from anywhere inside the service
-/// by calling `config` function. 33
+/// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
     /// The orchestrator config
-    params: ConfigParam,
+    pub params: ConfigParam,
     /// The Madara client to get data from the node
     madara_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -127,6 +184,7 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),

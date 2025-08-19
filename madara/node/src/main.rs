@@ -18,11 +18,10 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_db::DatabaseService;
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolConfig, MempoolLimits};
+use mc_mempool::{Mempool, MempoolConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
 use mc_telemetry::{SysInfo, TelemetryService};
-use mp_oracle::pragma::PragmaOracleBuilder;
 use mp_utils::service::{MadaraServiceId, ServiceMonitor};
 use service::{BlockProductionService, GatewayService, L1SyncService, RpcService, SyncService, WarpUpdateConfig};
 use starknet_api::core::ChainId;
@@ -101,6 +100,14 @@ async fn main() -> anyhow::Result<()> {
         );
     }
 
+    // If the devnet is running, we set the gas prices to a default value.
+    if run_cmd.is_devnet() {
+        run_cmd.l1_sync_params.l1_sync_disabled = true;
+        run_cmd.l1_sync_params.l1_gas_price.get_or_insert(128);
+        run_cmd.l1_sync_params.blob_gas_price.get_or_insert(128);
+        run_cmd.l1_sync_params.strk_per_eth.get_or_insert(1.0);
+    }
+
     // Check if the devnet is running with the correct chain id. This is purely
     // to avoid accidental setups which would allow for replay attacks. This is
     // possible if the devnet has the same chain id as another popular chain,
@@ -143,52 +150,10 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Initializing db service")?;
 
-    // L1 Sync
-
-    let mut l1_gas_setter = GasPriceProvider::new();
-
-    if let Some(fix_gas) = run_cmd.l1_sync_params.gas_price {
-        l1_gas_setter.update_eth_l1_gas_price(fix_gas as u128);
-        l1_gas_setter.set_gas_price_sync_enabled(false);
-    }
-    if let Some(fix_blob_gas) = run_cmd.l1_sync_params.blob_gas_price {
-        l1_gas_setter.update_eth_l1_data_gas_price(fix_blob_gas as u128);
-        l1_gas_setter.set_data_gas_price_sync_enabled(false);
-    }
-    if let Some(strk_fix_gas) = run_cmd.l1_sync_params.strk_gas_price {
-        l1_gas_setter.update_strk_l1_gas_price(strk_fix_gas as u128);
-        l1_gas_setter.set_strk_gas_price_sync_enabled(false);
-    }
-    if let Some(strk_fix_blob_gas) = run_cmd.l1_sync_params.strk_blob_gas_price {
-        l1_gas_setter.update_strk_l1_data_gas_price(strk_fix_blob_gas as u128);
-        l1_gas_setter.set_strk_data_gas_price_sync_enabled(false);
-    }
-    if let Some(ref oracle_url) = run_cmd.l1_sync_params.oracle_url {
-        if let Some(ref oracle_api_key) = run_cmd.l1_sync_params.oracle_api_key {
-            let oracle = PragmaOracleBuilder::new()
-                .with_api_url(oracle_url.clone())
-                .with_api_key(oracle_api_key.clone())
-                .build();
-            l1_gas_setter.set_oracle_provider(oracle);
-        }
-    }
-
-    if !run_cmd.full
-        && !run_cmd.devnet
-        && !run_cmd.l1_sync_params.l1_sync_disabled
-        && l1_gas_setter.is_oracle_needed()
-        && l1_gas_setter.oracle_provider.is_none()
-    {
-        bail!("STRK gas is not fixed and oracle is not provided");
-    }
-
-    let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
-
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mut mempool = Mempool::new(
+    let mempool = Mempool::new(
         Arc::clone(service_db.backend()),
-        MempoolConfig::new(MempoolLimits::new(&chain_config))
-            .with_no_saving(run_cmd.validator_params.no_mempool_saving),
+        MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving },
     );
     mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
@@ -198,10 +163,8 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.l1_sync_params,
         service_db.backend().clone(),
         L1SyncConfig {
-            l1_gas_provider: l1_gas_setter,
             l1_core_address: chain_config.eth_core_contract_address.clone(),
             authority: run_cmd.is_sequencer(),
-            devnet: run_cmd.devnet,
             l1_block_metrics: L1BlockMetrics::register().context("Initializing L1 Block Metrics")?.into(),
             l1_head_snd,
         },
@@ -273,7 +236,6 @@ async fn main() -> anyhow::Result<()> {
         &run_cmd.block_production_params,
         &service_db,
         Arc::clone(&mempool),
-        Arc::clone(&l1_data_provider),
         service_l1_sync.client(),
     )?;
 

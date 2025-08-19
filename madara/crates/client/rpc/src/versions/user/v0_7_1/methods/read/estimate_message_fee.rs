@@ -1,5 +1,6 @@
 use std::sync::Arc;
 
+use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
 use mp_rpc::{FeeEstimate, MsgFromL1};
@@ -43,12 +44,13 @@ pub async fn estimate_message_fee(
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
+    let tip = transaction.tip().unwrap_or_default();
     let execution_result = exec_context
         .re_execute_transactions([], [transaction])?
         .pop()
         .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result);
+    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result, tip);
 
     Ok(fee_estimate)
 }

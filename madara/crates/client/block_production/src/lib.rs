@@ -9,14 +9,14 @@ use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
-use mc_mempool::{L1DataProvider, Mempool};
+use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::header::PendingHeader;
 use mp_block::{BlockId, BlockTag, PendingFullBlock, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
-use mp_state_update::DeclaredClassItem;
+use mp_state_update::{DeclaredClassItem, NonceUpdate};
 use mp_transactions::validated::ValidatedMempoolTx;
 use mp_transactions::TransactionWithHash;
 use mp_utils::service::ServiceContext;
@@ -209,7 +209,6 @@ pub(crate) enum TaskState {
 /// documentation.
 pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     mempool: Arc<Mempool>,
     current_state: Option<TaskState>,
     metrics: Arc<BlockProductionMetrics>,
@@ -225,14 +224,12 @@ impl BlockProductionTask {
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
         l1_client: Arc<dyn SettlementClient>,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
         Self {
             backend: backend.clone(),
-            l1_data_provider,
             mempool,
             current_state: None,
             metrics,
@@ -358,14 +355,13 @@ impl BlockProductionTask {
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 tracing::debug!(
-                    "Received ExecutorMessage::BatchExecuted executed_txs={}",
-                    batch_execution_result.executed_txs.len()
+                    "Received ExecutorMessage::BatchExecuted executed_txs={:?}",
+                    batch_execution_result.executed_txs
                 );
                 let current_state = self.current_state.as_mut().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
-
                 state.append_batch(batch_execution_result);
             }
             ExecutorMessage::EndBlock => {
@@ -374,6 +370,17 @@ impl BlockProductionTask {
                 let TaskState::Executing(state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
+
+                self.mempool
+                    .on_tx_batch_executed(
+                        state.block.state.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                            contract_address: contract_address.to_felt(),
+                            nonce: nonce.to_felt(),
+                        }),
+                        state.tx_executed_for_tick.iter().cloned(),
+                    )
+                    .await
+                    .context("Updating mempool state")?;
 
                 let (block, classes) = state.block.into_full_block_with_classes(&self.backend, state.block_n)?;
                 let block_hash = self
@@ -391,7 +398,7 @@ impl BlockProductionTask {
         Ok(())
     }
 
-    fn store_pending_block(&mut self) -> anyhow::Result<()> {
+    async fn store_pending_block(&mut self) -> anyhow::Result<()> {
         if let TaskState::Executing(state) = self.current_state.as_mut().context("No current state")? {
             for l1_nonce in &state.block.consumed_core_contract_nonces {
                 // This ensures we remove the nonces for rejected L1 to L2 message transactions. This avoids us from reprocessing them on restart.
@@ -406,6 +413,17 @@ impl BlockProductionTask {
                 .into_full_block_with_classes(&self.backend, state.block_n)
                 .context("Converting to full pending block")?;
             self.backend.store_pending_block_with_classes(block, &classes)?;
+
+            self.mempool
+                .on_tx_batch_executed(
+                    state.block.state.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                        contract_address: contract_address.to_felt(),
+                        nonce: nonce.to_felt(),
+                    }),
+                    state.tx_executed_for_tick.iter().cloned(),
+                )
+                .await
+                .context("Updating mempool state")?;
 
             let stats = mem::take(&mut state.stats_for_tick);
             if stats.n_added_to_block > 0 {
@@ -450,7 +468,6 @@ impl BlockProductionTask {
 
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
-            Arc::clone(&self.l1_data_provider),
             self.executor_commands_recv.take().context("Task already started")?,
         )
         .context("Starting executor thread")?;
@@ -498,7 +515,7 @@ impl BlockProductionTask {
 
                 // Update the pending block in db periodically.
                 Some(_) = OptionFuture::from(interval_pending_block_update.as_mut().map(|int| int.tick())) => {
-                    self.store_pending_block().context("Storing pending block")?;
+                    self.store_pending_block().await.context("Storing pending block")?;
                 }
 
                 // Bubble up errors from the executor thread, or graceful shutdown.
@@ -521,10 +538,9 @@ pub(crate) mod tests {
     use mc_devnet::{
         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
     };
-    use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mc_settlement_client::L1ClientMock;
     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-    use mp_block::header::GasPrices;
     use mp_block::{BlockId, BlockTag};
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
@@ -571,7 +587,6 @@ pub(crate) mod tests {
     pub struct DevnetSetup {
         pub backend: Arc<MadaraBackend>,
         pub metrics: Arc<BlockProductionMetrics>,
-        pub l1_data_provider: Arc<MockL1DataProvider>,
         pub mempool: Arc<Mempool>,
         pub tx_validator: Arc<TransactionValidator>,
         pub contracts: DevnetKeys,
@@ -584,7 +599,6 @@ pub(crate) mod tests {
                 self.backend.clone(),
                 self.mempool.clone(),
                 self.metrics.clone(),
-                self.l1_data_provider.clone(),
                 Arc::new(self.l1_client.clone()),
             )
         }
@@ -617,18 +631,10 @@ pub(crate) mod tests {
         };
 
         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+        backend.set_l1_gas_quote_for_testing();
         genesis.build_and_store(&backend).await.unwrap();
 
-        let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-            eth_l1_gas_price: 128,
-            strk_l1_gas_price: 128,
-            eth_l1_data_gas_price: 128,
-            strk_l1_data_gas_price: 128,
-        });
-        let l1_data_provider = Arc::new(l1_data_provider);
-
-        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::for_testing()));
+        let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let tx_validator = Arc::new(TransactionValidator::new(
             Arc::clone(&mempool) as _,
             Arc::clone(&backend),
@@ -641,7 +647,6 @@ pub(crate) mod tests {
             metrics: Arc::new(BlockProductionMetrics::register()),
             tx_validator,
             contracts,
-            l1_data_provider,
             l1_client: L1ClientMock::new(),
         }
     }
