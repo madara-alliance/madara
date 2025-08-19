@@ -183,11 +183,26 @@ pub trait NodeRpcMethods: Send + Sync {
 
 }
 
-/// Get a free port
+
+lazy_static::lazy_static! {
+    static ref ALLOCATED_PORTS: Mutex<HashSet<u16>> = Mutex::new(HashSet::new());
+}
+
+/// Get a free port and reserve it to prevent double allocation
 pub fn get_free_port() -> Result<u16, io::Error> {
-    let listener = TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))?;
-    let addr = listener.local_addr()?;
-    Ok(addr.port())
+    let mut allocated = ALLOCATED_PORTS.lock().unwrap();
+
+    loop {
+        let listener = TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))?;
+        let port = listener.local_addr()?.port();
+
+        // Check if we've already allocated this port
+        if !allocated.contains(&port) {
+            allocated.insert(port);
+            return Ok(port);
+        }
+        // If port was already allocated, try again
+    }
 }
 
 /// Get the binary path
