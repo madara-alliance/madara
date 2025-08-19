@@ -18,6 +18,7 @@ use std::sync::Arc;
 use url::Url;
 
 use crate::core::error::OrchestratorCoreResult;
+use crate::types::constant::generate_version_string;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
 use crate::{
@@ -326,5 +327,10 @@ impl Config {
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
         &self.params.prover_layout_name
+    }
+
+    /// Get the orchestrator version string
+    pub fn orchestrator_version(&self) -> String {
+        generate_version_string()
     }
 }
