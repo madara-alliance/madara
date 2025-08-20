@@ -39,7 +39,7 @@ pub struct LayeredStateAdapter<D: MadaraStorageRead = RocksDBStorage> {
 impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
     pub fn new(backend: Arc<MadaraBackend<D>>) -> Result<Self, crate::Error> {
         let view = backend.view_on_latest_confirmed();
-        let block_number = view.anchor().block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+        let block_number = view.latest_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
         Ok(Self {
             inner: BlockifierStateAdapter::new(view, block_number),
             cached_states_by_block_n: Default::default(),
@@ -75,7 +75,7 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         l1_to_l2_messages: HashSet<u64>,
     ) -> Result<(), crate::Error> {
         let new_view = self.inner.view.backend().view_on_latest_confirmed();
-        let latest_db_block = new_view.anchor().block_n();
+        let latest_db_block = new_view.latest_block_n();
 
         // Remove outdated cache entries
         self.remove_cache_before_including(latest_db_block);

@@ -12,7 +12,7 @@ use blockifier::{
         objects::HasRelatedFeeType,
     },
 };
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraBlockView};
 use mc_exec::MadaraBlockViewExecutionExt;
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
@@ -242,8 +242,9 @@ impl TransactionValidator {
 
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
-            let mut validator =
-                self.backend.block_view_on_preconfirmed().new_execution_context()?.into_transaction_validator();
+            let mut validator = MadaraBlockView::from(self.backend.block_view_on_preconfirmed_or_fake())
+                .new_execution_context()?
+                .into_transaction_validator();
             validator.perform_validations(account_tx.clone())?
         }
 

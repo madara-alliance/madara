@@ -50,7 +50,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                 starknet_version: block.header.protocol_version.to_string(),
             },
         })),
-        MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxs::Block(BlockWithTxs {
                 transactions: transactions_with_hash,

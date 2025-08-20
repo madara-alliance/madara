@@ -41,7 +41,7 @@ pub fn get_block_with_receipts(
                 },
             }))
         }
-        MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
                 transactions: transactions_with_receipts,
@@ -201,7 +201,7 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,

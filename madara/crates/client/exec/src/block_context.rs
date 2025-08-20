@@ -6,7 +6,7 @@ use blockifier::{
     context::BlockContext,
     state::cached_state::CachedState,
 };
-use mc_db::{Anchor, MadaraBackend, MadaraBlockView, MadaraStorageRead};
+use mc_db::{MadaraBackend, MadaraBlockView, MadaraStateView, MadaraStorageRead};
 use mp_chain_config::L1DataAvailabilityMode;
 use starknet_api::{
     block::{BlockInfo, BlockNumber, BlockTimestamp},
@@ -37,8 +37,8 @@ pub struct ExecutionContext<D: MadaraStorageRead> {
 }
 
 impl<D: MadaraStorageRead> ExecutionContext<D> {
-    pub fn anchor(&self) -> &Anchor {
-        self.state.state.view.anchor()
+    pub fn view(&self) -> &MadaraStateView<D> {
+        &self.state.state.view
     }
 
     pub fn into_transaction_validator(self) -> StatefulValidator<BlockifierStateAdapter<D>> {
@@ -62,7 +62,7 @@ impl<D: MadaraStorageRead> MadaraBlockViewExecutionExt<D> for MadaraBlockView<D>
         let block_context = block_context(self)?;
         Ok(ExecutionContext {
             state: CachedState::new(BlockifierStateAdapter::new(
-                self.clone().into_view(),
+                self.clone().into(),
                 block_context.block_info().block_number.0,
             )),
             block_context,
@@ -72,7 +72,7 @@ impl<D: MadaraStorageRead> MadaraBlockViewExecutionExt<D> for MadaraBlockView<D>
         let block_context = block_context(self)?;
         Ok(ExecutionContext {
             state: CachedState::new(BlockifierStateAdapter::new(
-                self.clone().view_on_parent(), // Only make the parent block state visible..
+                self.clone().state_view_on_parent(), // Only make the parent block state visible..
                 block_context.block_info().block_number.0, // ..but use the current block context
             )),
             block_context,

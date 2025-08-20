@@ -59,7 +59,7 @@ pub async fn handle_get_block(
             MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => Err(GatewayError::InternalServerError(format!(
                 "Retrieved pending block info from db for non-pending block {block_id:?}"
             ))),
-            MadaraMaybePreconfirmedBlockInfo::Closed(block_info) => {
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(block_info) => {
                 let body = json!({
                     "block_hash": block_info.block_hash,
                     "block_number": block_info.header.block_number
@@ -114,7 +114,7 @@ pub async fn handle_get_signature(
         MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => Err(GatewayError::InternalServerError(format!(
             "Retrieved pending block info from db for non-pending block {block_id:?}"
         ))),
-        MadaraMaybePreconfirmedBlockInfo::Closed(block_info) => {
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block_info) => {
             let private_key = &backend.chain_config().private_key;
             let signature = private_key
                 .sign(&block_info.block_hash)

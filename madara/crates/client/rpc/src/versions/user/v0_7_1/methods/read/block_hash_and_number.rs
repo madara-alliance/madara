@@ -42,7 +42,7 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header { parent_block_hash: Felt::ZERO, block_number: 0, ..Default::default() },
                         block_hash: Felt::ONE,
                         tx_hashes: vec![],
@@ -59,7 +59,7 @@ mod tests {
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header { parent_block_hash: Felt::ONE, block_number: 1, ..Default::default() },
                         block_hash: Felt::from_hex_unchecked("0x12345"),
                         tx_hashes: vec![],

@@ -1363,7 +1363,7 @@ pub(crate) mod tests {
             .backend
             .store_block(
                 mp_block::MadaraMaybePendingBlock {
-                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(mp_block::MadaraBlockInfo {
+                    info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(mp_block::MadaraBlockInfo {
                         header: mp_block::Header::default(),
                         block_hash: Felt::ZERO,
                         tx_hashes: vec![Felt::ZERO, Felt::ONE, Felt::TWO],

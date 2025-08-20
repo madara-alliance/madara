@@ -146,7 +146,7 @@ mod test {
             backend
                 .store_block(
                     mp_block::MadaraMaybePendingBlock {
-                        info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(mp_block::MadaraBlockInfo {
+                        info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(mp_block::MadaraBlockInfo {
                             header: mp_block::Header {
                                 parent_block_hash: Felt::from(n),
                                 block_number: n,

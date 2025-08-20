@@ -52,49 +52,49 @@ impl BlockHeaderWithSignatures {
 #[allow(clippy::large_enum_variant)]
 pub enum MadaraMaybePreconfirmedBlockInfo {
     Preconfirmed(MadaraPreconfirmedBlockInfo),
-    Closed(MadaraBlockInfo),
+    Confirmed(MadaraBlockInfo),
 }
 
 impl MadaraMaybePreconfirmedBlockInfo {
     pub fn as_closed(&self) -> Option<&MadaraBlockInfo> {
         match self {
             Self::Preconfirmed(_) => None,
-            Self::Closed(v) => Some(v),
+            Self::Confirmed(v) => Some(v),
         }
     }
 
     pub fn into_closed(self) -> Option<MadaraBlockInfo> {
         match self {
             Self::Preconfirmed(_) => None,
-            Self::Closed(v) => Some(v),
+            Self::Confirmed(v) => Some(v),
         }
     }
 
     pub fn as_pending(&self) -> Option<&MadaraPreconfirmedBlockInfo> {
         match self {
             Self::Preconfirmed(v) => Some(v),
-            Self::Closed(_) => None,
+            Self::Confirmed(_) => None,
         }
     }
 
     pub fn into_pending(self) -> Option<MadaraPreconfirmedBlockInfo> {
         match self {
             Self::Preconfirmed(v) => Some(v),
-            Self::Closed(_) => None,
+            Self::Confirmed(_) => None,
         }
     }
 
     pub fn block_id(&self) -> BlockId {
         match self {
             Self::Preconfirmed(_) => BlockId::Tag(BlockTag::Pending),
-            Self::Closed(info) => BlockId::Number(info.header.block_number),
+            Self::Confirmed(info) => BlockId::Number(info.header.block_number),
         }
     }
 
     pub fn block_number(&self) -> u64 {
         match self {
             Self::Preconfirmed(info) => info.header.block_number,
-            Self::Closed(info) => info.header.block_number,
+            Self::Confirmed(info) => info.header.block_number,
         }
     }
 
@@ -104,38 +104,38 @@ impl MadaraMaybePreconfirmedBlockInfo {
 
     pub fn tx_hashes(&self) -> &[Felt] {
         match self {
-            Self::Closed(block) => &block.tx_hashes,
+            Self::Confirmed(block) => &block.tx_hashes,
             Self::Preconfirmed(block) => &block.tx_hashes,
         }
     }
 
     pub fn protocol_version(&self) -> &StarknetVersion {
         match self {
-            Self::Closed(block) => &block.header.protocol_version,
+            Self::Confirmed(block) => &block.header.protocol_version,
             Self::Preconfirmed(block) => &block.header.protocol_version,
         }
     }
     pub fn sequencer_address(&self) -> &Felt {
         match self {
-            Self::Closed(block) => &block.header.sequencer_address,
+            Self::Confirmed(block) => &block.header.sequencer_address,
             Self::Preconfirmed(block) => &block.header.sequencer_address,
         }
     }
     pub fn l1_da_mode(&self) -> &L1DataAvailabilityMode {
         match self {
-            Self::Closed(block) => &block.header.l1_da_mode,
+            Self::Confirmed(block) => &block.header.l1_da_mode,
             Self::Preconfirmed(block) => &block.header.l1_da_mode,
         }
     }
     pub fn l1_gas_price(&self) -> &GasPrices {
         match self {
-            Self::Closed(block) => &block.header.l1_gas_price,
+            Self::Confirmed(block) => &block.header.l1_gas_price,
             Self::Preconfirmed(block) => &block.header.l1_gas_price,
         }
     }
     pub fn block_timestamp(&self) -> &BlockTimestamp {
         match self {
-            Self::Closed(block) => &block.header.block_timestamp,
+            Self::Confirmed(block) => &block.header.block_timestamp,
             Self::Preconfirmed(block) => &block.header.block_timestamp,
         }
     }
@@ -149,7 +149,7 @@ impl From<MadaraPreconfirmedBlockInfo> for MadaraMaybePreconfirmedBlockInfo {
 
 impl From<MadaraBlockInfo> for MadaraMaybePreconfirmedBlockInfo {
     fn from(value: MadaraBlockInfo) -> Self {
-        Self::Closed(value)
+        Self::Confirmed(value)
     }
 }
 
@@ -331,7 +331,7 @@ impl TryFrom<MadaraMaybePendingBlock> for MadaraBlock {
     fn try_from(value: MadaraMaybePendingBlock) -> Result<Self, Self::Error> {
         match value.info {
             MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => Err(BlockIsPendingError(())),
-            MadaraMaybePreconfirmedBlockInfo::Closed(info) => Ok(MadaraBlock { info, inner: value.inner }),
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(info) => Ok(MadaraBlock { info, inner: value.inner }),
         }
     }
 }
@@ -344,7 +344,7 @@ impl TryFrom<MadaraMaybePendingBlock> for MadaraPendingBlock {
     type Error = BlockIsNotPendingError;
     fn try_from(value: MadaraMaybePendingBlock) -> Result<Self, Self::Error> {
         match value.info {
-            MadaraMaybePreconfirmedBlockInfo::Closed(_) => Err(BlockIsNotPendingError(())),
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(_) => Err(BlockIsNotPendingError(())),
             MadaraMaybePreconfirmedBlockInfo::Preconfirmed(info) => Ok(MadaraPendingBlock { info, inner: value.inner }),
         }
     }

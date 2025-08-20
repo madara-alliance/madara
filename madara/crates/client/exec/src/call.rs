@@ -24,8 +24,8 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         tracing::debug!("calling contract {contract_address:#x}");
 
         // We don't need a tx_executor here
-        let anchor = self.anchor().clone();
-        let make_err = |err| CallContractError { anchor: anchor.clone(), contract: *contract_address, err };
+        let view = self.view().clone();
+        let make_err = |err| CallContractError { view: format!("{view}"), contract: *contract_address, err };
 
         let storage_address =
             (*contract_address).try_into().map_err(TransactionExecutionError::StarknetApiError).map_err(make_err)?;

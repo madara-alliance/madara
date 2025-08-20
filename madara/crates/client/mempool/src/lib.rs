@@ -172,12 +172,8 @@ impl Mempool {
         tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.tx_hash);
 
         let now = TxTimestamp::now();
-        let account_nonce = self
-            .backend
-            .view_on_preconfirmed()
-            .into_view()
-            .get_contract_nonce(&tx.contract_address)?
-            .unwrap_or(Felt::ZERO);
+        let account_nonce =
+            self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedMempoolTx; 1]>::new();
         // Lock is acquired here and dropped immediately after.
         let ret = self.inner.write().await.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);

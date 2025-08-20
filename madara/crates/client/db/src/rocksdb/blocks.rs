@@ -158,8 +158,9 @@ impl RocksDBStorageInner {
         }
 
         // update block info tx hashes (we should get rid of this field at some point IMO)
-        let mut block_info: MadaraBlockInfo =
-            bincode::deserialize(&self.db.get_cf(&block_info_col, block_n.to_be_bytes())?.unwrap_or_default())?;
+        let mut block_info: MadaraBlockInfo = bincode::deserialize(
+            &self.db.get_pinned_cf(&block_info_col, block_n.to_be_bytes())?.context("Block info not found")?,
+        )?;
         block_info.tx_hashes =
             value.iter().map(|tx_with_receipt| *tx_with_receipt.receipt.transaction_hash()).collect();
         batch.put_cf(&block_info_col, block_n.to_be_bytes(), bincode::serialize(&block_info)?);

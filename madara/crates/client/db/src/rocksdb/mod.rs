@@ -1,14 +1,12 @@
 use crate::{
-    preconfirmed::PreconfirmedExecutedTransaction, prelude::*, rocksdb::{
-        backup::BackupManager,
-        column::{Column, ALL_COLUMNS},
-        options::rocksdb_global_options,
-        snapshots::Snapshots,
-        update_global_trie::apply_to_global_trie,
-    }, storage::{
-        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
-        MadaraStorageWrite, StoredChainInfo, StoredChainTip, TxIndex,
-    }, view::Anchor
+    preconfirmed::PreconfirmedExecutedTransaction,
+    prelude::*,
+    rocksdb::{
+        backup::BackupManager, column::{Column, ALL_COLUMNS}, meta::StoredChainTipWithoutContent, options::rocksdb_global_options, snapshots::Snapshots, update_global_trie::apply_to_global_trie
+    },
+    storage::{
+        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead, MadaraStorageWrite, StorageChainTip, StoredChainInfo, TxIndex
+    },
 };
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
@@ -115,9 +113,9 @@ impl RocksDBStorage {
         writeopts_no_wal.disable_wal(true);
         let inner = Arc::new(RocksDBStorageInner { writeopts_no_wal, db, config: config.clone() });
 
-        let head_block_n = inner.get_chain_tip()?.and_then(|c| match c {
-            StoredChainTip::BlockN(block_n) => Some(block_n),
-            StoredChainTip::Preconfirmed(pending_header) => pending_header.block_number.checked_sub(1),
+        let head_block_n = inner.get_chain_tip_without_content()?.and_then(|c| match c {
+            StoredChainTipWithoutContent::Confirmed(block_n) => Some(block_n),
+            StoredChainTipWithoutContent::Preconfirmed(header) => header.block_number.checked_sub(1),
         });
 
         let snapshot = Snapshots::new(inner.clone(), head_block_n, config.max_kept_snapshots, config.snapshot_interval);
@@ -211,11 +209,8 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         self.inner.get_devnet_predeployed_keys().context("Getting devnet predeployed contracts keys")
     }
-    fn get_chain_tip(&self) -> Result<Option<StoredChainTip>> {
+    fn get_chain_tip(&self) -> Result<StorageChainTip> {
         self.inner.get_chain_tip().context("Getting chain tip from db")
-    }
-    fn get_preconfirmed_content(&self) -> impl Iterator<Item = Result<PreconfirmedExecutedTransaction>> + '_ {
-        self.inner.get_preconfirmed_content().map(|res| res.context("Getting preconfirmed block content from db"))
     }
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>> {
         self.inner.get_confirmed_on_l1_tip().context("Getting confirmed block on l1 tip")
@@ -296,7 +291,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.store_classes(block_n, converted_classes)
     }
 
-    fn replace_chain_tip(&self, chain_tip: &Anchor) -> Result<()> {
+    fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {
         self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
     }
 

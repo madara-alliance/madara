@@ -54,7 +54,7 @@ impl RocksDBStorageInner {
 
     pub fn get_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
-        self.db.get_cf(&pending_cf, core_contract_nonce.to_be_bytes())?;
+        self.db.get_pinned_cf(&pending_cf, core_contract_nonce.to_be_bytes())?;
         let Some(res) = self.db.get_pinned_cf(&pending_cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
         Ok(Some(bincode::deserialize(&res)?))
     }

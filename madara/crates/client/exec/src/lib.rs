@@ -2,7 +2,6 @@ use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
-use mc_db::Anchor;
 use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
@@ -40,9 +39,9 @@ pub enum Error {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Executing tx {hash:#} (index {index}) on top of {anchor}: {err:#}")]
+#[error("Executing tx {hash:#} (index {index}) on top of {view}: {err:#}")]
 pub struct TxExecError {
-    anchor: Anchor,
+    view: String,
     hash: TransactionHash,
     index: usize,
     #[source]
@@ -50,26 +49,26 @@ pub struct TxExecError {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Estimating fee for tx index {index} on top of {anchor}: {err:#}")]
+#[error("Estimating fee for tx index {index} on top of {view}: {err:#}")]
 pub struct TxFeeEstimationError {
-    anchor: Anchor,
+    view: String,
     index: usize,
     #[source]
     err: TransactionExecutionError,
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Estimating message fee on top of {anchor}: {err:#}")]
+#[error("Estimating message fee on top of {view}: {err:#}")]
 pub struct MessageFeeEstimationError {
-    anchor: Anchor,
+    view: String,
     #[source]
     err: TransactionExecutionError,
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Calling contract {contract:#x} on top of {anchor}: {err:#}")]
+#[error("Calling contract {contract:#x} on top of {view}: {err:#}")]
 pub struct CallContractError {
-    anchor: Anchor,
+    view: String,
     contract: Felt,
     #[source]
     err: TransactionExecutionError,

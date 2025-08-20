@@ -38,7 +38,7 @@ pub async fn get_transaction_status(
 
         let finality_status = match block.info {
             MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => TxnStatus::AcceptedOnL2,
-            MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
                 if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
                     TxnStatus::AcceptedOnL1
                 } else {
@@ -114,7 +114,7 @@ mod tests {
     #[rstest::fixture]
     fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::MadaraMaybePendingBlock {
         mp_block::MadaraMaybePendingBlock {
-            info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(mp_block::MadaraBlockInfo {
+            info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(mp_block::MadaraBlockInfo {
                 tx_hashes: vec![TX_HASH],
                 ..Default::default()
             }),

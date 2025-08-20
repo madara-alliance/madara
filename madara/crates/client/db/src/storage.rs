@@ -1,4 +1,4 @@
-use crate::{preconfirmed::PreconfirmedExecutedTransaction, view::Anchor};
+use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use anyhow::Result;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
@@ -62,12 +62,14 @@ pub struct DevnetPredeployedContractAccount {
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub struct DevnetPredeployedKeys(pub Vec<DevnetPredeployedContractAccount>);
 
-#[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
-pub enum StoredChainTip {
+#[derive(Clone, Debug)]
+pub enum StorageChainTip {
+    /// Empty pre-genesis state.
+    Empty,
     /// Latest block is closed.
-    BlockN(u64),
+    Confirmed(u64),
     /// Latest block is a preconfirmed block.
-    Preconfirmed(PreconfirmedHeader),
+    Preconfirmed { header: PreconfirmedHeader, content: Vec<PreconfirmedExecutedTransaction> },
 }
 
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone)]
@@ -110,8 +112,7 @@ pub trait MadaraStorageRead {
     // Meta
 
     fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>>;
-    fn get_chain_tip(&self) -> Result<Option<StoredChainTip>>;
-    fn get_preconfirmed_content(&self) -> impl Iterator<Item = Result<PreconfirmedExecutedTransaction>> + '_;
+    fn get_chain_tip(&self) -> Result<StorageChainTip>;
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
@@ -135,8 +136,7 @@ pub trait MadaraStorageWrite {
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
 
-    /// Clears the preconfirmed block, and sets the chain tip in db.
-    fn replace_chain_tip(&self, chain_tip: &Anchor) -> Result<()>;
+    fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
     fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
     /// Set the latest block confirmed on l1.
     fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()>;

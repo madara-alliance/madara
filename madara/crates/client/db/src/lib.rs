@@ -39,13 +39,12 @@ use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::rocksdb::RocksDBConfig;
 use crate::rocksdb::RocksDBStorage;
+use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
-use crate::storage::StoredChainTip;
 use crate::sync_status::SyncStatus;
 use crate::sync_status::SyncStatusCell;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
-use mp_block::header::PreconfirmedHeader;
 use mp_block::BlockHeaderWithSignatures;
 use mp_block::PreconfirmedFullBlock;
 use mp_block::TransactionWithReceipt;
@@ -66,8 +65,8 @@ mod storage;
 mod subscription;
 mod sync_status;
 
-pub mod rocksdb;
 pub mod preconfirmed;
+pub mod rocksdb;
 mod view;
 // pub mod tests;
 
@@ -76,6 +75,88 @@ pub use storage::{
     MadaraStorageWrite, TxIndex,
 };
 pub use view::*;
+
+/// Current chain tip.
+#[derive(Debug, Default, Clone)]
+pub enum ChainTip {
+    /// Empty pre-genesis state. There are no blocks currently in the backend.
+    #[default]
+    Empty,
+    /// Latest block is a confirmed block.
+    Confirmed(/* block_number */ u64),
+    /// Latest block is a preconfirmed block.
+    Preconfirmed(Arc<PreconfirmedBlock>),
+}
+
+// Use [`Arc::ptr_eq`] for quick equality check: we don't want to compare the content of the transactions
+// for the preconfirmed block case.
+impl PartialEq for ChainTip {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Empty, Self::Empty) => true,
+            (Self::Confirmed(l0), Self::Confirmed(r0)) => l0 == r0,
+            (Self::Preconfirmed(l0), Self::Preconfirmed(r0)) => Arc::ptr_eq(l0, r0),
+            _ => false,
+        }
+    }
+}
+impl Eq for ChainTip {}
+
+impl ChainTip {
+    pub fn on_confirmed_block_n_or_empty(block_n: Option<u64>) -> Self {
+        match block_n {
+            Some(block_n) => Self::Confirmed(block_n),
+            None => Self::Empty,
+        }
+    }
+
+    /// Latest block_n, which may be the pre-confirmed block.
+    pub fn block_n(&self) -> Option<u64> {
+        match self {
+            Self::Empty => None,
+            Self::Confirmed(block_n) => Some(*block_n),
+            Self::Preconfirmed(b) => Some(b.header.block_number),
+        }
+    }
+    pub fn latest_confirmed_block_n(&self) -> Option<u64> {
+        match self {
+            Self::Empty => None,
+            Self::Preconfirmed(b) => b.header.block_number.checked_sub(1),
+            Self::Confirmed(block_n) => Some(*block_n),
+        }
+    }
+    pub fn is_preconfirmed(&self) -> bool {
+        matches!(self, Self::Preconfirmed(_))
+    }
+    pub fn as_preconfirmed(&self) -> Option<&Arc<PreconfirmedBlock>> {
+        match self {
+            Self::Preconfirmed(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    /// Convert to the chain tip type for use in the storage backend. It is distinct from our the internal
+    /// ChainTip to hide implementation details from the storage implementation.
+    fn to_storage(&self) -> StorageChainTip {
+        match self {
+            Self::Empty => StorageChainTip::Empty,
+            Self::Confirmed(block_n) => StorageChainTip::Confirmed(*block_n),
+            Self::Preconfirmed(preconfirmed_block) => StorageChainTip::Preconfirmed {
+                header: preconfirmed_block.header.clone(),
+                content: preconfirmed_block.content.borrow().executed_transactions().cloned().collect(),
+            },
+        }
+    }
+    fn from_storage(tip: StorageChainTip) -> Self {
+        match tip {
+            StorageChainTip::Empty => Self::Empty,
+            StorageChainTip::Confirmed(block_n) => Self::Confirmed(block_n),
+            StorageChainTip::Preconfirmed { header, content } => {
+                Self::Preconfirmed(PreconfirmedBlock::new_with_content(header, content, /* candidates */ []).into())
+            }
+        }
+    }
+}
 
 /// Madara client database backend singleton.
 #[derive(Debug)]
@@ -87,10 +168,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
 
-    /// Current chain tip. Contains:
-    /// - the current preconfirmed block, when one is present.
-    /// - the
-    chain_tip: tokio::sync::watch::Sender<Anchor>,
+    chain_tip: tokio::sync::watch::Sender<ChainTip>,
 
     /// Current finalized block_n on L1.
     latest_l1_confirmed: tokio::sync::watch::Sender<Option<u64>>,
@@ -146,18 +224,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         }
 
         // Init chain_tip and set starting block
-        let chain_tip = match self.db.get_chain_tip()? {
-            Some(StoredChainTip::BlockN(block_n)) => Anchor::new_on_confirmed(Some(block_n)),
-            Some(StoredChainTip::Preconfirmed(header)) => {
-                // Load the preconfirmed block from db.
-                let preconfirmed_block = Arc::new(PreconfirmedBlock::new(header));
-                self.db.get_preconfirmed_content().process_results(|iter| preconfirmed_block.append(iter, []))?;
-                Anchor::new_on_preconfirmed(preconfirmed_block)
-            }
-            // Pre-genesis state.
-            None => Anchor::new_on_confirmed(None),
-        };
-        self.starting_block = chain_tip.block_n();
+        let chain_tip = ChainTip::from_storage(self.db.get_chain_tip()?);
+        self.starting_block = chain_tip.latest_confirmed_block_n();
         self.chain_tip.send_replace(chain_tip);
 
         // Init L1 head
@@ -182,53 +250,6 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     // ways to make the aforementioned logic errors unrepreasentable by designing the API a little better.
     pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
         MadaraBackendWriter { inner: self.clone() }
-    }
-}
-
-impl<D: MadaraStorageRead> MadaraBackend<D> {
-    pub fn chain_tip(&self) -> Anchor {
-        self.chain_tip.borrow().clone()
-    }
-    pub fn latest_confirmed_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().latest_confirmed_block_n()
-    }
-    pub fn latest_block_n(&self) -> Option<u64> {
-        self.chain_tip.borrow().block_n()
-    }
-    pub fn has_preconfirmed_block(&self) -> bool {
-        self.chain_tip.borrow().is_preconfirmed()
-    }
-    pub fn latest_l1_confirmed_block_n(&self) -> Option<u64> {
-        self.latest_l1_confirmed.borrow().clone()
-    }
-
-    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
-        self.chain_tip.borrow().preconfirmed().map(|p| p.block.clone())
-    }
-
-    /// Set the current latest block confirmed on L1. This will also wake watchers to L1 head changes.
-    ///
-    /// Warning: It is invalid to set this new `latest_l1_confirmed` to a lower value than the current one, or
-    /// to a higher value than the current block on l2.
-    // FIXME: In these cases, the update should not succeed and an error should be returned.
-    pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
-        self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
-        Ok(())
-    }
-
-    pub fn set_sync_status(&self, sync_status: SyncStatus) {
-        self.sync_status.set(sync_status);
-    }
-    pub fn get_sync_status(&self) -> SyncStatus {
-        self.sync_status.get()
-    }
-    /// Get the latest block_n that was in the db when this backend instance was initialized.
-    pub fn get_starting_block(&self) -> Option<u64> {
-        self.starting_block
-    }
-
-    pub fn chain_config(&self) -> &Arc<ChainConfig> {
-        &self.chain_config
     }
 }
 
@@ -260,6 +281,51 @@ impl MadaraBackend<RocksDBStorage> {
     }
 }
 
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    pub fn latest_confirmed_block_n(&self) -> Option<u64> {
+        self.chain_tip.borrow().latest_confirmed_block_n()
+    }
+    /// Latest block_n, which may be the pre-confirmed block.
+    pub fn latest_block_n(&self) -> Option<u64> {
+        self.chain_tip.borrow().block_n()
+    }
+    pub fn has_preconfirmed_block(&self) -> bool {
+        self.chain_tip.borrow().is_preconfirmed()
+    }
+    pub fn latest_l1_confirmed_block_n(&self) -> Option<u64> {
+        self.latest_l1_confirmed.borrow().clone()
+    }
+
+    fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
+        self.chain_tip.borrow().as_preconfirmed().cloned()
+    }
+
+    /// Set the current latest block confirmed on L1. This will also wake watchers to L1 head changes.
+    ///
+    /// Warning: It is invalid to set this new `latest_l1_confirmed` to a lower value than the current one, or
+    /// to a higher value than the current block on l2.
+    // FIXME: In these cases, the update should not succeed and an error should be returned.
+    pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
+        self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
+        Ok(())
+    }
+
+    pub fn set_sync_status(&self, sync_status: SyncStatus) {
+        self.sync_status.set(sync_status);
+    }
+    pub fn get_sync_status(&self) -> SyncStatus {
+        self.sync_status.get()
+    }
+    /// Get the latest block_n that was in the db when this backend instance was initialized.
+    pub fn get_starting_block(&self) -> Option<u64> {
+        self.starting_block
+    }
+
+    pub fn chain_config(&self) -> &Arc<ChainConfig> {
+        &self.chain_config
+    }
+}
+
 /// Structure holding exclusive access to write the blocks and the tip of the chain.
 ///
 /// Note: All of the associated functions need to be called in a rayon thread pool context.
@@ -268,7 +334,7 @@ pub struct MadaraBackendWriter<D: MadaraStorage> {
 }
 
 impl<D: MadaraStorage> MadaraBackendWriter<D> {
-    fn replace_chain_tip(&self, new_tip: Anchor) -> Result<()> {
+    fn replace_chain_tip(&self, new_tip: ChainTip) -> Result<()> {
         // Note: while you could think it is possible for the `chain_tip` to change between this next line when we
         // originally get it, and when we save the replace it to a new one, leading to possible corruption in this
         // race condition, we have explicitely forbidden `MadaraBackendWriter` as a whole to be used concurrently.
@@ -278,16 +344,18 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Write to db if needed.
         let saved_tip = if self.inner.config.save_preconfirmed {
-            new_tip.clone()
+            &new_tip
         } else {
-            new_tip.latest_confirmed() // We save the anchor to the parent block of the preconfirmed instead.
+            // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
-        if current_tip != saved_tip {
-            self.inner.db.replace_chain_tip(&saved_tip)?;
+        if &current_tip != saved_tip {
+            // Save to db.
+            self.inner.db.replace_chain_tip(&saved_tip.to_storage())?;
         }
 
         // Write to the backend. This also sends the notification to subscribers :)
-        self.inner.chain_tip.send_replace(new_tip.clone());
+        self.inner.chain_tip.send_replace(new_tip);
 
         Ok(())
     }
@@ -314,57 +382,31 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
     /// Returns an error if there is no preconfirmed block.
     pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<()> {
-        let block = self.inner.preconfirmed_block().context("There is no current preconfirmed block")?;
-
-        // Converting the block.
-
-        let header = block.header.clone();
-        let block_n = header.block_number;
-
-        // We don't care about the candidate transactions.
-        let mut executed_transactions: Vec<_> = block.content.borrow().executed_transactions().cloned().collect();
-
-        let state_diff = self
+        let (block, classes) = self
             .inner
-            .preconfirmed_view_on_anchor(PreconfirmedBlockAnchor::new(block))
-            .get_normalized_state_diff()
-            .context("Creating normalized state diff")?;
-        let classes: Vec<_> = executed_transactions.iter_mut().filter_map(|tx| tx.declared_class.take()).collect();
-        let transactions: Vec<_> = executed_transactions.into_iter().map(|tx| tx.transaction.clone()).collect();
-        let events = transactions
-            .iter()
-            .flat_map(|tx| {
-                tx.receipt
-                    .events()
-                    .iter()
-                    .cloned()
-                    .map(|event| EventWithTransactionHash { transaction_hash: *tx.receipt.transaction_hash(), event })
-            })
-            .collect();
+            .block_view_on_preconfirmed()
+            .context("There is no current preconfirmed block")?
+            .get_full_block_with_classes()?;
 
         // Write the block & apply to global trie
 
-        self.write_preconfirmed_full_with_classes_inner(
-            &PreconfirmedFullBlock { header, state_diff, transactions, events },
-            &classes,
-            pre_v0_13_2_hash_override,
-        )?;
+        self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
 
         // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(Anchor::new_on_confirmed(Some(block_n)))?;
+        self.replace_chain_tip(ChainTip::Confirmed(block.header.block_number))?;
 
-        self.on_new_block_imported(block_n)
+        self.on_new_block_imported(block.header.block_number)
     }
 
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
     pub fn clear_preconfirmed(&self) -> Result<()> {
-        self.replace_chain_tip(self.inner.chain_tip.borrow().latest_confirmed())
+        self.replace_chain_tip(ChainTip::on_confirmed_block_n_or_empty(self.inner.latest_confirmed_block_n()))
     }
 
     /// Start a new preconfirmed block on top of the latest confirmed block. Deletes and replaces the current preconfirmed block if present.
     /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
-    pub fn new_preconfirmed(&self, header: PreconfirmedHeader) -> Result<()> {
-        self.replace_chain_tip(Anchor::new_on_preconfirmed(Arc::new(PreconfirmedBlock::new(header))))
+    pub fn new_preconfirmed(&self, block: PreconfirmedBlock) -> Result<()> {
+        self.replace_chain_tip(ChainTip::Preconfirmed(Arc::new(block)))
     }
 
     /// Add a block.
@@ -376,16 +418,17 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         pre_v0_13_2_hash_override: bool,
     ) -> Result<()> {
         let block_n = block.header.block_number;
-        self.write_preconfirmed_full_with_classes_inner(block, classes, pre_v0_13_2_hash_override)?;
+        self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
 
         // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(Anchor::new_on_confirmed(Some(block_n)))?;
+        self.replace_chain_tip(ChainTip::Confirmed(block_n))?;
 
         self.on_new_block_imported(block_n)
     }
 
-    /// Does not change the chain tip.
-    fn write_preconfirmed_full_with_classes_inner(
+    /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
+    /// all the block parts.
+    fn write_new_confirmed_inner(
         &self,
         block: &PreconfirmedFullBlock,
         classes: &[ConvertedClass],
@@ -511,7 +554,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     // }
 }
 
-// Delegate secondary db reads/writes. These are relative to specific services, and are not specific to a block view / the chain tip writer handle.
+// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>> {
         self.db.get_l1_messaging_sync_tip()
@@ -532,7 +575,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         self.db.get_devnet_predeployed_keys()
     }
 }
-// Delegate secondary db reads/writes. These are relative to specific services, and are not specific to a block view / the chain tip writer handle.
+// Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn write_l1_messaging_sync_tip(&self, l1_block_n: u64) -> Result<()> {
         self.db.write_l1_messaging_sync_tip(l1_block_n)

@@ -1,563 +1,143 @@
-use crate::{
-    preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction, PreconfirmedTransaction},
-    prelude::*,
-    rocksdb::RocksDBStorage,
-    storage::{EventFilter, MadaraStorageRead, TxIndex},
-    MadaraBackend,
-};
-use mp_block::{
-    header::PreconfirmedHeader, EventWithInfo, MadaraMaybePreconfirmedBlockInfo, MadaraPreconfirmedBlockInfo,
-    TransactionWithReceipt,
-};
-use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
-use mp_convert::Felt;
-use mp_state_update::StateDiff;
-use mp_transactions::TransactionWithHash;
-use std::{
-    ops::{Bound, RangeBounds},
-    sync::Arc,
-};
+use crate::{prelude::*, ChainTip};
+use mp_block::{BlockId, BlockTag};
 
-mod anchor;
-mod state_diff;
+mod block;
+mod block_confirmed;
+mod block_preconfirmed;
+mod state;
 
-pub use anchor::*;
+pub use block::MadaraBlockView;
+pub use block_confirmed::MadaraConfirmedBlockView;
+pub use block_preconfirmed::MadaraPreconfirmedBlockView;
+pub use state::MadaraStateView;
 
-pub struct MadaraView<D: MadaraStorageRead = RocksDBStorage> {
-    pub(crate) backend: Arc<MadaraBackend<D>>,
-    pub(crate) anchor: Anchor,
+// Returns (start_tx_index, to_take).
+fn normalize_transactions_range(bounds: impl std::ops::RangeBounds<u64>) -> (usize, usize) {
+    use std::ops::Bound;
+
+    let (start, end) = (bounds.start_bound().cloned(), bounds.end_bound().cloned());
+
+    let start_tx_index = match start {
+        Bound::Excluded(start) => start.saturating_add(1),
+        Bound::Included(start) => start,
+        Bound::Unbounded => 0,
+    };
+    let start_tx_index = usize::try_from(start_tx_index).ok().unwrap_or(usize::MAX);
+    let end_tx_index = match end {
+        Bound::Excluded(end) => end,
+        Bound::Included(end) => end.saturating_add(1),
+        Bound::Unbounded => u64::MAX.into(),
+    };
+    let end_tx_index = usize::try_from(end_tx_index).unwrap_or(usize::MAX);
+
+    let to_take = end_tx_index.saturating_sub(start_tx_index);
+
+    (start_tx_index, to_take)
 }
 
-impl<D: MadaraStorageRead> Clone for MadaraView<D> {
-    fn clone(&self) -> Self {
-        Self { backend: self.backend.clone(), anchor: self.anchor.clone() }
-    }
-}
-
-impl<D: MadaraStorageRead> MadaraView<D> {
-    fn new(backend: Arc<MadaraBackend<D>>, anchor: Anchor) -> Self {
-        Self { backend, anchor }
-    }
-
-    pub fn backend(&self) -> &Arc<MadaraBackend<D>> {
-        &self.backend
-    }
-    pub fn anchor(&self) -> &Anchor {
-        &self.anchor
-    }
-
-    pub fn into_block_view_on(self, block_n: u64) -> Option<MadaraBlockView<D>> {
-        self.anchor
-            .into_block_anchor()
-            .filter(|anchor| block_n <= anchor.block_n())
-            .map(|anchor| MadaraBlockView::new(self.backend, anchor))
-    }
-
-    pub fn into_block_view(self) -> Option<MadaraBlockView<D>> {
-        self.anchor.into_block_anchor().map(|anchor| MadaraBlockView::new(self.backend, anchor))
-    }
-
-    fn lookup_preconfirmed_state<V>(
+pub trait BlockViewResolvable: Sized {
+    fn resolve_block_view<D: MadaraStorageRead>(
         &self,
-        f: impl FnMut((usize, &PreconfirmedExecutedTransaction)) -> Option<V>,
-    ) -> Option<V> {
-        if let Some(preconfirmed) = self.anchor.preconfirmed() {
-            preconfirmed.borrow_content().executed_transactions().enumerate().rev().find_map(f)
-        } else {
-            None
-        }
-    }
+        backend: &Arc<MadaraBackend<D>>,
+    ) -> Result<Option<MadaraBlockView<D>>>;
+}
 
-    pub fn get_contract_storage(&self, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
-        let state_diff_key = (*contract_address, *key);
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.storage.get(&state_diff_key).copied()) {
-            return Ok(Some(res));
-        }
-        let Some(block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        self.backend.db.get_storage_at(block_n, contract_address, key)
+impl<T: BlockViewResolvable> BlockViewResolvable for &T {
+    fn resolve_block_view<D: MadaraStorageRead>(
+        &self,
+        backend: &Arc<MadaraBackend<D>>,
+    ) -> Result<Option<MadaraBlockView<D>>> {
+        (*self).resolve_block_view(backend)
     }
+}
 
-    pub fn get_contract_nonce(&self, contract_address: &Felt) -> Result<Option<Felt>> {
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.nonces.get(contract_address).copied()) {
-            return Ok(Some(res));
-        }
-        let Some(block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        self.backend.db.get_contract_nonce_at(block_n, contract_address)
-    }
-
-    pub fn get_contract_class_hash(&self, contract_address: &Felt) -> Result<Option<Felt>> {
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.nonces.get(contract_address).copied()) {
-            return Ok(Some(res));
-        }
-        let Some(block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        self.backend.db.get_contract_class_hash_at(block_n, contract_address)
-    }
-
-    pub fn is_contract_deployed(&self, contract_address: &Felt) -> Result<bool> {
-        if self
-            .lookup_preconfirmed_state(|(_, s)| {
-                if s.state_diff.contract_class_hashes.contains_key(&contract_address) {
-                    Some(())
-                } else {
-                    None
-                }
-            })
-            .is_some()
-        {
-            return Ok(true);
-        }
-        let Some(block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(false) };
-        self.backend.db.is_contract_deployed_at(block_n, contract_address)
-    }
-
-    pub fn get_class_info(&self, class_hash: &Felt) -> Result<Option<ClassInfo>> {
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| {
-            s.declared_class.as_ref().filter(|c| c.class_hash() == class_hash).map(|c| c.info())
-        }) {
-            return Ok(Some(res));
-        }
-        let Some(block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        let Some(class) = self.backend.db.get_class(class_hash)? else { return Ok(None) };
-        if class.block_n <= block_n {
-            Ok(Some(class.class_info))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn get_class_compiled(&self, compiled_class_hash: &Felt) -> Result<Option<Arc<CompiledSierra>>> {
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| {
-            s.declared_class
-                .as_ref()
-                .and_then(|c| c.as_sierra())
-                .filter(|c| &c.info.compiled_class_hash == compiled_class_hash)
-                .map(|c| c.compiled.clone())
-        }) {
-            return Ok(Some(res));
-        }
-        let Some(block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        let Some(class) = self.backend.db.get_class_compiled(compiled_class_hash)? else { return Ok(None) };
-        if class.block_n <= block_n {
-            Ok(Some(class.compiled_sierra.into()))
-        } else {
-            Ok(None)
-        }
-    }
-
-    pub fn get_class_info_and_compiled(&self, class_hash: &Felt) -> Result<Option<ConvertedClass>> {
-        let Some(class_info) = self.get_class_info(class_hash).context("Getting class info from class_hash")? else {
-            return Ok(None);
-        };
-        let compiled = match class_info {
-            ClassInfo::Sierra(sierra_class_info) => ConvertedClass::Sierra(SierraConvertedClass {
-                class_hash: *class_hash,
-                compiled: self
-                    .get_class_compiled(&sierra_class_info.compiled_class_hash)
-                    .context("Getting class compiled from class_hash")?
-                    .context("Class info found, compiled class should be found")?,
-                info: sierra_class_info,
-            }),
-            ClassInfo::Legacy(legacy_class_info) => {
-                ConvertedClass::Legacy(LegacyConvertedClass { class_hash: *class_hash, info: legacy_class_info })
-            }
-        };
-        Ok(Some(compiled))
-    }
-
-    pub fn get_transaction_by_hash(&self, tx_hash: &Felt) -> Result<Option<(TxIndex, TransactionWithReceipt)>> {
-        if let Some(res) = self.anchor.preconfirmed().and_then(|preconfirmed| {
-            preconfirmed.borrow_content().executed_transactions().enumerate().find_map(|(tx_index, tx)| {
-                if tx.transaction.receipt.transaction_hash() == tx_hash {
-                    Some((
-                        TxIndex { block_n: preconfirmed.block.header.block_number, transaction_index: tx_index as _ },
-                        tx.transaction.clone(),
+impl BlockViewResolvable for BlockId {
+    fn resolve_block_view<D: MadaraStorageRead>(
+        &self,
+        backend: &Arc<MadaraBackend<D>>,
+    ) -> Result<Option<MadaraBlockView<D>>> {
+        match self {
+            Self::Tag(BlockTag::Pending) => Ok(Some(backend.block_view_on_preconfirmed_or_fake().into())),
+            Self::Tag(BlockTag::Latest) => Ok(backend.block_view_on_last_confirmed().map(|b| b.into())),
+            Self::Hash(hash) => {
+                if let Some(block_n) = backend.db.find_block_hash(&hash)? {
+                    Ok(Some(
+                        backend
+                            .block_view_on_confirmed(block_n)
+                            .with_context(|| {
+                                format!("Block with hash {hash:#x} was found at {block_n} but no such block exists")
+                            })?
+                            .into(),
                     ))
                 } else {
-                    None
+                    Ok(None)
                 }
-            })
-        }) {
-            return Ok(Some(res));
-        }
-
-        let Some(on_block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        let Some(found) = self.backend.db.find_transaction_hash(tx_hash)? else {
-            return Ok(None);
-        };
-
-        if found.block_n > on_block_n {
-            return Ok(None);
-        }
-
-        let tx = self
-            .backend
-            .db
-            .get_transaction(found.block_n, found.transaction_index)?
-            .context("Transaction should exist")?;
-
-        Ok(Some((found, tx)))
-    }
-
-    pub fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<TxIndex>> {
-        if let Some(res) = self.anchor.preconfirmed().and_then(|preconfirmed| {
-            preconfirmed.borrow_content().executed_transactions().enumerate().find_map(|(tx_index, tx)| {
-                if tx.transaction.receipt.transaction_hash() == tx_hash {
-                    Some(TxIndex { block_n: preconfirmed.block.header.block_number, transaction_index: tx_index as _ })
-                } else {
-                    None
-                }
-            })
-        }) {
-            return Ok(Some(res));
-        }
-
-        let Some(on_block_n) = self.anchor.latest_confirmed_block_n() else { return Ok(None) };
-        let Some(found) = self.backend.db.find_transaction_hash(tx_hash)? else {
-            return Ok(None);
-        };
-
-        if found.block_n > on_block_n {
-            return Ok(None);
-        }
-
-        Ok(Some(found))
-    }
-
-    pub fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
-        let Ok(tx_index_i) = usize::try_from(tx_index) else { return Ok(None) };
-        if let Some(res) = self.anchor.preconfirmed().filter(|p| p.block.header.block_number == block_n) {
-            return Ok(res.borrow_content().executed_transactions().nth(tx_index_i).map(|tx| tx.transaction.clone()));
-        }
-        if !self.anchor.latest_confirmed_block_n().is_some_and(|on_block_n| on_block_n >= block_n) {
-            return Ok(None);
-        }
-
-        self.backend.db.get_transaction(block_n, tx_index)
-    }
-
-    pub fn get_events(&self, _filter: EventFilter) -> Result<Vec<EventWithInfo>> {
-        // let mut events = if let Some(closed_block_n) = self.anchor.on_block_n() {
-        //     let mut filter = filter.clone();
-        //     filter.end_block = cmp::min(closed_block_n, filter.end_block);
-        //     if filter.end_block >= filter.start_block {
-        //         self.backend.db.get_events(filter)?
-        //     } else {
-        //         vec![]
-        //     }
-        // } else {
-        //     vec![]
-        // };
-
-        // if events.len() < filter.max_events && filter.end_block >= filter.start_block {
-        //     if let Some(preconfirmed) = self.anchor.preconfirmed().filter(|p| p.block.block_n >= filter.end_block) {
-        //         let skip = if preconfirmed.block.block_n == filter.start_block {
-        //             filter.start_event_index
-        //         } else {
-        //             0
-        //         };
-        //         events.extend(preconfirmed.content().events_with_info().skip(skip).filter(|ev| filter.matches(ev)).take(events.len() - filter.max_events));
-        //     }
-        // }
-        // events
-        Ok(vec![])
-    }
-}
-
-pub struct MadaraBlockView<D: MadaraStorageRead> {
-    pub(crate) backend: Arc<MadaraBackend<D>>,
-    pub(crate) anchor: BlockAnchor,
-}
-
-// derive(Clone) will put a D: Clone bounds which we don't want, so we have to implement clone by hand :(
-impl<D: MadaraStorageRead> Clone for MadaraBlockView<D> {
-    fn clone(&self) -> Self {
-        Self { backend: self.backend.clone(), anchor: self.anchor.clone() }
-    }
-}
-
-impl<D: MadaraStorageRead> MadaraBlockView<D> {
-    pub(crate) fn new(backend: Arc<MadaraBackend<D>>, anchor: BlockAnchor) -> Self {
-        Self { backend, anchor }
-    }
-    pub fn backend(&self) -> &Arc<MadaraBackend<D>> {
-        &self.backend
-    }
-
-    pub fn anchor(&self) -> &BlockAnchor {
-        &self.anchor
-    }
-
-    pub fn is_preconfirmed(&self) -> bool {
-        self.anchor.as_preconfirmed().is_some()
-    }
-
-    pub fn block_n(&self) -> u64 {
-        self.anchor.block_n()
-    }
-
-    pub fn is_on_l1(&self) -> bool {
-        !self.anchor.is_preconfirmed()
-            && self.backend.latest_l1_confirmed_block_n().is_some_and(|last_on_l1| self.block_n() <= last_on_l1)
-    }
-
-    pub fn get_block_info(&self) -> Result<MadaraMaybePreconfirmedBlockInfo> {
-        match &self.anchor {
-            BlockAnchor::Preconfirmed(preconfirmed) => {
-                Ok(MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
-                    header: preconfirmed.block.header.clone(),
-                    tx_hashes: preconfirmed
-                        .borrow_content()
-                        .executed_transactions()
-                        .map(|c| *c.transaction.receipt.transaction_hash())
-                        .collect(),
-                }))
             }
-            BlockAnchor::Confirmed(block_n) => Ok(self
-                .backend
-                .db
-                .get_block_info(*block_n)?
-                .map(MadaraMaybePreconfirmedBlockInfo::Closed)
-                .context("Block info should be found")?),
+            Self::Number(block_n) => Ok(backend.block_view_on_confirmed(*block_n).map(Into::into)),
         }
-    }
-
-    pub fn get_state_diff(&self) -> Result<StateDiff> {
-        if let Some(preconfirmed) = self.to_preconfirmed() {
-            preconfirmed.get_normalized_state_diff()
-        } else {
-            self.backend.db.get_block_state_diff(self.block_n())?.context("Block state diff should be found")
-        }
-    }
-
-    pub fn get_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
-        let Some(tx_index) = usize::try_from(tx_index).ok() else { return Ok(None) };
-        match &self.anchor {
-            BlockAnchor::Preconfirmed(preconfirmed) => Ok(preconfirmed
-                .borrow_content()
-                .executed_transactions()
-                .nth(tx_index)
-                .map(|tx| &tx.transaction)
-                .cloned()),
-            BlockAnchor::Confirmed(block_n) => Ok(self.backend.db.get_transaction(*block_n, tx_index as u64)?),
-        }
-    }
-
-    pub fn get_block_transactions(&self, bounds: impl RangeBounds<u64>) -> Result<Vec<TransactionWithReceipt>> {
-        let (start, end) = (bounds.start_bound().cloned(), bounds.end_bound().cloned());
-
-        let start_tx_index = match start {
-            Bound::Excluded(start) => start.saturating_add(1),
-            Bound::Included(start) => start,
-            Bound::Unbounded => 0,
-        };
-        let Some(start_tx_index) = usize::try_from(start_tx_index).ok() else { return Ok(vec![]) };
-        let end_tx_index = match end {
-            Bound::Excluded(end) => end,
-            Bound::Included(end) => end.saturating_add(1),
-            Bound::Unbounded => u64::MAX.into(),
-        };
-        let end_tx_index = usize::try_from(end_tx_index).unwrap_or(usize::MAX);
-
-        let to_take = end_tx_index.saturating_sub(start_tx_index);
-        if to_take == 0 {
-            return Ok(vec![]);
-        }
-
-        match &self.anchor {
-            BlockAnchor::Preconfirmed(preconfirmed) => Ok(preconfirmed
-                .borrow_content()
-                .executed_transactions()
-                .skip(start_tx_index)
-                .take(end_tx_index)
-                .map(|tx| tx.transaction.clone())
-                .collect()),
-            BlockAnchor::Confirmed(block_n) => Ok(self
-                .backend
-                .db
-                .get_block_transactions(*block_n, start_tx_index as u64)
-                .take(to_take)
-                .collect::<Result<_, _>>()?),
-        }
-    }
-
-    /// Make a preconfirmed block view. Returns [`None`] if the view is not on a preconfirmed block.
-    pub fn into_preconfirmed(self) -> Option<MadaraPreconfirmedBlockView<D>> {
-        self.anchor.into_preconfirmed().map(|anchor| MadaraPreconfirmedBlockView::new(self.backend, anchor))
-    }
-
-    /// Make a preconfirmed block view. Returns [`None`] if the view is not on a preconfirmed block.
-    pub fn to_preconfirmed(&self) -> Option<MadaraPreconfirmedBlockView<D>> {
-        self.anchor
-            .as_preconfirmed()
-            .cloned()
-            .map(|anchor| MadaraPreconfirmedBlockView::new(self.backend.clone(), anchor))
-    }
-
-    pub fn into_view(self) -> MadaraView<D> {
-        MadaraView::new(self.backend, Anchor::Block(self.anchor))
-    }
-
-    /// Make a view on the parent block of this view. The view will always be either on a confirmed block, or the empty state prior to the genesis block.
-    pub fn view_on_parent(&self) -> MadaraView<D> {
-        MadaraView::new(self.backend.clone(), Anchor::new_on_confirmed(self.anchor.block_n().checked_sub(1)))
-    }
-}
-
-pub struct MadaraPreconfirmedBlockView<D: MadaraStorageRead> {
-    pub(crate) backend: Arc<MadaraBackend<D>>,
-    pub(crate) anchor: PreconfirmedBlockAnchor,
-}
-
-impl<D: MadaraStorageRead> Clone for MadaraPreconfirmedBlockView<D> {
-    fn clone(&self) -> Self {
-        Self { backend: self.backend.clone(), anchor: self.anchor.clone() }
-    }
-}
-
-impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
-    pub(crate) fn new(backend: Arc<MadaraBackend<D>>, anchor: PreconfirmedBlockAnchor) -> Self {
-        Self { backend, anchor }
-    }
-}
-
-impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
-    pub fn into_view(self) -> MadaraView<D> {
-        self.into_block_view().into_view()
-    }
-    pub fn into_block_view(self) -> MadaraBlockView<D> {
-        MadaraBlockView::new(self.backend, BlockAnchor::Preconfirmed(self.anchor))
-    }
-
-    pub fn header(&self) -> &PreconfirmedHeader {
-        &self.anchor.block.header
-    }
-
-    /// Make none of the transactions visible.
-    pub fn reset_to_start(&mut self) {
-        self.anchor.refresh();
-    }
-
-    /// Refresh the view. Added transactions will be visible.
-    pub fn refresh(&mut self) {
-        self.anchor.refresh();
-    }
-
-    /// Make the new transactions visible. Candidate transactions will also be visible.
-    pub fn refresh_with_candidates(&mut self) {
-        self.anchor.refresh_with_candidates();
-    }
-
-    /// Returns when the block content has changed. Returns immediately if the view is
-    /// already outdated. The view is not updated; you need to call [`Self::refresh`] or
-    /// [`Self::refresh_with_candidates`] when this function returns.
-    pub async fn wait_until_outdated(&mut self) {
-        self.anchor.wait_until_outdated().await
-    }
-    pub fn get_transaction_with_candidate(&self, tx_index: u64) -> Option<PreconfirmedTransaction> {
-        self.anchor.block_content.borrow().all_transactions().nth(tx_index.try_into().ok()?).cloned()
-    }
-    pub fn get_block_transactions_with_candidates(
-        &self,
-        bounds: impl RangeBounds<u64>,
-    ) -> Vec<PreconfirmedTransaction> {
-        let (start, end) = (bounds.start_bound().cloned(), bounds.end_bound().cloned());
-
-        let start_tx_index = match start {
-            Bound::Excluded(start) => start.saturating_add(1),
-            Bound::Included(start) => start,
-            Bound::Unbounded => 0,
-        };
-        let Some(start_tx_index) = usize::try_from(start_tx_index).ok() else { return vec![] };
-        let end_tx_index = match end {
-            Bound::Excluded(end) => end,
-            Bound::Included(end) => end.saturating_add(1),
-            Bound::Unbounded => u64::MAX.into(),
-        };
-        let end_tx_index = usize::try_from(end_tx_index).unwrap_or(usize::MAX);
-
-        let to_take = end_tx_index.saturating_sub(start_tx_index);
-        if to_take == 0 {
-            return vec![];
-        }
-        self.anchor
-            .borrow_content()
-            .executed_transactions()
-            .cloned()
-            .map(PreconfirmedTransaction::Executed)
-            .chain(self.anchor.candidates.iter().cloned().map(PreconfirmedTransaction::Candidate))
-            .skip(start_tx_index)
-            .take(end_tx_index)
-            .collect()
-    }
-
-    pub fn get_candidates(&self) -> impl Iterator<Item = &TransactionWithHash> {
-        self.anchor.candidates.iter()
-    }
-
-    pub fn n_executed(&self) -> usize {
-        self.anchor.n_executed()
-    }
-
-    pub async fn wait_for_new_tx(&mut self) -> PreconfirmedBlockChange {
-        self.anchor.wait_next_tx().await
-    }
-
-    /// Anchor on the previous block.
-    pub fn view_on_parent(&self) -> MadaraView<D> {
-        MadaraView::new(
-            self.backend.clone(),
-            Anchor::new_on_confirmed(self.anchor.block.header.block_number.checked_sub(1)),
-        )
     }
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {
-    pub(crate) fn view_on_anchor(self: &Arc<Self>, anchor: Anchor) -> MadaraView<D> {
-        MadaraView::new(self.clone(), anchor)
-    }
-    pub(crate) fn block_view_on_anchor(self: &Arc<Self>, anchor: BlockAnchor) -> MadaraBlockView<D> {
-        MadaraBlockView::new(self.clone(), anchor)
-    }
-    pub(crate) fn preconfirmed_view_on_anchor(
-        self: &Arc<Self>,
-        anchor: PreconfirmedBlockAnchor,
-    ) -> MadaraPreconfirmedBlockView<D> {
-        MadaraPreconfirmedBlockView::new(self.clone(), anchor)
+    /// Returns a view on a block. This view is used to query content from that block.
+    /// Returns [`None`] if the block was not found.
+    pub fn block_view(self: &Arc<Self>, block_id: impl BlockViewResolvable) -> Result<Option<MadaraBlockView<D>>> {
+        block_id.resolve_block_view(self)
     }
 
-    pub fn view_on(self: &Arc<Self>, anchor: impl IntoAnchor) -> Result<Option<MadaraView<D>>> {
-        Ok(anchor.into_anchor(self.as_ref())?.map(|anchor| self.view_on_anchor(anchor)))
-    }
-    pub fn view_on_latest_confirmed(self: &Arc<Self>) -> MadaraView<D> {
-        self.view_on_anchor(Anchor::new_on_confirmed(self.latest_confirmed_block_n()))
-    }
-    /// May return a view on a fake preconfirmed block if none was found.
-    pub fn view_on_preconfirmed(self: &Arc<Self>) -> MadaraPreconfirmedBlockView<D> {
-        self.preconfirmed_view_on_anchor(PreconfirmedBlockAnchor::new(self.get_preconfirmed_or_fake()))
+    /// Returns a view on the last confirmed block. This view is used to query content from that block.
+    /// Returns [`None`] if the database has no blocks.
+    pub fn block_view_on_last_confirmed(self: &Arc<Self>) -> Option<MadaraConfirmedBlockView<D>> {
+        self.latest_confirmed_block_n().map(|block_number| MadaraConfirmedBlockView::new(self.clone(), block_number))
     }
 
-    pub fn block_view_on_confirmed(self: &Arc<Self>, block_n: u64) -> MadaraBlockView<D> {
-        self.block_view_on_anchor(BlockAnchor::new_on_confirmed(block_n))
-    }
-    pub fn block_view_on(self: &Arc<Self>, anchor: impl IntoAnchor) -> Result<Option<MadaraBlockView<D>>> {
-        Ok(anchor.into_block_anchor(self.as_ref())?.map(|anchor| self.block_view_on_anchor(anchor)))
-    }
-    pub fn block_view_on_latest_confirmed(self: &Arc<Self>) -> Option<MadaraBlockView<D>> {
-        Some(self.block_view_on_anchor(BlockAnchor::new_on_confirmed(self.latest_confirmed_block_n()?)))
-    }
-    /// May return a view on a fake preconfirmed block if none was found.
-    pub fn block_view_on_preconfirmed(self: &Arc<Self>) -> MadaraBlockView<D> {
-        self.block_view_on_anchor(BlockAnchor::new_on_preconfirmed(self.get_preconfirmed_or_fake().clone()))
+    /// Returns a view on a confirmed block. This view is used to query content from that block.
+    /// Returns [`None`] if the block number is not yet confirmed.
+    pub fn block_view_on_confirmed(self: &Arc<Self>, block_number: u64) -> Option<MadaraConfirmedBlockView<D>> {
+        self.latest_confirmed_block_n()
+            .filter(|n| n >= &block_number)
+            .map(|_| MadaraConfirmedBlockView::new(self.clone(), block_number))
     }
 
-    /// Returns a fake preconfirmed block if none was found.
-    pub fn get_preconfirmed_or_fake(&self) -> Arc<PreconfirmedBlock> {
-        let anchor = self.chain_tip.borrow();
-        if let Some(preconfirmed) = anchor.preconfirmed() {
-            preconfirmed.block.clone()
-        } else {
-            // Fake preconfirmed
-            todo!()
+    /// Returns a view on the preconfirmed block. This view is used to query content and listen for changes in that block.
+    pub fn block_view_on_preconfirmed(self: &Arc<Self>) -> Option<MadaraPreconfirmedBlockView<D>> {
+        self.preconfirmed_block().map(|block| MadaraPreconfirmedBlockView::new(self.clone(), block))
+    }
+
+    /// Returns a view on the preconfirmed block. This view is used to query content and listen for changes in that block.
+    /// This returns a fake preconfirmed block if there is not currently one in the backend.
+    pub fn block_view_on_preconfirmed_or_fake(self: &Arc<Self>) -> MadaraPreconfirmedBlockView<D> {
+        MadaraPreconfirmedBlockView::new(
+            self.clone(),
+            self.preconfirmed_block().unwrap_or_else(|| {
+                // fake preconfirmed block.
+                todo!()
+            }),
+        )
+    }
+
+    /// Returns a state view on the latest confirmed block state. This view can be used to query the state from this block and earlier.
+    pub fn view_on_latest_confirmed(self: &Arc<Self>) -> MadaraStateView<D> {
+        MadaraStateView::on_confirmed_or_empty(self.clone(), self.latest_confirmed_block_n())
+    }
+
+    /// Returns a state view on the latest block state, including pre-confirmed state. This view can be used to query the state from this block and earlier.
+    pub fn view_on_latest(self: &Arc<Self>) -> MadaraStateView<D> {
+        self.view_on_tip(self.chain_tip.borrow().clone())
+    }
+
+    pub fn block_view_on_tip(self: &Arc<MadaraBackend<D>>, tip: ChainTip) -> Option<MadaraBlockView<D>> {
+        match tip {
+            ChainTip::Empty => None,
+            ChainTip::Confirmed(block_number) => Some(MadaraConfirmedBlockView::new(self.clone(), block_number).into()),
+            ChainTip::Preconfirmed(block) => Some(MadaraPreconfirmedBlockView::new(self.clone(), block).into()),
+        }
+    }
+    pub fn view_on_tip(self: &Arc<MadaraBackend<D>>, tip: ChainTip) -> MadaraStateView<D> {
+        match tip {
+            ChainTip::Empty => MadaraStateView::Empty(self.clone()),
+            ChainTip::Confirmed(block_number) => MadaraConfirmedBlockView::new(self.clone(), block_number).into(),
+            ChainTip::Preconfirmed(block) => MadaraPreconfirmedBlockView::new(self.clone(), block).into(),
         }
     }
 }

@@ -9,7 +9,7 @@ use crate::{
     util::ServiceStateSender,
     SyncControllerConfig,
 };
-use mc_db::{db_block_id::DbBlockId, MadaraBackend};
+use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::StateUpdate;
 use mp_chain_config::ChainConfig;
 use mp_state_update::DeclaredClassItem;

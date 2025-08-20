@@ -51,11 +51,6 @@ pub(crate) struct PreconfirmedBlockInner {
 }
 
 impl PreconfirmedBlockInner {
-    pub fn all_transactions(
-        &self,
-    ) -> impl DoubleEndedIterator<Item = &PreconfirmedTransaction> + Clone + ExactSizeIterator {
-        self.txs[..].iter()
-    }
     pub fn executed_transactions(
         &self,
     ) -> impl DoubleEndedIterator<Item = &PreconfirmedExecutedTransaction> + Clone + ExactSizeIterator {
@@ -105,6 +100,16 @@ impl Eq for PreconfirmedBlock {}
 impl PreconfirmedBlock {
     pub fn new(header: PreconfirmedHeader) -> Self {
         Self { header, content: tokio::sync::watch::Sender::new(Default::default()) }
+    }
+    pub fn new_with_content(
+        header: PreconfirmedHeader,
+        executed: impl IntoIterator<Item = PreconfirmedExecutedTransaction>,
+        candidates: impl IntoIterator<Item = TransactionWithHash>,
+    ) -> Self {
+        let mut inner = PreconfirmedBlockInner::default();
+        inner.append_executed(executed);
+        inner.append_candidates(candidates);
+        Self { header, content: tokio::sync::watch::Sender::new(inner) }
     }
 
     /// Replaces all candidate transactions with the content of `replace_candidates`.

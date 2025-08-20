@@ -1,6 +1,10 @@
 use crate::{
-    preconfirmed::PreconfirmedExecutedTransaction, prelude::*, rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction}, storage::{DevnetPredeployedKeys, StoredChainInfo, StoredChainTip}, view::{Anchor, BlockAnchor}
+    preconfirmed::PreconfirmedExecutedTransaction,
+    prelude::*,
+    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
+    storage::{DevnetPredeployedKeys, StorageChainTip, StoredChainInfo},
 };
+use mp_block::header::PreconfirmedHeader;
 use rocksdb::{IteratorMode, ReadOptions};
 
 pub const META_COLUMN: Column = Column::new("meta").set_point_lookup();
@@ -11,6 +15,12 @@ const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK"
 const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
+
+#[derive(serde::Deserialize, serde::Serialize)]
+pub enum StoredChainTipWithoutContent {
+    Confirmed(u64),
+    Preconfirmed(PreconfirmedHeader),
+}
 
 impl RocksDBStorageInner {
     /// Set the latest l1_block synced for the messaging worker.
@@ -57,7 +67,7 @@ impl RocksDBStorageInner {
     /// Get the devnet predeployed contracts keys.
     #[tracing::instrument(skip(self))]
     pub(super) fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
-        let Some(res) = self.db.get_cf(&self.get_column(META_COLUMN), META_DEVNET_KEYS_KEY)? else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_DEVNET_KEYS_KEY)? else {
             return Ok(None);
         };
         Ok(Some(bincode::deserialize(&res)?))
@@ -76,8 +86,8 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn replace_chain_tip(&self, chain_tip: &Anchor) -> Result<()> {
-        // We need to do all of this in a single write.
+    pub(super) fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {
+        // We need to do all of this in a single write. (atomic)
 
         let preconfirmed_col = self.get_column(PRECONFIRMED_COLUMN);
         let meta_col = self.get_column(META_COLUMN);
@@ -86,30 +96,43 @@ impl RocksDBStorageInner {
         // Delete previous preconfirmed content.
         batch.delete_range_cf(&preconfirmed_col, 0u16.to_be_bytes(), u16::MAX.to_be_bytes());
 
-        // Write new preconfirmed content.
-        if let Some(preconfirmed) = chain_tip.preconfirmed() {
-            for (tx_index, val) in preconfirmed.block.content.borrow().executed_transactions().enumerate() {
-                let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
-                batch.put_cf(&preconfirmed_col, &tx_index.to_be_bytes(), bincode::serialize(&val)?);
-            }
-        }
-
         // Write new chain tip.
-        let chain_tip = match chain_tip {
-            Anchor::Empty => None,
-            Anchor::Block(BlockAnchor::Confirmed(block_n)) => Some(StoredChainTip::BlockN(*block_n)),
-            Anchor::Block(BlockAnchor::Preconfirmed(block)) => {
-                Some(StoredChainTip::Preconfirmed(block.block.header.clone()))
+        match chain_tip {
+            StorageChainTip::Empty => batch.delete_cf(&meta_col, META_CHAIN_TIP_KEY),
+            StorageChainTip::Confirmed(block_n) => {
+                batch.put_cf(
+                    &meta_col,
+                    META_CHAIN_TIP_KEY,
+                    super::serialize_to_smallvec::<[u8; 128]>(&StoredChainTipWithoutContent::Confirmed(*block_n))?,
+                );
+            }
+            StorageChainTip::Preconfirmed { header, content } => {
+                batch.put_cf(
+                    &meta_col,
+                    META_CHAIN_TIP_KEY,
+                    super::serialize_to_smallvec::<[u8; 128]>(&StoredChainTipWithoutContent::Preconfirmed(
+                        header.clone(),
+                    ))?,
+                );
+                // Write new preconfirmed content.
+                for (tx_index, val) in content.iter().enumerate() {
+                    let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
+                    batch.put_cf(&preconfirmed_col, &tx_index.to_be_bytes(), bincode::serialize(&val)?);
+                }
             }
         };
-        if let Some(chain_tip) = chain_tip {
-            batch.put_cf(&meta_col, META_CHAIN_TIP_KEY, super::serialize_to_smallvec::<[u8; 128]>(&chain_tip)?);
-        } else {
-            batch.delete_cf(&meta_col, META_CHAIN_TIP_KEY);
-        }
 
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
         Ok(())
+    }
+
+    // internal utility method
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_chain_tip_without_content(&self) -> Result<Option<StoredChainTipWithoutContent>> {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_CHAIN_TIP_KEY)? else {
+            return Ok(None);
+        };
+        Ok(Some(bincode::deserialize::<StoredChainTipWithoutContent>(&res)?))
     }
 
     #[tracing::instrument(skip(self, txs))]
@@ -130,31 +153,30 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn get_chain_tip(&self) -> Result<Option<StoredChainTip>> {
-        let Some(res) = self.db.get_cf(&self.get_column(META_COLUMN), META_CHAIN_TIP_KEY)? else {
-            return Ok(None);
-        };
-        Ok(Some(bincode::deserialize(&res)?))
-    }
+    pub(super) fn get_chain_tip(&self) -> Result<StorageChainTip> {
+        match self.get_chain_tip_without_content()? {
+            None => Ok(StorageChainTip::Empty),
+            Some(StoredChainTipWithoutContent::Confirmed(block_n)) => Ok(StorageChainTip::Confirmed(block_n)),
+            Some(StoredChainTipWithoutContent::Preconfirmed(header)) => {
+                // Get preconfirmed block content
+                let content = DBIterator::new_cf(
+                    &self.db,
+                    &self.get_column(PRECONFIRMED_COLUMN),
+                    ReadOptions::default(),
+                    IteratorMode::Start,
+                )
+                .into_iter_values(|bytes| bincode::deserialize::<PreconfirmedExecutedTransaction>(bytes))
+                .map(|res| Ok(res??))
+                .collect::<Result<_>>()?;
 
-    #[tracing::instrument(skip(self))]
-    pub(super) fn get_preconfirmed_content(
-        &self,
-    ) -> impl Iterator<Item = Result<PreconfirmedExecutedTransaction>> + '_ {
-        let iter = DBIterator::new_cf(
-            &self.db,
-            &self.get_column(PRECONFIRMED_COLUMN),
-            ReadOptions::default(),
-            IteratorMode::Start,
-        )
-        .into_iter_values(|bytes| bincode::deserialize::<PreconfirmedExecutedTransaction>(bytes))
-        .map(|res| Ok(res??));
-        iter
+                Ok(StorageChainTip::Preconfirmed { header, content })
+            }
+        }
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
-        let Some(res) = self.db.get_cf(&self.get_column(META_COLUMN), META_CHAIN_INFO_KEY)? else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_CHAIN_INFO_KEY)? else {
             return Ok(None);
         };
         Ok(Some(bincode::deserialize(&res)?))

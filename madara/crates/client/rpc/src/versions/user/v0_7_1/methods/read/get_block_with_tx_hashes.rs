@@ -43,7 +43,7 @@ pub fn get_block_with_tx_hashes(
                 },
             }))
         }
-        MadaraMaybePreconfirmedBlockInfo::Closed(block) => {
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
                 transactions: block_txs_hashes,

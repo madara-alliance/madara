@@ -24,13 +24,12 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         transactions_before: impl IntoIterator<Item = Transaction>,
         transactions_to_trace: impl IntoIterator<Item = Transaction>,
     ) -> Result<Vec<ExecutionResult>, Error> {
-
         let mut executed_prev = 0;
         for (index, tx) in transactions_before.into_iter().enumerate() {
             let hash = tx.tx_hash();
             tracing::debug!("executing {:#x}", hash.to_felt());
             tx.execute(&mut self.state, &self.block_context).map_err(|err| TxExecError {
-                anchor: self.anchor().clone(),
+                view: format!("{}", self.view()),
                 hash,
                 index,
                 err,
@@ -60,13 +59,9 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
                     Transaction::L1Handler(_) => None, // There is no minimal_l1_gas field for L1 handler transactions.
                 };
 
-                let anchor = self.anchor().clone();
-                let make_reexec_error = |err| TxExecError {
-                    anchor: anchor.clone(),
-                    hash,
-                    index: executed_prev + index,
-                    err,
-                };
+                let view = self.view().clone();
+                let make_reexec_error =
+                    |err| TxExecError { view: format!("{view}"), hash, index: executed_prev + index, err };
 
                 let mut transactional_state = TransactionalState::create_transactional(&mut self.state);
                 // NB: We use execute_raw because execute already does transaactional state.

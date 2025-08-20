@@ -203,7 +203,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             block_number: 0,
@@ -256,7 +256,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             block_number: 1,
@@ -279,7 +279,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             block_number: 2,
@@ -541,7 +541,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: Felt::ZERO,
                             global_state_root: state_roots[0],
@@ -563,7 +563,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[0],
                             global_state_root: state_roots[1],
@@ -585,7 +585,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
         backend
             .store_block(
                 MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Closed(MadaraBlockInfo {
+                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
                         header: Header {
                             parent_block_hash: block_hashes[1],
                             global_state_root: state_roots[2],

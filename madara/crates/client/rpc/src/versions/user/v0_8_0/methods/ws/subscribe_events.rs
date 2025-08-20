@@ -148,7 +148,7 @@ mod test {
             backend
                 .store_block(
                     mp_block::MadaraMaybePendingBlock {
-                        info: mp_block::MadaraMaybePreconfirmedBlockInfo::Closed(block_info.clone()),
+                        info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(block_info.clone()),
                         inner: block_inner.clone(),
                     },
                     mp_state_update::StateDiff::default(),
