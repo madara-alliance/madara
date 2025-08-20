@@ -3,7 +3,6 @@
 use crate::header::GasPrices;
 use commitments::{BlockCommitments, CommitmentComputationContext};
 use header::{BlockTimestamp, PendingHeader};
-use mp_chain_config::L1DataAvailabilityMode;
 
 use mp_chain_config::StarknetVersion;
 use mp_convert::FixedPoint;
@@ -15,13 +14,14 @@ use starknet_types_core::felt::Felt;
 pub mod commitments;
 pub mod event_with_info;
 pub mod header;
+pub mod to_rpc;
 
 pub use event_with_info::EventWithInfo;
 pub use header::Header;
 pub use primitive_types::{H160, U256};
 
-pub type BlockId = mp_rpc::BlockId;
-pub type BlockTag = mp_rpc::BlockTag;
+pub type BlockId = mp_rpc::v0_7_1::BlockId;
+pub type BlockTag = mp_rpc::v0_7_1::BlockTag;
 
 // TODO: where should we put that?
 #[derive(Debug, Clone)]
@@ -138,61 +138,6 @@ impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
 impl From<MadaraBlockInfo> for MadaraMaybePendingBlockInfo {
     fn from(value: MadaraBlockInfo) -> Self {
         Self::NotPending(value)
-    }
-}
-
-impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
-    fn from(info: MadaraBlockInfo) -> Self {
-        let MadaraBlockInfo {
-            header:
-                Header {
-                    parent_block_hash: parent_hash,
-                    block_number,
-                    global_state_root: new_root,
-                    sequencer_address,
-                    block_timestamp: timestamp,
-                    protocol_version,
-                    gas_prices,
-                    l1_da_mode,
-                    ..
-                },
-            block_hash,
-            ..
-        } = info;
-        let GasPrices {
-            eth_l1_gas_price,
-            strk_l1_gas_price,
-            eth_l1_data_gas_price,
-            strk_l1_data_gas_price,
-            eth_l2_gas_price: _,
-            strk_l2_gas_price: _,
-        } = gas_prices;
-
-        Self {
-            block_hash,
-            block_number,
-            l1_da_mode: match l1_da_mode {
-                L1DataAvailabilityMode::Blob => mp_rpc::L1DaMode::Blob,
-                L1DataAvailabilityMode::Calldata => mp_rpc::L1DaMode::Calldata,
-            },
-            l1_data_gas_price: mp_rpc::ResourcePrice {
-                price_in_fri: Felt::from(strk_l1_data_gas_price),
-                price_in_wei: Felt::from(eth_l1_data_gas_price),
-            },
-            l1_gas_price: mp_rpc::ResourcePrice {
-                price_in_fri: Felt::from(strk_l1_gas_price),
-                price_in_wei: Felt::from(eth_l1_gas_price),
-            },
-            new_root,
-            parent_hash,
-            sequencer_address,
-            starknet_version: if protocol_version < StarknetVersion::V0_9_1 {
-                "".to_string()
-            } else {
-                protocol_version.to_string()
-            },
-            timestamp: timestamp.0,
-        }
     }
 }
 

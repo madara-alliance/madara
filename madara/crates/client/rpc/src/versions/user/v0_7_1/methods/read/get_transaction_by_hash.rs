@@ -1,4 +1,4 @@
-use mp_rpc::TxnWithHash;
+use mp_rpc::v0_7_1::TxnWithHash;
 use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
