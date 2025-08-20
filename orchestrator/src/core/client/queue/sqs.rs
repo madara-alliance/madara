@@ -1,4 +1,5 @@
 use crate::core::client::queue::QueueError;
+use crate::types::constant::generate_version_string;
 use crate::types::params::AWSResourceIdentifier;
 use crate::types::params::ARN;
 use crate::{
@@ -167,14 +168,47 @@ impl SQS {
 #[async_trait]
 impl QueueClient for SQS {
     /// **send_message** - Send a message to the queue
-    /// This function sends a message to the queue.
+    /// This function sends a message to the queue using FIFO queues with MessageGroupId for version-based filtering
     /// It returns a Result<(), OrchestratorError> indicating whether the operation was successful or not
     async fn send_message(&self, queue: QueueType, payload: String, delay: Option<Duration>) -> Result<(), QueueError> {
-        let producer = self.get_producer(queue).await?;
-        match delay {
-            Some(d) => producer.send_raw_scheduled(payload.as_str(), d).await?,
-            None => producer.send_raw(payload.as_str()).await?,
+        // Always use FIFO queue with MessageGroupId for version-based filtering
+        let queue_name = self.get_queue_name(&queue)?;
+        let queue_url = self.inner.get_queue_url_from_client(queue_name.as_str()).await?;
+
+        // Get the orchestrator version
+        let version = generate_version_string();
+
+        // Generate a unique deduplication ID using timestamp and payload hash
+        let deduplication_id = format!(
+            "{}_{}",
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_millis(),
+            // Use a simple hash of the payload for additional uniqueness
+            payload.len()
+        );
+
+        let mut send_message_request = self
+            .inner
+            .client()
+            .send_message()
+            .queue_url(&queue_url)
+            .message_body(&payload)
+            .message_group_id(&version)
+            .message_deduplication_id(&deduplication_id);
+
+        // Add delay if specified
+        if let Some(delay_duration) = delay {
+            send_message_request = send_message_request.delay_seconds(delay_duration.as_secs() as i32);
         }
+
+        send_message_request.send().await?;
+
+        tracing::info!(
+            "Sent versioned message to queue {} with version {} and deduplication_id {}",
+            queue_name,
+            version,
+            deduplication_id
+        );
+
         Ok(())
     }
 
