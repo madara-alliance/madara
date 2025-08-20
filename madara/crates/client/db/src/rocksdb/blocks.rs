@@ -49,7 +49,7 @@ impl RocksDBStorageInner {
             return Ok(None);
         };
         let res = bincode::deserialize::<(u32, u32)>(&res)?;
-        Ok(Some(TxIndex { block_n: res.0.into(), transaction_index: res.1.into() }))
+        Ok(Some(TxIndex { block_number: res.0.into(), transaction_index: res.1.into() }))
     }
 
     #[tracing::instrument(skip(self))]
@@ -135,7 +135,7 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, value))]
-    pub(super) fn blocks_store_transactions(&self, block_n: u64, value: &[TransactionWithReceipt]) -> Result<()> {
+    pub(super) fn blocks_store_transactions(&self, block_number: u64, value: &[TransactionWithReceipt]) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
 
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
@@ -146,9 +146,9 @@ impl RocksDBStorageInner {
             batch.put_cf(
                 &tx_hash_to_index_col,
                 transaction.receipt.transaction_hash().to_bytes_be(),
-                super::serialize_to_smallvec::<[u8; 16]>(&TxIndex { block_n, transaction_index: tx_index as _ })?,
+                super::serialize_to_smallvec::<[u8; 16]>(&TxIndex { block_number, transaction_index: tx_index as _ })?,
             );
-            let block_n = u32::try_from(block_n).context("Converting block_n to u32")?;
+            let block_n = u32::try_from(block_number).context("Converting block_n to u32")?;
             let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
             batch.put_cf(
                 &block_txs_col,
@@ -159,11 +159,11 @@ impl RocksDBStorageInner {
 
         // update block info tx hashes (we should get rid of this field at some point IMO)
         let mut block_info: MadaraBlockInfo = bincode::deserialize(
-            &self.db.get_pinned_cf(&block_info_col, block_n.to_be_bytes())?.context("Block info not found")?,
+            &self.db.get_pinned_cf(&block_info_col, block_number.to_be_bytes())?.context("Block info not found")?,
         )?;
         block_info.tx_hashes =
             value.iter().map(|tx_with_receipt| *tx_with_receipt.receipt.transaction_hash()).collect();
-        batch.put_cf(&block_info_col, block_n.to_be_bytes(), bincode::serialize(&block_info)?);
+        batch.put_cf(&block_info_col, block_number.to_be_bytes(), bincode::serialize(&block_info)?);
 
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
         Ok(())

@@ -122,7 +122,7 @@ pub(crate) struct AdditionalTxInfo {
 #[derive(Debug, Clone)]
 pub(crate) struct BlockExecutionContext {
     /// The new block_n.
-    pub block_n: u64,
+    pub block_number: u64,
     /// The Starknet address of the sequencer who created this block.
     pub sequencer_address: Felt,
     /// Unix timestamp (seconds) when the block was produced -- before executing any transaction.
@@ -138,6 +138,7 @@ pub(crate) struct BlockExecutionContext {
 impl BlockExecutionContext {
     pub fn into_header(self, parent_block_hash: Felt) -> PreconfirmedHeader {
         PreconfirmedHeader {
+            block_number: self.block_number,
             parent_block_hash,
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp.into(),
@@ -149,7 +150,7 @@ impl BlockExecutionContext {
 
     pub fn to_blockifier(&self) -> Result<starknet_api::block::BlockInfo, StarknetApiError> {
         Ok(starknet_api::block::BlockInfo {
-            block_number: starknet_api::block::BlockNumber(self.block_n),
+            block_number: starknet_api::block::BlockNumber(self.block_number),
             block_timestamp: starknet_api::block::BlockTimestamp(BlockTimestamp::from(self.block_timestamp).0),
             sequencer_address: self.sequencer_address.try_into()?,
             gas_prices: (&self.l1_gas_price).into(),
@@ -169,6 +170,6 @@ pub(crate) fn create_execution_context(
         protocol_version: backend.chain_config().latest_protocol_version,
         l1_gas_price: l1_data_provider.get_gas_prices(),
         l1_da_mode: backend.chain_config().l1_da_mode,
-        block_n,
+        block_number: block_n,
     }
 }

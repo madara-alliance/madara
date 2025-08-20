@@ -221,6 +221,9 @@ impl MadaraStorageRead for RocksDBStorage {
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>> {
         self.inner.get_stored_chain_info().context("Getting stored chain info from db")
     }
+    fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
+        self.inner.get_latest_applied_trie_update().context("Getting latest applied trie update info from db")
+    }
 
     // L1 to L2 messages
 
@@ -327,6 +330,9 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
     fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()> {
         self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
+    }
+    fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
+        self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
     }
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {

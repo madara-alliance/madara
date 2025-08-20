@@ -157,7 +157,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         }
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
         let Some(class) = self.backend().db.get_class(class_hash)? else { return Ok(None) };
-        if class.block_n <= block_n {
+        if class.block_number <= block_n {
             Ok(Some(class.class_info))
         } else {
             Ok(None)
@@ -176,7 +176,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         }
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
         let Some(class) = self.backend().db.get_class_compiled(compiled_class_hash)? else { return Ok(None) };
-        if class.block_n <= block_n {
+        if class.block_number <= block_n {
             Ok(Some(class.compiled_sierra.into()))
         } else {
             Ok(None)
@@ -208,7 +208,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             preconfirmed.borrow_content().executed_transactions().enumerate().find_map(|(tx_index, tx)| {
                 if tx.transaction.receipt.transaction_hash() == tx_hash {
                     Some((
-                        TxIndex { block_n: preconfirmed.block_number(), transaction_index: tx_index as _ },
+                        TxIndex { block_number: preconfirmed.block_number(), transaction_index: tx_index as _ },
                         tx.transaction.clone(),
                     ))
                 } else {
@@ -224,14 +224,14 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             return Ok(None);
         };
 
-        if found.block_n > on_block_n {
+        if found.block_number > on_block_n {
             return Ok(None);
         }
 
         let tx = self
             .backend()
             .db
-            .get_transaction(found.block_n, found.transaction_index)?
+            .get_transaction(found.block_number, found.transaction_index)?
             .context("Transaction should exist")?;
 
         Ok(Some((found, tx)))
@@ -241,7 +241,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         if let Some(res) = self.block_view_on_latest().and_then(|v| v.as_preconfirmed()).and_then(|preconfirmed| {
             preconfirmed.borrow_content().executed_transactions().enumerate().find_map(|(tx_index, tx)| {
                 if tx.transaction.receipt.transaction_hash() == tx_hash {
-                    Some(TxIndex { block_n: preconfirmed.block_number(), transaction_index: tx_index as _ })
+                    Some(TxIndex { block_number: preconfirmed.block_number(), transaction_index: tx_index as _ })
                 } else {
                     None
                 }
@@ -255,7 +255,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
             return Ok(None);
         };
 
-        if found.block_n > on_block_n {
+        if found.block_number > on_block_n {
             return Ok(None);
         }
 

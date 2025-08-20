@@ -528,7 +528,7 @@ impl BlockImporterCtx {
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
         // don't re-import the blocks we've already imported.
-        let next_to_import = self.db.head_status().global_trie.next();
+        let next_to_import = self.db.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let already_imported_count = next_to_import.saturating_sub(block_range.start);
         let state_diffs = state_diffs.iter().skip(already_imported_count as _);
         block_range.start += already_imported_count;
@@ -537,22 +537,19 @@ impl BlockImporterCtx {
             return Ok(()); // range is empty
         };
 
-        let got = self.db.apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
+        let got = self.db.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
             BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
         })?;
+
+        self.db.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
         // Sanity check: verify state root.
         if !self.config.no_check {
             let expected = self
                 .db
-                .get_block_info(&RawDbBlockId::Number(last_block_n))
-                .map_err(|error| BlockImportError::InternalDb {
-                    error,
-                    context: format!("Cannot find block info for block #{last_block_n}").into(),
-                })?
+                .block_view_on_confirmed(last_block_n)
                 .context("Block header cannot be found")?
-                .into_closed()
-                .context("Block is pending")?
+                .get_block_info()?
                 .header
                 .global_state_root;
 

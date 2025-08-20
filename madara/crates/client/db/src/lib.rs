@@ -61,20 +61,20 @@ use std::path::Path;
 // mod db_metrics;
 mod db_version;
 mod prelude;
-mod storage;
-mod subscription;
-mod sync_status;
+pub mod storage;
 
+pub mod sync_status;
 pub mod preconfirmed;
 pub mod rocksdb;
-mod view;
+pub mod subscription;
+pub mod view;
 // pub mod tests;
 
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
     MadaraStorageWrite, TxIndex,
 };
-pub use view::*;
+pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
 /// Current chain tip.
 #[derive(Debug, Default, Clone)]
@@ -380,8 +380,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         Ok(())
     }
 
-    /// Returns an error if there is no preconfirmed block.
-    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<()> {
+    /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
+    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<Felt> {
         let (block, classes) = self
             .inner
             .block_view_on_preconfirmed()
@@ -390,12 +390,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Write the block & apply to global trie
 
-        self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
+        let block_hash = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
 
         // Advance chain & clear preconfirmed atomically
         self.replace_chain_tip(ChainTip::Confirmed(block.header.block_number))?;
 
-        self.on_new_block_imported(block.header.block_number)
+        self.on_new_block_imported(block.header.block_number)?;
+
+        Ok(block_hash)
     }
 
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
@@ -427,13 +429,13 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
-    /// all the block parts.
+    /// all the block parts. Returns the block hash.
     fn write_new_confirmed_inner(
         &self,
         block: &PreconfirmedFullBlock,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
-    ) -> Result<()> {
+    ) -> Result<Felt> {
         let commitments = BlockCommitments::compute(
             &CommitmentComputationContext {
                 protocol_version: self.inner.chain_config.latest_protocol_version,
@@ -458,7 +460,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.write_events(block.header.block_number, &block.events)?;
         self.write_classes(block.header.block_number, &classes)?;
 
-        Ok(())
+        Ok(block_hash)
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
@@ -574,6 +576,9 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
         self.db.get_devnet_predeployed_keys()
     }
+    pub fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
+        self.db.get_latest_applied_trie_update()
+    }
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
@@ -597,5 +602,8 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     }
     pub fn write_saved_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()> {
         self.db.write_mempool_transaction(tx)
+    }
+    pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.write_latest_applied_trie_update(block_n)
     }
 }

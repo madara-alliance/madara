@@ -395,7 +395,6 @@ impl PreconfirmedFullBlock {
     pub fn close_block(
         self,
         ctx: &CommitmentComputationContext,
-        _block_number: u64,
         new_global_state_root: Felt,
         pre_v0_13_2_override: bool,
     ) -> FullBlock {

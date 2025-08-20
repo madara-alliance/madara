@@ -219,7 +219,6 @@ mod tests {
         RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
         TransactionValidator, TransactionValidatorConfig,
     };
-    use mp_block::{BlockId, BlockTag};
     use mp_class::{ClassInfo, FlattenedSierraClass};
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
     use mp_rpc::{
@@ -323,20 +322,16 @@ mod tests {
 
         /// (STRK in FRI, ETH in WEI)
         pub fn get_bal_strk_eth(&self, contract_address: Felt) -> (u128, u128) {
-            get_fee_tokens_balance(&self.backend, contract_address).unwrap().as_u128_fri_wei().unwrap()
+            get_fee_tokens_balance(&self.backend.view_on_latest(), contract_address).unwrap().as_u128_fri_wei().unwrap()
         }
     }
 
     async fn test_chain() -> DevnetForTesting {
         test_chain_with_chain_config(ChainConfig::madara_devnet()).await
     }
-    async fn test_chain_with_block_time(
-        block_time: Duration,
-        pending_block_update_time: Option<Duration>,
-    ) -> DevnetForTesting {
+    async fn test_chain_with_block_time(block_time: Duration) -> DevnetForTesting {
         let mut chain_config = ChainConfig::madara_devnet();
         chain_config.block_time = block_time;
-        chain_config.pending_block_update_time = pending_block_update_time;
         test_chain_with_chain_config(chain_config).await
     }
     async fn test_chain_with_chain_config(chain_config: ChainConfig) -> DevnetForTesting {
@@ -350,7 +345,10 @@ mod tests {
         let chain_config = Arc::new(chain_config);
         let backend = MadaraBackend::open_for_testing(chain_config.clone());
         g.build_and_store(&backend).await.unwrap();
-        tracing::debug!("block imported {:?}", backend.get_block_info(&BlockId::Tag(BlockTag::Latest)));
+        tracing::debug!(
+            "block imported {:?}",
+            backend.block_view_on_last_confirmed().unwrap().get_block_info().unwrap()
+        );
 
         let mut l1_data_provider = MockL1DataProvider::new();
         l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
@@ -423,41 +421,32 @@ mod tests {
             AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
-            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
-            {
+            if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
                 break;
             }
         }
+        let pending_view = chain.backend.block_view_on_preconfirmed_or_fake();
+        assert_eq!(pending_view.get_block_info().tx_hashes.len(), 1);
+        tracing::debug!("receipt: {:?}", pending_view.get_transaction(0).unwrap().receipt);
 
-        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
-
-        assert_eq!(block.inner.transactions.len(), 1);
-        assert_eq!(block.inner.receipts.len(), 1);
-        tracing::debug!("receipt: {:?}", block.inner.receipts[0]);
-
-        let class_info =
-            chain.backend.get_class_info(&BlockId::Tag(BlockTag::Pending), &calculated_class_hash).unwrap().unwrap();
+        let class_info = chain.backend.view_on_latest().get_class_info(&calculated_class_hash).unwrap().unwrap();
 
         assert_matches!(
             class_info,
             ClassInfo::Sierra(info) if info.compiled_class_hash == compiled_contract_class_hash
         );
 
-        let TransactionReceipt::Declare(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
+        let TransactionReceipt::Declare(receipt) = pending_view.get_transaction(0).unwrap().receipt else {
+            unreachable!()
+        };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
     }
 
     #[rstest]
-    #[case::should_fail_no_fund(false, false, Some(Duration::from_millis(500)), Duration::from_secs(500000), false)]
-    #[case::should_work_all_in_pending_block(
-        true,
-        false,
-        Some(Duration::from_millis(500)),
-        Duration::from_secs(500000),
-        true
-    )]
-    #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
+    #[case::should_fail_no_fund(false, false, Duration::from_secs(500000), false)]
+    #[case::should_work_all_in_pending_block(true, false, Duration::from_secs(500000), true)]
+    #[case::should_work_across_block_boundary(true, true, Duration::from_millis(300), true)]
     // FIXME: flaky
     // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
     #[ignore = "should_work_across_block_boundary"]
@@ -465,11 +454,10 @@ mod tests {
     async fn test_account_deploy(
         #[case] transfer_fees: bool,
         #[case] wait_block_time: bool,
-        #[case] pending_update_time: Option<Duration>,
         #[case] block_time: Duration,
         #[case] should_work: bool,
     ) {
-        let mut chain = test_chain_with_block_time(block_time, pending_update_time).await;
+        let mut chain = test_chain_with_block_time(block_time).await;
 
         let mut block_production = chain.block_production.take().unwrap();
         let mut notifications = block_production.subscribe_state_notifications();
@@ -531,14 +519,7 @@ mod tests {
 
             for _ in 0..10 {
                 assert_eq!(notifications.recv().await.unwrap(), notif);
-                if !chain
-                    .backend
-                    .get_block_info(&BlockId::Tag(BlockTag::Pending))
-                    .unwrap()
-                    .unwrap()
-                    .tx_hashes()
-                    .is_empty()
-                {
+                if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
                     break;
                 }
             }
@@ -546,7 +527,7 @@ mod tests {
 
         // =====================================================================================
 
-        let account_balance = get_fee_tokens_balance(&chain.backend, calculated_address).unwrap();
+        let account_balance = get_fee_tokens_balance(&chain.backend.view_on_latest(), calculated_address).unwrap();
         let account = DevnetPredeployedContract {
             secret: key,
             pubkey: pubkey.scalar(),
@@ -595,20 +576,17 @@ mod tests {
 
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), notif);
-            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
-            {
+            if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
                 break;
             }
         }
 
         assert_eq!(res.contract_address, account.address);
 
-        let res = chain.backend.find_tx_hash_block(&res.transaction_hash).unwrap();
-        let (block, index) = res.unwrap();
+        let res = chain.backend.view_on_latest().get_transaction_by_hash(&res.transaction_hash).unwrap();
+        let (_, tx) = res.unwrap();
 
-        let TransactionReceipt::DeployAccount(receipt) = block.inner.receipts[index.0 as usize].clone() else {
-            unreachable!()
-        };
+        let TransactionReceipt::DeployAccount(receipt) = tx.receipt else { unreachable!() };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
     }
@@ -670,20 +648,18 @@ mod tests {
 
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
-            if !chain.backend.get_block_info(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap().tx_hashes().is_empty()
-            {
+            if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
                 break;
             }
         }
 
-        let block = chain.backend.get_block(&BlockId::Tag(BlockTag::Pending)).unwrap().unwrap();
+        let block_txs = chain.backend.block_view_on_preconfirmed_or_fake().get_block_transactions(..);
 
-        assert_eq!(block.inner.transactions.len(), 1);
-        assert_eq!(block.inner.receipts.len(), 1);
-        tracing::info!("receipt: {:?}", block.inner.receipts[0]);
+        assert_eq!(block_txs.len(), 1);
+        tracing::info!("receipt: {:?}", block_txs[0].receipt);
 
-        let TransactionReceipt::Invoke(receipt) = block.inner.receipts[0].clone() else { unreachable!() };
-        let fees_fri = block.inner.receipts[0].actual_fee().amount;
+        let TransactionReceipt::Invoke(receipt) = block_txs[0].receipt.clone() else { unreachable!() };
+        let fees_fri = block_txs[0].receipt.actual_fee().amount;
 
         if !expect_reverted {
             assert_eq!(
@@ -732,7 +708,7 @@ mod tests {
             false => {
                 assert_eq!(&receipt.execution_result, &ExecutionResult::Succeeded);
 
-                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
+                let fees_fri = block_txs[0].receipt.actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),
@@ -747,7 +723,7 @@ mod tests {
                 let ExecutionResult::Reverted { reason } = receipt.execution_result else { unreachable!() };
                 assert!(reason.contains("ERC20: insufficient balance"));
 
-                let fees_fri = block.inner.receipts[0].actual_fee().amount.try_into().unwrap();
+                let fees_fri = block_txs[0].receipt.actual_fee().amount.try_into().unwrap();
                 assert_eq!(chain.get_bal_strk_eth(sequencer_address), (fees_fri, 0));
                 assert_eq!(
                     chain.get_bal_strk_eth(contract_0.address),

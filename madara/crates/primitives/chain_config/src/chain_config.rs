@@ -76,9 +76,6 @@ impl Default for BlockProductionConfig {
 fn starknet_version_latest() -> StarknetVersion {
     StarknetVersion::LATEST
 }
-fn default_pending_block_update_time() -> Option<Duration> {
-    Some(Duration::from_millis(500))
-}
 fn default_block_time() -> Duration {
     Duration::from_secs(30)
 }
@@ -136,13 +133,6 @@ pub struct ChainConfig {
     /// are based on the latest block on chain.
     #[serde(default)]
     pub no_empty_blocks: bool,
-
-    /// Only used for block production.
-    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
-    /// When none, no pending block will be produced.
-    /// Default: 500ms.
-    #[serde(default = "default_pending_block_update_time", deserialize_with = "deserialize_optional_duration")]
-    pub pending_block_update_time: Option<Duration>,
 
     /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
@@ -223,9 +213,6 @@ impl ChainConfig {
         if self.block_time.is_zero() {
             bail!("Block time cannot be zero for block production.")
         }
-        if self.pending_block_update_time.is_some_and(|t| t.is_zero()) {
-            bail!("Pending block update time cannot be zero for block production.")
-        }
         Ok(())
     }
 
@@ -263,7 +250,6 @@ impl ChainConfig {
 
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
-            pending_block_update_time: Some(Duration::from_millis(500)),
 
             no_empty_blocks: false,
 
@@ -536,7 +522,6 @@ mod tests {
 
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
-        assert_eq!(chain_config.pending_block_update_time, Some(Duration::from_secs(2)));
 
         assert_eq!(
             chain_config.sequencer_address,

@@ -15,6 +15,7 @@ const META_LAST_SYNCED_L1_EVENT_BLOCK_KEY: &[u8] = b"LAST_SYNCED_L1_EVENT_BLOCK"
 const META_CONFIRMED_ON_L1_TIP_KEY: &[u8] = b"CONFIRMED_ON_L1_TIP";
 const META_CHAIN_TIP_KEY: &[u8] = b"CHAIN_TIP";
 const META_CHAIN_INFO_KEY: &[u8] = b"CHAIN_INFO";
+const META_LATEST_APPLIED_TRIE_UPDATE: &[u8] = b"LATEST_APPLIED_TRIE_UPDATE";
 
 #[derive(serde::Deserialize, serde::Serialize)]
 pub enum StoredChainTipWithoutContent {
@@ -188,6 +189,25 @@ impl RocksDBStorageInner {
             &self.get_column(META_COLUMN),
             META_CHAIN_INFO_KEY,
             super::serialize_to_smallvec::<[u8; 128]>(info)?,
+            &self.writeopts_no_wal,
+        )?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn get_latest_applied_trie_update(&self) -> Result<Option<u64>> {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE)? else {
+            return Ok(None);
+        };
+        Ok(Some(bincode::deserialize(&res)?))
+    }
+
+    #[tracing::instrument(skip(self))]
+    pub(super) fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
+        self.db.put_cf_opt(
+            &self.get_column(META_COLUMN),
+            META_LATEST_APPLIED_TRIE_UPDATE,
+            super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
             &self.writeopts_no_wal,
         )?;
         Ok(())

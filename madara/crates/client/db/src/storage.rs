@@ -35,19 +35,19 @@ impl EventFilter {
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
 pub struct TxIndex {
-    pub block_n: u64,
+    pub block_number: u64,
     pub transaction_index: u64,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct ClassInfoWithBlockN {
-    pub block_n: u64,
+    pub block_number: u64,
     pub class_info: ClassInfo,
 }
 
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct CompiledSierraWithBlockN {
-    pub block_n: u64,
+    pub block_number: u64,
     pub compiled_sierra: CompiledSierra,
 }
 
@@ -116,6 +116,7 @@ pub trait MadaraStorageRead {
     fn get_confirmed_on_l1_tip(&self) -> Result<Option<u64>>;
     fn get_l1_messaging_sync_tip(&self) -> Result<Option<u64>>;
     fn get_stored_chain_info(&self) -> Result<Option<StoredChainInfo>>;
+    fn get_latest_applied_trie_update(&self) -> Result<Option<u64>>;
 
     // L1 to L2 messages
 
@@ -149,6 +150,7 @@ pub trait MadaraStorageWrite {
 
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()>;
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()>;
+    fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
     fn write_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()>;

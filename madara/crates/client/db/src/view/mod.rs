@@ -104,6 +104,11 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         self.preconfirmed_block().map(|block| MadaraPreconfirmedBlockView::new(self.clone(), block))
     }
 
+    /// Returns a view on the latest block, which may be a preconfirmed block. This view is used to query content and listen for changes in that block.
+    pub fn block_view_on_latest(self: &Arc<Self>) -> Option<MadaraBlockView<D>> {
+        self.block_view_on_tip(self.chain_tip.borrow().clone())
+    }
+
     /// Returns a view on the preconfirmed block. This view is used to query content and listen for changes in that block.
     /// This returns a fake preconfirmed block if there is not currently one in the backend.
     pub fn block_view_on_preconfirmed_or_fake(self: &Arc<Self>) -> MadaraPreconfirmedBlockView<D> {

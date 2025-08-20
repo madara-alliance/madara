@@ -38,7 +38,7 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, converted_classes))]
-    pub(crate) fn store_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
+    pub(crate) fn store_classes(&self, block_number: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
         converted_classes.par_chunks(DB_UPDATES_BATCH_SIZE).try_for_each_init(
             || self.get_column(CLASS_INFO_COLUMN),
             |col, chunk| {
@@ -50,7 +50,7 @@ impl RocksDBStorageInner {
                         batch.put_cf(
                             col,
                             &converted_class.class_hash().to_bytes_be(),
-                            bincode::serialize(&ClassInfoWithBlockN { class_info: converted_class.info(), block_n })?,
+                            bincode::serialize(&ClassInfoWithBlockN { class_info: converted_class.info(), block_number })?,
                         );
                     }
                 }

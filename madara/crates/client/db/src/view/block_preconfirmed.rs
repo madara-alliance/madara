@@ -1,8 +1,11 @@
 use crate::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedBlockInner, PreconfirmedExecutedTransaction},
-    prelude::*, rocksdb::RocksDBStorage,
+    prelude::*,
+    rocksdb::RocksDBStorage,
 };
-use mp_block::{header::PreconfirmedHeader, MadaraPreconfirmedBlockInfo, PreconfirmedFullBlock, TransactionWithReceipt};
+use mp_block::{
+    header::PreconfirmedHeader, MadaraPreconfirmedBlockInfo, PreconfirmedFullBlock, TransactionWithReceipt,
+};
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{
@@ -219,6 +222,8 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
     /// given storage key to new value, and a following transaction change it back to the original value - the normalized state diff
     /// should not preserve the storage key, since it ends up not being changed in the end. This function does this normalization,
     /// by looking up every key in the backend and only keep the changed ones.
+    ///
+    /// This function will also add the block hash entry for `block_n-10` on the 0x1 contract address.
     pub fn get_normalized_state_diff(&self) -> Result<StateDiff> {
         fn sorted_by_key<T, K: Ord, F: FnMut(&T) -> K>(mut vec: Vec<T>, f: F) -> Vec<T> {
             vec.sort_by_key(f);
@@ -231,24 +236,39 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         // Filter and group storage diffs.
         // HashMap<(Addr, K), V> => HashMap<Addr, Vec<(K, V)>>
 
-        let storage_diffs = borrow.executed_transactions().flat_map(|tx| &tx.state_diff.storage).try_fold(
-            HashMap::<Felt, Vec<StorageEntry>>::new(),
-            |mut acc, ((addr, key), value)| -> anyhow::Result<_> {
-                let previous_value = view_on_parent_block.get_contract_storage(addr, key)?.unwrap_or(Felt::ZERO);
-                if &previous_value != value {
-                    // only keep changed keys.
-                    acc.entry(*addr).or_default().push(StorageEntry { key: *key, value: *value });
-                }
-                Ok(acc)
-            },
-        )?;
+        let mut storage_diffs = HashMap::<Felt, HashMap<Felt, Felt>>::new();
+
+        // Add the block hash entry for `block_n-10` on the 0x1 contract address.
+        if let Some(block_number) = self.block_number().checked_sub(10) {
+            let block_hash = self
+                .backend
+                .block_view_on_confirmed(block_number)
+                .with_context(|| format!("Block at height {block_number} should be in the backend"))?
+                .get_block_info()?
+                .block_hash;
+
+            storage_diffs.entry(Felt::ONE).or_default().insert(Felt::from(block_number), block_hash);
+        }
+
+        // Aggregate the transaction state diffs.
+        for ((addr, key), value) in borrow.executed_transactions().flat_map(|tx| &tx.state_diff.storage) {
+            let previous_value = view_on_parent_block.get_contract_storage(addr, key)?.unwrap_or(Felt::ZERO);
+            if &previous_value != value {
+                // only keep changed keys.
+                storage_diffs.entry(*addr).or_default().insert(*key, *value);
+            }
+        }
+
         // Map into a sorted vec.
         let storage_diffs: Vec<ContractStorageDiffItem> = sorted_by_key(
             storage_diffs
                 .into_iter()
                 .map(|(address, entries)| ContractStorageDiffItem {
                     address,
-                    storage_entries: sorted_by_key(entries, |entry| entry.key),
+                    storage_entries: sorted_by_key(
+                        entries.into_iter().map(|(key, value)| StorageEntry { key, value }).collect(),
+                        |entry| entry.key,
+                    ),
                 })
                 .collect(),
             |entry| entry.address,
