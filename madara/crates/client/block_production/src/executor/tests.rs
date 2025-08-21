@@ -8,7 +8,7 @@ use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
 use mp_chain_config::StarknetVersion;
 use mp_convert::ToFelt;
-use mp_rpc::BroadcastedTxn;
+use mp_rpc::v0_7_1::BroadcastedTxn;
 use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rstest::fixture;

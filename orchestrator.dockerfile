@@ -81,5 +81,9 @@ RUN while read dir; do \
 # Expose the default port
 EXPOSE 3000
 
-
+# Use exec form to ensure proper signal handling (PID 1 receives signals directly)
+# This ensures SIGTERM from Docker reaches the Rust application correctly
 ENTRYPOINT ["./orchestrator"]
+
+# Default stop signal (explicit, though this is the default)
+STOPSIGNAL SIGTERM

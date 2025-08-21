@@ -1,8 +1,9 @@
 use async_trait::async_trait;
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction};
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::validated::ValidatedMempoolTx;
 use mp_utils::service::{MadaraServiceId, ServiceContext};

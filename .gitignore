@@ -78,3 +78,13 @@ test-artifacts/madara
 
 # global npm package installation directory for nix
 .npm-global
+
+
+# e2e test
+e2e_data/
+/e2e_data.zip
+/e2e_data/*
+/e2e_data*
+
+out
+cache

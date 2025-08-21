@@ -9,6 +9,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
+pub(crate) use orchestrator_ethereum_settlement_client::conversion::hex_string_to_u8_vec;
 use starknet_os::io::output::StarknetOsOutput;
 
 pub mod fact_info;
@@ -49,6 +50,57 @@ pub fn biguint_to_32_bytes(num: &BigUint) -> [u8; 32] {
     }
 
     result
+}
+
+/// fetch_blob_data_for_batch - Fetches blob data for a specific batch
+/// Fetching the blob data (stored in remote storage during Batching) for a particular batch
+///
+/// # Arguments
+/// * `index` - The index of the batch
+/// * `config` - The configuration object
+/// * `blob_data_paths` - A slice of blob data directory paths
+///
+/// # Returns
+/// * `Result<Vec<Vec<u8>>, JobError>` - A result containing a vector of blob data or an error.
+///
+pub async fn fetch_blob_data_for_batch(
+    index: usize,
+    config: Arc<Config>,
+    blob_data_paths: &[String],
+) -> Result<Vec<Vec<u8>>, JobError> {
+    // TODO: Check if we can optimize the memory usage here
+    tracing::debug!("Fetching blob data for batch index {}", index);
+
+    let storage_client = config.storage();
+
+    // Get the directory path for this batch
+    let dir_path = blob_data_paths.get(index).ok_or_else(|| {
+        tracing::error!("Blob data path not found for index {}", index);
+        JobError::Other(OtherError(eyre!("Blob data path not found for index {}", index)))
+    })?;
+
+    // Get the blob files for this batch
+    let mut files = config.storage().list_files_in_dir(dir_path).await.map_err(|e| {
+        tracing::error!("Failed to list files in path {}: {}", dir_path, e);
+        JobError::Other(OtherError(eyre!("Failed to list files in path {}: {}", dir_path, e)))
+    })?;
+    // Sort the files by name (which is the blob index)
+    files.sort();
+
+    tracing::debug!("Retrieving blob data from {} files in directory: {}", files.len(), dir_path);
+
+    let mut blobs = Vec::new();
+
+    for file in files {
+        let blob_data = storage_client.get_data(&file).await.map_err(|e| {
+            tracing::error!("Failed to retrieve blob data from path {}: {}", file, e);
+            JobError::Other(OtherError(eyre!("Failed to retrieve blob data from path {}: {}", file, e)))
+        })?;
+        blobs.push(blob_data.to_vec());
+    }
+
+    tracing::debug!("Successfully retrieved blob data for batch index {}", index);
+    Ok(blobs)
 }
 
 /// fetch_blob_data_for_block - Fetches blob data for a specific block index.
@@ -161,24 +213,6 @@ pub async fn fetch_program_output_for_block(
 
 // Util Functions
 // ===============
-
-/// Util function to convert hex string data into Vec<u8>
-pub fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
-    // Remove any spaces or non-hex characters from the input string
-    let cleaned_str: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-
-    // Convert the cleaned hex string to a Vec<u8>
-    let mut result = Vec::new();
-    for chunk in cleaned_str.as_bytes().chunks(2) {
-        if let Ok(byte_val) = u8::from_str_radix(std::str::from_utf8(chunk)?, 16) {
-            result.push(byte_val);
-        } else {
-            return Err(eyre!("Error parsing hex string: {}", cleaned_str));
-        }
-    }
-
-    Ok(result)
-}
 
 pub fn bytes_to_vec_u8(bytes: &[u8]) -> color_eyre::Result<Vec<[u8; 32]>> {
     let cursor = Cursor::new(bytes);

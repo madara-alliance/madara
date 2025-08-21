@@ -224,7 +224,7 @@ mod tests {
     use mp_block::{BlockId, BlockTag};
     use mp_class::{ClassInfo, FlattenedSierraClass};
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use mp_rpc::{
+    use mp_rpc::v0_7_1::{
         AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
         BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,

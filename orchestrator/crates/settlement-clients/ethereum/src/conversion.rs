@@ -4,7 +4,7 @@ use alloy::dyn_abi::parser::Error;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::primitives::{FixedBytes, U256};
 use c_kzg::{Blob, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::ContextCompat;
+use color_eyre::eyre::{eyre, ContextCompat};
 use color_eyre::Result as EyreResult;
 
 /// Converts a `&[[u8; 32]]` to `Vec<U256>`.
@@ -41,48 +41,35 @@ pub(crate) fn to_padded_hex(slice: &[u8]) -> String {
 /// Function to construct the transaction's `input data` for updating the state in the core
 /// contract. HEX Concatenation: MethodId, Offset, length for program_output, lines count,
 /// program_output, length for kzg_proof, kzg_proof All 64 chars, if lesser padded from left with 0s
-pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proof: [u8; 48]) -> Result<String, Error> {
+pub fn get_input_data_for_eip_4844(program_output: Vec<[u8; 32]>, kzg_proofs: Vec<[u8; 48]>) -> Result<String, Error> {
     // bytes4(keccak256(bytes("updateStateKzgDA(uint256[],bytes[])")))
     let method_id_hex = "0x507ee528";
 
-    // offset for updateStateKzgDA is 64
-    let offset: u64 = 64;
-    let offset_hex = format!("{:0>64x}", offset);
+    let offset_program_output = format!("{:0>64x}", 64); // start of program_output
+    let len_program_output = format!("{:0>64x}", program_output.len()); // length of the program_output array
+    let program_output_hex = u8_32_slice_to_hex_string(&program_output); // serialized program_output
 
-    // program_output
-    let program_output_length = program_output.len();
-    let program_output_hex = u8_32_slice_to_hex_string(&program_output);
+    let offset_kzg_proofs = format!("{:0>64x}", (3 * 64 + program_output_hex.len()) / 2); // start of kzg_proofs
+    let len_kzg_proofs = format!("{:0>64x}", kzg_proofs.len()); // length of the kzg_proofs array
+    let len_kzg_proof = format!("{:0>64x}", 48); // length of a single kzg_proof
 
-    // length for program_output: 3*64 [offset, length, lines all have 64 char length] + length of
-    // program_output
-    let length_program_output = (3 * 64 + program_output_hex.len()) / 2;
-    let length_program_output_hex = format!("{:0>64x}", length_program_output);
-
-    // lines count for program_output
-    let lines_count_hex = format!("{:0>64x}", program_output_length);
-
-    // length of KZG proof
-    let length_kzg_hex = format!("{:0>64x}", kzg_proof.len());
-
-    // length of total kzg inputs in the vec
-    // hardcoded as of now
-    // TODO : need to update this when we are integrating the 0.13.2 updated spec with AR (Applicative
-    // recursion)
-    let length_kzg_output = format!("{:0>64x}", 1);
-    // Offset for 1st KZG proof starts at 32 in our case
-    let kzg_proof_offset = format!("{:0>64x}", 32);
-    // KZG proof
-    let kzg_proof_hex = u8_48_to_hex_string(kzg_proof);
-
-    let input_data = method_id_hex.to_string()
-        + &offset_hex
-        + &length_program_output_hex
-        + &lines_count_hex
+    let mut input_data = method_id_hex.to_string()
+        + &offset_program_output
+        + &offset_kzg_proofs
+        + &len_program_output
         + &program_output_hex
-        + &length_kzg_output
-        + &kzg_proof_offset
-        + &length_kzg_hex
-        + &kzg_proof_hex;
+        + &len_kzg_proofs;
+
+    // adding offsets for kzg_proofs
+    for i in 0..kzg_proofs.len() {
+        input_data += &format!("{:0>64x}", 32 * kzg_proofs.len() + i * 96);
+    }
+
+    // adding kzg_proofs with length
+    for kzg_proof in kzg_proofs {
+        input_data += &len_kzg_proof;
+        input_data += &u8_48_to_hex_string(kzg_proof);
+    }
 
     Ok(input_data)
 }
@@ -139,13 +126,30 @@ pub(crate) async fn prepare_sidecar(
     Ok((sidecar_blobs, sidecar_commitments, sidecar_proofs))
 }
 
+/// Convert hex string data into Vec<u8>
+pub fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
+    // Remove any spaces or non-hex characters from the input string
+    let cleaned_str: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
+
+    // Convert the cleaned hex string to a Vec<u8>
+    let mut result = Vec::new();
+    for chunk in cleaned_str.as_bytes().chunks(2) {
+        if let Ok(byte_val) = u8::from_str_radix(std::str::from_utf8(chunk)?, 16) {
+            result.push(byte_val);
+        } else {
+            return Err(eyre!("Error parsing hex string: {}", cleaned_str));
+        }
+    }
+
+    Ok(result)
+}
+
 #[cfg(test)]
 mod tests {
 
     use std::fs;
     use std::path::Path;
 
-    use color_eyre::eyre::eyre;
     use rstest::rstest;
 
     use super::*;
@@ -287,23 +291,6 @@ mod tests {
         let blob_proof_file_path =
             format!("{}{}{}{}", current_path.clone(), "/src/test_data/blob_proof/", fork_block_no, ".txt");
         let blob_proof = fs::read_to_string(blob_proof_file_path).expect("Failed to read the blob data txt file");
-
-        fn hex_string_to_u8_vec(hex_str: &str) -> color_eyre::Result<Vec<u8>> {
-            // Remove any spaces or non-hex characters from the input string
-            let cleaned_str: String = hex_str.chars().filter(|c| c.is_ascii_hexdigit()).collect();
-
-            // Convert the cleaned hex string to a Vec<u8>
-            let mut result = Vec::new();
-            for chunk in cleaned_str.as_bytes().chunks(2) {
-                if let Ok(byte_val) = u8::from_str_radix(std::str::from_utf8(chunk)?, 16) {
-                    result.push(byte_val);
-                } else {
-                    return Err(eyre!("Error parsing hex string: {}", cleaned_str));
-                }
-            }
-
-            Ok(result)
-        }
 
         let blob_data_vec = vec![hex_string_to_u8_vec(&blob_data).unwrap()];
 
