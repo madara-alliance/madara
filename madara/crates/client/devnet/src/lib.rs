@@ -183,7 +183,7 @@ impl ChainGenesisDescription {
                 },
                 state_diff: StateDiff {
                     storage_diffs: self.initial_storage.as_state_diff(),
-                    deprecated_declared_classes: self.declared_classes.as_legacy_state_diff(),
+                    old_declared_contracts: self.declared_classes.as_legacy_state_diff(),
                     declared_classes: self.declared_classes.as_state_diff(),
                     deployed_contracts: self.deployed_contracts.as_state_diff(),
                     replaced_classes: vec![],

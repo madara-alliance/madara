@@ -2,7 +2,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 mod into_starknet_types;
 
@@ -26,12 +26,16 @@ pub enum DeclaredClassCompiledClass {
     Legacy,
 }
 
+// TODO: used BTreeMap for storage_diffs and nonces to ensure deterministic serialization order when legacy format will be no longer supported.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
     /// Changed storage values. Mapping (contract_address, storage_key) => value.
+    #[serde(deserialize_with = "deserialize_storage_diffs")]
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     /// New declared classes. List of class hashes.
-    pub deprecated_declared_classes: Vec<Felt>,
+    // TODO: remove this alias when legacy format is no longer supported.
+    #[serde(alias = "deprecated_declared_classes")]
+    pub old_declared_contracts: Vec<Felt>,
     /// New declared classes. Mapping class_hash => compiled_class_hash.
     pub declared_classes: Vec<DeclaredClassItem>,
     /// New contract. Mapping contract_address => class_hash.
@@ -39,14 +43,60 @@ pub struct StateDiff {
     /// Contract has changed class. Mapping contract_address => class_hash.
     pub replaced_classes: Vec<ReplacedClassItem>,
     /// New contract nonce. Mapping contract_address => nonce.
+    #[serde(deserialize_with = "deserialize_nonces")]
     pub nonces: Vec<NonceUpdate>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum StorageDiffsDe {
+    Map(BTreeMap<Felt, Vec<StorageEntry>>),
+    /// This is used for backward compatibility with the old format.
+    List(Vec<ContractStorageDiffItem>),
+}
+
+fn deserialize_storage_diffs<'de, D>(deserializer: D) -> Result<Vec<ContractStorageDiffItem>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    match StorageDiffsDe::deserialize(deserializer)? {
+        StorageDiffsDe::Map(map) => Ok(map
+            .into_iter()
+            .map(|(address, storage_entries)| ContractStorageDiffItem { address, storage_entries })
+            .collect()),
+        StorageDiffsDe::List(list) => Ok(list),
+    }
+}
+
+#[derive(serde::Deserialize)]
+#[serde(untagged)]
+enum NoncesDe {
+    Map(BTreeMap<Felt, Felt>),
+    /// This is used for backward compatibility with the old format.
+    List(Vec<NonceUpdate>),
+}
+
+fn deserialize_nonces<'de, D>(deserializer: D) -> Result<Vec<NonceUpdate>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize;
+
+    match NoncesDe::deserialize(deserializer)? {
+        NoncesDe::Map(map) => {
+            Ok(map.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect())
+        }
+        NoncesDe::List(list) => Ok(list),
+    }
 }
 
 impl StateDiff {
     pub fn is_empty(&self) -> bool {
         self.deployed_contracts.is_empty()
             && self.declared_classes.is_empty()
-            && self.deprecated_declared_classes.is_empty()
+            && self.old_declared_contracts.is_empty()
             && self.nonces.is_empty()
             && self.replaced_classes.is_empty()
             && self.storage_diffs.is_empty()
@@ -56,7 +106,7 @@ impl StateDiff {
         let mut result = 0usize;
         result += self.deployed_contracts.len();
         result += self.declared_classes.len();
-        result += self.deprecated_declared_classes.len();
+        result += self.old_declared_contracts.len();
         result += self.nonces.len();
         result += self.replaced_classes.len();
 
@@ -69,7 +119,7 @@ impl StateDiff {
     pub fn sort(&mut self) {
         self.storage_diffs.iter_mut().for_each(|storage_diff| storage_diff.sort_storage_entries());
         self.storage_diffs.sort_by_key(|storage_diff| storage_diff.address);
-        self.deprecated_declared_classes.sort();
+        self.old_declared_contracts.sort();
         self.declared_classes.sort_by_key(|declared_class| declared_class.class_hash);
         self.deployed_contracts.sort_by_key(|deployed_contract| deployed_contract.address);
         self.replaced_classes.sort_by_key(|replaced_class| replaced_class.contract_address);
@@ -99,7 +149,7 @@ impl StateDiff {
         };
 
         let deprecated_declared_classes_sorted = {
-            let mut deprecated_declared_classes = self.deprecated_declared_classes.clone();
+            let mut deprecated_declared_classes = self.old_declared_contracts.clone();
             deprecated_declared_classes.sort();
             deprecated_declared_classes
         };
@@ -159,9 +209,7 @@ impl StateDiff {
             .iter()
             .map(|class| (class.class_hash, DeclaredClassCompiledClass::Sierra(class.compiled_class_hash)))
             .chain(
-                self.deprecated_declared_classes
-                    .iter()
-                    .map(|class_hash| (*class_hash, DeclaredClassCompiledClass::Legacy)),
+                self.old_declared_contracts.iter().map(|class_hash| (*class_hash, DeclaredClassCompiledClass::Legacy)),
             )
             .collect()
     }
@@ -227,7 +275,7 @@ mod tests {
         let state_diff = StateDiff::default();
         assert!(state_diff.is_empty());
 
-        let state_diff = StateDiff { deprecated_declared_classes: vec![Felt::ONE], ..Default::default() };
+        let state_diff = StateDiff { old_declared_contracts: vec![Felt::ONE], ..Default::default() };
         assert!(!state_diff.is_empty());
     }
 
@@ -258,7 +306,7 @@ mod tests {
         for diff in state_diff_two.storage_diffs.iter_mut() {
             diff.storage_entries.reverse();
         }
-        state_diff_two.deprecated_declared_classes.reverse();
+        state_diff_two.old_declared_contracts.reverse();
         state_diff_two.declared_classes.reverse();
         state_diff_two.deployed_contracts.reverse();
         state_diff_two.replaced_classes.reverse();
@@ -285,7 +333,7 @@ mod tests {
                     ],
                 },
             ],
-            deprecated_declared_classes: vec![Felt::from(11), Felt::from(12)],
+            old_declared_contracts: vec![Felt::from(11), Felt::from(12)],
             declared_classes: vec![
                 DeclaredClassItem { class_hash: Felt::from(13), compiled_class_hash: Felt::from(14) },
                 DeclaredClassItem { class_hash: Felt::from(15), compiled_class_hash: Felt::from(16) },

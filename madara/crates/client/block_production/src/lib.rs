@@ -99,7 +99,7 @@ pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(Pen
     let state_diff = backend.get_pending_block_state_update().context("Getting pending state update")?;
 
     let classes: Vec<_> = state_diff
-        .deprecated_declared_classes
+        .old_declared_contracts
         .iter()
         .chain(state_diff.declared_classes.iter().map(|DeclaredClassItem { class_hash, .. }| class_hash))
         .map(|class_hash| {
@@ -1005,7 +1005,7 @@ pub(crate) mod tests {
             },
         ];
 
-        let deprecated_declared_classes = vec![Felt::from_hex_unchecked("0xc1a553")];
+        let old_declared_contracts = vec![Felt::from_hex_unchecked("0xc1a553")];
 
         let declared_classes = vec![
             DeclaredClassItem {
@@ -1043,7 +1043,7 @@ pub(crate) mod tests {
 
         let expected = StateDiff {
             storage_diffs,
-            deprecated_declared_classes,
+            old_declared_contracts,
             declared_classes,
             nonces,
             deployed_contracts,
@@ -1055,7 +1055,7 @@ pub(crate) mod tests {
 
         actual.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
         actual.storage_diffs.iter_mut().for_each(|s| s.storage_entries.sort_by(|a, b| a.key.cmp(&b.key)));
-        actual.deprecated_declared_classes.sort();
+        actual.old_declared_contracts.sort();
         actual.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
         actual.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
         actual.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
@@ -1133,7 +1133,7 @@ pub(crate) mod tests {
                     ],
                 },
             ],
-            deprecated_declared_classes: vec![Felt::ZERO],
+            old_declared_contracts: vec![Felt::ZERO],
             declared_classes: vec![
                 DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
                 DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
@@ -1322,7 +1322,7 @@ pub(crate) mod tests {
                     ],
                 },
             ],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![],
             deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
             replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
@@ -1398,7 +1398,7 @@ pub(crate) mod tests {
                     ],
                 },
             ],
-            deprecated_declared_classes: vec![Felt::ZERO],
+            old_declared_contracts: vec![Felt::ZERO],
             declared_classes: vec![
                 DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
                 DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
@@ -1574,7 +1574,7 @@ pub(crate) mod tests {
                     ],
                 },
             ],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE }],
             deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
             replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
@@ -1669,7 +1669,7 @@ pub(crate) mod tests {
                     ],
                 },
             ],
-            deprecated_declared_classes: vec![Felt::ZERO],
+            old_declared_contracts: vec![Felt::ZERO],
             declared_classes: vec![],
             deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
             replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],

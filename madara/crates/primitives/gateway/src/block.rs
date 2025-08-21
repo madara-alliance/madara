@@ -245,6 +245,23 @@ pub struct ProviderBlockPending {
     pub starknet_version: Option<String>,
 }
 
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockPreConfirmed {
+    pub status: BlockStatus,
+    pub starknet_version: Option<String>,
+    pub l1_da_mode: L1DataAvailabilityMode,
+    pub l1_gas_price: ResourcePrice,
+    pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
+    pub timestamp: u64,
+    pub sequencer_address: Felt,
+    pub transactions: Vec<Transaction>,
+    pub transaction_receipts: Vec<ConfirmedReceipt>,
+    pub transaction_state_diffs: Vec<StateDiff>,
+}
+
 impl ProviderBlockPending {
     pub fn new(block: mp_block::MadaraPendingBlock) -> Self {
         let starknet_version = starknet_version(block.info.header.protocol_version);
@@ -336,6 +353,7 @@ pub struct ResourcePrice {
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub enum BlockStatus {
     Pending,
+    PreConfirmed,
     Aborted,
     Reverted,
     AcceptedOnL2,

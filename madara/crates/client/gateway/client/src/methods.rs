@@ -2,6 +2,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
+use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::user_transaction::{
     AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
@@ -38,6 +39,15 @@ impl GatewayProvider {
             }
             _ => Ok(ProviderBlockPendingMaybe::NonPending(request.send_get::<ProviderBlock>().await?)),
         }
+    }
+
+    pub async fn get_preconfirmed_block(&self, block_number: u64) -> Result<ProviderBlockPreConfirmed, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_preconfirmed_block")
+            .expect("Failed to add URI segment. This should not fail in prod.")
+            .with_block_id(&BlockId::Number(block_number));
+
+        request.send_get::<ProviderBlockPreConfirmed>().await
     }
 
     pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
@@ -176,7 +186,10 @@ mod tests {
         Compression,
     };
     use mp_class::CompressedLegacyContractClass;
-    use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
+    use mp_gateway::{
+        block::BlockStatus,
+        error::{SequencerError, StarknetError, StarknetErrorCode},
+    };
     use rstest::*;
     use serde::de::DeserializeOwned;
     use starknet_types_core::felt::Felt;
@@ -346,6 +359,11 @@ mod tests {
         GatewayProvider::starknet_alpha_mainnet()
     }
 
+    #[fixture]
+    fn client_testnet_fixture() -> GatewayProvider {
+        GatewayProvider::starknet_alpha_sepolia()
+    }
+
     #[rstest]
     #[tokio::test]
     async fn get_block(client_mainnet_fixture: GatewayProvider) {
@@ -366,6 +384,17 @@ mod tests {
         println!("parent_block_hash:ignore 0x{:x}", block.parent_block_hash());
         let block = client_mainnet_fixture.get_block(BlockId::Tag(BlockTag::Pending)).await.unwrap();
         println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_preconfirmed_block(client_testnet_fixture: GatewayProvider) {
+        let latest_block_number =
+            client_testnet_fixture.get_header(BlockId::Tag(BlockTag::Latest)).await.unwrap().block_number;
+        println!("latest_block_number: {}", latest_block_number);
+        let block_number = latest_block_number + 1;
+        let block = client_testnet_fixture.get_preconfirmed_block(block_number).await.unwrap();
+        assert_eq!(block.status, BlockStatus::PreConfirmed);
     }
 
     #[rstest]
