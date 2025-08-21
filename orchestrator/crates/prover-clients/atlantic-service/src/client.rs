@@ -118,7 +118,7 @@ impl AtlanticClient {
         }
     }
 
-    /// Fetch the details of a bucket from
+    /// Fetch the details of a bucket from the Atlantic client
     pub async fn get_bucket(&self, bucket_id: &str) -> Result<AtlanticGetBucketResponse, AtlanticError> {
         let response = self
             .client

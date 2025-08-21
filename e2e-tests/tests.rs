@@ -235,14 +235,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     // Check 4: Check that the State Transition Job has been completed correctly
     let expected_state_after_da_job = ExpectedDBState {
-        internal_id: "1".to_string(),
+        internal_id: String::from("1"),
         job_type: JobType::StateTransition,
         job_status: JobStatus::Completed,
         version: 4,
     };
     let test_result = wait_for_db_state(
         Duration::from_secs(300),
-        l2_block_number,
+        String::from("1"),
         setup_config.mongo_db_instance(),
         expected_state_after_da_job,
     )
