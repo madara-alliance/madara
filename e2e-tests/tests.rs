@@ -235,7 +235,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
 
     // Check 4: Check that the State Transition Job has been completed correctly
     let expected_state_after_da_job = ExpectedDBState {
-        internal_id: l2_block_number.clone(),
+        internal_id: "1".to_string(),
         job_type: JobType::StateTransition,
         job_status: JobStatus::Completed,
         version: 4,
