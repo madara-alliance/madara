@@ -1,9 +1,3 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use color_eyre::eyre::eyre;
-use opentelemetry::KeyValue;
-
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
     AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
@@ -141,7 +135,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         // Sanitize the list of blocks/batches to be processed
-        let mut to_process = find_successive_items_in_vector(to_process, Some(STATE_UPDATE_MAX_NO_BLOCK_PROCESSING));
+        let to_process = find_successive_items_in_vector(to_process, Some(STATE_UPDATE_MAX_NO_BLOCK_PROCESSING));
 
         // Getting settlement context
         let settlement_context = match config.layer() {
@@ -289,11 +283,7 @@ mod test_update_state_worker_utils {
     #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], Some(10), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]
     #[case(vec![1, 2, 3, 4, 5], Some(3), vec![1, 2, 3])] // limit smaller than available
     #[case(vec![1, 2, 3], Some(5), vec![1, 2, 3])] // limit larger than available
-    fn test_find_successive_items(
-        #[case] input: Vec<u64>,
-        #[case] limit: Option<usize>,
-        #[case] expected: Vec<u64>,
-    ) {
+    fn test_find_successive_items(#[case] input: Vec<u64>, #[case] limit: Option<usize>, #[case] expected: Vec<u64>) {
         let result = super::find_successive_items_in_vector(input, limit);
         assert_eq!(result, expected);
     }

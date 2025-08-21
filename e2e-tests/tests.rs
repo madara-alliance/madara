@@ -342,7 +342,7 @@ async fn get_batch_by_index(mongo_db_server: &MongoDbServer, index: u64) -> colo
 
 /// Update Batch state to Completed in DB
 async fn update_batch_state(mongo_db_server: &MongoDbServer, index: u64) -> color_eyre::Result<()> {
-    let mongo_db_client = get_mongo_db_client(&mongo_db_server).await;
+    let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
     let collection = mongo_db_client.database("orchestrator").collection::<Batch>(BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
     let update = doc! { "$set": { "is_batch_ready": true, "status": "Closed" } };
