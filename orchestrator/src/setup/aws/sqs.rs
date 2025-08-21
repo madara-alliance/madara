@@ -62,8 +62,15 @@ impl Resource for InnerSQS {
                     // MODIFICATION: Prepare FIFO attributes for creation.
                     let mut creation_attributes = HashMap::new();
                     creation_attributes.insert(QueueAttributeName::FifoQueue, "true".to_string());
-                    // TODO: since we dont need deduplication for the orchestrator, we can set it to true
-                    // creation_attributes.insert(QueueAttributeName::ContentBasedDeduplication, "true".to_string());
+                    creation_attributes.insert(QueueAttributeName::ContentBasedDeduplication, "true".to_string());
+
+                    // Set deduplication scope to message group (for version-based filtering)
+                    creation_attributes.insert(QueueAttributeName::DeduplicationScope, "messageGroup".to_string());
+
+                    // Set FIFO throughput limit to per message group ID (for better parallel processing)
+                    creation_attributes
+                        .insert(QueueAttributeName::FifoThroughputLimit, "perMessageGroupId".to_string());
+
                     creation_attributes
                         .insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
 
@@ -107,6 +114,14 @@ impl Resource for InnerSQS {
                         dlq_creation_attributes.insert(QueueAttributeName::FifoQueue, "true".to_string());
                         dlq_creation_attributes
                             .insert(QueueAttributeName::ContentBasedDeduplication, "true".to_string());
+
+                        // Set deduplication scope to message group for DLQ as well
+                        dlq_creation_attributes
+                            .insert(QueueAttributeName::DeduplicationScope, "messageGroup".to_string());
+
+                        // Set FIFO throughput limit to per message group ID for DLQ
+                        dlq_creation_attributes
+                            .insert(QueueAttributeName::FifoThroughputLimit, "perMessageGroupId".to_string());
 
                         let dlq_res = self
                             .client()
