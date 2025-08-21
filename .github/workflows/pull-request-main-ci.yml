@@ -169,11 +169,14 @@ jobs:
   #                                MERGE QUEUE                                #
   # ========================================================================= #
 
-  build-nightly:
-    uses: ./.github/workflows/task-do-nothing-build-nightly.yml
+  build-nightly-and-publish-madara:
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
 
   # test-hive:
   #   uses: ./.github/workflows/task-do-nothing-test-hive.yml
 
-  publish-nightly:
-    uses: ./.github/workflows/task-do-nothing-publish-image.yml
+  build-nightly-and-publish-orchestrator:
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+
+  build-nightly-and-publish-bootstrapper:
+    uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml

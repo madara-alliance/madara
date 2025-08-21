@@ -31,7 +31,7 @@ pub enum TxInsertionError {
     NonceConflict,
     #[error("A transaction with this hash already exists in the mempool")]
     DuplicateTxn,
-    #[error("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 10.0)]
+    #[error("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 100.0)]
     MinTipBump { min_tip_bump: f64 },
     #[error("Transaction is too old; max age is {ttl:?}")]
     TooOld { ttl: Duration },

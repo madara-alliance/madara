@@ -25,38 +25,25 @@ runs:
     - name: Checkout Repository
       uses: actions/checkout@v4
 
-    - uses: actions/cache@v4
-      if: ${{ inputs.extra-cache == 'true' }}
-      id: cache-cargo
-      with:
-        path: |
-          ~/.cargo/bin
-          ~/.cargo/registry
-          ~/.cargo/git
-        key: ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-cargo-registry-${{ inputs.cache-key }}
-          ${{ runner.os }}-cargo-registry-
-
-    - uses: actions/cache@v4
-      if: ${{ inputs.extra-cache == 'true' }}
-      id: cache-build-deps
-      with:
-        path: |
-          target/${{ inputs.cache-location }}/deps
-          target/${{ inputs.cache-location }}/build
-          target/${{ inputs.cache-location }}/.fingerprint
-        key: ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock', 'src/**/*.rs') }}
-        restore-keys: |
-          ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}-${{ hashFiles('**/Cargo.lock') }}
-          ${{ runner.os }}-${{ inputs.rust-version }}-build-deps-${{ inputs.cache-key }}
-
     - name: Setup Rust toolchain
       uses: actions-rust-lang/setup-rust-toolchain@v1
       with:
         toolchain: ${{ inputs.rust-version }}
         components: cargo, clippy, rustfmt
         rustflags: ""
+        cache: false # Disable built-in caching since we're using Blacksmith
+
+    - name: Setup Blacksmith Rust Cache
+      if: ${{ inputs.extra-cache == 'true' }}
+      uses: useblacksmith/rust-cache@v3
+      with:
+        # Automatically handles:
+        # - ~/.cargo/bin
+        # - ~/.cargo/registry
+        # - ~/.cargo/git
+        # - target/ directories
+        # - Cargo.lock-based cache invalidation
+        shared-key: ${{ inputs.cache-key }}
 
     - name: Install dependencies
       shell: bash

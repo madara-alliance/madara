@@ -11,13 +11,14 @@ jobs:
   #                              NIGHTLY RELEASE                              #
   # ========================================================================= #
 
-  build-nightly:
-    uses: ./.github/workflows/task-build-nightly.yml
+  build-nightly-and-publish-madara:
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
       image-name: madara
       image-file: ./madara/Dockerfile
     permissions:
       contents: read
+      packages: write
       attestations: write
       id-token: write
     secrets: inherit
@@ -29,13 +30,23 @@ jobs:
   #     nightly-sha: ${{ needs.build-nightly.outputs.nightly-sha }}
   #   secrets: inherit
 
-  publish-nightly:
-    needs: build-nightly
-    uses: ./.github/workflows/task-publish-image.yml
+  build-nightly-and-publish-orchestrator:
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
     with:
-      image-name: madara
-      tag: ${{ needs.build-nightly.outputs.nightly }}
-      tag-version: ${{ needs.build-nightly.outputs.nightly-sha }}
+      image-name: orchestrator
+      image-file: ./orchestrator/Dockerfile
+    permissions:
+      contents: read
+      packages: write
+      attestations: write
+      id-token: write
+    secrets: inherit
+
+  build-nightly-and-publish-bootstrapper:
+    uses: ./.github/workflows/task-build-nightly-and-publish.yml
+    with:
+      image-name: bootstrapper
+      image-file: ./bootstrapper/Dockerfile
     permissions:
       contents: read
       packages: write

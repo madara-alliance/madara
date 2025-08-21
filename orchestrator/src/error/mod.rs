@@ -16,6 +16,7 @@ use crate::core::client::database::DatabaseError;
 use crate::core::client::queue::QueueError;
 use crate::core::client::storage::StorageError;
 use crate::core::error::OrchestratorCoreError;
+use crate::error::event::EventSystemError;
 pub use consumer::ConsumptionError;
 
 /// Result type for orchestrator operations
@@ -154,6 +155,11 @@ pub enum OrchestratorError {
     /// JSON error
     #[error("JSON error: {0}")]
     JsonError(#[from] serde_json::Error),
+
+    /// From Hex error
     #[error("Invalid address: {0}")]
     InvalidAddress(#[from] FromHexError),
+
+    #[error("Event System Error: {0}")]
+    EventSystemError(#[from] EventSystemError),
 }
