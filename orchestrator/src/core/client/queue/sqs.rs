@@ -239,6 +239,56 @@ impl QueueClient for SQS {
     /// TODO: this should not be need remove this after reviewing the code access for usage
     async fn consume_message_from_queue(&self, queue: QueueType) -> Result<Delivery, QueueError> {
         let mut consumer = self.get_consumer(queue).await?;
-        Ok(consumer.receive().await?)
+
+        loop {
+            let delivery = consumer.receive().await?;
+
+            // Check if message version matches our orchestrator version
+            if let Err(version_error) = self.verify_message_version(&delivery) {
+                tracing::warn!("Version mismatch detected: {:?}. NACKing message back to queue.", version_error);
+
+                // NACK the message - this will return it to the queue for other consumers
+                if let Err(nack_error) = delivery.nack().await {
+                    tracing::error!("Failed to NACK message: {:?}", nack_error);
+                    // Even if NACK fails, we shouldn't process this mismatched message
+                    continue;
+                }
+
+                tracing::debug!("Successfully NACKed version-mismatched message back to queue");
+                // Continue the loop to get the next message
+                continue;
+            }
+
+            // Version matches - return the message for processing
+            tracing::debug!("Message version verified, returning for processing");
+            return Ok(delivery);
+        }
+    }
+}
+
+impl SQS {
+    /// Verify message version compatibility
+    /// Returns Ok(()) if version matches, Err(QueueError) if version mismatch
+    fn verify_message_version(&self, delivery: &Delivery) -> Result<(), QueueError> {
+        let our_version = generate_version_string();
+
+        // Try to extract version from message attributes or GroupId
+        if let Some(payload) = delivery.payload() {
+            if let Some(attributes) = &payload.attributes {
+                if let Some(message_group_id) = attributes.get("MessageGroupId").and_then(|v| v.as_str()) {
+                    if message_group_id != our_version {
+                        return Err(QueueError::Generic(format!(
+                            "Version mismatch: expected={}, got={}",
+                            our_version, message_group_id
+                        )));
+                    }
+                    tracing::debug!("Message version verified via MessageGroupId: {}", message_group_id);
+                } else {
+                    tracing::debug!("No MessageGroupId found - accepting message for backward compatibility");
+                }
+            }
+        }
+
+        Ok(())
     }
 }
