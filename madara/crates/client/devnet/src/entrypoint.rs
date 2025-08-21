@@ -1,6 +1,6 @@
 use std::ops::Deref;
 
-use starknet_core::{types::Felt, utils::starknet_keccak};
+use starknet::core::{types::Felt, utils::starknet_keccak};
 
 pub struct Call {
     pub to: Felt,

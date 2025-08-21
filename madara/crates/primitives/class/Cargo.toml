@@ -35,7 +35,7 @@ casm-utils-v1_0_0-alpha6 = { package = "cairo-lang-utils", git = "https://github
 casm-utils-v1_0_0-rc0 = { package = "cairo-lang-utils", git = "https://github.com/starkware-libs/cairo", tag = "v1.0.0-rc0" }
 casm-utils-v1_1_1 = { package = "cairo-lang-utils", version = "=1.1.1" }
 casm-utils-v2 = { package = "cairo-lang-utils", version = "2.12.0-dev.1" }
-starknet-core = { workspace = true }
+starknet = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
@@ -49,6 +49,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-starknet-providers = { workspace = true }
 tokio = { workspace = true }
 mp-convert = { workspace = true }

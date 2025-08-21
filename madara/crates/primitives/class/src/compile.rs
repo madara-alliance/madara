@@ -445,9 +445,9 @@ fn felt_to_big_uint(value: &Felt) -> BigUint {
 #[cfg(test)]
 mod tests {
     use crate::ContractClass;
-    use starknet_core::types::BlockId;
-    use starknet_core::types::BlockTag;
-    use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet::core::types::BlockId;
+    use starknet::core::types::BlockTag;
+    use starknet::providers::{Provider, SequencerGatewayProvider};
     use starknet_types_core::felt::Felt;
 
     #[tokio::test]

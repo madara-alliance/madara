@@ -10,11 +10,13 @@ use futures::stream::BoxStream;
 use futures::{StreamExt, TryStreamExt};
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
-use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePendingBlockWithTxHashes};
-use starknet_core::utils::get_selector_from_name;
+use starknet::core::types::{
+    BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePendingBlockWithTxHashes,
+};
+use starknet::core::utils::get_selector_from_name;
+use starknet::providers::jsonrpc::HttpTransport;
+use starknet::providers::{JsonRpcClient, Provider};
 use starknet_crypto::poseidon_hash_many;
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::{JsonRpcClient, Provider};
 use starknet_types_core::felt::Felt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -476,12 +478,12 @@ pub mod starknet_client_tests {
     use crate::state_update::StateUpdate;
     use mp_transactions::L1HandlerTransaction;
     use rstest::*;
-    use starknet_accounts::ConnectedAccount;
-    use starknet_core::types::BlockId;
-    use starknet_core::types::MaybePendingBlockWithTxHashes::{Block, PendingBlock};
-    use starknet_providers::jsonrpc::HttpTransport;
-    use starknet_providers::ProviderError::StarknetError;
-    use starknet_providers::{JsonRpcClient, Provider};
+    use starknet::accounts::ConnectedAccount;
+    use starknet::core::types::BlockId;
+    use starknet::core::types::MaybePendingBlockWithTxHashes::{Block, PendingBlock};
+    use starknet::providers::jsonrpc::HttpTransport;
+    use starknet::providers::ProviderError::StarknetError;
+    use starknet::providers::{JsonRpcClient, Provider};
     use starknet_types_core::felt::Felt;
     use std::time::Duration;
     use tokio::time::sleep;
@@ -671,7 +673,7 @@ pub mod starknet_client_tests {
                 Ok(Block(_)) => {
                     return Ok(());
                 }
-                Ok(PendingBlock(_)) | Err(StarknetError(starknet_core::types::StarknetError::BlockNotFound)) => {
+                Ok(PendingBlock(_)) | Err(StarknetError(starknet::core::types::StarknetError::BlockNotFound)) => {
                     if try_count == max_retries {
                         return Err(anyhow::anyhow!("Max retries reached while polling for block {}", block_number));
                     }

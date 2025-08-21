@@ -8,9 +8,9 @@ use mp_chain_config::ChainConfig;
 use mp_class::ClassInfoWithHash;
 use mp_convert::ToFelt;
 use mp_state_update::{ContractStorageDiffItem, StateDiff, StorageEntry};
+use starknet::signers::SigningKey;
 use starknet_api::abi::abi_utils::get_storage_var_address;
 use starknet_api::{core::ContractAddress, state::StorageKey};
-use starknet_signers::SigningKey;
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
@@ -235,7 +235,7 @@ mod tests {
     use mp_utils::service::ServiceContext;
     use mp_utils::AbortOnDrop;
     use rstest::rstest;
-    use starknet_core::types::contract::SierraClass;
+    use starknet::core::types::contract::SierraClass;
     use std::sync::Arc;
     use std::time::Duration;
 

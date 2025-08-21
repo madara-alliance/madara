@@ -9,8 +9,8 @@ use mp_block::BlockId;
 use mp_class::{ClassInfo, ClassInfoWithHash, ConvertedClass, LegacyClassInfo, SierraClassInfo, MISSED_CLASS_HASHES};
 use mp_state_update::DeclaredClassCompiledClass;
 use mp_utils::AbortOnDrop;
+use starknet::core::types::Felt;
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
 use std::{collections::HashMap, ops::Range, sync::Arc};
 
 /// for blocks before 2597 on mainnet new classes are not declared in the state update

@@ -14,8 +14,8 @@ use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
+use starknet::core::types::Felt;
 use starknet_api::core::ChainId;
-use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
@@ -580,8 +580,8 @@ mod tests {
     use mp_state_update::{ContractStorageDiffItem, DeployedContractItem, StateDiff, StorageEntry};
     use mp_transactions::{InvokeTransaction, Transaction};
     use rstest::*;
+    use starknet::core::types::Felt;
     use starknet_api::felt;
-    use starknet_core::types::Felt;
     use std::sync::Arc;
 
     /// Test cases for the `update_tries` function.
