@@ -25,14 +25,14 @@ RUN apt-get -y update && apt-get install -y \
   wget \
   curl \
   git
-ENV STARKGATE_TAG="v2.0.1"
+ENV STARKGATE_REV="45941888479663ac93e898cd7f8504fa9066c54c"
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
 ENV COMPILE_SIERRA=".downloads/cairo/bin/starknet-sierra-compile"
 
 # clone repository
 RUN git clone https://github.com/starknet-io/starkgate-contracts.git
 WORKDIR starkgate-contracts
-RUN git checkout $STARKGATE_TAG
+RUN git checkout $STARKGATE_REV
 
 # setup python
 RUN python3 -m venv venv
@@ -93,7 +93,7 @@ WORKDIR build/Release/src
 # =========================================================================== #
 
 FROM builder AS cairo-lang
-ENV CAIRO_LANG_REV="a86e92bfde9c171c0856d7b46580c66e004922f3"
+ENV CAIRO_LANG_TAG="v0.13.3"
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
 WORKDIR /contracts
@@ -101,13 +101,20 @@ WORKDIR /contracts
 # Clone the repo
 RUN git clone https://github.com/starkware-libs/cairo-lang.git
 WORKDIR cairo-lang
-RUN git checkout $CAIRO_LANG_REV
+RUN git checkout $CAIRO_LANG_TAG
 
 RUN python3 -m venv venv
 ENV PATH="$CAIRO_LANG_DIR/venv/bin:$PATH"
 RUN pip install "cairo-lang==0.13.2" "sympy<1.13.0"
 
+RUN curl -L https://foundry.paradigm.xyz | bash
+ENV PATH="$PATH:/root/.foundry/bin"
+RUN foundryup
+
 RUN cairo-compile src/starkware/starknet/core/os/os.cairo --output os_latest.json --cairo_path src
+
+COPY ./build-artifacts/src/foundry-cairo-lang.toml foundry.toml
+RUN forge build
 
 # =========================================================================== #
 #                               BRAAVOS CONTRACTS                             #
@@ -247,7 +254,7 @@ WORKDIR /contracts
 # Setup scarb
 RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
 
-COPY bootstrapper-v2/contracts/madara/ . 
+COPY bootstrapper-v2/contracts/madara/ .
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
@@ -267,18 +274,23 @@ ENV ARTIFACTS_CAIRO="$STARKGATE_DIR/cairo_contracts"
 ENV ARTIFACTS_SOLID="$STARKGATE_DIR/artifacts"
 ENV BASE_CHAIN_FACTORY_DIR="bootstrapper/contracts/ethereum"
 
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra erc20.sierra.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm erc20.casm.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/TokenBridge.sierra token_bridge.sierra.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/TokenBridge.casm token_bridge.casm.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/LegacyBridgeUpgradeEIC.sierra token_bridge_eic.sierra.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/LegacyBridgeUpgradeEIC.casm token_bridge_eic.casm.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/RolesExternalInitializer.sierra eth_token_eic.sierra.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/RolesExternalInitializer.casm eth_token_eic.casm.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.sierra ERC20_070.sierra.json
-COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ERC20_070.casm.json
-COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json eth_bridge_upgraded.json
-COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json eic_eth_bridge.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.sierra ./cairo/erc20.sierra.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20Lockable.casm ./cairo/erc20.casm.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/TokenBridge.sierra ./cairo/token_bridge.sierra.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/TokenBridge.casm ./cairo/token_bridge.casm.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/LegacyBridgeUpgradeEIC.sierra ./cairo/token_bridge_eic.sierra.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/LegacyBridgeUpgradeEIC.casm ./cairo/token_bridge_eic.casm.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/RolesExternalInitializer.sierra ./cairo/eth_token_eic.sierra.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/RolesExternalInitializer.casm ./cairo/eth_token_eic.casm.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.sierra ./cairo/ERC20_070.sierra.json
+COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ./cairo/ERC20_070.casm.json
+
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateManager.json ./solidity/manager.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateRegistry.json ./solidity/registry.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetTokenBridge.json ./solidity/token_bridge.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json ./solidity/eth_bridge_upgraded.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json ./solidity/eic_eth_bridge.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/ConfigureSingleBridgeEIC.json ./solidity/configure_single_bridge_eic.json
 
 WORKDIR ../bootstrapper
 ENV BOOTSTRAPPER_DIR_BASE_CHAIN_FACTORY="/contracts"
@@ -303,6 +315,7 @@ WORKDIR ../cairo_lang
 ENV CAIRO_LANG_DIR="/contracts/cairo-lang"
 
 COPY --from=cairo-lang $CAIRO_LANG_DIR/os_latest.json .
+COPY --from=cairo-lang $CAIRO_LANG_DIR/out/Starknet.sol/Starknet.json .
 
 WORKDIR ../braavos
 
