@@ -261,4 +261,4 @@ chrono = { version = "0.4", features = ["serde"] }
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-# starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", rev = "70e1ee45dc701afc2a7629bf88bb5d90a93d51a7" }
+starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
