@@ -394,7 +394,10 @@ impl PendingFullBlock {
         pre_v0_13_2_override: bool,
     ) -> FullBlock {
         let commitments = BlockCommitments::compute(ctx, &self.transactions, &self.state_diff, &self.events);
-        let header = self.header.to_closed_header(commitments, new_global_state_root, block_number);
+        let header = self.header.to_closed_header(commitments, new_global_state_root, block_number, ctx.block_timestamp);
+        let block_hash = header.compute_hash(ctx.chain_id, pre_v0_13_2_override);
+        println!("Here is the block hash for  block number {}", block_number);
+        println!("Block hash: {}", block_hash);
         FullBlock {
             block_hash: header.compute_hash(ctx.chain_id, pre_v0_13_2_override),
             header,

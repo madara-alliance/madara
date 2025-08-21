@@ -9,7 +9,7 @@ use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 // TODO: add these to metrics
@@ -166,9 +166,11 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u64,
 ) -> anyhow::Result<BlockExecutionContext> {
+    println!("Creating execution context");
+    println!("This is where we set the block_timestamp for each block !");
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: SystemTime::now(),
+        block_timestamp: UNIX_EPOCH + Duration::from_secs(1725783510u64),
         protocol_version: backend.chain_config().latest_protocol_version,
         gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?,
         l1_da_mode: backend.chain_config().l1_da_mode,

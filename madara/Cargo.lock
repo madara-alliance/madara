@@ -6614,6 +6614,7 @@ dependencies = [
  "proptest",
  "rand 0.8.5",
  "rayon",
+ "reqwest 0.12.19",
  "rocksdb",
  "rstest 0.18.2",
  "serde",
@@ -7186,6 +7187,8 @@ dependencies = [
 name = "mp-block"
 version = "0.8.0"
 dependencies = [
+ "anyhow",
+ "bigdecimal",
  "bitvec",
  "blockifier",
  "bonsai-trie",
@@ -7195,6 +7198,7 @@ dependencies = [
  "mp-rpc",
  "mp-state-update",
  "mp-transactions",
+ "num-traits",
  "opentelemetry",
  "opentelemetry-appender-tracing",
  "opentelemetry-otlp",
@@ -7203,8 +7207,10 @@ dependencies = [
  "opentelemetry_sdk",
  "primitive-types",
  "rayon",
+ "reqwest 0.12.19",
  "rstest 0.18.2",
  "serde",
+ "serde_json",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",
