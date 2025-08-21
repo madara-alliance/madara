@@ -1,3 +1,4 @@
+use crate::constants::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::{OptionExt, ResultExt};
@@ -5,14 +6,10 @@ use crate::Starknet;
 use mc_exec::execution_result_to_tx_trace;
 use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::ExecutionContext;
-use mp_chain_config::StarknetVersion;
 use mp_rpc::v0_7_1::TraceTransactionResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-
-/// Blockifier does not support execution for versions earlier than that.
-pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
 
 pub async fn trace_transaction(
     starknet: &Starknet,

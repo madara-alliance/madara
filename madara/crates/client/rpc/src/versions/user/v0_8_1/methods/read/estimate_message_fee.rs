@@ -1,9 +1,8 @@
 use std::sync::Arc;
 
-use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use mp_rpc::v0_7_1::{FeeEstimate, MsgFromL1};
+use mp_rpc::v0_8_1::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
@@ -14,22 +13,6 @@ use crate::errors::StarknetRpcResult;
 use crate::utils::OptionExt;
 use crate::Starknet;
 
-/// Estimate the L2 fee of a message sent on L1
-///
-/// # Arguments
-///
-/// * `message` - the message to estimate
-/// * `block_id` - hash, number (height), or tag of the requested block
-///
-/// # Returns
-///
-/// * `FeeEstimate` - the fee estimation (gas consumed, gas price, overall fee, unit)
-///
-/// # Errors
-///
-/// BlockNotFound : If the specified block does not exist.
-/// ContractNotFound : If the specified contract address does not exist.
-/// ContractError : If there is an error with the contract.
 pub async fn estimate_message_fee(
     starknet: &Starknet,
     message: MsgFromL1,
@@ -44,13 +27,12 @@ pub async fn estimate_message_fee(
     let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
 
     let transaction = convert_message_into_transaction(message, starknet.chain_id());
-    let tip = transaction.tip().unwrap_or_default();
     let execution_result = exec_context
         .re_execute_transactions([], [transaction])?
         .pop()
         .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let fee_estimate = exec_context.execution_result_to_fee_estimate_legacy(&execution_result, tip);
+    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result);
 
     Ok(fee_estimate)
 }
