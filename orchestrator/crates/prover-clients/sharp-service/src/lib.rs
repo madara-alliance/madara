@@ -1,4 +1,5 @@
 pub mod client;
+mod constants;
 pub mod error;
 mod types;
 
@@ -18,6 +19,7 @@ use crate::client::SharpClient;
 
 pub const SHARP_SETTINGS_NAME: &str = "sharp";
 
+use crate::constants::SHARP_FETCH_ARTIFACTS_BASE_URL;
 use url::Url;
 
 #[derive(Debug, Clone)]
@@ -64,10 +66,12 @@ impl ProverClient for SharpProverService {
                 Ok(job_key.to_string())
             }
             Task::CreateBucket => {
-                todo!()
+                let response = self.sharp_client.create_bucket().await?;
+                Ok(response.bucket_id.to_string())
             }
-            Task::CloseBucket(_) => {
-                todo!()
+            Task::CloseBucket(bucket_id) => {
+                self.sharp_client.close_bucket(&bucket_id).await?;
+                Ok(bucket_id)
             }
         }
     }
@@ -181,12 +185,15 @@ impl ProverClient for SharpProverService {
         todo!()
     }
 
-    async fn get_task_artifacts(&self, _: &str, _: &str) -> Result<Vec<u8>, ProverClientError> {
-        todo!()
+    async fn get_task_artifacts(&self, task_id: &str, file_name: &str) -> Result<Vec<u8>, ProverClientError> {
+        Ok(self
+            .sharp_client
+            .get_artifacts(format!("{}/queries/{}/{}", SHARP_FETCH_ARTIFACTS_BASE_URL, task_id, file_name))
+            .await?)
     }
 
-    async fn get_aggregator_task_id(&self, _: &str, _: u64) -> Result<String, ProverClientError> {
-        todo!()
+    async fn get_aggregator_task_id(&self, bucket_id: &str, _: u64) -> Result<String, ProverClientError> {
+        Ok(self.sharp_client.get_aggregator_task_id(bucket_id).await?.task_id)
     }
 }
 
