@@ -1,7 +1,7 @@
 use crate::core::client::database::DatabaseError;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::{build_batch, build_job_item};
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::metadata::JobSpecificMetadata;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -285,7 +285,7 @@ async fn database_test_update_batch(
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     // Create updates for the batch
-    let updates = BatchUpdates { end_block: 250, is_batch_ready: batch.is_batch_ready };
+    let updates = BatchUpdates { end_block: Some(250), is_batch_ready: Some(true), status: Some(BatchStatus::Closed) };
 
     // Update the batch
     let updated_batch = database_client.update_or_create_batch(&batch, &updates).await.unwrap();
@@ -293,10 +293,12 @@ async fn database_test_update_batch(
     // Verify the updates
     assert_eq!(updated_batch.id, batch.id);
     assert_eq!(updated_batch.index, batch.index);
-    assert_eq!(updated_batch.num_blocks, updates.end_block - batch.start_block + 1);
+    assert_eq!(updated_batch.num_blocks, updates.end_block.unwrap() - batch.start_block + 1);
     assert_eq!(updated_batch.start_block, batch.start_block);
-    assert_eq!(updated_batch.end_block, updates.end_block);
-    assert_eq!(updated_batch.is_batch_ready, batch.is_batch_ready);
+    assert_eq!(updated_batch.end_block, updates.end_block.unwrap());
+    assert!(updated_batch.is_batch_ready);
+    assert_eq!(updated_batch.status, BatchStatus::Closed);
+    assert_eq!(updated_batch.bucket_id, batch.bucket_id);
     assert_eq!(updated_batch.squashed_state_updates_path, batch.squashed_state_updates_path);
     assert_eq!(updated_batch.blob_path, batch.blob_path);
     assert_eq!(updated_batch.created_at, batch.created_at);
