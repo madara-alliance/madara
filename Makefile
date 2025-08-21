@@ -87,6 +87,7 @@ Targets:
 
   - help               Show this help message
   - git-hook           Setup git hooks path to .githooks
+  - run-mock-atlantic-server  Run the mock Atlantic server (optional: PORT=4002 make run-mock-atlantic-server)
 
 endef
 export HELP
@@ -299,3 +300,17 @@ run-orchestrator-l3:
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
 	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1
+
+# Run the mock Atlantic server
+# Usage: make run-mock-atlantic-server
+#        PORT=4002 make run-mock-atlantic-server  # Run on custom port
+.PHONY: run-mock-atlantic-server
+run-mock-atlantic-server:
+	@echo -e "$(DIM)Starting mock Atlantic server...$(RESET)"
+	@if [ -z "$(PORT)" ]; then \
+		echo -e "$(INFO)Using default port 4001$(RESET)"; \
+		cargo run --release --package utils-mock-atlantic-server; \
+	else \
+		echo -e "$(INFO)Using custom port $(PORT)$(RESET)"; \
+		cargo run --release --package utils-mock-atlantic-server -- $(PORT); \
+	fi

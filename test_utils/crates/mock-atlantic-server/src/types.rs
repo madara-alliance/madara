@@ -140,4 +140,5 @@ pub struct MockServerConfig {
     pub failure_rate: f32, // 0.0 to 1.0
     pub auto_complete_jobs: bool,
     pub completion_delay_ms: u64,
+    pub max_jobs_in_memory: usize,
 }
