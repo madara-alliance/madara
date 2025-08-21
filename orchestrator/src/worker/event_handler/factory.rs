@@ -10,8 +10,8 @@ pub mod factory {
 
     use crate::types::jobs::types::JobType;
     use crate::worker::event_handler::jobs::{
-        da::DAJobHandler, proof_registration::RegisterProofJobHandler, proving::ProvingJobHandler,
-        snos::SnosJobHandler, state_update::StateUpdateJobHandler, JobHandlerTrait,
+        aggregator::AggregatorJobHandler, da::DAJobHandler, proof_registration::RegisterProofJobHandler,
+        proving::ProvingJobHandler, snos::SnosJobHandler, state_update::StateUpdateJobHandler, JobHandlerTrait,
     };
 
     /// To get the job handler
@@ -62,6 +62,7 @@ pub mod factory {
             JobType::ProofRegistration => Box::new(RegisterProofJobHandler),
             JobType::DataSubmission => Box::new(DAJobHandler),
             JobType::StateTransition => Box::new(StateUpdateJobHandler),
+            JobType::Aggregator => Box::new(AggregatorJobHandler),
         };
 
         Arc::new(job)

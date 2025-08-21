@@ -103,8 +103,8 @@ pub async fn subscribe_pending_transactions(
 #[cfg(test)]
 mod test {
     use crate::{
-        versions::user::v0_8_0::{
-            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_0Client, StarknetWsRpcApiV0_8_0Server,
+        versions::user::v0_8_1::{
+            methods::ws::SubscriptionItem, StarknetWsRpcApiV0_8_1Client, StarknetWsRpcApiV0_8_1Server,
         },
         Starknet,
     };
@@ -232,7 +232,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -297,7 +297,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -358,7 +358,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 
@@ -463,7 +463,7 @@ mod test {
         let builder = jsonrpsee::server::Server::builder();
         let server = builder.build(SERVER_ADDR).await.expect("Failed to start jsonprsee server");
         let server_url = format!("ws://{}", server.local_addr().expect("Failed to retrieve server local addr"));
-        let _server_handle = server.start(StarknetWsRpcApiV0_8_0Server::into_rpc(starknet));
+        let _server_handle = server.start(StarknetWsRpcApiV0_8_1Server::into_rpc(starknet));
 
         tracing::debug!(server_url, "Started jsonrpsee server");
 

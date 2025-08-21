@@ -21,6 +21,7 @@ pub mod service;
 pub mod settlement;
 pub mod snos;
 pub mod storage;
+
 #[derive(Parser, Debug)]
 pub struct Cli {
     #[command(subcommand)]
@@ -225,6 +226,10 @@ pub struct SetupCmd {
     // Cron
     #[clap(flatten)]
     pub aws_event_bridge_args: AWSEventBridgeCliArgs,
+
+    // Database
+    #[clap(flatten)]
+    pub mongodb_args: database::mongodb::MongoDBCliArgs,
 
     // Miscellaneous
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_TIMEOUT", long, default_value = Some("300"))]

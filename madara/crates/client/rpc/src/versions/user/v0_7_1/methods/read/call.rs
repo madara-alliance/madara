@@ -2,7 +2,7 @@ use std::sync::Arc;
 
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use mp_rpc::FunctionCall;
+use mp_rpc::v0_7_1::FunctionCall;
 use starknet_types_core::felt::Felt;
 
 use crate::errors::StarknetRpcApiError;

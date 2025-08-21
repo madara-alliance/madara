@@ -2,7 +2,7 @@ use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::{execution_result_to_tx_trace, ExecutionContext};
 use mp_block::BlockId;
 use mp_convert::ToFelt;
-use mp_rpc::TraceBlockTransactionsResult;
+use mp_rpc::v0_7_1::TraceBlockTransactionsResult;
 use starknet_api::transaction::TransactionHash;
 use std::sync::Arc;
 
