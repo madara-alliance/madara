@@ -14,7 +14,7 @@ pub struct StarknetSetup {
 
 impl StarknetSetup {
     pub fn new(rpc_url: String, private_key: String) -> Self {
-        let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&rpc_url).unwrap()));
+        let provider = JsonRpcClient::new(HttpTransport::new(Url::parse(&rpc_url).expect("Failed to parse RPC URL")));
         let client = LocalWallet::from(SigningKey::from_secret_scalar(
             Felt::from_hex(&private_key).expect("Failed to convert BASE_LAYER_PRIVATE_KEY to Felt"),
         ));
