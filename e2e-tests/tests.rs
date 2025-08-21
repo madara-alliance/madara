@@ -201,6 +201,21 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         .await
         .expect("After Batching state DB state assertion failed.");
 
+    let expected_state_after_snos_job = ExpectedDBState {
+        internal_id: l2_block_number.clone(),
+        job_type: JobType::SnosRun,
+        job_status: JobStatus::Completed,
+        version: 4,
+    };
+    let test_result = wait_for_db_state(
+        Duration::from_secs(1200),
+        l2_block_number.clone(),
+        setup_config.mongo_db_instance(),
+        expected_state_after_snos_job,
+    )
+    .await;
+    assert!(test_result.is_ok(), "After Snos Job state DB state assertion failed.");
+
     // Check 2: Check that the Proof Creation Job has been completed correctly
     let expected_state_after_proving_job = ExpectedDBState {
         internal_id: l2_block_number.clone(),
@@ -209,7 +224,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 4,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(900),
+        Duration::from_secs(1200),
         l2_block_number.clone(),
         setup_config.mongo_db_instance(),
         expected_state_after_proving_job,
