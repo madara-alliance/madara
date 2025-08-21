@@ -1,6 +1,6 @@
 use super::client::{
-    alert::AlertError, database::DatabaseError, event_bus::error::EventBusError, queue::QueueError,
-    storage::StorageError,
+    alert::AlertError, database::DatabaseError, event_bus::error::EventBusError, lock::error::LockError,
+    queue::QueueError, storage::StorageError,
 };
 use thiserror::Error;
 
@@ -22,6 +22,9 @@ pub enum OrchestratorCoreError {
 
     #[error("EventBus Error: {0}")]
     CronError(#[from] EventBusError),
+
+    #[error("Lock Error: {0}")]
+    LockError(#[from] LockError),
 
     #[error("Invalid provider: {0}")]
     InvalidProvider(String),

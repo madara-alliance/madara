@@ -4,14 +4,14 @@ use reqwest::StatusCode;
 
 #[derive(Debug, thiserror::Error)]
 pub enum AtlanticError {
-    #[error("Failed to to add Atlantic job: {0}")]
+    #[error("Failed to add Atlantic job: {0}")]
     AddJobFailure(#[source] reqwest::Error),
 
-    #[error("Failed to to get status of a Atlantic job: {0}")]
+    #[error("Failed to get status of an Atlantic job: {0}")]
     GetJobStatusFailure(#[source] reqwest::Error),
 
-    #[error("Failed to to get result of a Atlantic job: {0}")]
-    GetJobResultFailure(#[source] reqwest::Error),
+    #[error("Failed to get artifacts of an Atlantic job: {0}")]
+    GetJobArtifactsFailure(#[source] reqwest::Error),
 
     #[error("Failed to submit L2 query: {0}")]
     SubmitL2QueryFailure(#[source] reqwest::Error),
@@ -48,6 +48,18 @@ pub enum AtlanticError {
 
     #[error("Other error: {0}")]
     Other(#[from] color_eyre::eyre::Error),
+
+    #[error("Failed to parse body: {0}")]
+    BodyParseError(#[source] serde_json::Error),
+
+    #[error("Failed to get status of an Atlantic bucket: {0}")]
+    GetBucketStatusFailure(#[source] reqwest::Error),
+
+    #[error("Failed to create a new Atlantic bucket: {0}")]
+    CreateBucketFailure(#[source] reqwest::Error),
+
+    #[error("Failed to close Atlantic bucket: {0}")]
+    CloseBucketFailure(#[source] reqwest::Error),
 }
 
 impl From<AtlanticError> for ProverClientError {
