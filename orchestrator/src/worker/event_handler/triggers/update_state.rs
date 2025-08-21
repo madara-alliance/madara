@@ -1,9 +1,16 @@
+use std::sync::Arc;
+
+use async_trait::async_trait;
+use color_eyre::eyre::eyre;
+use opentelemetry::KeyValue;
+
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
     AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
     SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::constants::STATE_UPDATE_MAX_NO_BLOCK_PROCESSING;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
@@ -134,15 +141,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         }
 
         // Sanitize the list of blocks/batches to be processed
-        let mut to_process = find_successive_items_in_vector(to_process);
-        // TODO: Remove this once we have a proper way to handle L3 blocks with use of receipt
-        let max_blocks = match config.layer() {
-            Layer::L2 => 10,
-            Layer::L3 => 1,
-        };
-        if to_process.len() >= max_blocks {
-            to_process = to_process.into_iter().take(max_blocks).collect();
-        }
+        let mut to_process = find_successive_items_in_vector(to_process, Some(STATE_UPDATE_MAX_NO_BLOCK_PROCESSING));
 
         // Getting settlement context
         let settlement_context = match config.layer() {
@@ -268,11 +267,13 @@ impl UpdateStateJobTrigger {
 /// Gets the successive list of blocks from all the blocks processed in previous jobs
 /// e.g.: input_vec : [1,2,3,4,7,8,9,11]
 /// We will take the first 4 block numbers and send it for processing
-pub fn find_successive_items_in_vector(items: Vec<u64>) -> Vec<u64> {
+pub fn find_successive_items_in_vector(items: Vec<u64>, limit: Option<usize>) -> Vec<u64> {
     items
         .iter()
         .enumerate()
-        .take_while(|(index, block_number)| **block_number == (items[0] + *index as u64))
+        .take_while(|(index, block_number)| {
+            **block_number == (items[0] + *index as u64) && (limit.is_none() || *index < limit.unwrap())
+        })
         .map(|(_, block_number)| *block_number)
         .collect()
 }
@@ -282,13 +283,18 @@ mod test_update_state_worker_utils {
     use rstest::rstest;
 
     #[rstest]
-    #[case(vec![], vec![])]
-    #[case(vec![1], vec![1])]
-    #[case(vec![1, 2, 3, 4, 5], vec![1, 2, 3, 4, 5])]
-    #[case(vec![1, 2, 3, 4, 7, 8, 9, 11], vec![1, 2, 3, 4])]
-    #[case(vec![1, 3, 5, 7, 9], vec![1])]
-    fn test_find_successive_items(#[case] input: Vec<u64>, #[case] expected: Vec<u64>) {
-        let result = super::find_successive_items_in_vector(input);
+    #[case(vec![], Some(3), vec![])]
+    #[case(vec![1], None, vec![1])]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], None, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], Some(10), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]
+    #[case(vec![1, 2, 3, 4, 5], Some(3), vec![1, 2, 3])] // limit smaller than available
+    #[case(vec![1, 2, 3], Some(5), vec![1, 2, 3])] // limit larger than available
+    fn test_find_successive_items(
+        #[case] input: Vec<u64>,
+        #[case] limit: Option<usize>,
+        #[case] expected: Vec<u64>,
+    ) {
+        let result = super::find_successive_items_in_vector(input, limit);
         assert_eq!(result, expected);
     }
 }

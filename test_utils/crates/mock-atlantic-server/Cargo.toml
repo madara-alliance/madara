@@ -1,0 +1,25 @@
+[package]
+name = "utils-mock-atlantic-server"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "mock-atlantic-server"
+path = "src/main.rs"
+
+[dependencies]
+axum = { workspace = true, features = ["multipart"] }
+chrono = { workspace = true, features = ["serde"] }
+rand.workspace = true
+reqwest = { workspace = true, features = ["json", "multipart"] }
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+tokio = { workspace = true, features = ["full"] }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
