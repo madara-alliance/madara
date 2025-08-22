@@ -16,11 +16,7 @@ pub struct ProofRegistrationJobTrigger;
 #[async_trait]
 impl JobTrigger for ProofRegistrationJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        trace!(
-            log_type = "starting",
-            category = "ProofRegistrationWorker",
-            "ProofRegistrationWorker started."
-        );
+        trace!(log_type = "starting", category = "ProofRegistrationWorker", "ProofRegistrationWorker started.");
 
         // Self-healing: recover any orphaned ProofRegistration jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofRegistration).await {
@@ -33,10 +29,7 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             .get_jobs_without_successor(JobType::ProofCreation, JobStatus::Completed, JobType::ProofRegistration)
             .await?;
 
-        info!(
-            "Found {} successful proving jobs without proof registration jobs",
-            successful_proving_jobs.len()
-        );
+        info!("Found {} successful proving jobs without proof registration jobs", successful_proving_jobs.len());
 
         for job in successful_proving_jobs {
             // Extract proving metadata to get relevant information
@@ -79,11 +72,7 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             }
         }
 
-        trace!(
-            log_type = "completed",
-            category = "ProofRegistrationWorker",
-            "ProofRegistrationWorker completed."
-        );
+        trace!(log_type = "completed", category = "ProofRegistrationWorker", "ProofRegistrationWorker completed.");
         Ok(())
     }
 }
