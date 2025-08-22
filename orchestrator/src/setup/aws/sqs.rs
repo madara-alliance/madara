@@ -59,13 +59,34 @@ impl Resource for InnerSQS {
                 AWSResourceIdentifier::Name(name) => {
                     let queue_name = InnerSQS::get_queue_name_from_type(name, queue_type);
 
-                    // Create the queue
-                    let res = self.client().create_queue().queue_name(&queue_name).send().await.map_err(|e| {
-                        OrchestratorError::ResourceSetupError(format!(
-                            "Failed to create SQS queue '{}': {}",
-                            queue_name, e
-                        ))
-                    })?;
+                    // MODIFICATION: Prepare FIFO attributes for creation.
+                    let mut creation_attributes = HashMap::new();
+                    creation_attributes.insert(QueueAttributeName::FifoQueue, "true".to_string());
+                    creation_attributes.insert(QueueAttributeName::ContentBasedDeduplication, "true".to_string());
+
+                    // Set deduplication scope to message group (for version-based filtering)
+                    creation_attributes.insert(QueueAttributeName::DeduplicationScope, "messageGroup".to_string());
+
+                    // Set FIFO throughput limit to per message group ID (for better parallel processing)
+                    creation_attributes
+                        .insert(QueueAttributeName::FifoThroughputLimit, "perMessageGroupId".to_string());
+
+                    creation_attributes
+                        .insert(QueueAttributeName::VisibilityTimeout, queue.visibility_timeout.to_string());
+
+                    let res = self
+                        .client()
+                        .create_queue()
+                        .queue_name(&queue_name)
+                        .set_attributes(Some(creation_attributes))
+                        .send()
+                        .await
+                        .map_err(|e| {
+                            OrchestratorError::ResourceSetupError(format!(
+                                "Failed to create SQS queue '{}': {}",
+                                queue_name, e
+                            ))
+                        })?;
 
                     let queue_url = res
                         .queue_url()
@@ -87,9 +108,34 @@ impl Resource for InnerSQS {
 
                         // Create the dl queue
                         let dlq_name = InnerSQS::get_queue_name_from_type(name, &dlq_config.dlq_name);
-                        let dlq_res = self.client().create_queue().queue_name(&dlq_name).send().await.map_err(|e| {
-                            OrchestratorError::ResourceSetupError(format!("Failed to create DLQ '{}': {}", dlq_name, e))
-                        })?;
+
+                        // MODIFICATION: DLQ creation needs FIFO attributes.
+                        let mut dlq_creation_attributes = HashMap::new();
+                        dlq_creation_attributes.insert(QueueAttributeName::FifoQueue, "true".to_string());
+                        dlq_creation_attributes
+                            .insert(QueueAttributeName::ContentBasedDeduplication, "true".to_string());
+
+                        // Set deduplication scope to message group for DLQ as well
+                        dlq_creation_attributes
+                            .insert(QueueAttributeName::DeduplicationScope, "messageGroup".to_string());
+
+                        // Set FIFO throughput limit to per message group ID for DLQ
+                        dlq_creation_attributes
+                            .insert(QueueAttributeName::FifoThroughputLimit, "perMessageGroupId".to_string());
+
+                        let dlq_res = self
+                            .client()
+                            .create_queue()
+                            .queue_name(&dlq_name)
+                            .set_attributes(Some(dlq_creation_attributes))
+                            .send()
+                            .await
+                            .map_err(|e| {
+                                OrchestratorError::ResourceSetupError(format!(
+                                    "Failed to create FIFO DLQ '{}': {}",
+                                    dlq_name, e
+                                ))
+                            })?;
 
                         let dlq_url = dlq_res.queue_url().ok_or_else(|| {
                             OrchestratorError::ResourceSetupError("Failed to get dl queue url".to_string())
