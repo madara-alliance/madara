@@ -17,6 +17,7 @@ use orchestrator_atlantic_service::constants::{CAIRO_PIE_FILE_NAME, PROOF_FILE_N
 use orchestrator_prover_client_interface::{Task, TaskStatus, TaskType};
 use starknet_core::types::Felt;
 use std::sync::Arc;
+use tracing::{debug, error, info, trace, warn};
 
 pub struct AggregatorJobHandler;
 
@@ -24,7 +25,7 @@ pub struct AggregatorJobHandler;
 impl JobHandlerTrait for AggregatorJobHandler {
     #[tracing::instrument(fields(category = "aggregator"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "aggregator",
             function_type = "create_job",
@@ -32,7 +33,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
             "Aggregator job creation started."
         );
         let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
-        tracing::info!(
+        info!(
             log_type = "completed",
             category = "aggregator",
             function_type = "create_job",
@@ -52,7 +53,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     #[tracing::instrument(fields(category = "aggregator"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "aggregator",
             function_type = "process_job",
@@ -64,15 +65,12 @@ impl JobHandlerTrait for AggregatorJobHandler {
         // Get aggregator metadata
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
 
-        tracing::debug!(batch_no = %internal_id, id = %job.id, bucket_id = %metadata.bucket_id, "Closing bucket");
+        debug!(batch_no = %internal_id, id = %job.id, bucket_id = %metadata.bucket_id, "Closing bucket");
 
         // Call close bucket
-        let external_id = config
-            .prover_client()
-            .submit_task(Task::CloseBucket(metadata.bucket_id))
-            .await
-            .map_err(|e| {
-                tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit close bucket task to prover client");
+        let external_id =
+            config.prover_client().submit_task(Task::CloseBucket(metadata.bucket_id)).await.map_err(|e| {
+                error!(job_id = %job.internal_id, error = %e, "Failed to submit close bucket task to prover client");
                 JobError::ProverClientError(e)
             })?;
 
@@ -81,13 +79,23 @@ impl JobHandlerTrait for AggregatorJobHandler {
             .update_batch_status_by_index(metadata.batch_num, BatchStatus::PendingAggregatorVerification)
             .await?;
 
+        info!(
+            log_type = "completed",
+            category = "aggregator",
+            function_type = "process_job",
+            job_id = ?job.id,
+            batch_no = %internal_id,
+            external_id = %external_id,
+            "Aggregator job processing completed."
+        );
+
         Ok(external_id)
     }
 
     #[tracing::instrument(fields(category = "aggregator"), skip(self, config), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id.clone();
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "aggregator",
             function_type = "verify_job",
@@ -101,7 +109,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         let bucket_id = metadata.bucket_id;
 
-        tracing::debug!(
+        debug!(
             job_id = %job.internal_id,
             bucket_id = %bucket_id,
             "Getting bucket status from prover client"
@@ -109,7 +117,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         let task_status =
             config.prover_client().get_task_status(TaskType::Bucket, &bucket_id, None, false).await.map_err(|e| {
-                tracing::error!(
+                error!(
                     job_id = %job.internal_id,
                     error = %e,
                     "Failed to get bucket status from prover client"
@@ -119,7 +127,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         match task_status {
             TaskStatus::Processing => {
-                tracing::info!(
+                info!(
                     log_type = "pending",
                     category = "proving",
                     function_type = "verify_job",
@@ -134,7 +142,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 let aggregator_query_id =
                     config.prover_client().get_aggregator_task_id(&bucket_id, metadata.num_blocks + 1).await.map_err(
                         |e| {
-                            tracing::error!(
+                            error!(
                                 job_id = %job.internal_id,
                                 error = %e,
                                 "Failed to get aggregator query ID from prover client"
@@ -196,7 +204,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     .update_batch_status_by_index(metadata.batch_num, BatchStatus::ReadyForStateUpdate)
                     .await?;
 
-                tracing::info!(
+                info!(
                     log_type = "completed",
                     category = "aggregator",
                     function_type = "verify_job",
@@ -213,7 +221,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
                     .database()
                     .update_batch_status_by_index(metadata.batch_num, BatchStatus::VerificationFailed)
                     .await?;
-                tracing::info!(
+                warn!(
                     log_type = "failed",
                     category = "aggregator",
                     function_type = "verify_job",
@@ -250,9 +258,9 @@ impl AggregatorJobHandler {
         storage_path: &str,
     ) -> Result<Vec<u8>, JobError> {
         // TODO: Check if we can optimize the memory usage here
-        tracing::debug!("Downloading {} and storing to path: {}", file_name, storage_path);
+        debug!("Downloading {} and storing to path: {}", file_name, storage_path);
         let artifact = config.prover_client().get_task_artifacts(task_id, file_name).await.map_err(|e| {
-            tracing::error!(error = %e, "Failed to download {}", file_name);
+            error!(error = %e, "Failed to download {}", file_name);
             JobError::Other(OtherError(eyre!(e)))
         })?;
 
