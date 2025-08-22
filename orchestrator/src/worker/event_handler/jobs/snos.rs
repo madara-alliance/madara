@@ -23,7 +23,7 @@ use prove_block::prove_block;
 use starknet_os::io::output::StarknetOsOutput;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
-use tracing::{debug, error};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct SnosJobHandler;
 
@@ -31,7 +31,7 @@ pub struct SnosJobHandler;
 impl JobHandlerTrait for SnosJobHandler {
     #[tracing::instrument(fields(category = "snos"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "snos",
             function_type = "create_job",
@@ -39,7 +39,7 @@ impl JobHandlerTrait for SnosJobHandler {
             "SNOS job creation started."
         );
         let job_item = JobItem::create(internal_id.clone(), JobType::SnosRun, JobStatus::Created, metadata);
-        tracing::info!(
+        info!(
             log_type = "completed",
             category = "snos",
             function_type = "create_job",
@@ -52,7 +52,7 @@ impl JobHandlerTrait for SnosJobHandler {
     #[tracing::instrument(fields(category = "snos"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
-        tracing::info!(
+        info!(
             log_type = "starting",
             category = "snos",
             function_type = "process_job",
@@ -145,7 +145,7 @@ impl JobHandlerTrait for SnosJobHandler {
             }
         }
 
-        tracing::info!(
+        info!(
             log_type = "completed",
             category = "snos",
             function_type = "process_job",
@@ -160,10 +160,10 @@ impl JobHandlerTrait for SnosJobHandler {
     #[tracing::instrument(fields(category = "snos"), skip(self, _config), ret, err)]
     async fn verify_job(&self, _config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id.clone();
-        tracing::info!(log_type = "starting", category = "snos", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, "SNOS job verification started.");
+        info!(log_type = "starting", category = "snos", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, "SNOS job verification started.");
         // No need for verification as of now. If we later on decide to outsource SNOS run
         // to another service, verify_job can be used to poll on the status of the job
-        tracing::info!(log_type = "completed", category = "snos", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, "SNOS job verification completed.");
+        info!(log_type = "completed", category = "snos", function_type = "verify_job", job_id = %job.id,  block_no = %internal_id, "SNOS job verification completed.");
         Ok(JobVerificationStatus::Verified)
     }
 

@@ -166,13 +166,13 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 }
             };
 
-            tracing::debug!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, "Validating transaction receipt");
+            debug!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, "Validating transaction receipt");
 
             config.settlement_client()
                 .wait_for_tx_finality(&txn_hash)
                 .await
                 .map_err(|e| {
-                    tracing::error!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
+                    error!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
                     JobError::Other(OtherError(e))
                 })?;
 
