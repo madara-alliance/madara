@@ -382,7 +382,7 @@ pub struct FullBlock {
 }
 
 /// A pending block is a block that has not yet been closed.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct PreconfirmedFullBlock {
     pub header: PreconfirmedHeader,
     pub state_diff: StateDiff,

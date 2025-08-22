@@ -1,7 +1,5 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
 use crate::Starknet;
-use mc_db::db_block_id::{DbBlockIdResolvable, RawDbBlockId};
 use mp_block::BlockId;
 use starknet_types_core::felt::Felt;
 
@@ -38,15 +36,15 @@ pub fn get_storage_at(
     key: Felt,
     block_id: BlockId,
 ) -> StarknetRpcResult<Felt> {
-    let view = starknet.backend.view_on(&block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = starknet.backend.view_on(&block_id)?;
 
-    // // Felt::ONE is a special contract address that is a mapping of the block number to the block hash.
-    // // no contract is deployed at this address, so we skip the contract check.
-    // if contract_address != Felt::ONE && !view.is_contract_deployed(contract_address)? {
-    //     return Err(StarknetRpcApiError::contract_not_found().into())
-    // }
+    // Felt::ONE is a special contract address that is a mapping of the block number to the block hash.
+    // no contract is deployed at this address, so we skip the contract check.
+    if contract_address != Felt::ONE && !view.is_contract_deployed(&contract_address)? {
+        return Err(StarknetRpcApiError::contract_not_found());
+    }
 
-    Ok(view.get_contract_storage(contract_address, key)?.unwrap_or(Felt::ZERO))
+    Ok(view.get_contract_storage(&contract_address, &key)?.unwrap_or(Felt::ZERO))
 }
 
 #[cfg(test)]

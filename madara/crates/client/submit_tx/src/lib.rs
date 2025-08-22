@@ -3,7 +3,7 @@ use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransaction, L1HandlerTransactionResult};
+use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransaction, L1HandlerTransactionResult};
 
 mod error;
 mod validation;
@@ -59,7 +59,7 @@ pub trait SubmitL1HandlerTransaction: Send + Sync {
 /// This should never be directly exposed to users.
 #[async_trait]
 pub trait SubmitValidatedTransaction: Send + Sync {
-    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError>;
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError>;
 
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 

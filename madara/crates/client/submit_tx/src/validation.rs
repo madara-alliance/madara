@@ -21,7 +21,7 @@ use mp_rpc::{
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{
-    validated::{TxTimestamp, ValidatedMempoolTx},
+    validated::{TxTimestamp, ValidatedTransaction},
     IntoStarknetApiExt, ToBlockifierError,
 };
 use starknet_api::{
@@ -165,6 +165,49 @@ impl From<mc_exec::Error> for SubmitTransactionError {
     }
 }
 
+impl From<MempoolInsertionError> for SubmitTransactionError {
+    fn from(value: MempoolInsertionError) -> Self {
+        use MempoolInsertionError as E;
+        use RejectedTransactionErrorKind::*;
+        use SubmitTransactionError::*;
+
+        fn rejected(
+            kind: RejectedTransactionErrorKind,
+            message: impl Into<Cow<'static, str>>,
+        ) -> SubmitTransactionError {
+            SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
+        }
+
+        match value {
+            err @ (E::Internal(_) | E::ValidatedToBlockifier(_)) => Internal(anyhow::anyhow!(err)),
+            err @ E::InnerMempool(TxInsertionError::TooOld { .. }) => Internal(anyhow::anyhow!(err)),
+            E::InnerMempool(TxInsertionError::DuplicateTxn) => {
+                rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
+            }
+            E::InnerMempool(TxInsertionError::Limit(limit)) => rejected(TransactionLimitExceeded, format!("{limit:#}")),
+            E::InnerMempool(TxInsertionError::NonceConflict) => rejected(
+                InvalidTransactionNonce,
+                "A transaction with this nonce already exists in the transaction pool",
+            ),
+            E::InnerMempool(TxInsertionError::PendingDeclare) => {
+                rejected(InvalidTransactionNonce, "Cannot add a declare transaction with a future nonce")
+            }
+            E::InnerMempool(TxInsertionError::MinTipBump { min_tip_bump }) => rejected(
+                ValidateFailure,
+                format!("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 10.0),
+            ),
+            E::InnerMempool(TxInsertionError::InvalidContractAddress) => {
+                rejected(ValidateFailure, "Invalid contract address")
+            }
+            E::InnerMempool(TxInsertionError::NonceTooLow { account_nonce }) => rejected(
+                InvalidTransactionNonce,
+                format!("Nonce needs to be greater than the account nonce {:#x}", account_nonce.to_felt()),
+            ),
+            E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 pub struct TransactionValidatorConfig {
     pub disable_validation: bool,
@@ -249,7 +292,7 @@ impl TransactionValidator {
         }
 
         // Forward the validated tx.
-        let tx = ValidatedMempoolTx::from_starknet_api(account_tx.tx, arrived_at, converted_class);
+        let tx = ValidatedTransaction::from_starknet_api(account_tx.tx, arrived_at, converted_class);
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())

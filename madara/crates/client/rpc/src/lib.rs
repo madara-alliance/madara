@@ -11,16 +11,10 @@ pub mod utils;
 pub mod versions;
 
 use jsonrpsee::RpcModule;
-use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
 use mc_submit_tx::SubmitTransaction;
-use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePreconfirmedBlockInfo};
-use mp_chain_config::ChainConfig;
-use mp_convert::ToFelt;
 use mp_utils::service::ServiceContext;
-use starknet_types_core::felt::Felt;
 use std::sync::Arc;
-use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
 
@@ -62,54 +56,6 @@ impl Starknet {
     ) -> Self {
         let ws_handles = Arc::new(WsSubscribeHandles::new());
         Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
-    }
-
-    pub fn clone_backend(&self) -> Arc<MadaraBackend> {
-        Arc::clone(&self.backend)
-    }
-
-    pub fn clone_chain_config(&self) -> Arc<ChainConfig> {
-        Arc::clone(self.backend.chain_config())
-    }
-
-    pub fn get_block_info(
-        &self,
-        block_id: &impl DbBlockIdResolvable,
-    ) -> StarknetRpcResult<MadaraMaybePreconfirmedBlockInfo> {
-        self.backend
-            .get_block_info(block_id)
-            .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)
-    }
-
-    pub fn get_block_n(&self, block_id: &impl DbBlockIdResolvable) -> StarknetRpcResult<u64> {
-        self.backend
-            .get_block_n(block_id)
-            .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)
-    }
-
-    pub fn get_block(&self, block_id: &impl DbBlockIdResolvable) -> StarknetRpcResult<MadaraMaybePendingBlock> {
-        self.backend
-            .get_block(block_id)
-            .or_internal_server_error("Error getting block from storage")?
-            .ok_or(StarknetRpcApiError::BlockNotFound)
-    }
-
-    pub fn chain_id(&self) -> Felt {
-        self.backend.chain_config().chain_id.clone().to_felt()
-    }
-
-    pub fn current_block_number(&self) -> StarknetRpcResult<u64> {
-        self.get_block_n(&BlockId::Tag(BlockTag::Latest))
-    }
-
-    pub fn get_l1_last_confirmed_block(&self) -> StarknetRpcResult<u64> {
-        Ok(self
-            .backend
-            .get_l1_last_confirmed_block()
-            .or_internal_server_error("Error getting L1 last confirmed block")?
-            .unwrap_or_default())
     }
 }
 

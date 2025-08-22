@@ -1,7 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
-use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
+use anyhow::Context;
 use mp_rpc::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
 
@@ -31,24 +30,29 @@ pub fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
-    tracing::debug!("get_transaction_receipt {:#x}", transaction_hash);
-    let view = starknet.backend.view_on_preconfirmed();
-    let (tx_index, tx) =
+    let view = starknet.backend.view_on_latest();
+    let transaction_with_index =
         view.get_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
 
-    let block_hash = view
-        .into_block_view_on(tx_index.block_n)
-        .ok_or_internal_server_error("Block should exist")?
-        .get_block_info()?
-        .block_hash();
+    if !transaction_with_index.index.is_preconfirmed {
+        let view = view
+            .block_view_on_confirmed(transaction_with_index.index.block_number)
+            .context("Block should be found")?;
+        let finality_status = if view.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
+        let block_hash = view.get_block_info()?.block_hash;
 
-    let is_on_l1 =
-        if let Some(block_n) = tx_index.block_n { block_n <= starknet.get_l1_last_confirmed_block()? } else { false };
-    let finality_status = if is_on_l1 { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
-
-    let transaction_receipt = tx.receipt.clone().to_starknet_types(finality_status);
-
-    Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number })
+        let transaction_receipt = transaction_with_index.transaction.receipt.clone().to_starknet_types(finality_status);
+        Ok(TxnReceiptWithBlockInfo {
+            transaction_receipt,
+            block_hash: Some(block_hash),
+            block_number: Some(transaction_with_index.index.block_number),
+        })
+    } else {
+        // TODO: block_number should not be an Option in rpc v0.9, and new finality status.
+        let transaction_receipt =
+            transaction_with_index.transaction.receipt.clone().to_starknet_types(TxnFinalityStatus::L2);
+        Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash: None, block_number: None })
+    }
 }
 
 #[cfg(test)]

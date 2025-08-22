@@ -2,7 +2,7 @@ use crate::{prelude::*, rocksdb::RocksDBStorage};
 use mp_block::{MadaraMaybePreconfirmedBlockInfo, TransactionWithReceipt};
 use mp_state_update::StateDiff;
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum MadaraBlockView<D: MadaraStorageRead = RocksDBStorage> {
     Confirmed(MadaraConfirmedBlockView<D>),
     Preconfirmed(MadaraPreconfirmedBlockView<D>),
@@ -100,20 +100,20 @@ impl<D: MadaraStorageRead> MadaraBlockView<D> {
         }
     }
 
-    pub fn get_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
+    pub fn get_executed_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
         match self {
-            Self::Confirmed(view) => view.get_transaction(tx_index),
-            Self::Preconfirmed(view) => Ok(view.get_transaction(tx_index)),
+            Self::Confirmed(view) => view.get_executed_transaction(tx_index),
+            Self::Preconfirmed(view) => Ok(view.get_executed_transaction(tx_index)),
         }
     }
 
-    pub fn get_block_transactions(
+    pub fn get_executed_transactions(
         &self,
         bounds: impl std::ops::RangeBounds<u64>,
     ) -> Result<Vec<TransactionWithReceipt>> {
         match self {
-            Self::Confirmed(view) => view.get_block_transactions(bounds),
-            Self::Preconfirmed(view) => Ok(view.get_block_transactions(bounds)),
+            Self::Confirmed(view) => view.get_executed_transactions(bounds),
+            Self::Preconfirmed(view) => Ok(view.get_executed_transactions(bounds)),
         }
     }
 
@@ -124,6 +124,12 @@ impl<D: MadaraStorageRead> MadaraBlockView<D> {
         }
     }
     pub fn as_preconfirmed(&self) -> Option<&MadaraPreconfirmedBlockView<D>> {
+        match self {
+            Self::Preconfirmed(view) => Some(view),
+            _ => None,
+        }
+    }
+    pub fn as_preconfirmed_mut(&mut self) -> Option<&mut MadaraPreconfirmedBlockView<D>> {
         match self {
             Self::Preconfirmed(view) => Some(view),
             _ => None,

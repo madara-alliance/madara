@@ -7,7 +7,7 @@ use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
 use mp_convert::Felt;
 use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransactionWithFee};
+use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
 
 #[derive(Debug, Clone)]
@@ -34,7 +34,7 @@ impl EventFilter {
 }
 
 #[derive(Debug, Clone, Copy, serde::Deserialize, serde::Serialize)]
-pub struct TxIndex {
+pub struct StorageTxIndex {
     pub block_number: u64,
     pub transaction_index: u64,
 }
@@ -83,7 +83,7 @@ pub trait MadaraStorageRead {
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;
-    fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<TxIndex>>;
+    fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>>;
     fn get_block_info(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>>;
     fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>>;
     fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>>;
@@ -126,7 +126,7 @@ pub trait MadaraStorageRead {
 
     // Mempool
 
-    fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedMempoolTx>> + '_;
+    fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_;
 }
 
 /// Trait abstracting over the storage interface.
@@ -153,7 +153,7 @@ pub trait MadaraStorageWrite {
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()>;
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()>;
-    fn write_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()>;
+    fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()>;
 
     /// Write a state diff to the global tries.
     /// Returns the new state root.

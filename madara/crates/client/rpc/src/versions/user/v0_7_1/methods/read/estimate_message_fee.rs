@@ -1,17 +1,15 @@
-use std::sync::Arc;
-
-use mc_exec::ExecutionContext;
+use crate::errors::StarknetRpcApiError;
+use crate::errors::StarknetRpcResult;
+use crate::Starknet;
+use anyhow::Context;
+use mc_exec::MadaraBlockViewExecutionExt;
+use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use mp_block::BlockId;
+use mp_convert::ToFelt;
 use mp_rpc::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
-
-use crate::errors::StarknetRpcApiError;
-use crate::errors::StarknetRpcResult;
-use crate::utils::OptionExt;
-use crate::versions::user::v0_7_1::methods::trace::trace_transaction::EXECUTION_UNSUPPORTED_BELOW_VERSION;
-use crate::Starknet;
 
 /// Estimate the L2 fee of a message sent on L1
 ///
@@ -34,19 +32,24 @@ pub async fn estimate_message_fee(
     message: MsgFromL1,
     block_id: BlockId,
 ) -> StarknetRpcResult<FeeEstimate> {
-    let block_info = starknet.get_block_info(&block_id)?;
+    tracing::debug!("estimate fee on block_id {block_id:?}");
+    let view = starknet.backend.block_view(block_id)?;
+    let mut exec_context = view.new_execution_context()?;
 
-    if block_info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
+    if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
-    let exec_context = ExecutionContext::new_at_block_end(Arc::clone(&starknet.backend), &block_info)?;
+    let transaction = convert_message_into_transaction(message, view.backend().chain_config().chain_id.to_felt());
 
-    let transaction = convert_message_into_transaction(message, starknet.chain_id());
-    let execution_result = exec_context
-        .re_execute_transactions([], [transaction])?
-        .pop()
-        .ok_or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
+    // spawn_blocking: avoid starving the tokio workers during execution.
+    let (mut execution_results, exec_context) = mp_utils::spawn_blocking(move || {
+        Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], [transaction])?, exec_context))
+    })
+    .await?;
+
+    let execution_result =
+        execution_results.pop().context("There should be at least one result")?;
 
     let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result);
 

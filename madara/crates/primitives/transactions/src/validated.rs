@@ -50,13 +50,14 @@ impl TxTimestamp {
 
 /// A transaction that has been validated, but not yet included into a block.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ValidatedMempoolTx {
+pub struct ValidatedTransaction {
     pub tx: Transaction,
     /// Only filled in for L1HandlerTransaction.
     pub paid_fee_on_l1: Option<u128>,
     /// This field is always filled in with the sender_address, but it is the deployed
     /// contract address in case of DeployAccount. For L1HandlerTransactions this is the
     /// contract address receiving the l1 message.
+    // TODO: this field is redundant, it's already included in the transaction.
     pub contract_address: Felt,
     /// Timestamp.
     pub arrived_at: TxTimestamp,
@@ -66,7 +67,7 @@ pub struct ValidatedMempoolTx {
     pub tx_hash: Felt,
 }
 
-impl ValidatedMempoolTx {
+impl ValidatedTransaction {
     pub fn from_starknet_api(
         tx: ApiAccountTransaction,
         arrived_at: TxTimestamp,
@@ -100,7 +101,7 @@ impl ValidatedMempoolTx {
             }
             Transaction::Declare(tx) => {
                 let converted_class =
-                    self.converted_class.as_ref().ok_or(ValidatedToBlockifierTxError::MissingField("class_info"))?;
+                    self.converted_class.as_ref().ok_or(ValidatedToBlockifierTxError::MissingField("converted_class"))?;
                 let class_info =
                     converted_class.try_into().map_err(ValidatedToBlockifierTxError::ClassCompilationError)?;
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;

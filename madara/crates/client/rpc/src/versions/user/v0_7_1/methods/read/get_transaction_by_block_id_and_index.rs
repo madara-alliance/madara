@@ -28,8 +28,8 @@ pub fn get_transaction_by_block_id_and_index(
     block_id: BlockId,
     index: u64,
 ) -> StarknetRpcResult<TxnWithHash> {
-    let view = starknet.backend.block_view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
-    let tx = view.get_transaction(index)?.ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
+    let view = starknet.backend.block_view(block_id)?;
+    let tx = view.get_executed_transaction(index)?.ok_or(StarknetRpcApiError::InvalidTxnIndex)?;
 
     Ok(TxnWithHash { transaction: tx.transaction.into(), transaction_hash: *tx.receipt.transaction_hash() })
 }

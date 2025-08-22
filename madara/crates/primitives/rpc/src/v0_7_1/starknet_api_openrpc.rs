@@ -988,7 +988,7 @@ pub enum TxnExecutionStatus {
 }
 
 /// The finality status of the transaction
-#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug, Copy)]
 pub enum TxnFinalityStatus {
     #[serde(rename = "ACCEPTED_ON_L1")]
     L1,

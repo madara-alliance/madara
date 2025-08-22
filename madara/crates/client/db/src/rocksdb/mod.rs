@@ -5,14 +5,14 @@ use crate::{
         backup::BackupManager, column::{Column, ALL_COLUMNS}, meta::StoredChainTipWithoutContent, options::rocksdb_global_options, snapshots::Snapshots, update_global_trie::apply_to_global_trie
     },
     storage::{
-        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead, MadaraStorageWrite, StorageChainTip, StoredChainInfo, TxIndex
+        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead, MadaraStorageWrite, StorageChainTip, StoredChainInfo, StorageTxIndex
     },
 };
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransactionWithFee};
+use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use rocksdb::{BoundColumnFamily, ColumnFamilyDescriptor, DBWithThreadMode, FlushOptions, MultiThreaded, WriteOptions};
 use std::{fmt, path::Path, sync::Arc};
 
@@ -136,7 +136,7 @@ impl MadaraStorageRead for RocksDBStorage {
             .find_block_hash(block_hash)
             .with_context(|| format!("Finding block number for block_hash={block_hash:#x}"))
     }
-    fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<TxIndex>> {
+    fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>> {
         self.inner
             .find_transaction_hash(tx_hash)
             .with_context(|| format!("Finding transaction index for tx_hash={tx_hash:#x}"))
@@ -245,7 +245,7 @@ impl MadaraStorageRead for RocksDBStorage {
 
     // Mempool
 
-    fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedMempoolTx>> + '_ {
+    fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.inner.get_mempool_transactions().map(|res| res.context("Getting mempool transactions"))
     }
 }
@@ -338,7 +338,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
         self.inner.remove_mempool_transactions(tx_hashes).context("Removing mempool transactions from db")
     }
-    fn write_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()> {
+    fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         let tx_hash = tx.tx_hash;
         self.inner
             .write_mempool_transaction(tx)

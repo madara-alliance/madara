@@ -21,6 +21,13 @@ impl<D: MadaraStorageRead> fmt::Display for MadaraConfirmedBlockView<D> {
     }
 }
 
+impl<D: MadaraStorageRead> PartialEq for MadaraConfirmedBlockView<D> {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.backend, &other.backend) && self.block_number == other.block_number
+    }
+}
+impl<D: MadaraStorageRead> Eq for MadaraConfirmedBlockView<D> {}
+
 impl<D: MadaraStorageRead> MadaraConfirmedBlockView<D> {
     /// New view on the current block state. The block height must be confirmed.
     pub(crate) fn new(backend: Arc<MadaraBackend<D>>, block_number: u64) -> Self {
@@ -64,12 +71,12 @@ impl<D: MadaraStorageRead> MadaraConfirmedBlockView<D> {
         self.backend.db.get_block_state_diff(self.block_number)?.context("Block state diff should be found")
     }
 
-    pub fn get_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
+    pub fn get_executed_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
         let Some(tx_index) = usize::try_from(tx_index).ok() else { return Ok(None) };
         Ok(self.backend.db.get_transaction(self.block_number, tx_index as u64)?)
     }
 
-    pub fn get_block_transactions(
+    pub fn get_executed_transactions(
         &self,
         bounds: impl std::ops::RangeBounds<u64>,
     ) -> Result<Vec<TransactionWithReceipt>> {

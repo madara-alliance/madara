@@ -20,7 +20,7 @@ use starknet_types_core::felt::Felt;
 /// [`Received`]: mp_rpc::v0_7_1::TxnStatus::Received
 /// [`AcceptedOnL2`]: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
 /// [`AcceptedOnL1`]: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
-pub async fn get_transaction_status(
+pub fn get_transaction_status(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnFinalityAndExecutionStatus> {

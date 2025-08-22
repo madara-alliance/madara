@@ -1,7 +1,7 @@
 use crate::{
     prelude::*,
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner},
-    storage::TxIndex,
+    storage::StorageTxIndex,
 };
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
@@ -43,13 +43,13 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<TxIndex>> {
+    pub(super) fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>> {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(TX_HASH_TO_INDEX_COLUMN), &tx_hash.to_bytes_be())?
         else {
             return Ok(None);
         };
         let res = bincode::deserialize::<(u32, u32)>(&res)?;
-        Ok(Some(TxIndex { block_number: res.0.into(), transaction_index: res.1.into() }))
+        Ok(Some(StorageTxIndex { block_number: res.0.into(), transaction_index: res.1.into() }))
     }
 
     #[tracing::instrument(skip(self))]
@@ -146,7 +146,7 @@ impl RocksDBStorageInner {
             batch.put_cf(
                 &tx_hash_to_index_col,
                 transaction.receipt.transaction_hash().to_bytes_be(),
-                super::serialize_to_smallvec::<[u8; 16]>(&TxIndex { block_number, transaction_index: tx_index as _ })?,
+                super::serialize_to_smallvec::<[u8; 16]>(&StorageTxIndex { block_number, transaction_index: tx_index as _ })?,
             );
             let block_n = u32::try_from(block_number).context("Converting block_n to u32")?;
             let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;

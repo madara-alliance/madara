@@ -31,7 +31,7 @@ use mp_gateway::{
     user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult},
 };
 use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
@@ -339,7 +339,7 @@ pub async fn handle_add_validated_transaction(
     let Some(submit_validated) = submit_validated else { return Ok(not_found_response()) };
     let whole_body = req.collect().await.or_internal_server_error("Failed to read request body")?.aggregate();
 
-    let transaction: ValidatedMempoolTx = bincode::options()
+    let transaction: ValidatedTransaction = bincode::options()
         .with_little_endian()
         .deserialize_from(whole_body.reader())
         .map_err(|e| GatewayError::StarknetError(StarknetError::malformed_request(e)))?; // Fixed endinaness is important.

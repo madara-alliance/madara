@@ -15,7 +15,7 @@ use mp_state_update::{
 use mp_transactions::TransactionWithHash;
 use std::fmt;
 
-/// Lock guard on the content of a preconfirmed block. Only the first [`n_txs_visible`] executed transactions
+/// Lock guard on the content of a preconfirmed block. Only the first `n_txs_visible` executed transactions
 /// are visible.
 pub(super) struct PreconfirmedContentRef<'a, D: MadaraStorageRead> {
     guard: tokio::sync::watch::Ref<'a, PreconfirmedBlockInner>,
@@ -45,7 +45,7 @@ pub struct MadaraPreconfirmedBlockView<D: MadaraStorageRead = RocksDBStorage> {
     block_content: tokio::sync::watch::Receiver<PreconfirmedBlockInner>,
 
     /// Candidate transactions. Most of the time, we don't care about those, so this vec is empty.
-    /// This vec is only filled when using `reset_with_candidates`.
+    /// This vec is only filled when using `refresh_with_candidates`.
     candidates: Vec<TransactionWithHash>,
 }
 
@@ -107,6 +107,9 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
     pub fn backend(&self) -> &Arc<MadaraBackend<D>> {
         &self.backend
     }
+    pub fn block(&self) -> &Arc<PreconfirmedBlock> {
+        &self.block
+    }
 
     pub fn parent_block(&self) -> Option<MadaraConfirmedBlockView<D>> {
         self.block_number()
@@ -143,13 +146,13 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         self.candidates.extend(borrow.candidate_transactions().cloned());
     }
 
-    // /// Returns when the block content has changed. Returns immediately if the view is
-    // /// already outdated. The view is not updated; you need to call [`Self::refresh`] or
-    // /// [`Self::refresh_with_candidates`] when this function returns.
-    // pub(crate) async fn wait_until_outdated(&mut self) {
-    //     self.block_content.changed().await.expect("Channel unexpectedly closed");
-    //     self.block_content.mark_changed();
-    // }
+    /// Returns when the block content has changed. Returns immediately if the view is
+    /// already outdated. The view is not updated; you need to call [`Self::refresh`] or
+    /// [`Self::refresh_with_candidates`] when this function returns.
+    pub async fn wait_until_outdated(&mut self) {
+        self.block_content.changed().await.expect("Channel unexpectedly closed");
+        self.block_content.mark_changed();
+    }
 
     /// Wait for the next transaction. When we're up to date with all executed transactions, this
     /// will start returning candidate transactions. When a new executed transaction appears, this
@@ -202,12 +205,12 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         }
     }
 
-    pub fn get_transaction(&self, tx_index: u64) -> Option<TransactionWithReceipt> {
-        let Some(tx_index) = usize::try_from(tx_index).ok() else { return None };
-        self.borrow_content().executed_transactions().nth(tx_index).map(|tx| &tx.transaction).cloned()
+    pub fn get_executed_transaction(&self, transaction_index: u64) -> Option<TransactionWithReceipt> {
+        let Some(transaction_index) = usize::try_from(transaction_index).ok() else { return None };
+        self.borrow_content().executed_transactions().nth(transaction_index).map(|tx| &tx.transaction).cloned()
     }
 
-    pub fn get_block_transactions(&self, bounds: impl std::ops::RangeBounds<u64>) -> Vec<TransactionWithReceipt> {
+    pub fn get_executed_transactions(&self, bounds: impl std::ops::RangeBounds<u64>) -> Vec<TransactionWithReceipt> {
         let (from_tx_index, to_take) = super::normalize_transactions_range(bounds);
         self.borrow_content()
             .executed_transactions()
@@ -215,6 +218,12 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
             .take(to_take)
             .map(|tx| tx.transaction.clone())
             .collect()
+    }
+
+    /// Candidate transactions. Most of the time, we don't care about those, so this vec is empty.
+    /// This will be empty unless filled by using [`Self::refresh_with_candidates`].
+    pub fn candidate_transactions(&self) -> &[TransactionWithHash] {
+        &self.candidates
     }
 
     /// Create an aggregated state diff of the preconfirmed block.

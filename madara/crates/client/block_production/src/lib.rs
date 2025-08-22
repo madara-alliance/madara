@@ -17,7 +17,7 @@ use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
 use mp_state_update::{DeclaredClassItem, NonceUpdate, TransactionStateUpdate};
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::TransactionWithHash;
 use mp_utils::rayon::global_spawn_rayon_task;
 use mp_utils::service::ServiceContext;
@@ -151,7 +151,7 @@ pub struct BlockProductionTask {
     handle: BlockProductionHandle,
     executor_commands_recv: Option<mpsc::UnboundedReceiver<executor::ExecutorCommand>>,
     l1_client: Arc<dyn SettlementClient>,
-    bypass_tx_input: Option<mpsc::Receiver<ValidatedMempoolTx>>,
+    bypass_tx_input: Option<mpsc::Receiver<ValidatedTransaction>>,
 }
 
 impl BlockProductionTask {

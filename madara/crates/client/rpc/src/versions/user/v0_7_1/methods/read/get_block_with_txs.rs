@@ -1,5 +1,4 @@
-use crate::Starknet;
-use jsonrpsee::core::RpcResult;
+use crate::{Starknet, StarknetRpcResult};
 use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockHeader, PendingBlockWithTxs,
@@ -24,34 +23,33 @@ use mp_rpc::{
 /// the block, this can include either a confirmed block or a pending block with its
 /// transactions. In case the specified block is not found, returns a `StarknetRpcApiError` with
 /// `BlockNotFound`.
-pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs> {
-    let view = starknet.backend.view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
-    let view = view.into_block_view().ok_or(StarknetRpcApiError::NoBlocks)?;
-
+pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingBlockWithTxs> {
+    let view = starknet.backend.block_view(block_id)?;
     let block_info = view.get_block_info()?;
-    let txs = view.get_block_transactions(..)?;
-    let is_on_l1 = view.is_on_l1();
 
-    let transactions_with_hash = txs
+    let transactions_with_hash = view
+        .get_executed_transactions(..)?
         .into_iter()
         .map(|tx| TxnWithHash { transaction: tx.transaction.into(), transaction_hash: *tx.receipt.transaction_hash() })
         .collect();
 
     match block_info {
-        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => Ok(MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
-            transactions: transactions_with_hash,
-            pending_block_header: PendingBlockHeader {
-                parent_hash: block.header.parent_block_hash,
-                timestamp: block.header.block_timestamp.0,
-                sequencer_address: block.header.sequencer_address,
-                l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
-                l1_da_mode: block.header.l1_da_mode.into(),
-                starknet_version: block.header.protocol_version.to_string(),
-            },
-        })),
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
+            Ok(MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
+                transactions: transactions_with_hash,
+                pending_block_header: PendingBlockHeader {
+                    parent_hash: block.header.parent_block_hash,
+                    timestamp: block.header.block_timestamp.0,
+                    sequencer_address: block.header.sequencer_address,
+                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
+                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_da_mode: block.header.l1_da_mode.into(),
+                    starknet_version: block.header.protocol_version.to_string(),
+                },
+            }))
+        }
         MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
-            let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
+            let status = if view.is_on_l1() { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxs::Block(BlockWithTxs {
                 transactions: transactions_with_hash,
                 status,

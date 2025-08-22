@@ -31,7 +31,7 @@ impl<D: MadaraStorageRead> BlockifierStateAdapter<D> {
                 ))
             })? {
             self.view
-                .find_transaction_hash(&tx_hash)
+                .find_transaction_by_hash(&tx_hash)
                 .map_err(|err| {
                     StateError::StateReadError(format!(
                         "Failed to l1 handler txn by hash: on={}, nonce={nonce}: {err:#}",

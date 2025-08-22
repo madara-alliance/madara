@@ -1,9 +1,6 @@
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::OptionExt;
-use crate::utils::ResultExt;
+use crate::errors::StarknetRpcResult;
 use crate::Starknet;
-use mc_db::db_block_id::DbBlockId;
-use mp_block::{BlockId, BlockTag};
+use mp_block::BlockId;
 use mp_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
 
@@ -26,66 +23,32 @@ use starknet_types_core::felt::Felt;
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate> {
-    let resolved_block_id = starknet
-        .backend
-        .resolve_block_id(&block_id)
-        .or_internal_server_error("Error resolving block id")?
-        .ok_or(StarknetRpcApiError::BlockNotFound)?;
+    let view = starknet.backend.block_view(block_id)?;
+    let state_diff = view.get_state_diff()?;
+    let old_root = if let Some(parent) = view.parent_block() {
+        parent.get_block_info()?.header.global_state_root
+    } else {
+        Felt::ZERO
+    };
 
-    let state_diff = starknet
-        .backend
-        .get_block_state_diff(&resolved_block_id)
-        .or_internal_server_error("Error getting contract class hash at")?
-        .ok_or(StarknetRpcApiError::BlockNotFound)?;
-
-    match resolved_block_id.is_pending() {
-        true => {
-            let old_root = if let Some(block) = starknet
-                .backend
-                .get_block_info(&BlockId::Tag(BlockTag::Latest))
-                .or_internal_server_error("Error getting latest block from db")?
-            {
-                block
-                    .as_closed()
-                    .ok_or_internal_server_error("Latest block cannot be pending")?
-                    .header
-                    .global_state_root
-            } else {
-                // The pending block is actually genesis, so old root is zero (huh?)
-                Felt::ZERO
-            };
-            Ok(MaybePendingStateUpdate::Pending(PendingStateUpdate { old_root, state_diff: state_diff.into() }))
-        }
-        false => {
-            let block_info = &starknet.get_block_info(&resolved_block_id)?;
-            let block_info = block_info.as_closed().ok_or_internal_server_error("Block should not be pending")?;
-
-            // Get the old root from the previous block if it exists, otherwise default to zero.
-            let old_root = if let Some(val) = block_info.header.block_number.checked_sub(1) {
-                let prev_block_info = &starknet.get_block_info(&DbBlockId::Number(val))?;
-                let prev_block_info =
-                    prev_block_info.as_closed().ok_or_internal_server_error("Block should not be pending")?;
-
-                prev_block_info.header.global_state_root
-            } else {
-                // for the genesis block, the previous root is zero
-                Felt::ZERO
-            };
-
-            Ok(MaybePendingStateUpdate::Block(StateUpdate {
-                block_hash: block_info.block_hash,
-                old_root,
-                new_root: block_info.header.global_state_root,
-                state_diff: state_diff.into(),
-            }))
-        }
+    if let Some(confirmed) = view.as_confirmed() {
+        let block_info = confirmed.get_block_info()?;
+        Ok(MaybePendingStateUpdate::Block(StateUpdate {
+            block_hash: block_info.block_hash,
+            old_root,
+            new_root: block_info.header.global_state_root,
+            state_diff: state_diff.into(),
+        }))
+    } else {
+        Ok(MaybePendingStateUpdate::Pending(PendingStateUpdate { old_root, state_diff: state_diff.into() }))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates};
+    use crate::{test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates}, StarknetRpcApiError};
+    use mp_block::BlockTag;
     use rstest::rstest;
 
     #[rstest]

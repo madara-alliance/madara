@@ -3,7 +3,7 @@
 use crate::{limits::MempoolLimitReached, tx::ScoreFunction, InnerMempool, InnerMempoolConfig, TxInsertionError};
 use assert_matches::assert_matches;
 use mp_convert::{Felt, ToFelt};
-use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
+use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use proptest::strategy::Strategy;
 use rstest::{fixture, rstest};
 use starknet_api::{core::Nonce, felt, transaction::TransactionHash};
@@ -24,7 +24,7 @@ pub struct TestTx {
     pub is_declare: bool,
 }
 
-impl From<TestTx> for ValidatedMempoolTx {
+impl From<TestTx> for ValidatedTransaction {
     fn from(value: TestTx) -> Self {
         Self {
             tx: if value.is_declare {
@@ -84,8 +84,8 @@ impl From<TestTx> for ValidatedMempoolTx {
     }
 }
 
-impl From<ValidatedMempoolTx> for TestTx {
-    fn from(value: ValidatedMempoolTx) -> Self {
+impl From<ValidatedTransaction> for TestTx {
+    fn from(value: ValidatedTransaction) -> Self {
         Self {
             nonce: value.tx.nonce(),
             contract_address: value.contract_address,

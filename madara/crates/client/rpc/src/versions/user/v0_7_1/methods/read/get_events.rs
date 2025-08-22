@@ -1,7 +1,6 @@
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
-use crate::utils::ResultExt;
 use crate::Starknet;
 use mp_block::{BlockId, BlockTag, EventWithInfo};
 use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
@@ -26,7 +25,7 @@ use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, Even
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
+pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
     let chunk_size = filter.chunk_size as usize;
@@ -57,7 +56,7 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest)
     let mut events_infos = starknet
         .backend
         .get_filtered_events(from_block, from_event_n, to_block, from_address.as_ref(), keys.as_deref(), chunk_size + 1)
-        .or_internal_server_error("Error getting filtered events")?;
+        .context("Error getting filtered events")?;
 
     let mut continuation_token = None;
     if events_infos.len() > chunk_size {

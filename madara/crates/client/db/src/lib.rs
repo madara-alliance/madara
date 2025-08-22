@@ -52,7 +52,7 @@ use mp_chain_config::ChainConfig;
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_transactions::TransactionWithHash;
 use prelude::*;
@@ -72,7 +72,7 @@ pub mod view;
 
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
-    MadaraStorageWrite, TxIndex,
+    MadaraStorageWrite, StorageTxIndex,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
@@ -570,7 +570,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn get_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64) -> Result<Option<Felt>> {
         self.db.get_l1_handler_txn_hash_by_nonce(core_contract_nonce)
     }
-    pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedMempoolTx>> + '_ {
+    pub fn get_saved_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         self.db.get_mempool_transactions()
     }
     pub fn get_devnet_predeployed_keys(&self) -> Result<Option<DevnetPredeployedKeys>> {
@@ -600,7 +600,7 @@ impl<D: MadaraStorageWrite> MadaraBackend<D> {
     pub fn remove_saved_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
         self.db.remove_mempool_transactions(tx_hashes)
     }
-    pub fn write_saved_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()> {
+    pub fn write_saved_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         self.db.write_mempool_transaction(tx)
     }
     pub fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {

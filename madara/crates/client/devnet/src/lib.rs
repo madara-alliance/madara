@@ -427,7 +427,7 @@ mod tests {
         }
         let pending_view = chain.backend.block_view_on_preconfirmed_or_fake();
         assert_eq!(pending_view.get_block_info().tx_hashes.len(), 1);
-        tracing::debug!("receipt: {:?}", pending_view.get_transaction(0).unwrap().receipt);
+        tracing::debug!("receipt: {:?}", pending_view.get_executed_transaction(0).unwrap().receipt);
 
         let class_info = chain.backend.view_on_latest().get_class_info(&calculated_class_hash).unwrap().unwrap();
 
@@ -436,7 +436,7 @@ mod tests {
             ClassInfo::Sierra(info) if info.compiled_class_hash == compiled_contract_class_hash
         );
 
-        let TransactionReceipt::Declare(receipt) = pending_view.get_transaction(0).unwrap().receipt else {
+        let TransactionReceipt::Declare(receipt) = pending_view.get_executed_transaction(0).unwrap().receipt else {
             unreachable!()
         };
 
@@ -653,7 +653,7 @@ mod tests {
             }
         }
 
-        let block_txs = chain.backend.block_view_on_preconfirmed_or_fake().get_block_transactions(..);
+        let block_txs = chain.backend.block_view_on_preconfirmed_or_fake().get_executed_transactions(..);
 
         assert_eq!(block_txs.len(), 1);
         tracing::info!("receipt: {:?}", block_txs[0].receipt);

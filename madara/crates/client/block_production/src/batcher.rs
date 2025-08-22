@@ -8,7 +8,7 @@ use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_convert::ToFelt;
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransactionWithFee};
+use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -19,7 +19,7 @@ pub struct Batcher {
     l1_message_stream: BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>,
     ctx: ServiceContext,
     out: mpsc::Sender<BatchToExecute>,
-    bypass_in: mpsc::Receiver<ValidatedMempoolTx>,
+    bypass_in: mpsc::Receiver<ValidatedTransaction>,
     batch_size: usize,
 }
 
@@ -30,7 +30,7 @@ impl Batcher {
         l1_client: Arc<dyn SettlementClient>,
         ctx: ServiceContext,
         out: mpsc::Sender<BatchToExecute>,
-        bypass_in: mpsc::Receiver<ValidatedMempoolTx>,
+        bypass_in: mpsc::Receiver<ValidatedTransaction>,
     ) -> Self {
         Self {
             mempool,

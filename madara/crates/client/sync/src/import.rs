@@ -12,7 +12,7 @@ use mp_class::{
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
@@ -150,7 +150,7 @@ impl BlockImporterCtx {
         &self,
         block: PreconfirmedFullBlock,
         classes: Vec<ConvertedClass>,
-        candidates: &[ValidatedMempoolTx],
+        candidates: &[ValidatedTransaction],
     ) -> Result<(), BlockImportError> {
         // self.db
         //     .write_access()

@@ -41,7 +41,6 @@ testing = ["mc-db/testing", "mockall"]
 mc-analytics.workspace = true
 mc-db.workspace = true
 mc-exec.workspace = true
-mc-submit-tx.workspace = true
 mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-class.workspace = true
@@ -64,6 +63,8 @@ smallvec.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
+futures.workspace = true
+dashmap.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

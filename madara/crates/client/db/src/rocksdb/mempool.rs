@@ -3,7 +3,7 @@ use crate::{
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
 };
 use mp_convert::Felt;
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use rocksdb::{IteratorMode, ReadOptions};
 
 /// <txn_hash 32 bytes> => bincode(txn)
@@ -11,14 +11,14 @@ pub const MEMPOOL_TRANSACTIONS_COLUMN: Column = Column::new("mempool_transaction
 
 impl RocksDBStorageInner {
     #[tracing::instrument(skip(self), fields(module = "MempoolDB"))]
-    pub(super) fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedMempoolTx>> + '_ {
+    pub(super) fn get_mempool_transactions(&self) -> impl Iterator<Item = Result<ValidatedTransaction>> + '_ {
         DBIterator::new_cf(
             &self.db,
             &self.get_column(MEMPOOL_TRANSACTIONS_COLUMN),
             ReadOptions::default(),
             IteratorMode::Start,
         )
-        .into_iter_values(|v| bincode::deserialize::<ValidatedMempoolTx>(&v))
+        .into_iter_values(|v| bincode::deserialize::<ValidatedTransaction>(&v))
         .map(|r| Ok(r??))
     }
 
@@ -37,7 +37,7 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self, tx), fields(module = "MempoolDB"))]
-    pub(super) fn write_mempool_transaction(&self, tx: &ValidatedMempoolTx) -> Result<()> {
+    pub(super) fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         let col = self.get_column(MEMPOOL_TRANSACTIONS_COLUMN);
         self.db.put_cf(&col, bincode::serialize(&tx.tx_hash)?, bincode::serialize(&tx)?)?;
         Ok(())

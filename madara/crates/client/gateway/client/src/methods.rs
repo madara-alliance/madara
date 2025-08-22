@@ -135,7 +135,7 @@ impl GatewayProvider {
 
     pub async fn add_validated_transaction(
         &self,
-        transaction: mp_transactions::validated::ValidatedMempoolTx,
+        transaction: mp_transactions::validated::ValidatedTransaction,
     ) -> Result<(), SequencerError> {
         let url = self.madara_specific_url.as_ref().ok_or(SequencerError::NoUrl)?;
 

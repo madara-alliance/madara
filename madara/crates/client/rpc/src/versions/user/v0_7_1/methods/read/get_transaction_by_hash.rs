@@ -1,5 +1,4 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::{OptionExt, ResultExt};
 use crate::Starknet;
 use mp_rpc::TxnWithHash;
 use starknet_types_core::felt::Felt;
@@ -26,15 +25,12 @@ use starknet_types_core::felt::Felt;
 /// ### Errors
 ///
 /// The function may return one of the following errors if encountered:
-/// - `PAGE_SIZE_TOO_BIG` if the requested page size exceeds the allowed limit.
-/// - `INVALID_CONTINUATION_TOKEN` if the provided continuation token is invalid or expired.
-/// - `BLOCK_NOT_FOUND` if the specified block is not found.
-/// - `TOO_MANY_KEYS_IN_FILTER` if there are too many keys in the filter, which may exceed the
-///   system's capacity.
+/// - `TXN_HASH_NOT_FOUND` if the specified transaction is not found.
 pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TxnWithHash> {
-    let view = starknet.backend.view_on_preconfirmed();
-    let (_, tx) = view.get_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    Ok(TxnWithHash { transaction: tx.transaction.into(), transaction_hash })
+    let view = starknet.backend.view_on_latest();
+    let transaction_with_index =
+        view.get_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    Ok(TxnWithHash { transaction: transaction_with_index.transaction.transaction.into(), transaction_hash })
 }
 
 #[cfg(test)]

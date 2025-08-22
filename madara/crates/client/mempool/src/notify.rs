@@ -100,13 +100,13 @@ mod tests {
     use futures::FutureExt;
     use mp_chain_config::ChainConfig;
     use mp_convert::Felt;
-    use mp_transactions::validated::ValidatedMempoolTx;
+    use mp_transactions::validated::ValidatedTransaction;
     use starknet_api::core::Nonce;
     use std::sync::Arc;
 
     #[rstest::rstest]
     #[tokio::test]
-    async fn test_mempool_notify(tx_account: ValidatedMempoolTx) {
+    async fn test_mempool_notify(tx_account: ValidatedTransaction) {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -135,7 +135,7 @@ mod tests {
     #[rstest::rstest]
     #[tokio::test]
     /// This is unused as of yet in madara, but the mempool supports having multiple waiters on the notify.
-    async fn test_mempool_notify_multiple_listeners(tx_account: ValidatedMempoolTx) {
+    async fn test_mempool_notify_multiple_listeners(tx_account: ValidatedTransaction) {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
@@ -171,7 +171,7 @@ mod tests {
     #[tokio::test]
     /// This is unused as of yet in madara, but the mempool supports having multiple waiters on the notify.
     /// Tests that the second consumer is not woken up if there are no more txs in the mempool.
-    async fn test_mempool_notify_multiple_listeners_not_woken(tx_account: ValidatedMempoolTx) {
+    async fn test_mempool_notify_multiple_listeners_not_woken(tx_account: ValidatedTransaction) {
         let mempool = Arc::new(MempoolInnerWithNotify::new(&ChainConfig::madara_test()));
 
         mempool

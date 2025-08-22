@@ -2,6 +2,7 @@ use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
+use mp_chain_config::StarknetVersion;
 use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
@@ -19,6 +20,9 @@ pub use block_context::*;
 pub use blockifier_state_adapter::BlockifierStateAdapter;
 pub use layered_state_adapter::LayeredStateAdapter;
 pub use trace::execution_result_to_tx_trace;
+
+/// Blockifier does not support execution for versions earlier than that.
+pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {

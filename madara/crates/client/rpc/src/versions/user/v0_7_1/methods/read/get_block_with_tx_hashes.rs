@@ -1,5 +1,5 @@
 use crate::errors::StarknetRpcResult;
-use crate::{Starknet, StarknetRpcApiError};
+use crate::Starknet;
 use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
 use mp_rpc::{
     BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
@@ -22,16 +22,14 @@ pub fn get_block_with_tx_hashes(
     starknet: &Starknet,
     block_id: BlockId,
 ) -> StarknetRpcResult<MaybePendingBlockWithTxHashes> {
-    let view = starknet.backend.view_on(block_id)?.ok_or(StarknetRpcApiError::BlockNotFound)?;
-    let view = view.into_block_view().ok_or(StarknetRpcApiError::NoBlocks)?;
-
+    let view = starknet.backend.block_view(block_id)?;
     let block_info = view.get_block_info()?;
     let is_on_l1 = view.is_on_l1();
 
     match block_info {
         MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
             Ok(MaybePendingBlockWithTxHashes::Pending(PendingBlockWithTxHashes {
-                transactions: block_txs_hashes,
+                transactions: block.tx_hashes,
                 pending_block_header: PendingBlockHeader {
                     parent_hash: block.header.parent_block_hash,
                     timestamp: block.header.block_timestamp.0,
@@ -46,7 +44,7 @@ pub fn get_block_with_tx_hashes(
         MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
             let status = if is_on_l1 { BlockStatus::AcceptedOnL1 } else { BlockStatus::AcceptedOnL2 };
             Ok(MaybePendingBlockWithTxHashes::Block(BlockWithTxHashes {
-                transactions: block_txs_hashes,
+                transactions: block.tx_hashes,
                 status,
                 block_header: BlockHeader {
                     block_hash: block.block_hash,

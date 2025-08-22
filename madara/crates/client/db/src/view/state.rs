@@ -1,4 +1,7 @@
-use crate::{preconfirmed::PreconfirmedExecutedTransaction, prelude::*, rocksdb::RocksDBStorage, EventFilter, TxIndex};
+use crate::{
+    preconfirmed::PreconfirmedExecutedTransaction, prelude::*, rocksdb::RocksDBStorage,
+    view::ExecutedTransactionWithBlockView, EventFilter, StorageTxIndex,
+};
 use mp_block::{EventWithInfo, TransactionWithReceipt};
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 
@@ -50,11 +53,21 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         }
     }
 
+    /// Returns a view on a confirmed block. This view is used to query content from that block.
+    /// Returns [`None`] if the block number is not yet confirmed.
     pub fn block_view_on_latest(&self) -> Option<&MadaraBlockView<D>> {
         match self {
             Self::OnBlock(view) => Some(view),
             _ => None,
         }
+    }
+
+    /// Returns a view on a confirmed block. This view is used to query content from that block.
+    /// Returns [`None`] if the block number is not yet confirmed.
+    pub fn block_view_on_confirmed(&self, block_number: u64) -> Option<MadaraConfirmedBlockView<D>> {
+        self.latest_confirmed_block_n()
+            .filter(|n| n >= &block_number)
+            .map(|_| MadaraConfirmedBlockView::new(self.backend().clone(), block_number))
     }
 
     /// Latest confirmed block_n visible from this view.
@@ -203,14 +216,15 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         Ok(Some(compiled))
     }
 
-    pub fn get_transaction_by_hash(&self, tx_hash: &Felt) -> Result<Option<(TxIndex, TransactionWithReceipt)>> {
+    /// This will not return candidate transactions.
+    pub fn find_transaction_by_hash(&self, tx_hash: &Felt) -> Result<Option<ExecutedTransactionWithBlockView<D>>> {
         if let Some(res) = self.block_view_on_latest().and_then(|v| v.as_preconfirmed()).and_then(|preconfirmed| {
             preconfirmed.borrow_content().executed_transactions().enumerate().find_map(|(tx_index, tx)| {
                 if tx.transaction.receipt.transaction_hash() == tx_hash {
-                    Some((
-                        TxIndex { block_number: preconfirmed.block_number(), transaction_index: tx_index as _ },
-                        tx.transaction.clone(),
-                    ))
+                    Some(ExecutedTransactionWithBlockView {
+                        transaction_index: tx_index as _,
+                        block: preconfirmed.clone().into(),
+                    })
                 } else {
                     None
                 }
@@ -220,49 +234,23 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         }
 
         let Some(on_block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
-        let Some(found) = self.backend().db.find_transaction_hash(tx_hash)? else {
+        let Some(StorageTxIndex { block_number, transaction_index }) =
+            self.backend().db.find_transaction_hash(tx_hash)?
+        else {
             return Ok(None);
         };
 
-        if found.block_number > on_block_n {
+        if block_number > on_block_n {
             return Ok(None);
         }
 
-        let tx = self
-            .backend()
-            .db
-            .get_transaction(found.block_number, found.transaction_index)?
-            .context("Transaction should exist")?;
-
-        Ok(Some((found, tx)))
+        Ok(Some(ExecutedTransactionWithBlockView {
+            transaction_index,
+            block: MadaraConfirmedBlockView::new(self.backend().clone(), block_number).into(),
+        }))
     }
 
-    pub fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<TxIndex>> {
-        if let Some(res) = self.block_view_on_latest().and_then(|v| v.as_preconfirmed()).and_then(|preconfirmed| {
-            preconfirmed.borrow_content().executed_transactions().enumerate().find_map(|(tx_index, tx)| {
-                if tx.transaction.receipt.transaction_hash() == tx_hash {
-                    Some(TxIndex { block_number: preconfirmed.block_number(), transaction_index: tx_index as _ })
-                } else {
-                    None
-                }
-            })
-        }) {
-            return Ok(Some(res));
-        }
-
-        let Some(on_block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
-        let Some(found) = self.backend().db.find_transaction_hash(tx_hash)? else {
-            return Ok(None);
-        };
-
-        if found.block_number > on_block_n {
-            return Ok(None);
-        }
-
-        Ok(Some(found))
-    }
-
-    pub fn get_transaction(&self, block_number: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
+    pub fn get_executed_transaction(&self, block_number: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
         let Ok(tx_index_i) = usize::try_from(tx_index) else { return Ok(None) };
         if let Some(preconfirmed) =
             self.block_view_on_latest().and_then(|v| v.as_preconfirmed()).filter(|p| p.block_number() == block_number)
