@@ -106,7 +106,7 @@ impl From<mp_state_update::StateDiff> for StateDiff {
                 .map(|mp_state_update::ContractStorageDiffItem { address, storage_entries }| (address, storage_entries))
                 .collect(),
             deployed_contracts: state_diff.deployed_contracts,
-            old_declared_contracts: state_diff.deprecated_declared_classes,
+            old_declared_contracts: state_diff.old_declared_contracts,
             declared_classes: state_diff.declared_classes,
             nonces: state_diff
                 .nonces
@@ -133,7 +133,7 @@ impl From<StateDiff> for mp_state_update::StateDiff {
                 .into_iter()
                 .map(|(address, storage_entries)| mp_state_update::ContractStorageDiffItem { address, storage_entries })
                 .collect(),
-            deprecated_declared_classes: state_diff.old_declared_contracts,
+            old_declared_contracts: state_diff.old_declared_contracts,
             declared_classes: state_diff.declared_classes,
             deployed_contracts: state_diff.deployed_contracts,
             replaced_classes: state_diff

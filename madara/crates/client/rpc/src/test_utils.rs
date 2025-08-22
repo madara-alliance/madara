@@ -470,7 +470,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                     StorageEntry { key: keys[2], value: values[2] },
                 ],
             }],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![
                 DeclaredClassItem { class_hash: class_hashes[0], compiled_class_hash: compiled_class_hashes[0] },
                 DeclaredClassItem { class_hash: class_hashes[1], compiled_class_hash: compiled_class_hashes[1] },
@@ -490,7 +490,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                     storage_entries: vec![StorageEntry { key: keys[2], value: values[0] }],
                 },
             ],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![],
             deployed_contracts: vec![
                 DeployedContractItem { address: contracts[1], class_hash: class_hashes[1] },
@@ -513,7 +513,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                     storage_entries: vec![StorageEntry { key: keys[1], value: values[2] }],
                 },
             ],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![],
             deployed_contracts: vec![],
             replaced_classes: vec![],
@@ -531,7 +531,7 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
                 class_hash: class_hashes[2],
                 compiled_class_hash: compiled_class_hashes[2],
             }],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             deployed_contracts: vec![],
             replaced_classes: vec![ReplacedClassItem { contract_address: contracts[0], class_hash: class_hashes[2] }],
             nonces: vec![

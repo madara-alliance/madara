@@ -41,7 +41,7 @@ impl From<mp_rpc::v0_7_1::StateDiff> for StateDiff {
     fn from(state_diff: mp_rpc::v0_7_1::StateDiff) -> Self {
         Self {
             storage_diffs: state_diff.storage_diffs.into_iter().map(|diff| diff.into()).collect(),
-            deprecated_declared_classes: state_diff.deprecated_declared_classes,
+            old_declared_contracts: state_diff.deprecated_declared_classes,
             declared_classes: state_diff
                 .declared_classes
                 .into_iter()
@@ -66,7 +66,7 @@ impl From<StateDiff> for mp_rpc::v0_7_1::StateDiff {
     fn from(state_diff: StateDiff) -> Self {
         Self {
             storage_diffs: state_diff.storage_diffs.into_iter().map(|diff| diff.into()).collect(),
-            deprecated_declared_classes: state_diff.deprecated_declared_classes,
+            deprecated_declared_classes: state_diff.old_declared_contracts,
             declared_classes: state_diff
                 .declared_classes
                 .into_iter()
