@@ -2,7 +2,7 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use std::collections::{BTreeMap, HashMap};
+use std::collections::HashMap;
 
 mod into_starknet_types;
 
@@ -26,15 +26,11 @@ pub enum DeclaredClassCompiledClass {
     Legacy,
 }
 
-// TODO: used BTreeMap for storage_diffs and nonces to ensure deterministic serialization order when legacy format will be no longer supported.
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct StateDiff {
     /// Changed storage values. Mapping (contract_address, storage_key) => value.
-    #[serde(deserialize_with = "deserialize_storage_diffs")]
     pub storage_diffs: Vec<ContractStorageDiffItem>,
     /// New declared classes. List of class hashes.
-    // TODO: remove this alias when legacy format is no longer supported.
-    #[serde(alias = "deprecated_declared_classes")]
     pub old_declared_contracts: Vec<Felt>,
     /// New declared classes. Mapping class_hash => compiled_class_hash.
     pub declared_classes: Vec<DeclaredClassItem>,
@@ -43,53 +39,7 @@ pub struct StateDiff {
     /// Contract has changed class. Mapping contract_address => class_hash.
     pub replaced_classes: Vec<ReplacedClassItem>,
     /// New contract nonce. Mapping contract_address => nonce.
-    #[serde(deserialize_with = "deserialize_nonces")]
     pub nonces: Vec<NonceUpdate>,
-}
-
-#[derive(serde::Deserialize)]
-#[serde(untagged)]
-enum StorageDiffsDe {
-    Map(BTreeMap<Felt, Vec<StorageEntry>>),
-    /// This is used for backward compatibility with the old format.
-    List(Vec<ContractStorageDiffItem>),
-}
-
-fn deserialize_storage_diffs<'de, D>(deserializer: D) -> Result<Vec<ContractStorageDiffItem>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::Deserialize;
-
-    match StorageDiffsDe::deserialize(deserializer)? {
-        StorageDiffsDe::Map(map) => Ok(map
-            .into_iter()
-            .map(|(address, storage_entries)| ContractStorageDiffItem { address, storage_entries })
-            .collect()),
-        StorageDiffsDe::List(list) => Ok(list),
-    }
-}
-
-#[derive(serde::Deserialize)]
-#[serde(untagged)]
-enum NoncesDe {
-    Map(BTreeMap<Felt, Felt>),
-    /// This is used for backward compatibility with the old format.
-    List(Vec<NonceUpdate>),
-}
-
-fn deserialize_nonces<'de, D>(deserializer: D) -> Result<Vec<NonceUpdate>, D::Error>
-where
-    D: serde::Deserializer<'de>,
-{
-    use serde::Deserialize;
-
-    match NoncesDe::deserialize(deserializer)? {
-        NoncesDe::Map(map) => {
-            Ok(map.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect())
-        }
-        NoncesDe::List(list) => Ok(list),
-    }
 }
 
 impl StateDiff {
