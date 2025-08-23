@@ -1,16 +1,16 @@
 use crate::{
     errors::{StarknetRpcApiError, StorageProofLimit, StorageProofTrie},
     utils::ResultExt,
-    versions::user::v0_8_0::{
-        ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult, GlobalRoots,
-        MerkleNode, NodeHashToNodeMappingItem,
-    },
     Starknet,
 };
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
 use jsonrpsee::core::RpcResult;
 use mc_db::{bonsai_identifier, db_block_id::DbBlockId, BasicId, GlobalTrie};
 use mp_block::{BlockId, BlockTag};
+use mp_rpc::v0_8_1::{
+    ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult, GlobalRoots, MerkleNode,
+    NodeHashToNodeMappingItem,
+};
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::StarkHash;
 use std::iter;

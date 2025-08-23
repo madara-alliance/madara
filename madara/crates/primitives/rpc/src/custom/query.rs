@@ -1,6 +1,6 @@
 use serde::{Deserialize, Serialize};
 
-use crate::{
+use crate::v0_7_1::{
     BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3, DeployAccountTxnV1, DeployAccountTxnV3,
     InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,
 };

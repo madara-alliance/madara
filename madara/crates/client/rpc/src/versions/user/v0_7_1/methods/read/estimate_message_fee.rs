@@ -3,7 +3,7 @@ use std::sync::Arc;
 use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use mp_rpc::{FeeEstimate, MsgFromL1};
+use mp_rpc::v0_7_1::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;

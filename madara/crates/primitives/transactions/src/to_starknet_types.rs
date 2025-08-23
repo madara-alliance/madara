@@ -5,29 +5,29 @@ use crate::{
     Transaction,
 };
 
-impl From<Transaction> for mp_rpc::Txn {
+impl From<Transaction> for mp_rpc::v0_7_1::Txn {
     fn from(tx: Transaction) -> Self {
         match tx {
-            Transaction::Invoke(tx) => mp_rpc::Txn::Invoke(tx.into()),
-            Transaction::L1Handler(tx) => mp_rpc::Txn::L1Handler(tx.into()),
-            Transaction::Declare(tx) => mp_rpc::Txn::Declare(tx.into()),
-            Transaction::Deploy(tx) => mp_rpc::Txn::Deploy(tx.into()),
-            Transaction::DeployAccount(tx) => mp_rpc::Txn::DeployAccount(tx.into()),
+            Transaction::Invoke(tx) => mp_rpc::v0_7_1::Txn::Invoke(tx.into()),
+            Transaction::L1Handler(tx) => mp_rpc::v0_7_1::Txn::L1Handler(tx.into()),
+            Transaction::Declare(tx) => mp_rpc::v0_7_1::Txn::Declare(tx.into()),
+            Transaction::Deploy(tx) => mp_rpc::v0_7_1::Txn::Deploy(tx.into()),
+            Transaction::DeployAccount(tx) => mp_rpc::v0_7_1::Txn::DeployAccount(tx.into()),
         }
     }
 }
 
-impl From<InvokeTransaction> for mp_rpc::InvokeTxn {
+impl From<InvokeTransaction> for mp_rpc::v0_7_1::InvokeTxn {
     fn from(tx: InvokeTransaction) -> Self {
         match tx {
-            InvokeTransaction::V0(tx) => mp_rpc::InvokeTxn::V0(tx.into()),
-            InvokeTransaction::V1(tx) => mp_rpc::InvokeTxn::V1(tx.into()),
-            InvokeTransaction::V3(tx) => mp_rpc::InvokeTxn::V3(tx.into()),
+            InvokeTransaction::V0(tx) => mp_rpc::v0_7_1::InvokeTxn::V0(tx.into()),
+            InvokeTransaction::V1(tx) => mp_rpc::v0_7_1::InvokeTxn::V1(tx.into()),
+            InvokeTransaction::V3(tx) => mp_rpc::v0_7_1::InvokeTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<InvokeTransactionV0> for mp_rpc::InvokeTxnV0 {
+impl From<InvokeTransactionV0> for mp_rpc::v0_7_1::InvokeTxnV0 {
     fn from(tx: InvokeTransactionV0) -> Self {
         Self {
             calldata: tx.calldata,
@@ -39,7 +39,7 @@ impl From<InvokeTransactionV0> for mp_rpc::InvokeTxnV0 {
     }
 }
 
-impl From<InvokeTransactionV1> for mp_rpc::InvokeTxnV1 {
+impl From<InvokeTransactionV1> for mp_rpc::v0_7_1::InvokeTxnV1 {
     fn from(tx: InvokeTransactionV1) -> Self {
         Self {
             calldata: tx.calldata,
@@ -51,7 +51,7 @@ impl From<InvokeTransactionV1> for mp_rpc::InvokeTxnV1 {
     }
 }
 
-impl From<InvokeTransactionV3> for mp_rpc::InvokeTxnV3 {
+impl From<InvokeTransactionV3> for mp_rpc::v0_7_1::InvokeTxnV3 {
     fn from(tx: InvokeTransactionV3) -> Self {
         Self {
             account_deployment_data: tx.account_deployment_data,
@@ -68,12 +68,12 @@ impl From<InvokeTransactionV3> for mp_rpc::InvokeTxnV3 {
     }
 }
 
-impl From<L1HandlerTransaction> for mp_rpc::L1HandlerTxn {
+impl From<L1HandlerTransaction> for mp_rpc::v0_7_1::L1HandlerTxn {
     fn from(tx: L1HandlerTransaction) -> Self {
         Self {
             nonce: tx.nonce,
             version: tx.version.to_hex_string(),
-            function_call: mp_rpc::FunctionCall {
+            function_call: mp_rpc::v0_7_1::FunctionCall {
                 calldata: tx.calldata,
                 contract_address: tx.contract_address,
                 entry_point_selector: tx.entry_point_selector,
@@ -82,18 +82,18 @@ impl From<L1HandlerTransaction> for mp_rpc::L1HandlerTxn {
     }
 }
 
-impl From<DeclareTransaction> for mp_rpc::DeclareTxn {
+impl From<DeclareTransaction> for mp_rpc::v0_7_1::DeclareTxn {
     fn from(tx: DeclareTransaction) -> Self {
         match tx {
-            DeclareTransaction::V0(tx) => mp_rpc::DeclareTxn::V0(tx.into()),
-            DeclareTransaction::V1(tx) => mp_rpc::DeclareTxn::V1(tx.into()),
-            DeclareTransaction::V2(tx) => mp_rpc::DeclareTxn::V2(tx.into()),
-            DeclareTransaction::V3(tx) => mp_rpc::DeclareTxn::V3(tx.into()),
+            DeclareTransaction::V0(tx) => mp_rpc::v0_7_1::DeclareTxn::V0(tx.into()),
+            DeclareTransaction::V1(tx) => mp_rpc::v0_7_1::DeclareTxn::V1(tx.into()),
+            DeclareTransaction::V2(tx) => mp_rpc::v0_7_1::DeclareTxn::V2(tx.into()),
+            DeclareTransaction::V3(tx) => mp_rpc::v0_7_1::DeclareTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<DeclareTransactionV0> for mp_rpc::DeclareTxnV0 {
+impl From<DeclareTransactionV0> for mp_rpc::v0_7_1::DeclareTxnV0 {
     fn from(tx: DeclareTransactionV0) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -104,7 +104,7 @@ impl From<DeclareTransactionV0> for mp_rpc::DeclareTxnV0 {
     }
 }
 
-impl From<DeclareTransactionV1> for mp_rpc::DeclareTxnV1 {
+impl From<DeclareTransactionV1> for mp_rpc::v0_7_1::DeclareTxnV1 {
     fn from(tx: DeclareTransactionV1) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -116,7 +116,7 @@ impl From<DeclareTransactionV1> for mp_rpc::DeclareTxnV1 {
     }
 }
 
-impl From<DeclareTransactionV2> for mp_rpc::DeclareTxnV2 {
+impl From<DeclareTransactionV2> for mp_rpc::v0_7_1::DeclareTxnV2 {
     fn from(tx: DeclareTransactionV2) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -129,7 +129,7 @@ impl From<DeclareTransactionV2> for mp_rpc::DeclareTxnV2 {
     }
 }
 
-impl From<DeclareTransactionV3> for mp_rpc::DeclareTxnV3 {
+impl From<DeclareTransactionV3> for mp_rpc::v0_7_1::DeclareTxnV3 {
     fn from(tx: DeclareTransactionV3) -> Self {
         Self {
             account_deployment_data: tx.account_deployment_data,
@@ -147,7 +147,7 @@ impl From<DeclareTransactionV3> for mp_rpc::DeclareTxnV3 {
     }
 }
 
-impl From<DeployTransaction> for mp_rpc::DeployTxn {
+impl From<DeployTransaction> for mp_rpc::v0_7_1::DeployTxn {
     fn from(tx: DeployTransaction) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -158,16 +158,16 @@ impl From<DeployTransaction> for mp_rpc::DeployTxn {
     }
 }
 
-impl From<DeployAccountTransaction> for mp_rpc::DeployAccountTxn {
+impl From<DeployAccountTransaction> for mp_rpc::v0_7_1::DeployAccountTxn {
     fn from(tx: DeployAccountTransaction) -> Self {
         match tx {
-            DeployAccountTransaction::V1(tx) => mp_rpc::DeployAccountTxn::V1(tx.into()),
-            DeployAccountTransaction::V3(tx) => mp_rpc::DeployAccountTxn::V3(tx.into()),
+            DeployAccountTransaction::V1(tx) => mp_rpc::v0_7_1::DeployAccountTxn::V1(tx.into()),
+            DeployAccountTransaction::V3(tx) => mp_rpc::v0_7_1::DeployAccountTxn::V3(tx.into()),
         }
     }
 }
 
-impl From<DeployAccountTransactionV1> for mp_rpc::DeployAccountTxnV1 {
+impl From<DeployAccountTransactionV1> for mp_rpc::v0_7_1::DeployAccountTxnV1 {
     fn from(tx: DeployAccountTransactionV1) -> Self {
         Self {
             class_hash: tx.class_hash,
@@ -180,7 +180,7 @@ impl From<DeployAccountTransactionV1> for mp_rpc::DeployAccountTxnV1 {
     }
 }
 
-impl From<DeployAccountTransactionV3> for mp_rpc::DeployAccountTxnV3 {
+impl From<DeployAccountTransactionV3> for mp_rpc::v0_7_1::DeployAccountTxnV3 {
     fn from(tx: DeployAccountTransactionV3) -> Self {
         Self {
             class_hash: tx.class_hash,
