@@ -53,7 +53,7 @@
 //!
 //! #[versioned_rpc("V0_7_1", "starknet")]
 //! pub trait JsonRpc {
-//!     #[method(name = "blockNumber", and_versions = ["V0_8_0"])]
+//!     #[method(name = "blockNumber", and_versions = ["V0_8_1"])]
 //!     fn block_number(&self) -> RpcResult<u64>;
 //! }
 //! ```
@@ -68,7 +68,7 @@
 //!
 //! #[jsonrpsee::proc_macros::rpc(server, client, namespace = "starknet")]
 //! pub trait JsonRpcV0_7_1 {
-//!     #[method(name = "V0_7_1_blockNumber", aliases = ["starknet_V0_8_0blockNumber"])]
+//!     #[method(name = "V0_7_1_blockNumber", aliases = ["starknet_V0_8_1blockNumber"])]
 //!     fn block_number(&self) -> RpcResult<u64>;
 //! }
 //! ```
