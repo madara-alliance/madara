@@ -14,16 +14,18 @@ use setup::madara::MadaraSetup;
 use std::fs::File;
 
 fn main() -> Result<()> {
-    dotenvy::from_filename_override("../.env")?;
+    dotenvy::from_filename_override(".env")?;
     let args = CliArgs::parse();
 
     match args.command {
         Commands::SetupBase(setup_base) => {
             let config: BaseConfigOuter = serde_json::from_reader(File::open(setup_base.config_path)?)?;
 
-            let base_layer_setup = config.get_base_layer_setup(setup_base.private_key)?;
+            let mut base_layer_setup = config.get_base_layer_setup(setup_base.private_key)?;
 
-            base_layer_setup.init().context("Failed to initialise the base layer setup")?;
+            base_layer_setup
+                .init(setup_base.addresses_output_path)
+                .context("Failed to initialise the base layer setup")?;
             base_layer_setup.setup().context("Failed to setup base layer setup")?;
         }
 

@@ -23,7 +23,7 @@ impl StarknetSetup {
 }
 
 impl BaseLayerSetupTrait for StarknetSetup {
-    fn init(&self) -> anyhow::Result<()> {
+    fn init(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 

@@ -53,6 +53,9 @@ RUN scripts/build-cairo.sh                                                      
 RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"starkware/\"src\/starkware/' {} \; -exec rm {}.bak \;
 RUN find $STARKGATE_DIR/starkware -type f -name "*.sol" -exec sed -i.bak 's/\"third_party/\"src\/third_party/' {} \; -exec rm {}.bak \;
 
+COPY build-artifacts/src/convert.py ./artifacts/convert.py
+RUN python3 artifacts/convert.py
+
 # =========================================================================== #
 #                          STARKGATE CONTRACTS (legacy)                       #
 # =========================================================================== #
@@ -287,9 +290,9 @@ COPY --from=starkgate-latest $ARTIFACTS_CAIRO/ERC20.casm ./cairo/ERC20_070.casm.
 
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateManager.json ./solidity/manager.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateRegistry.json ./solidity/registry.json
-COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetTokenBridge.json ./solidity/token_bridge.json
-COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json ./solidity/eth_bridge_upgraded.json
-COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json ./solidity/eic_eth_bridge.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetTokenBridge.json ./solidity/multiBridge.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarknetEthBridge.json ./solidity/ethBridge.json
+COPY --from=starkgate-latest $ARTIFACTS_SOLID/StarkgateUpgradeAssistExternalInitializer.json ./solidity/ethBridgeEIC.json
 COPY --from=starkgate-latest $ARTIFACTS_SOLID/ConfigureSingleBridgeEIC.json ./solidity/configure_single_bridge_eic.json
 
 WORKDIR ../bootstrapper
