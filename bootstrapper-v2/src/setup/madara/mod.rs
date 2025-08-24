@@ -6,6 +6,7 @@ pub struct MadaraSetup {
     rpc_url: String,
 }
 
+#[allow(unused_variables)]
 impl MadaraSetup {
     pub fn new(madara_config: MadaraConfig, _private_key: String) -> Self {
         Self { rpc_url: madara_config.rpc_url }
@@ -15,11 +16,7 @@ impl MadaraSetup {
         Ok(())
     }
 
-    pub fn setup(&self) -> anyhow::Result<()> {
-        Ok(())
-    }
-
-    pub fn post_madara_setup(&self) -> anyhow::Result<()> {
+    pub fn setup(&self, base_addresses_path: &str, madara_addresses_path: &str) -> anyhow::Result<()> {
         Ok(())
     }
 }

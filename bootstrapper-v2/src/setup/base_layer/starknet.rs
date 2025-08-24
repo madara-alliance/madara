@@ -22,8 +22,10 @@ impl StarknetSetup {
     }
 }
 
+#[allow(unused_variables)]
 impl BaseLayerSetupTrait for StarknetSetup {
-    fn init(&mut self) -> anyhow::Result<()> {
+    #[allow(unused_variables)]
+    fn init(&mut self, addresses_output_path: &str) -> anyhow::Result<()> {
         Ok(())
     }
 
@@ -31,7 +33,7 @@ impl BaseLayerSetupTrait for StarknetSetup {
         Ok(())
     }
 
-    fn post_madara_setup(&self) -> anyhow::Result<()> {
+    fn post_madara_setup(&self, base_addresses_path: &str, madara_addresses_path: &str) -> anyhow::Result<()> {
         Ok(())
     }
 }

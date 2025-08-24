@@ -56,8 +56,9 @@ impl EthereumSetup {
     }
 }
 
+#[allow(unused_variables)]
 impl BaseLayerSetupTrait for EthereumSetup {
-    fn init(&mut self) -> anyhow::Result<()> {
+    fn init(&mut self, addresses_output_path: &str) -> anyhow::Result<()> {
         for contract in IMPLEMENTATION_CONTRACTS {
             // let address = self.implementation_address.get(contract).unwrap();
             let rt = Runtime::new().context("Failed to create runtime")?;
@@ -77,7 +78,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
     fn setup(&self) -> anyhow::Result<()> {
         Ok(())
     }
-    fn post_madara_setup(&self) -> anyhow::Result<()> {
+    fn post_madara_setup(&self, base_addresses_path: &str, madara_addresses_path: &str) -> anyhow::Result<()> {
         Ok(())
     }
 }

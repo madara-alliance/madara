@@ -7,7 +7,7 @@ use anyhow::Result;
 pub trait BaseLayerSetupTrait {
     /// This function does prerequisite setup for running the base layer setup.
     /// It should be called before the base layer setup.
-    fn init(&mut self, addresses_output_path: String) -> Result<()>;
+    fn init(&mut self, addresses_output_path: &str) -> Result<()>;
     fn setup(&self) -> Result<()>;
-    fn post_madara_setup(&self) -> Result<()>;
+    fn post_madara_setup(&self, base_addresses_path: &str, madara_addresses_path: &str) -> Result<()>;
 }
