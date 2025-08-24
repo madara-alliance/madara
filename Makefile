@@ -207,6 +207,7 @@ artifacts:
 	@rm -rf "$(ARTIFACTS)/starkgate_latest"
 	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
 	@rm -rf "$(ARTIFACTS)/bootstrapper"
+	@git submodule update --init --recursive
 	@docker build --platform=linux/amd64 -f $(ARTIFACTS)/build.docker -t contracts .
 	@ID=$$(docker create contracts do-nothing) && \
 		docker cp $${ID}:/artifacts/. $(ARTIFACTS) && \
