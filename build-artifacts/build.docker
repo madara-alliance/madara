@@ -217,6 +217,7 @@ RUN ./scarb/bin/scarb build
 #                                  BOOTSTRAPPER                               #
 # =========================================================================== #
 
+FROM ghcr.io/foundry-rs/foundry:latest AS bootstrapper
 WORKDIR /contracts
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
