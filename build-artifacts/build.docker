@@ -217,7 +217,7 @@ RUN ./scarb/bin/scarb build
 #                         BOOTSTRAPPER ETHEREUM                               #
 # =========================================================================== #
 
-FROM ghcr.io/foundry-rs/foundry AS bootstrapper-ethereum
+FROM ghcr.io/foundry-rs/foundry:stable AS bootstrapper
 WORKDIR /contracts
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
