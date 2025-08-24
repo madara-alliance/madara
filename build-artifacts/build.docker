@@ -217,7 +217,7 @@ RUN ./scarb/bin/scarb build
 #                         BOOTSTRAPPER ETHEREUM                               #
 # =========================================================================== #
 
-FROM ghcr.io/foundry-rs/foundry:stable AS bootstrapper
+FROM ghcr.io/foundry-rs/foundry:stable AS bootstrapper-ethereum
 WORKDIR /contracts
 
 ENV STARKGATE_DIR="/contracts/starkgate-contracts"
@@ -247,7 +247,7 @@ WORKDIR /contracts
 # Setup scarb
 RUN mkdir scarb && wget -c $(cat /tmp/scarb_url) -O - | tar -xz -C scarb --strip-components=1
 
-COPY bootstrapper-v2/contracts/madara/ . 
+COPY bootstrapper-v2/contracts/madara/ .
 
 # Compile contracts
 RUN ./scarb/bin/scarb build
