@@ -45,5 +45,5 @@ readable formatting.
 ### Configuration
 
 Taplo allows you to customize the formatting rules by adding configuration
-options. You can find the available options and how to use them
-[here](https://taplo.tamasfe.dev/configuration/formatter-options.html).
+options. You can find the available options and how to use them in the
+[Taplo configuration documentation](https://taplo.tamasfe.dev/configuration/formatter-options.html).

@@ -20,6 +20,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Run prettier
         run: npm install && npx prettier --check .
@@ -30,6 +32,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Lint root markdown
         uses: avto-dev/markdown-lint@v1
@@ -43,6 +47,8 @@ jobs:
     runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Taplo Format Check
         uses: addnab/docker-run-action@v3
