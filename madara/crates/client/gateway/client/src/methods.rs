@@ -7,13 +7,8 @@ use mp_gateway::user_transaction::{
     AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
 };
 use mp_gateway::{
-    block::{
-        ProviderBlock, ProviderBlockHeader, ProviderBlockPending, ProviderBlockPendingMaybe, ProviderBlockSignature,
-    },
-    state_update::{
-        ProviderStateUpdate, ProviderStateUpdatePending, ProviderStateUpdatePendingMaybe, ProviderStateUpdateWithBlock,
-        ProviderStateUpdateWithBlockPending, ProviderStateUpdateWithBlockPendingMaybe,
-    },
+    block::{ProviderBlock, ProviderBlockHeader, ProviderBlockSignature},
+    state_update::{ProviderStateUpdate, ProviderStateUpdateWithBlock},
     user_transaction::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
@@ -26,18 +21,13 @@ use starknet_types_core::felt::Felt;
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 
 impl GatewayProvider {
-    pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlockPendingMaybe, SequencerError> {
+    pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_block")
             .expect("Failed to add URI segment. This should not fail in prod.")
             .with_block_id(&block_id);
 
-        match block_id {
-            BlockId::Tag(BlockTag::Pending) => {
-                Ok(ProviderBlockPendingMaybe::Pending(request.send_get::<ProviderBlockPending>().await?))
-            }
-            _ => Ok(ProviderBlockPendingMaybe::NonPending(request.send_get::<ProviderBlock>().await?)),
-        }
+        request.send_get::<ProviderBlock>().await
     }
 
     pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
@@ -50,38 +40,26 @@ impl GatewayProvider {
         request.send_get::<ProviderBlockHeader>().await
     }
 
-    pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdatePendingMaybe, SequencerError> {
+    pub async fn get_state_update(&self, block_id: BlockId) -> Result<ProviderStateUpdate, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
             .expect("Failed to add URI segment. This should not fail in prod")
             .with_block_id(&block_id);
 
-        match block_id {
-            BlockId::Tag(BlockTag::Pending) => {
-                Ok(ProviderStateUpdatePendingMaybe::Pending(request.send_get::<ProviderStateUpdatePending>().await?))
-            }
-            _ => Ok(ProviderStateUpdatePendingMaybe::NonPending(request.send_get::<ProviderStateUpdate>().await?)),
-        }
+        request.send_get::<ProviderStateUpdate>().await
     }
 
     pub async fn get_state_update_with_block(
         &self,
         block_id: BlockId,
-    ) -> Result<ProviderStateUpdateWithBlockPendingMaybe, SequencerError> {
+    ) -> Result<ProviderStateUpdateWithBlock, SequencerError> {
         let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
             .add_uri_segment("get_state_update")
             .expect("Failed to add URI segment. This should not fail in prod")
             .with_block_id(&block_id)
             .add_param(Cow::from("includeBlock"), "true");
 
-        match block_id {
-            BlockId::Tag(BlockTag::Pending) => Ok(ProviderStateUpdateWithBlockPendingMaybe::Pending(
-                request.send_get::<ProviderStateUpdateWithBlockPending>().await?,
-            )),
-            _ => Ok(ProviderStateUpdateWithBlockPendingMaybe::NonPending(
-                request.send_get::<ProviderStateUpdateWithBlock>().await?,
-            )),
-        }
+        request.send_get::<ProviderStateUpdateWithBlock>().await
     }
 
     pub async fn get_signature(&self, block_id: BlockId) -> Result<ProviderBlockSignature, SequencerError> {
@@ -299,10 +277,9 @@ mod tests {
     #[tokio::test]
     async fn get_block(client_mainnet_fixture: GatewayProvider) {
         let block = client_mainnet_fixture.get_block(BlockId::Number(0)).await.unwrap();
-        println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
-        assert!(matches!(block, ProviderBlockPendingMaybe::NonPending(_)));
-        assert_eq!(block.non_pending().unwrap().block_number, 0);
-        assert_eq!(block.non_pending().unwrap().parent_block_hash, Felt::from_hex_unchecked("0x0"));
+        println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
+        assert_eq!(block.block_number, 0);
+        assert_eq!(block.parent_block_hash, Felt::from_hex_unchecked("0x0"));
 
         let block = client_mainnet_fixture
             .get_block(BlockId::Hash(Felt::from_hex_unchecked(
@@ -310,20 +287,19 @@ mod tests {
             )))
             .await
             .unwrap();
-        println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
+        println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
         let block = client_mainnet_fixture.get_block(BlockId::Tag(BlockTag::Latest)).await.unwrap();
-        println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
+        println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
         let block = client_mainnet_fixture.get_block(BlockId::Tag(BlockTag::Pending)).await.unwrap();
-        println!("parent_block_hash: 0x{:x}", block.parent_block_hash());
+        println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
     }
 
     #[rstest]
     #[tokio::test]
     async fn get_state_update(client_mainnet_fixture: GatewayProvider) {
         let state_update = client_mainnet_fixture.get_state_update(BlockId::Number(0)).await.unwrap();
-        assert!(matches!(state_update, ProviderStateUpdatePendingMaybe::NonPending(_)));
         assert_eq!(
-            state_update.non_pending().unwrap().block_hash,
+            state_update.block_hash,
             Felt::from_hex_unchecked("0x47c3637b57c2b079b93c61539950c17e868a28f46cdef28f88521067f21e943")
         );
 
@@ -334,7 +310,6 @@ mod tests {
             .await
             .unwrap();
         let _block = client_mainnet_fixture.get_state_update(BlockId::Tag(BlockTag::Latest)).await.unwrap();
-        let _block = client_mainnet_fixture.get_state_update(BlockId::Tag(BlockTag::Pending)).await.unwrap();
     }
 
     // INFO:
@@ -351,42 +326,33 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn get_state_update_with_block_first_few_blocks(client_mainnet_fixture: GatewayProvider) {
-        let let_binding = client_mainnet_fixture
+        let res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(0))
             .await
             .expect("Getting state update and block at block number 0");
-        let (state_update_0, block_0) = let_binding.as_update_and_block();
-        let state_update_0 =
-            state_update_0.non_pending_ownded().expect("State update at block number 0 should not be pending");
-        let block_0 = block_0.non_pending_owned().expect("Block at block number 0 should not be pending");
+        let (state_update_0, block_0) = (res.state_update, res.block);
         let ProviderStateUpdateWithBlock { state_update: state_update_0_reference, block: block_0_reference } =
             load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_0.gz");
 
         assert_eq!(state_update_0, state_update_0_reference);
         assert_eq!(block_0, block_0_reference);
 
-        let let_binding = client_mainnet_fixture
+        let res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(1))
             .await
             .expect("Getting state update and block at block number 1");
-        let (state_update_1, block_1) = let_binding.as_update_and_block();
-        let state_update_1 =
-            state_update_1.non_pending_ownded().expect("State update at block number 1 should not be pending");
-        let block_1 = block_1.non_pending_owned().expect("Block at block number 1 should not be pending");
+        let (state_update_1, block_1) = (res.state_update, res.block);
         let ProviderStateUpdateWithBlock { state_update: state_update_1_reference, block: block_1_reference } =
             load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_1.gz");
 
         assert_eq!(state_update_1, state_update_1_reference);
         assert_eq!(block_1, block_1_reference);
 
-        let let_binding = client_mainnet_fixture
+        let res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(2))
             .await
             .expect("Getting state update and block at block number 2");
-        let (state_update_2, block_2) = let_binding.as_update_and_block();
-        let state_update_2 =
-            state_update_2.non_pending_ownded().expect("State update at block number 0 should not be pending");
-        let block_2 = block_2.non_pending_owned().expect("Block at block number 0 should not be pending");
+        let (state_update_2, block_2) = (res.state_update, res.block);
         let ProviderStateUpdateWithBlock { state_update: state_update_2_reference, block: block_2_reference } =
             load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_2.gz");
 
@@ -397,27 +363,10 @@ mod tests {
     #[rstest]
     #[tokio::test]
     async fn get_state_update_with_block_latest(client_mainnet_fixture: GatewayProvider) {
-        let let_binding = client_mainnet_fixture
+        let _res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Tag(BlockTag::Latest))
             .await
             .expect("Getting state update and block at block latest");
-        let (state_update_latest, block_latest) = let_binding.as_update_and_block();
-
-        assert!(matches!(state_update_latest, ProviderStateUpdatePendingMaybe::NonPending(_)));
-        assert!(matches!(block_latest, ProviderBlockPendingMaybe::NonPending(_)));
-    }
-
-    #[rstest]
-    #[tokio::test]
-    async fn get_state_update_with_block_pending(client_mainnet_fixture: GatewayProvider) {
-        let let_binding = client_mainnet_fixture
-            .get_state_update_with_block(BlockId::Tag(BlockTag::Pending))
-            .await
-            .expect("Getting state update and block at block latest");
-        let (state_update_pending, block_pending) = let_binding.as_update_and_block();
-
-        assert!(matches!(state_update_pending, ProviderStateUpdatePendingMaybe::Pending(_)));
-        assert!(matches!(block_pending, ProviderBlockPendingMaybe::Pending(_)))
     }
 
     #[rstest]

@@ -67,7 +67,7 @@ pub mod preconfirmed;
 pub mod rocksdb;
 pub mod subscription;
 pub mod view;
-// pub mod tests;
+pub mod tests;
 
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
@@ -160,7 +160,8 @@ impl ChainTip {
 /// Madara client database backend singleton.
 #[derive(Debug)]
 pub struct MadaraBackend<DB = RocksDBStorage> {
-    db: DB,
+    // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
+    pub db: DB,
     chain_config: Arc<ChainConfig>,
     // db_metrics: DbMetrics,
     config: MadaraBackendConfig,

@@ -122,8 +122,8 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(get_transaction_receipt(self, transaction_hash)?)
     }
 
-    fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
-        Ok(get_transaction_status(self, transaction_hash)?)
+    async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
+        Ok(get_transaction_status(self, transaction_hash).await?)
     }
 
     fn syncing(&self) -> RpcResult<SyncingStatus> {

@@ -1,7 +1,5 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-use crate::utils::ResultExt;
 use crate::Starknet;
-use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_receipt::ExecutionResult;
 use mp_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 use starknet_types_core::felt::Felt;
@@ -14,37 +12,31 @@ use starknet_types_core::felt::Felt;
 /// - [`AcceptedOnL2`]: tx has been saved to the pending block.
 /// - [`AcceptedOnL1`]: tx has been finalized on L1.
 ///
-/// We do not currently support the **Rejected** transaction status.
-///
 /// [specs]: https://github.com/starkware-libs/starknet-specs/blob/a2d10fc6cbaddbe2d3cf6ace5174dd0a306f4885/api/starknet_api_openrpc.json#L224C5-L250C7
 /// [`Received`]: mp_rpc::v0_7_1::TxnStatus::Received
 /// [`AcceptedOnL2`]: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL2
 /// [`AcceptedOnL1`]: mp_rpc::v0_7_1::TxnStatus::AcceptedOnL1
-pub fn get_transaction_status(
+pub async fn get_transaction_status(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnFinalityAndExecutionStatus> {
-    if let Some((block, tx_index)) =
-        starknet.backend.find_tx_hash_block(&transaction_hash).or_else_internal_server_error(|| {
-            format!("GetTransactionStatus failed to retrieve block for tx {transaction_hash:#x}")
-        })?
-    {
-        let tx_receipt = block.inner.receipts.get(tx_index.0 as usize).ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let view = starknet.backend.view_on_latest();
+    // TODO: rpc v0.9 Candidate status.
+    if let Some(res) = view.find_transaction_by_hash(&transaction_hash)? {
+        let transaction = res.get_transaction()?;
 
-        let execution_status = match tx_receipt.execution_result() {
+        let execution_status = match transaction.receipt.execution_result() {
             ExecutionResult::Reverted { .. } => Some(TxnExecutionStatus::Reverted),
             ExecutionResult::Succeeded => Some(TxnExecutionStatus::Succeeded),
         };
 
-        let finality_status = match block.info {
-            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => TxnStatus::AcceptedOnL2,
-            MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
-                if block.header.block_number <= starknet.get_l1_last_confirmed_block()? {
-                    TxnStatus::AcceptedOnL1
-                } else {
-                    TxnStatus::AcceptedOnL2
-                }
-            }
+        let finality_status = if res.block.is_on_l1() {
+            TxnStatus::AcceptedOnL1
+        } else if res.block.is_confirmed() {
+            TxnStatus::AcceptedOnL2
+        } else {
+            // FIXME: rpc v0.9 TxnStatus::Preconfirmed
+            TxnStatus::AcceptedOnL2
         };
 
         Ok(TxnFinalityAndExecutionStatus { finality_status, execution_status })
@@ -102,26 +94,12 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn pending(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PreconfirmedFullBlock {
+    fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PreconfirmedFullBlock {
         mp_block::PreconfirmedFullBlock {
             header: Default::default(),
             state_diff: Default::default(),
             transactions: vec![tx_with_receipt],
             events: Default::default(),
-        }
-    }
-
-    #[rstest::fixture]
-    fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::MadaraMaybePendingBlock {
-        mp_block::MadaraMaybePendingBlock {
-            info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(mp_block::MadaraBlockInfo {
-                tx_hashes: vec![TX_HASH],
-                ..Default::default()
-            }),
-            inner: mp_block::MadaraBlockInner {
-                transactions: vec![tx_with_receipt.transaction],
-                receipts: vec![tx_with_receipt.receipt],
-            },
         }
     }
 
@@ -160,9 +138,13 @@ mod tests {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn get_transaction_status_accepted_on_l2(_logs: (), starknet: Starknet, pending: mp_block::PreconfirmedFullBlock) {
+    async fn get_transaction_status_accepted_on_l2(
+        _logs: (),
+        starknet: Starknet,
+        block: mp_block::PreconfirmedFullBlock,
+    ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
-        backend.store_pending_block(pending).expect("Failed to store pending block");
+        backend.write_access().add_full_block_with_classes(&block, &[], true).expect("Failed to store pending block");
 
         let status = get_transaction_status(&starknet, TX_HASH).await.expect("Failed to retrieve transaction status");
 
@@ -180,13 +162,11 @@ mod tests {
     async fn get_transaction_status_accepted_on_l1(
         _logs: (),
         starknet: Starknet,
-        block: mp_block::MadaraMaybePendingBlock,
+        block: mp_block::PreconfirmedFullBlock,
     ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
-        let state_diff = Default::default();
-        let converted_classes = Default::default();
-        backend.store_block(block, state_diff, converted_classes).expect("Failed to store block");
-        backend.write_last_confirmed_block(0).expect("Failed to update last confirmed block");
+        backend.write_access().add_full_block_with_classes(&block, &[], true).expect("Failed to store pending block");
+        backend.set_latest_l1_confirmed(Some(0)).expect("Failed to update last confirmed block");
 
         let status = get_transaction_status(&starknet, TX_HASH).await.expect("Failed to retrieve transaction status");
 

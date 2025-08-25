@@ -1,15 +1,17 @@
 use crate::{
     errors::{StarknetRpcApiError, StorageProofLimit, StorageProofTrie},
-    utils::ResultExt,
     versions::user::v0_8_0::{
         ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult, GlobalRoots,
         MerkleNode, NodeHashToNodeMappingItem,
     },
-    Starknet,
+    Starknet, StarknetRpcResult,
 };
+use anyhow::Context;
 use bitvec::{array::BitArray, order::Msb0, slice::BitSlice};
-use jsonrpsee::core::RpcResult;
-use mc_db::{bonsai_identifier, db_block_id::DbBlockId, BasicId, GlobalTrie};
+use mc_db::rocksdb::{
+    trie::{BasicId, GlobalTrie, ProofNode},
+    update_global_trie::bonsai_identifier,
+};
 use mp_block::{BlockId, BlockTag};
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::StarkHash;
@@ -34,7 +36,7 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
     trie_name: StorageProofTrie,
     identifier: &[u8],
     keys: Vec<Felt>,
-) -> RpcResult<(Felt, Vec<NodeHashToNodeMappingItem>)> {
+) -> StarknetRpcResult<(Felt, Vec<NodeHashToNodeMappingItem>)> {
     let mut keys: Vec<_> = keys.into_iter().map(|f| BitArray::new(f.to_bytes_be())).collect();
     keys.sort();
 
@@ -43,18 +45,16 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
     let mut storage = trie
         .get_transactional_state(BasicId::new(block_n), trie.get_config())
         .map_err(|err| anyhow::anyhow!("{err:#}"))
-        .or_internal_server_error("Getting transactional state")?
+        .context("Getting transactional state")?
         .ok_or(StarknetRpcApiError::CannotMakeProofOnOldBlock)?;
 
-    let root_hash = storage
-        .root_hash(identifier)
-        .map_err(|err| anyhow::anyhow!("{err:#}"))
-        .or_internal_server_error("Getting root hash of trie")?;
+    let root_hash =
+        storage.root_hash(identifier).map_err(|err| anyhow::anyhow!("{err:#}")).context("Getting root hash of trie")?;
 
     let proof = storage
         .get_multi_proof(identifier, keys.iter().map(|k| &k.as_bitslice()[5..]))
         .map_err(|err| anyhow::anyhow!("{err:#}"))
-        .or_internal_server_error("Error while making storage multiproof")?;
+        .context("Error while making storage multiproof")?;
 
     // convert the bonsai-trie type to the rpc DTO
     let converted_proof = proof
@@ -62,8 +62,8 @@ fn make_trie_proof<H: StarkHash + Send + Sync>(
         .into_iter()
         .map(|(node_hash, n)| {
             let node = match n {
-                mc_db::ProofNode::Binary { left, right } => MerkleNode::Binary { left, right },
-                mc_db::ProofNode::Edge { child, path } => {
+                ProofNode::Binary { left, right } => MerkleNode::Binary { left, right },
+                ProofNode::Edge { child, path } => {
                     MerkleNode::Edge { child, path: path_to_felt(&path), length: path.len() }
                 }
             };
@@ -80,33 +80,25 @@ pub fn get_storage_proof(
     class_hashes: Option<Vec<Felt>>,
     contract_addresses: Option<Vec<Felt>>,
     contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
-) -> RpcResult<GetStorageProofResult> {
+) -> StarknetRpcResult<GetStorageProofResult> {
     // Pending block does not have a state root, so always fallback to latest.
     let block_id = match block_id {
         BlockId::Tag(BlockTag::Pending) => BlockId::Tag(BlockTag::Latest),
         block_id => block_id,
     };
 
-    let block_n = starknet
-        .backend
-        .get_block_n(&block_id)
-        .or_internal_server_error("Resolving block number")?
-        .ok_or(StarknetRpcApiError::NoBlocks)?;
+    let block_view =
+        starknet.backend.block_view(block_id)?.into_confirmed().context("View cannot be preconfirmed here")?;
 
-    let Some(latest) = starknet.backend.get_latest_block_n().or_internal_server_error("Getting latest block in db")?
-    else {
-        return Err(StarknetRpcApiError::BlockNotFound.into());
+    let Some(latest) = starknet.backend.latest_confirmed_block_n() else {
+        return Err(StarknetRpcApiError::NoBlocks.into());
     };
 
-    if latest.saturating_sub(block_n) > starknet.storage_proof_config.max_distance {
+    if latest.saturating_sub(block_view.block_number()) > starknet.storage_proof_config.max_distance {
         return Err(StarknetRpcApiError::CannotMakeProofOnOldBlock.into());
     }
 
-    let block_hash = starknet
-        .backend
-        .get_block_hash(&block_id)
-        .or_internal_server_error("Resolving block hash")?
-        .ok_or(StarknetRpcApiError::NoBlocks)?;
+    let block_hash = block_view.get_block_info()?.block_hash;
 
     let class_hashes = class_hashes.unwrap_or_default();
     let contract_addresses = contract_addresses.unwrap_or_default();
@@ -145,8 +137,8 @@ pub fn get_storage_proof(
     // Make the proofs.
 
     let (classes_tree_root, classes_proof) = make_trie_proof(
-        block_n,
-        &mut starknet.backend.class_trie(),
+        block_view.block_number(),
+        &mut starknet.backend.db.class_trie(),
         StorageProofTrie::Classes,
         bonsai_identifier::CLASS,
         class_hashes,
@@ -158,8 +150,8 @@ pub fn get_storage_proof(
         .map(|ContractStorageKeysItem { contract_address, storage_keys }| {
             let identifier = contract_address.to_bytes_be();
             let (root_hash, proof) = make_trie_proof(
-                block_n,
-                &mut starknet.backend.contract_storage_trie(),
+                block_view.block_number(),
+                &mut starknet.backend.db.contract_storage_trie(),
                 StorageProofTrie::ContractStorage(contract_address),
                 &identifier,
                 storage_keys,
@@ -167,30 +159,23 @@ pub fn get_storage_proof(
             contract_root_hashes.insert(contract_address, root_hash);
             Ok(proof)
         })
-        .collect::<RpcResult<_>>()?;
+        .collect::<StarknetRpcResult<_>>()?;
 
     // contract leaves data
+    let state_view = block_view.state_view();
     let contract_leaves_data = contract_addresses
         .iter()
         .map(|contract_addr| {
             Ok(ContractLeavesDataItem {
-                nonce: starknet
-                    .backend
-                    .get_contract_nonce_at(&DbBlockId::Number(block_n), contract_addr)
-                    .or_internal_server_error("Getting contract nonce")?
-                    .unwrap_or(Felt::ZERO),
-                class_hash: starknet
-                    .backend
-                    .get_contract_class_hash_at(&DbBlockId::Number(block_n), contract_addr)
-                    .or_internal_server_error("Getting contract class hash")?
-                    .unwrap_or(Felt::ZERO),
+                nonce: state_view.get_contract_nonce(contract_addr)?.unwrap_or(Felt::ZERO),
+                class_hash: state_view.get_contract_class_hash(contract_addr)?.unwrap_or(Felt::ZERO),
                 storage_root: *contract_root_hashes.get(contract_addr).unwrap_or(&Felt::ZERO),
             })
         })
-        .collect::<RpcResult<_>>()?;
+        .collect::<StarknetRpcResult<_>>()?;
     let (contracts_tree_root, contracts_proof_nodes) = make_trie_proof(
-        block_n,
-        &mut starknet.backend.contract_trie(),
+        block_view.block_number(),
+        &mut starknet.backend.db.contract_trie(),
         StorageProofTrie::Contracts,
         bonsai_identifier::CONTRACT,
         contract_addresses,
@@ -208,16 +193,13 @@ pub fn get_storage_proof(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
-    use bitvec::{bits, vec::BitVec, view::AsBits};
-    use mc_db::tests::common::finalized_block_one;
-    use mp_state_update::StateDiff;
-    use starknet_types_core::hash::Pedersen;
-
     use super::*;
-
     use crate::test_utils::rpc_test_setup;
+    use bitvec::{bits, vec::BitVec, view::AsBits};
+    use mc_db::rocksdb::{trie::BasicId, update_global_trie::bonsai_identifier};
+    use mp_block::{header::PreconfirmedHeader, PreconfirmedFullBlock};
+    use starknet_types_core::hash::Pedersen;
+    use std::collections::HashMap;
 
     #[test]
     fn test_path_to_felt() {
@@ -287,7 +269,7 @@ mod tests {
     ) -> Result<(), String> {
         let (_backend, starknet) = rpc_test_setup;
 
-        let mut storage_trie = starknet.backend.contract_storage_trie();
+        let mut storage_trie = starknet.backend.db.contract_storage_trie();
         let mut contract_storage: HashMap<Felt, Vec<(Felt, Felt)>> = HashMap::new();
         let mut contract_addresses = Vec::new();
         let mut contract_storage_keys: HashMap<Felt, Vec<Felt>> = HashMap::new();
@@ -319,8 +301,20 @@ mod tests {
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let pending_block = finalized_block_one();
-        starknet.backend.store_block(pending_block, StateDiff::default(), vec![]).unwrap();
+        starknet
+            .backend
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader::default(),
+                    state_diff: Default::default(),
+                    transactions: Default::default(),
+                    events: Default::default(),
+                },
+                &[],
+                true,
+            )
+            .unwrap();
 
         // convert contract_storage_keys to vec of ContractStorageKeyItems now that we have all keys
         let contract_storage_keys_items = contract_storage_keys
@@ -412,7 +406,7 @@ mod tests {
 
         let (_backend, starknet) = rpc_test_setup;
 
-        let mut class_trie = starknet.backend.class_trie();
+        let mut class_trie = starknet.backend.db.class_trie();
         let mut class_keys = Vec::new();
 
         // the class trie is just one MPT (unlike the contract storage MPT), we just insert k:v
@@ -426,8 +420,20 @@ mod tests {
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let block = finalized_block_one();
-        starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
+        starknet
+            .backend
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader::default(),
+                    state_diff: Default::default(),
+                    transactions: Default::default(),
+                    events: Default::default(),
+                },
+                &[],
+                true,
+            )
+            .unwrap();
 
         let storage_proof_result =
             get_storage_proof(&starknet, BlockId::Tag(BlockTag::Latest), Some(class_keys.clone()), None, None).unwrap();
@@ -467,7 +473,7 @@ mod tests {
     ) -> Result<(), String> {
         let (_backend, starknet) = rpc_test_setup;
 
-        let mut contract_trie = starknet.backend.contract_trie();
+        let mut contract_trie = starknet.backend.db.contract_trie();
         let mut contract_addresses = Vec::new();
 
         // the contract trie is just one MPT (unlike the contract-storage MPT), we just insert k:v
@@ -483,8 +489,20 @@ mod tests {
 
         // create a dummy block to make get_storage_proof() happy
         // (it wants a block to exist for the requested chain height)
-        let block = finalized_block_one();
-        starknet.backend.store_block(block, StateDiff::default(), vec![]).unwrap();
+        starknet
+            .backend
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader::default(),
+                    state_diff: Default::default(),
+                    transactions: Default::default(),
+                    events: Default::default(),
+                },
+                &[],
+                true,
+            )
+            .unwrap();
 
         let storage_proof_result =
             get_storage_proof(&starknet, BlockId::Tag(BlockTag::Latest), None, Some(contract_addresses.clone()), None)

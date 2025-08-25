@@ -1,7 +1,7 @@
 use crate::rocksdb::column::Column;
 use crate::rocksdb::snapshots::{SnapshotRef, Snapshots};
 use crate::rocksdb::{RocksDBStorage, RocksDBStorageInner, WriteBatchWithTransaction};
-use bonsai_trie::id::{BasicId, Id};
+use bonsai_trie::id::Id;
 use bonsai_trie::{
     BonsaiDatabase, BonsaiPersistentDatabase, BonsaiStorage, BonsaiStorageConfig, ByteVec, DBError, DatabaseKey,
 };
@@ -22,6 +22,9 @@ pub const BONSAI_CLASS_TRIE_COLUMN: Column = Column::new("bonsai_class_trie").se
 pub const BONSAI_CLASS_LOG_COLUMN: Column = Column::new("bonsai_class_log");
 
 pub type GlobalTrie<H> = BonsaiStorage<BasicId, BonsaiDB, H>;
+
+pub use bonsai_trie::id::BasicId;
+pub use bonsai_trie::ProofNode;
 
 /// Wrapper because bonsai requires a special DBError trait implementation.
 /// TODO: Remove that upstream in bonsai-trie, this is dumb.
@@ -54,21 +57,21 @@ impl RocksDBStorage {
             251,
         )
     }
-    pub(super) fn contract_trie(&self) -> GlobalTrie<Pedersen> {
+    pub fn contract_trie(&self) -> GlobalTrie<Pedersen> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: BONSAI_CONTRACT_FLAT_COLUMN,
             trie: BONSAI_CONTRACT_TRIE_COLUMN,
             log: BONSAI_CONTRACT_LOG_COLUMN,
         })
     }
-    pub(super) fn contract_storage_trie(&self) -> GlobalTrie<Pedersen> {
+    pub fn contract_storage_trie(&self) -> GlobalTrie<Pedersen> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: BONSAI_CONTRACT_STORAGE_FLAT_COLUMN,
             trie: BONSAI_CONTRACT_STORAGE_TRIE_COLUMN,
             log: BONSAI_CONTRACT_STORAGE_LOG_COLUMN,
         })
     }
-    pub(super) fn class_trie(&self) -> GlobalTrie<Poseidon> {
+    pub fn class_trie(&self) -> GlobalTrie<Poseidon> {
         self.get_bonsai(DatabaseKeyMapping {
             flat: BONSAI_CLASS_FLAT_COLUMN,
             trie: BONSAI_CLASS_TRIE_COLUMN,

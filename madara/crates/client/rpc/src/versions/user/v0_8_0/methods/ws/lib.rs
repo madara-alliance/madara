@@ -1,13 +1,13 @@
 use mp_block::BlockId;
 use starknet_types_core::felt::Felt;
 
-use crate::versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server;
+use crate::{versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server, StarknetRpcApiError};
 
 use super::starknet_unsubscribe::*;
-use super::subscribe_events::*;
-use super::subscribe_new_heads::*;
-use super::subscribe_pending_transactions::*;
-use super::subscribe_transaction_status::*;
+// use super::subscribe_events::*;
+// use super::subscribe_new_heads::*;
+// use super::subscribe_pending_transactions::*;
+// use super::subscribe_transaction_status::*;
 
 #[jsonrpsee::core::async_trait]
 impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
@@ -16,7 +16,8 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
         block: BlockId,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_new_heads(self, subscription_sink, block).await?)
+        // Ok(subscribe_new_heads(self, subscription_sink, block).await?)
+        Err(StarknetRpcApiError::UnimplementedMethod.into())
     }
 
     async fn subscribe_events(
@@ -26,7 +27,8 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
         keys: Option<Vec<Vec<Felt>>>,
         block: Option<BlockId>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_events(self, subscription_sink, from_address, keys, block).await?)
+        // Ok(subscribe_events(self, subscription_sink, from_address, keys, block).await?)
+        Err(StarknetRpcApiError::UnimplementedMethod.into())
     }
 
     async fn subscribe_transaction_status(
@@ -34,7 +36,8 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
         transaction_hash: Felt,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_transaction_status(self, subscription_sink, transaction_hash).await?)
+        // Ok(subscribe_transaction_status(self, subscription_sink, transaction_hash).await?)
+        Err(StarknetRpcApiError::UnimplementedMethod.into())
     }
 
     async fn subscribe_pending_transactions(
@@ -43,7 +46,8 @@ impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
         transaction_details: bool,
         sender_address: Vec<starknet_types_core::felt::Felt>,
     ) -> jsonrpsee::core::SubscriptionResult {
-        Ok(subscribe_pending_transactions(self, subscription_sink, transaction_details, sender_address).await?)
+        // Ok(subscribe_pending_transactions(self, subscription_sink, transaction_details, sender_address).await?)
+        Err(StarknetRpcApiError::UnimplementedMethod.into())
     }
 
     async fn starknet_unsubscribe(&self, subscription_id: u64) -> jsonrpsee::core::RpcResult<bool> {

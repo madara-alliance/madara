@@ -9,7 +9,6 @@ use mc_gateway_client::GatewayProvider;
 use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header, PreconfirmedFullBlock};
 use mp_gateway::{
     error::{SequencerError, StarknetErrorCode},
-    state_update::ProviderStateUpdateWithBlockPendingMaybe,
 };
 use mp_state_update::StateDiff;
 use mp_utils::AbortOnDrop;
@@ -60,10 +59,6 @@ impl PipelineSteps for GatewaySyncSteps {
                     .get_state_update_with_block(BlockId::Number(block_n))
                     .await
                     .with_context(|| format!("Getting state update with block_n={block_n}"))?;
-
-                let ProviderStateUpdateWithBlockPendingMaybe::NonPending(block) = block else {
-                    anyhow::bail!("Asked for a block_n, got a pending one")
-                };
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 

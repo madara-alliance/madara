@@ -30,8 +30,10 @@ mod options;
 mod rocksdb_snapshot;
 mod snapshots;
 mod state;
-mod trie;
-mod update_global_trie;
+// TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
+pub mod trie;
+// TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
+pub mod update_global_trie;
 
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
