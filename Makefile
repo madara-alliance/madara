@@ -210,7 +210,7 @@ artifacts:
 	@git submodule update --init --recursive
 	@docker build --platform=linux/amd64 -f $(ARTIFACTS)/build.docker -t contracts .
 	@ID=$$(docker create contracts do-nothing) && \
-		docker cp $${ID}:/artifacts/. $(ARTIFACTS) && \
+		docker cp $${ID}:/artifacts/. $(ARTIFACTS)/ && \
 		docker rm $${ID} > /dev/null
 
 .PHONY: check
