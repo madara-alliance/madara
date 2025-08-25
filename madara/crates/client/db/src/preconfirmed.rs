@@ -2,19 +2,38 @@ use crate::prelude::*;
 use mp_block::{header::PreconfirmedHeader, Transaction, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_state_update::TransactionStateUpdate;
-use mp_transactions::TransactionWithHash;
+use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub struct PreconfirmedExecutedTransaction {
     pub transaction: TransactionWithReceipt,
     pub state_diff: TransactionStateUpdate,
     pub declared_class: Option<ConvertedClass>,
+
+    /// The earliest known timestamp for this transaction.
+    /// This field is used when putting the pre-confirmed transaction back into mempool.
+    pub arrived_at: TxTimestamp,
+}
+
+impl PreconfirmedExecutedTransaction {
+    /// Creates a ValidatedTransaction from this PreconfirmedExecutedTransaction. This is used to put
+    /// transactions back into mempool.
+    pub fn to_validated(&self) -> ValidatedTransaction {
+        ValidatedTransaction {
+            transaction: self.transaction.transaction.clone(),
+            paid_fee_on_l1: None,
+            contract_address: *self.transaction.contract_address(),
+            arrived_at: self.arrived_at,
+            declared_class: self.declared_class.clone(),
+            hash: *self.transaction.receipt.transaction_hash(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub enum PreconfirmedTransaction {
     Executed(PreconfirmedExecutedTransaction),
-    Candidate(TransactionWithHash),
+    Candidate(Arc<ValidatedTransaction>),
 }
 
 impl PreconfirmedTransaction {
@@ -24,7 +43,7 @@ impl PreconfirmedTransaction {
             _ => None,
         }
     }
-    pub fn as_candidate(&self) -> Option<&TransactionWithHash> {
+    pub fn as_candidate(&self) -> Option<&Arc<ValidatedTransaction>> {
         match self {
             Self::Candidate(tx) => Some(tx),
             _ => None,
@@ -60,7 +79,7 @@ impl PreconfirmedBlockInner {
     }
     pub fn candidate_transactions(
         &self,
-    ) -> impl DoubleEndedIterator<Item = &TransactionWithHash> + Clone + ExactSizeIterator {
+    ) -> impl DoubleEndedIterator<Item = &Arc<ValidatedTransaction>> + Clone + ExactSizeIterator {
         self.txs[self.n_executed..].iter().map(|c: &PreconfirmedTransaction| {
             c.as_candidate().expect("Invalid state: executed transaction marked as candidate")
         })
@@ -71,7 +90,7 @@ impl PreconfirmedBlockInner {
         self.txs.splice(self.n_executed.., txs.into_iter().map(PreconfirmedTransaction::Executed));
         self.n_executed = self.txs.len();
     }
-    pub fn append_candidates(&mut self, txs: impl IntoIterator<Item = TransactionWithHash>) {
+    pub fn append_candidates(&mut self, txs: impl IntoIterator<Item = Arc<ValidatedTransaction>>) {
         self.txs.extend(txs.into_iter().map(PreconfirmedTransaction::Candidate))
     }
 
@@ -104,7 +123,7 @@ impl PreconfirmedBlock {
     pub fn new_with_content(
         header: PreconfirmedHeader,
         executed: impl IntoIterator<Item = PreconfirmedExecutedTransaction>,
-        candidates: impl IntoIterator<Item = TransactionWithHash>,
+        candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
     ) -> Self {
         let mut inner = PreconfirmedBlockInner::default();
         inner.append_executed(executed);
@@ -116,7 +135,7 @@ impl PreconfirmedBlock {
     pub(crate) fn append(
         &self,
         executed: impl IntoIterator<Item = PreconfirmedExecutedTransaction>,
-        replace_candidates: impl IntoIterator<Item = TransactionWithHash>,
+        replace_candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
     ) {
         // Takes the write lock and modify the content.
         self.content.send_modify(|block| {

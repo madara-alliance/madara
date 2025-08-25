@@ -1,6 +1,5 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use anyhow::Context;
 use mp_rpc::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
 
@@ -31,26 +30,22 @@ pub fn get_transaction_receipt(
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
     let view = starknet.backend.view_on_latest();
-    let transaction_with_index =
-        view.get_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let transaction = res.get_transaction()?;
 
-    if !transaction_with_index.index.is_preconfirmed {
-        let view = view
-            .block_view_on_confirmed(transaction_with_index.index.block_number)
-            .context("Block should be found")?;
-        let finality_status = if view.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
-        let block_hash = view.get_block_info()?.block_hash;
+    if let Some(confirmed) = res.block.as_confirmed() {
+        let finality_status = if res.block.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
+        let block_hash = confirmed.get_block_info()?.block_hash;
 
-        let transaction_receipt = transaction_with_index.transaction.receipt.clone().to_starknet_types(finality_status);
+        let transaction_receipt = transaction.receipt.clone().to_starknet_types(finality_status);
         Ok(TxnReceiptWithBlockInfo {
             transaction_receipt,
             block_hash: Some(block_hash),
-            block_number: Some(transaction_with_index.index.block_number),
+            block_number: Some(confirmed.block_number()),
         })
     } else {
         // TODO: block_number should not be an Option in rpc v0.9, and new finality status.
-        let transaction_receipt =
-            transaction_with_index.transaction.receipt.clone().to_starknet_types(TxnFinalityStatus::L2);
+        let transaction_receipt = transaction.receipt.clone().to_starknet_types(TxnFinalityStatus::L2);
         Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash: None, block_number: None })
     }
 }

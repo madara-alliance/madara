@@ -5,6 +5,7 @@ use mp_block::header::{BlockTimestamp, GasPrices, PreconfirmedHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
+use mp_transactions::validated::TxTimestamp;
 use starknet_api::StarknetApiError;
 use std::{
     collections::VecDeque,
@@ -112,6 +113,8 @@ impl FromIterator<(Transaction, AdditionalTxInfo)> for BatchToExecute {
 #[derive(Debug, Default)]
 pub(crate) struct AdditionalTxInfo {
     pub declared_class: Option<ConvertedClass>,
+    /// Earliest known timestamp for this transaction. Used for mempool re-insertion.
+    pub arrived_at: TxTimestamp,
 }
 
 /// This is a pending header, without parent_block_hash. Parent block hash is not visible to the execution,

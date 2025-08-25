@@ -1,14 +1,19 @@
 use crate::Starknet;
 use jsonrpsee::core::async_trait;
-use mc_db::MadaraBackend;
+use mc_db::{
+    preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
+    MadaraBackend,
+};
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
 use mp_block::{
     header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
-    Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePreconfirmedBlockInfo,
-    MadaraPreconfirmedBlockInfo,
+    PreconfirmedFullBlock, TransactionWithReceipt,
 };
 use mp_chain_config::ChainConfig;
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
+use mp_class::{
+    CompiledSierra, ConvertedClass, EntryPointsByType, FlattenedSierraClass, SierraClassInfo, SierraConvertedClass,
+};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
@@ -18,9 +23,9 @@ use mp_rpc::{
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
-    StorageEntry,
+    StorageEntry, TransactionStateUpdate,
 };
-use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+use mp_transactions::{validated::TxTimestamp, InvokeTransaction, InvokeTransactionV0, Transaction};
 use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
@@ -95,7 +100,7 @@ pub fn sample_chain_for_block_getters(
 }
 
 /// Transactions and blocks testing, no state diff, no converted class
-pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleChainForBlockGetters {
+pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> SampleChainForBlockGetters {
     let block_hashes = vec![Felt::ONE, Felt::from_hex_unchecked("0xff"), Felt::from_hex_unchecked("0xffabab")];
     let tx_hashes = vec![
         Felt::from_hex_unchecked("0x8888888"),
@@ -201,118 +206,92 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
     {
         // Block 0
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: Felt::ZERO,
-                            block_number: 0,
-                            transaction_count: 1,
-                            global_state_root: Felt::from_hex_unchecked("0x88912"),
-                            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                            block_timestamp: BlockTimestamp(43),
-                            transaction_commitment: Felt::from_hex_unchecked("0xbabaa0"),
-                            event_count: 0,
-                            event_commitment: Felt::from_hex_unchecked("0xb"),
-                            state_diff_length: Some(5),
-                            state_diff_commitment: Some(Felt::from_hex_unchecked("0xb1")),
-                            receipt_commitment: Some(Felt::from_hex_unchecked("0xb4")),
-                            protocol_version: StarknetVersion::V0_13_1_1,
-                            l1_gas_price: GasPrices {
-                                eth_l1_gas_price: 123,
-                                strk_l1_gas_price: 12,
-                                eth_l1_data_gas_price: 44,
-                                strk_l1_data_gas_price: 52,
-                            },
-                            l1_da_mode: L1DataAvailabilityMode::Blob,
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader {
+                        parent_block_hash: Felt::ZERO,
+                        block_number: 0,
+                        sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                        block_timestamp: BlockTimestamp(43),
+                        protocol_version: StarknetVersion::V0_13_1_1,
+                        l1_gas_price: GasPrices {
+                            eth_l1_gas_price: 123,
+                            strk_l1_gas_price: 12,
+                            eth_l1_data_gas_price: 44,
+                            strk_l1_data_gas_price: 52,
                         },
-                        block_hash: block_hashes[0],
-                        tx_hashes: vec![Felt::from_hex_unchecked("0x8888888")],
-                    }),
-                    inner: MadaraBlockInner {
-                        transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                        l1_da_mode: L1DataAvailabilityMode::Blob,
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![TransactionWithReceipt {
+                        transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0x12"),
                             signature: vec![].into(),
                             contract_address: Felt::from_hex_unchecked("0x4343"),
                             entry_point_selector: Felt::from_hex_unchecked("0x1212"),
                             calldata: vec![Felt::from_hex_unchecked("0x2828")].into(),
-                        }))],
-                        receipts: vec![TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                        })),
+                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
                             transaction_hash: Felt::from_hex_unchecked("0x8888888"),
                             actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
                             messages_sent: vec![],
                             events: vec![],
                             execution_resources: ExecutionResources::default(),
                             execution_result: ExecutionResult::Succeeded,
-                        })],
-                    },
+                        }),
+                    }],
+                    events: vec![],
                 },
-                StateDiff::default(),
-                vec![],
+                &[],
+                false,
             )
             .unwrap();
 
         // Block 1
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: block_hashes[0],
-                            block_number: 1,
-                            transaction_count: 0,
-                            l1_da_mode: L1DataAvailabilityMode::Calldata,
-                            protocol_version: StarknetVersion::V0_13_2,
-                            ..Default::default()
-                        },
-                        block_hash: block_hashes[1],
-                        tx_hashes: vec![],
-                    }),
-                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader {
+                        parent_block_hash: block_hashes[0],
+                        block_number: 1,
+                        l1_da_mode: L1DataAvailabilityMode::Calldata,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: Default::default(),
+                    transactions: Default::default(),
+                    events: Default::default(),
                 },
-                StateDiff::default(),
-                vec![],
+                &[],
+                false,
             )
             .unwrap();
 
         // Block 2
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: block_hashes[1],
-                            block_number: 2,
-                            transaction_count: 2,
-                            l1_da_mode: L1DataAvailabilityMode::Blob,
-                            protocol_version: StarknetVersion::V0_13_2,
-                            ..Default::default()
-                        },
-                        block_hash: block_hashes[2],
-                        tx_hashes: vec![
-                            Felt::from_hex_unchecked("0xdd848484"),
-                            Felt::from_hex_unchecked("0xdd84848407"),
-                        ],
-                    }),
-                    inner: MadaraBlockInner {
-                        transactions: vec![
-                            Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader {
+                        parent_block_hash: block_hashes[1],
+                        block_number: 2,
+                        l1_da_mode: L1DataAvailabilityMode::Blob,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: Default::default(),
+                    transactions: vec![
+                        TransactionWithReceipt {
+                            transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                                 max_fee: Felt::from_hex_unchecked("0xb12"),
                                 signature: vec![].into(),
                                 contract_address: Felt::from_hex_unchecked("0x434b3"),
                                 entry_point_selector: Felt::from_hex_unchecked("0x12123"),
                                 calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
                             })),
-                            Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                                max_fee: Felt::from_hex_unchecked("0xb12"),
-                                signature: vec![].into(),
-                                contract_address: Felt::from_hex_unchecked("0x434b3"),
-                                entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
-                                calldata: vec![Felt::from_hex_unchecked("0x2828eeb")].into(),
-                            })),
-                        ],
-                        receipts: vec![
-                            TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                            receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
                                 transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
                                 actual_fee: FeePayment {
                                     amount: Felt::from_hex_unchecked("0x94"),
@@ -323,7 +302,16 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                                 execution_resources: ExecutionResources::default(),
                                 execution_result: ExecutionResult::Succeeded,
                             }),
-                            TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                        },
+                        TransactionWithReceipt {
+                            transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                                max_fee: Felt::from_hex_unchecked("0xb12"),
+                                signature: vec![].into(),
+                                contract_address: Felt::from_hex_unchecked("0x434b3"),
+                                entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
+                                calldata: vec![Felt::from_hex_unchecked("0x2828eeb")].into(),
+                            })),
+                            receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
                                 transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
                                 actual_fee: FeePayment {
                                     amount: Felt::from_hex_unchecked("0x94dd"),
@@ -334,48 +322,49 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                                 execution_resources: ExecutionResources::default(),
                                 execution_result: ExecutionResult::Reverted { reason: "too bad".into() },
                             }),
-                        ],
-                    },
+                        },
+                    ],
+                    events: vec![],
                 },
-                StateDiff::default(),
-                vec![],
+                &[],
+                true,
             )
             .unwrap();
 
         // Pending
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
-                        header: PreconfirmedHeader {
-                            parent_block_hash: block_hashes[2],
-                            protocol_version: StarknetVersion::V0_13_2,
-                            l1_da_mode: L1DataAvailabilityMode::Blob,
-                            ..Default::default()
-                        },
-                        tx_hashes: vec![Felt::from_hex_unchecked("0xdd84847784")],
-                    }),
-                    inner: MadaraBlockInner {
-                        transactions: vec![Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader {
+                    parent_block_hash: block_hashes[2],
+                    protocol_version: StarknetVersion::V0_13_2,
+                    l1_da_mode: L1DataAvailabilityMode::Blob,
+                    ..Default::default()
+                },
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: TransactionWithReceipt {
+                        transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
                             max_fee: Felt::from_hex_unchecked("0xb12"),
                             signature: vec![].into(),
                             contract_address: Felt::from_hex_unchecked("0x434b3"),
                             entry_point_selector: Felt::from_hex_unchecked("0x12123"),
                             calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
-                        }))],
-                        receipts: vec![TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                        })),
+                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
                             transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
                             actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
                             messages_sent: vec![],
                             events: vec![],
                             execution_resources: ExecutionResources::default(),
                             execution_result: ExecutionResult::Succeeded,
-                        })],
+                        }),
                     },
-                },
-                StateDiff::default(),
-                vec![],
-            )
+                    state_diff: Default::default(),
+                    declared_class: None,
+                    arrived_at: Default::default(),
+                }],
+                [],
+            ))
             .unwrap();
     }
 
@@ -419,7 +408,7 @@ pub fn sample_chain_for_state_updates(
 }
 
 /// State diff
-pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleChainForStateUpdates {
+pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> SampleChainForStateUpdates {
     let block_hashes = vec![
         Felt::from_hex_unchecked("0x9999999eee"),
         Felt::from_hex_unchecked("0x9999"),
@@ -539,88 +528,116 @@ pub fn make_sample_chain_for_state_updates(backend: &MadaraBackend) -> SampleCha
     {
         // Block 0
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: Felt::ZERO,
-                            global_state_root: state_roots[0],
-                            block_number: 0,
-                            protocol_version: StarknetVersion::V0_13_2,
-                            ..Default::default()
-                        },
-                        block_hash: block_hashes[0],
-                        tx_hashes: vec![],
-                    }),
-                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader {
+                        parent_block_hash: Felt::ZERO,
+                        block_number: 0,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: state_diffs[0].clone(),
+                    transactions: vec![],
+                    events: vec![],
                 },
-                state_diffs[0].clone(),
-                vec![],
+                &[],
+                true,
             )
             .unwrap();
 
         // Block 1
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: block_hashes[0],
-                            global_state_root: state_roots[1],
-                            block_number: 1,
-                            protocol_version: StarknetVersion::V0_13_2,
-                            ..Default::default()
-                        },
-                        block_hash: block_hashes[1],
-                        tx_hashes: vec![],
-                    }),
-                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader {
+                        parent_block_hash: block_hashes[0],
+                        block_number: 1,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: state_diffs[1].clone(),
+                    transactions: vec![],
+                    events: vec![],
                 },
-                state_diffs[1].clone(),
-                vec![],
+                &[],
+                true,
             )
             .unwrap();
 
         // Block 2
         backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Confirmed(MadaraBlockInfo {
-                        header: Header {
-                            parent_block_hash: block_hashes[1],
-                            global_state_root: state_roots[2],
-                            block_number: 2,
-                            protocol_version: StarknetVersion::V0_13_2,
-                            ..Default::default()
-                        },
-                        block_hash: block_hashes[2],
-                        tx_hashes: vec![],
-                    }),
-                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
+            .write_access()
+            .add_full_block_with_classes(
+                &PreconfirmedFullBlock {
+                    header: PreconfirmedHeader {
+                        parent_block_hash: block_hashes[1],
+                        block_number: 2,
+                        protocol_version: StarknetVersion::V0_13_2,
+                        ..Default::default()
+                    },
+                    state_diff: state_diffs[2].clone(),
+                    transactions: vec![],
+                    events: vec![],
                 },
-                state_diffs[2].clone(),
-                vec![],
+                &[],
+                true,
             )
             .unwrap();
 
         // Pending
-        backend
-            .store_block(
-                MadaraMaybePendingBlock {
-                    info: MadaraMaybePreconfirmedBlockInfo::Preconfirmed(MadaraPreconfirmedBlockInfo {
-                        header: PreconfirmedHeader {
-                            parent_block_hash: block_hashes[2],
-                            protocol_version: StarknetVersion::V0_13_2,
-                            ..Default::default()
-                        },
-                        tx_hashes: vec![],
+        backend.write_access().new_preconfirmed(PreconfirmedBlock::new_with_content(
+            PreconfirmedHeader {
+                parent_block_hash: block_hashes[2],
+                protocol_version: StarknetVersion::V0_13_2,
+                ..Default::default()
+            },
+            vec![PreconfirmedExecutedTransaction {
+                transaction: TransactionWithReceipt {
+                    transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                        max_fee: Felt::from_hex_unchecked("0xb12"),
+                        signature: vec![].into(),
+                        contract_address: Felt::from_hex_unchecked("0x434b3"),
+                        entry_point_selector: Felt::from_hex_unchecked("0x12123"),
+                        calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
+                    })),
+                    receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                        transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                        actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
+                        messages_sent: vec![],
+                        events: vec![],
+                        execution_resources: ExecutionResources::default(),
+                        execution_result: ExecutionResult::Succeeded,
                     }),
-                    inner: MadaraBlockInner { transactions: vec![], receipts: vec![] },
                 },
-                state_diffs[3].clone(),
-                vec![],
-            )
-            .unwrap();
+                state_diff: TransactionStateUpdate {
+                    nonces: [(contracts[0], 3.into()), (contracts[1], 2.into())].into(),
+                    contract_class_hashes: [(contracts[0], class_hashes[2])].into(),
+                    storage: [((contracts[0], keys[1]), values[0]), ((contracts[0], keys[0]), values[2])].into(),
+                },
+                declared_class: Some(ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: class_hashes[2],
+                    info: SierraClassInfo {
+                        contract_class: FlattenedSierraClass {
+                            sierra_program: vec![],
+                            contract_class_version: Default::default(),
+                            entry_points_by_type: EntryPointsByType {
+                                constructor: vec![],
+                                external: vec![],
+                                l1_handler: vec![],
+                            },
+                            abi: Default::default(),
+                        }
+                        .into(),
+                        compiled_class_hash: compiled_class_hashes[2],
+                    },
+                    compiled: CompiledSierra(Default::default()).into(),
+                })),
+                arrived_at: TxTimestamp::default(),
+            }],
+            [],
+        ));
     }
 
     SampleChainForStateUpdates {

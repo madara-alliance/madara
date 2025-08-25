@@ -3,20 +3,16 @@
 use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
-use blockifier::state::cached_state::{StateMaps, StorageEntry};
 use executor::{BatchExecutionResult, ExecutorMessage};
-use futures::future::OptionFuture;
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
 use mc_mempool::{L1DataProvider, Mempool};
 use mc_settlement_client::SettlementClient;
-use mp_block::header::PreconfirmedHeader;
-use mp_block::{BlockId, BlockTag, PreconfirmedFullBlock, TransactionWithReceipt};
-use mp_class::ConvertedClass;
+use mp_block::TransactionWithReceipt;
 use mp_convert::ToFelt;
-use mp_receipt::{from_blockifier_execution_info, EventWithTransactionHash};
-use mp_state_update::{DeclaredClassItem, NonceUpdate, TransactionStateUpdate};
+use mp_receipt::from_blockifier_execution_info;
+use mp_state_update::TransactionStateUpdate;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::TransactionWithHash;
 use mp_utils::rayon::global_spawn_rayon_task;
@@ -24,12 +20,11 @@ use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
 use opentelemetry::KeyValue;
 use starknet_types_core::felt::Felt;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
-use util::{BlockExecutionContext, ExecutionStats};
 
 mod batcher;
 mod executor;
@@ -96,6 +91,7 @@ impl CurrentPendingState {
                             .collect(),
                     },
                     declared_class,
+                    arrived_at: additional_info.arrived_at,
                 })
             }
         }
@@ -264,6 +260,15 @@ impl BlockProductionTask {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
 
+                tracing::debug!("Close and save block block_n={}", state.block_number);
+                let start_time = Instant::now();
+
+                let n_txs = self
+                    .backend
+                    .block_view_on_preconfirmed()
+                    .context("No current pre-confirmed block")?
+                    .num_executed_transactions();
+
                 let backend = self.backend.clone();
                 let block_hash = global_spawn_rayon_task(move || {
                     for l1_nonce in state.consumed_core_contract_nonces {
@@ -281,6 +286,22 @@ impl BlockProductionTask {
                     anyhow::Ok(block_hash)
                 })
                 .await?;
+
+                let time_to_close = start_time.elapsed();
+                tracing::info!(
+                    "⛏️  Closed block #{} with {n_txs} transactions - {time_to_close:?}",
+                    state.block_number
+                );
+
+                // Record metrics
+                let attributes = [
+                    KeyValue::new("transactions_added", n_txs.to_string()),
+                    KeyValue::new("closing_time", time_to_close.as_secs_f32().to_string()),
+                ];
+
+                self.metrics.block_counter.add(1, &[]);
+                self.metrics.block_gauge.record(state.block_number, &attributes);
+                self.metrics.transaction_counter.add(n_txs as u64, &[]);
 
                 self.current_state = Some(TaskState::NotExecuting {
                     latest_block_n: Some(state.block_number),

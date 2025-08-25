@@ -1,29 +1,29 @@
 use anyhow::Context;
 use dashmap::DashMap;
-use mc_db::{MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
+use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
 use metrics::MempoolMetrics;
-use mp_state_update::NonceUpdate;
-use mp_transactions::validated::{TxTimestamp, ValidatedTransaction, ValidatedToBlockifierTxError};
+use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 use std::time::Duration;
+use topic_pubsub::TopicWatchPubsub;
+use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
+mod chain_watcher_task;
 mod inner;
 mod l1;
 mod notify;
-mod transaction_status;
 mod topic_pubsub;
+mod transaction_status;
 
 pub use inner::*;
 #[cfg(any(test, feature = "testing"))]
 pub use l1::MockL1DataProvider;
 pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolWriteAccess;
-
-use crate::{topic_pubsub::TopicWatchPubsub, transaction_status::{PreConfirmationStatus, TransactionStatus}};
 
 pub mod metrics;
 
@@ -58,7 +58,7 @@ impl MempoolConfig {
 }
 
 /// Mempool also holds all of the transaction statuses.
-pub struct Mempool<D: MadaraStorageRead> {
+pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
     backend: Arc<MadaraBackend<D>>,
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
@@ -105,19 +105,19 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     }
 
     /// Accept a new validated transaction.
-    async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
+    pub async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
         self.add_tx(tx, /* is_new_tx */ true).await
     }
 
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
     async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
-        tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.tx_hash);
+        tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
         let now = TxTimestamp::now();
         let account_nonce =
             self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-        // Lock is acquired here and dropped immediately after.
+        // Guard is immediately dropped.
         let ret = self.inner.write().await.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
@@ -129,7 +129,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     /// Update secondary state when a new transaction has been successfully added to the mempool.
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
     fn on_tx_added(&self, tx: &ValidatedTransaction, is_new_tx: bool) {
-        tracing::debug!("Accepted transaction tx_hash={:#x}", tx.tx_hash);
+        tracing::debug!("Accepted transaction tx_hash={:#x}", tx.hash);
         if is_new_tx {
             self.metrics.accepted_transaction_counter.add(1, &[]);
             if self.config.save_to_db {
@@ -138,63 +138,30 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             }
         }
-        self.received_txs.write().expect("Poisoned lock").insert(tx.tx_hash);
-        let _ = self.tx_sender.send(tx.tx_hash);
+
+        if let dashmap::Entry::Vacant(entry) = self.preconfirmed_transactions_statuses.entry(tx.hash) {
+            let status = PreConfirmationStatus::Received(Arc::new(tx.clone()));
+            entry.insert(status.clone());
+            self.watch_transaction_status.publish(&tx.hash, Some(TransactionStatus::Preconfirmed(status)));
+        }
     }
 
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
     fn on_txs_removed(&self, removed: &[ValidatedTransaction]) {
         if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.tx_hash)) {
+            if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.hash)) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
         }
-        let mut lock = self.received_txs.write().expect("Poisoned lock");
+
         for tx in removed {
-            tracing::debug!("Removed transaction tx_hash={:#x}", tx.tx_hash);
-            lock.remove(&tx.tx_hash);
-        }
-        // TODO: tell self.tx_sender about the removal
-    }
-
-    /// Temporary: this will move to the backend. Called by block production & locally when txs are added to the chain.
-    fn remove_from_received(&self, txs: &[Felt]) {
-        if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_saved_mempool_transactions(txs.iter().copied()) {
-                tracing::error!("Could not remove mempool transactions from database: {err:#}");
-            }
-            // TODO: tell self.tx_sender about the removal
-        }
-        let mut lock = self.received_txs.write().expect("Poisoned lock");
-        for tx in txs {
-            lock.remove(tx);
-        }
-    }
-
-    /// This is called directly by the block production task for now.
-    pub async fn on_tx_batch_executed(
-        &self,
-        new_nonce_updates: impl IntoIterator<Item = NonceUpdate>,
-        executed_txs: impl IntoIterator<Item = Felt>,
-    ) -> anyhow::Result<()> {
-        let updates = new_nonce_updates
-            .into_iter()
-            .map(|el| Ok((el.contract_address.try_into()?, Nonce(el.nonce))))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let executed_txs = executed_txs.into_iter().collect::<Vec<_>>();
-
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-        {
-            let mut lock = self.inner.write().await;
-            for (contract_address, nonce) in updates {
-                lock.update_account_nonce(&contract_address, &nonce, &mut removed_txs);
+            if let dashmap::Entry::Occupied(entry) = self.preconfirmed_transactions_statuses.entry(tx.hash) {
+                if matches!(entry.get(), PreConfirmationStatus::Received(_)) {
+                    entry.remove();
+                    self.watch_transaction_status.publish(&tx.hash, None);
+                }
             }
         }
-        self.on_txs_removed(&removed_txs);
-
-        self.remove_from_received(&executed_txs);
-
-        Ok(())
     }
 
     async fn remove_ttl_exceeded_txs(&self) -> anyhow::Result<()> {
@@ -208,9 +175,14 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
-    pub async fn run_mempool_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
+    pub async fn run_mempool_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
 
+        tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx))?;
+        Ok(())
+    }
+
+    pub async fn run_ttl_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         if self.ttl.is_none() {
             // no need to do anything more
             ctx.cancelled().await;

@@ -9,12 +9,19 @@ mod state;
 pub use block::MadaraBlockView;
 pub use block_confirmed::MadaraConfirmedBlockView;
 pub use block_preconfirmed::MadaraPreconfirmedBlockView;
+use mp_block::TransactionWithReceipt;
 pub use state::MadaraStateView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ExecutedTransactionWithBlockView<D: MadaraStorageRead> {
     pub transaction_index: u64,
     pub block: MadaraBlockView<D>,
+}
+
+impl<D: MadaraStorageRead> ExecutedTransactionWithBlockView<D> {
+    pub fn get_transaction(&self) -> Result<TransactionWithReceipt> {
+        self.block.get_executed_transaction(self.transaction_index)?.context("Transaction should be found")
+    }
 }
 
 impl<D: MadaraStorageRead> MadaraBackend<D> {

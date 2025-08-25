@@ -256,7 +256,7 @@ mod tests {
                     TxTimestamp::now(),
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&api_tx.tx_hash).unwrap();
+            let signature = contract.secret.sign(&api_tx.hash).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedInvokeTxn::V0(tx) => &mut tx.signature,
@@ -283,7 +283,7 @@ mod tests {
                     TxTimestamp::now(),
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&api_tx.tx_hash).unwrap();
+            let signature = contract.secret.sign(&api_tx.hash).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeclareTxn::V1(tx) => &mut tx.signature,
@@ -308,7 +308,7 @@ mod tests {
                     TxTimestamp::now(),
                 )
                 .unwrap();
-            let signature = contract.secret.sign(&api_tx.tx_hash).unwrap();
+            let signature = contract.secret.sign(&api_tx.hash).unwrap();
 
             let tx_signature = match &mut tx {
                 BroadcastedDeployAccountTxn::V1(tx) => &mut tx.signature,
@@ -583,10 +583,16 @@ mod tests {
 
         assert_eq!(res.contract_address, account.address);
 
-        let res = chain.backend.view_on_latest().get_transaction_by_hash(&res.transaction_hash).unwrap();
-        let (_, tx) = res.unwrap();
+        let res = chain
+            .backend
+            .view_on_latest()
+            .find_transaction_by_hash(&res.transaction_hash)
+            .unwrap()
+            .unwrap()
+            .get_transaction()
+            .unwrap();
 
-        let TransactionReceipt::DeployAccount(receipt) = tx.receipt else { unreachable!() };
+        let TransactionReceipt::DeployAccount(receipt) = res.receipt else { unreachable!() };
 
         assert_eq!(receipt.execution_result, ExecutionResult::Succeeded);
     }

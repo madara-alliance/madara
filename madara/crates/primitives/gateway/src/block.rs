@@ -131,7 +131,7 @@ impl ProviderBlock {
             .zip(block.inner.receipts.iter().map(|receipt| (receipt.transaction_hash(), receipt.contract_address())))
             .map(|(transaction, (&hash, contract_address))| {
                 let transaction_with_hash = mp_transactions::TransactionWithHash { transaction, hash };
-                Transaction::new(transaction_with_hash, contract_address)
+                Transaction::new(transaction_with_hash, contract_address.copied())
             })
             .collect();
 
@@ -245,7 +245,7 @@ impl ProviderBlockPending {
             .zip(block.inner.receipts.iter().map(|receipt| (receipt.transaction_hash(), receipt.contract_address())))
             .map(|(transaction, (&hash, contract_address))| {
                 let transaction_with_hash = mp_transactions::TransactionWithHash { transaction, hash };
-                Transaction::new(transaction_with_hash, contract_address)
+                Transaction::new(transaction_with_hash, contract_address.copied())
             })
             .collect();
 

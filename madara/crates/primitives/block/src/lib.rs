@@ -4,7 +4,6 @@ use crate::header::GasPrices;
 use commitments::{BlockCommitments, CommitmentComputationContext};
 use header::{BlockTimestamp, PreconfirmedHeader};
 use mp_chain_config::L1DataAvailabilityMode;
-
 use mp_chain_config::StarknetVersion;
 use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
 use mp_state_update::StateDiff;
@@ -27,6 +26,20 @@ pub type BlockTag = mp_rpc::BlockTag;
 pub struct TransactionWithReceipt {
     pub transaction: Transaction,
     pub receipt: TransactionReceipt,
+}
+
+impl TransactionWithReceipt {
+    pub fn contract_address(&self) -> &Felt {
+        match &self.transaction {
+            Transaction::Invoke(tx) => tx.sender_address(),
+            Transaction::L1Handler(tx) => &tx.contract_address,
+            Transaction::Declare(tx) => tx.sender_address(),
+            // Hash is in the receipt for DeployAccount.
+            Transaction::Deploy(_) | Transaction::DeployAccount(_) => {
+                self.receipt.contract_address().expect("Malformated receipt")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -441,7 +454,8 @@ mod tests {
         assert_eq!(pending_as_maybe_pending.protocol_version(), &StarknetVersion::LATEST);
         assert_eq!(not_pending_as_maybe_pending.protocol_version(), &StarknetVersion::LATEST);
 
-        let maybe_pending: MadaraMaybePendingBlock = MadaraPendingBlock::new_empty(PreconfirmedHeader::default()).into();
+        let maybe_pending: MadaraMaybePendingBlock =
+            MadaraPendingBlock::new_empty(PreconfirmedHeader::default()).into();
         assert!(MadaraBlock::try_from(maybe_pending.clone()).is_err());
         assert!(MadaraPendingBlock::try_from(maybe_pending.clone()).is_ok());
     }

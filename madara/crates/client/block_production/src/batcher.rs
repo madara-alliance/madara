@@ -8,7 +8,10 @@ use mc_db::MadaraBackend;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_convert::ToFelt;
-use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
+use mp_transactions::{
+    validated::{TxTimestamp, ValidatedTransaction},
+    L1HandlerTransactionWithFee,
+};
 use mp_utils::service::ServiceContext;
 use std::sync::Arc;
 use tokio::sync::mpsc;
@@ -67,15 +70,16 @@ impl Batcher {
                 stream::unfold(&mut self.bypass_in, |chan| async move { chan.recv().await.map(|tx| (tx, chan)) }).map(
                     |tx| {
                         tx.into_blockifier_for_sequencing()
-                            .map(|(btx, _ts, declared_class)| (btx, AdditionalTxInfo { declared_class }))
+                            .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
                             .map_err(anyhow::Error::from)
                     },
                 );
 
             let l1_txs_stream = self.l1_message_stream.as_mut().map(|res| {
-                Ok(res?
-                    .into_blockifier(chain_id, sn_version)
-                    .map(|(btx, declared_class)| (btx, AdditionalTxInfo { declared_class }))?)
+                Ok(res?.into_blockifier(chain_id, sn_version).map(|(btx, declared_class)| {
+                    // L1HandlerTx timestamp is irrelevant
+                    (btx, AdditionalTxInfo { declared_class, arrived_at: TxTimestamp::now() })
+                })?)
             });
 
             // Note: this is not hoisted out of the loop, because we don't want to keep the lock around when waiting on the output channel reserve().
@@ -86,7 +90,7 @@ impl Batcher {
             .map(|c| {
                 stream::iter(c.map(|tx| {
                     tx.into_blockifier_for_sequencing()
-                        .map(|(btx, _ts, declared_class)| (btx, AdditionalTxInfo { declared_class }))
+                        .map(|(btx, ts, declared_class)| (btx, AdditionalTxInfo { declared_class, arrived_at: ts }))
                         .map_err(anyhow::Error::from)
                 }))
             })

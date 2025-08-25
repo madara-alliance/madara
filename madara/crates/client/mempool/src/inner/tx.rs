@@ -66,13 +66,13 @@ impl MempoolTransaction {
         self.score
     }
     pub fn nonce(&self) -> Nonce {
-        Nonce(self.inner.tx.nonce())
+        Nonce(self.inner.transaction.nonce())
     }
     pub fn contract_address(&self) -> ContractAddress {
         self.inner.contract_address.try_into().expect("Invalid contract address")
     }
     pub fn tx_hash(&self) -> TransactionHash {
-        TransactionHash(self.inner.tx_hash)
+        TransactionHash(self.inner.hash)
     }
     pub fn arrived_at(&self) -> TxTimestamp {
         self.inner.arrived_at
@@ -84,7 +84,7 @@ impl MempoolTransaction {
         TxKey(self.contract_address(), self.nonce())
     }
     pub fn is_declare(&self) -> bool {
-        self.inner.tx.as_declare().is_some()
+        self.inner.transaction.as_declare().is_some()
     }
 }
 
@@ -108,7 +108,7 @@ impl ScoreFunction {
         match self {
             // Reverse the order, so that higher score means priority.
             Self::Timestamp => Score(u64::MAX - tx.arrived_at.0),
-            Self::Tip { .. } => Score(tx.tx.tip().unwrap_or(0)),
+            Self::Tip { .. } => Score(tx.transaction.tip().unwrap_or(0)),
         }
     }
 

@@ -12,12 +12,12 @@ use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
-use mp_transactions::TransactionWithHash;
+use mp_transactions::validated::ValidatedTransaction;
 use std::fmt;
 
 /// Lock guard on the content of a preconfirmed block. Only the first `n_txs_visible` executed transactions
 /// are visible.
-pub(super) struct PreconfirmedContentRef<'a, D: MadaraStorageRead> {
+pub struct PreconfirmedContentRef<'a, D: MadaraStorageRead> {
     guard: tokio::sync::watch::Ref<'a, PreconfirmedBlockInner>,
     view: &'a MadaraPreconfirmedBlockView<D>,
 }
@@ -46,7 +46,7 @@ pub struct MadaraPreconfirmedBlockView<D: MadaraStorageRead = RocksDBStorage> {
 
     /// Candidate transactions. Most of the time, we don't care about those, so this vec is empty.
     /// This vec is only filled when using `refresh_with_candidates`.
-    candidates: Vec<TransactionWithHash>,
+    candidates: Vec<Arc<ValidatedTransaction>>,
 }
 
 // derive(Clone) will put a D: Clone bounds which we don't want, so we have to implement clone by hand :(
@@ -126,7 +126,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
     }
 
     /// Returns a lock guard into the current block content.
-    pub(super) fn borrow_content(&self) -> PreconfirmedContentRef<'_, D> {
+    pub fn borrow_content(&self) -> PreconfirmedContentRef<'_, D> {
         PreconfirmedContentRef { guard: self.block_content.borrow(), view: self }
     }
 
@@ -222,7 +222,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
 
     /// Candidate transactions. Most of the time, we don't care about those, so this vec is empty.
     /// This will be empty unless filled by using [`Self::refresh_with_candidates`].
-    pub fn candidate_transactions(&self) -> &[TransactionWithHash] {
+    pub fn candidate_transactions(&self) -> &[Arc<ValidatedTransaction>] {
         &self.candidates
     }
 
@@ -376,7 +376,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
 /// A notification of a block change on the preconfirmed block.
 #[derive(Debug)]
 pub enum PreconfirmedBlockChange {
-    NewPreconfirmed { transaction_index: u64, removed_candidates: Vec<TransactionWithHash> },
+    NewPreconfirmed { transaction_index: u64, removed_candidates: Vec<Arc<ValidatedTransaction>> },
     NewCandidate { transaction_index: u64 },
 }
 
@@ -387,7 +387,7 @@ impl PreconfirmedBlockChange {
             Self::NewCandidate { transaction_index } => *transaction_index,
         }
     }
-    pub fn removed_candidates(&mut self) -> Vec<TransactionWithHash> {
+    pub fn removed_candidates(&mut self) -> Vec<Arc<ValidatedTransaction>> {
         match self {
             Self::NewPreconfirmed { removed_candidates, .. } => mem::take(removed_candidates),
             _ => vec![],

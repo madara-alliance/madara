@@ -154,10 +154,10 @@ impl TransactionReceipt {
         }
     }
 
-    pub fn contract_address(&self) -> Option<Felt> {
+    pub fn contract_address(&self) -> Option<&Felt> {
         match self {
-            TransactionReceipt::Deploy(receipt) => Some(receipt.contract_address),
-            TransactionReceipt::DeployAccount(receipt) => Some(receipt.contract_address),
+            TransactionReceipt::Deploy(receipt) => Some(&receipt.contract_address),
+            TransactionReceipt::DeployAccount(receipt) => Some(&receipt.contract_address),
             _ => None,
         }
     }

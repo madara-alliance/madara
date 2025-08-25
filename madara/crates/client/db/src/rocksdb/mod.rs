@@ -339,7 +339,7 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.inner.remove_mempool_transactions(tx_hashes).context("Removing mempool transactions from db")
     }
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
-        let tx_hash = tx.tx_hash;
+        let tx_hash = tx.hash;
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))

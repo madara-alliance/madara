@@ -14,6 +14,7 @@ use blockifier::{
 };
 use mc_db::{MadaraBackend, MadaraBlockView};
 use mc_exec::MadaraBlockViewExecutionExt;
+use mc_mempool::{MempoolInsertionError, TxInsertionError};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_rpc::{
@@ -242,7 +243,7 @@ impl TransactionValidator {
         Self { inner, backend, config }
     }
 
-    #[tracing::instrument(skip(self, tx, converted_class), fields(module = "TxValidation"))]
+    #[tracing::instrument(skip(self, tx, converted_class))]
     async fn accept_tx(
         &self,
         tx: ApiAccountTransaction,

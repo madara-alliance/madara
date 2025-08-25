@@ -128,8 +128,8 @@ mod tests {
         let mut consumer = fut.as_mut().now_or_never().unwrap();
         let received = consumer.pop_next_ready().unwrap();
         assert_eq!(received.contract_address, tx_account.contract_address);
-        assert_eq!(received.tx.nonce(), tx_account.tx.nonce());
-        assert_eq!(received.tx_hash, tx_account.tx_hash);
+        assert_eq!(received.transaction.nonce(), tx_account.transaction.nonce());
+        assert_eq!(received.hash, tx_account.hash);
     }
 
     #[rstest::rstest]
@@ -163,8 +163,8 @@ mod tests {
         let mut consumer = fut.as_mut().now_or_never().unwrap();
         let received = consumer.pop_next_ready().unwrap();
         assert_eq!(received.contract_address, tx_account.contract_address);
-        assert_eq!(received.tx.nonce(), tx_account.tx.nonce());
-        assert_eq!(received.tx_hash, tx_account.tx_hash);
+        assert_eq!(received.transaction.nonce(), tx_account.transaction.nonce());
+        assert_eq!(received.hash, tx_account.hash);
     }
 
     #[rstest::rstest]
@@ -184,8 +184,8 @@ mod tests {
         // consume!
         let received = first_consumer.pop_next_ready().unwrap();
         assert_eq!(received.contract_address, tx_account.contract_address);
-        assert_eq!(received.tx.nonce(), tx_account.tx.nonce());
-        assert_eq!(received.tx_hash, tx_account.tx_hash);
+        assert_eq!(received.transaction.nonce(), tx_account.transaction.nonce());
+        assert_eq!(received.hash, tx_account.hash);
 
         // keep the first consumer around for now
 

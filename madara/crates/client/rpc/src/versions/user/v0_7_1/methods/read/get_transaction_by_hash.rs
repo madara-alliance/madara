@@ -28,9 +28,9 @@ use starknet_types_core::felt::Felt;
 /// - `TXN_HASH_NOT_FOUND` if the specified transaction is not found.
 pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> StarknetRpcResult<TxnWithHash> {
     let view = starknet.backend.view_on_latest();
-    let transaction_with_index =
-        view.get_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
-    Ok(TxnWithHash { transaction: transaction_with_index.transaction.transaction.into(), transaction_hash })
+    let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let transaction = res.get_transaction()?;
+    Ok(TxnWithHash { transaction: transaction.transaction.into(), transaction_hash })
 }
 
 #[cfg(test)]

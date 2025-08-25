@@ -54,7 +54,6 @@ use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::L1HandlerTransactionWithFee;
-use mp_transactions::TransactionWithHash;
 use prelude::*;
 use std::path::Path;
 
@@ -365,7 +364,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     pub fn append_to_preconfirmed(
         &self,
         executed: &[PreconfirmedExecutedTransaction],
-        replace_candidates: impl IntoIterator<Item = TransactionWithHash>,
+        replace_candidates: impl IntoIterator<Item = Arc<ValidatedTransaction>>,
     ) -> Result<()> {
         let block = self.inner.preconfirmed_block().context("There is no current preconfirmed block")?;
 

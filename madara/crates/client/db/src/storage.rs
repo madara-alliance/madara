@@ -79,7 +79,7 @@ pub struct StoredChainInfo {
 }
 
 /// Trait abstracting over the storage interface.
-pub trait MadaraStorageRead {
+pub trait MadaraStorageRead: Send + Sync + 'static {
     // Blocks
 
     fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>>;
@@ -130,7 +130,7 @@ pub trait MadaraStorageRead {
 }
 
 /// Trait abstracting over the storage interface.
-pub trait MadaraStorageWrite {
+pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()>;

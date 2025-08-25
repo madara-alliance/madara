@@ -40,6 +40,7 @@ mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
+mp-class = { workspace = true }
 
 # Starknet
 blockifier = { workspace = true, default-features = true }
