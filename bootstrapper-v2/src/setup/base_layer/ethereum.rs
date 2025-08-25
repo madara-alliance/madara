@@ -1,11 +1,25 @@
 use crate::setup::base_layer::BaseLayerSetupTrait;
+use crate::utils::save_addresses_to_file;
 use alloy::network::TransactionBuilder;
 use alloy::providers::{Provider, ProviderBuilder};
 use alloy::rpc::types::eth::TransactionRequest;
 use alloy::signers::local::PrivateKeySigner;
+use alloy::sol;
 use anyhow::Context;
 use std::collections::HashMap;
+
 use tokio::runtime::Runtime;
+
+sol! {
+    struct ImplementationContracts {
+        address coreContract;
+        address manager;
+        address registry;
+        address multiBridge;
+        address ethBridge;
+        address ethBridgeEIC;
+    }
+}
 
 pub static IMPLEMENTATION_CONTRACTS: [&str; 6] =
     ["coreContract", "manager", "registry", "multiBridge", "ethBridge", "ethBridgeEIC"];
@@ -18,12 +32,18 @@ pub struct EthereumSetup {
     // keys in ImplementationContracts struct.
     // This might be done using a alloy::sol macro.
     implementation_address: HashMap<String, String>,
+    addresses_output_path: String,
 }
 
 impl EthereumSetup {
-    pub fn new(rpc_url: String, private_key: String, implementation_address: HashMap<String, String>) -> Self {
+    pub fn new(
+        rpc_url: String,
+        private_key: String,
+        implementation_address: HashMap<String, String>,
+        addresses_output_path: &str,
+    ) -> Self {
         let signer: PrivateKeySigner = private_key.parse().expect("Failed to parse private key");
-        Self { rpc_url, signer, implementation_address }
+        Self { rpc_url, signer, implementation_address, addresses_output_path: addresses_output_path.to_string() }
     }
 
     async fn deploy_contract_from_artifact(&self, artifact_path: &str) -> anyhow::Result<String> {
@@ -41,24 +61,26 @@ impl EthereumSetup {
             .context("Incorrect bytecode")?
             .to_string();
 
-        let deploy_tx = TransactionRequest::default()
-            .with_deploy_code(alloy::hex::decode(bytecode).context("Failed to decode bytecode")?);
-        let receipt = provider
-            .send_transaction(deploy_tx)
-            .await
-            .context("Failed to send deployment transaction")?
+        let deploy_code = alloy::hex::decode(bytecode).context("Failed to decode bytecode")?;
+
+        let deploy_tx = TransactionRequest::default().with_deploy_code(deploy_code);
+        let pending_transaction_builder = provider.send_transaction(deploy_tx).await;
+        let transaction_receipt = pending_transaction_builder
+            .with_context(|| format!("Failed to send deployment transaction {}", artifact_path))?
             .get_receipt()
-            .await
-            .context("Failed to get transaction receipt")?;
+            .await;
+        let receipt = transaction_receipt.context("Failed to get transaction receipt")?;
+
+        println!("Deployed contract at transaction hash: {:?}", receipt.transaction_hash);
+        println!("Receipt for deployment: {:?}", receipt);
 
         let address = receipt.contract_address.context("No contract address in receipt")?;
         Ok(address.to_string())
     }
 }
 
-#[allow(unused_variables)]
 impl BaseLayerSetupTrait for EthereumSetup {
-    fn init(&mut self, addresses_output_path: &str) -> anyhow::Result<()> {
+    fn init(&mut self) -> anyhow::Result<()> {
         for contract in IMPLEMENTATION_CONTRACTS {
             // let address = self.implementation_address.get(contract).unwrap();
             let rt = Runtime::new().context("Failed to create runtime")?;
@@ -69,16 +91,37 @@ impl BaseLayerSetupTrait for EthereumSetup {
                 self.implementation_address.insert(contract.to_string(), address);
             } else {
                 let artifact_path = format!("../build-artifacts/starkgate_latest/solidity/{}.json", contract);
-                let address = rt.block_on(self.deploy_contract_from_artifact(&artifact_path))?;
+                let address = rt
+                    .block_on(self.deploy_contract_from_artifact(&artifact_path))
+                    .with_context(|| format!("Failed to deploy {}", contract))?;
                 self.implementation_address.insert(contract.to_string(), address);
             }
         }
+
+        // Write the addresses to a JSON file
+        let addresses_json = serde_json::to_string_pretty(&self.implementation_address)?;
+        save_addresses_to_file(addresses_json, &self.addresses_output_path)?;
+
         Ok(())
     }
-    fn setup(&self) -> anyhow::Result<()> {
+
+    fn setup(&mut self) -> anyhow::Result<()> {
+        let rt = Runtime::new().context("Failed to create runtime")?;
+
+        // For now, let's try without constructor arguments to debug
+        // let constructor_args = Vec::new();
+
+        let artifact_path = "./contracts/ethereum/out/Factory.sol/Factory.json";
+        let address = rt
+            .block_on(self.deploy_contract_from_artifact(artifact_path))
+            .context("Failed to deploy base_layer_factory")?;
+        self.implementation_address.insert("base_layer_factory".to_string(), address);
+
         Ok(())
     }
-    fn post_madara_setup(&self, base_addresses_path: &str, madara_addresses_path: &str) -> anyhow::Result<()> {
+
+    #[allow(unused_variables)]
+    fn post_madara_setup(&self, madara_addresses_path: &str) -> anyhow::Result<()> {
         Ok(())
     }
 }
