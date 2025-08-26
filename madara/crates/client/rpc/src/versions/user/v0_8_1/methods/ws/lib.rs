@@ -1,7 +1,7 @@
 use mp_block::BlockId;
 use starknet_types_core::felt::Felt;
 
-use crate::versions::user::v0_8_0::StarknetWsRpcApiV0_8_0Server;
+use crate::versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server;
 
 use super::starknet_unsubscribe::*;
 use super::subscribe_events::*;
@@ -10,7 +10,7 @@ use super::subscribe_pending_transactions::*;
 use super::subscribe_transaction_status::*;
 
 #[jsonrpsee::core::async_trait]
-impl StarknetWsRpcApiV0_8_0Server for crate::Starknet {
+impl StarknetWsRpcApiV0_8_1Server for crate::Starknet {
     async fn subscribe_new_heads(
         &self,
         subscription_sink: jsonrpsee::PendingSubscriptionSink,
