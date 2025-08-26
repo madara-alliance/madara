@@ -69,10 +69,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Initialize tracing with the specified log level
     tracing_subscriber::registry()
-        .with(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| args.log_level.clone().into()),
-        )
+        .with(tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| args.log_level.clone().into()))
         .with(tracing_subscriber::fmt::layer())
         .init();
 
@@ -81,15 +78,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err(format!(
             "Max concurrent jobs ({}) cannot exceed max jobs in memory ({})",
             args.max_concurrent_jobs, args.max_jobs_in_memory
-        ).into());
+        )
+        .into());
     }
-    
+
     // Parse bind address
-    let bind_addr = args.bind_addr.parse::<std::net::IpAddr>()
-        .map_err(|e| format!("Invalid bind address: {}", e))?;
-    
+    let bind_addr = args.bind_addr.parse::<std::net::IpAddr>().map_err(|e| format!("Invalid bind address: {}", e))?;
+
     let addr = SocketAddr::from((bind_addr, args.port));
-    
+
     let config = MockServerConfig {
         simulate_failures: args.failure_rate > 0.0,
         processing_delay_ms: args.processing_delay_ms,
@@ -112,14 +109,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("  📦 Max jobs in memory: {}", args.max_jobs_in_memory);
     println!("  🔄 Max concurrent jobs: {}", args.max_concurrent_jobs);
     println!("  ✅ Auto-complete jobs: {}", args.auto_complete_jobs);
-    
+
     if args.failure_rate > 0.0 {
         println!("  ⚡ Failure simulation: enabled");
         println!("  📊 Failure rate: {:.1}%", args.failure_rate * 100.0);
     } else {
         println!("  ⚡ Failure simulation: disabled");
     }
-    
+
     println!();
     println!("Endpoints:");
     println!("  🔗 Health check: http://{}:{}/is-alive", bind_addr, args.port);
