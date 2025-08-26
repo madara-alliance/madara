@@ -57,6 +57,7 @@ impl MockAtlanticServer {
             auto_complete_jobs: true,
             completion_delay_ms: 2000,
             max_jobs_in_memory: 500,
+            max_concurrent_jobs: 10,
         };
         Self::new(addr, config)
     }
@@ -71,6 +72,7 @@ impl MockAtlanticServer {
             auto_complete_jobs: true,
             completion_delay_ms: 1500,
             max_jobs_in_memory: 500,
+            max_concurrent_jobs: 5,
         };
         Self::new(addr, config)
     }

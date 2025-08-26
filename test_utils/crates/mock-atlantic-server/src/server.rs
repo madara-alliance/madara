@@ -304,6 +304,17 @@ pub async fn add_job_handler(
     {
         let mut jobs = state.jobs.write().await;
 
+        // Check if we're at the concurrent job limit for running jobs
+        let concurrent_jobs = jobs
+            .values()
+            .filter(|job| matches!(job.query.status, AtlanticQueryStatus::Received | AtlanticQueryStatus::InProgress))
+            .count();
+        
+        if concurrent_jobs >= state.config.max_concurrent_jobs {
+            warn!("Rejecting job: concurrent job limit reached ({}/{})", concurrent_jobs, state.config.max_concurrent_jobs);
+            return Err(StatusCode::TOO_MANY_REQUESTS);
+        }
+
         // If we're at capacity, remove the oldest completed job
         if jobs.len() >= state.config.max_jobs_in_memory {
             // Find oldest completed or failed job
@@ -328,7 +339,16 @@ pub async fn add_job_handler(
         }
 
         jobs.insert(job_id.clone(), job_data);
-        debug!("Current number of jobs in memory: {}", jobs.len());
+        
+        let total_jobs = jobs.len();
+        let running_jobs = jobs
+            .values()
+            .filter(|job| matches!(job.query.status, AtlanticQueryStatus::Received | AtlanticQueryStatus::InProgress))
+            .count();
+            
+        debug!("Current jobs - Total: {}/{}, Running: {}/{}", 
+               total_jobs, state.config.max_jobs_in_memory,
+               running_jobs, state.config.max_concurrent_jobs);
     }
 
     info!("Created mock job with ID: {} for layout: {:?}", job_id, job_layout);
