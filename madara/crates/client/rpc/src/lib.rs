@@ -13,6 +13,7 @@ pub mod versions;
 use jsonrpsee::RpcModule;
 use mc_db::db_block_id::DbBlockIdResolvable;
 use mc_db::MadaraBackend;
+use mc_settlement_client::client::SettlementLayerProvider;
 use mc_submit_tx::SubmitTransaction;
 use mp_block::{BlockId, BlockTag, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
 use mp_chain_config::ChainConfig;
@@ -49,6 +50,7 @@ pub struct Starknet {
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+    pub(crate) settlement_client: Option<Arc<dyn SettlementLayerProvider>>,
     pub ctx: ServiceContext,
 }
 
@@ -58,10 +60,19 @@ impl Starknet {
         add_transaction_provider: Arc<dyn SubmitTransaction>,
         storage_proof_config: StorageProofConfig,
         block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+        settlement_client: Option<Arc<dyn SettlementLayerProvider>>,
         ctx: ServiceContext,
     ) -> Self {
         let ws_handles = Arc::new(WsSubscribeHandles::new());
-        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
+        Self {
+            backend,
+            ws_handles,
+            add_transaction_provider,
+            storage_proof_config,
+            block_prod_handle,
+            settlement_client,
+            ctx,
+        }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {
@@ -70,6 +81,10 @@ impl Starknet {
 
     pub fn clone_chain_config(&self) -> Arc<ChainConfig> {
         Arc::clone(self.backend.chain_config())
+    }
+
+    pub fn settlement_client(&self) -> Option<Arc<dyn SettlementLayerProvider>> {
+        self.settlement_client.clone()
     }
 
     pub fn get_block_info(
