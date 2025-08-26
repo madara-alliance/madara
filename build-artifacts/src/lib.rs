@@ -187,7 +187,7 @@ fn build_artifacts(root: &RootDir) -> Result<(), BuildError> {
 
     let root = root.0.to_string_lossy();
     let mut make = std::process::Command::new("sh");
-    let cmd = make.arg("-c").arg(format!("yes | make -C {root} artifacts"));
+    let cmd = make.arg("-c").arg(format!("no | make -C {root} artifacts"));
     cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd, err_msg))
 }
 
