@@ -2,59 +2,18 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Build Orchestrator
 
-# This workflow builds the main Orchestrator binary and related components
-# It also caches the build artifacts for other workflows to use
+# This workflow builds the main Orchestrator binary using the reusable build workflow
 on:
   workflow_dispatch:
   workflow_call:
     outputs:
       orchestrator-binary-hash:
         description: "Hash of the built orchestrator binary"
-        value: ${{ jobs.build-binaries.outputs.orchestrator-binary-hash }}
+        value: ${{ jobs.build-orchestrator.outputs.binary-hash }}
 
 jobs:
-  build-binaries:
-    runs-on: karnot-arc-runner-set
-    outputs:
-      orchestrator-binary-hash: ${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
-    permissions:
-      pull-requests: write
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Load env
-        uses: ./.github/actions/load-env
-
-      - name: Rust setup
-        uses: ./.github/actions/setup-rust
-        with:
-          rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: orchestrator-${{ runner.os }}-rust-1.86
-
-      # Build Orchestrator
-      - name: Cargo build
-        run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build --release --bin orchestrator
-
-      # Generate hash for the Orchestrator binary
-      - name: Generate binary hashes
-        id: generate-binary-hash
-        run: |
-          # Get current Unix timestamp for uniqueness
-          TIMESTAMP=$(date +%s)
-
-          # Path to the compiled Orchestrator binary
-          BINARY_PATH=./target/release/orchestrator
-          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          echo "orchestrator-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the orchestrator is: $HASH (with timestamp: $TIMESTAMP)"
-
-      # Upload Orchestrator binary as artifact
-      - name: Upload Orchestrator binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: orchestrator-binary-${{ steps.generate-binary-hash.outputs.orchestrator-hash }}
-          path: target/release/orchestrator
+  build-orchestrator:
+    uses: ./.github/workflows/task-build-binary.yml
+    with:
+      binary-name: orchestrator
+    secrets: inherit

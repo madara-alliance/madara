@@ -2,59 +2,18 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
 name: Task - Build Bootstrapper
 
-# This workflow builds the main Bootstrapper binary and related components
-# It also caches the build artifacts for other workflows to use
+# This workflow builds the main Bootstrapper binary using the reusable build workflow
 on:
   workflow_dispatch:
   workflow_call:
     outputs:
       bootstrapper-binary-hash:
         description: "Hash of the built bootstrapper binary"
-        value: ${{ jobs.build-binaries.outputs.bootstrapper-binary-hash }}
+        value: ${{ jobs.build-bootstrapper.outputs.binary-hash }}
 
 jobs:
-  build-binaries:
-    runs-on: karnot-arc-runner-set
-    outputs:
-      bootstrapper-binary-hash: ${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-    permissions:
-      pull-requests: write
-
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-
-      - name: Load env
-        uses: ./.github/actions/load-env
-
-      - name: Rust setup
-        uses: ./.github/actions/setup-rust
-        with:
-          rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: bootstrapper-${{ runner.os }}-rust-1.86
-
-      # Build Bootstrapper
-      - name: Cargo build
-        run: |
-          export GIT_COMMIT_HASH=$GITHUB_SHA
-          cargo build --release --bin bootstrapper
-
-      # Generate hash for the Bootstrapper binary
-      - name: Generate binary hashes
-        id: generate-binary-hash
-        run: |
-          # Get current Unix timestamp for uniqueness
-          TIMESTAMP=$(date +%s)
-
-          # Path to the compiled Bootstrapper binary
-          BINARY_PATH=./target/release/bootstrapper
-          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          echo "bootstrapper-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the bootstrapper is: $HASH (with timestamp: $TIMESTAMP)"
-
-      # Upload Bootstrapper binary as artifact
-      - name: Upload Bootstrapper binary
-        uses: actions/upload-artifact@v4
-        with:
-          name: bootstrapper-binary-${{ steps.generate-binary-hash.outputs.bootstrapper-hash }}
-          path: target/release/bootstrapper
+  build-bootstrapper:
+    uses: ./.github/workflows/task-build-binary.yml
+    with:
+      binary-name: bootstrapper
+    secrets: inherit
