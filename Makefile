@@ -183,35 +183,8 @@ frestart: fclean
 
 .PHONY: artifacts
 artifacts:
-	@if [ -d "$(ARTIFACTS)/argent"             ] || \
-			[ -d "$(ARTIFACTS)/braavos"            ] || \
-			[ -d "$(ARTIFACTS)/cairo_lang"         ] || \
-			[ -d "$(ARTIFACTS)/js_tests"           ] || \
-			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
-			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
-			[ -d "$(ARTIFACTS)/starkgate_legacy"   ] || \
-			[ -d "$(ARTIFACTS)/bootstrapper" ]; \
-	then \
-		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
-		read ans && \
-		case "$$ans" in \
-			[yY]*) true;; \
-			*) echo -e "$(INFO)Artifacts not removed. Exiting.$(RESET)" && exit 0;; \
-		esac \
-	fi
-	@rm -rf "$(ARTIFACTS)/argent"
-	@rm -rf "$(ARTIFACTS)/braavos"
-	@rm -rf "$(ARTIFACTS)/cairo_lang"
-	@rm -rf "$(ARTIFACTS)/js_tests"
-	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
-	@rm -rf "$(ARTIFACTS)/starkgate_latest"
-	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@rm -rf "$(ARTIFACTS)/bootstrapper"
-	@git submodule update --init --recursive
-	@docker build --platform=linux/amd64 -f $(ARTIFACTS)/build.docker -t contracts .
-	@ID=$$(docker create contracts do-nothing) && \
-		docker cp $${ID}:/artifacts/. $(ARTIFACTS) && \
-		docker rm $${ID} > /dev/null
+	./scripts/artifacts.sh
+	
 
 .PHONY: check
 check:
