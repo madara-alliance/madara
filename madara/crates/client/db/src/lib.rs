@@ -62,12 +62,12 @@ mod db_version;
 mod prelude;
 pub mod storage;
 
-pub mod sync_status;
 pub mod preconfirmed;
 pub mod rocksdb;
 pub mod subscription;
-pub mod view;
+pub mod sync_status;
 pub mod tests;
+pub mod view;
 
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
@@ -183,6 +183,7 @@ pub struct MadaraBackendConfig {
     pub flush_every_n_blocks: Option<u64>,
     /// When false, the preconfirmed block is never saved to database.
     pub save_preconfirmed: bool,
+    pub unsafe_starting_block: Option<u64>,
 }
 
 impl<D: MadaraStorage> MadaraBackend<D> {
@@ -191,8 +192,8 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             db,
             // db_metrics: DbMetrics::register().context("Registering db metrics")?,
             chain_config,
+            starting_block: config.unsafe_starting_block,
             config,
-            starting_block: None,
             sync_status: SyncStatusCell::default(),
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
@@ -224,7 +225,11 @@ impl<D: MadaraStorage> MadaraBackend<D> {
         }
 
         // Init chain_tip and set starting block
-        let chain_tip = ChainTip::from_storage(self.db.get_chain_tip()?);
+        let chain_tip = ChainTip::from_storage(if let Some(starting_block) = self.starting_block {
+            StorageChainTip::Confirmed(starting_block)
+        } else {
+            self.db.get_chain_tip()?
+        });
         self.starting_block = chain_tip.latest_confirmed_block_n();
         self.chain_tip.send_replace(chain_tip);
 

@@ -52,13 +52,12 @@ enum TestSetup {
 struct SetupBuilder {
     setup: TestSetup,
     block_time: String,
-    pending_update_time: String,
     block_production_disabled: bool,
 }
 
 impl SetupBuilder {
     pub fn new(setup: TestSetup) -> Self {
-        Self { setup, block_time: "2s".into(), pending_update_time: "500ms".into(), block_production_disabled: false }
+        Self { setup, block_time: "2s".into(), block_production_disabled: false }
     }
     pub fn with_block_production_disabled(mut self, disabled: bool) -> Self {
         self.block_production_disabled = disabled;
@@ -66,11 +65,6 @@ impl SetupBuilder {
     }
     pub fn with_block_time(mut self, block_time: impl Into<String>) -> Self {
         self.block_time = block_time.into();
-        self
-    }
-    #[allow(unused)]
-    pub fn with_pending_update_time(mut self, pending_update_time: impl Into<String>) -> Self {
-        self.pending_update_time = pending_update_time.into();
         self
     }
 
@@ -83,7 +77,7 @@ impl SetupBuilder {
             "--chain-config-path".into(),
             "test_devnet.yaml".into(),
             "--chain-config-override".into(),
-            format!("block_time={},pending_block_update_time={}", self.block_time, self.pending_update_time),
+            format!("block_time={}", self.block_time),
             "--gateway".into(),
         ]
         .into_iter()

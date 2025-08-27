@@ -38,7 +38,7 @@ pub mod update_global_trie;
 type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 type DB = DBWithThreadMode<MultiThreaded>;
 
-pub use options::RocksDBConfig;
+pub use options::{RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 

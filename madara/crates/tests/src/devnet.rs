@@ -58,7 +58,7 @@ async fn madara_devnet_add_transaction() {
         "0",
         // only produce blocks no pending txs
         "--chain-config-override",
-        "block_time=1s,pending_block_update_time=null",
+        "block_time=1s",
     ];
 
     let cmd_builder = MadaraCmdBuilder::new().args(*args);
@@ -131,7 +131,7 @@ async fn madara_devnet_mempool_saving() {
         "--chain-config-path",
         "test_devnet.yaml",
         "--chain-config-override",
-        "block_time=5min,pending_block_update_time=null",
+        "block_time=5min",
     ]);
     let mut node = cmd_builder.clone().run();
     node.wait_for_ready().await;
@@ -166,7 +166,7 @@ async fn madara_devnet_mempool_saving() {
         "--chain-config-path",
         "test_devnet.yaml",
         "--chain-config-override",
-        "block_time=5min,pending_block_update_time=500ms",
+        "block_time=5min",
     ]);
     let mut node = cmd_builder.clone().run();
     node.wait_for_ready().await;

@@ -16,7 +16,7 @@ use figment::{
 };
 use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
-use mc_db::DatabaseService;
+use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_mempool::{GasPriceProvider, L1DataProvider, Mempool, MempoolConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
@@ -91,16 +91,6 @@ async fn main() -> anyhow::Result<()> {
         run_cmd.chain_config()?
     };
 
-    // If block time is inferior to the tick time, then only empty blocks will
-    // be produced as we will never update the pending block before storing it.
-    if run_cmd.is_sequencer() && chain_config.pending_block_update_time.is_some_and(|t| chain_config.block_time < t) {
-        anyhow::bail!(
-            "Block time ({:?}) cannot be less than the pending block update time ({:?}), as this will yield only empty blocks",
-            chain_config.block_time,
-            chain_config.pending_block_update_time.expect("Condition already checked")
-        );
-    }
-
     // Check if the devnet is running with the correct chain id. This is purely
     // to avoid accidental setups which would allow for replay attacks. This is
     // possible if the devnet has the same chain id as another popular chain,
@@ -139,9 +129,13 @@ async fn main() -> anyhow::Result<()> {
 
     // Database
 
-    let service_db = DatabaseService::new(chain_config.clone(), run_cmd.db_params.backend_config())
-        .await
-        .context("Initializing db service")?;
+    let backend = MadaraBackend::open_rocksdb(
+        &run_cmd.backend_params.base_path,
+        chain_config.clone(),
+        run_cmd.backend_params.backend_config(),
+        run_cmd.backend_params.rocksdb_config(),
+    )
+    .context("Starting madara backend")?;
 
     // L1 Sync
 
@@ -185,17 +179,15 @@ async fn main() -> anyhow::Result<()> {
     let l1_data_provider: Arc<dyn L1DataProvider> = Arc::new(l1_gas_setter.clone());
 
     // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mempool = Mempool::new(
-        Arc::clone(service_db.backend()),
-        MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving },
-    );
+    let mempool =
+        Mempool::new(Arc::clone(&backend), MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving });
     mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
     let mempool = Arc::new(mempool);
 
     let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);
     let service_l1_sync = L1SyncService::new(
         &run_cmd.l1_sync_params,
-        service_db.backend().clone(),
+        backend.clone(),
         L1SyncConfig {
             l1_gas_provider: l1_gas_setter,
             l1_core_address: chain_config.eth_core_contract_address.clone(),
@@ -247,9 +239,15 @@ async fn main() -> anyhow::Result<()> {
         None
     };
 
-    let service_l2_sync = SyncService::new(&run_cmd.l2_sync_params, service_db.backend(), l1_head_recv, warp_update)
-        .await
-        .context("Initializing sync service")?;
+    let service_l2_sync = SyncService::new(
+        &run_cmd.l2_sync_params,
+        &backend,
+        l1_head_recv,
+        warp_update,
+        /* unsafe_starting_block_enabled */ run_cmd.backend_params.unsafe_starting_block.is_some(),
+    )
+    .await
+    .context("Initializing sync service")?;
 
     let mut provider = GatewayProvider::new(chain_config.gateway_url.clone(), chain_config.feeder_gateway_url.clone());
 
@@ -270,7 +268,7 @@ async fn main() -> anyhow::Result<()> {
 
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,
-        &service_db,
+        &backend,
         Arc::clone(&mempool),
         Arc::clone(&l1_data_provider),
         service_l1_sync.client(),
@@ -280,7 +278,7 @@ async fn main() -> anyhow::Result<()> {
 
     let mempool_tx_validator = Arc::new(TransactionValidator::new(
         Arc::clone(&mempool) as _,
-        Arc::clone(service_db.backend()),
+        backend.clone(),
         run_cmd.validator_params.as_validator_config(),
     ));
 
@@ -288,7 +286,7 @@ async fn main() -> anyhow::Result<()> {
         if run_cmd.validator_params.validate_then_forward_txs_to.is_some() {
             Arc::new(TransactionValidator::new(
                 Arc::clone(&gateway_client) as _,
-                Arc::clone(service_db.backend()),
+                backend.clone(),
                 run_cmd.validator_params.as_validator_config(),
             ))
         } else {
@@ -302,14 +300,13 @@ async fn main() -> anyhow::Result<()> {
 
     // User-facing RPC
 
-    let service_rpc_user =
-        RpcService::user(run_cmd.rpc_params.clone(), Arc::clone(service_db.backend()), tx_submit.clone());
+    let service_rpc_user = RpcService::user(run_cmd.rpc_params.clone(), backend.clone(), tx_submit.clone());
 
     // Admin-facing RPC (for node operators)
 
     let service_rpc_admin = RpcService::admin(
         run_cmd.rpc_params.clone(),
-        Arc::clone(service_db.backend()),
+        backend.clone(),
         tx_submit.clone(),
         service_block_production.handle(),
     );
@@ -318,7 +315,7 @@ async fn main() -> anyhow::Result<()> {
 
     let service_gateway = GatewayService::new(
         run_cmd.gateway_params.clone(),
-        Arc::clone(service_db.backend()),
+        backend.clone(),
         tx_submit.clone(),
         Some(validated_tx_submit.clone()),
     )
@@ -336,7 +333,6 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = ServiceMonitor::default()
-        .with(service_db)?
         .with(service_l1_sync)?
         .with(service_l2_sync)?
         .with(service_block_production)?

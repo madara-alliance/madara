@@ -24,7 +24,7 @@ pub struct ChainConfigOverrideParams {
     /// Overrides parameters from the chain config.
     ///
     /// Use the following syntax:
-    /// --chain-config-override=block_time=30s,pending_block_update_time=2s...
+    /// --chain-config-override=block_time=30s,chain_id=MADARA_TEST...
     ///
     /// Parameters:
     ///
@@ -46,10 +46,6 @@ pub struct ChainConfigOverrideParams {
     ///     method release, consensus change, etc...
     ///
     ///   * block_time: time it takes to close a block.
-    ///
-    ///   * pending_block_update_time: time interval at which the pending block
-    ///     is updated. This is also referred to internally as a 'tick'. The
-    ///     block update time should always be inferior to the block time.
     ///
     ///   * execution_batch_size: number of transaction to process in a single
     ///     tick.
@@ -93,8 +89,6 @@ pub struct ChainConfigOverridesInner {
     pub latest_protocol_version: StarknetVersion,
     #[serde(deserialize_with = "deserialize_duration", serialize_with = "serialize_duration")]
     pub block_time: Duration,
-    #[serde(deserialize_with = "deserialize_optional_duration", serialize_with = "serialize_optional_duration")]
-    pub pending_block_update_time: Option<Duration>,
     pub bouncer_config: BouncerConfig,
     pub sequencer_address: ContractAddress,
     pub eth_core_contract_address: String,
@@ -125,7 +119,6 @@ impl ChainConfigOverrideParams {
             parent_fee_token_address: chain_config.parent_fee_token_address,
             latest_protocol_version: chain_config.latest_protocol_version,
             block_time: chain_config.block_time,
-            pending_block_update_time: chain_config.pending_block_update_time,
             bouncer_config: chain_config.bouncer_config,
             sequencer_address: chain_config.sequencer_address,
             eth_core_contract_address: chain_config.eth_core_contract_address,
@@ -182,7 +175,6 @@ impl ChainConfigOverrideParams {
             parent_fee_token_address: chain_config_overrides.parent_fee_token_address,
             latest_protocol_version: chain_config_overrides.latest_protocol_version,
             block_time: chain_config_overrides.block_time,
-            pending_block_update_time: chain_config_overrides.pending_block_update_time,
             bouncer_config: chain_config_overrides.bouncer_config,
             sequencer_address: chain_config_overrides.sequencer_address,
             eth_core_contract_address: chain_config_overrides.eth_core_contract_address,

@@ -221,7 +221,6 @@ impl ChainConfig {
         // - https://docs.starknet.io/tools/important-addresses
         // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
         // - state_diff_size is the blob size limit of ethereum
-        // - pending_block_update_time: educated guess
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
         Self {
             chain_name: "Starknet Mainnet".into(),

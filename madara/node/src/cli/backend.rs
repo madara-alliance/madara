@@ -1,6 +1,12 @@
-use mc_db::{MadaraBackendConfig, RocksDBConfig, TrieLogConfig};
+
+use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+#[allow(non_upper_case_globals)]
+const KiB: usize = 1024;
+#[allow(non_upper_case_globals)]
+const MiB: usize = 1024 * KiB;
 
 #[derive(Debug, Clone, Copy, clap::ValueEnum, PartialEq, Deserialize, Serialize)]
 pub enum StatsLevel {
@@ -22,7 +28,7 @@ pub enum StatsLevel {
     All,
 }
 
-impl From<StatsLevel> for mc_db::StatsLevel {
+impl From<StatsLevel> for mc_db::rocksdb::StatsLevel {
     fn from(value: StatsLevel) -> Self {
         match value {
             StatsLevel::DisableAll => Self::DisableAll,
@@ -36,7 +42,7 @@ impl From<StatsLevel> for mc_db::StatsLevel {
 }
 
 #[derive(Clone, Debug, clap::Args, Deserialize, Serialize)]
-pub struct DbParams {
+pub struct BackendParams {
     /// The path where madara will store the database. You should probably change it.
     #[clap(env = "MADARA_BASE_PATH", long, default_value = "/tmp/madara", value_name = "PATH")]
     pub base_path: PathBuf,
@@ -45,15 +51,20 @@ pub struct DbParams {
     #[clap(env = "MADARA_BACKUP_DIR", long, value_name = "PATH")]
     pub backup_dir: Option<PathBuf>,
 
+    /// Save the preconfirmed block to database. This may slow down block production a bit.
+    /// Default: true
+    #[clap(env = "MADARA_SAVE_PRECONFIRMED", long, default_value_t = true)]
+    pub save_preconfirmed: bool,
+
     /// Restore the database at startup from the latest backup version. Use it with `--backup-dir <PATH>`
     #[clap(env = "MADARA_RESTORE_FROM_LATEST_BACKUP", long)]
     pub restore_from_latest_backup: bool,
 
     /// This is the number of blocks for which you can get storage proofs using the storage proof endpoints.
     /// Blocks older than this limit will not be stored for retrieving historical merkle trie state. By default,
-    /// the value 0 means that no historical merkle trie state access is allowed.
-    #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value_t = 0)]
-    pub db_max_saved_trie_logs: usize,
+    /// no historical merkle trie state access is allowed.
+    #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long)]
+    pub db_max_saved_trie_logs: Option<usize>,
 
     /// This affects the performance of the storage proof endpoint.
     /// How many databse snapshots are kept at a given time, older ones will be discarded.
@@ -61,8 +72,8 @@ pub struct DbParams {
     /// when getting a storage proof.
     /// Higher values cause more database space usage, while lower values prevent the efficient reverting and historical access for
     /// the global state trie at older blocks.
-    #[clap(env = "MADARA_DB_MAX_SNAPSHOTS", long, default_value_t = 0)]
-    pub db_max_kept_snapshots: usize,
+    #[clap(env = "MADARA_DB_MAX_SNAPSHOTS", long)]
+    pub db_max_kept_snapshots: Option<usize>,
 
     /// This affects the performance of the storage proof endpoint.
     /// A database snapshot is created every `db_snapshot_interval` blocks.
@@ -115,30 +126,35 @@ pub struct DbParams {
     /// Set the rocksdb prefix bloom filter ratio.
     #[clap(env = "MADARA_DB_MEMTABLE_PREFIX_BLOOM_FILTER_RATIO", long, default_value_t = 0.0)]
     pub db_memtable_prefix_bloom_filter_ratio: f64,
+
+    /// The block you want to start syncing from. This will most probably break your database.
+    #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
+    pub unsafe_starting_block: Option<u64>,
 }
 
-impl DbParams {
+impl BackendParams {
     pub fn backend_config(&self) -> MadaraBackendConfig {
         MadaraBackendConfig {
-            base_path: self.base_path.clone(),
+            flush_every_n_blocks: self.flush_every_n_blocks,
+            save_preconfirmed: self.save_preconfirmed,
+            unsafe_starting_block: self.unsafe_starting_block,
+        }
+    }
+    pub fn rocksdb_config(&self) -> RocksDBConfig {
+        RocksDBConfig { 
+            enable_statistics: self.db_enable_statistics,
+            statistics_period_sec: self.db_statistics_period_sec,
+            statistics_level: self.db_statistics_level.unwrap_or(StatsLevel::All).into(),
+            memtable_blocks_budget_bytes: self.db_memtable_blocks_budget_mib * MiB,
+            memtable_contracts_budget_bytes: self.db_memtable_contracts_budget_mib * MiB,
+            memtable_other_budget_bytes: self.db_memtable_other_budget_mib * MiB,
+            memtable_prefix_bloom_filter_ratio: self.db_memtable_prefix_bloom_filter_ratio,
+            max_saved_trie_logs: self.db_max_saved_trie_logs,
+            max_kept_snapshots: self.db_max_kept_snapshots,
+            snapshot_interval: self.db_snapshot_interval,
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
-            trie_log: TrieLogConfig {
-                max_saved_trie_logs: self.db_max_saved_trie_logs,
-                max_kept_snapshots: self.db_max_kept_snapshots,
-                snapshot_interval: self.db_snapshot_interval,
-            },
-            backup_every_n_blocks: self.backup_every_n_blocks,
-            flush_every_n_blocks: self.flush_every_n_blocks,
-            rocksdb: RocksDBConfig {
-                enable_statistics: self.db_enable_statistics,
-                statistics_period_sec: self.db_statistics_period_sec,
-                statistics_level: self.db_statistics_level.unwrap_or(StatsLevel::All).into(),
-                memtable_blocks_budget_mib: self.db_memtable_blocks_budget_mib,
-                memtable_contracts_budget_mib: self.db_memtable_contracts_budget_mib,
-                memtable_other_budget_mib: self.db_memtable_other_budget_mib,
-                memtable_prefix_bloom_filter_ratio: self.db_memtable_prefix_bloom_filter_ratio,
-            },
-        }
+            
+         }
     }
 }
