@@ -230,8 +230,8 @@ impl ServiceManager {
         let delay = Duration::from_secs(360); // Check every 5 mins
         let timeout = Duration::from_secs(1800); // For 30 mins
 
-        let operation = |attempt| async move {
-            println!("⏳ Checking orchestrator state update... (attempt {})", attempt);
+        let operation = || async move {
+            println!("⏳ Checking orchestrator state update...");
 
             if let Some(orchestrator) = &services.orchestrator_service {
                 let mut is_synced = false;

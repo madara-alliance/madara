@@ -148,7 +148,7 @@ pub trait NodeRpcMethods: Send + Sync {
         let timeout = Duration::from_secs(300); // 5 mins
 
         // Inner function that performs one attempt
-        let wait_for_block_inner = |retry_count| async move {
+        let wait_for_block_inner = || async move {
             match self.get_latest_block_number().await {
                 Ok(Some(latest)) => {
                     if latest >= block_number {
@@ -165,10 +165,7 @@ pub trait NodeRpcMethods: Send + Sync {
                 }
                 Err(e) => {
                     // Log error but continue retrying
-                    if retry_count % 20 == 0 {
-                        println!("⚠️  Error fetching block number (retry {}): {}",
-                                retry_count, e);
-                    }
+                        println!("⚠️  Error fetching block number: {}", e);
 
                     return Err(e);
                 }
@@ -322,9 +319,7 @@ pub trait NodeRpcMethods: Send + Sync {
             return Err(NodeRpcError::RpcError(error_msg.to_string()));
         }
 
-        // Extract block number directly from result (it's just an integer now)
-        let block_number = json.get("result").and_then(|v| v.as_u64()).ok_or(NodeRpcError::InvalidResponse)?;
-        Ok(block_number.into())
+        Ok(json)
     }
 
     /// Extracts block number from RPC response
@@ -440,16 +435,14 @@ pub async fn retry_with_timeout<T, E, F, Fut>(
     mut operation: F,
 ) -> Result<T, E>
 where
-    F: FnMut(u32) -> Fut,  // Now takes attempt count as parameter
+    F: FnMut() -> Fut,  // Now takes attempt count as parameter
     Fut: Future<Output = Result<T, E>>,
 {
     let start_time = tokio::time::Instant::now();
     let mut last_error = None;
-    let mut attempt = 0;
 
     loop {
-        attempt += 1;
-        match operation(attempt).await {
+        match operation().await {
             Ok(result) => return Ok(result),
             Err(e) => {
                 last_error = Some(e);

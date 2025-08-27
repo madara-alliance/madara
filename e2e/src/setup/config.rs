@@ -99,7 +99,7 @@ pub struct Timeouts {
 impl Default for Timeouts {
     fn default() -> Self {
         Self {
-            validate_dependencies: Duration::from_secs(10),
+            validate_dependencies: Duration::from_secs(60),
             start_infrastructure_services: Duration::from_secs(180),
             setup_localstack_infrastructure_services: Duration::from_secs(180),
             setup_mongodb_infrastructure_services: Duration::from_secs(180),
@@ -338,6 +338,7 @@ impl SetupConfigBuilder {
         let orchestrator_setup_config = OrchestratorConfigBuilder::new()
             .mode(OrchestratorMode::Setup)
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MONGODB_CONNECTION_URL", mongodb_config.endpoint())
             .logs((true, true))
             .build();
 

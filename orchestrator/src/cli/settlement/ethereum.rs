@@ -2,7 +2,7 @@ use clap::Args;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address"])]
+#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address", "ethereum_settlement_txn_wait_sleep_delay_secs"])]
 pub struct EthereumSettlementCliArgs {
     /// Use the Ethereum settlement layer.
     #[arg(long)]
@@ -27,5 +27,5 @@ pub struct EthereumSettlementCliArgs {
     /// The amount of time in seconds to wait for state update txns
     /// Doesn't require an env variable
     #[arg(long, default_value = "60")]
-    pub ethereum_settlement_txn_wait_sleep_deplay_secs: Option<u64>,
+    pub ethereum_settlement_txn_wait_sleep_delay_secs: Option<u64>,
 }

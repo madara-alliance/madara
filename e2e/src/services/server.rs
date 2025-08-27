@@ -237,28 +237,28 @@ impl Server {
             return Ok(());
         }
 
-        // Try to terminate gracefully first
-        let pid = self.process.id();
-        if let Some(pid) = pid {
-            let kill_result = tokio::process::Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn();
-
-            match kill_result {
-                Ok(mut kill_process) => {
-                    // Block on the async wait
-                    if let Ok(handle) = Handle::try_current() {
-                        let _ = handle.block_on(kill_process.wait());
-                    }
-                }
-                Err(_) => {
-                    // If kill command fails, try to kill the process directly
-                    let _ = self.process.start_kill(); // Use start_kill instead of kill
+        // Try graceful shutdown first - this works cross-platform
+        #[cfg(unix)]
+        {
+            let pid = self.process.id();
+            if let Some(pid) = pid {
+                if let Ok(mut kill_process) = tokio::process::Command::new("kill")
+                    .args(["-s", "TERM", &pid.to_string()])
+                    .spawn()
+                {
+                    // Spawn a task to wait for kill completion, but don't block on it
+                    tokio::spawn(async move {
+                        let _ = kill_process.wait().await;
+                    });
                 }
             }
-
-            // Use try_wait instead of wait (non-blocking)
-            let _ = self.process.try_wait();
         }
 
+        // Cross-platform forceful termination as fallback
+        let _ = self.process.start_kill();
+        let _ = self.process.try_wait();
+
+        // Clean up tasks
         if let Some(task) = self.stdout_task.take() {
             task.abort();
         }
