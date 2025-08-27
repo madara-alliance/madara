@@ -147,21 +147,21 @@ pub trait NodeRpcMethods: Send + Sync {
                 Ok(Some(latest)) => {
                     if latest >= block_number {
                         println!("🔔 Block {} is mined (latest: {})", block_number, latest);
-                        return Ok(());
+                        Ok(())
                     } else {
                         // Block not ready yet, return an error to trigger retry
-                        return Err(NodeRpcError::BlockNotReady(latest, block_number));
+                        Err(NodeRpcError::BlockNotReady(latest, block_number))
                     }
                 }
                 Ok(None) => {
                     // No blocks mined yet, continue waiting
-                    return Err(NodeRpcError::NoBlocksYet);
+                    Err(NodeRpcError::NoBlocksYet)
                 }
                 Err(e) => {
                     // Log error but continue retrying
                     println!("⚠️  Error fetching block number: {}", e);
 
-                    return Err(e);
+                    Err(e)
                 }
             }
         };
@@ -306,7 +306,7 @@ pub trait NodeRpcMethods: Send + Sync {
 
     /// Extracts block number from RPC response
     fn extract_block_number_from_response(&self, response: &serde_json::Value) -> Result<Option<u64>, NodeRpcError> {
-        response.get("result").and_then(|v| Some(v.as_u64())).ok_or(NodeRpcError::InvalidResponse)
+        response.get("result").map(|v| v.as_u64()).ok_or(NodeRpcError::InvalidResponse)
     }
 
     /// Extracts block status from RPC response

@@ -83,7 +83,7 @@ impl PathfinderService {
     }
 
     pub async fn wait_for_block_synced(&self, block_number: u64) -> Result<(), PathfinderError> {
-        self.wait_for_block(block_number).await.map_err(|err| PathfinderError::RpcError(err))
+        self.wait_for_block(block_number).await.map_err(PathfinderError::RpcError)
     }
 }
 

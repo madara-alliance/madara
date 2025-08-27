@@ -28,37 +28,37 @@ impl ServiceLifecycleManager {
             // Shutdown in reverse dependency order
 
             if let Some(mut orchestrator) = services.orchestrator_service.take() {
-                let _ = orchestrator.stop()?;
+                orchestrator.stop()?;
                 println!("🛑 Orchestrator stopped");
             }
 
             if let Some(mut mock_prover) = services.mock_prover_service.take() {
-                let _ = mock_prover.stop()?;
+                mock_prover.stop()?;
                 println!("🛑 Mock Prover stopped");
             }
 
             if let Some(mut pathfinder) = services.pathfinder_service.take() {
-                let _ = pathfinder.stop()?;
+                pathfinder.stop()?;
                 println!("🛑 Pathfinder stopped");
             }
 
             if let Some(mut madara) = services.madara_service.take() {
-                let _ = madara.stop()?;
+                madara.stop()?;
                 println!("🛑 Madara stopped");
             }
 
             if let Some(mut anvil) = services.anvil_service.take() {
-                let _ = anvil.stop()?;
+                anvil.stop()?;
                 println!("🛑 Anvil stopped");
             }
 
             if let Some(mut mongo) = services.mongo_service.take() {
-                let _ = mongo.stop()?;
+                mongo.stop()?;
                 println!("🛑 MongoDB stopped");
             }
 
             if let Some(mut localstack) = services.localstack_service.take() {
-                let _ = localstack.stop()?;
+                localstack.stop()?;
                 println!("🛑 Localstack stopped");
             }
 

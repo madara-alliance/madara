@@ -197,7 +197,7 @@ impl ServiceManager {
 
             // Stop Madara after Pathfinder syncs
             if let Some(mut madara) = services.madara_service.take() {
-                let _ = madara.stop()?;
+                madara.stop()?;
                 println!("🛑 Madara stopped after Pathfinder sync");
             }
 

@@ -96,7 +96,7 @@ pub async fn wait_for_transactions_finality(setup: &ChainSetup, transaction_hash
                             tx_hash.to_hex_string(),
                             start_time.elapsed()
                         );
-                        newly_finalized.push(tx_hash.clone());
+                        newly_finalized.push(*tx_hash);
                     }
                 }
                 Err(e) => {
@@ -144,7 +144,7 @@ pub async fn get_l2_token_balance(
         .await
         .map_err(|e| format!("Failed to call balanceOf: {}", e))?;
 
-    result.get(0).copied().ok_or("balanceOf returned empty result".into())
+    result.first().copied().ok_or("balanceOf returned empty result".into())
 }
 
 pub fn cleanup_test_directory(test_name: &str) {

@@ -26,7 +26,6 @@ use starknet::{
     providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
 
-use super::setup::setup_chain;
 use crate::setup::ChainSetup;
 
 // Define the ERC20Token contract interface
@@ -163,7 +162,7 @@ async fn test_eth_deposit_flow(
 
     // Get initial L2 balance
     let initial_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
+        get_l2_token_balance(l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     println!("Initial ETH L2 balance: {}", initial_l2_balance);
 
@@ -177,7 +176,7 @@ async fn test_eth_deposit_flow(
 
     // Verify L2 balance increased
     let final_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
+        get_l2_token_balance(l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     println!("Final ETH L2 balance: {}", final_l2_balance);
 
@@ -198,7 +197,7 @@ async fn test_erc20_deposit_flow(
 
     // Get initial L2 balance
     let initial_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+        get_l2_token_balance(l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
             .await?;
 
     println!("Initial ERC20 L2 balance: {}", initial_l2_balance);
@@ -213,7 +212,7 @@ async fn test_erc20_deposit_flow(
 
     // Verify L2 balance increased
     let final_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+        get_l2_token_balance(l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
             .await?;
 
     println!("Final ERC20 L2 balance: {}", final_l2_balance);
@@ -337,11 +336,11 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
 
     // Get initial ETH L2 balance
     let initial_eth_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
+        get_l2_token_balance(l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     // Get initial ETH L2 balance
     let initial_erc20_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+        get_l2_token_balance(l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
             .await?;
 
     // Execute ETH withdrawal
@@ -357,11 +356,11 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
 
     // Verify ETH L2 balance decreased
     let final_eth_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
+        get_l2_token_balance(l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     // Verify ERC20 L2 balance decreased
     let final_erc20_l2_balance =
-        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+        get_l2_token_balance(l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
             .await?;
 
     println!("ETH L2 balance before withdraw: {}", initial_eth_l2_balance);

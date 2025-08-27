@@ -110,7 +110,7 @@ impl MadaraService {
     }
 
     pub async fn wait_for_block_mined(&self, block_number: u64) -> Result<(), MadaraError> {
-        self.wait_for_block(block_number).await.map_err(|err| MadaraError::RpcError(err))
+        self.wait_for_block(block_number).await.map_err(MadaraError::RpcError)
     }
 }
 

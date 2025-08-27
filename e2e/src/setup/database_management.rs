@@ -11,6 +11,12 @@ use crate::services::{constants::*, helpers::get_file_path};
 
 pub struct DatabaseManager {}
 
+impl Default for DatabaseManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl DatabaseManager {
     pub fn new() -> Self {
         Self {}
@@ -65,7 +71,7 @@ impl DatabaseManager {
         options.copy_inside = true;
 
         let data_directory = get_file_path(DATA_DIR);
-        let data_test_directory = get_file_path(&dir_name);
+        let data_test_directory = get_file_path(dir_name);
 
         copy(&data_directory, &data_test_directory, &options).map_err(|e| SetupError::OtherError(e.to_string()))?;
 

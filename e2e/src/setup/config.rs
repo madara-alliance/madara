@@ -239,7 +239,7 @@ pub struct SetupConfigBuilder {
 
 impl SetupConfigBuilder {
     pub fn new(config: Option<SetupConfig>) -> Self {
-        Self { config: config.unwrap_or_else(SetupConfig::default) }
+        Self { config: config.unwrap_or_default() }
     }
 
     /// Set Layer
@@ -371,7 +371,7 @@ impl SetupConfigBuilder {
         let bootstrapper_l2_config = BootstrapperConfigBuilder::new()
             .mode(BootstrapperMode::SetupL2)
             .config_path(BOOTSTRAPPER_CONFIG)
-            .timeout(BOOTSTRAPPER_SETUP_L2_TIMEOUT.clone())
+            .timeout(*BOOTSTRAPPER_SETUP_L2_TIMEOUT)
             .env_var("ETH_RPC", anvil_config.endpoint().as_str())
             .env_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY)
             .env_var("ROLLUP_SEQ_URL", madara_config.rpc_endpoint().as_str())
