@@ -23,4 +23,9 @@ pub struct EthereumSettlementCliArgs {
     /// The address of the Starknet operator.
     #[arg(env = "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS", long)]
     pub starknet_operator_address: Option<String>,
+
+    /// The amount of time in seconds to wait for state update txns
+    /// Doesn't require an env variable
+    #[arg(long, default_value = "60")]
+    pub ethereum_settlement_txn_wait_sleep_deplay_secs: Option<u64>,
 }
