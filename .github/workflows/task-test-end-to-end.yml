@@ -27,7 +27,7 @@ on:
 
 jobs:
   e2e-full:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
 
     steps:
       - name: Checkout Repository

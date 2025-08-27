@@ -22,7 +22,7 @@ on:
 
 jobs:
   build-binary:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     outputs:
       binary-hash: ${{ steps.generate-binary-hash.outputs.binary-hash }}
     permissions:
