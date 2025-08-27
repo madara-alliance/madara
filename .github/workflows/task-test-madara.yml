@@ -84,6 +84,9 @@ jobs:
             exit 1
           fi
 
+      - name: Run make artifacts
+        run: yes | make artifacts
+
       - name: Run tests with coverage
         env:
           ETH_FORK_URL: ${{ secrets.ETH_FORK_URL }}

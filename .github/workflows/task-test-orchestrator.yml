@@ -96,6 +96,9 @@ jobs:
       - name: Check rust version
         run: rustup show
 
+      - name: Run make artifacts
+        run: yes | make artifacts
+
       - name: Run llvm-cov tests
         continue-on-error: false
         env:
