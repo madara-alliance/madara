@@ -11,7 +11,6 @@ use thiserror::Error;
 use std::future::Future;
 use tokio::sync::Mutex;
 use std::collections::HashSet;
-use thiserror::Error;
 
 /// Error code returned by Starknet RPC when a block is not found
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
@@ -325,7 +324,7 @@ pub trait NodeRpcMethods: Send + Sync {
 
         // Extract block number directly from result (it's just an integer now)
         let block_number = json.get("result").and_then(|v| v.as_u64()).ok_or(NodeRpcError::InvalidResponse)?;
-        Ok(block_number)
+        Ok(block_number.into())
     }
 
     /// Extracts block number from RPC response
