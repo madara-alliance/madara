@@ -196,8 +196,8 @@ artifacts:
 		read ans && \
 		case "$$ans" in \
 			[yY]*) true;; \
-		*) false;; \
-	esac \
+			*) echo -e "$(INFO)Artifacts not removed. Exiting.$(RESET)" && exit 0;; \
+		esac \
 	fi
 	@rm -rf "$(ARTIFACTS)/argent"
 	@rm -rf "$(ARTIFACTS)/braavos"
