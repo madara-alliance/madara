@@ -14,7 +14,7 @@ use std::time::Duration;
 use tokio::task::JoinSet;
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
-use tracing::{debug, error, info, info_span, warn};
+use tracing::{debug, error, info, info_span, instrument, warn};
 
 pub enum MessageType {
     Message(Delivery),
@@ -176,6 +176,7 @@ impl EventWorker {
     /// * `Result<(), EventSystemError>` - A result indicating whether the operation was successful or not
     /// # Errors
     /// * Returns an EventSystemError if the message cannot be handled
+    #[instrument(skip(self))]
     async fn handle_message(&self, message: &ParsedMessage) -> EventSystemResult<()> {
         match self.queue_type {
             QueueType::WorkerTrigger => {
@@ -226,7 +227,7 @@ impl EventWorker {
             let (_error_context, consumption_error) = match parsed_message {
                 ParsedMessage::WorkerTrigger(msg) => {
                     let worker = &msg.worker;
-                    tracing::error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
+                    error!("Failed to handle worker trigger {worker:?}. Error: {error:?}");
                     (
                         format!("Worker {worker:?} handling failed: {error}"),
                         ConsumptionError::FailedToSpawnWorker {
@@ -237,7 +238,7 @@ impl EventWorker {
                 }
                 ParsedMessage::JobQueue(msg) => {
                     let job_id = &msg.id;
-                    tracing::error!("Failed to handle job {job_id:?}. Error: {error:?}");
+                    error!("Failed to handle job {job_id:?}. Error: {error:?}");
                     (
                         format!("Job {job_id:?} handling failed: {error}"),
                         ConsumptionError::FailedToHandleJob { job_id: *job_id, error_msg: error.to_string() },
@@ -271,6 +272,7 @@ impl EventWorker {
     /// * This function processes the message based on its type
     /// * It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
     /// * It returns an EventSystemError if the message cannot be processed
+    #[instrument(skip(self))]
     async fn process_message(&self, message: Delivery, parsed_message: ParsedMessage) -> EventSystemResult<()> {
         let result = self.handle_message(&parsed_message).await;
         match self.post_processing(result, message, &parsed_message).await {
@@ -294,9 +296,16 @@ impl EventWorker {
         }
     }
 
-    /// run - Run the event worker, by closely monitoring the queue and processing messages
+    /// Run the event worker, by closely monitoring the queue and processing messages
     /// This function starts the event worker and processes messages from the queue
     /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    ///
+    /// The following things happen in this function:
+    /// 1. Run an infinite loop to wait and process messages from the queue using backpressure
+    /// 2. When a message is received, it processes the message.
+    /// 3. Following is the method call chain
+    ///    - `parse_message()` -> `process_message()` -> `handle_message()` -> `post_processing()`
+    ///
     /// # Errors
     /// * Returns an EventSystemError if the event worker cannot be started
     /// # Notes
@@ -304,6 +313,7 @@ impl EventWorker {
     /// * It will sleep for a short duration if no messages are received to prevent a tight loop
     /// * It will also sleep for a longer duration if an error occurs to prevent a tight loop
     /// * It will log errors and messages for debugging purposes
+    #[instrument(skip(self))]
     pub async fn run(&self) -> EventSystemResult<()> {
         let mut tasks = JoinSet::new();
         let max_concurrent_tasks = self.queue_control.max_message_count;
