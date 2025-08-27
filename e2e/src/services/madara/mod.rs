@@ -146,7 +146,6 @@ impl MadaraService {
             tokio::time::sleep(poll_interval).await;
         }
     }
-
 }
 
 impl NodeRpcMethods for MadaraService {

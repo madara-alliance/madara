@@ -1,3 +1,9 @@
+use async_trait::async_trait;
+use cairo_vm::vm::runners::cairo_pie::CairoPie;
+use color_eyre::eyre::eyre;
+use orchestrator_prover_client_interface::{CreateJobInfo, Task, TaskStatus, TaskType};
+use std::sync::Arc;
+
 use crate::core::config::Config;
 use crate::error::job::proving::ProvingError;
 use crate::error::job::JobError;
@@ -7,11 +13,6 @@ use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadat
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::JobHandlerTrait;
-use async_trait::async_trait;
-use cairo_vm::vm::runners::cairo_pie::CairoPie;
-use color_eyre::eyre::eyre;
-use orchestrator_prover_client_interface::{Task, TaskStatus};
-use std::sync::Arc;
 
 pub struct ProvingJobHandler;
 
@@ -34,7 +35,7 @@ impl JobHandlerTrait for ProvingJobHandler {
             tracing::error!(job_id = %job.internal_id, error = %e, "Failed to convert metadata to ProvingMetadata");
         })?;
 
-        // Get an input path from metadata
+        // Get the input path from metadata
         let input_path = match proving_metadata.input_path {
             Some(ProvingInputType::CairoPie(path)) => path,
             Some(ProvingInputType::Proof(_)) => {
@@ -61,7 +62,12 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         let external_id = config
             .prover_client()
-            .submit_task(Task::CairoPie(cairo_pie), *config.prover_layout_name(), proving_metadata.n_steps)
+            .submit_task(Task::CreateJob(CreateJobInfo {
+                cairo_pie,
+                bucket_id: proving_metadata.bucket_id,
+                bucket_job_index: proving_metadata.bucket_job_index,
+                num_steps: proving_metadata.n_steps,
+            }))
             .await
             .inspect_err(|e| {
                 tracing::error!(job_id = %job.internal_id, error = %e, "Failed to submit task to prover client");
@@ -109,13 +115,15 @@ impl JobHandlerTrait for ProvingJobHandler {
         );
 
         let task_status =
-            config.prover_client().get_task_status(&task_id, fact, cross_verify).await.inspect_err(|e| {
-                tracing::error!(
-                    job_id = %job.internal_id,
-                    error = %e,
-                    "Failed to get task status from prover client"
-                );
-            })?;
+            config.prover_client().get_task_status(TaskType::Job, &task_id, fact, cross_verify).await.inspect_err(
+                |e| {
+                    tracing::error!(
+                        job_id = %job.internal_id,
+                        error = %e,
+                        "Failed to get task status from prover client"
+                    );
+                },
+            )?;
 
         match task_status {
             TaskStatus::Processing => {
@@ -130,7 +138,7 @@ impl JobHandlerTrait for ProvingJobHandler {
                 Ok(JobVerificationStatus::Pending)
             }
             TaskStatus::Succeeded => {
-                // If proof download path is specified, store the proof
+                // If the proof download path is specified, store the proof
                 if let Some(download_path) = &proving_metadata.download_proof {
                     let fetched_proof = config.prover_client().get_proof(&task_id).await.inspect_err(|e| {
                         tracing::error!(
@@ -174,7 +182,10 @@ impl JobHandlerTrait for ProvingJobHandler {
     }
 
     fn max_process_attempts(&self) -> u64 {
-        2
+        // we want this as 1 since we don't want to retry proof creation
+        // because once proof creation fails, the AR bucket will also fail
+        // hence, no point of retrying right now
+        1
     }
 
     fn max_verification_attempts(&self) -> u64 {

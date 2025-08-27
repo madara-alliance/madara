@@ -12,9 +12,10 @@ use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
@@ -82,7 +83,7 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
 pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
-    pub expected_txs: Vec<mp_rpc::TxnWithHash>,
+    pub expected_txs: Vec<mp_rpc::v0_7_1::TxnWithHash>,
     pub expected_receipts: Vec<TxnReceipt>,
 }
 
@@ -104,7 +105,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         Felt::from_hex_unchecked("0xdd84847784"),
     ];
     let expected_txs = {
-        use mp_rpc::{InvokeTxn, InvokeTxnV0, Txn};
+        use mp_rpc::v0_7_1::{InvokeTxn, InvokeTxnV0, Txn};
         vec![
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
@@ -149,7 +150,9 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         ]
     };
     let expected_receipts = {
-        use mp_rpc::{CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt};
+        use mp_rpc::v0_7_1::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
+        };
         vec![
             TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
@@ -159,7 +162,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L1,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -170,7 +173,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -181,7 +184,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Reverted("too bad".into()),
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Reverted("too bad".into()),
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -192,7 +195,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
         ]
@@ -384,8 +387,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
 
-fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
-    mp_rpc::ExecutionResources {
+fn defaut_execution_resources() -> mp_rpc::v0_7_1::ExecutionResources {
+    mp_rpc::v0_7_1::ExecutionResources {
         bitwise_builtin_applications: None,
         ec_op_builtin_applications: None,
         ecdsa_builtin_applications: None,
@@ -396,7 +399,7 @@ fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
         range_check_builtin_applications: None,
         segment_arena_builtin: None,
         steps: 0,
-        data_availability: mp_rpc::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
+        data_availability: mp_rpc::v0_7_1::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
     }
 }
 

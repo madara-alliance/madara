@@ -19,6 +19,7 @@ pub enum WorkerTriggerType {
     DataSubmission,
     UpdateState,
     Batching,
+    Aggregator,
 }
 
 #[derive(Debug, Serialize, Clone)]

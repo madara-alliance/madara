@@ -21,12 +21,12 @@ on:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - run: echo "Checking Version File ('${{ inputs.label }}' label only)"
 
   update-version-file:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     if: contains(github.event.pull_request.labels.*.name, inputs.label)
     outputs:
       update: ${{ steps.check_bump.outputs.update }}

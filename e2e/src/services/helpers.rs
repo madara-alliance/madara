@@ -166,7 +166,6 @@ pub trait NodeRpcMethods: Send + Sync {
 
         // Extract block number directly from result (it's just an integer now)
         let block_number = json.get("result").and_then(|v| v.as_u64()).ok_or(NodeRpcError::InvalidResponse)?;
-
         Ok(block_number)
     }
 
