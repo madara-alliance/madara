@@ -29,6 +29,9 @@ jobs:
         with:
           scarb-version: ${{ env.BUILD_SCARB_VERSION }}
 
+      - name: Run Make artifacts
+        run: yes | make artifacts
+
       - name: Cargo fmt
         run: cargo fmt -- --check
 
