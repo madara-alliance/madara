@@ -25,5 +25,5 @@ mempool_declare_tx_limit: 20
 mempool_tx_max_age: null
 mempool_ttl: null
 l2_gas_target: 2000000000
-min_l2_gas_price: 100000
+min_l2_gas_price: 0
 l2_gas_price_max_change_denominator: 48

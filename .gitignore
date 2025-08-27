@@ -1,4 +1,4 @@
-.env*
+.env
 orchestrator/.env*
 nohup.log
 
@@ -85,6 +85,7 @@ e2e_data/
 /e2e_data.zip
 /e2e_data/*
 /e2e_data*
+/e2e/data/*
 
 out
 cache
