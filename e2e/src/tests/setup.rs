@@ -12,7 +12,7 @@ pub async fn setup_chain(#[default("")] test_name: &str) -> ChainSetup {
 
     // Setting Config!
     println!("Running {}", test_name);
-    let setup_config = SetupConfigBuilder::new(None).test_config_l2(test_name).unwrap();
+    let setup_config = SetupConfigBuilder::new(None).test_config_l2(test_name).await.unwrap();
     println!("Running setup");
 
     // Running Chain

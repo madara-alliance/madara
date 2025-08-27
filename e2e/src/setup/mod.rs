@@ -58,7 +58,7 @@ impl ChainSetup {
             DBState::NotReady => {
                 println!("❌ Chain state does not exist, setting up new chain...");
                 let test_config = self.config.to_owned();
-                let setup_config = SetupConfigBuilder::new(None).build_l2_setup_config()?;
+                let setup_config = SetupConfigBuilder::new(None).build_l2_config().await?;
                 self.config = Arc::new(setup_config);
                 self.service_manager = ServiceManager::new(self.config.clone());
                 self.setup_new_chain().await?;
