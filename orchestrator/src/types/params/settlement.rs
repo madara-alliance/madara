@@ -58,6 +58,7 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     txn_wait_sleep_delay_secs: run_cmd.ethereum_settlement_args.ethereum_settlement_txn_wait_sleep_deplay_secs.ok_or_else(|| {
                         OrchestratorError::SetupCommandError("Ethereum TXN WAIT SLEEP SECS required".to_string())
                     })?,
+
                 };
                 Ok(Self::Ethereum(ethereum_params))
             }

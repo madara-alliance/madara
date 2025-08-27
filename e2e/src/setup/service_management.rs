@@ -19,7 +19,7 @@ use crate::services::orchestrator::OrchestratorService;
 use crate::services::helpers::NodeRpcMethods;
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
-use tokio::time::{timeout, Duration, Instant, sleep};
+use tokio::time::{timeout, Duration, Instant};
 
 pub struct ServiceManager {
     config: Arc<SetupConfig>,
