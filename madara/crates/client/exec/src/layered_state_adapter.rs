@@ -8,6 +8,7 @@ use blockifier::{
     },
 };
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead};
+use mp_block::{header::GasPrices};
 use mp_convert::Felt;
 use starknet_api::{
     contract_class::ContractClass as ApiContractClass,
@@ -34,14 +35,32 @@ struct CacheByBlock {
 /// previous blocks once we know they are imported into the database.
 pub struct LayeredStateAdapter<D: MadaraStorageRead = RocksDBStorage> {
     inner: BlockifierStateAdapter<D>,
+    gas_prices: GasPrices,
     cached_states_by_block_n: VecDeque<CacheByBlock>,
 }
+
 impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
     pub fn new(backend: Arc<MadaraBackend<D>>) -> Result<Self, crate::Error> {
         let view = backend.view_on_latest_confirmed();
         let block_number = view.latest_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
+
+        let gas_prices = if let Some(block) = view.block_view_on_latest_confirmed() {
+            let latest_gas_prices = block.get_block_info()?.header.gas_prices.clone();
+
+            let latest_gas_used = block
+                .get_executed_transactions(..)?
+                .iter()
+                .map(|tx| tx.receipt.execution_resources().total_gas_consumed.l2_gas)
+                .sum::<u128>();
+
+            backend.calculate_gas_prices(latest_gas_prices.strk_l2_gas_price, latest_gas_used)?
+        } else {
+            backend.calculate_gas_prices(0, 0)?
+        };
+
         Ok(Self {
             inner: BlockifierStateAdapter::new(view, block_number),
+            gas_prices,
             cached_states_by_block_n: Default::default(),
         })
     }
@@ -89,6 +108,10 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         self.inner = BlockifierStateAdapter::new(new_view, block_n + 1);
 
         Ok(())
+    }
+
+    pub fn latest_gas_prices(&self) -> &GasPrices {
+        &self.gas_prices
     }
 
     pub fn is_l1_to_l2_message_nonce_consumed(&self, nonce: u64) -> StateResult<bool> {
@@ -147,7 +170,7 @@ mod tests {
     use mc_db::MadaraBackend;
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
-        PreconfirmedFullBlock,
+        FullBlockWithoutCommitments,
     };
     use mp_chain_config::{ChainConfig, L1DataAvailabilityMode, StarknetVersion};
     use mp_convert::{Felt, ToFelt};
@@ -156,6 +179,7 @@ mod tests {
     #[tokio::test]
     async fn test_layered_state_adapter() {
         let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+        backend.set_l1_gas_quote_for_testing();
         let mut adaptor = LayeredStateAdapter::new(backend.clone()).unwrap();
 
         // initial state (no genesis block)
@@ -205,14 +229,13 @@ mod tests {
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
                         block_number: 0,
-                        parent_block_hash: Felt::ZERO,
                         sequencer_address: backend.chain_config().sequencer_address.to_felt(),
                         block_timestamp: BlockTimestamp::now(),
                         protocol_version: StarknetVersion::LATEST,
-                        l1_gas_price: GasPrices::default(),
+                        gas_prices: GasPrices::default(),
                         l1_da_mode: L1DataAvailabilityMode::Calldata,
                     },
                     state_diff: StateDiff {

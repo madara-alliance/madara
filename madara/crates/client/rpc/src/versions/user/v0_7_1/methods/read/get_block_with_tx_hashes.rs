@@ -1,7 +1,8 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
-use mp_rpc::{
+use mp_convert::Felt;
+use mp_rpc::v0_7_1::{
     BlockHeader, BlockStatus, BlockWithTxHashes, MaybePendingBlockWithTxHashes, PendingBlockHeader,
     PendingBlockWithTxHashes,
 };
@@ -26,16 +27,22 @@ pub fn get_block_with_tx_hashes(
     let block_info = view.get_block_info()?;
     let is_on_l1 = view.is_on_l1();
 
+    let parent_hash = if let Some(b) = view.parent_block() {
+        b.get_block_info()?.block_hash
+    } else {
+        Felt::ZERO // genesis
+    };
+
     match block_info {
         MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
             Ok(MaybePendingBlockWithTxHashes::Pending(PendingBlockWithTxHashes {
                 transactions: block.tx_hashes,
                 pending_block_header: PendingBlockHeader {
-                    parent_hash: block.header.parent_block_hash,
+                    parent_hash,
                     timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
+                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
                     l1_da_mode: block.header.l1_da_mode.into(),
                     starknet_version: block.header.protocol_version.to_string(),
                 },
@@ -53,8 +60,8 @@ pub fn get_block_with_tx_hashes(
                     new_root: block.header.global_state_root,
                     timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
+                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
                     l1_da_mode: block.header.l1_da_mode.into(),
                     starknet_version: block.header.protocol_version.to_string(),
                 },
@@ -71,7 +78,7 @@ mod tests {
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mp_block::BlockTag;
-    use mp_rpc::{BlockHeader, L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{BlockHeader, L1DaMode, ResourcePrice};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
 

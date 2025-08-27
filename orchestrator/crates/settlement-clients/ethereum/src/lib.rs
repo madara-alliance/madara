@@ -18,7 +18,7 @@ use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
 use c_kzg::{Blob, Bytes32, KzgCommitment, KzgProof, KzgSettings};
-use color_eyre::eyre::{bail, Ok};
+use color_eyre::eyre::{bail, eyre, Ok};
 use color_eyre::Result;
 use conversion::{get_input_data_for_eip_4844, prepare_sidecar};
 use orchestrator_settlement_client_interface::{SettlementClient, SettlementVerificationStatus};
@@ -35,7 +35,6 @@ pub mod tests;
 pub mod types;
 use alloy::providers::RootProvider;
 use alloy::transports::http::Http;
-use color_eyre::eyre::WrapErr;
 use lazy_static::lazy_static;
 use mockall::automock;
 use reqwest::Client;
@@ -43,10 +42,14 @@ use tokio::time::sleep;
 
 use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 
+// For more details on state update, refer to the core contract logic
+// https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
+
 pub const ENV_PRIVATE_KEY: &str = "MADARA_ORCHESTRATOR_ETHEREUM_PRIVATE_KEY";
-const X_0_POINT_OFFSET: usize = 10;
-const Y_LOW_POINT_OFFSET: usize = 14;
-const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
+pub const N_BLOBS_OFFSET: usize = 11;
+pub const X_0_POINT_OFFSET: usize = 10; // =h(c, c') where c=f(p_i(tau)) and c'=poseidon_hash(state_diff)
+pub const Y_LOW_POINT_OFFSET: usize = 11;
+pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 
 // Ethereum Transaction Finality
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
@@ -133,41 +136,49 @@ impl EthereumSettlementClient {
 
     /// Build kzg proof for the x_0 point evaluation
     pub fn build_proof(
+        n_blobs: u64,
         blob_data: Vec<Vec<u8>>,
         x_0_value: Bytes32,
-        y_0_value_program_output: Bytes32,
-    ) -> Result<KzgProof> {
-        // Assuming that there is only one blob in the whole Vec<Vec<u8>> array for now.
-        // Later we will add the support for multiple blob in single blob_data vec.
-        assert_eq!(blob_data.len(), 1);
+        y_0_values_program_output: Vec<Bytes32>,
+    ) -> Result<Vec<KzgProof>> {
+        assert_eq!(blob_data.len(), n_blobs as usize);
 
-        let fixed_size_blob: [u8; BYTES_PER_BLOB] = blob_data[0].as_slice().try_into()?;
+        let mut kzg_proofs: Vec<KzgProof> = vec![];
 
-        let blob = Blob::new(fixed_size_blob);
-        let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_SETTINGS)?;
-        let (kzg_proof, y_0_value) = KzgProof::compute_kzg_proof(&blob, &x_0_value, &KZG_SETTINGS)?;
+        for i in 0..n_blobs {
+            let fixed_size_blob: [u8; BYTES_PER_BLOB] = blob_data[i as usize].as_slice().try_into()?;
 
-        if y_0_value != y_0_value_program_output {
-            bail!(
-                "ERROR : y_0 value is different than expected. Expected {:?}, got {:?}",
-                y_0_value,
-                y_0_value_program_output
-            );
+            let blob = Blob::new(fixed_size_blob);
+            let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, &KZG_SETTINGS)?;
+            let (kzg_proof, y_0_value) = KzgProof::compute_kzg_proof(&blob, &x_0_value, &KZG_SETTINGS)?;
+
+            let y_0_value_program_output = y_0_values_program_output[i as usize];
+
+            if y_0_value != y_0_value_program_output {
+                bail!(
+                    "ERROR : y_0 value is different than expected. Expected {:?}, got {:?}",
+                    y_0_value,
+                    y_0_value_program_output
+                );
+            }
+
+            // Verifying the proof for double check
+            let eval = KzgProof::verify_kzg_proof(
+                &commitment.to_bytes(),
+                &x_0_value,
+                &y_0_value,
+                &kzg_proof.to_bytes(),
+                &KZG_SETTINGS,
+            )?;
+
+            if !eval {
+                bail!("ERROR : Assertion failed, not able to verify the proof.");
+            }
+
+            kzg_proofs.push(kzg_proof);
         }
 
-        // Verifying the proof for double check
-        let eval = KzgProof::verify_kzg_proof(
-            &commitment.to_bytes(),
-            &x_0_value,
-            &y_0_value,
-            &kzg_proof.to_bytes(),
-            &KZG_SETTINGS,
-        )?;
-
-        if !eval {
-            bail!("ERROR : Assertion failed, not able to verify the proof.");
-        }
-        Ok(kzg_proof)
+        Ok(kzg_proofs)
     }
 }
 
@@ -211,6 +222,7 @@ impl SettlementClient for EthereumSettlementClient {
     }
 
     /// Should be used to update state on core contract when DA is in blobs/alt DA
+    /// NOTE: state_diff is a vector of blobs (which in turn is a vector of u8)
     async fn update_state_with_blobs(
         &self,
         program_output: Vec<[u8; 32]>,
@@ -223,31 +235,17 @@ impl SettlementClient for EthereumSettlementClient {
             function_type = "blobs",
             "Updating state with blobs."
         );
+        // Prepare sidecar for transaction
         let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &KZG_SETTINGS).await?;
         let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
 
+        let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
+
+        // Get EIP1559 estimate, chain ID and blob base fee
         let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
         let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
 
         let max_fee_per_blob_gas: u128 = self.provider.get_blob_base_fee().await?.to_string().parse()?;
-
-        // calculating y_0 point
-        let y_0 = Bytes32::from(
-            convert_stark_bigint_to_u256(
-                bytes_be_to_u128(&program_output[Y_LOW_POINT_OFFSET]),
-                bytes_be_to_u128(&program_output[Y_HIGH_POINT_OFFSET]),
-            )
-            .to_be_bytes(),
-        );
-
-        // x_0_value : program_output[10]
-        // Updated with starknet 0.13.2 spec
-        let x_0_point = Bytes32::from_bytes(program_output[X_0_POINT_OFFSET].as_slice())
-            .wrap_err("Failed to get x_0 point params")?;
-
-        let kzg_proof = Self::build_proof(state_diff, x_0_point, y_0).wrap_err("Failed to build KZG proof")?.to_owned();
-
-        let input_bytes = get_input_data_for_eip_4844(program_output, kzg_proof)?;
 
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
 
@@ -346,7 +344,12 @@ impl SettlementClient for EthereumSettlementClient {
                         tx_hash = %tx_status.transaction_hash,
                         "Tx inclusion pending."
                     );
-                    Ok(SettlementVerificationStatus::Pending)
+                    // TODO: Make sure that this is correct for other txn types as well
+                    Ok(SettlementVerificationStatus::Rejected(format!(
+                        "Txn {} of type {} rejected",
+                        tx_hash,
+                        tx_status.inner.tx_type()
+                    )))
                 }
             }
             None => {
@@ -399,6 +402,52 @@ impl SettlementClient for EthereumSettlementClient {
     async fn get_nonce(&self) -> Result<u64> {
         let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
         Ok(nonce)
+    }
+}
+
+impl EthereumSettlementClient {
+    pub async fn build_input_bytes(program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
+        let n_blobs = match program_output.get(N_BLOBS_OFFSET) {
+            Some(n_blobs) => u64::from_be_bytes(n_blobs[24..32].try_into()?),
+            None => bail!("Failed to get n_blobs from program output"),
+        };
+
+        if program_output.len() <= N_BLOBS_OFFSET + 2 * n_blobs as usize {
+            bail!("Malformed program output");
+        }
+
+        let mut y_0_values: Vec<Bytes32> = vec![];
+        for i in 0..n_blobs {
+            y_0_values.push(Bytes32::from(
+                convert_stark_bigint_to_u256(
+                    bytes_be_to_u128(
+                        program_output
+                            .get(2 * (n_blobs as usize + i as usize) + 1 + Y_LOW_POINT_OFFSET)
+                            .ok_or(eyre!("Malformed program output"))?,
+                    ),
+                    bytes_be_to_u128(
+                        program_output
+                            .get(2 * (n_blobs as usize + i as usize) + 1 + Y_HIGH_POINT_OFFSET)
+                            .ok_or(eyre!("Malformed program output"))?,
+                    ),
+                )
+                .to_be_bytes(),
+            ));
+        }
+
+        let x_0_point = Bytes32::from_bytes(
+            program_output.get(X_0_POINT_OFFSET).ok_or(eyre!("Malformed program output"))?.as_slice(),
+        )
+        .map_err(|e| eyre!("Failed to get x_0 point params: {}", e))?;
+
+        let kzg_proofs = Self::build_proof(n_blobs, state_diff, x_0_point, y_0_values)
+            .map_err(|e| eyre!("Failed to build KZG proofs: {}", e))?;
+
+        // Convert Vec<KzgProof> to Vec<[u8; 48]>
+        let kzg_proofs_bytes: Vec<[u8; 48]> =
+            kzg_proofs.into_iter().map(|proof| proof.to_bytes().into_inner()).collect();
+
+        Ok(get_input_data_for_eip_4844(program_output, kzg_proofs_bytes)?)
     }
 }
 

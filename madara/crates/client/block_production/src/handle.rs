@@ -5,9 +5,10 @@ use mc_submit_tx::{
     SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction, TransactionValidator,
     TransactionValidatorConfig,
 };
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::validated::ValidatedTransaction;
 use std::sync::Arc;

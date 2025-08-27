@@ -104,14 +104,14 @@ impl BlockCommitments {
 }
 
 impl PreconfirmedHeader {
-    pub fn into_confirmed_header(self, commitments: BlockCommitments, global_state_root: Felt) -> Header {
+    pub fn into_confirmed_header(self, parent_block_hash: Felt, commitments: BlockCommitments, global_state_root: Felt) -> Header {
         Header {
-            parent_block_hash: self.parent_block_hash,
+            parent_block_hash,
             block_number: self.block_number,
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp,
             protocol_version: self.protocol_version,
-            l1_gas_price: self.l1_gas_price,
+            gas_prices: self.gas_prices,
             l1_da_mode: self.l1_da_mode,
             global_state_root,
             transaction_count: commitments.transaction.transaction_count,
@@ -207,11 +207,10 @@ mod tests {
     fn dummy_header() -> PreconfirmedHeader {
         PreconfirmedHeader {
             block_number: 0,
-            parent_block_hash: Felt::ZERO,
             sequencer_address: Felt::ZERO,
             block_timestamp: BlockTimestamp(0),
             protocol_version: StarknetVersion::V0_13_2,
-            l1_gas_price: GasPrices::default(),
+            gas_prices: GasPrices::default(),
             l1_da_mode: L1DataAvailabilityMode::Blob,
         }
     }
@@ -238,7 +237,7 @@ mod tests {
             CommitmentComputationContext { protocol_version: header.protocol_version, chain_id: chain_id.to_felt() };
         let commitments = BlockCommitments::compute(&ctx, &[], &StateDiff::default(), &[]);
 
-        let closed_header = header.into_confirmed_header(commitments, global_state_root);
+        let closed_header = header.into_confirmed_header(Felt::ZERO, commitments, global_state_root);
         let block_hash = closed_header.compute_hash(chain_id.to_felt(), pre_v0_13_2_override);
         assert_eq!(expected, block_hash);
     }

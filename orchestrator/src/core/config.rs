@@ -14,9 +14,12 @@ use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use std::str::FromStr;
 use std::sync::Arc;
 use url::Url;
 
+use crate::core::client::lock::mongodb::MongoLockClient;
+use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
@@ -36,9 +39,65 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+/// Starknet versions supported by the service
+macro_rules! versions {
+    ($(($variant:ident, $version:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub enum StarknetVersion {
+            $($variant),*
+        }
+
+        impl StarknetVersion {
+            pub fn to_string(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $version),*
+                }
+            }
+
+            pub fn supported() -> &'static [StarknetVersion] {
+                &[$(Self::$variant),*]
+            }
+
+            pub fn is_supported(&self) -> bool {
+                Self::supported().contains(self)
+            }
+        }
+
+        impl FromStr for StarknetVersion {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($version => Ok(Self::$variant),)*
+                    _ => Err(format!("Unknown version: {}", s)),
+                }
+            }
+        }
+
+        /// Making 0.13.3 as the default version for now
+        impl Default for StarknetVersion {
+            fn default() -> Self {
+                Self::V0_13_3
+            }
+        }
+
+        impl std::fmt::Display for StarknetVersion {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.to_string())
+            }
+        }
+    }
+}
+
+// Add more versions here whenever necessary. Follow the following rules:
+// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
+// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
+
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
+    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
@@ -49,11 +108,11 @@ pub struct ConfigParam {
 }
 
 /// The app config. It can be accessed from anywhere inside the service
-/// by calling `config` function. 33
+/// by calling the ` config ` function. 33
 pub struct Config {
     layer: Layer,
     /// The orchestrator config
-    params: ConfigParam,
+    pub params: ConfigParam,
     /// The Madara client to get data from the node
     madara_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -64,6 +123,8 @@ pub struct Config {
     settlement_client: Box<dyn SettlementClient>,
     /// The database client
     database: Box<dyn DatabaseClient>,
+    /// Lock client
+    lock: Box<dyn LockClient>,
     /// Queue client
     queue: Box<dyn QueueClient>,
     /// Storage client
@@ -81,6 +142,7 @@ impl Config {
         madara_client: Arc<JsonRpcClient<HttpTransport>>,
         database: Box<dyn DatabaseClient>,
         storage: Box<dyn StorageClient>,
+        lock: Box<dyn LockClient>,
         alerts: Box<dyn AlertClient>,
         queue: Box<dyn QueueClient>,
         prover_client: Box<dyn ProverClient>,
@@ -92,6 +154,7 @@ impl Config {
             params,
             madara_client,
             database,
+            lock,
             storage,
             alerts,
             queue,
@@ -126,6 +189,7 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
@@ -137,12 +201,13 @@ impl Config {
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
         let database = Self::build_database_client(&db).await?;
+        let lock = Self::build_lock_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
         // External Clients Initialization
-        let prover_client = Self::build_prover_service(&prover_config);
+        let prover_client = Self::build_prover_service(&prover_config, &params);
         let da_client = Self::build_da_client(&da_config).await;
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
@@ -151,6 +216,7 @@ impl Config {
             params,
             madara_client: Arc::new(rpc_client),
             database,
+            lock,
             storage,
             alerts,
             queue,
@@ -169,6 +235,12 @@ impl Config {
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
         Ok(Box::new(MongoDbClient::new(db_args).await?))
+    }
+
+    pub(crate) async fn build_lock_client(
+        args: &DatabaseArgs,
+    ) -> OrchestratorCoreResult<Box<dyn LockClient + Send + Sync>> {
+        Ok(Box::new(MongoLockClient::new(args).await?))
     }
 
     pub(crate) async fn build_storage_client(
@@ -202,10 +274,17 @@ impl Config {
     /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
-    pub(crate) fn build_prover_service(prover_params: &ProverConfig) -> Box<dyn ProverClient + Send + Sync> {
+    pub(crate) fn build_prover_service(
+        prover_params: &ProverConfig,
+        params: &ConfigParam,
+    ) -> Box<dyn ProverClient + Send + Sync> {
         match prover_params {
-            ProverConfig::Sharp(sharp_params) => Box::new(SharpProverService::new_with_args(sharp_params)),
-            ProverConfig::Atlantic(atlantic_params) => Box::new(AtlanticProverService::new_with_args(atlantic_params)),
+            ProverConfig::Sharp(sharp_params) => {
+                Box::new(SharpProverService::new_with_args(sharp_params, &params.prover_layout_name))
+            }
+            ProverConfig::Atlantic(atlantic_params) => {
+                Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
+            }
         }
     }
 
@@ -301,6 +380,11 @@ impl Config {
     /// Returns the database client
     pub fn database(&self) -> &dyn DatabaseClient {
         self.database.as_ref()
+    }
+
+    /// Returns the Lock Client
+    pub fn lock(&self) -> &dyn LockClient {
+        self.lock.as_ref()
     }
 
     /// Returns the queue provider

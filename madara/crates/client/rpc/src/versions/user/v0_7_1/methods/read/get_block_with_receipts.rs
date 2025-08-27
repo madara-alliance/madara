@@ -1,7 +1,8 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use mp_block::{BlockId, MadaraMaybePreconfirmedBlockInfo};
-use mp_rpc::{
+use mp_convert::Felt;
+use mp_rpc::v0_7_1::{
     BlockHeader, BlockStatus, BlockWithReceipts, PendingBlockHeader, PendingBlockWithReceipts,
     StarknetGetBlockWithTxsAndReceiptsResult, TransactionAndReceipt, TxnFinalityStatus,
 };
@@ -24,16 +25,22 @@ pub fn get_block_with_receipts(
         })
         .collect();
 
+    let parent_hash = if let Some(b) = view.parent_block() {
+        b.get_block_info()?.block_hash
+    } else {
+        Felt::ZERO // genesis
+    };
+
     match block_info {
         MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
             Ok(StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
                 transactions: transactions_with_receipts,
                 pending_block_header: PendingBlockHeader {
-                    parent_hash: block.header.parent_block_hash,
+                    parent_hash,
                     timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
+                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
                     l1_da_mode: block.header.l1_da_mode.into(),
                     starknet_version: block.header.protocol_version.to_string(),
                 },
@@ -46,13 +53,13 @@ pub fn get_block_with_receipts(
                 status,
                 block_header: BlockHeader {
                     block_hash: block.block_hash,
-                    parent_hash: block.header.parent_block_hash,
+                    parent_hash,
                     block_number: block.header.block_number,
                     new_root: block.header.global_state_root,
                     timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
+                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
                     l1_da_mode: block.header.l1_da_mode.into(),
                     starknet_version: block.header.protocol_version.to_string(),
                 },
@@ -71,13 +78,13 @@ mod tests {
     use mc_db::MadaraBackend;
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
-        BlockTag, PreconfirmedFullBlock, TransactionWithReceipt,
+        BlockTag, FullBlockWithoutCommitments, TransactionWithReceipt,
     };
     use mp_chain_config::StarknetVersion;
     use mp_receipt::{
         ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
     };
-    use mp_rpc::{L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{L1DaMode, ResourcePrice};
     use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
@@ -198,18 +205,19 @@ mod tests {
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: Felt::ZERO,
                         block_number: 0,
                         sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
                         block_timestamp: BlockTimestamp(43),
                         protocol_version: StarknetVersion::V0_13_1_1,
-                        l1_gas_price: GasPrices {
+                        gas_prices: GasPrices {
                             eth_l1_gas_price: 123,
                             strk_l1_gas_price: 12,
                             eth_l1_data_gas_price: 44,
                             strk_l1_data_gas_price: 52,
+                            eth_l2_gas_price: 0,
+                            strk_l2_gas_price: 0,
                         },
                         l1_da_mode: mp_chain_config::L1DataAvailabilityMode::Blob,
                     },

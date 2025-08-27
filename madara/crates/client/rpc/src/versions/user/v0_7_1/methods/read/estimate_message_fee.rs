@@ -2,11 +2,12 @@ use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use anyhow::Context;
+use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use mp_block::BlockId;
 use mp_convert::ToFelt;
-use mp_rpc::{FeeEstimate, MsgFromL1};
+use mp_rpc::v0_7_1::{FeeEstimate, MsgFromL1};
 use mp_transactions::L1HandlerTransaction;
 use starknet_api::transaction::{fields::Fee, TransactionHash};
 use starknet_types_core::felt::Felt;
@@ -42,16 +43,16 @@ pub async fn estimate_message_fee(
 
     let transaction = convert_message_into_transaction(message, view.backend().chain_config().chain_id.to_felt());
 
+    let tip = transaction.tip().unwrap_or_default();
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (mut execution_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], [transaction])?, exec_context))
     })
     .await?;
 
-    let execution_result =
-        execution_results.pop().context("There should be at least one result")?;
+    let execution_result = execution_results.pop().context("There should be one result")?;
 
-    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result);
+    let fee_estimate = exec_context.execution_result_to_fee_estimate(&execution_result, tip)?;
 
     Ok(fee_estimate)
 }

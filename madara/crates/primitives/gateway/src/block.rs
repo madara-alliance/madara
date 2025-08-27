@@ -1,11 +1,13 @@
+use crate::state_update::StateDiff;
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
+use itertools::Itertools;
+use mp_block::header::PreconfirmedHeader;
 use mp_block::Header;
 use mp_block::{FullBlock, TransactionWithReceipt};
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
 use mp_receipt::EventWithTransactionHash;
-use mp_state_update::StateDiff;
 use mp_transactions::TransactionWithHash;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -52,6 +54,7 @@ pub struct ProviderBlock {
     pub parent_block_hash: Felt,
     pub timestamp: u64,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub sequencer_address: Option<Felt>,
     pub state_root: Felt,
     pub transaction_commitment: Felt,
@@ -63,14 +66,17 @@ pub struct ProviderBlock {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_commitment: Option<Felt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub state_diff_length: Option<u64>,
     pub status: BlockStatus,
     pub l1_da_mode: L1DataAvailabilityMode,
     pub l1_gas_price: ResourcePrice,
     pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
     pub transactions: Vec<Transaction>,
     pub transaction_receipts: Vec<ConfirmedReceipt>,
     #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub starknet_version: Option<String>,
 }
 
@@ -124,12 +130,16 @@ impl ProviderBlock {
             status,
             l1_da_mode: header.l1_da_mode,
             l1_gas_price: ResourcePrice {
-                price_in_wei: header.l1_gas_price.eth_l1_gas_price,
-                price_in_fri: header.l1_gas_price.strk_l1_gas_price,
+                price_in_wei: header.gas_prices.eth_l1_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_gas_price,
             },
             l1_data_gas_price: ResourcePrice {
-                price_in_wei: header.l1_gas_price.eth_l1_data_gas_price,
-                price_in_fri: header.l1_gas_price.strk_l1_data_gas_price,
+                price_in_wei: header.gas_prices.eth_l1_data_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_data_gas_price,
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_wei: header.gas_prices.eth_l2_gas_price,
+                price_in_fri: header.gas_prices.strk_l2_gas_price,
             },
             transactions,
             transaction_receipts,
@@ -137,7 +147,7 @@ impl ProviderBlock {
         }
     }
 
-    pub fn into_full_block(self, state_diff: StateDiff) -> Result<FullBlock, FromGatewayError> {
+    pub fn into_full_block(self, state_diff: mp_state_update::StateDiff) -> Result<FullBlock, FromGatewayError> {
         if self.transactions.len() != self.transaction_receipts.len() {
             return Err(FromGatewayError::TransactionCountNotEqualToReceiptCount);
         }
@@ -147,17 +157,19 @@ impl ProviderBlock {
         Ok(FullBlock { block_hash: self.block_hash, header, transactions, events, state_diff })
     }
 
-    pub fn header(&self, state_diff: &StateDiff) -> Result<mp_block::Header, FromGatewayError> {
+    pub fn header(&self, state_diff: &mp_state_update::StateDiff) -> Result<mp_block::Header, FromGatewayError> {
         Ok(mp_block::Header {
             parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address.unwrap_or_default(),
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
             protocol_version: protocol_version(self.starknet_version.as_deref(), self.block_number, self.block_hash)?,
-            l1_gas_price: mp_block::header::GasPrices {
+            gas_prices: mp_block::header::GasPrices {
                 eth_l1_gas_price: self.l1_gas_price.price_in_wei,
                 strk_l1_gas_price: self.l1_gas_price.price_in_fri,
                 eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
                 strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+                eth_l2_gas_price: self.l2_gas_price.price_in_wei,
+                strk_l2_gas_price: self.l2_gas_price.price_in_fri,
             },
             l1_da_mode: self.l1_da_mode,
             block_number: self.block_number,
@@ -172,6 +184,91 @@ impl ProviderBlock {
         })
     }
 }
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockPreConfirmed {
+    pub status: BlockStatus,
+    pub starknet_version: String,
+    pub l1_da_mode: L1DataAvailabilityMode,
+    pub l1_gas_price: ResourcePrice,
+    pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
+    pub timestamp: u64,
+    pub sequencer_address: Felt,
+    pub transactions: Vec<Transaction>,
+    pub transaction_receipts: Vec<ConfirmedReceipt>,
+    pub transaction_state_diffs: Vec<StateDiff>,
+}
+
+
+impl ProviderBlockPreConfirmed {
+    pub fn new(header: PreconfirmedHeader, content: Vec<TransactionWithReceipt>, status: BlockStatus) -> Self {
+        let (transactions, transaction_receipts, transaction_state_diffs): (Vec<_>, Vec<_>, Vec<_>) = content
+            .into_iter()
+            .enumerate()
+            .map(|(index, tx)| {
+                let l1_to_l2_consumed_message = match &tx.transaction {
+                    mp_block::Transaction::L1Handler(l1_handler) => {
+                        mp_receipt::MsgToL2::try_from(&l1_handler.clone()).ok()
+                    }
+                    _ => None,
+                };
+                (
+                    Transaction::new(
+                        TransactionWithHash { transaction: tx.transaction, hash: *tx.receipt.transaction_hash() },
+                        tx.receipt.contract_address().copied(),
+                    ),
+                    ConfirmedReceipt::new(tx.receipt, l1_to_l2_consumed_message, index as u64),
+                    StateDiff::default()
+                )
+            })
+            .multiunzip();
+
+        Self {
+            timestamp: header.block_timestamp.0,
+            sequencer_address: header.sequencer_address,
+            status,
+            l1_da_mode: header.l1_da_mode,
+            l1_gas_price: ResourcePrice {
+                price_in_wei: header.gas_prices.eth_l1_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_gas_price,
+            },
+            l1_data_gas_price: ResourcePrice {
+                price_in_wei: header.gas_prices.eth_l1_data_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_data_gas_price,
+            },
+            l2_gas_price: ResourcePrice {
+                price_in_wei: header.gas_prices.eth_l2_gas_price,
+                price_in_fri: header.gas_prices.strk_l2_gas_price,
+            },
+            transactions,
+            transaction_receipts,
+            transaction_state_diffs,
+            starknet_version: header.protocol_version.to_string(),
+        }
+    }
+
+    pub fn header(&self, block_number: u64) -> Result<PreconfirmedHeader, FromGatewayError> {
+        Ok(PreconfirmedHeader {
+            sequencer_address: self.sequencer_address,
+            block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
+            protocol_version: self.starknet_version.parse()?,
+            gas_prices: mp_block::header::GasPrices {
+                eth_l1_gas_price: self.l1_gas_price.price_in_wei,
+                strk_l1_gas_price: self.l1_gas_price.price_in_fri,
+                eth_l1_data_gas_price: self.l1_data_gas_price.price_in_wei,
+                strk_l1_data_gas_price: self.l1_data_gas_price.price_in_fri,
+                eth_l2_gas_price: self.l2_gas_price.price_in_wei,
+                strk_l2_gas_price: self.l2_gas_price.price_in_fri,
+            },
+            l1_da_mode: self.l1_da_mode,
+            block_number,
+        })
+    }
+}
+
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
@@ -196,9 +293,7 @@ pub struct ResourcePrice {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub enum BlockStatus {
-    Pending,
-    Aborted,
-    Reverted,
+    PreConfirmed,
     AcceptedOnL2,
     AcceptedOnL1,
 }

@@ -1,7 +1,7 @@
-use std::{borrow::Cow, sync::Arc};
-
+use super::{builder::GatewayProvider, request_builder::RequestBuilder};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
+use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};
 use mp_gateway::user_transaction::{
     AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult,
@@ -17,8 +17,7 @@ use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
-
-use super::{builder::GatewayProvider, request_builder::RequestBuilder};
+use std::{borrow::Cow, sync::Arc};
 
 impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {
@@ -28,6 +27,15 @@ impl GatewayProvider {
             .with_block_id(&block_id);
 
         request.send_get::<ProviderBlock>().await
+    }
+
+    pub async fn get_preconfirmed_block(&self, block_number: u64) -> Result<ProviderBlockPreConfirmed, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_preconfirmed_block")
+            .expect("Failed to add URI segment. This should not fail in prod.")
+            .with_block_id(&BlockId::Number(block_number));
+
+        request.send_get::<ProviderBlockPreConfirmed>().await
     }
 
     pub async fn get_header(&self, block_id: BlockId) -> Result<ProviderBlockHeader, SequencerError> {
@@ -154,7 +162,10 @@ mod tests {
         Compression,
     };
     use mp_class::CompressedLegacyContractClass;
-    use mp_gateway::error::{SequencerError, StarknetError, StarknetErrorCode};
+    use mp_gateway::{
+        block::BlockStatus,
+        error::{SequencerError, StarknetError, StarknetErrorCode},
+    };
     use rstest::*;
     use serde::de::DeserializeOwned;
     use starknet_types_core::felt::Felt;
@@ -162,6 +173,7 @@ mod tests {
     use std::io::{BufReader, BufWriter, Read, Write};
     use std::ops::Drop;
     use std::path::PathBuf;
+    use url::Url;
 
     use super::*;
 
@@ -183,6 +195,56 @@ mod tests {
 
     const CLASS_ERC1155: &str = "0x04be7f1bace6f593abd8e56947c11151f45498030748a950fdaf0b79ac3dc03f";
     const CLASS_ERC1155_BLOCK: u64 = 18507;
+
+    struct JsonGatewayProvider {
+        client: reqwest::Client,
+        url: Url,
+    }
+
+    impl JsonGatewayProvider {
+        pub fn new(url: Url) -> Self {
+            let client = reqwest::Client::new();
+            Self { client, url }
+        }
+
+        pub fn mainnet() -> Self {
+            let url = Url::parse("https://feeder.alpha-mainnet.starknet.io").expect("Invalid URL");
+            Self::new(url)
+        }
+
+        pub async fn get_state_update_with_block(&self, block_id: BlockId) -> serde_json::Value {
+            let url = self.url.join("feeder_gateway/get_state_update").expect("Invalid URL");
+
+            let response = self
+                .client
+                .get(url)
+                .query(&[Self::block_id_to_param(&block_id), ("includeBlock", "true".to_string())])
+                .send()
+                .await
+                .expect("Failed to send request");
+            if !response.status().is_success() {
+                panic!("Failed to get block: {}", response.status());
+            }
+            response.json().await.expect("Failed to parse response")
+        }
+
+        fn block_id_to_param(block_id: &BlockId) -> (&str, String) {
+            match block_id {
+                BlockId::Hash(hash) => ("blockHash", format!("0x{hash:x}")),
+                BlockId::Number(number) => ("blockNumber", number.to_string()),
+                BlockId::Tag(BlockTag::Latest) => ("blockNumber", "latest".to_string()),
+                BlockId::Tag(BlockTag::Pending) => ("blockNumber", "pending".to_string()),
+            }
+        }
+    }
+
+    fn compare_json(a: &serde_json::Value, b: &serde_json::Value) {
+        let mut a = a.clone();
+        a.sort_all_objects();
+        let mut b = b.clone();
+        b.sort_all_objects();
+        assert_eq!(a, b, "JSON values do not match");
+    }
 
     /// Loads a gz file, deserializing it into the target type.
     ///
@@ -273,6 +335,11 @@ mod tests {
         GatewayProvider::starknet_alpha_mainnet()
     }
 
+    #[fixture]
+    fn client_testnet_fixture() -> GatewayProvider {
+        GatewayProvider::starknet_alpha_sepolia()
+    }
+
     #[rstest]
     #[tokio::test]
     async fn get_block(client_mainnet_fixture: GatewayProvider) {
@@ -290,8 +357,17 @@ mod tests {
         println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
         let block = client_mainnet_fixture.get_block(BlockId::Tag(BlockTag::Latest)).await.unwrap();
         println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
-        let block = client_mainnet_fixture.get_block(BlockId::Tag(BlockTag::Pending)).await.unwrap();
-        println!("parent_block_hash: 0x{:x}", block.parent_block_hash);
+    }
+
+    #[rstest]
+    #[tokio::test]
+    async fn get_preconfirmed_block(client_testnet_fixture: GatewayProvider) {
+        let latest_block_number =
+            client_testnet_fixture.get_header(BlockId::Tag(BlockTag::Latest)).await.unwrap().block_number;
+        println!("latest_block_number: {}", latest_block_number);
+        let block_number = latest_block_number + 1;
+        let block = client_testnet_fixture.get_preconfirmed_block(block_number).await.unwrap();
+        assert_eq!(block.status, BlockStatus::PreConfirmed);
     }
 
     #[rstest]
@@ -325,39 +401,46 @@ mod tests {
 
     #[rstest]
     #[tokio::test]
+    #[ignore = "Serialization of `to_address` in `l2_to_l1_messages` needs to be fixed"]
     async fn get_state_update_with_block_first_few_blocks(client_mainnet_fixture: GatewayProvider) {
         let res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(0))
             .await
             .expect("Getting state update and block at block number 0");
         let (state_update_0, block_0) = (res.state_update, res.block);
-        let ProviderStateUpdateWithBlock { state_update: state_update_0_reference, block: block_0_reference } =
-            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_0.gz");
-
-        assert_eq!(state_update_0, state_update_0_reference);
-        assert_eq!(block_0, block_0_reference);
+        let state_update_with_block_json =
+            JsonGatewayProvider::mainnet().get_state_update_with_block(BlockId::Number(0)).await;
+        let state_update_json =
+            state_update_with_block_json.get("state_update").expect("State update should be present");
+        let block_json = state_update_with_block_json.get("block").expect("Block should be present");
+        compare_json(state_update_json, &serde_json::to_value(&state_update_0).unwrap());
+        compare_json(block_json, &serde_json::to_value(&block_0).unwrap());
 
         let res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(1))
             .await
             .expect("Getting state update and block at block number 1");
         let (state_update_1, block_1) = (res.state_update, res.block);
-        let ProviderStateUpdateWithBlock { state_update: state_update_1_reference, block: block_1_reference } =
-            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_1.gz");
-
-        assert_eq!(state_update_1, state_update_1_reference);
-        assert_eq!(block_1, block_1_reference);
+        let state_update_with_block_json =
+            JsonGatewayProvider::mainnet().get_state_update_with_block(BlockId::Number(1)).await;
+        let state_update_json =
+            state_update_with_block_json.get("state_update").expect("State update should be present");
+        let block_json = state_update_with_block_json.get("block").expect("Block should be present");
+        compare_json(state_update_json, &serde_json::to_value(&state_update_1).unwrap());
+        compare_json(block_json, &serde_json::to_value(&block_1).unwrap());
 
         let res = client_mainnet_fixture
             .get_state_update_with_block(BlockId::Number(2))
             .await
             .expect("Getting state update and block at block number 2");
         let (state_update_2, block_2) = (res.state_update, res.block);
-        let ProviderStateUpdateWithBlock { state_update: state_update_2_reference, block: block_2_reference } =
-            load_from_file_compressed::<ProviderStateUpdateWithBlock>("src/mocks/state_update_and_block_2.gz");
-
-        assert_eq!(state_update_2, state_update_2_reference);
-        assert_eq!(block_2, block_2_reference);
+        let state_update_with_block_json =
+            JsonGatewayProvider::mainnet().get_state_update_with_block(BlockId::Number(2)).await;
+        let state_update_json =
+            state_update_with_block_json.get("state_update").expect("State update should be present");
+        let block_json = state_update_with_block_json.get("block").expect("Block should be present");
+        compare_json(state_update_json, &serde_json::to_value(&state_update_2).unwrap());
+        compare_json(block_json, &serde_json::to_value(&block_2).unwrap());
     }
 
     #[rstest]

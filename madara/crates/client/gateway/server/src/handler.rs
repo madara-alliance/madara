@@ -19,10 +19,10 @@ use mc_rpc::{
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ClassInfo, ContractClass};
-use mp_gateway::user_transaction::{
+use mp_gateway::{block::ProviderBlockPreConfirmed, user_transaction::{
     AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
     UserTransaction,
-};
+}};
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockSignature},
     state_update::ProviderStateUpdate,
@@ -31,13 +31,22 @@ use mp_gateway::{
     error::{StarknetError, StarknetErrorCode},
     user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult},
 };
-use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
+use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
+
+// pub async fn handle_get_preconfirmed_block(
+//     req: Request<Incoming>,
+//     backend: Arc<MadaraBackend>,
+// ) -> Result<Response<String>, GatewayError> {
+//     let block = ProviderBlockPreConfirmed {
+        
+//     }
+// }
 
 pub async fn handle_get_block(
     req: Request<Incoming>,
@@ -246,10 +255,7 @@ pub async fn handle_add_validated_transaction(
 
     submit_validated.submit_validated_transaction(transaction).await?;
 
-    Ok(Response::builder()
-        .status(StatusCode::OK)
-        .body(String::new())
-        .context("Building response")?)
+    Ok(Response::builder().status(StatusCode::OK).body(String::new()).context("Building response")?)
 }
 
 pub async fn handle_add_transaction(

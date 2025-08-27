@@ -28,9 +28,9 @@ pub struct EventWithInfo {
     pub in_preconfirmed: bool
 }
 
-impl From<EventWithInfo> for mp_rpc::EmittedEvent {
+impl From<EventWithInfo> for mp_rpc::v0_7_1::EmittedEvent {
     fn from(event_with_info: EventWithInfo) -> Self {
-        mp_rpc::EmittedEvent {
+        mp_rpc::v0_7_1::EmittedEvent {
             event: event_with_info.event.into(),
             block_hash: event_with_info.block_hash,
             block_number: event_with_info.block_number,

@@ -22,6 +22,12 @@ pub mod state_update_job;
 #[cfg(test)]
 pub mod snos_job;
 
+#[cfg(test)]
+pub mod batching_job;
+
+#[cfg(test)]
+mod aggregator_job;
+
 use crate::core::client::queue::QueueError;
 use crate::error::job::JobError;
 use crate::types::constant::CAIRO_PIE_FILE_NAME;

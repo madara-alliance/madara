@@ -26,7 +26,6 @@ mp-chain-config = { workspace = true }
 mp-class = { workspace = true }
 mp-convert = { workspace = true }
 mp-receipt = { workspace = true }
-mp-rpc = { workspace = true }
 mp-state-update = { workspace = true }
 mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
@@ -38,11 +37,14 @@ starknet_api = { workspace = true }
 blockifier = { workspace = true }
 
 # Other
+alloy.workspace = true
 anyhow.workspace = true
+bigdecimal = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
 futures = { workspace = true }
 librocksdb-sys = { workspace = true }
+num-traits = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }

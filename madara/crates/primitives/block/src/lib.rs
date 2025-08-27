@@ -5,6 +5,7 @@ use commitments::{BlockCommitments, CommitmentComputationContext};
 use header::{BlockTimestamp, PreconfirmedHeader};
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
+use mp_convert::FixedPoint;
 use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
 use mp_state_update::StateDiff;
 use starknet_types_core::felt::Felt;
@@ -12,14 +13,15 @@ use starknet_types_core::felt::Felt;
 pub mod commitments;
 pub mod event_with_info;
 pub mod header;
-pub use mp_transactions::Transaction;
+pub mod to_rpc;
 
+pub use mp_transactions::Transaction;
 pub use event_with_info::EventWithInfo;
 pub use header::Header;
 pub use primitive_types::{H160, U256};
 
-pub type BlockId = mp_rpc::BlockId;
-pub type BlockTag = mp_rpc::BlockTag;
+pub type BlockId = mp_rpc::v0_7_1::BlockId;
+pub type BlockTag = mp_rpc::v0_7_1::BlockTag;
 
 // TODO: where should we put that?
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
@@ -140,10 +142,10 @@ impl MadaraMaybePreconfirmedBlockInfo {
             Self::Preconfirmed(block) => &block.header.l1_da_mode,
         }
     }
-    pub fn l1_gas_price(&self) -> &GasPrices {
+    pub fn gas_prices(&self) -> &GasPrices {
         match self {
-            Self::Confirmed(block) => &block.header.l1_gas_price,
-            Self::Preconfirmed(block) => &block.header.l1_gas_price,
+            Self::Confirmed(block) => &block.header.gas_prices,
+            Self::Preconfirmed(block) => &block.header.gas_prices,
         }
     }
     pub fn block_timestamp(&self) -> &BlockTimestamp {
@@ -163,55 +165,6 @@ impl From<MadaraPreconfirmedBlockInfo> for MadaraMaybePreconfirmedBlockInfo {
 impl From<MadaraBlockInfo> for MadaraMaybePreconfirmedBlockInfo {
     fn from(value: MadaraBlockInfo) -> Self {
         Self::Confirmed(value)
-    }
-}
-
-impl From<MadaraBlockInfo> for mp_rpc::BlockHeader {
-    fn from(info: MadaraBlockInfo) -> Self {
-        let MadaraBlockInfo {
-            header:
-                Header {
-                    parent_block_hash: parent_hash,
-                    block_number,
-                    global_state_root: new_root,
-                    sequencer_address,
-                    block_timestamp: timestamp,
-                    protocol_version,
-                    l1_gas_price,
-                    l1_da_mode,
-                    ..
-                },
-            block_hash,
-            ..
-        } = info;
-        let GasPrices { eth_l1_gas_price, strk_l1_gas_price, eth_l1_data_gas_price, strk_l1_data_gas_price } =
-            l1_gas_price;
-
-        Self {
-            block_hash,
-            block_number,
-            l1_da_mode: match l1_da_mode {
-                L1DataAvailabilityMode::Blob => mp_rpc::L1DaMode::Blob,
-                L1DataAvailabilityMode::Calldata => mp_rpc::L1DaMode::Calldata,
-            },
-            l1_data_gas_price: mp_rpc::ResourcePrice {
-                price_in_fri: Felt::from(strk_l1_data_gas_price),
-                price_in_wei: Felt::from(eth_l1_data_gas_price),
-            },
-            l1_gas_price: mp_rpc::ResourcePrice {
-                price_in_fri: Felt::from(strk_l1_gas_price),
-                price_in_wei: Felt::from(eth_l1_gas_price),
-            },
-            new_root,
-            parent_hash,
-            sequencer_address,
-            starknet_version: if protocol_version < StarknetVersion::V0_9_1 {
-                "".to_string()
-            } else {
-                protocol_version.to_string()
-            },
-            timestamp: timestamp.0,
-        }
     }
 }
 
@@ -394,25 +347,25 @@ pub struct FullBlock {
     pub events: Vec<EventWithTransactionHash>,
 }
 
-/// A pending block is a block that has not yet been closed.
 #[derive(Clone, Debug, Default)]
-pub struct PreconfirmedFullBlock {
+pub struct FullBlockWithoutCommitments {
     pub header: PreconfirmedHeader,
     pub state_diff: StateDiff,
     pub transactions: Vec<TransactionWithReceipt>,
     pub events: Vec<EventWithTransactionHash>,
 }
 
-impl PreconfirmedFullBlock {
+impl FullBlockWithoutCommitments {
     /// Uses the rayon thread pool.
     pub fn close_block(
         self,
         ctx: &CommitmentComputationContext,
+        parent_block_hash: Felt,
         new_global_state_root: Felt,
         pre_v0_13_2_override: bool,
     ) -> FullBlock {
         let commitments = BlockCommitments::compute(ctx, &self.transactions, &self.state_diff, &self.events);
-        let header = self.header.into_confirmed_header(commitments, new_global_state_root);
+        let header = self.header.into_confirmed_header(parent_block_hash, commitments, new_global_state_root);
         FullBlock {
             block_hash: header.compute_hash(ctx.chain_id, pre_v0_13_2_override),
             header,
@@ -421,6 +374,15 @@ impl PreconfirmedFullBlock {
             events: self.events,
         }
     }
+}
+
+/// Gas quote for calculating gas prices.
+/// It's represents an instantaneous quote of current L1 network fees.
+#[derive(Clone, Default, Debug)]
+pub struct L1GasQuote {
+    pub l1_gas_price: u128,
+    pub l1_data_gas_price: u128,
+    pub strk_per_eth: FixedPoint,
 }
 
 #[cfg(test)]

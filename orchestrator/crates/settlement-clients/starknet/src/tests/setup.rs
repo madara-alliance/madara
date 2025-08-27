@@ -1,3 +1,4 @@
+use color_eyre::eyre::eyre;
 use std::collections::HashMap;
 use std::env;
 use std::future::Future;
@@ -6,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
-
 use tempfile::TempDir;
 use url::Url;
 
@@ -76,12 +76,9 @@ impl Drop for MadaraCmd {
             Ok::<_, color_eyre::Report>(())
         };
         if let Err(_err) = kill() {
-            match child.kill() {
-                Ok(kill) => kill,
-                Err(e) => {
-                    log::error!("{}", format!("Failed to kill Madara {:?}", e));
-                }
-            }
+            child.kill().unwrap_or_else(|e| {
+                log::error!("{}", eyre!("Failed to kill Madara {:?}", e));
+            })
         }
         match child.wait() {
             Ok(exit_status) => log::debug!("{}", exit_status),

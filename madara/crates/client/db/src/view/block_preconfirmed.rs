@@ -4,7 +4,7 @@ use crate::{
     rocksdb::RocksDBStorage,
 };
 use mp_block::{
-    header::PreconfirmedHeader, MadaraPreconfirmedBlockInfo, PreconfirmedFullBlock, TransactionWithReceipt,
+    header::PreconfirmedHeader, MadaraPreconfirmedBlockInfo, FullBlockWithoutCommitments, TransactionWithReceipt,
 };
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
@@ -239,13 +239,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
             vec
         }
 
-        let view_on_parent_block = self.state_view_on_parent();
-        let borrow = self.borrow_content();
-
-        // Filter and group storage diffs.
-        // HashMap<(Addr, K), V> => HashMap<Addr, Vec<(K, V)>>
-
-        let mut storage_diffs = HashMap::<Felt, HashMap<Felt, Felt>>::new();
+        let mut storage_diffs: HashMap<Felt, HashMap<Felt, Felt>> = Default::default();
 
         // Add the block hash entry for `block_n-10` on the 0x1 contract address.
         if let Some(block_number) = self.block_number().checked_sub(10) {
@@ -259,88 +253,110 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
             storage_diffs.entry(Felt::ONE).or_default().insert(Felt::from(block_number), block_hash);
         }
 
-        // Aggregate the transaction state diffs.
-        for ((addr, key), value) in borrow.executed_transactions().flat_map(|tx| &tx.state_diff.storage) {
-            let previous_value = view_on_parent_block.get_contract_storage(addr, key)?.unwrap_or(Felt::ZERO);
-            if &previous_value != value {
-                // only keep changed keys.
-                storage_diffs.entry(*addr).or_default().insert(*key, *value);
-            }
-        }
+        // Aggregate all transaction state diffs.
 
-        // Map into a sorted vec.
+        let mut contract_class_hashes: HashMap<Felt, Felt> = Default::default();
+        let mut nonces: Vec<NonceUpdate> = Default::default();
+        let mut declared_classes: Vec<DeclaredClassItem> = Default::default();
+        let mut old_declared_contracts: Vec<Felt> = Default::default();
+        {
+            // Get the lock guard on the block content.
+            let borrow = self.borrow_content();
+
+            for tx in borrow.executed_transactions() {
+                // Storage diffs.
+                for ((contract, key), value) in &tx.state_diff.storage {
+                    storage_diffs.entry(*contract).or_default().insert(*key, *value);
+                }
+
+                // Changed contract class hashes.
+                contract_class_hashes.extend(tx.state_diff.contract_class_hashes.iter().map(|(k, v)| (*k, *v)));
+
+                // Nonces.
+                nonces.extend(tx.state_diff.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
+                    contract_address: *contract_address,
+                    nonce: *nonce,
+                }));
+
+                // Classes.
+                if let Some(declared_class) = &tx.declared_class {
+                    match declared_class {
+                        ConvertedClass::Legacy(class) => old_declared_contracts.push(class.class_hash),
+                        ConvertedClass::Sierra(class) => declared_classes.push(DeclaredClassItem {
+                            class_hash: class.class_hash,
+                            compiled_class_hash: class.info.compiled_class_hash,
+                        }),
+                    }
+                }
+            }
+        } // Lock on the block content is dropped here.
+
+        // Normalize, remove redundant entries & sort.
+
+        let view_on_parent_block = self.state_view_on_parent();
+
+        // Map storage diffs, keeping only changed entries, and sort the result.
         let storage_diffs: Vec<ContractStorageDiffItem> = sorted_by_key(
             storage_diffs
                 .into_iter()
-                .map(|(address, entries)| ContractStorageDiffItem {
-                    address,
-                    storage_entries: sorted_by_key(
-                        entries.into_iter().map(|(key, value)| StorageEntry { key, value }).collect(),
+                .map(|(address, storage_entries)| {
+                    let storage_entries: Vec<StorageEntry> = sorted_by_key(
+                        storage_entries
+                            .into_iter()
+                            .map(|(key, value)| {
+                                let previous_value =
+                                    view_on_parent_block.get_contract_storage(&address, &key)?.unwrap_or(Felt::ZERO);
+                                // Only keep changed keys.
+                                Ok((previous_value != value).then_some(StorageEntry { key, value }))
+                            })
+                            .filter_map_ok(|v| v)
+                            .collect::<Result<_>>()?,
                         |entry| entry.key,
-                    ),
+                    );
+
+                    // Remove empty entries.
+                    if storage_entries.is_empty() {
+                        Ok(None)
+                    } else {
+                        Ok(Some(ContractStorageDiffItem {
+                            address,
+                            storage_entries: sorted_by_key(storage_entries, |entry| entry.key),
+                        }))
+                    }
                 })
-                .collect(),
+                .filter_map_ok(|v| v)
+                .collect::<Result<_>>()?,
             |entry| entry.address,
         );
+        // Differentiate between: newly deployed contract, replaced contract class. Remove entries where no change happened.
+        let (mut deployed_contracts, mut replaced_classes): (Vec<DeployedContractItem>, Vec<ReplacedClassItem>) =
+            Default::default();
+        for (address, class_hash) in contract_class_hashes {
+            let previous_class_hash = view_on_parent_block.get_contract_class_hash(&address)?.unwrap_or(Felt::ZERO);
 
-        // We shouldn't need to check the backend for duplicate here: you can't redeclare a class (except on very early mainnet blocks, not handled here).
-        let (declared_classes, deprecated_declared_classes): (Vec<DeclaredClassItem>, Vec<Felt>) =
-            borrow.executed_transactions().flat_map(|tx| tx.declared_class.as_ref()).partition_map(|class| {
-                let class_hash = *class.class_hash();
-                if let Some(sierra_class) = class.as_sierra() {
-                    // Sierra
-                    Either::Left(DeclaredClassItem {
-                        class_hash,
-                        compiled_class_hash: sierra_class.info.compiled_class_hash,
-                    })
-                } else {
-                    // Legacy
-                    Either::Right(class_hash)
-                }
-            });
-        let (declared_classes, deprecated_declared_classes) = (
-            sorted_by_key(declared_classes, |entry| entry.class_hash),
-            sorted_by_key(deprecated_declared_classes, |class_hash| *class_hash),
-        );
-
-        // Same here: duplicate is not possible for nonces.
-        let nonces = sorted_by_key(
-            borrow
-                .executed_transactions()
-                .flat_map(|tx| &tx.state_diff.nonces)
-                .map(|(contract_address, nonce)| NonceUpdate { contract_address: *contract_address, nonce: *nonce })
-                .collect(),
-            |entry| entry.contract_address,
-        );
-
-        // Differentiate between: newly deployed contract, replaced class entry. Remove entries where no change happened.
-        let (deployed_contracts, replaced_classes): (Vec<DeployedContractItem>, Vec<ReplacedClassItem>) =
-            borrow.executed_transactions().flat_map(|tx| &tx.state_diff.contract_class_hashes).try_fold(
-                (Vec::new(), Vec::new()),
-                |(mut deployed, mut replaced), (contract_address, class_hash)| -> anyhow::Result<_> {
-                    let previous_class_hash =
-                        view_on_parent_block.get_contract_class_hash(contract_address)?.unwrap_or(Felt::ZERO);
-
-                    if previous_class_hash == Felt::ZERO {
-                        // Newly deployed contract
-                        deployed.push(DeployedContractItem { address: *contract_address, class_hash: *class_hash });
-                    } else if &previous_class_hash != class_hash {
-                        // Replaced class
-                        replaced
-                            .push(ReplacedClassItem { contract_address: *contract_address, class_hash: *class_hash });
-                    }
-
-                    Ok((deployed, replaced))
-                },
-            )?;
+            if previous_class_hash == Felt::ZERO {
+                // Newly deployed contract
+                deployed_contracts.push(DeployedContractItem { address, class_hash });
+            } else if previous_class_hash != class_hash {
+                // Replaced class
+                replaced_classes.push(ReplacedClassItem { contract_address: address, class_hash });
+            }
+            // Do not include the entry if the class hash has not changed.
+        }
         let (deployed_contracts, replaced_classes) = (
             sorted_by_key(deployed_contracts, |entry| entry.address),
             sorted_by_key(replaced_classes, |entry| entry.contract_address),
         );
 
+        // Nonce entries do not need to be checked against the database, since they can never take a previous value.
+        // Same with the classes: they can only be declared once.
+        let nonces = sorted_by_key(nonces, |entry| entry.contract_address);
+        let declared_classes = sorted_by_key(declared_classes, |entry| entry.class_hash);
+        let old_declared_contracts = sorted_by_key(old_declared_contracts, |class_hash| *class_hash);
+
         Ok(StateDiff {
             storage_diffs,
-            deprecated_declared_classes,
+            old_declared_contracts,
             declared_classes,
             nonces,
             deployed_contracts,
@@ -349,7 +365,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
     }
 
     /// Get the full block with all classes, and normalize state diffs.
-    pub fn get_full_block_with_classes(&self) -> Result<(PreconfirmedFullBlock, Vec<ConvertedClass>)> {
+    pub fn get_full_block_with_classes(&self) -> Result<(FullBlockWithoutCommitments, Vec<ConvertedClass>)> {
         let header = self.block.header.clone();
 
         // We don't care about the candidate transactions.
@@ -369,7 +385,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
             })
             .collect();
 
-        Ok((PreconfirmedFullBlock { header, state_diff, transactions, events }, classes))
+        Ok((FullBlockWithoutCommitments { header, state_diff, transactions, events }, classes))
     }
 }
 

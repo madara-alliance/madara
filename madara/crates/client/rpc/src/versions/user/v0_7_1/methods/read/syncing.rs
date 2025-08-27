@@ -1,8 +1,8 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use anyhow::Context;
-use mp_rpc::{SyncStatus, SyncingStatus};
-use starknet_types_core::felt::Felt;
+use mp_convert::Felt;
+use mp_rpc::v0_7_1::{SyncStatus, SyncingStatus};
 
 const SYNC_THRESHOLD_BLOCKS: u64 = 6;
 

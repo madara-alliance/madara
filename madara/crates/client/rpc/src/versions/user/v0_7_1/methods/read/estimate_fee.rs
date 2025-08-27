@@ -4,11 +4,12 @@ use crate::utils::tx_api_to_blockifier;
 use crate::Starknet;
 use anyhow::Context;
 use blockifier::transaction::account_transaction::ExecutionFlags;
+use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
 use mp_block::BlockId;
 use mp_convert::ToFelt;
-use mp_rpc::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
+use mp_rpc::v0_7_1::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 
 /// Estimate the fee associated with transaction
@@ -49,25 +50,28 @@ pub async fn estimate_fee(
         .collect::<Result<Vec<_>, ToBlockifierError>>()
         .context("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
+    let tips = transactions.iter().map(|tx| tx.tip().unwrap_or_default()).collect::<Vec<_>>();
+
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], transactions)?, exec_context))
     })
     .await?;
 
-    let fee_estimates = execution_results.iter().enumerate().try_fold(
-        Vec::with_capacity(execution_results.len()),
-        |mut acc, (index, result)| {
+    let fee_estimates = execution_results
+        .iter()
+        .zip(tips)
+        .enumerate()
+        .map(|(index, (result, tip))| {
             if result.execution_info.is_reverted() {
                 return Err(StarknetRpcApiError::TxnExecutionError {
                     tx_index: index,
                     error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
                 });
             }
-            acc.push(exec_context.execution_result_to_fee_estimate(result));
-            Ok(acc)
-        },
-    )?;
+            Ok(exec_context.execution_result_to_fee_estimate(result, tip)?)
+        })
+        .collect::<Result<_, _>>()?;
 
     Ok(fee_estimates)
 }

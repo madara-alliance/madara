@@ -27,7 +27,7 @@ fn block_context(
             block_timestamp: BlockTimestamp(block_info.block_timestamp().0),
             sequencer_address: ContractAddress::try_from(*block_info.sequencer_address())
                 .map_err(|_| Error::InvalidSequencerAddress(*block_info.sequencer_address()))?,
-            gas_prices: block_info.l1_gas_price().into(),
+            gas_prices: block_info.gas_prices().into(),
             use_kzg_da: *block_info.l1_da_mode() == L1DataAvailabilityMode::Blob,
         },
         chain_config.blockifier_chain_info(),

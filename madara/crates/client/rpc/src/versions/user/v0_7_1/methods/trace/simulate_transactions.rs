@@ -3,10 +3,11 @@ use crate::utils::tx_api_to_blockifier;
 use crate::Starknet;
 use anyhow::Context;
 use blockifier::transaction::account_transaction::ExecutionFlags;
+use mc_exec::execution::TxInfo;
 use mc_exec::{execution_result_to_tx_trace, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_block::BlockId;
 use mp_convert::ToFelt;
-use mp_rpc::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
+use mp_rpc::v0_7_1::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 
 pub async fn simulate_transactions(
@@ -37,6 +38,8 @@ pub async fn simulate_transactions(
         .collect::<Result<Vec<_>, ToBlockifierError>>()
         .context("Failed to convert broadcasted transaction to blockifier")?;
 
+    let tips = user_transactions.iter().map(|tx| tx.tip().unwrap_or_default()).collect::<Vec<_>>();
+
     // spawn_blocking: avoid starving the tokio workers during execution.
     let (execution_results, exec_context) = mp_utils::spawn_blocking(move || {
         Ok::<_, mc_exec::Error>((exec_context.execute_transactions([], user_transactions)?, exec_context))
@@ -45,11 +48,14 @@ pub async fn simulate_transactions(
 
     let simulated_transactions = execution_results
         .iter()
-        .map(|result| {
+        .zip(tips)
+        .map(|(result, tip)| {
             Ok(SimulateTransactionsResult {
                 transaction_trace: execution_result_to_tx_trace(result)
                     .context("Converting execution infos to tx trace")?,
-                fee_estimation: exec_context.execution_result_to_fee_estimate(result),
+                fee_estimation: exec_context
+                    .execution_result_to_fee_estimate(result, tip)
+                    .context("Converting execution infos to tx trace")?,
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;

@@ -13,10 +13,19 @@ pub enum SyncStatus {
 #[derive(Debug, Default)]
 pub(super) struct SyncStatusCell(std::sync::RwLock<SyncStatus>);
 impl SyncStatusCell {
-    pub fn set(&self, sync_status: SyncStatus) {
+    fn set(&self, sync_status: SyncStatus) {
         *self.0.write().expect("Poisoned lock") = sync_status;
     }
-    pub fn get(&self) -> SyncStatus {
+    fn get(&self) -> SyncStatus {
         self.0.read().expect("Poisoned lock").clone()
+    }
+}
+
+impl<D: MadaraStorageRead> MadaraBackend<D> {
+    pub fn set_sync_status(&self, sync_status: SyncStatus) {
+        self.sync_status.set(sync_status);
+    }
+    pub fn get_sync_status(&self) -> SyncStatus {
+        self.sync_status.get()
     }
 }

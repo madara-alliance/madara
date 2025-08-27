@@ -1,6 +1,6 @@
 #![cfg(test)]
 use crate::{rocksdb::RocksDBConfig, MadaraBackend, MadaraBackendConfig};
-use mp_block::{header::PreconfirmedHeader, PreconfirmedFullBlock, TransactionWithReceipt};
+use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments, TransactionWithReceipt};
 use mp_chain_config::ChainConfig;
 use mp_receipt::{
     DeclareTransactionReceipt, DeployAccountTransactionReceipt, DeployTransactionReceipt, InvokeTransactionReceipt,
@@ -10,8 +10,8 @@ use mp_transactions::{
     DeclareTransactionV0, DeployAccountTransactionV1, DeployTransaction, InvokeTransactionV0, L1HandlerTransaction,
 };
 
-pub fn dummy_block(header: PreconfirmedHeader) -> PreconfirmedFullBlock {
-    PreconfirmedFullBlock {
+pub fn dummy_block(header: PreconfirmedHeader) -> FullBlockWithoutCommitments {
+    FullBlockWithoutCommitments {
         header,
         state_diff: Default::default(),
         transactions: vec![

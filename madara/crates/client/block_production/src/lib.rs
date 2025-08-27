@@ -7,7 +7,7 @@ use executor::{BatchExecutionResult, ExecutorMessage};
 use mc_db::preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction};
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
-use mc_mempool::{L1DataProvider, Mempool};
+use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::TransactionWithReceipt;
 use mp_convert::ToFelt;
@@ -19,7 +19,6 @@ use mp_utils::rayon::global_spawn_rayon_task;
 use mp_utils::service::ServiceContext;
 use mp_utils::AbortOnDrop;
 use opentelemetry::KeyValue;
-use starknet_types_core::felt::Felt;
 use std::collections::HashSet;
 use std::mem;
 use std::sync::Arc;
@@ -42,13 +41,13 @@ pub enum BlockProductionStateNotification {
 }
 
 #[derive(Debug)]
-pub(crate) struct CurrentPendingState {
+pub(crate) struct CurrentBlockState {
     backend: Arc<MadaraBackend>,
     pub block_number: u64,
     pub consumed_core_contract_nonces: HashSet<u64>,
 }
 
-impl CurrentPendingState {
+impl CurrentBlockState {
     pub fn new(backend: Arc<MadaraBackend>, block_number: u64) -> Self {
         Self { backend, block_number, consumed_core_contract_nonces: Default::default() }
     }
@@ -124,10 +123,8 @@ pub(crate) enum TaskState {
     NotExecuting {
         /// [`None`] when the next block to execute is genesis.
         latest_block_n: Option<u64>,
-        /// [`Felt::ZERO`] when the next block to execute is genesis.
-        latest_block_hash: Felt,
     },
-    Executing(CurrentPendingState),
+    Executing(CurrentBlockState),
 }
 
 /// The block production task consumes transactions from the mempool in batches.
@@ -139,7 +136,6 @@ pub(crate) enum TaskState {
 /// documentation.
 pub struct BlockProductionTask {
     backend: Arc<MadaraBackend>,
-    l1_data_provider: Arc<dyn L1DataProvider>,
     mempool: Arc<Mempool>,
     current_state: Option<TaskState>,
     metrics: Arc<BlockProductionMetrics>,
@@ -155,14 +151,12 @@ impl BlockProductionTask {
         backend: Arc<MadaraBackend>,
         mempool: Arc<Mempool>,
         metrics: Arc<BlockProductionMetrics>,
-        l1_data_provider: Arc<dyn L1DataProvider>,
         l1_client: Arc<dyn SettlementClient>,
     ) -> Self {
         let (sender, recv) = mpsc::unbounded_channel();
         let (bypass_input_sender, bypass_tx_input) = mpsc::channel(16);
         Self {
             backend: backend.clone(),
-            l1_data_provider,
             mempool,
             current_state: None,
             metrics,
@@ -215,7 +209,7 @@ impl BlockProductionTask {
             ExecutorMessage::StartNewBlock { exec_ctx } => {
                 tracing::debug!("Received ExecutorMessage::StartNewBlock block_n={}", exec_ctx.block_number);
                 let current_state = self.current_state.take().context("No current state")?;
-                let TaskState::NotExecuting { latest_block_n, latest_block_hash } = current_state else {
+                let TaskState::NotExecuting { latest_block_n } = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be NotExecuting")
                 };
 
@@ -230,14 +224,12 @@ impl BlockProductionTask {
 
                 let backend = self.backend.clone();
                 global_spawn_rayon_task(move || {
-                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(
-                        exec_ctx.into_header(/* parent_block_hash */ latest_block_hash),
-                    ))
+                    backend.write_access().new_preconfirmed(PreconfirmedBlock::new(exec_ctx.into_header()))
                 })
                 .await?;
 
                 self.current_state =
-                    Some(TaskState::Executing(CurrentPendingState::new(self.backend.clone(), new_block_n)));
+                    Some(TaskState::Executing(CurrentBlockState::new(self.backend.clone(), new_block_n)));
             }
             ExecutorMessage::BatchExecuted(batch_execution_result) => {
                 tracing::debug!(
@@ -270,7 +262,7 @@ impl BlockProductionTask {
                     .num_executed_transactions();
 
                 let backend = self.backend.clone();
-                let block_hash = global_spawn_rayon_task(move || {
+                global_spawn_rayon_task(move || {
                     for l1_nonce in state.consumed_core_contract_nonces {
                         // This ensures we remove the nonces for rejected L1 to L2 message transactions. This avoids us from reprocessing them on restart.
                         backend
@@ -278,12 +270,12 @@ impl BlockProductionTask {
                             .context("Removing pending message to l2 from database")?;
                     }
 
-                    let block_hash = backend
+                    backend
                         .write_access()
                         .close_preconfirmed(/* pre_v0_13_2_hash_override */ true)
                         .context("Closing block")?;
 
-                    anyhow::Ok(block_hash)
+                    anyhow::Ok(())
                 })
                 .await?;
 
@@ -303,10 +295,7 @@ impl BlockProductionTask {
                 self.metrics.block_gauge.record(state.block_number, &attributes);
                 self.metrics.transaction_counter.add(n_txs as u64, &[]);
 
-                self.current_state = Some(TaskState::NotExecuting {
-                    latest_block_n: Some(state.block_number),
-                    latest_block_hash: block_hash,
-                });
+                self.current_state = Some(TaskState::NotExecuting { latest_block_n: Some(state.block_number) });
                 self.send_state_notification(BlockProductionStateNotification::ClosedBlock);
             }
         }
@@ -320,12 +309,8 @@ impl BlockProductionTask {
         self.close_pending_block_if_exists().await.context("Cannot close pending block on startup")?;
 
         // initial state
-        let (latest_block_n, latest_block_hash) = if let Some(view) = self.backend.block_view_on_last_confirmed() {
-            (Some(view.block_number()), view.get_block_info()?.block_hash)
-        } else {
-            (None, Felt::ZERO) // Genesis' parent block hash.
-        };
-        self.current_state = Some(TaskState::NotExecuting { latest_block_n, latest_block_hash });
+        let latest_block_n = self.backend.latest_confirmed_block_n();
+        self.current_state = Some(TaskState::NotExecuting { latest_block_n });
 
         Ok(())
     }
@@ -336,7 +321,6 @@ impl BlockProductionTask {
 
         let mut executor = executor::start_executor_thread(
             Arc::clone(&self.backend),
-            Arc::clone(&self.l1_data_provider),
             self.executor_commands_recv.take().context("Task already started")?,
         )
         .context("Starting executor thread")?;
@@ -395,15 +379,14 @@ impl BlockProductionTask {
 //     use mc_devnet::{
 //         Call, ChainGenesisDescription, DevnetKeys, DevnetPredeployedContract, Multicall, Selector, UDC_CONTRACT_ADDRESS,
 //     };
-//     use mc_mempool::{Mempool, MempoolConfig, MockL1DataProvider};
+//     use mc_mempool::{Mempool, MempoolConfig};
 //     use mc_settlement_client::L1ClientMock;
 //     use mc_submit_tx::{SubmitTransaction, TransactionValidator, TransactionValidatorConfig};
-//     use mp_block::header::GasPrices;
 //     use mp_block::{BlockId, BlockTag};
 //     use mp_chain_config::ChainConfig;
 //     use mp_convert::ToFelt;
 //     use mp_receipt::{Event, ExecutionResult};
-//     use mp_rpc::{
+//     use mp_rpc::v0_7_1::{
 //         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
 //         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
 //     };
@@ -445,7 +428,6 @@ impl BlockProductionTask {
 //     pub struct DevnetSetup {
 //         pub backend: Arc<MadaraBackend>,
 //         pub metrics: Arc<BlockProductionMetrics>,
-//         pub l1_data_provider: Arc<MockL1DataProvider>,
 //         pub mempool: Arc<Mempool>,
 //         pub tx_validator: Arc<TransactionValidator>,
 //         pub contracts: DevnetKeys,
@@ -458,7 +440,6 @@ impl BlockProductionTask {
 //                 self.backend.clone(),
 //                 self.mempool.clone(),
 //                 self.metrics.clone(),
-//                 self.l1_data_provider.clone(),
 //                 Arc::new(self.l1_client.clone()),
 //             )
 //         }
@@ -491,16 +472,8 @@ impl BlockProductionTask {
 //         };
 
 //         let backend = MadaraBackend::open_for_testing(Arc::clone(&chain_config));
+//         backend.set_l1_gas_quote_for_testing();
 //         genesis.build_and_store(&backend).await.unwrap();
-
-//         let mut l1_data_provider = MockL1DataProvider::new();
-//         l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-//             eth_l1_gas_price: 128,
-//             strk_l1_gas_price: 128,
-//             eth_l1_data_gas_price: 128,
-//             strk_l1_data_gas_price: 128,
-//         });
-//         let l1_data_provider = Arc::new(l1_data_provider);
 
 //         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
 //         let tx_validator = Arc::new(TransactionValidator::new(
@@ -515,7 +488,6 @@ impl BlockProductionTask {
 //             metrics: Arc::new(BlockProductionMetrics::register()),
 //             tx_validator,
 //             contracts,
-//             l1_data_provider,
 //             l1_client: L1ClientMock::new(),
 //         }
 //     }
@@ -874,7 +846,7 @@ impl BlockProductionTask {
 //             },
 //         ];
 
-//         let deprecated_declared_classes = vec![Felt::from_hex_unchecked("0xc1a553")];
+//         let old_declared_contracts = vec![Felt::from_hex_unchecked("0xc1a553")];
 
 //         let declared_classes = vec![
 //             DeclaredClassItem {
@@ -912,7 +884,7 @@ impl BlockProductionTask {
 
 //         let expected = StateDiff {
 //             storage_diffs,
-//             deprecated_declared_classes,
+//             old_declared_contracts,
 //             declared_classes,
 //             nonces,
 //             deployed_contracts,
@@ -924,7 +896,7 @@ impl BlockProductionTask {
 
 //         actual.storage_diffs.sort_by(|a, b| a.address.cmp(&b.address));
 //         actual.storage_diffs.iter_mut().for_each(|s| s.storage_entries.sort_by(|a, b| a.key.cmp(&b.key)));
-//         actual.deprecated_declared_classes.sort();
+//         actual.old_declared_contracts.sort();
 //         actual.declared_classes.sort_by(|a, b| a.class_hash.cmp(&b.class_hash));
 //         actual.nonces.sort_by(|a, b| a.contract_address.cmp(&b.contract_address));
 //         actual.deployed_contracts.sort_by(|a, b| a.address.cmp(&b.address));
@@ -1002,7 +974,7 @@ impl BlockProductionTask {
 //                     ],
 //                 },
 //             ],
-//             deprecated_declared_classes: vec![Felt::ZERO],
+//             old_declared_contracts: vec![Felt::ZERO],
 //             declared_classes: vec![
 //                 DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
 //                 DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
@@ -1048,12 +1020,10 @@ impl BlockProductionTask {
 //             .backend
 //             .store_block(
 //                 mp_block::MadaraMaybePendingBlock {
-//                     info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
-//                         mp_block::MadaraPreconfirmedBlockInfo {
-//                             header: mp_block::header::PreconfirmedHeader::default(),
-//                             tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-//                         },
-//                     ),
+//                     info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+//                         header: mp_block::header::PendingHeader::default(),
+//                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+//                     }),
 //                     inner: pending_inner.clone(),
 //                 },
 //                 pending_state_diff.clone(),
@@ -1193,7 +1163,7 @@ impl BlockProductionTask {
 //                     ],
 //                 },
 //             ],
-//             deprecated_declared_classes: vec![],
+//             old_declared_contracts: vec![],
 //             declared_classes: vec![],
 //             deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
 //             replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
@@ -1215,7 +1185,7 @@ impl BlockProductionTask {
 //             .backend
 //             .store_block(
 //                 mp_block::MadaraMaybePendingBlock {
-//                     info: mp_block::MadaraMaybePreconfirmedBlockInfo::Confirmed(mp_block::MadaraBlockInfo {
+//                     info: mp_block::MadaraMaybePendingBlockInfo::NotPending(mp_block::MadaraBlockInfo {
 //                         header: mp_block::Header::default(),
 //                         block_hash: Felt::ZERO,
 //                         tx_hashes: vec![Felt::ZERO, Felt::ONE, Felt::TWO],
@@ -1269,7 +1239,7 @@ impl BlockProductionTask {
 //                     ],
 //                 },
 //             ],
-//             deprecated_declared_classes: vec![Felt::ZERO],
+//             old_declared_contracts: vec![Felt::ZERO],
 //             declared_classes: vec![
 //                 DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE },
 //                 DeclaredClassItem { class_hash: Felt::TWO, compiled_class_hash: Felt::TWO },
@@ -1296,12 +1266,10 @@ impl BlockProductionTask {
 //             .backend
 //             .store_block(
 //                 mp_block::MadaraMaybePendingBlock {
-//                     info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
-//                         mp_block::MadaraPreconfirmedBlockInfo {
-//                             header: mp_block::header::PreconfirmedHeader::default(),
-//                             tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-//                         },
-//                     ),
+//                     info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+//                         header: mp_block::header::PendingHeader::default(),
+//                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+//                     }),
 //                     inner: pending_inner.clone(),
 //                 },
 //                 pending_state_diff.clone(),
@@ -1447,7 +1415,7 @@ impl BlockProductionTask {
 //                     ],
 //                 },
 //             ],
-//             deprecated_declared_classes: vec![],
+//             old_declared_contracts: vec![],
 //             declared_classes: vec![DeclaredClassItem { class_hash: Felt::ONE, compiled_class_hash: Felt::ONE }],
 //             deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
 //             replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
@@ -1468,12 +1436,10 @@ impl BlockProductionTask {
 //             .backend
 //             .store_block(
 //                 mp_block::MadaraMaybePendingBlock {
-//                     info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
-//                         mp_block::MadaraPreconfirmedBlockInfo {
-//                             header: mp_block::header::PreconfirmedHeader::default(),
-//                             tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-//                         },
-//                     ),
+//                     info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+//                         header: mp_block::header::PendingHeader::default(),
+//                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+//                     }),
 //                     inner: pending_inner.clone(),
 //                 },
 //                 pending_state_diff.clone(),
@@ -1544,7 +1510,7 @@ impl BlockProductionTask {
 //                     ],
 //                 },
 //             ],
-//             deprecated_declared_classes: vec![Felt::ZERO],
+//             old_declared_contracts: vec![Felt::ZERO],
 //             declared_classes: vec![],
 //             deployed_contracts: vec![DeployedContractItem { address: Felt::THREE, class_hash: Felt::THREE }],
 //             replaced_classes: vec![ReplacedClassItem { contract_address: Felt::TWO, class_hash: Felt::TWO }],
@@ -1565,12 +1531,10 @@ impl BlockProductionTask {
 //             .backend
 //             .store_block(
 //                 mp_block::MadaraMaybePendingBlock {
-//                     info: mp_block::MadaraMaybePreconfirmedBlockInfo::Preconfirmed(
-//                         mp_block::MadaraPreconfirmedBlockInfo {
-//                             header: mp_block::header::PreconfirmedHeader::default(),
-//                             tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
-//                         },
-//                     ),
+//                     info: mp_block::MadaraMaybePendingBlockInfo::Pending(mp_block::MadaraPendingBlockInfo {
+//                         header: mp_block::header::PendingHeader::default(),
+//                         tx_hashes: vec![Felt::ONE, Felt::TWO, Felt::THREE],
+//                     }),
 //                     inner: pending_inner.clone(),
 //                 },
 //                 pending_state_diff.clone(),

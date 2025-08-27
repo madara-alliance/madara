@@ -14,7 +14,7 @@ use crate::core::config::Config;
 use crate::server::types::ApiResponse;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
-use crate::types::jobs::metadata::JobSpecificMetadata;
+use crate::types::jobs::metadata::{JobSpecificMetadata, SettlementContext};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueNameForJobType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
@@ -220,7 +220,11 @@ async fn test_get_job_status_by_block_number_found(#[future] setup_trigger: (Soc
     let mut state_transition_job_specific_metadata = state_transition_job.metadata.specific.clone();
 
     if let JobSpecificMetadata::StateUpdate(ref mut x) = state_transition_job_specific_metadata {
-        x.blocks_to_settle = vec![block_number, block_number + 1];
+        if let SettlementContext::Block(ref mut y) = x.context {
+            y.to_settle = vec![block_number, block_number + 1];
+        } else {
+            panic!("Unexpected settlement context");
+        }
     } else {
         panic!("Unexpected job type");
     }

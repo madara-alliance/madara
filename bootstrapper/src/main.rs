@@ -76,13 +76,13 @@ pub struct ConfigBuilder {
     pub eth_rpc: Option<String>,
     pub eth_priv_key: Option<String>,
     pub rollup_priv_key: Option<String>,
-    pub rollup_seq_url: String,
-    pub rollup_declare_v0_seq_url: String,
+    pub rollup_seq_url: Option<String>,
+    pub rollup_declare_v0_seq_url: Option<String>,
     pub eth_chain_id: u64,
     pub l1_deployer_address: String,
     pub l1_wait_time: String,
-    pub sn_os_program_hash: String,
-    pub config_hash_version: String,
+    pub sn_os_program_hash: Option<String>,
+    pub config_hash_version: Option<String>,
     pub app_chain_id: String,
     pub fee_token_address: String,
     pub native_fee_token_address: String,
@@ -108,13 +108,13 @@ impl Default for ConfigBuilder {
             eth_rpc: Some("http://127.0.0.1:8545".to_string()),
             eth_priv_key: Some("0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80".to_string()),
             rollup_priv_key: Some("0xabcd".to_string()),
-            rollup_seq_url: "http://127.0.0.1:19944".to_string(),
-            rollup_declare_v0_seq_url: "http://127.0.0.1:19943".to_string(),
+            rollup_seq_url: Some("http://127.0.0.1:19944".to_string()),
+            rollup_declare_v0_seq_url: Some("http://127.0.0.1:19943".to_string()),
             eth_chain_id: 31337,
             l1_deployer_address: "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266".to_string(),
             l1_wait_time: "15".to_string(),
-            sn_os_program_hash: "0x1e324682835e60c4779a683b32713504aed894fd73842f7d05b18e7bd29cd70".to_string(),
-            config_hash_version: "StarknetOsConfig2".to_string(),
+            sn_os_program_hash: Some("0x1e324682835e60c4779a683b32713504aed894fd73842f7d05b18e7bd29cd70".to_string()),
+            config_hash_version: Some("StarknetOsConfig2".to_string()),
             app_chain_id: "MADARA_DEVNET".to_string(),
             fee_token_address: "0x049d36570d4e46f48e99674bd3fcc84644ddd6b96f7c741b1562b82f9e004dc7".to_string(),
             native_fee_token_address: "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d".to_string(),
@@ -153,16 +153,16 @@ impl ConfigBuilder {
             self.rollup_priv_key = Some(rollup_priv_key);
         }
         if let Ok(rollup_seq_url) = std::env::var("ROLLUP_SEQ_URL") {
-            self.rollup_seq_url = rollup_seq_url;
+            self.rollup_seq_url = Some(rollup_seq_url);
         }
         if let Ok(rollup_declare_v0_seq_url) = std::env::var("ROLLUP_DECLARE_V0_SEQ_URL") {
-            self.rollup_declare_v0_seq_url = rollup_declare_v0_seq_url;
+            self.rollup_declare_v0_seq_url = Some(rollup_declare_v0_seq_url);
         }
         if let Ok(sn_os_program_hash) = std::env::var("SN_OS_PROGRAM_HASH") {
-            self.sn_os_program_hash = sn_os_program_hash;
+            self.sn_os_program_hash = Some(sn_os_program_hash);
         }
         if let Ok(config_hash_version) = std::env::var("CONFIG_HASH_VERSION") {
-            self.config_hash_version = config_hash_version;
+            self.config_hash_version = Some(config_hash_version);
         }
         self
     }
@@ -178,13 +178,21 @@ impl ConfigBuilder {
             rollup_priv_key: self.rollup_priv_key.ok_or_else(|| {
                 color_eyre::eyre::eyre!("ROLLUP_PRIVATE_KEY must be provided in config file or environment")
             })?,
-            rollup_seq_url: self.rollup_seq_url,
-            rollup_declare_v0_seq_url: self.rollup_declare_v0_seq_url,
+            rollup_seq_url: self.rollup_seq_url.ok_or_else(|| {
+                color_eyre::eyre::eyre!("ROLLUP_SEQ_URL must be provided in config file or environment")
+            })?,
+            rollup_declare_v0_seq_url: self.rollup_declare_v0_seq_url.ok_or_else(|| {
+                color_eyre::eyre::eyre!("ROLLUP_DECLARE_V0_SEQ_URL must be provided in config file or environment")
+            })?,
             eth_chain_id: self.eth_chain_id,
             l1_deployer_address: self.l1_deployer_address,
             l1_wait_time: self.l1_wait_time,
-            sn_os_program_hash: self.sn_os_program_hash,
-            config_hash_version: self.config_hash_version,
+            sn_os_program_hash: self.sn_os_program_hash.ok_or_else(|| {
+                color_eyre::eyre::eyre!("SN_OS_PROGRAM_HASH must be provided in config file or environment")
+            })?,
+            config_hash_version: self.config_hash_version.ok_or_else(|| {
+                color_eyre::eyre::eyre!("CONFIG_HASH_VERSION must be provided in config file or environment")
+            })?,
             app_chain_id: self.app_chain_id,
             fee_token_address: self.fee_token_address,
             native_fee_token_address: self.native_fee_token_address,

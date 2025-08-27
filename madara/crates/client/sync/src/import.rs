@@ -2,7 +2,7 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
-    BlockHeaderWithSignatures, Header, PreconfirmedFullBlock, TransactionWithReceipt,
+    BlockHeaderWithSignatures, Header, FullBlockWithoutCommitments, TransactionWithReceipt,
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -148,7 +148,7 @@ impl BlockImporterCtx {
 
     pub fn save_preconfirmed(
         &self,
-        block: PreconfirmedFullBlock,
+        block: FullBlockWithoutCommitments,
         classes: Vec<ConvertedClass>,
         candidates: &[ValidatedTransaction],
     ) -> Result<(), BlockImportError> {

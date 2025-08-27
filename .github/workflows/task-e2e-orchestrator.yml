@@ -20,7 +20,7 @@ on:
 
 jobs:
   e2e-orchestrator:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
 
     services:
       localstack:
@@ -100,4 +100,5 @@ jobs:
             --release                             \
             --no-fail-fast                        \
             -E 'test(test_orchestrator_workflow)' \
-            test_orchestrator_workflow
+            test_orchestrator_workflow            \
+            --no-capture

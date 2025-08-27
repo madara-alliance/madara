@@ -2,7 +2,7 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_block::{
     header::{GasPrices, PreconfirmedHeader},
-    PreconfirmedFullBlock,
+    FullBlockWithoutCommitments,
 };
 use mp_chain_config::ChainConfig;
 use mp_class::ClassInfoWithHash;
@@ -156,14 +156,13 @@ impl ChainGenesisDescription {
     pub fn into_block(
         mut self,
         chain_config: &ChainConfig,
-    ) -> anyhow::Result<(PreconfirmedFullBlock, Vec<ClassInfoWithHash>)> {
+    ) -> anyhow::Result<(FullBlockWithoutCommitments, Vec<ClassInfoWithHash>)> {
         self.initial_balances.to_storage_diffs(chain_config, &mut self.initial_storage);
 
         Ok((
-            PreconfirmedFullBlock {
+            FullBlockWithoutCommitments {
                 header: PreconfirmedHeader {
                     block_number: 0,
-                    parent_block_hash: Felt::ZERO,
                     sequencer_address: chain_config.sequencer_address.to_felt(),
                     block_timestamp: mp_block::header::BlockTimestamp(
                         SystemTime::now()
@@ -172,17 +171,19 @@ impl ChainGenesisDescription {
                             .as_secs(),
                     ),
                     protocol_version: chain_config.latest_protocol_version,
-                    l1_gas_price: GasPrices {
-                        eth_l1_gas_price: 5,
-                        strk_l1_gas_price: 5,
-                        eth_l1_data_gas_price: 5,
-                        strk_l1_data_gas_price: 5,
+                    gas_prices: GasPrices {
+                        eth_l1_gas_price: 128,
+                        strk_l1_gas_price: 128,
+                        eth_l1_data_gas_price: 128,
+                        strk_l1_data_gas_price: 128,
+                        eth_l2_gas_price: 128,
+                        strk_l2_gas_price: 128,
                     },
                     l1_da_mode: chain_config.l1_da_mode,
                 },
                 state_diff: StateDiff {
                     storage_diffs: self.initial_storage.as_state_diff(),
-                    deprecated_declared_classes: self.declared_classes.as_legacy_state_diff(),
+                    old_declared_contracts: self.declared_classes.as_legacy_state_diff(),
                     declared_classes: self.declared_classes.as_state_diff(),
                     deployed_contracts: self.deployed_contracts.as_state_diff(),
                     replaced_classes: vec![],
@@ -214,14 +215,14 @@ mod tests {
     use mc_block_production::metrics::BlockProductionMetrics;
     use mc_block_production::{BlockProductionStateNotification, BlockProductionTask};
     use mc_db::MadaraBackend;
-    use mc_mempool::{L1DataProvider, Mempool, MempoolConfig, MockL1DataProvider};
+    use mc_mempool::{Mempool, MempoolConfig};
     use mc_submit_tx::{
         RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
         TransactionValidator, TransactionValidatorConfig,
     };
     use mp_class::{ClassInfo, FlattenedSierraClass};
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use mp_rpc::{
+    use mp_rpc::v0_7_1::{
         AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
         BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
@@ -344,20 +345,13 @@ mod tests {
 
         let chain_config = Arc::new(chain_config);
         let backend = MadaraBackend::open_for_testing(chain_config.clone());
+        backend.set_l1_gas_quote_for_testing();
         g.build_and_store(&backend).await.unwrap();
         tracing::debug!(
             "block imported {:?}",
             backend.block_view_on_last_confirmed().unwrap().get_block_info().unwrap()
         );
 
-        let mut l1_data_provider = MockL1DataProvider::new();
-        l1_data_provider.expect_get_gas_prices().return_const(GasPrices {
-            eth_l1_gas_price: 128,
-            strk_l1_gas_price: 128,
-            eth_l1_data_gas_price: 128,
-            strk_l1_data_gas_price: 128,
-        });
-        let l1_data_provider = Arc::new(l1_data_provider) as Arc<dyn L1DataProvider>;
         let mempool = Arc::new(Mempool::new(Arc::clone(&backend), MempoolConfig::default()));
         let metrics = BlockProductionMetrics::register();
 
@@ -365,7 +359,6 @@ mod tests {
             Arc::clone(&backend),
             Arc::clone(&mempool),
             Arc::new(metrics),
-            Arc::clone(&l1_data_provider),
             Arc::new(mc_settlement_client::L1SyncDisabledClient) as _,
         );
 
@@ -449,7 +442,7 @@ mod tests {
     #[case::should_work_across_block_boundary(true, true, Duration::from_millis(300), true)]
     // FIXME: flaky
     // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
-    #[ignore = "should_work_across_block_boundary"]
+    // #[ignore = "should_work_across_block_boundary"]
     #[tokio::test]
     async fn test_account_deploy(
         #[case] transfer_fees: bool,

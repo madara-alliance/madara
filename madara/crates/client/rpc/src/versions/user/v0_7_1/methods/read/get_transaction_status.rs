@@ -1,7 +1,7 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
 use mp_receipt::ExecutionResult;
-use mp_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
+use mp_rpc::v0_7_1::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 use starknet_types_core::felt::Felt;
 
 /// Gets the status of a transaction. ([specs])
@@ -71,8 +71,8 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn tx() -> mp_rpc::BroadcastedInvokeTxn {
-        mp_rpc::BroadcastedInvokeTxn::V0(mp_rpc::InvokeTxnV0 {
+    fn tx() -> mp_rpc::v0_7_1::BroadcastedInvokeTxn {
+        mp_rpc::v0_7_1::BroadcastedInvokeTxn::V0(mp_rpc::v0_7_1::InvokeTxnV0 {
             calldata: Default::default(),
             contract_address: Default::default(),
             entry_point_selector: Default::default(),
@@ -82,7 +82,7 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn tx_with_receipt(tx: mp_rpc::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
+    fn tx_with_receipt(tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
         mp_block::TransactionWithReceipt {
             transaction: mp_transactions::Transaction::Invoke(tx.into()),
             receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
@@ -94,8 +94,8 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::PreconfirmedFullBlock {
-        mp_block::PreconfirmedFullBlock {
+    fn block(tx_with_receipt: mp_block::TransactionWithReceipt) -> mp_block::FullBlockWithoutCommitments {
+        mp_block::FullBlockWithoutCommitments {
             header: Default::default(),
             state_diff: Default::default(),
             transactions: vec![tx_with_receipt],
@@ -124,7 +124,7 @@ mod tests {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::BroadcastedInvokeTxn) {
+    async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
         provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
 
@@ -141,7 +141,7 @@ mod tests {
     async fn get_transaction_status_accepted_on_l2(
         _logs: (),
         starknet: Starknet,
-        block: mp_block::PreconfirmedFullBlock,
+        block: mp_block::FullBlockWithoutCommitments,
     ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
         backend.write_access().add_full_block_with_classes(&block, &[], true).expect("Failed to store pending block");
@@ -162,7 +162,7 @@ mod tests {
     async fn get_transaction_status_accepted_on_l1(
         _logs: (),
         starknet: Starknet,
-        block: mp_block::PreconfirmedFullBlock,
+        block: mp_block::FullBlockWithoutCommitments,
     ) {
         let backend = std::sync::Arc::clone(&starknet.backend);
         backend.write_access().add_full_block_with_classes(&block, &[], true).expect("Failed to store pending block");

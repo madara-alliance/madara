@@ -14,15 +14,11 @@ use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
 mod chain_watcher_task;
 mod inner;
-mod l1;
 mod notify;
 mod topic_pubsub;
 mod transaction_status;
 
 pub use inner::*;
-#[cfg(any(test, feature = "testing"))]
-pub use l1::MockL1DataProvider;
-pub use l1::{GasPriceProvider, L1DataProvider};
 pub use notify::MempoolWriteAccess;
 
 pub mod metrics;

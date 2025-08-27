@@ -5,7 +5,7 @@ use crate::Starknet;
 use anyhow::Context;
 use mc_db::EventFilter;
 use mp_block::{BlockId, BlockTag, EventWithInfo};
-use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
+use mp_rpc::v0_7_1::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 /// Returns all events matching the given filter.
 ///

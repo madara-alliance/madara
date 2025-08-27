@@ -62,6 +62,13 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         }
     }
 
+    /// Returns a view on the latest confirmed block. This view is used to query content from that block.
+    /// Returns [`None`] if the block number is not yet confirmed.
+    pub fn block_view_on_latest_confirmed(&self) -> Option<MadaraConfirmedBlockView<D>> {
+        self.latest_confirmed_block_n()
+            .map(|block_number| MadaraConfirmedBlockView::new(self.backend().clone(), block_number))
+    }
+
     /// Returns a view on a confirmed block. This view is used to query content from that block.
     /// Returns [`None`] if the block number is not yet confirmed.
     pub fn block_view_on_confirmed(&self, block_number: u64) -> Option<MadaraConfirmedBlockView<D>> {

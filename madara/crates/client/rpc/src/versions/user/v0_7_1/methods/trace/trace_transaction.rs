@@ -3,7 +3,7 @@ use crate::versions::user::v0_7_1::methods::trace::trace_block_transactions::pre
 use crate::{Starknet, StarknetRpcApiError};
 use anyhow::Context;
 use mc_exec::{execution_result_to_tx_trace, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
-use mp_rpc::TraceTransactionResult;
+use mp_rpc::v0_7_1::TraceTransactionResult;
 use starknet_types_core::felt::Felt;
 
 pub async fn trace_transaction(

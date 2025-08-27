@@ -1,7 +1,7 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use crate::StarknetRpcApiError;
-use mp_rpc::BlockHashAndNumber;
+use mp_rpc::v0_7_1::BlockHashAndNumber;
 
 /// Get the Most Recent Accepted Block Hash and Number
 ///
@@ -25,7 +25,7 @@ mod tests {
     use super::*;
     use crate::{errors::StarknetRpcApiError, test_utils::rpc_test_setup};
     use mc_db::{preconfirmed::PreconfirmedBlock, MadaraBackend};
-    use mp_block::{header::PreconfirmedHeader, PreconfirmedFullBlock};
+    use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
     use std::sync::Arc;
@@ -37,8 +37,8 @@ mod tests {
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
-                    header: PreconfirmedHeader { block_number: 0, parent_block_hash: Felt::ZERO, ..Default::default() },
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
                     ..Default::default()
                 },
                 &[],
@@ -51,8 +51,8 @@ mod tests {
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
-                    header: PreconfirmedHeader { parent_block_hash: Felt::ONE, block_number: 1, ..Default::default() },
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 1, ..Default::default() },
                     ..Default::default()
                 },
                 &[],
@@ -70,7 +70,6 @@ mod tests {
         backend
             .write_access()
             .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
-                parent_block_hash: Felt::ONE,
                 block_number: 2,
                 ..Default::default()
             }))
@@ -92,7 +91,6 @@ mod tests {
         backend
             .write_access()
             .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
-                parent_block_hash: Felt::ONE,
                 block_number: 0,
                 ..Default::default()
             }))

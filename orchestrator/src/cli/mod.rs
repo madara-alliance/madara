@@ -1,3 +1,4 @@
+use crate::core::config::StarknetVersion;
 use crate::types::Layer;
 use clap::{ArgGroup, Parser, Subcommand};
 use cron::event_bridge::AWSEventBridgeCliArgs;
@@ -20,6 +21,7 @@ pub mod service;
 pub mod settlement;
 pub mod snos;
 pub mod storage;
+
 #[derive(Parser, Debug)]
 pub struct Cli {
     #[command(subcommand)]
@@ -148,6 +150,9 @@ pub struct RunCmd {
     #[arg(env = "MADARA_ORCHESTRATOR_LAYER", long, default_value = "l2", value_enum)]
     pub layer: Layer,
 
+    #[arg(env = "MADARA_ORCHESTRATOR_MADARA_VERSION", long, required = true)]
+    pub madara_version: StarknetVersion,
+
     // Service
     #[clap(flatten)]
     pub service_args: service::ServiceCliArgs,
@@ -216,6 +221,10 @@ pub struct SetupCmd {
     // Cron
     #[clap(flatten)]
     pub aws_event_bridge_args: AWSEventBridgeCliArgs,
+
+    // Database
+    #[clap(flatten)]
+    pub mongodb_args: database::mongodb::MongoDBCliArgs,
 
     // Miscellaneous
     #[arg(env = "MADARA_ORCHESTRATOR_SETUP_TIMEOUT", long, default_value = Some("300"))]

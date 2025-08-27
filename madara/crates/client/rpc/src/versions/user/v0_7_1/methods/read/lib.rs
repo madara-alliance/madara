@@ -1,15 +1,14 @@
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
 use mp_chain_config::RpcVersion;
-use mp_convert::ToFelt;
-use mp_rpc::{
+use mp_convert::{Felt, ToFelt};
+use mp_rpc::v0_7_1::{
     BlockHashAndNumber, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall,
     MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
     MsgFromL1, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus,
     TxnReceiptWithBlockInfo, TxnWithHash,
 };
-use mp_rpc::{BroadcastedTxn, SimulationFlagForEstimateFee};
-use starknet_types_core::felt::Felt;
+use mp_rpc::v0_7_1::{BroadcastedTxn, SimulationFlagForEstimateFee};
 
 use super::block_hash_and_number::*;
 use super::call::*;

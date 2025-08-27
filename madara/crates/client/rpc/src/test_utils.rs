@@ -7,7 +7,7 @@ use mc_db::{
 use mc_submit_tx::{SubmitTransaction, SubmitTransactionError};
 use mp_block::{
     header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
-    PreconfirmedFullBlock, TransactionWithReceipt,
+    FullBlockWithoutCommitments, TransactionWithReceipt,
 };
 use mp_chain_config::ChainConfig;
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
@@ -17,9 +17,10 @@ use mp_class::{
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
@@ -87,7 +88,7 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
 pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
-    pub expected_txs: Vec<mp_rpc::TxnWithHash>,
+    pub expected_txs: Vec<mp_rpc::v0_7_1::TxnWithHash>,
     pub expected_receipts: Vec<TxnReceipt>,
 }
 
@@ -109,7 +110,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         Felt::from_hex_unchecked("0xdd84847784"),
     ];
     let expected_txs = {
-        use mp_rpc::{InvokeTxn, InvokeTxnV0, Txn};
+        use mp_rpc::v0_7_1::{InvokeTxn, InvokeTxnV0, Txn};
         vec![
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
@@ -154,7 +155,9 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         ]
     };
     let expected_receipts = {
-        use mp_rpc::{CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt};
+        use mp_rpc::v0_7_1::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
+        };
         vec![
             TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
@@ -164,7 +167,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L1,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -175,7 +178,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -186,7 +189,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Reverted("too bad".into()),
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Reverted("too bad".into()),
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -197,7 +200,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
         ]
@@ -208,18 +211,19 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: Felt::ZERO,
                         block_number: 0,
                         sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
                         block_timestamp: BlockTimestamp(43),
                         protocol_version: StarknetVersion::V0_13_1_1,
-                        l1_gas_price: GasPrices {
+                        gas_prices: GasPrices {
                             eth_l1_gas_price: 123,
                             strk_l1_gas_price: 12,
                             eth_l1_data_gas_price: 44,
                             strk_l1_data_gas_price: 52,
+                            eth_l2_gas_price: 0,
+                            strk_l2_gas_price: 0,
                         },
                         l1_da_mode: L1DataAvailabilityMode::Blob,
                     },
@@ -252,9 +256,8 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: block_hashes[0],
                         block_number: 1,
                         l1_da_mode: L1DataAvailabilityMode::Calldata,
                         protocol_version: StarknetVersion::V0_13_2,
@@ -273,9 +276,8 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: block_hashes[1],
                         block_number: 2,
                         l1_da_mode: L1DataAvailabilityMode::Blob,
                         protocol_version: StarknetVersion::V0_13_2,
@@ -336,7 +338,6 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
             .write_access()
             .new_preconfirmed(PreconfirmedBlock::new_with_content(
                 PreconfirmedHeader {
-                    parent_block_hash: block_hashes[2],
                     protocol_version: StarknetVersion::V0_13_2,
                     l1_da_mode: L1DataAvailabilityMode::Blob,
                     ..Default::default()
@@ -371,8 +372,8 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
 
-fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
-    mp_rpc::ExecutionResources {
+fn defaut_execution_resources() -> mp_rpc::v0_7_1::ExecutionResources {
+    mp_rpc::v0_7_1::ExecutionResources {
         bitwise_builtin_applications: None,
         ec_op_builtin_applications: None,
         ecdsa_builtin_applications: None,
@@ -383,7 +384,7 @@ fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
         range_check_builtin_applications: None,
         segment_arena_builtin: None,
         steps: 0,
-        data_availability: mp_rpc::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
+        data_availability: mp_rpc::v0_7_1::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
     }
 }
 
@@ -454,7 +455,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                     StorageEntry { key: keys[2], value: values[2] },
                 ],
             }],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![
                 DeclaredClassItem { class_hash: class_hashes[0], compiled_class_hash: compiled_class_hashes[0] },
                 DeclaredClassItem { class_hash: class_hashes[1], compiled_class_hash: compiled_class_hashes[1] },
@@ -474,7 +475,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                     storage_entries: vec![StorageEntry { key: keys[2], value: values[0] }],
                 },
             ],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![],
             deployed_contracts: vec![
                 DeployedContractItem { address: contracts[1], class_hash: class_hashes[1] },
@@ -497,7 +498,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                     storage_entries: vec![StorageEntry { key: keys[1], value: values[2] }],
                 },
             ],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             declared_classes: vec![],
             deployed_contracts: vec![],
             replaced_classes: vec![],
@@ -515,7 +516,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                 class_hash: class_hashes[2],
                 compiled_class_hash: compiled_class_hashes[2],
             }],
-            deprecated_declared_classes: vec![],
+            old_declared_contracts: vec![],
             deployed_contracts: vec![],
             replaced_classes: vec![ReplacedClassItem { contract_address: contracts[0], class_hash: class_hashes[2] }],
             nonces: vec![
@@ -530,9 +531,8 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: Felt::ZERO,
                         block_number: 0,
                         protocol_version: StarknetVersion::V0_13_2,
                         ..Default::default()
@@ -550,9 +550,8 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: block_hashes[0],
                         block_number: 1,
                         protocol_version: StarknetVersion::V0_13_2,
                         ..Default::default()
@@ -570,9 +569,8 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .add_full_block_with_classes(
-                &PreconfirmedFullBlock {
+                &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader {
-                        parent_block_hash: block_hashes[1],
                         block_number: 2,
                         protocol_version: StarknetVersion::V0_13_2,
                         ..Default::default()
@@ -587,57 +585,59 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
             .unwrap();
 
         // Pending
-        backend.write_access().new_preconfirmed(PreconfirmedBlock::new_with_content(
-            PreconfirmedHeader {
-                parent_block_hash: block_hashes[2],
-                protocol_version: StarknetVersion::V0_13_2,
-                ..Default::default()
-            },
-            vec![PreconfirmedExecutedTransaction {
-                transaction: TransactionWithReceipt {
-                    transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                        max_fee: Felt::from_hex_unchecked("0xb12"),
-                        signature: vec![].into(),
-                        contract_address: Felt::from_hex_unchecked("0x434b3"),
-                        entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                        calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
-                    })),
-                    receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                        transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
-                        actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
-                        messages_sent: vec![],
-                        events: vec![],
-                        execution_resources: ExecutionResources::default(),
-                        execution_result: ExecutionResult::Succeeded,
-                    }),
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader {
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
                 },
-                state_diff: TransactionStateUpdate {
-                    nonces: [(contracts[0], 3.into()), (contracts[1], 2.into())].into(),
-                    contract_class_hashes: [(contracts[0], class_hashes[2])].into(),
-                    storage: [((contracts[0], keys[1]), values[0]), ((contracts[0], keys[0]), values[2])].into(),
-                },
-                declared_class: Some(ConvertedClass::Sierra(SierraConvertedClass {
-                    class_hash: class_hashes[2],
-                    info: SierraClassInfo {
-                        contract_class: FlattenedSierraClass {
-                            sierra_program: vec![],
-                            contract_class_version: Default::default(),
-                            entry_points_by_type: EntryPointsByType {
-                                constructor: vec![],
-                                external: vec![],
-                                l1_handler: vec![],
-                            },
-                            abi: Default::default(),
-                        }
-                        .into(),
-                        compiled_class_hash: compiled_class_hashes[2],
+                vec![PreconfirmedExecutedTransaction {
+                    transaction: TransactionWithReceipt {
+                        transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                            max_fee: Felt::from_hex_unchecked("0xb12"),
+                            signature: vec![].into(),
+                            contract_address: Felt::from_hex_unchecked("0x434b3"),
+                            entry_point_selector: Felt::from_hex_unchecked("0x12123"),
+                            calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
+                        })),
+                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                            transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                            actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
+                            messages_sent: vec![],
+                            events: vec![],
+                            execution_resources: ExecutionResources::default(),
+                            execution_result: ExecutionResult::Succeeded,
+                        }),
                     },
-                    compiled: CompiledSierra(Default::default()).into(),
-                })),
-                arrived_at: TxTimestamp::default(),
-            }],
-            [],
-        ));
+                    state_diff: TransactionStateUpdate {
+                        nonces: [(contracts[0], 3.into()), (contracts[1], 2.into())].into(),
+                        contract_class_hashes: [(contracts[0], class_hashes[2])].into(),
+                        storage: [((contracts[0], keys[1]), values[0]), ((contracts[0], keys[0]), values[2])].into(),
+                    },
+                    declared_class: Some(ConvertedClass::Sierra(SierraConvertedClass {
+                        class_hash: class_hashes[2],
+                        info: SierraClassInfo {
+                            contract_class: FlattenedSierraClass {
+                                sierra_program: vec![],
+                                contract_class_version: Default::default(),
+                                entry_points_by_type: EntryPointsByType {
+                                    constructor: vec![],
+                                    external: vec![],
+                                    l1_handler: vec![],
+                                },
+                                abi: Default::default(),
+                            }
+                            .into(),
+                            compiled_class_hash: compiled_class_hashes[2],
+                        },
+                        compiled: CompiledSierra(Default::default()).into(),
+                    })),
+                    arrived_at: TxTimestamp::default(),
+                }],
+                [],
+            ))
+            .unwrap();
     }
 
     SampleChainForStateUpdates {

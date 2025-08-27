@@ -5,7 +5,7 @@ use mc_db::MadaraStateView;
 use mc_exec::{execution_result_to_tx_trace, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_block::{BlockId, TransactionWithReceipt};
 use mp_convert::ToFelt;
-use mp_rpc::TraceBlockTransactionsResult;
+use mp_rpc::v0_7_1::TraceBlockTransactionsResult;
 use mp_transactions::TransactionWithHash;
 
 pub(super) fn prepare_tx_for_reexecution(

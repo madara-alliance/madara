@@ -1,6 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_rpc::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
+use mp_rpc::v0_7_1::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
 
 /// Get the transaction receipt by the transaction hash.

@@ -12,7 +12,7 @@ pub struct JobItem {
     /// an uuid to identify a job
     #[cfg_attr(feature = "with_mongodb", serde(with = "uuid_1_as_binary"))]
     pub id: Uuid,
-    /// a meaningful id used to track a job internally, ex: block_no, txn_hash
+    /// a meaningful id used to track a job internally, ex: block_no, batch_no, txn_hash
     pub internal_id: String,
     /// the type of job
     pub job_type: JobType,

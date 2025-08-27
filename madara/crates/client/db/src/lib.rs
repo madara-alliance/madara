@@ -35,18 +35,18 @@
 //! service. The block importer service can however bypass this restriction by using [`db_block_id::RawDbBlockId`] instead;
 //! allowing it to see the partial data it has saved beyond the latest block marked as full.
 
+use crate::gas::L1GasQuoteCell;
 use crate::preconfirmed::PreconfirmedBlock;
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::rocksdb::RocksDBConfig;
 use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
-use crate::sync_status::SyncStatus;
 use crate::sync_status::SyncStatusCell;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::BlockHeaderWithSignatures;
-use mp_block::PreconfirmedFullBlock;
+use mp_block::FullBlockWithoutCommitments;
 use mp_block::TransactionWithReceipt;
 use mp_chain_config::ChainConfig;
 use mp_class::ConvertedClass;
@@ -62,6 +62,7 @@ mod db_version;
 mod prelude;
 pub mod storage;
 
+pub mod gas;
 pub mod preconfirmed;
 pub mod rocksdb;
 pub mod subscription;
@@ -164,6 +165,7 @@ pub struct MadaraBackend<DB = RocksDBStorage> {
     pub db: DB,
     chain_config: Arc<ChainConfig>,
     // db_metrics: DbMetrics,
+    watch_gas_quote: L1GasQuoteCell,
     config: MadaraBackendConfig,
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
@@ -195,6 +197,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             starting_block: config.unsafe_starting_block,
             config,
             sync_status: SyncStatusCell::default(),
+            watch_gas_quote: L1GasQuoteCell::default(),
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
             chain_tip: tokio::sync::watch::Sender::new(Default::default()),
@@ -315,12 +318,6 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         Ok(())
     }
 
-    pub fn set_sync_status(&self, sync_status: SyncStatus) {
-        self.sync_status.set(sync_status);
-    }
-    pub fn get_sync_status(&self) -> SyncStatus {
-        self.sync_status.get()
-    }
     /// Get the latest block_n that was in the db when this backend instance was initialized.
     pub fn get_starting_block(&self) -> Option<u64> {
         self.starting_block
@@ -420,7 +417,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
     pub fn add_full_block_with_classes(
         &self,
-        block: &PreconfirmedFullBlock,
+        block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
     ) -> Result<()> {
@@ -437,10 +434,16 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// all the block parts. Returns the block hash.
     fn write_new_confirmed_inner(
         &self,
-        block: &PreconfirmedFullBlock,
+        block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
     ) -> Result<Felt> {
+        let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
+            last_block.get_block_info()?.block_hash
+        } else {
+            Felt::ZERO // genesis
+        };
+
         let commitments = BlockCommitments::compute(
             &CommitmentComputationContext {
                 protocol_version: self.inner.chain_config.latest_protocol_version,
@@ -454,7 +457,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // Global state root and block hash.
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
-        let header = block.header.clone().into_confirmed_header(commitments, global_state_root);
+        let header = block.header.clone().into_confirmed_header(parent_block_hash, commitments, global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
         // Save the block.

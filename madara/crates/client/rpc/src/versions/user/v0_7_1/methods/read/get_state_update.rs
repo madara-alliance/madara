@@ -1,7 +1,7 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use mp_block::BlockId;
-use mp_rpc::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
+use mp_rpc::v0_7_1::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
 
 /// Get the information about the result of executing the requested block.
