@@ -1,0 +1,149 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Test E2E
+
+# This workflow runs end-to-end tests for the Madara System
+# against the Madara, Orchestrator, Bootstrapper binaries to ensure e2e testing
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      madara-binary-hash:
+        description: "Hash used to retrieve the madara artifact"
+        required: true
+        type: string
+      orchestrator-binary-hash:
+        description: "Hash used to retrieve the orchestrator artifact"
+        required: true
+        type: string
+      bootstrapper-binary-hash:
+        description: "Hash used to retrieve the bootstrapper artifact"
+        required: true
+        type: string
+      cairo-artifacts-hash:
+        description: "Hash used to retrieve the cairo artifacts"
+        required: true
+        type: string
+
+jobs:
+  e2e-full:
+    runs-on: blacksmith-16vcpu-ubuntu-2204
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Foundry setup
+        uses: ./.github/actions/setup-foundry
+        with:
+          foundry-version: ${{ env.BUILD_FOUNDRY_VERSION }}
+
+      - name: Pull Docker images
+        run: |
+          echo "${{ secrets.DOCKERHUB_TOKEN }}" | docker login -u "${{ secrets.DOCKERHUB_USERNAME }}" --password-stdin
+          docker pull localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+          docker pull mongo:latest
+          docker pull eqlabs/pathfinder:latest
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          extra-cache: false
+
+      - name: Download Madara binary
+        uses: actions/download-artifact@v4
+        with:
+          name: madara-binary-${{ inputs.madara-binary-hash }}
+          path: target/release/
+
+      - name: Download Orchestrator binary
+        uses: actions/download-artifact@v4
+        with:
+          name: orchestrator-binary-${{ inputs.orchestrator-binary-hash }}
+          path: target/release/
+
+      - name: Download Bootstrapper binary
+        uses: actions/download-artifact@v4
+        with:
+          name: bootstrapper-binary-${{ inputs.bootstrapper-binary-hash }}
+          path: target/release/
+
+      - name: Download Cairo artiracts
+        uses: actions/download-artifact@v4
+        with:
+          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
+          path: build-artifacts/
+
+      - name: Download and extract Pathfinder binary
+        run: |
+          mkdir -p target/release/
+          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.13.2.1-no-charge-fee/pathfinder-x86_64-unknown-linux-gnu.tar.gz
+          tar -xf pathfinder.tar.gz -C target/release/
+          rm pathfinder.tar.gz
+
+      - name: Build Mock Atlantic Server
+        run: CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml --bin mock-atlantic-server --release
+
+      - name: Make binaries executable
+        run: |
+          chmod +x target/release/madara
+          chmod +x target/release/bootstrapper
+          chmod +x target/release/pathfinder
+          chmod +x target/release/mock-atlantic-server
+          chmod +x target/release/orchestrator
+          chmod +x test_utils/scripts/deploy_dummy_verifier.sh
+
+      - name: Check Docker Installation
+        run: |
+          if command -v docker &> /dev/null
+            then
+                echo "Docker is installed. Version information:"
+                docker --version
+                echo "Checking if Docker daemon is running:"
+                if docker info &> /dev/null
+                then
+                    echo "✅ Docker daemon is running"
+                else
+                    echo "❌ Docker daemon is not running"
+                fi
+            else
+                echo "Docker is not installed or not in PATH"
+            fi
+
+      - name: Check Forge Installation
+        run: |
+          if command -v forge &> /dev/null
+          then
+              echo "Forge is installed. Version information:"
+              forge --version
+          else
+              echo "Forge is not installed or not in PATH"
+              exit 1
+          fi
+
+      - name: Check Anvil Installation
+        run: |
+          if command -v anvil &> /dev/null
+          then
+              echo "Anvil is installed. Version information:"
+              anvil --version
+          else
+              echo "Anvil is not installed or not in PATH"
+              exit 1
+          fi
+
+      - name: Build E2E for tests
+        run: cargo build -p e2e
+
+      - name: Run E2E test
+        env:
+          # the self hosted runner has a different region so we override it here
+          AWS_REGION: us-east-1
+        run: |
+          RUST_LOG=info cargo test \
+          --package e2e  e2e_test_setup \
+          -- --test-threads=10 --nocapture
