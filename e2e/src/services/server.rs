@@ -3,7 +3,6 @@ use std::collections::HashMap;
 use std::process::{ExitStatus, Stdio};
 use std::time::Duration;
 use tokio::net::TcpStream;
-use tokio::runtime::Handle;
 use url::Url;
 
 use tokio::io::{AsyncBufReadExt, BufReader};

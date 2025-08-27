@@ -37,9 +37,9 @@ tokio-util = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
 
+starknet = "0.11.0"
+starknet-accounts = "0.11.0"
 starknet-core = "0.11"
 starknet-crypto = "0.7"
 starknet-providers = "0.11"
 starknet-signers = "0.9"
-starknet-accounts = "0.11.0"
-starknet = "0.11.0"

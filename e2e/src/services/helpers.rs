@@ -405,7 +405,6 @@ where
 {
     let start_time = tokio::time::Instant::now();
     let mut last_error = None;
-
     loop {
         match operation().await {
             Ok(result) => return Ok(result),
