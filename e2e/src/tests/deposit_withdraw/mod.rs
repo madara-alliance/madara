@@ -63,7 +63,6 @@ sol! {
     }
 }
 
-
 #[rstest]
 #[case("deposit_withdraw")]
 #[tokio::test]
