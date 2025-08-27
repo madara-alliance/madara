@@ -27,6 +27,7 @@ use starknet::{
 };
 
 use crate::setup::ChainSetup;
+use crate::tests::setup::setup_chain;
 
 // Define the ERC20Token contract interface
 sol! {
@@ -61,6 +62,7 @@ sol! {
         function deposit(address token, uint256 amount, uint256 l2Recipient) external payable;
     }
 }
+
 
 #[rstest]
 #[case("deposit_withdraw")]
