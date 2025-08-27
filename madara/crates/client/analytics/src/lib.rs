@@ -1,3 +1,22 @@
+//! Metrics utilities for the Madara node.
+//!
+//! This file contains wrappers around [opentelemetry] to make it easy for other [services] to use
+//! and register their own metrics. Metrics are exported to the OTEL format at an enpoint which is
+//! specified by the `analytics_collection_endpoint` cli argument. Note that this defaults to
+//! [None], in which case metrics will not be exported!
+//!
+//! Supported metrics (along with their trait extensions) are:
+//!
+//! - [`Gauge`] (_[`GaugeType`]_)
+//! - [`Counter`] (_[`CounterType`]_)
+//! - [`Histogram`] (_[`HistogramType`]_)
+//!
+//! Each of which is made accessible over `u64` and `f64` by their respective trait extensions.
+//!
+//! **Metrics are initialized through the [`Analytics`] struct and [`Analytics::setup`].**
+//!
+//! [services]: mp_utils::service::Service
+
 use ::time::UtcOffset;
 use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 use opentelemetry::trace::TracerProvider;
@@ -22,6 +41,7 @@ use tracing_subscriber::util::SubscriberInitExt as _;
 use tracing_subscriber::EnvFilter;
 use url::Url;
 
+/// Utility class responsible for initializing metrics for the node.
 pub struct Analytics {
     meter_provider: Option<SdkMeterProvider>,
     service_name: String,
@@ -33,6 +53,8 @@ impl Analytics {
         Ok(Self { meter_provider: None, service_name, collection_endpoint })
     }
 
+    /// Initializes metrics, along with the [opentelemetry] collector endpoint should it have been
+    /// set via the `analytics_collection_endpoint` cli argument.
     pub fn setup(&mut self) -> anyhow::Result<()> {
         let local_offset = UtcOffset::current_local_offset().unwrap_or(UtcOffset::UTC);
         let custom_formatter = CustomFormatter { local_offset };
@@ -133,6 +155,8 @@ impl Analytics {
         Ok(logger)
     }
 
+    /// Closes the [opentelemetry] collection endpoint if it has been set via the
+    /// `analytics_collection_endpoint` cli argument.
     pub fn shutdown(&self) -> anyhow::Result<()> {
         // guard clause if otel is disabled
         if self.collection_endpoint.is_none() {
@@ -149,6 +173,9 @@ impl Analytics {
 }
 
 pub trait GaugeType<T> {
+    /// Registers a new OTEL [Gauge] to the node [metrics].
+    ///
+    /// [metrics]: self
     fn register_gauge(meter: &Meter, name: String, description: String, unit: String) -> Gauge<T>;
 }
 
@@ -173,6 +200,9 @@ pub fn register_gauge_metric_instrument<T: GaugeType<T> + Display>(
 }
 
 pub trait CounterType<T> {
+    /// Registers a new OTEL [Counter] to the node [metrics].
+    ///
+    /// [metrics]: self
     fn register_counter(meter: &Meter, name: String, description: String, unit: String) -> Counter<T>;
 }
 
@@ -197,6 +227,9 @@ pub fn register_counter_metric_instrument<T: CounterType<T> + Display>(
 }
 
 pub trait HistogramType<T> {
+    /// Registers a new OTEL [Histogram] to the node [metrics].
+    ///
+    /// [metrics]: self
     fn register_histogram(meter: &Meter, name: String, description: String, unit: String) -> Histogram<T>;
 }
 
