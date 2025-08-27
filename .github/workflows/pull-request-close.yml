@@ -9,11 +9,14 @@ on:
 
 jobs:
   cleanup:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     permissions:
       actions: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
       - name: Cleanup PR caches
         run: |
           echo "Fetching list of cache keys for this PR"

@@ -67,6 +67,10 @@ pub enum RejectedTransactionErrorKind {
     TransactionLimitExceeded,
     #[error("InvalidTransactionNonce")]
     InvalidTransactionNonce,
+    #[error("Replacement transaction is underpriced")]
+    ReplacementTransactionUnderpriced,
+    #[error("Transaction fee below minimum")]
+    FeeBelowMinimum,
     #[error("OutOfRangeFee")]
     OutOfRangeFee,
     #[error("InvalidTransactionVersion")]

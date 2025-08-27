@@ -7,6 +7,15 @@ pub enum SharpError {
     #[error("Failed to to add SHARP job: {0}")]
     AddJobFailure(#[source] reqwest::Error),
 
+    #[error("Failed to to close SHARP bucket: {0}")]
+    CloseBucketFailure(#[source] reqwest::Error),
+
+    #[error("Failed to to create SHARP bucket: {0}")]
+    CreateBucketFailure(#[source] reqwest::Error),
+
+    #[error("Failed to to get artifacts of a SHARP job: {0}")]
+    GetJobArtifactsFailure(#[source] reqwest::Error),
+
     #[error("Failed to to get status of a SHARP job: {0}")]
     GetJobStatusFailure(#[source] reqwest::Error),
 

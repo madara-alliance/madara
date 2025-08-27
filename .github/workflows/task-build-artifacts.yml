@@ -13,7 +13,7 @@ on:
         type: string
       should_run:
         required: false
-        default: true
+        default: "true"
         type: string
     outputs:
       artifacts:
@@ -30,12 +30,12 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - run: echo "Building ${{ inputs.artifacts-pr }}"
 
   build-artifacts:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     if: inputs.should_run == 'true'
     outputs:
       artifacts: ${{ steps.tag.outputs.artifacts }}
@@ -44,6 +44,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -78,7 +80,7 @@ jobs:
 
       - name: Build Docker image
         id: push
-        uses: docker/build-push-action@v6
+        uses: useblacksmith/build-push-action@v1.2
         with:
           context: .
           push: false
@@ -87,8 +89,6 @@ jobs:
             ${{ steps.tag.outputs.artifacts }}
             ${{ steps.tag.outputs.artifacts-pr }}
           outputs: type=docker,dest=${{ runner.temp }}/artifacts.tar
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

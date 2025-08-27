@@ -20,7 +20,7 @@ on:
 
 jobs:
   test-orchestrator:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
 
     services:
       localstack:
@@ -46,6 +46,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -59,8 +61,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-location: llvm-cov-target/release
-          cache-key: orchestrator-test-${{ runner.os }}-rust-1.86
+          cache-key: madara-${{ runner.os }}
 
       - name: Install cargo-llvm-cov & nextest
         uses: taiki-e/install-action@cargo-llvm-cov
@@ -94,6 +95,9 @@ jobs:
 
       - name: Check rust version
         run: rustup show
+
+      - name: Run make artifacts
+        run: yes | make artifacts
 
       - name: Run llvm-cov tests
         continue-on-error: false

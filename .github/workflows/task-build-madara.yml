@@ -17,7 +17,7 @@ on:
 
 jobs:
   build-binaries:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     outputs:
       madara-binary-hash: ${{ steps.generate-binary-hash.outputs.madara-hash }}
       cairo-artifacts-hash: ${{ steps.generate-binary-hash.outputs.cairo-hash }}
@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -35,7 +37,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}-rust-1.86
+          cache-key: madara-${{ runner.os }}
 
       # Build Madara
       - name: Cargo build
