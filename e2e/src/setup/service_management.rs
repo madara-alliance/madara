@@ -14,9 +14,9 @@ use crate::services::constants::*;
 use crate::services::localstack::LocalstackService;
 use crate::services::madara::{MadaraError, MadaraService};
 use crate::services::mongodb::MongoService;
-use crate::services::orchestrator::OrchestratorService;
+use crate::services::orchestrator::{OrchestratorError, OrchestratorService};
 
-use crate::services::helpers::NodeRpcMethods;
+use crate::services::helpers::{retry_with_timeout, NodeRpcMethods};
 use crate::services::mock_prover::MockProverService;
 use crate::services::pathfinder::PathfinderService;
 use tokio::time::{timeout, Duration, Instant};
@@ -227,17 +227,17 @@ impl ServiceManager {
     }
 
     async fn wait_for_orchestrator_sync(&self, services: &RunningServices) -> Result<(), SetupError> {
-        let max_retries = 20;
-        let delay = Duration::from_secs(360);
+        let delay = Duration::from_secs(360); // Check every 5 mins
+        let timeout = Duration::from_secs(1800); // For 30 mins
 
-        for retry in 0..max_retries {
-            println!("⏳ Checking orchestrator state update... (attempt {})", retry + 1);
+        let operation = |attempt| async move {
+            println!("⏳ Checking orchestrator state update... (attempt {})", attempt);
 
             if let Some(orchestrator) = &services.orchestrator_service {
                 let mut is_synced = false;
                 if let Some(sync_block) = self.bootstrapped_madara_block_number {
                     is_synced = orchestrator.check_state_update(sync_block).await
-                        .map_err(|err| SetupError::Orchestrator(err))?;
+                        .map_err(SetupError::Orchestrator)?;
                 }
 
                 if is_synced {
@@ -245,13 +245,13 @@ impl ServiceManager {
                 }
             }
 
-            if retry < max_retries - 1 {
-                println!("😩 Retrying orchestrator state update check...");
-                tokio::time::sleep(delay).await;
-            }
-        }
+            println!("😩 Retrying orchestrator state update check...");
+            Err(SetupError::Orchestrator(OrchestratorError::NotSynced))
+        };
 
-        Err(SetupError::Timeout("Orchestrator sync timed out".to_string()))
+        retry_with_timeout(delay, timeout, operation)
+            .await
+            .map_err(|_| SetupError::Timeout("Orchestrator sync timed out".to_string()))
     }
 
     async fn dump_databases(&self, services: &RunningServices) -> Result<(), SetupError> {

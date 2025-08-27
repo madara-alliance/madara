@@ -48,6 +48,8 @@ pub enum OrchestratorError {
     NetworkError(String),
     #[error("Invalid response: {0}")]
     InvalidResponse(String),
+    #[error("Not Synced yet")]
+    NotSynced,
 }
 
 #[derive(Debug, Clone)]
