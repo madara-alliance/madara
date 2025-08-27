@@ -14,7 +14,7 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///

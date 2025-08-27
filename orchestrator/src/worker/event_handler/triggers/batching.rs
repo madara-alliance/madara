@@ -22,7 +22,7 @@ use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
 use tokio::try_join;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, trace};
 
 pub struct BatchingTrigger;
 
