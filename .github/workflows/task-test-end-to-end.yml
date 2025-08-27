@@ -97,31 +97,6 @@ jobs:
           chmod +x target/release/orchestrator
           chmod +x test_utils/scripts/deploy_dummy_verifier.sh
 
-      - name: Download Cairo artiracts
-        uses: actions/download-artifact@v4
-        with:
-          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
-          path: build-artifacts/
-
-      - name: Download and extract Pathfinder binary
-        run: |
-          mkdir -p target/release/
-          curl -L -o pathfinder.tar.gz https://github.com/karnotxyz/pathfinder/releases/download/v0.13.2.1/pathfinder-x86_64-unknown-linux-gnu.tar.gz
-          tar -xf pathfinder.tar.gz -C target/release/
-          rm pathfinder.tar.gz
-
-      - name: Build Mock Atlantic Server
-        run: CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml --bin mock-atlantic-server --release
-
-      - name: Make binaries executable
-        run: |
-          chmod +x target/release/madara
-          chmod +x target/release/bootstrapper
-          chmod +x target/release/pathfinder
-          chmod +x target/release/mock-atlantic-server
-          chmod +x target/release/orchestrator
-          chmod +x test_utils/scripts/deploy_dummy_verifier.sh
-
       - name: Check Docker Installation
         run: |
           if command -v docker &> /dev/null

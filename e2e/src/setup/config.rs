@@ -89,25 +89,25 @@ pub struct Timeouts {
     pub start_infrastructure_services: Duration,
     pub setup_localstack_infrastructure_services: Duration,
     pub setup_mongodb_infrastructure_services: Duration,
-    pub start_l1_setup: Duration,
-    pub start_l2_setup: Duration,
-    pub start_full_node_syncing: Duration,
+    pub complete_l1_setup: Duration,
+    pub complete_l2_setup: Duration,
+    pub complete_full_node_syncing: Duration,
     pub start_mock_prover: Duration,
-    pub start_orchestration: Duration,
+    pub complete_orchestration: Duration,
 }
 
 impl Default for Timeouts {
     fn default() -> Self {
         Self {
-            start_infrastructure_services: Duration::from_secs(360),
-            setup_localstack_infrastructure_services: Duration::from_secs(360),
-            setup_mongodb_infrastructure_services: Duration::from_secs(360),
-            start_l1_setup: Duration::from_secs(360),
-            start_l2_setup: Duration::from_secs(1800),
-            start_full_node_syncing: Duration::from_secs(300),
-            start_mock_prover: Duration::from_secs(300),
-            start_orchestration: Duration::from_secs(10000),
             validate_dependencies: Duration::from_secs(10),
+            start_infrastructure_services: Duration::from_secs(180),
+            setup_localstack_infrastructure_services: Duration::from_secs(180),
+            setup_mongodb_infrastructure_services: Duration::from_secs(180),
+            complete_l1_setup: Duration::from_secs(360),
+            complete_l2_setup: Duration::from_secs(1800),
+            complete_full_node_syncing: Duration::from_secs(300),
+            start_mock_prover: Duration::from_secs(180),
+            complete_orchestration: Duration::from_secs(2400), // 40 mins
         }
     }
 }
@@ -324,10 +324,10 @@ impl SetupConfigBuilder {
         self.config
     }
 
-    pub fn build_l2_config(self) -> Result<SetupConfig, SetupError> {
-        let mongodb_config = MongoConfigBuilder::new().port(get_free_port()?).logs((false, true)).build();
+    pub async fn build_l2_config(self) -> Result<SetupConfig, SetupError> {
+        let mongodb_config = MongoConfigBuilder::new().port(get_free_port().await?).logs((false, true)).build();
 
-        let localstack_port = get_free_port()?;
+        let localstack_port = get_free_port().await?;
         let localstack_host = format!("{}:{}", DEFAULT_SERVICE_HOST, localstack_port);
         let localstack_config = LocalstackConfigBuilder::new()
             .port(localstack_port)
@@ -342,7 +342,7 @@ impl SetupConfigBuilder {
             .build();
 
         let anvil_config = AnvilConfigBuilder::new()
-            .port(get_free_port()?)
+            .port(get_free_port().await?)
             .dump_state(get_database_path(DATA_DIR, ANVIL_DATABASE_FILE))
             .logs((false, true))
             .build();
@@ -359,9 +359,9 @@ impl SetupConfigBuilder {
             .build();
 
         let madara_config = MadaraConfigBuilder::new()
-            .rpc_port(get_free_port()?)
-            .rpc_admin_port(get_free_port()?)
-            .gateway_port(get_free_port()?)
+            .rpc_port(get_free_port().await?)
+            .rpc_admin_port(get_free_port().await?)
+            .gateway_port(get_free_port().await?)
             .database_path(get_database_path(DATA_DIR, MADARA_DATABASE_DIR))
             .l1_endpoint(Some(anvil_config.endpoint()))
             .logs((true, true))
@@ -379,16 +379,16 @@ impl SetupConfigBuilder {
             .build();
 
         let pathfinder_config = PathfinderConfigBuilder::new()
-            .port(get_free_port()?)
+            .port(get_free_port().await?)
             .gateway_url(Some(madara_config.gateway_endpoint()))
             .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
             .logs((true, true))
             .build();
 
-        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port()?).logs((true, true)).build();
+        let mock_prover_config = MockProverConfigBuilder::new().port(get_free_port().await?).logs((true, true)).build();
 
         let orchestrator_run_config = OrchestratorConfigBuilder::run_l2()
-            .port(get_free_port()?)
+            .port(get_free_port().await?)
             .da_on_ethereum(true)
             .settle_on_ethereum(true)
             .ethereum_rpc_url(anvil_config.endpoint())
@@ -421,14 +421,19 @@ impl SetupConfigBuilder {
         Ok(sconfig)
     }
 
-    pub fn test_config_l2(self, test_name: &str) -> Result<SetupConfig, SetupError> {
-        let test_config = self.clone().build_l2_config()?;
+    pub async fn test_config_l2(self, test_name: &str) -> Result<SetupConfig, SetupError> {
+        let test_config = self.clone().build_l2_config().await?;
 
         let anvil_config = AnvilConfigBuilder::new()
-            .port(get_free_port()?)
+            .port(get_free_port().await?)
             .load_state(get_database_path(test_name, ANVIL_DATABASE_FILE))
-            .logs((true, true))
+            .logs((false, true))
             .build();
+
+        // Setting some envs
+        std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
+        std::env::set_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY);
+        std::env::set_var("ROLLUP_SEQ_URL", test_config.madara_config.rpc_endpoint().to_string());
 
         let sconfig = self
             .anvil_config(anvil_config)
