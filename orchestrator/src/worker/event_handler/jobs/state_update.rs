@@ -37,13 +37,7 @@ pub struct StateUpdateJobHandler;
 impl JobHandlerTrait for StateUpdateJobHandler {
     #[tracing::instrument(fields(category = "state_update"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(
-            log_type = "starting",
-            category = "state_update",
-            function_type = "create_job",
-            job_id = %internal_id,
-            "State update job creation started."
-        );
+        info!(log_type = "starting", "State update job creation started.");
 
         // Extract state transition metadata
         let state_metadata: StateUpdateMetadata = metadata.specific.clone().try_into()?;
@@ -53,16 +47,13 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             || state_metadata.program_output_paths.is_empty()
             || state_metadata.blob_data_paths.is_empty()
         {
-            error!(job_id = %internal_id, "Missing required paths in metadata");
+            error!("Missing required paths in metadata");
             return Err(JobError::Other(OtherError(eyre!("Missing required paths in metadata"))));
         }
         let job_item = JobItem::create(internal_id.clone(), JobType::StateTransition, JobStatus::Created, metadata);
 
         info!(
             log_type = "completed",
-            category = "state_update",
-            function_type = "create_job",
-            job_id = %internal_id,
             context = ?state_metadata.context,
             "State update job created."
         );
@@ -84,17 +75,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// last time) will not actually work.
     ///
     /// TODO: Update the code in the future releases to fix this.
-    #[tracing::instrument(fields(category = "state_update"), skip(self, config), ret, err)]
+    #[tracing::instrument(skip_all, fields(category = "state_update", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
-        info!(
-            log_type = "starting",
-            category = "state_update",
-            function_type = "process_job",
-            job_id = %job.id,
-            internal_id = %internal_id,
-            "State update job processing started."
-        );
+        info!(log_type = "starting", "State update job processing started.");
 
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
@@ -102,7 +86,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let (block_or_batch_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
                 self.validate_block_numbers(config.clone(), &data.to_settle).await?;
-                debug!(job_id = %job.internal_id, blocks = ?data.to_settle, "Validated block numbers");
+                debug!(blocks = ?data.to_settle, "Validated block numbers");
                 (data.to_settle, data.last_failed.unwrap_or(0))
             }
             SettlementContext::Batch(data) => {
@@ -129,7 +113,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Loop over the indices to process
         for &i in &filtered_indices {
             let to_settle_num = block_or_batch_to_settle[i];
-            debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
+            debug!(num = %to_settle_num, "Processing block/batch");
 
             // Get the artifacts for the block/batch
             let snos_output =
@@ -157,7 +141,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             {
                 Ok(hash) => hash,
                 Err(e) => {
-                    error!(job_id = %job.internal_id, num = %to_settle_num, error = %e, "Error updating state for block/batch");
+                    error!(num = %to_settle_num, error = %e, "Error updating state for block/batch");
                     state_metadata.context = self.update_last_failed(state_metadata.context.clone(), to_settle_num);
                     state_metadata.tx_hashes = sent_tx_hashes.clone();
                     job.metadata.specific = JobSpecificMetadata::StateUpdate(state_metadata.clone());
@@ -166,15 +150,12 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 }
             };
 
-            debug!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, "Validating transaction receipt");
+            debug!(num = %to_settle_num, tx_hash = %txn_hash, "Validating transaction receipt");
 
-            config.settlement_client()
-                .wait_for_tx_finality(&txn_hash)
-                .await
-                .map_err(|e| {
-                    error!(job_id = %job.internal_id, block_no = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
-                    JobError::Other(OtherError(e))
-                })?;
+            config.settlement_client().wait_for_tx_finality(&txn_hash).await.map_err(|e| {
+                error!(num = %to_settle_num, tx_hash = %txn_hash, error = %e, "Error waiting for transaction finality");
+                JobError::Other(OtherError(e))
+            })?;
 
             sent_tx_hashes.push(txn_hash);
             state_metadata.tx_hashes = sent_tx_hashes.clone();
@@ -186,10 +167,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         info!(
             log_type = "completed",
-            category = "state_update",
-            function_type = "process_job",
-            job_id = %job.id,
-            num = %internal_id,
             last_settled_block = %val,
             "State update job processed successfully."
         );
@@ -202,17 +179,9 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 1. The last settlement tx hash is successful,
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
-    #[tracing::instrument(fields(category = "state_update"), skip(self, config), ret, err)]
+    #[tracing::instrument(skip_all, fields(category = "state_update", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
-        let internal_id = job.internal_id.clone();
-        info!(
-            log_type = "starting",
-            category = "state_update",
-            function_type = "verify_job",
-            job_id = %job.id,
-            internal_id = %internal_id,
-            "State update job verification started."
-        );
+        info!(log_type = "starting", "State update job verification started.");
 
         // Get state update metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
@@ -224,12 +193,11 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             SettlementContext::Batch(data) => data.to_settle,
         };
 
-        debug!(job_id = %job.internal_id, "Retrieved block numbers from metadata");
+        debug!("Retrieved block numbers from metadata");
         let settlement_client = config.settlement_client();
 
         for (tx_hash, num_settled) in tx_hashes.iter().zip(nums_settled.iter()) {
             trace!(
-                job_id = %job.internal_id,
                 tx_hash = %tx_hash,
                 num = %num_settled,
                 "Verifying transaction inclusion"
@@ -241,7 +209,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             match tx_inclusion_status {
                 SettlementVerificationStatus::Rejected(_) => {
                     warn!(
-                        job_id = %job.internal_id,
                         tx_hash = %tx_hash,
                         num = %num_settled,
                         "Transaction rejected"
@@ -253,7 +220,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 // If the tx is still pending, we wait for it to be finalized and check again the status.
                 SettlementVerificationStatus::Pending => {
                     debug!(
-                        job_id = %job.internal_id,
                         tx_hash = %tx_hash,
                         "Transaction pending, waiting for finality"
                     );
@@ -270,7 +236,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                     match new_status {
                         SettlementVerificationStatus::Rejected(_) => {
                             warn!(
-                                job_id = %job.internal_id,
                                 tx_hash = %tx_hash,
                                 num = %num_settled,
                                 "Transaction rejected after finality"
@@ -282,7 +247,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                         }
                         SettlementVerificationStatus::Pending => {
                             error!(
-                                job_id = %job.internal_id,
                                 tx_hash = %tx_hash,
                                 "Transaction still pending after finality check"
                             );
@@ -290,7 +254,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                         }
                         SettlementVerificationStatus::Verified => {
                             debug!(
-                                job_id = %job.internal_id,
                                 tx_hash = %tx_hash,
                                 "Transaction verified after finality"
                             );
@@ -299,7 +262,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
                 }
                 SettlementVerificationStatus::Verified => {
                     debug!(
-                        job_id = %job.internal_id,
                         tx_hash = %tx_hash,
                         "Transaction verified"
                     );
@@ -329,10 +291,10 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         match last_settled_block_number {
             Some(block_num) => {
                 let block_status = if block_num == expected_last_block_number {
-                    info!(log_type = "completed", category = "state_update", function_type = "verify_job", job_id = %job.id,  num = %internal_id, last_settled_block = %block_num, "Last settled block verified.");
+                    info!(log_type = "completed", last_settled_block = %block_num, "Last settled block verified.");
                     SettlementVerificationStatus::Verified
                 } else {
-                    warn!(log_type = "failed/rejected", category = "state_update", function_type = "verify_job", job_id = %job.id,  num = %internal_id, expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
+                    warn!(log_type = "failed/rejected", expected = %expected_last_block_number, actual = %block_num, "Last settled block mismatch.");
                     SettlementVerificationStatus::Rejected(format!(
                         "Last settle bock expected was {} but found {}",
                         expected_last_block_number, block_num
