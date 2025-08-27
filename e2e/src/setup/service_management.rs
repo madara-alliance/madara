@@ -140,7 +140,7 @@ impl ServiceManager {
     async fn setup_l1_chain(&self, services: &mut RunningServices) -> Result<(), SetupError> {
         println!("🎯 Starting L1 setup...");
 
-        let duration = self.config.get_timeouts().start_l1_setup;
+        let duration = self.config.get_timeouts().complete_l1_setup;
 
         timeout(duration, async {
             self.start_anvil(services).await?;
@@ -155,7 +155,7 @@ impl ServiceManager {
     async fn setup_l2_chain(&mut self, services: &mut RunningServices) -> Result<(), SetupError> {
         println!("🎯 Starting L2 setup...");
 
-        let duration = self.config.get_timeouts().start_l2_setup;
+        let duration = self.config.get_timeouts().complete_l2_setup;
 
         timeout(duration, async {
             self.start_madara(services).await?;
@@ -182,7 +182,7 @@ impl ServiceManager {
     async fn setup_full_node_syncing(&self, services: &mut RunningServices) -> Result<(), SetupError> {
         println!("🎯 Starting Pathfinder syncing till # Block {:?}", self.bootstrapped_madara_block_number);
 
-        let duration = self.config.get_timeouts().start_full_node_syncing;
+        let duration = self.config.get_timeouts().complete_full_node_syncing;
 
         timeout(duration, async {
             self.start_pathfinder(services).await?;
@@ -212,7 +212,7 @@ impl ServiceManager {
     async fn setup_orchestration(&self, services: &mut RunningServices) -> Result<(), SetupError> {
         println!("🎯 Starting Orchestration...");
 
-        let duration = self.config.get_timeouts().start_orchestration;
+        let duration = self.config.get_timeouts().complete_orchestration;
 
         timeout(duration, async {
             self.start_orchestrator(services).await?;

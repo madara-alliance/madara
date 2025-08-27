@@ -89,25 +89,25 @@ pub struct Timeouts {
     pub start_infrastructure_services: Duration,
     pub setup_localstack_infrastructure_services: Duration,
     pub setup_mongodb_infrastructure_services: Duration,
-    pub start_l1_setup: Duration,
-    pub start_l2_setup: Duration,
-    pub start_full_node_syncing: Duration,
+    pub complete_l1_setup: Duration,
+    pub complete_l2_setup: Duration,
+    pub complete_full_node_syncing: Duration,
     pub start_mock_prover: Duration,
-    pub start_orchestration: Duration,
+    pub complete_orchestration: Duration,
 }
 
 impl Default for Timeouts {
     fn default() -> Self {
         Self {
-            start_infrastructure_services: Duration::from_secs(360),
-            setup_localstack_infrastructure_services: Duration::from_secs(360),
-            setup_mongodb_infrastructure_services: Duration::from_secs(360),
-            start_l1_setup: Duration::from_secs(360),
-            start_l2_setup: Duration::from_secs(1800),
-            start_full_node_syncing: Duration::from_secs(300),
-            start_mock_prover: Duration::from_secs(300),
-            start_orchestration: Duration::from_secs(10000),
             validate_dependencies: Duration::from_secs(10),
+            start_infrastructure_services: Duration::from_secs(180),
+            setup_localstack_infrastructure_services: Duration::from_secs(180),
+            setup_mongodb_infrastructure_services: Duration::from_secs(180),
+            complete_l1_setup: Duration::from_secs(360),
+            complete_l2_setup: Duration::from_secs(1800),
+            complete_full_node_syncing: Duration::from_secs(300),
+            start_mock_prover: Duration::from_secs(180),
+            complete_orchestration: Duration::from_secs(2400), // 40 mins
         }
     }
 }
