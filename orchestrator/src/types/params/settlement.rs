@@ -55,10 +55,12 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     )?,
                     l1_core_contract_address,
                     starknet_operator_address: ethereum_operator_address,
-                    txn_wait_sleep_delay_secs: run_cmd.ethereum_settlement_args.ethereum_settlement_txn_wait_sleep_delay_secs.ok_or_else(|| {
-                        OrchestratorError::SetupCommandError("Ethereum TXN WAIT SLEEP SECS required".to_string())
-                    })?,
-
+                    txn_wait_sleep_delay_secs: run_cmd
+                        .ethereum_settlement_args
+                        .ethereum_settlement_txn_wait_sleep_delay_secs
+                        .ok_or_else(|| {
+                            OrchestratorError::SetupCommandError("Ethereum TXN WAIT SLEEP SECS required".to_string())
+                        })?,
                 };
                 Ok(Self::Ethereum(ethereum_params))
             }

@@ -7,11 +7,11 @@ pub mod config;
 // Re-export common utilities
 pub use config::*;
 
+use crate::services::constants::*;
+use crate::services::helpers::NodeRpcMethods;
 use crate::services::server::{Server, ServerConfig};
 use reqwest::Url;
 use std::path::PathBuf;
-use crate::services::constants::*;
-use crate::services::helpers::NodeRpcMethods;
 
 pub struct MadaraService {
     server: Server,

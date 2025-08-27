@@ -1,16 +1,16 @@
 use super::constants::*;
 use async_trait::async_trait;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
+use std::collections::HashSet;
+use std::future::Future;
 use std::io;
 use std::net::TcpListener;
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
-use url::Url;
-use tokio::time::Duration;
 use thiserror::Error;
-use std::future::Future;
 use tokio::sync::Mutex;
-use std::collections::HashSet;
+use tokio::time::Duration;
+use url::Url;
 
 /// Error code returned by Starknet RPC when a block is not found
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
@@ -29,8 +29,7 @@ pub enum NodeRpcError {
     #[error("Block not ready Latest: {0}, Required: {1}")]
     BlockNotReady(u64, u64),
     #[error("No blocks yet")]
-    NoBlocksYet
-
+    NoBlocksYet,
 }
 
 /// Transaction finality status from Starknet
@@ -44,7 +43,6 @@ pub enum TransactionFinalityStatus {
     /// Transaction has been rejected
     Rejected,
 }
-
 
 /// The status of a block in the Starknet blockchain
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -85,9 +83,7 @@ impl From<&str> for BlockId {
         match s {
             "latest" => BlockId::Latest,
             "pending" => BlockId::Pending,
-            hash if hash.starts_with("0x") => BlockId::Hash {
-                block_hash: hash.to_string(),
-            },
+            hash if hash.starts_with("0x") => BlockId::Hash { block_hash: hash.to_string() },
             _ => panic!("Invalid block identifier: {}", s),
         }
     }
@@ -109,9 +105,7 @@ pub trait NodeRpcMethods: Send + Sync {
     /// * `Err(NodeRpcError::RpcError)` - For network or other RPC errors
     async fn get_latest_block_number(&self) -> Result<Option<u64>, NodeRpcError> {
         match self.make_rpc_request("starknet_blockNumber", json!([])).await {
-            Ok(response) => {
-                Ok(self.extract_block_number_from_response(&response)?)
-            }
+            Ok(response) => Ok(self.extract_block_number_from_response(&response)?),
             Err(NodeRpcError::BlockNotFound) => Ok(None),
             Err(other_error) => Err(other_error),
         }
@@ -165,7 +159,7 @@ pub trait NodeRpcMethods: Send + Sync {
                 }
                 Err(e) => {
                     // Log error but continue retrying
-                        println!("⚠️  Error fetching block number: {}", e);
+                    println!("⚠️  Error fetching block number: {}", e);
 
                     return Err(e);
                 }
@@ -173,15 +167,13 @@ pub trait NodeRpcMethods: Send + Sync {
         };
 
         // Use the retry function
-        retry_with_timeout(poll_interval, timeout, wait_for_block_inner)
-            .await
-            .map_err(|e| match e {
-                NodeRpcError::BlockNotReady(_, _) | NodeRpcError::NoBlocksYet => {
-                    NodeRpcError::TimeoutWaitingForBlock(block_number, 0, "Timeout exceeded".to_string())
-                }
-                other => other,
-            })
-        }
+        retry_with_timeout(poll_interval, timeout, wait_for_block_inner).await.map_err(|e| match e {
+            NodeRpcError::BlockNotReady(_, _) | NodeRpcError::NoBlocksYet => {
+                NodeRpcError::TimeoutWaitingForBlock(block_number, 0, "Timeout exceeded".to_string())
+            }
+            other => other,
+        })
+    }
 
     /// Fetches the status of a specific block.
     ///
@@ -218,9 +210,7 @@ pub trait NodeRpcMethods: Send + Sync {
             BlockId::Pending => json!(["pending"]),
         };
 
-        let response = self
-            .make_rpc_request("starknet_getBlockWithTxHashes", params)
-            .await?;
+        let response = self.make_rpc_request("starknet_getBlockWithTxHashes", params).await?;
 
         self.extract_block_status_from_response(&response)
     }
@@ -251,10 +241,11 @@ pub trait NodeRpcMethods: Send + Sync {
     /// # Ok(())
     /// # }
     /// ```
-    async fn get_transaction_finality(&self, transaction_hash: &str) -> Result<TransactionFinalityStatus, NodeRpcError> {
-        let response = self
-            .make_rpc_request("starknet_getTransactionReceipt", json!([transaction_hash]))
-            .await?;
+    async fn get_transaction_finality(
+        &self,
+        transaction_hash: &str,
+    ) -> Result<TransactionFinalityStatus, NodeRpcError> {
+        let response = self.make_rpc_request("starknet_getTransactionReceipt", json!([transaction_hash])).await?;
 
         self.extract_transaction_finality_from_response(&response)
     }
@@ -294,28 +285,19 @@ pub trait NodeRpcMethods: Send + Sync {
             .await
             .map_err(|e| NodeRpcError::RpcError(e.to_string()))?;
 
-        let json = response
-            .json::<serde_json::Value>()
-            .await
-            .map_err(|_| NodeRpcError::InvalidResponse)?;
+        let json = response.json::<serde_json::Value>().await.map_err(|_| NodeRpcError::InvalidResponse)?;
 
         // Check for JSON-RPC errors
         if let Some(error) = json.get("error") {
             if let (Some(code), Some(message)) = (error.get("code"), error.get("message")) {
                 if code.as_u64() == Some(BLOCK_NOT_FOUND_ERROR_CODE)
-                    && message
-                        .as_str()
-                        .map(|s| s.contains("Block not found"))
-                        .unwrap_or(false)
+                    && message.as_str().map(|s| s.contains("Block not found")).unwrap_or(false)
                 {
                     return Err(NodeRpcError::BlockNotFound);
                 }
             }
 
-            let error_msg = error
-                .get("message")
-                .and_then(|m| m.as_str())
-                .unwrap_or("Unknown RPC error");
+            let error_msg = error.get("message").and_then(|m| m.as_str()).unwrap_or("Unknown RPC error");
             return Err(NodeRpcError::RpcError(error_msg.to_string()));
         }
 
@@ -323,21 +305,12 @@ pub trait NodeRpcMethods: Send + Sync {
     }
 
     /// Extracts block number from RPC response
-    fn extract_block_number_from_response(
-        &self,
-        response: &serde_json::Value,
-    ) -> Result<Option<u64>, NodeRpcError> {
-        response
-            .get("result")
-            .and_then(|v| Some(v.as_u64()))
-            .ok_or(NodeRpcError::InvalidResponse)
+    fn extract_block_number_from_response(&self, response: &serde_json::Value) -> Result<Option<u64>, NodeRpcError> {
+        response.get("result").and_then(|v| Some(v.as_u64())).ok_or(NodeRpcError::InvalidResponse)
     }
 
     /// Extracts block status from RPC response
-    fn extract_block_status_from_response(
-        &self,
-        response: &serde_json::Value,
-    ) -> Result<BlockStatus, NodeRpcError> {
+    fn extract_block_status_from_response(&self, response: &serde_json::Value) -> Result<BlockStatus, NodeRpcError> {
         let status_str = response
             .get("result")
             .and_then(|result| result.get("status"))
@@ -345,8 +318,7 @@ pub trait NodeRpcMethods: Send + Sync {
             .ok_or(NodeRpcError::InvalidResponse)?;
 
         // Parse the status string into our enum
-        serde_json::from_str(&format!("\"{}\"", status_str))
-            .map_err(|_| NodeRpcError::InvalidResponse)
+        serde_json::from_str(&format!("\"{}\"", status_str)).map_err(|_| NodeRpcError::InvalidResponse)
     }
 
     /// Extracts transaction finality status from RPC response
@@ -361,12 +333,9 @@ pub trait NodeRpcMethods: Send + Sync {
             .ok_or(NodeRpcError::InvalidResponse)?;
 
         // Parse the finality status string into our enum
-        serde_json::from_str(&format!("\"{}\"", finality_str))
-            .map_err(|_| NodeRpcError::InvalidResponse)
+        serde_json::from_str(&format!("\"{}\"", finality_str)).map_err(|_| NodeRpcError::InvalidResponse)
     }
-
 }
-
 
 lazy_static::lazy_static! {
     static ref ALLOCATED_PORTS: Mutex<HashSet<u16>> = Mutex::new(HashSet::new());
@@ -429,13 +398,9 @@ pub fn docker_url_conversion(url: &Url) -> Url {
 }
 
 // Generic retry function that works with any async operation (timeout-based)
-pub async fn retry_with_timeout<T, E, F, Fut>(
-    delay: Duration,
-    timeout: Duration,
-    mut operation: F,
-) -> Result<T, E>
+pub async fn retry_with_timeout<T, E, F, Fut>(delay: Duration, timeout: Duration, mut operation: F) -> Result<T, E>
 where
-    F: FnMut() -> Fut,  // Now takes attempt count as parameter
+    F: FnMut() -> Fut, // Now takes attempt count as parameter
     Fut: Future<Output = Result<T, E>>,
 {
     let start_time = tokio::time::Instant::now();

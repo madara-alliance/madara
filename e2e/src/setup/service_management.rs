@@ -168,7 +168,9 @@ impl ServiceManager {
 
             // Get the block number for syncing
             if let Some(madara) = &services.madara_service {
-                self.bootstrapped_madara_block_number = madara.get_latest_block_number().await
+                self.bootstrapped_madara_block_number = madara
+                    .get_latest_block_number()
+                    .await
                     .map_err(|err| SetupError::Madara(MadaraError::RpcError(err)))?;
             }
 
@@ -236,8 +238,7 @@ impl ServiceManager {
             if let Some(orchestrator) = &services.orchestrator_service {
                 let mut is_synced = false;
                 if let Some(sync_block) = self.bootstrapped_madara_block_number {
-                    is_synced = orchestrator.check_state_update(sync_block).await
-                        .map_err(SetupError::Orchestrator)?;
+                    is_synced = orchestrator.check_state_update(sync_block).await.map_err(SetupError::Orchestrator)?;
                 }
 
                 if is_synced {

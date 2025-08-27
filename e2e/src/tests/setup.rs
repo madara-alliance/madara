@@ -1,7 +1,6 @@
-use rstest::*;
 use crate::setup::ChainSetup;
 use crate::setup::SetupConfigBuilder;
-
+use rstest::*;
 
 // Async fixture that takes arguments from the test
 #[fixture]

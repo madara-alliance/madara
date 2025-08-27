@@ -120,7 +120,6 @@ impl ChainSetup {
     pub fn config(&self) -> &SetupConfig {
         &self.config
     }
-
 }
 
 impl Drop for ChainSetup {

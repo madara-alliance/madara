@@ -242,9 +242,8 @@ impl Server {
         {
             let pid = self.process.id();
             if let Some(pid) = pid {
-                if let Ok(mut kill_process) = tokio::process::Command::new("kill")
-                    .args(["-s", "TERM", &pid.to_string()])
-                    .spawn()
+                if let Ok(mut kill_process) =
+                    tokio::process::Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn()
                 {
                     // Spawn a task to wait for kill completion, but don't block on it
                     tokio::spawn(async move {

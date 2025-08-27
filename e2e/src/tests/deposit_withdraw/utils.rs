@@ -1,24 +1,23 @@
-use alloy::primitives::Address;
-use starknet_signers::LocalWallet;
-use tokio::time::sleep;
-use tokio::time::Instant;
-use std::time::Duration;
+use crate::services::helpers::get_file_path;
 use crate::services::helpers::NodeRpcMethods;
 use crate::services::helpers::TransactionFinalityStatus;
-use crate::services::helpers::get_file_path;
-use starknet_core::types::FunctionCall;
-use starknet_core::types::BlockTag;
+use crate::setup::ChainSetup;
+use alloy::primitives::Address;
 use starknet::providers::Provider;
 use starknet_core::types::BlockId;
+use starknet_core::types::BlockTag;
+use starknet_core::types::FunctionCall;
 use starknet_core::utils::get_selector_from_name;
-use crate::setup::ChainSetup;
+use starknet_signers::LocalWallet;
+use std::time::Duration;
+use tokio::time::sleep;
+use tokio::time::Instant;
 
 use starknet::{
     accounts::SingleOwnerAccount,
     core::types::Felt,
     providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
-
 
 // Constants - Taken from: addresses.json, bootstrapper.json and output of bootstrapper
 pub const L2_ACCOUNT_ADDRESS: &str = "0x4fe5eea46caa0a1f344fafce82b39d66b552f00d3cd12e89073ef4b4ab37860";
@@ -38,9 +37,7 @@ pub const L1_ERC20_TOKEN_ADDRESS: &str = "0x4ed7c70f96b99c776995fb64377f0d4ab3b0
 
 pub const L1_ETH_BRIDGE_ADDRESS: &str = "0x8a791620dd6260079bf849dc5567adc3f2fdc318"; // Hex L1 ETH BRIDGE Address
 
-
 pub type TestResult<T> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
-
 
 // Helper structures for better organization - using type inference approach
 
@@ -59,13 +56,8 @@ pub struct L2Context {
     pub erc20_bridge_address: Felt,
 }
 
-
-pub async fn wait_for_transactions_finality(
-    setup: &ChainSetup,
-    transaction_hashes: Vec<Felt>
-) -> TestResult<()> {
-    let madara_service = setup.lifecycle_manager.madara_service().as_ref()
-        .ok_or("Madara service not available")?;
+pub async fn wait_for_transactions_finality(setup: &ChainSetup, transaction_hashes: Vec<Felt>) -> TestResult<()> {
+    let madara_service = setup.lifecycle_manager.madara_service().as_ref().ok_or("Madara service not available")?;
 
     let start_time = Instant::now();
     let timeout_duration = Duration::from_secs(500);
@@ -81,7 +73,8 @@ pub async fn wait_for_transactions_finality(
             return Err(format!(
                 "Transaction finality check timed out after 500 seconds. Still pending: {:?}",
                 pending_txs.iter().map(|f| f.to_hex_string()).collect::<Vec<_>>()
-            ).into());
+            )
+            .into());
         }
 
         println!(
@@ -93,16 +86,9 @@ pub async fn wait_for_transactions_finality(
         let mut newly_finalized = Vec::new();
 
         for tx_hash in &pending_txs {
-            match madara_service
-                .get_transaction_finality(tx_hash.to_hex_string().as_str())
-                .await
-            {
+            match madara_service.get_transaction_finality(tx_hash.to_hex_string().as_str()).await {
                 Ok(txn_finality) => {
-                    println!(
-                        "Transaction {} status: {:?}",
-                        tx_hash.to_hex_string(),
-                        txn_finality
-                    );
+                    println!("Transaction {} status: {:?}", tx_hash.to_hex_string(), txn_finality);
 
                     if txn_finality == TransactionFinalityStatus::AcceptedOnL1 {
                         println!(
@@ -114,11 +100,7 @@ pub async fn wait_for_transactions_finality(
                     }
                 }
                 Err(e) => {
-                    println!(
-                        "Error checking finality for {}: {:?}",
-                        tx_hash.to_hex_string(),
-                        e
-                    );
+                    println!("Error checking finality for {}: {:?}", tx_hash.to_hex_string(), e);
                 }
             }
         }
@@ -149,21 +131,20 @@ pub async fn get_l2_token_balance(
     contract_address: Felt,
     account_address: Felt,
 ) -> TestResult<Felt> {
-    let result = provider.call(
-        FunctionCall {
-            contract_address,
-            entry_point_selector: get_selector_from_name("balanceOf")
-                .map_err(|e| format!("Failed to get balanceOf selector: {}", e))?,
-            calldata: vec![account_address],
-        },
-        BlockId::Tag(BlockTag::Latest),
-    )
-    .await
-    .map_err(|e| format!("Failed to call balanceOf: {}", e))?;
+    let result = provider
+        .call(
+            FunctionCall {
+                contract_address,
+                entry_point_selector: get_selector_from_name("balanceOf")
+                    .map_err(|e| format!("Failed to get balanceOf selector: {}", e))?,
+                calldata: vec![account_address],
+            },
+            BlockId::Tag(BlockTag::Latest),
+        )
+        .await
+        .map_err(|e| format!("Failed to call balanceOf: {}", e))?;
 
-    result.get(0)
-        .copied()
-        .ok_or("balanceOf returned empty result".into())
+    result.get(0).copied().ok_or("balanceOf returned empty result".into())
 }
 
 pub fn cleanup_test_directory(test_name: &str) {

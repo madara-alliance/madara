@@ -1,34 +1,30 @@
 pub mod utils;
 
+use crate::setup::SetupConfig;
+use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
+use alloy::providers::ProviderBuilder;
+use alloy::signers::local::PrivateKeySigner;
 use rstest::*;
+use starknet::accounts::Account;
 use starknet::accounts::Call;
+use starknet::accounts::ConnectedAccount;
+use starknet_core::types::BlockId;
+use starknet_core::types::BlockTag;
+use starknet_core::utils::get_selector_from_name;
 use starknet_signers::{LocalWallet, SigningKey};
-use tokio::time::sleep;
 use std::str::FromStr;
 use std::time::Duration;
-use starknet::accounts::ConnectedAccount;
-use alloy::network::EthereumWallet;
-use alloy::providers::ProviderBuilder;
-use starknet::accounts::Account;
-use alloy::signers::local::PrivateKeySigner;
-use crate::setup::SetupConfig;
-use starknet_core::types::BlockTag;
-use starknet_core::types::BlockId;
-use starknet_core::utils::get_selector_from_name;
+use tokio::time::sleep;
 use utils::*;
 
-use alloy::{
-    primitives::U256,
-    sol,
-};
+use alloy::{primitives::U256, sol};
 
 use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     core::types::Felt,
     providers::jsonrpc::{HttpTransport, JsonRpcClient},
 };
-
 
 use super::setup::setup_chain;
 use crate::setup::ChainSetup;
@@ -113,28 +109,25 @@ async fn run_bridge_test(setup: ChainSetup) -> TestResult<()> {
 }
 
 async fn setup_l2_context(test_config: &SetupConfig) -> TestResult<L2Context> {
-    let provider = JsonRpcClient::new(HttpTransport::new(
-        test_config.get_madara_config().rpc_endpoint(),
-    ));
+    let provider = JsonRpcClient::new(HttpTransport::new(test_config.get_madara_config().rpc_endpoint()));
 
     use starknet_providers::Provider;
-    let chain_id = provider.chain_id().await
-        .map_err(|e| format!("Failed to get L2 chain ID: {}", e))?;
+    let chain_id = provider.chain_id().await.map_err(|e| format!("Failed to get L2 chain ID: {}", e))?;
 
-    let address = Felt::from_hex(L2_ACCOUNT_ADDRESS)
-        .map_err(|e| format!("Failed to parse L2 account address: {}", e))?;
+    let address =
+        Felt::from_hex(L2_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L2 account address: {}", e))?;
 
-    let private_key = Felt::from_hex(L2_ACCOUNT_PRIVATE_KEY)
-        .map_err(|e| format!("Failed to parse L2 private key: {}", e))?;
+    let private_key =
+        Felt::from_hex(L2_ACCOUNT_PRIVATE_KEY).map_err(|e| format!("Failed to parse L2 private key: {}", e))?;
 
-    let eth_token_address = Felt::from_str(L2_ETH_TOKEN_ADDRESS)
-        .map_err(|e| format!("Failed to parse L2 ETH token address: {}", e))?;
+    let eth_token_address =
+        Felt::from_str(L2_ETH_TOKEN_ADDRESS).map_err(|e| format!("Failed to parse L2 ETH token address: {}", e))?;
 
-    let eth_bridge_address = Felt::from_str(L2_ETH_BRIDGE_ADDRESS)
-        .map_err(|e| format!("Failed to parse L2 ETH bridge address: {}", e))?;
+    let eth_bridge_address =
+        Felt::from_str(L2_ETH_BRIDGE_ADDRESS).map_err(|e| format!("Failed to parse L2 ETH bridge address: {}", e))?;
 
-    let erc20_token_address = Felt::from_str(L2_ERC20_TOKEN_ADDRESS)
-        .map_err(|e| format!("Failed to parse L2 ERC20 token address: {}", e))?;
+    let erc20_token_address =
+        Felt::from_str(L2_ERC20_TOKEN_ADDRESS).map_err(|e| format!("Failed to parse L2 ERC20 token address: {}", e))?;
 
     let erc20_bridge_address = Felt::from_str(L2_ERC20_BRIDGE_ADDRESS)
         .map_err(|e| format!("Failed to parse L2 ERC20 bridge address: {}", e))?;
@@ -142,23 +135,10 @@ async fn setup_l2_context(test_config: &SetupConfig) -> TestResult<L2Context> {
     let signing_key = SigningKey::from_secret_scalar(private_key);
     let signer = LocalWallet::from(signing_key);
 
-    let mut account = SingleOwnerAccount::new(
-        provider,
-        signer,
-        address,
-        chain_id,
-        ExecutionEncoding::New,
-    );
+    let mut account = SingleOwnerAccount::new(provider, signer, address, chain_id, ExecutionEncoding::New);
     account.set_block_id(BlockId::Tag(BlockTag::Pending));
 
-    Ok(L2Context {
-        account,
-        address,
-        eth_token_address,
-        eth_bridge_address,
-        erc20_token_address,
-        erc20_bridge_address,
-    })
+    Ok(L2Context { account, address, eth_token_address, eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
 
 async fn setup_l1_context() -> TestResult<L1Context> {
@@ -171,22 +151,19 @@ async fn setup_l1_context() -> TestResult<L1Context> {
     let erc20_bridge_address = Address::from_str(L1_ERC20_BRIDGE_ADDRESS)
         .map_err(|e| format!("Failed to parse L1 ERC20 bridge address: {}", e))?;
 
-    Ok(L1Context {
-        eth_bridge_address,
-        erc20_token_address,
-        erc20_bridge_address,
-    })
+    Ok(L1Context { eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
 
-async fn test_eth_deposit_flow(l1_context: &L1Context, l2_context: &mut L2Context, test_config: &SetupConfig) -> TestResult<()> {
+async fn test_eth_deposit_flow(
+    l1_context: &L1Context,
+    l2_context: &mut L2Context,
+    test_config: &SetupConfig,
+) -> TestResult<()> {
     println!("🔄 Starting ETH deposit flow test (L1 -> L2)");
 
     // Get initial L2 balance
-    let initial_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.eth_token_address,
-        l2_context.address,
-    ).await?;
+    let initial_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     println!("Initial ETH L2 balance: {}", initial_l2_balance);
 
@@ -199,11 +176,8 @@ async fn test_eth_deposit_flow(l1_context: &L1Context, l2_context: &mut L2Contex
     sleep(Duration::from_secs(10)).await;
 
     // Verify L2 balance increased
-    let final_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.eth_token_address,
-        l2_context.address,
-    ).await?;
+    let final_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     println!("Final ETH L2 balance: {}", final_l2_balance);
 
@@ -215,15 +189,17 @@ async fn test_eth_deposit_flow(l1_context: &L1Context, l2_context: &mut L2Contex
     Ok(())
 }
 
-async fn test_erc20_deposit_flow(l1_context: &L1Context, l2_context: &mut L2Context, test_config: &SetupConfig) -> TestResult<()> {
+async fn test_erc20_deposit_flow(
+    l1_context: &L1Context,
+    l2_context: &mut L2Context,
+    test_config: &SetupConfig,
+) -> TestResult<()> {
     println!("🔄 Starting ERC20 deposit flow test (L1 -> L2)");
 
     // Get initial L2 balance
-    let initial_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.erc20_token_address,
-        l2_context.address,
-    ).await?;
+    let initial_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+            .await?;
 
     println!("Initial ERC20 L2 balance: {}", initial_l2_balance);
 
@@ -236,11 +212,9 @@ async fn test_erc20_deposit_flow(l1_context: &L1Context, l2_context: &mut L2Cont
     sleep(Duration::from_secs(10)).await;
 
     // Verify L2 balance increased
-    let final_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.erc20_token_address,
-        l2_context.address,
-    ).await?;
+    let final_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+            .await?;
 
     println!("Final ERC20 L2 balance: {}", final_l2_balance);
 
@@ -252,7 +226,11 @@ async fn test_erc20_deposit_flow(l1_context: &L1Context, l2_context: &mut L2Cont
     Ok(())
 }
 
-async fn execute_eth_l1_deposit(l1_context: &L1Context, deposit_amount: U256, test_config: &SetupConfig) -> TestResult<()> {
+async fn execute_eth_l1_deposit(
+    l1_context: &L1Context,
+    deposit_amount: U256,
+    test_config: &SetupConfig,
+) -> TestResult<()> {
     // Create provider and contracts on-demand - let compiler infer types
     let signer = PrivateKeySigner::from_str(L1_ACCOUNT_PRIVATE_KEY)
         .map_err(|e| format!("Failed to parse L1 private key: {}", e))?;
@@ -267,8 +245,8 @@ async fn execute_eth_l1_deposit(l1_context: &L1Context, deposit_amount: U256, te
     // Create contracts - compiler infers the complex types
     let eth_bridge_contract = StarknetEthBridge::new(l1_context.eth_bridge_address, &provider);
 
-    let l2_recipient = U256::from_str(L2_ACCOUNT_ADDRESS)
-        .map_err(|e| format!("Failed to parse L2 recipient address: {}", e))?;
+    let l2_recipient =
+        U256::from_str(L2_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L2 recipient address: {}", e))?;
 
     let fee_amount = U256::from(10_000_000_000_000_000u64); // 0.01 ETH fee
     let total_amount = deposit_amount + fee_amount;
@@ -282,7 +260,10 @@ async fn execute_eth_l1_deposit(l1_context: &L1Context, deposit_amount: U256, te
         .await
         .map_err(|e| format!("Failed to send deposit transaction: {}", e))?;
 
-    let deposit_receipt = deposit_txn.with_required_confirmations(3).get_receipt().await
+    let deposit_receipt = deposit_txn
+        .with_required_confirmations(3)
+        .get_receipt()
+        .await
         .map_err(|e| format!("Failed to get deposit transaction receipt: {}", e))?;
 
     println!("Deposit ETH Transaction Hash: {:?}", deposit_receipt.transaction_hash.to_string());
@@ -290,7 +271,11 @@ async fn execute_eth_l1_deposit(l1_context: &L1Context, deposit_amount: U256, te
     Ok(())
 }
 
-async fn execute_erc20_l1_deposit(l1_context: &L1Context, deposit_amount: U256, test_config: &SetupConfig) -> TestResult<()> {
+async fn execute_erc20_l1_deposit(
+    l1_context: &L1Context,
+    deposit_amount: U256,
+    test_config: &SetupConfig,
+) -> TestResult<()> {
     // Create provider and contracts on-demand - let compiler infer types
     let signer = PrivateKeySigner::from_str(L1_ACCOUNT_PRIVATE_KEY)
         .map_err(|e| format!("Failed to parse L1 private key: {}", e))?;
@@ -306,8 +291,8 @@ async fn execute_erc20_l1_deposit(l1_context: &L1Context, deposit_amount: U256, 
     let erc20_token_contract = ERC20Token::new(l1_context.erc20_token_address, &provider);
     let erc20_bridge_contract = StarknetTokenBridge::new(l1_context.erc20_bridge_address, &provider);
 
-    let l2_recipient = U256::from_str(L2_ACCOUNT_ADDRESS)
-        .map_err(|e| format!("Failed to parse L2 recipient address: {}", e))?;
+    let l2_recipient =
+        U256::from_str(L2_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L2 recipient address: {}", e))?;
 
     let fee_amount = U256::from(10_000_000_000_000_000u64); // 0.01 ETH fee
 
@@ -319,7 +304,10 @@ async fn execute_erc20_l1_deposit(l1_context: &L1Context, deposit_amount: U256, 
         .await
         .map_err(|e| format!("Failed to send approve transaction: {}", e))?;
 
-    let approve_receipt = approve_txn.with_required_confirmations(3).get_receipt().await
+    let approve_receipt = approve_txn
+        .with_required_confirmations(3)
+        .get_receipt()
+        .await
         .map_err(|e| format!("Failed to get approve transaction receipt: {}", e))?;
 
     println!("Approve ERC20 Transaction Hash: {:?}", approve_receipt.transaction_hash.to_string());
@@ -333,7 +321,10 @@ async fn execute_erc20_l1_deposit(l1_context: &L1Context, deposit_amount: U256, 
         .await
         .map_err(|e| format!("Failed to send deposit transaction: {}", e))?;
 
-    let deposit_receipt = deposit_txn.with_required_confirmations(3).get_receipt().await
+    let deposit_receipt = deposit_txn
+        .with_required_confirmations(3)
+        .get_receipt()
+        .await
         .map_err(|e| format!("Failed to get deposit transaction receipt: {}", e))?;
 
     println!("Deposit ERC20 Transaction Hash: {:?}", deposit_receipt.transaction_hash.to_string());
@@ -345,18 +336,13 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
     println!("🔄 Starting ETH & ERC20 withdrawal flow test (L2 -> L1)");
 
     // Get initial ETH L2 balance
-    let initial_eth_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.eth_token_address,
-        l2_context.address,
-    ).await?;
+    let initial_eth_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     // Get initial ETH L2 balance
-    let initial_erc20_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.erc20_token_address,
-        l2_context.address,
-    ).await?;
+    let initial_erc20_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+            .await?;
 
     // Execute ETH withdrawal
     let eth_withdraw_hash = execute_eth_l2_withdrawal(l2_context).await?;
@@ -370,18 +356,13 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
     wait_for_transactions_finality(setup, vec![eth_withdraw_hash, erc20_withdraw_hash]).await?;
 
     // Verify ETH L2 balance decreased
-    let final_eth_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.eth_token_address,
-        l2_context.address,
-    ).await?;
+    let final_eth_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.eth_token_address, l2_context.address).await?;
 
     // Verify ERC20 L2 balance decreased
-    let final_erc20_l2_balance = get_l2_token_balance(
-        &l2_context.account.provider(),
-        l2_context.erc20_token_address,
-        l2_context.address,
-    ).await?;
+    let final_erc20_l2_balance =
+        get_l2_token_balance(&l2_context.account.provider(), l2_context.erc20_token_address, l2_context.address)
+            .await?;
 
     println!("ETH L2 balance before withdraw: {}", initial_eth_l2_balance);
     println!("ETH L2 balance after withdraw: {}", final_eth_l2_balance);
@@ -404,8 +385,8 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
 }
 
 async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
-    let l1_recipient_felt = Felt::from_hex(L1_ACCOUNT_ADDRESS)
-        .map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
+    let l1_recipient_felt =
+        Felt::from_hex(L1_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
 
     let withdraw_amount = Felt::from(5);
 
@@ -413,16 +394,16 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
 
     let call = Call {
         to: l2_context.eth_bridge_address,
-        selector: get_selector_from_name("initiate_withdraw")
-            .map_err(|e| format!("Failed to get selector: {}", e))?,
+        selector: get_selector_from_name("initiate_withdraw").map_err(|e| format!("Failed to get selector: {}", e))?,
         calldata: vec![
-            l1_recipient_felt,              // L1 recipient address
-            withdraw_amount,                // Amount to withdraw (low part)
-            Felt::ZERO,                     // Amount to withdraw (high part, for u256)
+            l1_recipient_felt, // L1 recipient address
+            withdraw_amount,   // Amount to withdraw (low part)
+            Felt::ZERO,        // Amount to withdraw (high part, for u256)
         ],
     };
 
-    let result = l2_context.account
+    let result = l2_context
+        .account
         .execute_v1(vec![call])
         .nonce(l2_context.account.get_nonce().await?)
         .max_fee(Felt::ZERO)
@@ -435,11 +416,11 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
 }
 
 async fn execute_erc20_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
-    let l1_recipient_felt = Felt::from_hex(L1_ACCOUNT_ADDRESS)
-        .map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
+    let l1_recipient_felt =
+        Felt::from_hex(L1_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
 
-    let l1_erc20_token_address_felt = Felt::from_str(L1_ERC20_TOKEN_ADDRESS)
-        .map_err(|e| format!("Failed to parse L1 ERC20 token address: {}", e))?;
+    let l1_erc20_token_address_felt =
+        Felt::from_str(L1_ERC20_TOKEN_ADDRESS).map_err(|e| format!("Failed to parse L1 ERC20 token address: {}", e))?;
 
     let withdraw_amount = Felt::from(5);
 
@@ -450,14 +431,15 @@ async fn execute_erc20_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt>
         selector: get_selector_from_name("initiate_token_withdraw")
             .map_err(|e| format!("Failed to get selector: {}", e))?,
         calldata: vec![
-            l1_erc20_token_address_felt,    // L1 ERC20 token address
-            l1_recipient_felt,              // L1 recipient address
-            withdraw_amount,                // Amount to withdraw (low part)
-            Felt::ZERO,                     // Amount to withdraw (high part, for u256)
+            l1_erc20_token_address_felt, // L1 ERC20 token address
+            l1_recipient_felt,           // L1 recipient address
+            withdraw_amount,             // Amount to withdraw (low part)
+            Felt::ZERO,                  // Amount to withdraw (high part, for u256)
         ],
     };
 
-    let result = l2_context.account
+    let result = l2_context
+        .account
         .execute_v1(vec![call])
         .nonce(l2_context.account.get_nonce().await?)
         .max_fee(Felt::ZERO)

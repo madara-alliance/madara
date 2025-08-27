@@ -1,6 +1,8 @@
+use crate::services::constants::*;
 use crate::services::localstack::LocalstackConfigBuilder;
 use crate::services::mock_prover::MockProverConfig;
 use crate::services::mongodb::MongoConfigBuilder;
+use crate::services::orchestrator::Layer;
 use crate::services::server::ServerError;
 use crate::services::{
     anvil::{AnvilConfig, AnvilConfigBuilder, AnvilError},
@@ -15,8 +17,6 @@ use crate::services::{
     pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError},
 };
 use std::time::Duration;
-use crate::services::constants::*;
-use crate::services::orchestrator::Layer;
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {

@@ -107,7 +107,14 @@ impl EthereumSettlementClient {
         let core_contract_client =
             StarknetValidityContractClient::new(settlement_cfg.l1_core_contract_address, filler_provider);
 
-        EthereumSettlementClient { provider, core_contract_client, wallet, wallet_address, impersonate_account: None, txn_wait_sleep_delay_secs: settlement_cfg.txn_wait_sleep_delay_secs }
+        EthereumSettlementClient {
+            provider,
+            core_contract_client,
+            wallet,
+            wallet_address,
+            impersonate_account: None,
+            txn_wait_sleep_delay_secs: settlement_cfg.txn_wait_sleep_delay_secs,
+        }
     }
 
     #[cfg(feature = "testing")]

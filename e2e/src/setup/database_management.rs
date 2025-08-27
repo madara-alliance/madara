@@ -98,9 +98,7 @@ impl DatabaseManager {
         if anvil_json_exists && madara_db_exists && mock_verifier_exists && orchestrator_dir_exists {
             Ok(())
         } else {
-            Err(SetupError::OtherError(
-                "Database files missing despite ReadyToUse status".to_string()
-            ))
+            Err(SetupError::OtherError("Database files missing despite ReadyToUse status".to_string()))
         }
     }
 }

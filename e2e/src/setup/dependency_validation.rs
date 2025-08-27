@@ -76,10 +76,7 @@ impl DependencyValidator {
     async fn validate_docker_images(&self) -> Result<(), SetupError> {
         println!("📦 Pulling required Docker images...");
 
-        let images = vec![
-            ("mongo", MONGODB_IMAGE),
-            ("localstack/localstack", LOCALSTACK_IMAGE),
-        ];
+        let images = vec![("mongo", MONGODB_IMAGE), ("localstack/localstack", LOCALSTACK_IMAGE)];
 
         let mut join_set = JoinSet::new();
 
