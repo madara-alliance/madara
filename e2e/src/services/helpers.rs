@@ -8,6 +8,9 @@ use std::path::PathBuf;
 use url::Url;
 use tokio::time::Duration;
 use thiserror::Error;
+use std::future::Future;
+use tokio::sync::Mutex;
+use std::collections::HashSet;
 
 /// Error code returned by Starknet RPC when a block is not found
 const BLOCK_NOT_FOUND_ERROR_CODE: u64 = 24;
@@ -23,6 +26,11 @@ pub enum NodeRpcError {
     BlockNotFound,
     #[error("Timeout waiting for block {0} after {1} retries. Last error: {2}")]
     TimeoutWaitingForBlock(u64, u32, String),
+    #[error("Block not ready Latest: {0}, Required: {1}")]
+    BlockNotReady(u64, u64),
+    #[error("No blocks yet")]
+    NoBlocksYet
+
 }
 
 /// Transaction finality status from Starknet
@@ -136,39 +144,47 @@ pub trait NodeRpcMethods: Send + Sync {
     async fn wait_for_block(&self, block_number: u64) -> Result<(), NodeRpcError> {
         println!("⏳ Waiting for block {} to be mined", block_number);
 
-        let poll_interval = Duration::from_millis(500); // Configurable interval
-        let mut retry_count = 0;
-        const MAX_RETRIES: u32 = 1200; // 10 minutes with 500ms intervals
+        let poll_interval = Duration::from_secs(1); // 1 second
+        let timeout = Duration::from_secs(300); // 5 mins
 
-        loop {
+        // Inner function that performs one attempt
+        let wait_for_block_inner = |retry_count| async move {
             match self.get_latest_block_number().await {
                 Ok(Some(latest)) => {
                     if latest >= block_number {
                         println!("🔔 Block {} is mined (latest: {})", block_number, latest);
                         return Ok(());
+                    } else {
+                        // Block not ready yet, return an error to trigger retry
+                        return Err(NodeRpcError::BlockNotReady(latest, block_number));
                     }
                 }
                 Ok(None) => {
                     // No blocks mined yet, continue waiting
+                    return Err(NodeRpcError::NoBlocksYet);
                 }
                 Err(e) => {
-                    retry_count += 1;
-                    if retry_count >= MAX_RETRIES {
-                        return Err(NodeRpcError::TimeoutWaitingForBlock(block_number, MAX_RETRIES, e.to_string()));
-                    }
-
                     // Log error but continue retrying
                     if retry_count % 20 == 0 {
-                        // Log every ~10 seconds
-                        println!("⚠️  Error fetching block number (retry {}/{}): {}",
-                                retry_count, MAX_RETRIES, e.to_string());
+                        println!("⚠️  Error fetching block number (retry {}): {}",
+                                retry_count, e);
                     }
+
+                    return Err(e);
                 }
             }
+        };
 
-            tokio::time::sleep(poll_interval).await;
+        // Use the retry function
+        retry_with_timeout(poll_interval, timeout, wait_for_block_inner)
+            .await
+            .map_err(|e| match e {
+                NodeRpcError::BlockNotReady(_, _) | NodeRpcError::NoBlocksYet => {
+                    NodeRpcError::TimeoutWaitingForBlock(block_number, 0, "Timeout exceeded".to_string())
+                }
+                other => other,
+            })
         }
-    }
 
     /// Fetches the status of a specific block.
     ///
@@ -353,6 +369,7 @@ pub trait NodeRpcMethods: Send + Sync {
         serde_json::from_str(&format!("\"{}\"", finality_str))
             .map_err(|_| NodeRpcError::InvalidResponse)
     }
+
 }
 
 
@@ -361,8 +378,8 @@ lazy_static::lazy_static! {
 }
 
 /// Get a free port and reserve it to prevent double allocation
-pub fn get_free_port() -> Result<u16, io::Error> {
-    let mut allocated = ALLOCATED_PORTS.lock().unwrap();
+pub async fn get_free_port() -> Result<u16, io::Error> {
+    let mut allocated = ALLOCATED_PORTS.lock().await;
 
     loop {
         let listener = TcpListener::bind(format!("{}:0", DEFAULT_SERVICE_HOST))?;
@@ -414,4 +431,44 @@ pub fn docker_url_conversion(url: &Url) -> Url {
     } else {
         url.clone()
     }
+}
+
+// Generic retry function that works with any async operation (timeout-based)
+pub async fn retry_with_timeout<T, E, F, Fut>(
+    delay: Duration,
+    timeout: Duration,
+    mut operation: F,
+) -> Result<T, E>
+where
+    F: FnMut(u32) -> Fut,  // Now takes attempt count as parameter
+    Fut: Future<Output = Result<T, E>>,
+{
+    let start_time = tokio::time::Instant::now();
+    let mut last_error = None;
+    let mut attempt = 0;
+
+    loop {
+        attempt += 1;
+        match operation(attempt).await {
+            Ok(result) => return Ok(result),
+            Err(e) => {
+                last_error = Some(e);
+                let elapsed = start_time.elapsed();
+
+                // Check if we've exceeded the timeout
+                if elapsed >= timeout {
+                    break;
+                }
+
+                // Check if we have enough time for another attempt
+                if elapsed + delay >= timeout {
+                    break;
+                }
+
+                tokio::time::sleep(delay).await;
+            }
+        }
+    }
+
+    Err(last_error.unwrap())
 }
