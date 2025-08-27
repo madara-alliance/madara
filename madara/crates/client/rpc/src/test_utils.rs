@@ -610,11 +610,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
                             execution_result: ExecutionResult::Succeeded,
                         }),
                     },
-                    state_diff: TransactionStateUpdate {
-                        nonces: [(contracts[0], 3.into()), (contracts[1], 2.into())].into(),
-                        contract_class_hashes: [(contracts[0], class_hashes[2])].into(),
-                        storage: [((contracts[0], keys[1]), values[0]), ((contracts[0], keys[0]), values[2])].into(),
-                    },
+                    state_diff: state_diffs[3].clone().into(),
                     declared_class: Some(ConvertedClass::Sierra(SierraConvertedClass {
                         class_hash: class_hashes[2],
                         info: SierraClassInfo {

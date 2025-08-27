@@ -1,5 +1,5 @@
-use crate::state_update::StateDiff;
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
+use crate::state_update::StateDiff;
 use itertools::Itertools;
 use mp_block::header::PreconfirmedHeader;
 use mp_block::Header;
@@ -8,6 +8,8 @@ use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
 use mp_receipt::EventWithTransactionHash;
+use mp_state_update::TransactionStateUpdate;
+use mp_transactions::validated::{TransactionWithHashAndContractAddress, ValidatedTransaction};
 use mp_transactions::TransactionWithHash;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
@@ -198,32 +200,50 @@ pub struct ProviderBlockPreConfirmed {
     pub timestamp: u64,
     pub sequencer_address: Felt,
     pub transactions: Vec<Transaction>,
-    pub transaction_receipts: Vec<ConfirmedReceipt>,
-    pub transaction_state_diffs: Vec<StateDiff>,
+    pub transaction_receipts: Vec<Option<ConfirmedReceipt>>,
+    pub transaction_state_diffs: Vec<Option<StateDiff>>,
 }
 
-
 impl ProviderBlockPreConfirmed {
-    pub fn new(header: PreconfirmedHeader, content: Vec<TransactionWithReceipt>, status: BlockStatus) -> Self {
-        let (transactions, transaction_receipts, transaction_state_diffs): (Vec<_>, Vec<_>, Vec<_>) = content
+    pub fn new<'a>(
+        header: &PreconfirmedHeader,
+        executed_txs: impl IntoIterator<Item = (&'a TransactionWithReceipt, &'a TransactionStateUpdate)>,
+        candidates: impl IntoIterator<Item = &'a ValidatedTransaction>,
+        status: BlockStatus,
+    ) -> Self {
+        let (transactions, transaction_receipts, transaction_state_diffs): (Vec<_>, Vec<_>, Vec<_>) = executed_txs
             .into_iter()
             .enumerate()
-            .map(|(index, tx)| {
+            .map(|(index, (tx, state_diff))| {
                 let l1_to_l2_consumed_message = match &tx.transaction {
                     mp_block::Transaction::L1Handler(l1_handler) => {
                         mp_receipt::MsgToL2::try_from(&l1_handler.clone()).ok()
                     }
                     _ => None,
                 };
+
                 (
                     Transaction::new(
-                        TransactionWithHash { transaction: tx.transaction, hash: *tx.receipt.transaction_hash() },
+                        TransactionWithHash {
+                            transaction: tx.transaction.clone(),
+                            hash: *tx.receipt.transaction_hash(),
+                        },
                         tx.receipt.contract_address().copied(),
                     ),
-                    ConfirmedReceipt::new(tx.receipt, l1_to_l2_consumed_message, index as u64),
-                    StateDiff::default()
+                    Some(ConfirmedReceipt::new(tx.receipt.clone(), l1_to_l2_consumed_message, index as u64)),
+                    Some(state_diff.to_state_diff().into()),
                 )
             })
+            .chain(candidates.into_iter().map(|tx| {
+                (
+                    Transaction::new(
+                        TransactionWithHash { transaction: tx.transaction.clone(), hash: tx.hash },
+                        Some(tx.contract_address),
+                    ),
+                    None,
+                    None,
+                )
+            }))
             .multiunzip();
 
         Self {
@@ -267,8 +287,50 @@ impl ProviderBlockPreConfirmed {
             block_number,
         })
     }
-}
 
+    pub fn num_executed_transactions(&self) -> usize {
+        self.transaction_receipts
+            .iter()
+            .zip(&self.transaction_state_diffs)
+            .take_while(|(receipt, state_diff)| receipt.is_some() && state_diff.is_some())
+            .count()
+    }
+
+    pub fn into_transactions(
+        self,
+        skip_first_n: usize,
+    ) -> (Vec<(TransactionWithReceipt, TransactionStateUpdate)>, Vec<TransactionWithHashAndContractAddress>) {
+        let mut transactions = self
+            .transactions
+            .into_iter()
+            .zip(self.transaction_receipts.into_iter())
+            .zip(self.transaction_state_diffs.into_iter())
+            .skip(skip_first_n)
+            .peekable();
+
+        let executed = transactions
+            .peeking_take_while(|((_transaction, receipt), state_diff)| receipt.is_some() && state_diff.is_some())
+            .map(|((transaction, receipt), state_diff)| {
+                (
+                    TransactionWithReceipt {
+                        receipt: receipt.expect("Should not be empty").into_mp(&transaction),
+                        transaction: transaction.into(),
+                    },
+                    mp_state_update::StateDiff::from(state_diff.expect("Should not be empty")).into(),
+                )
+            })
+            .collect();
+
+        let candidates = transactions
+            .map(|((tx, _), _)| TransactionWithHashAndContractAddress {
+                contract_address: *tx.contract_address(),
+                transaction: TransactionWithHash { hash: *tx.transaction_hash(), transaction: tx.into() },
+            })
+            .collect();
+
+        (executed, candidates)
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]

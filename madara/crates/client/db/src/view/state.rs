@@ -129,7 +129,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
 
     pub fn get_contract_storage(&self, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
         let state_diff_key = (*contract_address, *key);
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.storage.get(&state_diff_key).copied()) {
+        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.storage_diffs.get(&state_diff_key).copied()) {
             return Ok(Some(res));
         }
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
@@ -145,8 +145,8 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
     }
 
     pub fn get_contract_class_hash(&self, contract_address: &Felt) -> Result<Option<Felt>> {
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.nonces.get(contract_address).copied()) {
-            return Ok(Some(res));
+        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.contract_class_hashes.get(contract_address).copied()) {
+            return Ok(Some(*res.class_hash()));
         }
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
         self.backend().db.get_contract_class_hash_at(block_n, contract_address)

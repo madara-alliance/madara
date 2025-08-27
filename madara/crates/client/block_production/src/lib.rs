@@ -10,9 +10,9 @@ use mc_exec::execution::TxInfo;
 use mc_mempool::Mempool;
 use mc_settlement_client::SettlementClient;
 use mp_block::TransactionWithReceipt;
-use mp_convert::ToFelt;
+use mp_convert::{Felt, ToFelt};
 use mp_receipt::from_blockifier_execution_info;
-use mp_state_update::TransactionStateUpdate;
+use mp_state_update::{ClassUpdateItem, DeclaredClassCompiledClass, TransactionStateUpdate};
 use mp_transactions::validated::ValidatedTransaction;
 use mp_transactions::TransactionWithHash;
 use mp_utils::rayon::global_spawn_rayon_task;
@@ -45,11 +45,18 @@ pub(crate) struct CurrentBlockState {
     backend: Arc<MadaraBackend>,
     pub block_number: u64,
     pub consumed_core_contract_nonces: HashSet<u64>,
+    /// We need to keep track of deployed contracts, because blockifier can't make the difference between replaced class / deployed contract :/
+    pub deployed_contracts: HashSet<Felt>,
 }
 
 impl CurrentBlockState {
     pub fn new(backend: Arc<MadaraBackend>, block_number: u64) -> Self {
-        Self { backend, block_number, consumed_core_contract_nonces: Default::default() }
+        Self {
+            backend,
+            block_number,
+            consumed_core_contract_nonces: Default::default(),
+            deployed_contracts: Default::default(),
+        }
     }
     /// Process the execution result, merging it with the current pending state
     pub async fn append_batch(&mut self, mut batch: BatchExecutionResult) -> anyhow::Result<()> {
@@ -81,12 +88,35 @@ impl CurrentBlockState {
                         contract_class_hashes: state_diff
                             .class_hashes
                             .into_iter()
-                            .map(|(contract_addr, class_hash)| (contract_addr.to_felt(), class_hash.to_felt()))
-                            .collect(),
-                        storage: state_diff
+                            .map(|(contract_addr, class_hash)| {
+                                let entry = if !self.deployed_contracts.contains(&contract_addr)
+                                    && !self.backend.view_on_latest_confirmed().is_contract_deployed(&contract_addr)?
+                                {
+                                    self.deployed_contracts.insert(contract_addr.to_felt());
+                                    ClassUpdateItem::DeployedContract(class_hash.to_felt())
+                                } else {
+                                    ClassUpdateItem::ReplacedClass(class_hash.to_felt())
+                                };
+
+                                Ok((contract_addr.to_felt(), entry))
+                            })
+                            .collect::<anyhow::Result<_>>()?,
+                        storage_diffs: state_diff
                             .storage
                             .into_iter()
                             .map(|((contract_addr, key), value)| ((contract_addr.to_felt(), key.to_felt()), value))
+                            .collect(),
+                        declared_classes: declared_class
+                            .iter()
+                            .map(|class| {
+                                (
+                                    *class.class_hash(),
+                                    class
+                                        .as_sierra()
+                                        .map(|class| DeclaredClassCompiledClass::Sierra(class.info.compiled_class_hash))
+                                        .unwrap_or(DeclaredClassCompiledClass::Legacy),
+                                )
+                            })
                             .collect(),
                     },
                     declared_class,

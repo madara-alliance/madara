@@ -3,14 +3,160 @@ use starknet_types_core::{
     hash::{Poseidon, StarkHash},
 };
 use std::collections::HashMap;
-
 mod into_starknet_types;
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum DeclaredClassCompiledClass {
+    Sierra(/* compiled_class_hash */ Felt),
+    Legacy,
+}
+
+#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
+pub enum ClassUpdateItem {
+    DeployedContract(Felt),
+    ReplacedClass(Felt),
+}
+
+impl ClassUpdateItem {
+    pub fn class_hash(&self) -> &Felt {
+        match self {
+            ClassUpdateItem::DeployedContract(class_hash) => class_hash,
+            ClassUpdateItem::ReplacedClass(class_hash) => class_hash,
+        }
+    }
+}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize, serde::Serialize)]
 pub struct TransactionStateUpdate {
     pub nonces: HashMap<Felt, Felt>,
-    pub contract_class_hashes: HashMap<Felt, Felt>,
-    pub storage: HashMap<(Felt, Felt), Felt>,
+    pub storage_diffs: HashMap<(Felt, Felt), Felt>,
+    pub declared_classes: HashMap<Felt, DeclaredClassCompiledClass>,
+    pub contract_class_hashes: HashMap<Felt, ClassUpdateItem>,
+}
+
+impl TransactionStateUpdate {
+    // Note: you need to re-normalize after..
+    #[allow(unused)]
+    fn append(&mut self, state_diff: &TransactionStateUpdate) {
+        self.nonces.extend(state_diff.nonces.iter());
+        self.storage_diffs.extend(state_diff.storage_diffs.iter());
+        self.declared_classes.extend(state_diff.declared_classes.iter());
+        self.contract_class_hashes.extend(state_diff.contract_class_hashes.iter());
+    }
+
+    // Note: you need to re-normalize after..
+    fn append_state_diff(&mut self, state_diff: &StateDiff) {
+        self.nonces.extend(state_diff.nonces.iter().map(|entry| (entry.contract_address, entry.nonce)));
+        self.storage_diffs.extend(
+            state_diff
+                .storage_diffs
+                .iter()
+                .flat_map(|entry| entry.storage_entries.iter().map(|e| ((entry.address, e.key), e.value))),
+        );
+        self.declared_classes.extend(
+            state_diff
+                .declared_classes
+                .iter()
+                .map(|entry| (entry.class_hash, DeclaredClassCompiledClass::Sierra(entry.compiled_class_hash)))
+                .chain(
+                    state_diff
+                        .old_declared_contracts
+                        .iter()
+                        .map(|class_hash| (*class_hash, DeclaredClassCompiledClass::Legacy)),
+                ),
+        );
+        self.contract_class_hashes.extend(
+            state_diff
+                .replaced_classes
+                .iter()
+                .map(|entry| (entry.contract_address, ClassUpdateItem::ReplacedClass(entry.class_hash)))
+                .chain(
+                    state_diff
+                        .deployed_contracts
+                        .iter()
+                        .map(|entry| (entry.address, ClassUpdateItem::DeployedContract(entry.class_hash))),
+                ),
+        );
+    }
+
+    pub fn from_state_diff(state_diff: &StateDiff) -> Self {
+        let mut this = Self::default();
+        this.append_state_diff(state_diff);
+        this
+    }
+
+    pub fn to_state_diff(&self) -> StateDiff {
+        fn sorted_by_key<T, K: Ord, F: FnMut(&T) -> K>(mut vec: Vec<T>, f: F) -> Vec<T> {
+            vec.sort_by_key(f);
+            vec
+        }
+
+        let mut storage_diffs: HashMap<Felt, HashMap<Felt, Felt>> = Default::default();
+        let mut declared_classes: Vec<DeclaredClassItem> = Default::default();
+        let mut old_declared_contracts: Vec<Felt> = Default::default();
+        let mut deployed_contracts: Vec<DeployedContractItem> = Default::default();
+        let mut replaced_classes: Vec<ReplacedClassItem> = Default::default();
+
+        for (&(contract, key), &value) in &self.storage_diffs {
+            storage_diffs.entry(contract).or_default().insert(key, value);
+        }
+
+        for (&class_hash, &compiled_class_hash) in &self.declared_classes {
+            match compiled_class_hash {
+                DeclaredClassCompiledClass::Legacy => old_declared_contracts.push(class_hash),
+                DeclaredClassCompiledClass::Sierra(compiled_class_hash) => {
+                    declared_classes.push(DeclaredClassItem { class_hash, compiled_class_hash })
+                }
+            }
+        }
+
+        for (&contract_address, &entry) in &self.contract_class_hashes {
+            match entry {
+                ClassUpdateItem::DeployedContract(class_hash) => {
+                    deployed_contracts.push(DeployedContractItem { address: contract_address, class_hash })
+                }
+                ClassUpdateItem::ReplacedClass(class_hash) => {
+                    replaced_classes.push(ReplacedClassItem { contract_address, class_hash })
+                }
+            }
+        }
+
+        StateDiff {
+            storage_diffs: sorted_by_key(
+                storage_diffs
+                    .into_iter()
+                    .map(|(address, storage_entries)| ContractStorageDiffItem {
+                        address,
+                        storage_entries: sorted_by_key(
+                            storage_entries.into_iter().map(|(key, value)| StorageEntry { key, value }).collect(),
+                            |entry| entry.key,
+                        ),
+                    })
+                    .collect(),
+                |entry| entry.address,
+            ),
+            old_declared_contracts: sorted_by_key(old_declared_contracts, |&class_hash| class_hash),
+            declared_classes: sorted_by_key(declared_classes, |entry| entry.class_hash),
+            deployed_contracts: sorted_by_key(deployed_contracts, |entry| entry.address),
+            replaced_classes: sorted_by_key(replaced_classes, |entry| entry.contract_address),
+            nonces: sorted_by_key(
+                self.nonces.iter().map(|(&contract_address, &nonce)| NonceUpdate { contract_address, nonce }).collect(),
+                |entry| entry.contract_address,
+            ),
+        }
+    }
+}
+
+impl From<StateDiff> for TransactionStateUpdate {
+    fn from(value: StateDiff) -> Self {
+        Self::from_state_diff(&value)
+    }
+}
+
+impl From<TransactionStateUpdate> for StateDiff {
+    fn from(value: TransactionStateUpdate) -> Self {
+        value.to_state_diff()
+    }
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -25,12 +171,6 @@ pub struct StateUpdate {
 pub struct PendingStateUpdate {
     pub old_root: Felt,
     pub state_diff: StateDiff,
-}
-
-#[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum DeclaredClassCompiledClass {
-    Sierra(/* compiled_class_hash */ Felt),
-    Legacy,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]

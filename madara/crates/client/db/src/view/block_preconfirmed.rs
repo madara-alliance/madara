@@ -4,13 +4,13 @@ use crate::{
     rocksdb::RocksDBStorage,
 };
 use mp_block::{
-    header::PreconfirmedHeader, MadaraPreconfirmedBlockInfo, FullBlockWithoutCommitments, TransactionWithReceipt,
+    header::PreconfirmedHeader, FullBlockWithoutCommitments, MadaraPreconfirmedBlockInfo, TransactionWithReceipt,
 };
 use mp_class::ConvertedClass;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{
-    ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
-    StorageEntry,
+    ContractStorageDiffItem, DeclaredClassCompiledClass, DeclaredClassItem, DeployedContractItem, NonceUpdate,
+    ReplacedClassItem, StateDiff, StorageEntry,
 };
 use mp_transactions::validated::ValidatedTransaction;
 use std::fmt;
@@ -265,12 +265,13 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
 
             for tx in borrow.executed_transactions() {
                 // Storage diffs.
-                for ((contract, key), value) in &tx.state_diff.storage {
+                for ((contract, key), value) in &tx.state_diff.storage_diffs {
                     storage_diffs.entry(*contract).or_default().insert(*key, *value);
                 }
 
                 // Changed contract class hashes.
-                contract_class_hashes.extend(tx.state_diff.contract_class_hashes.iter().map(|(k, v)| (*k, *v)));
+                contract_class_hashes
+                    .extend(tx.state_diff.contract_class_hashes.iter().map(|(k, v)| (*k, *v.class_hash())));
 
                 // Nonces.
                 nonces.extend(tx.state_diff.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
@@ -279,13 +280,12 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
                 }));
 
                 // Classes.
-                if let Some(declared_class) = &tx.declared_class {
-                    match declared_class {
-                        ConvertedClass::Legacy(class) => old_declared_contracts.push(class.class_hash),
-                        ConvertedClass::Sierra(class) => declared_classes.push(DeclaredClassItem {
-                            class_hash: class.class_hash,
-                            compiled_class_hash: class.info.compiled_class_hash,
-                        }),
+                for (&class_hash, &compiled_class_hash) in &tx.state_diff.declared_classes {
+                    match compiled_class_hash {
+                        DeclaredClassCompiledClass::Legacy => old_declared_contracts.push(class_hash),
+                        DeclaredClassCompiledClass::Sierra(compiled_class_hash) => {
+                            declared_classes.push(DeclaredClassItem { class_hash, compiled_class_hash })
+                        }
                     }
                 }
             }
@@ -318,10 +318,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
                     if storage_entries.is_empty() {
                         Ok(None)
                     } else {
-                        Ok(Some(ContractStorageDiffItem {
-                            address,
-                            storage_entries: sorted_by_key(storage_entries, |entry| entry.key),
-                        }))
+                        Ok(Some(ContractStorageDiffItem { address, storage_entries }))
                     }
                 })
                 .filter_map_ok(|v| v)

@@ -1,4 +1,4 @@
-use crate::Transaction;
+use crate::{Transaction, TransactionWithHash};
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use mp_class::ConvertedClass;
@@ -46,6 +46,15 @@ impl TxTimestamp {
     pub fn saturating_add(self, duration: Duration) -> Self {
         Self(self.0.saturating_add(duration.as_millis().try_into().unwrap_or(u64::MAX)))
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransactionWithHashAndContractAddress {
+    pub transaction: TransactionWithHash,
+    /// This field is always filled in with the sender_address, but it is the deployed
+    /// contract address in case of DeployAccount. For L1HandlerTransactions this is the
+    /// contract address receiving the l1 message.
+    pub contract_address: Felt
 }
 
 /// A transaction that has been validated, but not yet included into a block.

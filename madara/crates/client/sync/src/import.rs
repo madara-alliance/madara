@@ -2,7 +2,7 @@ use anyhow::Context;
 use mc_db::MadaraBackend;
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
-    BlockHeaderWithSignatures, Header, FullBlockWithoutCommitments, TransactionWithReceipt,
+    BlockHeaderWithSignatures, Header, TransactionWithReceipt,
 };
 use mp_chain_config::StarknetVersion;
 use mp_class::{
@@ -12,7 +12,6 @@ use mp_class::{
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::{DeclaredClassCompiledClass, StateDiff};
-use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::rayon::{global_spawn_rayon_task, RayonPool};
 use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRefIterator, ParallelIterator};
 use starknet_api::core::ChainId;
@@ -144,20 +143,6 @@ pub struct BlockImporterCtx {
     config: BlockValidationConfig,
 }
 impl BlockImporterCtx {
-    // Pending block
-
-    pub fn save_preconfirmed(
-        &self,
-        block: FullBlockWithoutCommitments,
-        classes: Vec<ConvertedClass>,
-        candidates: &[ValidatedTransaction],
-    ) -> Result<(), BlockImportError> {
-        // self.db
-        //     .write_access()
-        //     .map_err(|error| BlockImportError::InternalDb { error, context: "Storing pending block".into() })?;
-        Ok(())
-    }
-
     // HEADERS
 
     pub fn verify_header(

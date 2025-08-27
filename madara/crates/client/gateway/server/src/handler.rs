@@ -19,10 +19,13 @@ use mc_rpc::{
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ClassInfo, ContractClass};
-use mp_gateway::{block::ProviderBlockPreConfirmed, user_transaction::{
-    AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
-    UserTransaction,
-}};
+use mp_gateway::{
+    block::ProviderBlockPreConfirmed,
+    user_transaction::{
+        AddTransactionResult, UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction,
+        UserTransaction,
+    },
+};
 use mp_gateway::{
     block::{BlockStatus, ProviderBlock, ProviderBlockSignature},
     state_update::ProviderStateUpdate,
@@ -39,14 +42,40 @@ use serde_json::json;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
-// pub async fn handle_get_preconfirmed_block(
-//     req: Request<Incoming>,
-//     backend: Arc<MadaraBackend>,
-// ) -> Result<Response<String>, GatewayError> {
-//     let block = ProviderBlockPreConfirmed {
-        
-//     }
-// }
+pub async fn handle_get_preconfirmed_block(
+    req: Request<Incoming>,
+    backend: Arc<MadaraBackend>,
+) -> Result<Response<String>, GatewayError> {
+    let params = get_params_from_request(&req);
+    let block_number = params.get("blockNumber").ok_or_else(|| {
+        StarknetError::new(StarknetErrorCode::MalformedRequest, "Field blockNumber is required.".into())
+    })?;
+
+    let block_number: u64 = block_number
+        .parse()
+        .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
+
+    let mut block =
+        backend.block_view_on_preconfirmed().filter(|block| block.block_number() == block_number).ok_or_else(|| {
+            StarknetError::new(
+                StarknetErrorCode::BlockNotFound,
+                format!("Pre-confirmed block with number {block_number} was not found."),
+            )
+        })?;
+
+    block.refresh_with_candidates(); // We want candidates too :)
+    let block = {
+        let content = block.borrow_content();
+        ProviderBlockPreConfirmed::new(
+            block.header(),
+            content.executed_transactions().map(|tx| (&tx.transaction, &tx.state_diff)),
+            block.candidate_transactions().iter().map(|tx| &**tx),
+            BlockStatus::PreConfirmed,
+        )
+    };
+
+    Ok(create_json_response(hyper::StatusCode::OK, &block))
+}
 
 pub async fn handle_get_block(
     req: Request<Incoming>,

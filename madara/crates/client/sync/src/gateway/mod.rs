@@ -6,7 +6,7 @@ use crate::{
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
-use blocks::{gateway_pending_block_sync, GatewayBlockSync};
+use blocks::{gateway_preconfirmed_block_sync, GatewayBlockSync};
 use classes::ClassesSync;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
@@ -62,7 +62,7 @@ pub fn forward_sync(
 ) -> GatewaySync {
     let probe = Arc::new(GatewayLatestProbe::new(client.clone()));
     let probe = ThrottledRepeatedFuture::new(move |val| probe.clone().probe(val), Duration::from_secs(1));
-    let get_pending_block = gateway_pending_block_sync(client.clone(), importer.clone(), backend.clone());
+    let get_pending_block = gateway_preconfirmed_block_sync(client.clone(), importer.clone(), backend.clone());
     SyncController::new(
         backend.clone(),
         GatewayForwardSync::new(backend, importer, client, config),
