@@ -32,6 +32,7 @@ where
         let msg_color = "\x1b[97m"; // Bright White
         let fixed_field_color = "\x1b[92m"; // Bright Green
         let reset = "\x1b[0m";
+        let function_color = "\x1b[35m"; // Magenta
 
         // Format line
         write!(writer, "{}{}{} ", ts_color, now, reset)?;
@@ -48,9 +49,11 @@ where
             write!(writer, "{}{:<20}:{:<4} {}", file_color, display_name, line, reset)?;
         }
 
+        write!(writer, "{}[{}]{} ", function_color, meta.name(), reset)?;
+
         // Add queue_type from span if available
         if let Some(span) = ctx.lookup_current() {
-            if let Some(fields) = span.extensions().get::<tracing_subscriber::fmt::FormattedFields<N>>() {
+            if let Some(fields) = span.extensions().get::<fmt::FormattedFields<N>>() {
                 // Apply color to the entire field string
                 write!(writer, "{}[{}]{} ", fixed_field_color, fields, reset)?;
             }
@@ -122,14 +125,25 @@ impl tracing::field::Visit for FieldExtractor {
 /// This will also install color_eyre to handle the panic in the application
 pub fn init_logging() {
     color_eyre::install().expect("Unable to install color_eyre");
-    // let env_filter = EnvFilter::from_default_env();
-    let env_filter = EnvFilter::builder()
-        .with_default_directive(Level::DEBUG.into())
-        .parse("orchestrator=trace")
-        .expect("Invalid filter directive and Logger control");
 
-    let fmt_layer =
-        fmt::layer().with_thread_names(true).with_thread_ids(true).with_target(false).event_format(PrettyFormatter);
+    // Read from `RUST_LOG` environment variable, with fallback to default
+    let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        // Fallback if RUST_LOG is not set or invalid
+        EnvFilter::builder()
+            .with_default_directive(Level::DEBUG.into())
+            .parse("orchestrator=trace")
+            .expect("Invalid filter directive and Logger control")
+    });
+
+    let fmt_layer = fmt::layer()
+        .json()
+        .with_current_span(true)
+        .with_span_list(true)
+        .with_target(true)
+        .with_thread_ids(true)
+        .with_file(true)
+        .with_line_number(true)
+        .event_format(PrettyFormatter);
 
     let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
 
