@@ -14,7 +14,7 @@ use itertools::Itertools;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{error, info, trace, warn};
+use tracing::{error, info, instrument, trace, warn};
 
 pub struct UpdateStateJobTrigger;
 
@@ -25,8 +25,9 @@ impl JobTrigger for UpdateStateJobTrigger {
     /// 2. Get all the parent jobs after that last block/batch that have status as Completed
     /// 3. Sanitize and Trim this list of batches
     /// 4. Create a StateTransition job for doing state transitions for all the batches in this list
+    #[instrument(skip_all, fields(category = "UpdateStateWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
+        trace!(log_type = "starting", "UpdateStateWorker started.");
 
         // Self-healing: recover any orphaned StateTransition jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
@@ -178,7 +179,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         }
 
-        trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
+        trace!(log_type = "completed", "UpdateStateWorker completed.");
         Ok(())
     }
 }

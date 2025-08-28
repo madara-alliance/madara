@@ -21,9 +21,9 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 1. Fetch all the batches for which the status is Closed
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
-    #[instrument(skip(self, config), fields(category = "AggregatorWorker"), ret, err)]
+    #[instrument(skip_all, fields(category = "AggregatorWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", category = "AggregatorWorker", "AggregatorWorker started");
+        info!(log_type = "starting", "AggregatorWorker started");
 
         // Get all the closed batches
         let closed_batches = config.database().get_batches_by_status(BatchStatus::Closed, Some(10)).await?;
@@ -43,7 +43,7 @@ impl JobTrigger for AggregatorJobTrigger {
                     }
                 }
                 Err(err) => {
-                    error!(batch_id = %batch.id, batch_index = %batch.index, "Failed to check child jobs status : {} ", err);
+                    error!(batch_id = %batch.id, batch_index = %batch.index, error = %err, "Failed to check child jobs status");
                     continue;
                 }
             }
@@ -95,7 +95,7 @@ impl JobTrigger for AggregatorJobTrigger {
             }
         }
 
-        trace!(log_type = "completed", category = "AggregatorWorker", "AggregatorWorker completed");
+        trace!(log_type = "completed", "AggregatorWorker completed");
         Ok(())
     }
 }

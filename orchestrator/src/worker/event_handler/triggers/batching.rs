@@ -22,7 +22,7 @@ use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
 use tokio::try_join;
-use tracing::{debug, error, info, trace};
+use tracing::{debug, error, info, instrument, trace};
 
 pub struct BatchingTrigger;
 
@@ -37,8 +37,9 @@ impl JobTrigger for BatchingTrigger {
     /// 1. Fetch the latest completed block from Starknet chain
     /// 2. Fetch the last batch and check its `end_block`
     /// 3. Assign batches to all the remaining blocks and store the squashed state update in storage
+    #[instrument(skip_all, fields(category = "BatchingWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
+        info!(log_type = "starting", "BatchingWorker started");
 
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
         match config
@@ -87,7 +88,7 @@ impl JobTrigger for BatchingTrigger {
         // Releasing the lock
         config.lock().release_lock("BatchingWorker", None).await?;
 
-        trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
+        trace!(log_type = "completed", "BatchingWorker completed.");
         Ok(())
     }
 }

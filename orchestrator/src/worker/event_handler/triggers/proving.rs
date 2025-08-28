@@ -11,7 +11,7 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 pub struct ProvingJobTrigger;
 
@@ -19,8 +19,9 @@ pub struct ProvingJobTrigger;
 impl JobTrigger for ProvingJobTrigger {
     /// 1. Fetch all successful SNOS job runs that don't have a proving job
     /// 2. Create a proving job for each SNOS job run
+    #[instrument(skip_all, fields(category = "ProvingWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        info!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
+        info!(log_type = "starting", "ProvingWorker started.");
 
         // Self-healing: recover any orphaned Proving jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofCreation).await {
@@ -109,7 +110,7 @@ impl JobTrigger for ProvingJobTrigger {
             }
         }
 
-        trace!(log_type = "completed", category = "ProvingWorker", "ProvingWorker completed.");
+        trace!(log_type = "completed", "ProvingWorker completed.");
         Ok(())
     }
 }

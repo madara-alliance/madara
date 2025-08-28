@@ -9,14 +9,15 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, info, trace, warn};
+use tracing::{debug, error, info, instrument, trace, warn};
 
 pub struct ProofRegistrationJobTrigger;
 
 #[async_trait]
 impl JobTrigger for ProofRegistrationJobTrigger {
+    #[instrument(skip_all, fields(category = "ProofRegistrationWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        trace!(log_type = "starting", category = "ProofRegistrationWorker", "ProofRegistrationWorker started.");
+        trace!(log_type = "starting", "ProofRegistrationWorker started.");
 
         // Self-healing: recover any orphaned ProofRegistration jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofRegistration).await {
@@ -39,11 +40,11 @@ impl JobTrigger for ProofRegistrationJobTrigger {
                 e
             })?;
 
-            // Update input path to use proof from ProofCreation
+            // Update the input path to use proof from ProofCreation
             let proof_path = format!("{}/{}", job.internal_id, PROOF_FILE_NAME);
             proving_metadata.input_path = Some(ProvingInputType::Proof(proof_path));
 
-            // Set download path for bridge proof based on layer
+            // Set the download path for bridge proof based on the layer
             proving_metadata.download_proof = match config.layer() {
                 Layer::L2 => None,
                 Layer::L3 => Some(format!("{}/{}", job.internal_id, PROOF_PART2_FILE_NAME)),
@@ -72,7 +73,7 @@ impl JobTrigger for ProofRegistrationJobTrigger {
             }
         }
 
-        trace!(log_type = "completed", category = "ProofRegistrationWorker", "ProofRegistrationWorker completed.");
+        trace!(log_type = "completed", "ProofRegistrationWorker completed.");
         Ok(())
     }
 }

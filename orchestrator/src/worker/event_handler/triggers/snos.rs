@@ -14,7 +14,7 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use tracing::{debug, error, info, warn};
+use tracing::{debug, error, info, instrument, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -76,6 +76,7 @@ impl JobTrigger for SnosJobTrigger {
     /// - Returns early if no slots are available for new jobs
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
+    #[instrument(skip_all, fields(category = "SnosWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
@@ -292,7 +293,7 @@ impl SnosJobTrigger {
         end: u64,
         range_name: &str,
     ) -> Result<()> {
-        // Skip if range is invalid or empty
+        // Skip if the range is invalid or empty
         if start >= end || end == 0 {
             debug!("Skipping {} range: start={}, end={}", range_name, start, end);
             return Ok(());
