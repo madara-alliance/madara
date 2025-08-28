@@ -13,7 +13,7 @@ use tokio::sync::{
 };
 
 mod tests;
-mod thread;
+pub(crate) mod thread;
 
 /// Handle to used to talk with the executor thread.
 pub struct ExecutorThreadHandle {
@@ -39,8 +39,13 @@ pub enum ExecutorCommand {
 }
 
 #[derive(Debug)]
-/// Executor thread => master task
+/// Actor model messages, sent between the block production and itself to drive the production of
+/// new blocks.
+///
+/// We use this since the block production is parallelized and message passing allows for easy
+/// communication between the execution thread and the master thread.
 pub enum ExecutorMessage {
+    /// Asks the block production task to start a new block.
     StartNewBlock {
         /// Used to add the block_n-10 block hash table entry to the state diff.
         initial_state_diffs_storage: HashMap<StorageEntry, Felt>,

@@ -6561,6 +6561,7 @@ dependencies = [
  "mc-mempool",
  "mc-settlement-client",
  "mc-submit-tx",
+ "mc-sync",
  "mockall 0.13.1",
  "mp-block",
  "mp-chain-config",
