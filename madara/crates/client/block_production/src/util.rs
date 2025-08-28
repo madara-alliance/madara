@@ -11,6 +11,7 @@ use std::{
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use mc_db::storage_updates::get_block_timestamp;
 
 // TODO: add these to metrics
 #[derive(Default, Clone, Debug)]
@@ -169,9 +170,19 @@ pub(crate) fn create_execution_context(
 ) -> anyhow::Result<BlockExecutionContext> {
     println!("Creating execution context");
     println!("This is where we set the block_timestamp for each block !");
+
+    let paradex_rpc = "https://pathfinder.api.prod.paradex.trade/rpc/v0_8";
+
+    // Create a new runtime for this blocking operation
+    let rt = tokio::runtime::Runtime::new()?;
+    let block_timestamp = rt.block_on(get_block_timestamp(paradex_rpc, block_n)).unwrap();
+
+    println!("Got the block timestamp from Paradex {}", block_timestamp);
+    println!("Here is the global state root for block number {}", block_n);
+
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: UNIX_EPOCH + Duration::from_secs(1725783510u64),
+        block_timestamp: UNIX_EPOCH + Duration::from_secs(block_timestamp),
         protocol_version: backend.chain_config().latest_protocol_version,
         gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?,
         l1_da_mode: backend.chain_config().l1_da_mode,
