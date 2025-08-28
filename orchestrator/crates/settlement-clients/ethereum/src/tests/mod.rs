@@ -393,9 +393,9 @@ mod settlement_client_tests {
 
         // get blob data from the file
         let blob_data_vec = vec![
-            get_blob_data_from_file(&data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap().to_string())
+            get_blob_data_from_file(data_dir.path().join("8373665/blobs/1.txt").to_str().unwrap())
                 .expect("unable to get blob data from the file"),
-            get_blob_data_from_file(&data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap().to_string())
+            get_blob_data_from_file(data_dir.path().join("8373665/blobs/2.txt").to_str().unwrap())
                 .expect("unable to get blob data from the file"),
         ];
 
