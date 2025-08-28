@@ -56,6 +56,9 @@ jobs:
       - name: Make Madara binary executable
         run: chmod +x target/release/madara
 
+      - name: Build artifacts
+        run: yes | make artifacts
+
       - name: Prepare Madara Environment (Bootstrapper)
         run: |
           mv target/release/madara ./madara-binary

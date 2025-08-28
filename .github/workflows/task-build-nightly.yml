@@ -53,7 +53,10 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara-${{ runner.os }}-rust-1.86
 
-      - name: Download artifacts
+      - name: Build artifacts
+        run: yes | make artifacts
+
+      - name: Run cargo check
         run: cargo check
 
       - name: Tags
