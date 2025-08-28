@@ -42,16 +42,7 @@ impl OrchestratorInstrumentation {
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
 
                 let subscriber = tracing_subscriber::registry()
-                    .with(
-                        tracing_subscriber::fmt::layer()
-                            .json()
-                            .with_current_span(true)
-                            .with_span_list(true)
-                            .with_target(true)
-                            .with_thread_ids(true)
-                            .with_file(true)
-                            .with_line_number(true),
-                    )
+                    .with(tracing_subscriber::fmt::layer())
                     .with(EnvFilter::from_default_env())
                     .with(OpenTelemetryLayer::new(tracer))
                     .with(OpenTelemetryTracingBridge::new(&logger));
