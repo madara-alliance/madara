@@ -77,7 +77,7 @@ pub async fn sync(
     mut ctx: ServiceContext,
 ) -> Result<(), SettlementClientError> {
     // sync inner is cancellation safe.
-    ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer)).await.transpose()?;
+    // ctx.run_until_cancelled(sync_inner(settlement_client, backend, notify_consumer)).await.transpose()?;
     Ok(())
 }
 

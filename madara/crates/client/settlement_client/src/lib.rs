@@ -12,6 +12,7 @@ use futures::{
 use mc_db::MadaraBackend;
 use mp_transactions::L1HandlerTransactionWithFee;
 use std::sync::Arc;
+use mp_utils::service::ServiceContext;
 use tokio::sync::Notify;
 use url::Url;
 
@@ -30,12 +31,13 @@ mod utils;
 pub trait SettlementClient: Send + Sync + 'static {
     /// Create a stream consuming pending messages to l2.
     fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>>;
+    fn get_notify_service(&self) -> Option<Arc<Notify>>;
 }
 
 pub struct L1ClientImpl {
     provider: Arc<dyn SettlementLayerProvider>,
     backend: Arc<MadaraBackend>,
-    notify_new_message_to_l2: Arc<Notify>,
+    pub notify_new_message_to_l2: Arc<Notify>,
 }
 
 impl L1ClientImpl {
@@ -80,6 +82,11 @@ impl SettlementClient for L1ClientImpl {
         stream::unfold(consumer, |mut consumer| async move { Some((consumer.consume_next_or_wait().await, consumer)) })
             .boxed()
     }
+
+    fn get_notify_service(&self) -> Option<Arc<Notify>> {
+        Some(self.notify_new_message_to_l2.clone())
+    }
+
 }
 
 /// This is the implementation that is used when the L1 sync is disabled.
@@ -87,6 +94,10 @@ pub struct L1SyncDisabledClient;
 impl SettlementClient for L1SyncDisabledClient {
     fn create_message_to_l2_consumer(&self) -> BoxStream<'static, anyhow::Result<L1HandlerTransactionWithFee>> {
         stream::empty().boxed()
+    }
+
+    fn get_notify_service(&self) -> Option<Arc<Notify>> {
+        None
     }
 }
 

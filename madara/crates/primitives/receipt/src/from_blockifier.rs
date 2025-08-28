@@ -99,6 +99,8 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         })
         .collect();
 
+    // println!("This is RES RES RES : {:?}", res);
+
     // get all validate_calls
     let validate_calls = res.clone().validate_call_info.iter().flat_map(|call_info| call_info.iter());
 

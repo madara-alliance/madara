@@ -139,6 +139,7 @@ pub(crate) struct BlockExecutionContext {
 
 impl BlockExecutionContext {
     pub fn into_header(self, parent_block_hash: Felt) -> PendingHeader {
+        // println!("HEEMANK Block Info: {:?}", self.protocol_version);
         PendingHeader {
             parent_block_hash,
             sequencer_address: self.sequencer_address,

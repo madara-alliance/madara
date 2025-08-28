@@ -21,7 +21,7 @@ eth_core_contract_address: "0xF338cad020D506e8e3d9B4854986E0EcE6C23640"
 # Most recent Starknet version supported
 latest_protocol_version: "0.13.2"
 block_time: "180h"
-pending_block_update_time: "50ms"
+pending_block_update_time: "10ms"
 
 # Transaction limit in the mempool.
 mempool_max_transactions: 1000000000
@@ -48,3 +48,15 @@ bouncer_config:
     state_diff_size: 13107200000
     l1_gas: 5000000
     n_txs: 18446744073709551615
+    proving_gas: 100000000000000
+  builtin_weights:
+    pedersen: 8100
+    range_check: 70
+    ecdsa: 1333333
+    ec_op: 571900
+    bitwise: 583
+    keccak: 408566
+    poseidon: 8334
+    add_mod: 250
+    mul_mod: 604
+    range_check96: 56

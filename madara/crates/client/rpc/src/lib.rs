@@ -23,6 +23,7 @@ use std::sync::Arc;
 use utils::ResultExt;
 
 pub use errors::{StarknetRpcApiError, StarknetRpcResult};
+use mc_settlement_client::SettlementClient;
 
 /// Limits to the storage proof endpoint.
 #[derive(Clone, Debug)]
@@ -49,6 +50,8 @@ pub struct Starknet {
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+    pub(crate) l1_sync_client: Option<Arc<dyn SettlementClient>>,
+
     pub ctx: ServiceContext,
 }
 
@@ -58,10 +61,11 @@ impl Starknet {
         add_transaction_provider: Arc<dyn SubmitTransaction>,
         storage_proof_config: StorageProofConfig,
         block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
+        l1_sync_client: Option<Arc<dyn SettlementClient>>,
         ctx: ServiceContext,
     ) -> Self {
         let ws_handles = Arc::new(WsSubscribeHandles::new());
-        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
+        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, l1_sync_client, ctx }
     }
 
     pub fn clone_backend(&self) -> Arc<MadaraBackend> {

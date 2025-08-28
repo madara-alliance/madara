@@ -275,6 +275,7 @@ async fn main() -> anyhow::Result<()> {
         Arc::clone(service_db.backend()),
         tx_submit.clone(),
         service_block_production.handle(),
+        service_l1_sync.client(),
     );
 
     // Feeder gateway

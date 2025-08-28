@@ -29,6 +29,13 @@ impl TransactionAndReceiptCommitment {
         // Override pre-v0.13.2 transaction hash computation
         let starknet_version = StarknetVersion::max(ctx.protocol_version, StarknetVersion::V0_13_2);
 
+        // HERE!!!
+        for tx in transactions {
+            if let Transaction::L1Handler(_) = &tx.transaction {
+                println!("L1Handler transaction receipt: {:#?}", tx.receipt);
+            }
+        }
+        
         // Verify transaction hashes. Also compute the (hash with signature, receipt hash).
         let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
             .par_iter()
@@ -43,6 +50,9 @@ impl TransactionAndReceiptCommitment {
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(fst, _)| *fst),
             ctx.protocol_version,
         );
+
+        let x: Vec<Felt> = tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd).collect();
+        println!("receipt commitment is here {:?}", x);
 
         let receipt_commitment = compute_receipt_commitment(
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd),
@@ -76,6 +86,7 @@ impl EventsCommitment {
 
         let event_hashes: Vec<_> =
             events.par_iter().map(|ev| ev.event.compute_hash(ev.transaction_hash, starknet_version)).collect();
+
 
         let events_commitment = compute_event_commitment(event_hashes, starknet_version);
 
@@ -150,6 +161,7 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use mp_convert::FixedPoint;
+use mp_transactions::Transaction;
 use crate::header::GasPrices;
 
 impl PendingHeader {

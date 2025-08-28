@@ -5,6 +5,9 @@ use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
+use mp_transactions::L1HandlerTransactionWithFee;
+use tokio::sync::Notify;
+use std::sync::Arc;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -79,4 +82,20 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .await
             .or_internal_server_error("Force-closing block")?)
     }
+
+    /// Adds a L1 Handler message to the db for l1_txns_stream to pick
+    /// Only works in block production mode.
+    async fn add_l1_handler_message(
+        &self,
+        l1_handler_message: L1HandlerTransactionWithFee,
+    ) -> RpcResult<()> {
+        let called = self.backend
+               .add_pending_message_to_l2(l1_handler_message)
+               .map_err(StarknetRpcApiError::from)?;
+        let notifier: Arc<Notify> = self.l1_sync_client.clone().unwrap().get_notify_service().unwrap();
+        notifier.notify_one();
+        Ok(())
+    }
+
+
 }

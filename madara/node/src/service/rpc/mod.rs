@@ -8,6 +8,7 @@ use metrics::RpcMetrics;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use server::{start_server, ServerConfig};
 use std::sync::Arc;
+use mc_settlement_client::SettlementClient;
 
 mod metrics;
 mod middleware;
@@ -26,6 +27,7 @@ pub struct RpcService {
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
+    l1_sync_client: Option<Arc<dyn SettlementClient>>,
 }
 
 impl RpcService {
@@ -41,6 +43,7 @@ impl RpcService {
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
+            l1_sync_client: None,
         }
     }
 
@@ -49,6 +52,7 @@ impl RpcService {
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
         block_prod_handle: BlockProductionHandle,
+        l1_sync_client: Arc<dyn SettlementClient>,
     ) -> Self {
         Self {
             config,
@@ -57,6 +61,7 @@ impl RpcService {
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
+            l1_sync_client: Some(l1_sync_client),
         }
     }
 }
@@ -73,6 +78,7 @@ impl Service for RpcService {
 
         self.server_handle = Some(server_handle);
         let block_prod_handle = self.block_prod_handle.clone();
+        let l1_sync_client = self.l1_sync_client.clone();
 
         runner.service_loop(move |ctx| async move {
             let submit_tx = Arc::new(submit_tx_provider.make(ctx.clone()));
@@ -82,6 +88,7 @@ impl Service for RpcService {
                 submit_tx,
                 config.storage_proof_config(),
                 block_prod_handle,
+                l1_sync_client,
                 ctx.clone(),
             );
             let metrics = RpcMetrics::register()?;

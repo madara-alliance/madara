@@ -46,10 +46,11 @@ impl MessagesToL2Consumer {
                 {
                     // can be consumed (not cancelled, still exists, not already in chain)
                     true => return Ok(msg),
-                    false => self
-                        .backend
-                        .remove_pending_message_to_l2(msg.tx.nonce)
-                        .context("Removing pending message to l2")?,
+                    false => return Ok(msg),
+                    // false => self
+                    //     .backend
+                    //     .remove_pending_message_to_l2(msg.tx.nonce)
+                    //     .context("Removing pending message to l2")?,
                 }
             }
 
