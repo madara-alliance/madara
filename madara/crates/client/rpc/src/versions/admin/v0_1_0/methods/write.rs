@@ -1,11 +1,11 @@
 use crate::{utils::ResultExt, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
-use mc_submit_tx::SubmitTransaction;
+use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::L1HandlerTransactionWithFee;
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use tokio::sync::Notify;
 use std::sync::Arc;
 
@@ -88,14 +88,14 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
     async fn add_l1_handler_message(
         &self,
         l1_handler_message: L1HandlerTransactionWithFee,
-    ) -> RpcResult<()> {
-        let called = self.backend
-               .add_pending_message_to_l2(l1_handler_message)
-               .map_err(StarknetRpcApiError::from)?;
-        let notifier: Arc<Notify> = self.l1_sync_client.clone().unwrap().get_notify_service().unwrap();
-        notifier.notify_one();
-        Ok(())
+    ) -> RpcResult<L1HandlerTransactionResult> {
+            Ok(self
+                .block_prod_handle
+                .as_ref()
+                .unwrap()
+                .submit_l1_handler_transaction(l1_handler_message)
+                .await
+                .map_err(StarknetRpcApiError::from)?)
     }
-
 
 }

@@ -1,7 +1,4 @@
-use crate::{
-    RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError,
-    SubmitValidatedTransaction,
-};
+use crate::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitL1HandlerTransaction, SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction};
 use async_trait::async_trait;
 use blockifier::{
     blockifier::{stateful_validator::StatefulValidatorError, transaction_executor::TransactionExecutorError},
@@ -20,16 +17,14 @@ use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{
-    validated::{TxTimestamp, ValidatedMempoolTx},
-    IntoStarknetApiExt, ToBlockifierError,
-};
+use mp_transactions::{validated::{TxTimestamp, ValidatedMempoolTx}, IntoStarknetApiExt, L1HandlerTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError, Transaction};
 use starknet_api::{
     executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
     transaction::TransactionVersion,
 };
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, fmt, sync::Arc};
+use mc_exec::execution::TxInfo;
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
@@ -252,6 +247,36 @@ impl TransactionValidator {
         self.inner.submit_validated_transaction(tx).await?;
 
         Ok(())
+    }
+}
+#[async_trait]
+impl SubmitL1HandlerTransaction for TransactionValidator {
+    async fn submit_l1_handler_transaction(
+        &self,
+        tx: L1HandlerTransactionWithFee,
+    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError> {
+        let arrived_at = TxTimestamp::now();
+
+        let (api_tx, class) = tx.clone().into_blockifier(
+            self.backend.chain_config().chain_id.to_felt(),
+            self.backend.chain_config().latest_protocol_version,
+        )?;
+
+        let response = L1HandlerTransactionResult {
+            transaction_hash : api_tx.tx_hash().to_felt(),
+        };
+
+        let validated_txn = ValidatedMempoolTx {
+            tx: mp_transactions::Transaction::L1Handler(tx.tx.clone()),
+            paid_fee_on_l1: Some(tx.paid_fee_on_l1),
+            contract_address: tx.tx.contract_address,
+            arrived_at: TxTimestamp::now(),
+            converted_class: None,
+            tx_hash: api_tx.tx_hash().to_felt(),
+        };
+
+        self.inner.submit_validated_transaction(validated_txn).await?;
+        Ok(response)
     }
 }
 
