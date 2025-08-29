@@ -21,11 +21,11 @@
 //!
 //! - The `mempool_tx_stream` sends all validated transaction which have been added to the mempool,
 //!   following whichever mempool ordering policy is in use at the time of block production (this
-//!   can be first-come-first-served of fee-market).
+//!   can be first-come-first-served or fee-market).
 //!
-//! - The `bypass_txs_stream` allows to transactions to be added to block production _without having
+//! - The `bypass_txs_stream` allows transactions to be added to block production _without having
 //!   them be validated by the mempool_. This is used by certain _permisioned_ (admin) endpoints and
-//!   is useful when initially setting up the chain, where trying to deploy some genesis contracts
+//!   is useful when initially setting up a chain, where trying to deploy some genesis contracts
 //!   might result in an invalidation until they have been deployed. This kind of cyclical
 //!   invalidation requires a way to force-add transactions, and the bypass stream does just that.
 //!
@@ -52,11 +52,11 @@
 //!   the latest batch is added to the [`PendingBlockState`].
 //!
 //! - [`EndBlock`]: this message is sent by the [`ExecutorThread`] under one of several condition.
-//!   Either the block has been forcefully closed (for example by an admin endpoint), either it is
-//!   full as per the constraints set it the chain config, else the block time has elapsed as per
-//!   the constraints set in the chain config. In any of these cases, whenever the
-//!   [`ExecutorThread`] receives this message it will proceed to finalize (seal) the pending block
-//!   and store it to db as a full block.
+//!   Either the block has been forcefully closed (for example by an admin endpoint), or it is full
+//!   as per the constraints set it the chain config, else the block time has elapsed as per the
+//!   constraints set in the chain config. In any of these cases, whenever the [`ExecutorThread`]
+//!   receives this message it will proceed to finalize (seal) the pending block and store it to db
+//!   as a full block.
 //!
 //! ## Pending Phase
 //!
@@ -202,6 +202,7 @@ pub fn get_pending_block_from_db(backend: &MadaraBackend) -> anyhow::Result<(Pen
 }
 
 #[derive(Debug)]
+/// A wrapper around the [`PendingBlockState`] with access to the db.
 pub(crate) struct CurrentPendingState {
     backend: Arc<MadaraBackend>,
     pub block: PendingBlockState,

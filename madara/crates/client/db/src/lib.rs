@@ -1,39 +1,113 @@
-//! Madara database
+//! We use [`rocksdb`] as the key-value store backend for the Madara node. Rocksdb Is highly
+//! flexible, and you can find out more about the specific configuration we are using in
+//! [`rocksdb_global_options`]. Rocksdb splits storage into columns, each having their own key-value
+//! mappings for the data they store. We define this in the [`Column`] enum. Pay special attention
+//! to the string mappings in [`Column::rocksdb_name`]: this is what is actually used under the hood
+//! by Rocksdb and what you will see each column actually referred to as.
 //!
-//! # Block storage
+//! # Storage API
 //!
-//! Storing new blocks is the responsibility of the consumers of this crate. In the madara
-//! node architecture, this means: the sync service mc-sync (when we are syncing new blocks), or
-//! the block production mc-block-production task when we are producing blocks.
-//! For the sake of the mc-db documentation, we will call this service the "block importer" downstream service.
+//! Storing new blocks is the responsibility of the consumers of this crate. In the madara node
+//! architecture, this means: the sync service `mc-sync` (when we are syncing new blocks), or the
+//! block production `mc-block-production` task when we are producing blocks. For the sake of
+//! documentation, we will call this service the _"block importer"_.
 //!
-//! The block importer service has two ways of adding blocks to the database, namely:
-//! - the easy [`MadaraBackend::add_full_block_with_classes`] function, which takes a full block, and does everything
-//!   required to save it properly and increment the latest block number of the database.
-//! - or, the more complicated lower level API that allows you to store partial blocks.
+//! We divide the backend storage API into two components: a high-level storage API, useful for full
+//! block storage without shooting yourself in the foot, and a low-level API which allows for
+//! granular and targeted updates to the database but requires you to pay special attention to what
+//! you are doing.
 //!
-//! Note that the validity of the block being stored is not checked for neither of those APIs.
+//! Note that the validity of the block being stored is not checked for neither of those APIs. It is
+//! the responsibility of the block importer to check that blocks are valid before storing them in
+//! db.
 //!
-//! For the low-level API, there are a few responsibilities to follow:
+//! ## High-level API
 //!
-//! - The database can store partial blocks. Adding headers can be done using [`MadaraBackend::store_block_header`],
-//!   transactions and receipts using [`MadaraBackend::store_transactions`], classes using [`MadaraBackend::class_db_store_block`],
-//!   state diffs using [`MadaraBackend::store_state_diff`], events using [`MadaraBackend::store_events`]. Furthermore,
-//!   [`MadaraBackend::apply_to_global_trie`] also needs to be called.
-//! - Each of those functions can be called in parallel, however, [`MadaraBackend::apply_to_global_trie`] needs to be called
-//!   sequentially. This is because we cannot support updating the global trie in an inter-block parallelism fashion. However,
-//!   parallelism is still used inside of that function - intra-block parallelism.
-//! - Each of these block parts has a [`chain_head::BlockNStatus`] associated inside of [`MadaraBackend::head_status`],
-//!   which the block importer service can use however it wants. However, [`ChainHead::full_block`] is special,
-//!   as it is updated by this crate.
-//! - The block importer service needs to call [`MadaraBackend::on_block`] to mark a block as fully imported. This function
-//!   will increment the [`ChainHead::full_block`] field, marking a new block. It will also record some metrics, flush the
-//!   database if needed, and make may create db backups if the backend is configured to do so.
+//! The high-level API is quite simple: just call [`add_full_block_with_classes`] and it will handle
+//! everything required to save blocks properly to the db, including any side effects to storage
+//! such as incrementing the latest block number.
 //!
-//! In addition, readers of the database should use [`db_block_id::DbBlockId`] when querying blocks from the database.
-//! This ensures that any partial block data beyond the current [`ChainHead::full_block`] will not be visible to, eg. the rpc
-//! service. The block importer service can however bypass this restriction by using [`db_block_id::RawDbBlockId`] instead;
-//! allowing it to see the partial data it has saved beyond the latest block marked as full.
+//! ## Low-level API
+//!
+//! For the low-level API, there are a few responsibilities to follow. The database can store
+//! partial blocks: blocks are divided into _headers_, _transactions & receipts_, _classes_,
+//! _state diffs_ and _events_. These can be stored individually, so that for example if the node
+//! can store a block's header faster than its other components, it can move on to the next block
+//! and start storing _its_ header. Partial block storage allows you to make progress in block sync
+//! while minimizing the churn induced by certain heavy operations such as state root computation.
+//!
+//! To store individual block components, refer to:
+//!
+//! - headers: [`store_block_header`]
+//! - transactions & receipts: [`store_transactions`]
+//! - classes: [`store_classes`]
+//! - state diffs: [`store_state_diff`]
+//! - events: [`store_events`]
+//!
+//! You will also need to call [`apply_to_global_trie`] once a block has been fully imported to
+//! compute its state root.
+//!
+//! ### Parallelism
+//!
+//! Each of the low-level API functions can be called in parallel, however, [`apply_to_global_trie`]
+//! needs to be called _sequentially_. This is because we cannot support updating the global trie
+//! across multiple blocks at once. However, parallelism is still used inside of that function -
+//! parallelism within a single block.
+//!
+//! ### Head Status
+//!
+//! Because each block component can be written to at different speeds, we need to keep track of the
+//! advancement of each component stored this way. For example, we might have stored block headers
+//! until block 6 but only have all block transactions and receipts until block 3.
+//!
+//! To address this issue, each block component has a [`BlockNStatus`] associated with it inside of
+//! [`head_status`], which the block importer service can use however it wants. This includes block
+//! numbers for [`headers`], [`state diffs`], [`classes`], [`transactions`], [`events`], the
+//! [`global trie`]. Unless you use the high-level API, _you will have to set
+//! these manually_ using `backend.head_status.*.set_current`!
+//!
+//! ### Sealing blocks
+//!
+//! [`head_status`] also contains an extra field, [`full block`], which acts differently from the
+//! rest in that it is set by the backend crate. _You should not set this manually yourself!_
+//!
+//! The block importer service needs to call [`on_full_block_imported`] to mark a block as fully
+//! imported. This function will increment the [`full block`] field, marking a new block a available
+//! for query in the database (sealed). It will also do some extra tidying-up, such as recording
+//! metrics, flushing the database if needed, as well as creating db backups if the backup flag has
+//! been set when launching the node.
+//!
+//! ## Querying the db
+//!
+//! Any external crate reading the database should use [`DbBlockId`] when querying blocks from the
+//! database. This ensures that any partial block data beyond the current [`full block`] will not be
+//! visible to, eg. the rpc service.
+//!
+//! The block importer service can still bypass this restriction by using [`RawDbBlockId`] instead;
+//! allowing it to see the partial data it has saved beyond the latest block marked as full. As a
+//! general rule, you should avoid using this unless you really need to and you are sure of what you
+//! are doing!
+//!
+//! [rocksdb_global_options]: rocksdb_options::rocksdb_global_options
+//! [`add_full_block_with_classes`]: `MadaraBackend::add_full_block_with_classes`
+//! [`store_block_header`]: MadaraBackend::store_block_header
+//! [`store_transactions`]: MadaraBackend::store_transactions
+//! [`store_classes`]: MadaraBackend::store_classes
+//! [`store_state_diff`]: MadaraBackend::store_state_diff
+//! [`store_events`]: MadaraBackend::store_events
+//! [`apply_to_global_trie`]: MadaraBackend::apply_to_global_trie
+//! [`BlockNStatus`]: chain_head::BlockNStatus
+//! [`head_status`]: MadaraBackend::head_status
+//! [`headers`]: ChainHead::headers
+//! [`state diffs`]: ChainHead::state_diffs
+//! [`classes`]: ChainHead::classes
+//! [`transactions`]: ChainHead::transactions
+//! [`events`]: ChainHead::events
+//! [`global trie`]: ChainHead::global_trie
+//! [`full block`]: ChainHead::full_block
+//! [`on_full_block_imported`]: MadaraBackend::on_full_block_imported
+//! [`DbBlockId`]: db_block_id::DbBlockId
+//! [`RawDbBlockId`]: db_block_id::RawDbBlockId
 
 use anyhow::Context;
 use bonsai_db::{BonsaiDb, DatabaseKeyMapping};
