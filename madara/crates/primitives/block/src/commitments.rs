@@ -1,5 +1,7 @@
+use std::str::FromStr;
 use crate::{header::PendingHeader, Header, TransactionWithReceipt};
 use bitvec::vec::BitVec;
+use bigdecimal::ToPrimitive;
 use mp_chain_config::StarknetVersion;
 use mp_receipt::EventWithTransactionHash;
 use mp_state_update::StateDiff;
@@ -12,6 +14,7 @@ use starknet_types_core::{
 pub struct CommitmentComputationContext {
     pub protocol_version: StarknetVersion,
     pub chain_id: Felt,
+    pub block_timestamp: u64,
 }
 
 pub struct TransactionAndReceiptCommitment {
@@ -26,6 +29,13 @@ impl TransactionAndReceiptCommitment {
         // Override pre-v0.13.2 transaction hash computation
         let starknet_version = StarknetVersion::max(ctx.protocol_version, StarknetVersion::V0_13_2);
 
+        // HERE!!!
+        for tx in transactions {
+            if let Transaction::L1Handler(_) = &tx.transaction {
+                println!("L1Handler transaction receipt: {:#?}", tx.receipt);
+            }
+        }
+        
         // Verify transaction hashes. Also compute the (hash with signature, receipt hash).
         let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
             .par_iter()
@@ -40,6 +50,9 @@ impl TransactionAndReceiptCommitment {
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(fst, _)| *fst),
             ctx.protocol_version,
         );
+
+        let x: Vec<Felt> = tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd).collect();
+        println!("receipt commitment is here {:?}", x);
 
         let receipt_commitment = compute_receipt_commitment(
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd),
@@ -74,6 +87,7 @@ impl EventsCommitment {
         let event_hashes: Vec<_> =
             events.par_iter().map(|ev| ev.event.compute_hash(ev.transaction_hash, starknet_version)).collect();
 
+
         let events_commitment = compute_event_commitment(event_hashes, starknet_version);
 
         Self { events_commitment, events_count: events.len() as u64 }
@@ -103,13 +117,89 @@ impl BlockCommitments {
     }
 }
 
+
+use reqwest;
+use serde_json::{json, Value};
+use std::error::Error;
+
+pub async fn get_block_timestamp(block_n: u64) -> Result<u64, Box<dyn Error>> {
+    let client = reqwest::Client::new();
+
+    let payload = json!({
+        "id": 1,
+        "jsonrpc": "2.0",
+        "method": "starknet_getBlockWithTxHashes",
+        "params": [
+            {
+                "block_number": block_n
+            }
+        ]
+    });
+
+    let response = client
+        .post("https://docs-demo.strk-mainnet.quiknode.pro/rpc/v0_8")
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&payload)
+        .send()
+        .await?;
+
+    let json_response: Value = response.json().await?;
+
+    // Extract timestamp from the JSON-RPC response
+    let timestamp = json_response["result"]["timestamp"]
+        .as_u64()
+        .ok_or("Failed to parse timestamp")?;
+
+    Ok(timestamp)
+}
+
+
+
+
+use std::{
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
+use mp_convert::FixedPoint;
+use mp_transactions::Transaction;
+use crate::header::GasPrices;
+
 impl PendingHeader {
-    pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64) -> Header {
-        Header {
+    pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64, block_timestamp: u64) -> Header {
+
+        // let's write a function here to fetch the block information from Paradex here
+        // And then update the block headers.
+
+        //
+        // let strk_per_eth = 1_u128;
+        //
+        // let eth_l1_gas_price = 1000000000;
+        // let strk_l1_gas_price = (bigdecimal::BigDecimal::from(eth_l1_gas_price) * &strk_per_eth)
+        //     .to_u128().unwrap();
+        //
+        // let eth_l1_data_gas_price = 100000;
+        // let strk_l1_data_gas_price = (bigdecimal::BigDecimal::from(eth_l1_data_gas_price) * &strk_per_eth)
+        //     .to_u128().unwrap();
+        //
+        // let strk_l2_gas_price = 1_u128;
+        // let eth_l2_gas_price = (bigdecimal::BigDecimal::from(strk_l2_gas_price) / &strk_per_eth)
+        //     .to_u128().unwrap();
+        //
+        //
+        // let gas_prices = GasPrices {
+        //     eth_l1_gas_price,
+        //     strk_l1_gas_price,
+        //     eth_l1_data_gas_price,
+        //     strk_l1_data_gas_price,
+        //     eth_l2_gas_price,
+        //     strk_l2_gas_price,
+        // };
+
+        let block_header = Header {
             parent_block_hash: self.parent_block_hash,
             block_number,
             sequencer_address: self.sequencer_address,
-            block_timestamp: self.block_timestamp,
+            block_timestamp: block_timestamp.into(),
             protocol_version: self.protocol_version,
             gas_prices: self.gas_prices,
             l1_da_mode: self.l1_da_mode,
@@ -121,7 +211,10 @@ impl PendingHeader {
             state_diff_length: Some(commitments.state_diff.state_diff_length),
             state_diff_commitment: Some(commitments.state_diff.state_diff_commitment),
             receipt_commitment: Some(commitments.transaction.receipt_commitment),
-        }
+        };
+        println!("Here is the block header for block number  {}  ", &block_number);
+        println!("Block header {:?}  ", block_header);
+        block_header
     }
 }
 
@@ -136,6 +229,7 @@ pub fn compute_event_commitment(
     if starknet_version < StarknetVersion::V0_13_2 {
         compute_merkle_root::<Pedersen>(peekable)
     } else {
+        println!("THIS IS WHERE WE COMPUTE EVENTS #3");
         compute_merkle_root::<Poseidon>(peekable)
     }
 }
@@ -169,6 +263,8 @@ pub fn compute_receipt_commitment(
 // It seems lambdaclass' crypto lib does not do simd hashing, we may want to look into that.
 pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator<Item = Felt>) -> Felt {
     //TODO: replace the identifier by an empty slice when bonsai supports it
+    println!("THIS IS WHERE WE COMPUTE EVENTS #4");
+
     const IDENTIFIER: &[u8] = b"0xinmemory";
     let config = bonsai_trie::BonsaiStorageConfig::default();
     let bonsai_db = bonsai_trie::databases::HashMapDb::<bonsai_trie::id::BasicId>::default();

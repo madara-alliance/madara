@@ -51,6 +51,89 @@ fn store_events_to_receipts(
     Ok(())
 }
 
+
+
+
+
+use reqwest;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct JsonRpcRequest {
+    id: u32,
+    jsonrpc: String,
+    method: String,
+    params: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonRpcResponse {
+    id: u32,
+    jsonrpc: String,
+    result: BlockResult,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockResult {
+    timestamp: u64,
+    // We only care about timestamp, but the API returns many other fields
+    // Using serde's flatten or ignoring other fields with #[serde(other)]
+}
+
+#[derive(Debug)]
+pub enum StarknetError {
+    NetworkError(reqwest::Error),
+    ParseError(serde_json::Error),
+    ApiError(String),
+}
+
+impl From<reqwest::Error> for StarknetError {
+    fn from(err: reqwest::Error) -> Self {
+        StarknetError::NetworkError(err)
+    }
+}
+
+impl From<serde_json::Error> for StarknetError {
+    fn from(err: serde_json::Error) -> Self {
+        StarknetError::ParseError(err)
+    }
+}
+
+pub async fn get_block_timestamp(
+    rpc_url: &str,
+    block_number: u64,
+) -> Result<u64, StarknetError> {
+    let client = reqwest::Client::new();
+
+    let request_body = JsonRpcRequest {
+        id: 1,
+        jsonrpc: "2.0".to_string(),
+        method: "starknet_getBlockWithTxHashes".to_string(),
+        params: vec![json!({ "block_number": block_number })],
+    };
+
+    let response = client
+        .post(rpc_url)
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(StarknetError::ApiError(format!(
+            "HTTP error: {}",
+            response.status()
+        )));
+    }
+
+    let json_response: JsonRpcResponse = response.json().await?;
+
+    Ok(json_response.result.timestamp)
+}
+
+
 impl MadaraBackend {
     /// Add a new block to the db, calling the `on_full_block_imported` handler that handles flushes and backups when they are enabled,
     /// and update all the statuses.
@@ -73,10 +156,19 @@ impl MadaraBackend {
 
         let new_global_state_root = self.apply_to_global_trie(block_n, [&state_diff])?;
 
+        let paradex_rpc = "https://pathfinder.api.prod.paradex.trade/rpc/v0_8";
+        let block_timestamp = get_block_timestamp(paradex_rpc, block_n).await.unwrap();
+
+        println!("Got the block timestamp from Paradex {}", block_timestamp);
+
+        println!("Here is the global state root for block number {}", block_n);
+        println!("New global state root: {:#x}", new_global_state_root);
+
         let block = block.close_block(
             &CommitmentComputationContext {
                 protocol_version: self.chain_config.latest_protocol_version,
                 chain_id: self.chain_config.chain_id.to_felt(),
+                block_timestamp,
             },
             block_n,
             new_global_state_root,

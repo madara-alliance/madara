@@ -6,6 +6,7 @@ use mp_rpc::{
 };
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -54,6 +55,11 @@ pub trait MadaraWriteRpcApi {
     /// Only works in block production mode.
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
+
+    /// Adds a L1 Handler message to the db for l1_txns_stream to pick
+    /// Only works in block production mode.
+    #[method(name = "addL1HandlerMessage")]
+    async fn add_l1_handler_message(&self, l1_handler_message: L1HandlerTransactionWithFee) -> RpcResult<L1HandlerTransactionResult>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

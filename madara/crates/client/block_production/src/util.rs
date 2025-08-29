@@ -9,8 +9,9 @@ use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
+use mc_db::storage_updates::get_block_timestamp;
 
 // TODO: add these to metrics
 #[derive(Default, Clone, Debug)]
@@ -139,6 +140,7 @@ pub(crate) struct BlockExecutionContext {
 
 impl BlockExecutionContext {
     pub fn into_header(self, parent_block_hash: Felt) -> PendingHeader {
+        // println!("HEEMANK Block Info: {:?}", self.protocol_version);
         PendingHeader {
             parent_block_hash,
             sequencer_address: self.sequencer_address,
@@ -166,9 +168,21 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u64,
 ) -> anyhow::Result<BlockExecutionContext> {
+    println!("Creating execution context");
+    println!("This is where we set the block_timestamp for each block !");
+
+    let paradex_rpc = "https://pathfinder.api.prod.paradex.trade/rpc/v0_8";
+
+    // Create a new runtime for this blocking operation
+    let rt = tokio::runtime::Runtime::new()?;
+    let block_timestamp = rt.block_on(get_block_timestamp(paradex_rpc, block_n)).unwrap();
+
+    println!("Got the block timestamp from Paradex {}", block_timestamp);
+    println!("Here is the global state root for block number {}", block_n);
+
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: SystemTime::now(),
+        block_timestamp: UNIX_EPOCH + Duration::from_secs(block_timestamp),
         protocol_version: backend.chain_config().latest_protocol_version,
         gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?,
         l1_da_mode: backend.chain_config().l1_da_mode,

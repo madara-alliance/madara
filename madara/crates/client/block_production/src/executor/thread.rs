@@ -229,6 +229,8 @@ impl ExecutorThread {
             previous_l2_gas_used,
         )?;
 
+        println!("Execution context created : {:?}", exec_ctx);
+
         // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
             self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
