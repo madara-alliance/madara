@@ -8,7 +8,7 @@ use crate::{L1DataAvailabilityMode, StarknetVersion};
 use anyhow::{bail, Context, Result};
 use blockifier::blockifier::config::ConcurrencyConfig;
 use blockifier::blockifier_versioned_constants::{RawVersionedConstants, VersionedConstants};
-use blockifier::bouncer::{BouncerConfig, BouncerWeights};
+use blockifier::bouncer::{BouncerConfig, BouncerWeights, BuiltinWeights};
 use blockifier::context::{ChainInfo, FeeTokenAddresses};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
@@ -59,7 +59,7 @@ pub struct BlockProductionConfig {
 
 impl BlockProductionConfig {
     pub fn blockifier_config(&self) -> ConcurrencyConfig {
-        ConcurrencyConfig { enabled: !self.disable_concurrency, n_workers: self.n_workers, chunk_size: self.batch_size }
+        ConcurrencyConfig { enabled: false, n_workers: self.n_workers, chunk_size: self.batch_size }
     }
 }
 
@@ -282,7 +282,9 @@ impl ChainConfig {
                     state_diff_size: 131072,
                     sierra_gas: GasAmount(10_000_000_000),
                     n_txs: usize::MAX,
+                    proving_gas: GasAmount(10_000_000_000),
                 },
+                builtin_weights: BuiltinWeights::default()
             },
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress(
@@ -372,9 +374,12 @@ impl ChainConfig {
     ) -> Result<VersionedConstants, UnsupportedProtocolVersion> {
         for (k, constants) in self.versioned_constants.0.iter().rev() {
             if k <= &version {
+                // println!("2 HEEMANK Block Info: {:?}", version);
+                // println!("2 HEEMANK Block Info: {:?}", constants);
                 return Ok(constants.clone());
             }
         }
+
         Err(UnsupportedProtocolVersion(version))
     }
 

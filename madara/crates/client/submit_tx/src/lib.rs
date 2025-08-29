@@ -3,7 +3,7 @@ use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransaction, L1HandlerTransactionResult};
+use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 mod error;
 mod validation;
@@ -50,8 +50,7 @@ pub trait SubmitTransaction: Send + Sync {
 pub trait SubmitL1HandlerTransaction: Send + Sync {
     async fn submit_l1_handler_transaction(
         &self,
-        tx: L1HandlerTransaction,
-        paid_fees_on_l1: u128,
+        tx: L1HandlerTransactionWithFee,
     ) -> Result<L1HandlerTransactionResult, SubmitTransactionError>;
 }
 

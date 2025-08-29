@@ -51,6 +51,78 @@ fn store_events_to_receipts(
     Ok(())
 }
 
+use reqwest;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+#[derive(Debug, Serialize, Deserialize)]
+struct JsonRpcRequest {
+    id: u32,
+    jsonrpc: String,
+    method: String,
+    params: Vec<serde_json::Value>,
+}
+
+#[derive(Debug, Deserialize)]
+struct JsonRpcResponse {
+    id: u32,
+    jsonrpc: String,
+    result: BlockResult,
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockResult {
+    timestamp: u64,
+    // We only care about timestamp, but the API returns many other fields
+    // Using serde's flatten or ignoring other fields with #[serde(other)]
+}
+
+#[derive(Debug)]
+pub enum StarknetError {
+    NetworkError(reqwest::Error),
+    ParseError(serde_json::Error),
+    ApiError(String),
+}
+
+impl From<reqwest::Error> for StarknetError {
+    fn from(err: reqwest::Error) -> Self {
+        StarknetError::NetworkError(err)
+    }
+}
+
+impl From<serde_json::Error> for StarknetError {
+    fn from(err: serde_json::Error) -> Self {
+        StarknetError::ParseError(err)
+    }
+}
+
+pub async fn get_block_timestamp(rpc_url: &str, block_number: u64) -> Result<u64, StarknetError> {
+    let client = reqwest::Client::new();
+
+    let request_body = JsonRpcRequest {
+        id: 1,
+        jsonrpc: "2.0".to_string(),
+        method: "starknet_getBlockWithTxHashes".to_string(),
+        params: vec![json!({ "block_number": block_number })],
+    };
+
+    let response = client
+        .post(rpc_url)
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(StarknetError::ApiError(format!("HTTP error: {}", response.status())));
+    }
+
+    let json_response: JsonRpcResponse = response.json().await?;
+
+    Ok(json_response.result.timestamp)
+}
+
 impl MadaraBackend {
     /// Add a new block to the db, calling the `on_full_block_imported` handler that handles flushes and backups when they are enabled,
     /// and update all the statuses.

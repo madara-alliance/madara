@@ -35,6 +35,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
         state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
     ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error> {
+        println!("Creating executor for block production with : {:?}", self.chain_config().block_production_concurrency.blockifier_config());
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),
             BlockContext::new(
@@ -194,6 +195,10 @@ impl ExecutionContext {
             gas_prices: (&l1_gas_price).into(),
             use_kzg_da: l1_da_mode == L1DataAvailabilityMode::Blob,
         };
+
+        // println!("HEEMANK Block Info: {:?}", protocol_version);
+        // println!("HEEMANK Block Info: {:?}", versioned_constants);
+
 
         Ok(ExecutionContext {
             block_context: BlockContext::new(

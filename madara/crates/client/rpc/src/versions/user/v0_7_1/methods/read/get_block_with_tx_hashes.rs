@@ -60,6 +60,7 @@ pub fn get_block_with_tx_hashes(
                     sequencer_address: block.header.sequencer_address,
                     l1_gas_price: block.header.gas_prices.l1_gas_price(),
                     l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
+                    // l2_gas_price: block.header.gas_prices.l2_gas_price(), // ← Add this line
                     l1_da_mode: block.header.l1_da_mode.into(),
                     starknet_version: block.header.protocol_version.to_string(),
                 },

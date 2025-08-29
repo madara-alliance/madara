@@ -1,10 +1,13 @@
 use crate::{utils::ResultExt, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
-use mc_submit_tx::SubmitTransaction;
+use mc_submit_tx::{SubmitL1HandlerTransaction, SubmitTransaction};
 use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use tokio::sync::Notify;
+use std::sync::Arc;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -79,4 +82,20 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .await
             .or_internal_server_error("Force-closing block")?)
     }
+
+    /// Adds a L1 Handler message to the db for l1_txns_stream to pick
+    /// Only works in block production mode.
+    async fn add_l1_handler_message(
+        &self,
+        l1_handler_message: L1HandlerTransactionWithFee,
+    ) -> RpcResult<L1HandlerTransactionResult> {
+            Ok(self
+                .block_prod_handle
+                .as_ref()
+                .unwrap()
+                .submit_l1_handler_transaction(l1_handler_message)
+                .await
+                .map_err(StarknetRpcApiError::from)?)
+    }
+
 }
