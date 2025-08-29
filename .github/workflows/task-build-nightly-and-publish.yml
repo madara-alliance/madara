@@ -42,6 +42,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -52,7 +54,10 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           cache-key: madara-${{ runner.os }}-rust-1.86
 
-      - name: Download artifacts
+      - name: Run make artifacts
+        run: yes | make artifacts
+
+      - name: Run cargo check
         run: cargo check
 
       - name: Tags
