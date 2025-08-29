@@ -183,30 +183,8 @@ frestart: fclean
 
 .PHONY: artifacts
 artifacts:
-	@if [ -d "$(ARTIFACTS)/argent"             ] || \
-			[ -d "$(ARTIFACTS)/bravoos"            ] || \
-			[ -d "$(ARTIFACTS)/cairo_lang"         ] || \
-			[ -d "$(ARTIFACTS)/js_tests"           ] || \
-			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
-			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
-			[ -d "$(ARTIFACTS)/starkgate_legacy"   ]; \
-	then \
-		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
-		read ans && \
-		case "$$ans" in \
-			[yY]*) true;; \
-		*) false;; \
-	esac \
-	fi
-	@rm -rf "$(ARTIFACTS)/argent"
-	@rm -rf "$(ARTIFACTS)/bravoos"
-	@rm -rf "$(ARTIFACTS)/cairo_lang"
-	@rm -rf "$(ARTIFACTS)/js_tests"
-	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
-	@rm -rf "$(ARTIFACTS)/starkgate_latest"
-	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@docker build -f $(ARTIFACTS)/build.docker -t contracts .
-	@ID=$$(docker create contracts do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
+	./scripts/artifacts.sh
+	
 
 .PHONY: check
 check:
@@ -216,6 +194,10 @@ check:
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
+	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
+	@taplo fmt --config=./taplo/taplo.toml --check
+	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
+	@markdownlint -c .markdownlint.json -q -p .markdownlintignore -f .
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
 	@cargo clippy --workspace --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
@@ -299,3 +281,13 @@ run-orchestrator-l3:
 watch-orchestrator:
 	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
 	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1
+
+
+.PHONY: setup-bootstrapper
+setup-bootstrapper:
+	@echo -e "$(DIM)Setting up bootstrapper...$(RESET)"
+	@cp -r ./build-artifacts/bootstrapper/solidity/starkware/ ./bootstrapper-v2/contracts/ethereum/src/starkware/
+	@cp -r ./build-artifacts/bootstrapper/solidity/third_party/ ./bootstrapper-v2/contracts/ethereum/src/third_party/
+	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
+	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
+	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"
