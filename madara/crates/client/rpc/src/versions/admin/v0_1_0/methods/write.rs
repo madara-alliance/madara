@@ -1,4 +1,5 @@
-use crate::{utils::ResultExt, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+use crate::{versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+use anyhow::Context;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_submit_tx::SubmitTransaction;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
@@ -78,6 +79,7 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .ok_or(StarknetRpcApiError::UnimplementedMethod)?
             .close_block()
             .await
-            .or_internal_server_error("Force-closing block")?)
+            .context("Force-closing block")
+            .map_err(StarknetRpcApiError::from)?)
     }
 }

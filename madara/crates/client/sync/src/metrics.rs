@@ -1,7 +1,6 @@
 use crate::counter::ThroughputCounter;
 use anyhow::Context;
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
-use mc_db::db_block_id::RawDbBlockId;
 use mc_db::MadaraBackend;
 use num_traits::cast::FromPrimitive;
 use opentelemetry::{
@@ -9,7 +8,7 @@ use opentelemetry::{
     metrics::{Counter, Histogram},
     KeyValue,
 };
-use std::time::{Duration, Instant};
+use std::{sync::Arc, time::{Duration, Instant}};
 
 pub struct SyncMetrics {
     /// Built-in throughput counter, for logging purposes
@@ -130,7 +129,7 @@ impl SyncMetrics {
         }
     }
 
-    pub fn update(&mut self, block_n: u64, backend: &MadaraBackend) -> anyhow::Result<()> {
+    pub fn update(&mut self, block_n: u64, backend: &Arc<MadaraBackend>) -> anyhow::Result<()> {
         let now = Instant::now();
 
         // Update Block sync time metrics
@@ -141,10 +140,9 @@ impl SyncMetrics {
         self.counter.increment();
 
         let header = backend
-            .get_block_info(&RawDbBlockId::Number(block_n))
-            .context("Getting block info")?
+            .block_view_on_confirmed(block_n)
             .context("No block info")?
-            .into_closed()
+            .get_block_info()
             .context("Block is pending")?
             .header;
 
@@ -165,7 +163,7 @@ impl SyncMetrics {
 
         if last_update_duration.is_none() || last_update_duration.is_some_and(|d| d >= Duration::from_secs(5)) {
             self.last_db_metrics_update_instant = Some(now);
-            let storage_size = backend.update_metrics();
+            let storage_size = 1; //backend.update_metrics();
             let size_gb = storage_size as f64 / (1024 * 1024 * 1024) as f64;
             self.l2_state_size.record(size_gb, &[]);
         }

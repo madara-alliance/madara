@@ -29,7 +29,7 @@ impl StateUpdateWorker {
         let block_info = match state_update.block_number {
             Some(num) => {
                 self.block_metrics.l1_block_number.record(num, &[]);
-                self.backend.write_last_confirmed_block(num).map_err(|e| {
+                self.backend.set_latest_l1_confirmed(Some(num)).map_err(|e| {
                     SettlementClientError::DatabaseError(format!("Failed to write last confirmed block: {}", e))
                 })?;
                 tracing::debug!("Wrote last confirmed block number: {}", num);
@@ -64,7 +64,8 @@ pub async fn state_update_worker(
     let state = StateUpdateWorker { block_metrics, backend, l1_head_sender };
 
     // Clear L1 confirmed block at startup
-    state.backend.clear_last_confirmed_block().map_err(|e| {
+    // TODO: remove this
+    state.backend.set_latest_l1_confirmed(None).map_err(|e| {
         SettlementClientError::DatabaseError(format!("Failed to clear last confirmed block at startup: {}", e))
     })?;
     tracing::debug!("update_l1: cleared confirmed block number");

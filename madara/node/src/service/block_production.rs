@@ -1,7 +1,7 @@
 use crate::cli::block_production::BlockProductionParams;
 use anyhow::Context;
 use mc_block_production::{metrics::BlockProductionMetrics, BlockProductionHandle, BlockProductionTask};
-use mc_db::{DatabaseService, MadaraBackend};
+use mc_db::MadaraBackend;
 use mc_devnet::{ChainGenesisDescription, DevnetKeys};
 use mc_settlement_client::SettlementClient;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
@@ -18,15 +18,15 @@ impl BlockProductionService {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         config: &BlockProductionParams,
-        db_service: &DatabaseService,
+        backend: &Arc<MadaraBackend>,
         mempool: Arc<mc_mempool::Mempool>,
         l1_client: Arc<dyn SettlementClient>,
     ) -> anyhow::Result<Self> {
         let metrics = Arc::new(BlockProductionMetrics::register());
 
         Ok(Self {
-            backend: Arc::clone(db_service.backend()),
-            task: Some(BlockProductionTask::new(db_service.backend().clone(), mempool, metrics, l1_client)),
+            backend: backend.clone(),
+            task: Some(BlockProductionTask::new(backend.clone(), mempool, metrics, l1_client)),
             n_devnet_contracts: config.devnet_contracts,
             disabled: config.block_production_disabled,
         })
@@ -62,7 +62,7 @@ impl BlockProductionService {
     pub async fn setup_devnet(&self) -> anyhow::Result<()> {
         let Self { backend, n_devnet_contracts, .. } = self;
 
-        let keys = if backend.get_latest_block_n().context("Getting the latest block number in db")?.is_none() {
+        let keys = if backend.latest_confirmed_block_n().is_none() {
             // deploy devnet genesis
             tracing::info!("⛏️  Deploying devnet genesis block");
 

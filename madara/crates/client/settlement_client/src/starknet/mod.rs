@@ -696,7 +696,7 @@ mod starknet_client_messaging_test {
         cancel_messaging_event, fire_messaging_event, get_message_hash_from_cairo, get_test_context,
     };
     use crate::starknet::{StarknetClient, StarknetClientConfig};
-    use mc_db::DatabaseService;
+    use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use rstest::{fixture, rstest};
@@ -706,7 +706,7 @@ mod starknet_client_messaging_test {
     /// This struct holds all commonly used test resources
     pub struct StarknetClientTextFixture {
         pub context: crate::starknet::test_utils::TestContext,
-        pub db_service: Arc<DatabaseService>,
+        pub db_service: Arc<MadaraBackend>,
         pub starknet_client: StarknetClient,
     }
 
@@ -718,7 +718,7 @@ mod starknet_client_messaging_test {
         let chain_config = Arc::new(ChainConfig::madara_test());
 
         // Initialize database service
-        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             rpc_url: context.cmd.rpc_url().parse().unwrap(),
@@ -743,14 +743,9 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(
-                    Arc::new(starknet_client),
-                    Arc::clone(db.backend()),
-                    Default::default(),
-                    ServiceContext::new_for_testing(),
-                )
-                .await
-                .unwrap();
+                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
+                    .await
+                    .unwrap();
                 tracing::debug!("messaging worker stopped");
             })
         };
@@ -760,7 +755,7 @@ mod starknet_client_messaging_test {
         tokio::time::sleep(Duration::from_secs(10)).await;
 
         // Assert that the event is well stored in db
-        assert!(fixture.db_service.backend().get_pending_message_to_l2(0)?.is_some());
+        assert!(fixture.db_service.get_pending_message_to_l2(0)?.is_some());
 
         // Cancelling worker
         worker_handle.abort();
@@ -782,13 +777,8 @@ mod starknet_client_messaging_test {
             let starknet_client = fixture.starknet_client.clone();
 
             tokio::spawn(async move {
-                sync(
-                    Arc::new(starknet_client),
-                    Arc::clone(db.backend()),
-                    Default::default(),
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(starknet_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing())
+                    .await
             })
         };
 
@@ -810,7 +800,7 @@ mod starknet_client_event_subscription_test {
     use crate::starknet::test_utils::{get_test_context, send_state_update};
     use crate::starknet::{StarknetClient, StarknetClientConfig};
     use crate::state_update::{state_update_worker, StateUpdate};
-    use mc_db::DatabaseService;
+    use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use mp_utils::service::ServiceContext;
     use starknet_types_core::felt::Felt;
@@ -825,7 +815,7 @@ mod starknet_client_event_subscription_test {
         let chain_config = Arc::new(ChainConfig::madara_test());
 
         // Initialize database service
-        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
 
         let starknet_client = StarknetClient::new(StarknetClientConfig {
             rpc_url: context.cmd.rpc_url().parse().unwrap(),
@@ -840,7 +830,7 @@ mod starknet_client_event_subscription_test {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
                 state_update_worker(
-                    Arc::clone(db.backend()),
+                    Arc::clone(&db),
                     Arc::new(starknet_client),
                     ServiceContext::new_for_testing(),
                     snd,
@@ -856,10 +846,7 @@ mod starknet_client_event_subscription_test {
         assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(0));
 
         // Verify the block number
-        let block_in_db = db
-            .backend()
-            .get_l1_last_confirmed_block()
-            .expect("Should successfully retrieve the last confirmed block number from the database");
+        let block_in_db = db.latest_l1_confirmed_block_n();
         assert_eq!(block_in_db, Some(0), "Block in DB does not match expected L2 block number");
 
         // Firing the state update event
@@ -879,10 +866,7 @@ mod starknet_client_event_subscription_test {
         assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(100));
 
         // Verify the block number
-        let block_in_db = db
-            .backend()
-            .get_l1_last_confirmed_block()
-            .expect("Should successfully retrieve the last confirmed block number from the database");
+        let block_in_db = db.latest_l1_confirmed_block_n();
         assert_eq!(block_in_db, Some(100), "Block in DB does not match expected L2 block number");
 
         // Abort the worker before ending the test

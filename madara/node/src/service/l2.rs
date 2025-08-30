@@ -33,6 +33,7 @@ struct StartArgs {
     db_backend: Arc<MadaraBackend>,
     params: L2SyncParams,
     warp_update: Option<WarpUpdateConfig>,
+    unsafe_starting_block_enabled: bool
 }
 
 #[derive(Clone)]
@@ -47,6 +48,7 @@ impl SyncService {
         db: &Arc<MadaraBackend>,
         l1_head_recv: L1HeadReceiver,
         warp_update: Option<WarpUpdateConfig>,
+        unsafe_starting_block_enabled: bool
     ) -> anyhow::Result<Self> {
         Ok(Self {
             start_args: (!config.l2_sync_disabled).then_some(StartArgs {
@@ -54,6 +56,7 @@ impl SyncService {
                 db_backend: db.clone(),
                 params: config.clone(),
                 warp_update,
+                unsafe_starting_block_enabled
             }),
             disabled: config.l2_sync_disabled,
         })
@@ -69,7 +72,7 @@ impl Service for SyncService {
         let this = self.start_args.take().expect("Service already started");
         let importer = Arc::new(BlockImporter::new(
             this.db_backend.clone(),
-            BlockValidationConfig::default().trust_parent_hash(this.params.unsafe_starting_block.is_some()),
+            BlockValidationConfig::default().trust_parent_hash(this.unsafe_starting_block_enabled),
         ));
 
         let config = SyncControllerConfig::default()
@@ -78,11 +81,6 @@ impl Service for SyncService {
             .global_stop_on_sync(this.params.stop_on_sync)
             .stop_on_sync(this.params.stop_on_sync)
             .no_pending_block(this.params.no_pending_sync);
-
-        if let Some(starting_block) = this.params.unsafe_starting_block {
-            // We state that starting_block - 1 is the chain head.
-            this.db_backend.head_status().set_latest_full_block_n(starting_block.checked_sub(1));
-        }
 
         runner.service_loop(move |ctx| async move {
             // Warp update

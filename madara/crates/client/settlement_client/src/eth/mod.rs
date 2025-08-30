@@ -495,12 +495,11 @@ mod l1_messaging_tests {
         sol,
         transports::http::{Client, Http},
     };
-    use mc_db::DatabaseService;
+    use mc_db::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
     use mp_utils::service::ServiceContext;
     use rstest::*;
-
     use starknet_types_core::felt::Felt;
     use std::{sync::Arc, time::Duration};
     use tracing_test::traced_test;
@@ -509,7 +508,7 @@ mod l1_messaging_tests {
     struct TestRunner {
         #[allow(dead_code)]
         anvil: AnvilInstance, // Not used but needs to stay in scope otherwise it will be dropped
-        db_service: Arc<DatabaseService>,
+        db_service: Arc<MadaraBackend>,
         dummy_contract: DummyContractInstance<Http<Client>, RootProvider<Http<Client>>>,
         eth_client: EthereumClient,
     }
@@ -614,7 +613,7 @@ mod l1_messaging_tests {
         let anvil = Anvil::new().block_time(1).chain_id(1337).try_spawn().expect("failed to spawn anvil instance");
         let chain_config = Arc::new(ChainConfig::madara_test());
         // Initialize database service
-        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
 
         // Set up provider
         let rpc_url: Url = anvil.endpoint().parse().expect("issue while parsing");
@@ -653,13 +652,7 @@ mod l1_messaging_tests {
         let worker_handle = {
             let db = Arc::clone(&db);
             tokio::spawn(async move {
-                sync(
-                    Arc::new(eth_client),
-                    Arc::clone(db.backend()),
-                    Default::default(),
-                    ServiceContext::new_for_testing(),
-                )
-                .await
+                sync(Arc::new(eth_client), Arc::clone(&db), Default::default(), ServiceContext::new_for_testing()).await
             })
         };
 
@@ -670,7 +663,7 @@ mod l1_messaging_tests {
         // Wait for event processing
         tokio::time::sleep(Duration::from_secs(5)).await;
 
-        let handler_tx = db.backend().get_pending_message_to_l2(0).unwrap().unwrap();
+        let handler_tx = db.get_pending_message_to_l2(0).unwrap().unwrap();
 
         assert_eq!(handler_tx.tx.nonce, 0);
         assert_eq!(
@@ -698,13 +691,12 @@ mod l1_messaging_tests {
 
         // Assert that the event is well stored in db
         let last_block = db
-            .backend()
             .get_l1_messaging_sync_tip()
             .expect("Should successfully retrieve the last synced L1 block with messaging event")
             .unwrap();
         assert_ne!(last_block, 0);
         // TODO: Assert that the transaction has been executed successfully
-        assert!(db.backend().get_pending_message_to_l2(0).unwrap().is_some());
+        assert!(db.get_pending_message_to_l2(0).unwrap().is_some());
 
         // Explicitly cancel the listen task, else it would be running in the background
         worker_handle.abort();
@@ -860,7 +852,7 @@ mod eth_client_event_subscription_test {
         recv.changed().await.unwrap();
         assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(662702));
 
-        let block_in_db = backend.get_l1_last_confirmed_block().expect("Failed to get L1 last confirmed block number");
+        let block_in_db = backend.latest_l1_confirmed_block_n();
         assert_eq!(block_in_db, Some(662702), "Block in DB does not match expected L2 block number");
 
         let _ = contract.fireEvent().send().await.expect("Should successfully fire state update event");
@@ -869,9 +861,7 @@ mod eth_client_event_subscription_test {
         assert_eq!(recv.borrow().as_ref().unwrap().block_number, Some(662703));
 
         // Verify the block number
-        let block_in_db = backend
-            .get_l1_last_confirmed_block()
-            .expect("Should successfully retrieve the last confirmed block number from the database");
+        let block_in_db = backend.latest_l1_confirmed_block_n();
 
         // Explicitly cancel the listen task, else it would be running in the background
         listen_handle.abort();

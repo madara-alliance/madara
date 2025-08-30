@@ -190,7 +190,11 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
 
 impl From<ApiGasVector> for GasVector {
     fn from(value: ApiGasVector) -> Self {
-        GasVector { l1_gas: value.l1_gas.0, l1_data_gas: value.l1_data_gas.0, l2_gas: value.l2_gas.0 }
+        GasVector {
+            l1_gas: value.l1_gas.0.into(),
+            l1_data_gas: value.l1_data_gas.0.into(),
+            l2_gas: value.l2_gas.0.into(),
+        }
     }
 }
 

@@ -1,5 +1,4 @@
-use std::sync::Arc;
-
+use crate::{CallContractError, Error, ExecutionContext};
 use blockifier::context::TransactionContext;
 use blockifier::execution::entry_point::{
     CallEntryPoint, CallType, EntryPointExecutionContext, SierraGasRevertTracker,
@@ -7,17 +6,17 @@ use blockifier::execution::entry_point::{
 use blockifier::state::state_api::StateReader;
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::objects::{DeprecatedTransactionInfo, TransactionInfo};
+use mc_db::MadaraStorageRead;
 use starknet_api::contract_class::EntryPointType;
 use starknet_api::core::EntryPointSelector;
 use starknet_api::transaction::fields::Calldata;
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
-use crate::{CallContractError, Error, ExecutionContext};
-
-impl ExecutionContext {
+impl<D: MadaraStorageRead> ExecutionContext<D> {
     /// Call a contract, returning the retdata.
     pub fn call_contract(
-        &self,
+        &mut self,
         contract_address: &Felt,
         entry_point_selector: &Felt,
         calldata: &[Felt],
@@ -25,9 +24,8 @@ impl ExecutionContext {
         tracing::debug!("calling contract {contract_address:#x}");
 
         // We don't need a tx_executor here
-
-        let make_err =
-            |err| CallContractError { block_n: self.latest_visible_block.into(), contract: *contract_address, err };
+        let view = self.view().clone();
+        let make_err = |err| CallContractError { view: format!("{view}"), contract: *contract_address, err };
 
         let storage_address =
             (*contract_address).try_into().map_err(TransactionExecutionError::StarknetApiError).map_err(make_err)?;
@@ -53,17 +51,16 @@ impl ExecutionContext {
             SierraGasRevertTracker::new(entrypoint.initial_gas.into()),
         );
 
-        let mut cached_state = self.init_cached_state();
-
         let mut remaining_gas = entrypoint.initial_gas;
 
-        let class_hash = cached_state
+        let class_hash = self
+            .state
             .get_class_hash_at(storage_address)
             .map_err(TransactionExecutionError::StateError)
             .map_err(make_err)?;
 
         let res = entrypoint
-            .execute(&mut cached_state, &mut entry_point_execution_context, &mut remaining_gas)
+            .execute(&mut self.state, &mut entry_point_execution_context, &mut remaining_gas)
             .map_err(|error| TransactionExecutionError::ExecutionError {
                 error,
                 class_hash,

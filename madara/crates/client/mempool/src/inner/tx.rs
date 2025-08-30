@@ -1,5 +1,5 @@
 use crate::inner::TxInsertionError;
-use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
+use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
@@ -8,7 +8,7 @@ use starknet_api::{
 #[derive(Debug)]
 #[cfg_attr(any(test, feature = "testing"), derive(PartialEq, Eq, Clone))]
 pub struct MempoolTransaction {
-    pub inner: ValidatedMempoolTx,
+    pub inner: ValidatedTransaction,
     pub score: Score,
 }
 
@@ -42,14 +42,14 @@ impl EvictionScore {
 
 impl MempoolTransaction {
     pub fn new(
-        inner: ValidatedMempoolTx,
+        inner: ValidatedTransaction,
         score_function: &ScoreFunction,
     ) -> Result<MempoolTransaction, TxInsertionError> {
         let _: ContractAddress =
             inner.contract_address.try_into().map_err(|_| TxInsertionError::InvalidContractAddress)?;
         Ok(Self { score: score_function.get_score(&inner), inner })
     }
-    pub fn into_inner(self) -> ValidatedMempoolTx {
+    pub fn into_inner(self) -> ValidatedTransaction {
         self.inner
     }
     pub fn info(&self) -> TxSummary {
@@ -66,13 +66,13 @@ impl MempoolTransaction {
         self.score
     }
     pub fn nonce(&self) -> Nonce {
-        Nonce(self.inner.tx.nonce())
+        Nonce(self.inner.transaction.nonce())
     }
     pub fn contract_address(&self) -> ContractAddress {
         self.inner.contract_address.try_into().expect("Invalid contract address")
     }
     pub fn tx_hash(&self) -> TransactionHash {
-        TransactionHash(self.inner.tx_hash)
+        TransactionHash(self.inner.hash)
     }
     pub fn arrived_at(&self) -> TxTimestamp {
         self.inner.arrived_at
@@ -84,7 +84,7 @@ impl MempoolTransaction {
         TxKey(self.contract_address(), self.nonce())
     }
     pub fn is_declare(&self) -> bool {
-        self.inner.tx.as_declare().is_some()
+        self.inner.transaction.as_declare().is_some()
     }
 }
 
@@ -104,11 +104,11 @@ pub enum ScoreFunction {
 pub struct Score(pub u64);
 
 impl ScoreFunction {
-    pub fn get_score(&self, tx: &ValidatedMempoolTx) -> Score {
+    pub fn get_score(&self, tx: &ValidatedTransaction) -> Score {
         match self {
             // Reverse the order, so that higher score means priority.
             Self::Timestamp => Score(u64::MAX - tx.arrived_at.0),
-            Self::Tip { .. } => Score(tx.tx.tip().unwrap_or(0)),
+            Self::Tip { .. } => Score(tx.transaction.tip().unwrap_or(0)),
         }
     }
 

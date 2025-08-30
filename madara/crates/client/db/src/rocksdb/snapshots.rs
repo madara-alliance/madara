@@ -1,11 +1,12 @@
-use crate::{db_block_id::DbBlockId, rocksdb_snapshot::SnapshotWithDBArc, DB};
 use std::{
     collections::BTreeMap,
     fmt,
     sync::{Arc, RwLock},
 };
 
-pub type SnapshotRef = Arc<SnapshotWithDBArc<DB>>;
+use crate::rocksdb::{rocksdb_snapshot::SnapshotWithDBArc, RocksDBStorageInner};
+
+pub type SnapshotRef = Arc<SnapshotWithDBArc>;
 
 struct SnapshotsInner {
     historical: BTreeMap<u64, SnapshotRef>,
@@ -18,7 +19,7 @@ struct SnapshotsInner {
 /// an Arc. Getting a snapshot only holds the lock for the time of cloning the Arc.
 pub struct Snapshots {
     inner: RwLock<SnapshotsInner>,
-    db: Arc<DB>,
+    db: Arc<RocksDBStorageInner>,
     max_kept_snapshots: Option<usize>,
     snapshot_interval: u64,
 }
@@ -29,16 +30,11 @@ impl fmt::Debug for Snapshots {
 }
 
 impl Snapshots {
-    pub fn new(
-        db: Arc<DB>,
-        current_block_n: Option<u64>,
-        max_kept_snapshots: Option<usize>,
-        snapshot_interval: u64,
-    ) -> Self {
+    pub fn new(db: Arc<RocksDBStorageInner>, head_block_n: Option<u64>, max_kept_snapshots: Option<usize>, snapshot_interval: u64) -> Self {
         let head = Arc::new(SnapshotWithDBArc::new(Arc::clone(&db)));
         Self {
             db,
-            inner: SnapshotsInner { historical: Default::default(), head, head_block_n: current_block_n }.into(),
+            inner: SnapshotsInner { historical: Default::default(), head, head_block_n }.into(),
             max_kept_snapshots,
             snapshot_interval,
         }
@@ -47,34 +43,30 @@ impl Snapshots {
     /// Called when a new block has been added in the database. This will make a snapshot
     /// on top of the new block, and it will store that snapshot in the snapshot history every
     /// `snapshot_interval` blocks.
-    #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
-    pub fn set_new_head(&self, id: DbBlockId) {
+    #[tracing::instrument(skip(self))]
+    pub fn set_new_head(&self, block_n: u64) {
         let snapshot = Arc::new(SnapshotWithDBArc::new(Arc::clone(&self.db)));
 
         let mut inner = self.inner.write().expect("Poisoned lock");
 
-        if let DbBlockId::Number(n) = id {
-            if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && n % self.snapshot_interval == 0 {
-                tracing::debug!("Saving snapshot at {id:?}");
-                inner.historical.insert(n, Arc::clone(&snapshot));
+        if self.max_kept_snapshots != Some(0) && self.snapshot_interval != 0 && block_n % self.snapshot_interval == 0 {
+            tracing::debug!("Saving snapshot at {block_n:?}");
+            inner.historical.insert(block_n, Arc::clone(&snapshot));
 
-                // remove the oldest snapshot
-                if self.max_kept_snapshots.is_some_and(|n| inner.historical.len() > n) {
-                    inner.historical.pop_first();
-                }
+            // remove the oldest snapshot
+            if self.max_kept_snapshots.is_some_and(|n| inner.historical.len() > n) {
+                inner.historical.pop_first();
             }
         }
 
         // Update head snapshot
         inner.head = snapshot;
-        if let DbBlockId::Number(n) = id {
-            inner.head_block_n = Some(n);
-        }
+        inner.head_block_n = Some(block_n);
     }
 
     /// Get the closest snapshot that had been made at or after the provided `block_n`.
     /// Also returns the block_n, which can be null if no block is in database in that snapshot.
-    #[tracing::instrument(skip(self), fields(module = "BonsaiDB"))]
+    #[tracing::instrument(skip(self))]
     pub fn get_closest(&self, block_n: u64) -> (Option<u64>, SnapshotRef) {
         tracing::debug!("get closest {block_n:?} {self:?}");
         let inner = self.inner.read().expect("Poisoned lock");

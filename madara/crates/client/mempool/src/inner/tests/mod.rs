@@ -3,7 +3,7 @@
 use crate::{limits::MempoolLimitReached, tx::ScoreFunction, InnerMempool, InnerMempoolConfig, TxInsertionError};
 use assert_matches::assert_matches;
 use mp_convert::{Felt, ToFelt};
-use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx};
+use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use proptest::strategy::Strategy;
 use rstest::{fixture, rstest};
 use starknet_api::{core::Nonce, felt, transaction::TransactionHash};
@@ -24,10 +24,10 @@ pub struct TestTx {
     pub is_declare: bool,
 }
 
-impl From<TestTx> for ValidatedMempoolTx {
+impl From<TestTx> for ValidatedTransaction {
     fn from(value: TestTx) -> Self {
         Self {
-            tx: if value.is_declare {
+            transaction: if value.is_declare {
                 mp_transactions::Transaction::Declare(if let Some(tip) = value.tip {
                     mp_transactions::DeclareTransaction::V3(mp_transactions::DeclareTransactionV3 {
                         sender_address: value.contract_address,
@@ -78,21 +78,21 @@ impl From<TestTx> for ValidatedMempoolTx {
             paid_fee_on_l1: None,
             contract_address: value.contract_address,
             arrived_at: TxTimestamp(value.arrived_at),
-            converted_class: None,
-            tx_hash: value.tx_hash,
+            declared_class: None,
+            hash: value.tx_hash,
         }
     }
 }
 
-impl From<ValidatedMempoolTx> for TestTx {
-    fn from(value: ValidatedMempoolTx) -> Self {
+impl From<ValidatedTransaction> for TestTx {
+    fn from(value: ValidatedTransaction) -> Self {
         Self {
-            nonce: value.tx.nonce(),
+            nonce: value.transaction.nonce(),
             contract_address: value.contract_address,
             arrived_at: value.arrived_at.0,
-            tip: value.tx.tip(),
-            tx_hash: value.tx_hash,
-            is_declare: value.tx.as_declare().is_some(),
+            tip: value.transaction.tip(),
+            tx_hash: value.hash,
+            is_declare: value.transaction.as_declare().is_some(),
         }
     }
 }

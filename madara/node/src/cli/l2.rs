@@ -17,10 +17,6 @@ pub struct L2SyncParams {
     #[clap(env = "MADARA_SYNC_DISABLED", long, alias = "no-sync")]
     pub l2_sync_disabled: bool,
 
-    /// The block you want to start syncing from. This will most probably break your database.
-    #[clap(env = "MADARA_UNSAFE_STARTING_BLOCK", long, value_name = "BLOCK NUMBER")]
-    pub unsafe_starting_block: Option<u64>,
-
     /// Disable the global tries computation.
     /// When importing a block, the state root computation is the most expensive operation.
     /// Disabling it will mean a big speed-up in syncing speed, but storage proofs will be

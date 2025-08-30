@@ -54,7 +54,7 @@ pub trait StarknetReadRpcApi {
 
     /// Call a contract function at a given block id
     #[method(name = "call", and_versions = ["V0_8_1"])]
-    fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>>;
+    async fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>>;
 
     /// Get the chain id
     #[method(name = "chainId", and_versions = ["V0_8_1"])]
@@ -79,7 +79,7 @@ pub trait StarknetReadRpcApi {
 
     /// Get block information with full transactions and receipts given the block id
     #[method(name = "getBlockWithReceipts", and_versions = ["V0_8_1"])]
-    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult>;
+    fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult>;
 
     /// Get block information with transaction hashes given the block id
     #[method(name = "getBlockWithTxHashes", and_versions = ["V0_8_1"])]
@@ -104,7 +104,7 @@ pub trait StarknetReadRpcApi {
 
     /// Returns all events matching the given filter
     #[method(name = "getEvents", and_versions = ["V0_8_1"])]
-    async fn get_events(&self, filter: EventFilterWithPageRequest) -> RpcResult<EventsChunk>;
+    fn get_events(&self, filter: EventFilterWithPageRequest) -> RpcResult<EventsChunk>;
 
     /// Get the nonce associated with the given address at the given block
     #[method(name = "getNonce", and_versions = ["V0_8_1"])]
@@ -124,7 +124,7 @@ pub trait StarknetReadRpcApi {
 
     /// Returns the receipt of a transaction by transaction hash.
     #[method(name = "getTransactionReceipt", and_versions = ["V0_8_1"])]
-    async fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo>;
+    fn get_transaction_receipt(&self, transaction_hash: Felt) -> RpcResult<TxnReceiptWithBlockInfo>;
 
     /// Gets the Transaction Status, Including Mempool Status and Execution Details
     #[method(name = "getTransactionStatus", and_versions = ["V0_8_1"])]
@@ -132,7 +132,7 @@ pub trait StarknetReadRpcApi {
 
     /// Get an object about the sync status, or false if the node is not syncing
     #[method(name = "syncing", and_versions = ["V0_8_1"])]
-    async fn syncing(&self) -> RpcResult<SyncingStatus>;
+    fn syncing(&self) -> RpcResult<SyncingStatus>;
 
     /// Get the information about the result of executing the requested block
     #[method(name = "getStateUpdate", and_versions = ["V0_8_1"])]

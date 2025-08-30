@@ -1,5 +1,5 @@
 use crate::validated::TxTimestamp;
-use crate::validated::ValidatedMempoolTx;
+use crate::validated::ValidatedTransaction;
 use crate::L1HandlerTransactionWithFee;
 use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
 use blockifier::transaction::account_transaction::ExecutionFlags;
@@ -83,9 +83,9 @@ pub trait IntoStarknetApiExt: Sized {
         chain_id: Felt,
         starknet_version: StarknetVersion,
         arrived_at: TxTimestamp,
-    ) -> Result<ValidatedMempoolTx, ToBlockifierError> {
+    ) -> Result<ValidatedTransaction, ToBlockifierError> {
         let (btx, class) = self.into_starknet_api(chain_id, starknet_version)?;
-        Ok(ValidatedMempoolTx::from_starknet_api(btx, arrived_at, class))
+        Ok(ValidatedTransaction::from_starknet_api(btx, arrived_at, class))
     }
 }
 

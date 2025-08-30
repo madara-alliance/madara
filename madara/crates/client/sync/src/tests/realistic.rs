@@ -170,7 +170,7 @@ async fn test_should_import(ctx: TestContext) {
         .is_some());
     // State diff
     assert_eq!(
-        ctx.backend.get_block_state_diff(&id).unwrap().unwrap().deprecated_declared_classes,
+        ctx.backend.get_block_state_diff(&id).unwrap().unwrap().old_declared_contracts,
         vec![felt!("0x1b661756bf7d16210fc611626e1af4569baa1781ffc964bd018f4585ae241c1")]
     );
 
@@ -188,7 +188,7 @@ async fn test_should_import(ctx: TestContext) {
         .is_some());
     // State diff
     assert_eq!(
-        ctx.backend.get_block_state_diff(&id).unwrap().unwrap().deprecated_declared_classes,
+        ctx.backend.get_block_state_diff(&id).unwrap().unwrap().old_declared_contracts,
         vec![felt!("0x4f23a756b221f8ce46b72e6a6b10ee7ee6cf3b59790e76e02433104f9a8c5d1")]
     );
     // Transaction
@@ -235,7 +235,7 @@ async fn test_realistic_mainnet(ctx_mainnet: TestContext) {
         .is_some()); // should find!
                      // State diff
     let state_diff = ctx_mainnet.backend.get_block_state_diff(&id).unwrap().unwrap();
-    assert_eq!(state_diff.deprecated_declared_classes, vec![]); // empty
+    assert_eq!(state_diff.old_declared_contracts, vec![]); // empty
     assert_eq!(state_diff.deployed_contracts.len(), 5);
     assert_eq!(
         state_diff.deployed_contracts[3].address,

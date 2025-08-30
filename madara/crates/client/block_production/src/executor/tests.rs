@@ -259,7 +259,7 @@ async fn test_duplicate_l1_handler_same_height_different_batch(#[future] l1_hand
 async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSetup) {
     let mut setup = l1_handler_setup.await;
 
-    setup.backend.set_l1_handler_txn_hash_by_nonce(/* nonce */ 55, Felt::ONE).unwrap();
+    setup.backend.write_l1_handler_txn_hash_by_nonce(/* nonce */ 55, &Felt::ONE).unwrap();
 
     setup
         .handle

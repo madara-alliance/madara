@@ -1,11 +1,11 @@
-use mp_block::{BlockId, BlockTag, EventWithInfo};
-use mp_rpc::v0_7_1::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
-
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
-use crate::utils::ResultExt;
 use crate::Starknet;
+use anyhow::Context;
+use mc_db::EventFilter;
+use mp_block::{BlockId, BlockTag, EventWithInfo};
+use mp_rpc::v0_7_1::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 /// Returns all events matching the given filter.
 ///
@@ -27,7 +27,7 @@ use crate::Starknet;
 /// block in which they occurred, and the transaction that triggered them. In case of
 /// errors, such as `PAGE_SIZE_TOO_BIG`, `INVALID_CONTINUATION_TOKEN`, `BLOCK_NOT_FOUND`, or
 /// `TOO_MANY_KEYS_IN_FILTER`, returns a `StarknetRpcApiError` indicating the specific issue.
-pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
+pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> StarknetRpcResult<EventsChunk> {
     let from_address = filter.address;
     let keys = filter.keys;
     let chunk_size = filter.chunk_size as usize;
@@ -57,8 +57,16 @@ pub async fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest)
 
     let mut events_infos = starknet
         .backend
-        .get_filtered_events(from_block, from_event_n, to_block, from_address.as_ref(), keys.as_deref(), chunk_size + 1)
-        .or_internal_server_error("Error getting filtered events")?;
+        .view_on_latest()
+        .get_events(EventFilter {
+            start_block: from_block,
+            start_event_index: from_event_n,
+            end_block: to_block,
+            from_address,
+            keys_pattern: keys,
+            max_events: chunk_size + 1,
+        })
+        .context("Error getting filtered events")?;
 
     let mut continuation_token = None;
     if events_infos.len() > chunk_size {
@@ -92,15 +100,15 @@ fn block_range(
     from_block: Option<BlockId>,
     to_block: Option<BlockId>,
 ) -> StarknetRpcResult<(u64, u64, u64)> {
-    let latest_block_n = starknet.get_block_n(&BlockId::Tag(BlockTag::Latest))?;
+    let latest_block_n = starknet.backend.latest_confirmed_block_n().ok_or(StarknetRpcApiError::NoBlocks)?;
     let from_block_n = match from_block {
         Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.get_block_n(&block_id)?,
+        Some(block_id) => starknet.backend.block_view(&block_id)?.block_number(),
         None => 0,
     };
     let to_block_n = match to_block {
         Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.get_block_n(&block_id)?,
+        Some(block_id) => starknet.backend.block_view(&block_id)?.block_number(),
         None => latest_block_n,
     };
     Ok((from_block_n, to_block_n, latest_block_n))

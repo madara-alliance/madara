@@ -1,13 +1,11 @@
-use std::fmt;
-
+use crate::Oracle;
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use mp_convert::FixedPoint;
 use mp_utils::serde::{deserialize_url, serialize_url};
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
-
-use crate::Oracle;
+use std::fmt;
 
 pub const DEFAULT_API_URL: &str = "https://api.dev.pragma.build/node/v1/data/";
 

@@ -1,54 +1,43 @@
-use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
-use crate::utils::{OptionExt, ResultExt};
-use crate::Starknet;
-use mc_exec::execution_result_to_tx_trace;
-use mc_exec::transaction::to_blockifier_transaction;
-use mc_exec::ExecutionContext;
-use mp_chain_config::StarknetVersion;
+use crate::versions::user::v0_7_1::methods::trace::trace_block_transactions::prepare_tx_for_reexecution;
+use crate::{Starknet, StarknetRpcApiError};
+use anyhow::Context;
+use mc_exec::{execution_result_to_tx_trace, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_rpc::v0_7_1::TraceTransactionResult;
-use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
-use std::sync::Arc;
-
-/// Blockifier does not support execution for versions earlier than that.
-pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
 
 pub async fn trace_transaction(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TraceTransactionResult> {
-    let (block, tx_index) = starknet
-        .backend
-        .find_tx_hash_block(&transaction_hash)
-        .or_internal_server_error("Error while getting block from tx hash")?
-        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let view = starknet.backend.view_on_latest();
+    let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let mut exec_context = res.block.new_execution_context_at_block_start()?;
 
-    if block.info.protocol_version() < &EXECUTION_UNSUPPORTED_BELOW_VERSION {
+    if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
         return Err(StarknetRpcApiError::unsupported_txn_version());
     }
 
-    let exec_context = ExecutionContext::new_at_block_start(Arc::clone(&starknet.backend), &block.info)?;
+    let state_view = res.block.state_view();
+    // Takes up until but not including the transaction we're interested in.
+    let previous_transactions: Vec<_> = res
+        .block
+        .get_executed_transactions(..res.transaction_index)?
+        .into_iter()
+        .map(|tx| prepare_tx_for_reexecution(&state_view, tx))
+        .collect::<Result<_, _>>()?;
 
-    let mut block_txs =
-        Iterator::zip(block.inner.transactions.into_iter(), block.info.tx_hashes()).map(|(tx, hash)| {
-            to_blockifier_transaction(starknet.clone_backend(), block.info.block_id(), tx, &TransactionHash(*hash))
-                .or_internal_server_error("Failed to convert transaction to blockifier format")
-        });
+    let transaction_to_trace = prepare_tx_for_reexecution(&state_view, res.get_transaction()?)?;
 
-    // takes up until not including last tx
-    let transactions_before: Vec<_> = block_txs.by_ref().take(tx_index.0 as usize).collect::<Result<_, _>>()?;
-    // the one we're interested in comes next in the iterator
-    let transaction =
-        block_txs.next().ok_or_internal_server_error("There should be at least one transaction in the block")??;
+    // Reexecute all transactions before the one we're interested in, and trace the one we're interested in.
+    let mut executions_results = mp_utils::spawn_blocking(move || {
+        exec_context.execute_transactions(previous_transactions, [transaction_to_trace])
+    })
+    .await?;
 
-    let mut executions_results = exec_context.re_execute_transactions(transactions_before, [transaction])?;
+    let execution_result = executions_results.pop().context("No execution info returned")?;
 
-    let execution_result =
-        executions_results.pop().ok_or_internal_server_error("No execution info returned for the last transaction")?;
-
-    let trace = execution_result_to_tx_trace(&execution_result)
-        .or_internal_server_error("Converting execution infos to tx trace")?;
+    let trace = execution_result_to_tx_trace(&execution_result).context("Converting execution infos to tx trace")?;
 
     Ok(TraceTransactionResult { trace })
 }

@@ -191,7 +191,6 @@ tokio-util = "0.7.12"
 rayon = "1.10"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 async-trait = "0.1"
-dashmap = "6.1.0"
 
 # Serialization
 derive_more = "2.0.1"
@@ -258,6 +257,7 @@ figment = "0.10.19"
 flate2 = "1.0"
 regex = "1.10.5"
 sha3 = "0.10"
+dashmap = "6.1.0"
 
 # Orchestrator
 chrono = { version = "0.4", features = ["serde"] }

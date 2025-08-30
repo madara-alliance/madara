@@ -1,5 +1,5 @@
-use crate::MadaraBackend;
-use crate::{bonsai_identifier, MadaraStorageError};
+use crate::rocksdb::trie::WrappedBonsaiError;
+use crate::{prelude::*, rocksdb::RocksDBStorage};
 use bitvec::order::Msb0;
 use bitvec::vec::BitVec;
 use bitvec::view::AsBits;
@@ -13,10 +13,10 @@ use starknet_types_core::hash::{Poseidon, StarkHash};
 const CONTRACT_CLASS_HASH_VERSION: Felt = Felt::from_hex_unchecked("0x434f4e54524143545f434c4153535f4c4541465f5630");
 
 pub fn class_trie_root(
-    backend: &MadaraBackend,
+    backend: &RocksDBStorage,
     declared_classes: &[DeclaredClassItem],
     block_number: u64,
-) -> Result<Felt, MadaraStorageError> {
+) -> Result<Felt> {
     let mut class_trie = backend.class_trie();
 
     let updates: Vec<_> = declared_classes
@@ -31,13 +31,13 @@ pub fn class_trie_root(
     for (key, value) in updates {
         let bytes = key.to_bytes_be();
         let bv: BitVec<u8, Msb0> = bytes.as_bits()[5..].to_owned();
-        class_trie.insert(bonsai_identifier::CLASS, &bv, &value)?;
+        class_trie.insert(super::bonsai_identifier::CLASS, &bv, &value).map_err(WrappedBonsaiError)?;
     }
 
     tracing::trace!("class_trie committing");
-    class_trie.commit(BasicId::new(block_number))?;
+    class_trie.commit(BasicId::new(block_number)).map_err(WrappedBonsaiError)?;
 
-    let root_hash = class_trie.root_hash(bonsai_identifier::CLASS)?;
+    let root_hash = class_trie.root_hash(super::bonsai_identifier::CLASS).map_err(WrappedBonsaiError)?;
 
     tracing::trace!("class_trie committed");
 
@@ -47,7 +47,7 @@ pub fn class_trie_root(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::update_global_trie::tests::setup_test_backend;
+    use crate::{rocksdb::update_global_trie::tests::setup_test_backend, MadaraBackend};
     use rstest::*;
     use std::sync::Arc;
 
@@ -83,7 +83,7 @@ mod tests {
         let block_number = 1;
 
         // Call the class_trie_root function with the test data
-        let result = class_trie_root(&backend, &declared_classes, block_number).unwrap();
+        let result = class_trie_root(&backend.db, &declared_classes, block_number).unwrap();
 
         // Assert that the resulting root hash matches the expected value
         assert_eq!(

@@ -1,10 +1,12 @@
 use async_trait::async_trait;
+use mc_db::MadaraStorage;
+use mc_mempool::Mempool;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransaction, L1HandlerTransactionResult};
+use mp_transactions::validated::ValidatedTransaction;
 
 mod error;
 mod validation;
@@ -46,23 +48,26 @@ pub trait SubmitTransaction: Send + Sync {
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
 }
 
-/// Submit an L1HandlerTransaction.
-#[async_trait]
-pub trait SubmitL1HandlerTransaction: Send + Sync {
-    async fn submit_l1_handler_transaction(
-        &self,
-        tx: L1HandlerTransaction,
-        paid_fees_on_l1: u128,
-    ) -> Result<L1HandlerTransactionResult, SubmitTransactionError>;
-}
-
 /// Submit a validated transaction. Note: No validation will be performed on the transaction.
 /// This should never be directly exposed to users.
 #[async_trait]
 pub trait SubmitValidatedTransaction: Send + Sync {
-    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError>;
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError>;
 
     async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool>;
 
     async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>>;
+}
+
+#[async_trait]
+impl<D: MadaraStorage> SubmitValidatedTransaction for Mempool<D> {
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
+        Ok(self.accept_tx(tx).await?)
+    }
+    async fn received_transaction(&self, hash: mp_convert::Felt) -> Option<bool> {
+        Some(self.is_transaction_in_mempool(&hash))
+    }
+    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<mp_convert::Felt>> {
+        None
+    }
 }

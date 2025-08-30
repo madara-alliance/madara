@@ -6,7 +6,7 @@ pub mod hash256_serde;
 pub mod hex_serde;
 
 pub use felt::*;
-pub use fixed::*;
+pub use fixed::FixedPoint;
 pub use primitive_types::{H160, H256};
 pub use to_felt::*;
 

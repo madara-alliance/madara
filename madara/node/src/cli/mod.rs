@@ -11,7 +11,7 @@ use std::sync::Arc;
 pub mod analytics;
 pub mod block_production;
 pub mod chain_config_overrides;
-pub mod db;
+pub mod backend;
 pub mod gateway;
 pub mod l1;
 pub mod l2;
@@ -22,7 +22,7 @@ pub mod validator;
 pub use analytics::*;
 pub use block_production::*;
 pub use chain_config_overrides::*;
-pub use db::*;
+pub use backend::*;
 pub use gateway::*;
 pub use l1::*;
 pub use rpc::*;
@@ -154,7 +154,7 @@ pub struct RunCmd {
 
     #[allow(missing_docs)]
     #[clap(flatten)]
-    pub db_params: DbParams,
+    pub backend_params: BackendParams,
 
     #[allow(missing_docs)]
     #[clap(flatten)]

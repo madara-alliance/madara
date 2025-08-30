@@ -1,10 +1,8 @@
-use core::fmt;
-
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
-use mc_db::{db_block_id::DbBlockId, MadaraStorageError};
+use mp_chain_config::StarknetVersion;
 use starknet_api::execution_resources::GasVector;
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
@@ -13,33 +11,18 @@ use starknet_types_core::felt::Felt;
 mod block_context;
 mod blockifier_state_adapter;
 mod call;
-pub mod execution;
 mod fee;
 mod layered_state_adapter;
-pub mod state_diff;
 mod trace;
-pub mod transaction;
 
-pub use block_context::{ExecutionContext, MadaraBackendExecutionExt};
+pub mod execution;
+pub use block_context::*;
 pub use blockifier_state_adapter::BlockifierStateAdapter;
 pub use layered_state_adapter::LayeredStateAdapter;
 pub use trace::execution_result_to_tx_trace;
 
-#[derive(Debug)]
-struct OnTopOf(Option<DbBlockId>);
-impl fmt::Display for OnTopOf {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self.0 {
-            Some(id) => write!(f, "{:#}", id),
-            None => write!(f, "<none>"),
-        }
-    }
-}
-impl From<Option<DbBlockId>> for OnTopOf {
-    fn from(value: Option<DbBlockId>) -> Self {
-        Self(value)
-    }
-}
+/// Blockifier does not support execution for versions earlier than that.
+pub const EXECUTION_UNSUPPORTED_BELOW_VERSION: StarknetVersion = StarknetVersion::V0_13_0;
 
 #[derive(thiserror::Error, Debug)]
 pub enum Error {
@@ -53,18 +36,16 @@ pub enum Error {
     MessageFeeEstimation(#[from] MessageFeeEstimationError),
     #[error(transparent)]
     CallContract(#[from] CallContractError),
-    #[error("Storage error: {0:#}")]
-    Storage(#[from] MadaraStorageError),
+    #[error("Internal error: {0:#}")]
+    Internal(#[from] anyhow::Error),
     #[error("Invalid sequencer address: {0:#x}")]
     InvalidSequencerAddress(Felt),
-    #[error("Unable to calculate gas prices: {0}")]
-    GasPriceCalculation(#[from] anyhow::Error),
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Executing tx {hash:#} (index {index}) on top of {block_n}: {err:#}")]
+#[error("Executing tx {hash:#} (index {index}) on top of {view}: {err:#}")]
 pub struct TxExecError {
-    block_n: OnTopOf,
+    view: String,
     hash: TransactionHash,
     index: usize,
     #[source]
@@ -72,26 +53,26 @@ pub struct TxExecError {
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Estimating fee for tx index {index} on top of {block_n}: {err:#}")]
+#[error("Estimating fee for tx index {index} on top of {view}: {err:#}")]
 pub struct TxFeeEstimationError {
-    block_n: OnTopOf,
+    view: String,
     index: usize,
     #[source]
     err: TransactionExecutionError,
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Estimating message fee on top of {block_n}: {err:#}")]
+#[error("Estimating message fee on top of {view}: {err:#}")]
 pub struct MessageFeeEstimationError {
-    block_n: OnTopOf,
+    view: String,
     #[source]
     err: TransactionExecutionError,
 }
 
 #[derive(thiserror::Error, Debug)]
-#[error("Calling contract {contract:#x} on top of {block_n}: {err:#}")]
+#[error("Calling contract {contract:#x} on top of {view}: {err:#}")]
 pub struct CallContractError {
-    block_n: OnTopOf,
+    view: String,
     contract: Felt,
     #[source]
     err: TransactionExecutionError,

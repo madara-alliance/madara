@@ -20,17 +20,24 @@ pub enum ConvertedClass {
 }
 
 impl ConvertedClass {
-    pub fn class_hash(&self) -> Felt {
+    pub fn class_hash(&self) -> &Felt {
         match self {
-            ConvertedClass::Legacy(legacy) => legacy.class_hash,
-            ConvertedClass::Sierra(sierra) => sierra.class_hash,
+            Self::Legacy(legacy) => &legacy.class_hash,
+            Self::Sierra(sierra) => &sierra.class_hash,
         }
     }
 
     pub fn info(&self) -> ClassInfo {
         match self {
-            ConvertedClass::Legacy(legacy) => ClassInfo::Legacy(legacy.info.clone()),
-            ConvertedClass::Sierra(sierra) => ClassInfo::Sierra(sierra.info.clone()),
+            Self::Legacy(legacy) => ClassInfo::Legacy(legacy.info.clone()),
+            Self::Sierra(sierra) => ClassInfo::Sierra(sierra.info.clone()),
+        }
+    }
+
+    pub fn as_sierra(&self) -> Option<&SierraConvertedClass> {
+        match self {
+            Self::Sierra(sierra) => Some(sierra),
+            _ => None,
         }
     }
 }
