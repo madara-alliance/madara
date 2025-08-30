@@ -1,3 +1,4 @@
+
 .env*
 !.env.test
 !.envrc
@@ -96,6 +97,7 @@ e2e_data/
 /e2e_data.zip
 /e2e_data/*
 /e2e_data*
+/e2e/data/*
 
 out
 cache
