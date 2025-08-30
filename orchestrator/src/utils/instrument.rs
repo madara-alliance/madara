@@ -37,15 +37,13 @@ impl OrchestratorInstrumentation {
                 Ok(Self { otel_config: config.clone(), meter_provider: None })
             }
             Some(ref endpoint) => {
-                let tracing_subscriber = tracing_subscriber::registry()
-                    .with(tracing_subscriber::fmt::layer())
-                    .with(EnvFilter::from_default_env());
-
                 let meter_provider = Self::instrument_metric_provider(config, endpoint)?;
                 let tracer = Self::instrument_tracer_provider(config, endpoint)?;
                 let logger = Self::instrument_logger_provider(config, endpoint)?;
 
-                let subscriber = tracing_subscriber
+                let subscriber = tracing_subscriber::registry()
+                    .with(tracing_subscriber::fmt::layer())
+                    .with(EnvFilter::from_default_env())
                     .with(OpenTelemetryLayer::new(tracer))
                     .with(OpenTelemetryTracingBridge::new(&logger));
 

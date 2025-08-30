@@ -25,13 +25,13 @@ pub trait JobTrigger: Send + Sync {
 
     // Assumption
     // If say a job for block X fails, we don't want the worker to respawn another job for the same
-    // block we will resolve the existing failed job first.
+    // block, we will resolve the existing failed job first.
 
-    // We assume the system to keep working till a job hasn't failed,
-    // as soon as it fails we currently halt any more execution and wait for manual intervention.
+    // We assume the system to keep working till a job hasn't failed.
+    // As soon as it fails, we currently halt any more execution and wait for manual intervention.
 
     // Checks if any of the jobs have failed
-    // Failure : JobStatus::VerificationFailed, JobStatus::VerificationTimeout, JobStatus::Failed
+    // Failure: JobStatus::VerificationFailed, JobStatus::VerificationTimeout, JobStatus::Failed
     // Halts any new job creation till all the count of failed jobs is not Zero.
     async fn is_worker_enabled(&self, config: Arc<Config>) -> color_eyre::Result<bool> {
         let failed_jobs = config
