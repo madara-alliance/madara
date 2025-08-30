@@ -40,3 +40,19 @@ lazy_static! {
     pub static ref TWO: BigUint = 2u32.to_biguint().unwrap();
     pub static ref ONE: BigUint = 1u32.to_biguint().unwrap();
 }
+
+
+/// Version of the Madara client
+pub const MADARA_VERSION: &str = "0.1.0";
+
+/// Version of the Starknet client
+pub const STARKNET_VERSION: &str = "0.1.0";
+
+/// Version of the Orchestrator
+pub const ORCHESTRATOR_VERSION: &str = "1.0.0";
+
+/// Generate a version string combining Starknet and Orchestrator versions
+/// This format allows for future extensibility with additional dependencies
+pub fn generate_version_string() -> String {
+    format!("starknet-{}::orchestrator-{}", STARKNET_VERSION, ORCHESTRATOR_VERSION)
+}
