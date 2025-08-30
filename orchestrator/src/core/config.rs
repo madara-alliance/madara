@@ -16,6 +16,7 @@ use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use std::str::FromStr;
 use std::sync::Arc;
+use tracing::{error, info};
 use url::Url;
 
 use crate::core::client::lock::mongodb::MongoLockClient;
@@ -206,6 +207,11 @@ impl Config {
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
 
+        // Start mock Atlantic server if flag is enabled
+        if run_cmd.mock_atlantic_server {
+            Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
+        }
+
         // External Clients Initialization
         let prover_client = Self::build_prover_service(&prover_config, &params);
         let da_client = Self::build_da_client(&da_config).await;
@@ -271,7 +277,6 @@ impl Config {
     ///
     /// # Arguments
     /// * `prover_params` - The proving service parameters
-    /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
     pub(crate) fn build_prover_service(
@@ -284,6 +289,43 @@ impl Config {
             }
             ProverConfig::Atlantic(atlantic_params) => {
                 Box::new(AtlanticProverService::new_with_args(atlantic_params, &params.prover_layout_name))
+            }
+        }
+    }
+
+    /// start_mock_atlantic_server - Start the mock Atlantic server
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `allow_mock_hash_server` - Whether to allow the mock Atlantic server
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    ///
+    /// # Notes
+    /// This function is used to start the mock Atlantic server if the flag is enabled and we're in testnet.
+    /// It starts the mock server in a background task and gives it time to start.
+    async fn start_mock_atlantic_server(prover_params: &ProverConfig, allow_mock_hash_server: bool) {
+        match prover_params {
+            ProverConfig::Atlantic(atlantic_params) => {
+                // Start mock Atlantic server if flag is enabled and we're in testnet
+                if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
+                    info!("Mock Atlantic server flag is enabled, starting mock server...");
+
+                    // Start the mock server in a background task
+                    tokio::spawn(async move {
+                        info!("Starting mock Atlantic server on port 4001");
+                        if let Err(e) = utils_mock_atlantic_server::start_mock_atlantic_server().await {
+                            error!("Failed to start mock Atlantic server: {}", e);
+                        }
+                    });
+
+                    // Give the mock server time to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    info!("Mock Atlantic server started successfully");
+                }
+            }
+            ProverConfig::Sharp(_) => {
+                tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
             }
         }
     }

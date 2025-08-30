@@ -10,6 +10,7 @@ path = "src/main.rs"
 [dependencies]
 axum = { workspace = true, features = ["multipart"] }
 chrono = { workspace = true, features = ["serde"] }
+clap = { version = "4.5", features = ["derive"] }
 rand.workspace = true
 reqwest = { workspace = true, features = ["json", "multipart"] }
 serde = { workspace = true, features = ["derive"] }
