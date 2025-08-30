@@ -1,10 +1,11 @@
+use crate::state_update::StateDiff;
+
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
 use mp_block::{header::PendingHeader, FullBlock, PendingFullBlock, TransactionWithReceipt};
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
 use mp_receipt::EventWithTransactionHash;
-use mp_state_update::StateDiff;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
@@ -188,7 +189,7 @@ impl ProviderBlock {
         }
     }
 
-    pub fn into_full_block(self, state_diff: StateDiff) -> Result<FullBlock, FromGatewayError> {
+    pub fn into_full_block(self, state_diff: mp_state_update::StateDiff) -> Result<FullBlock, FromGatewayError> {
         if self.transactions.len() != self.transaction_receipts.len() {
             return Err(FromGatewayError::TransactionCountNotEqualToReceiptCount);
         }
@@ -198,7 +199,7 @@ impl ProviderBlock {
         Ok(FullBlock { block_hash: self.block_hash, header, transactions, events, state_diff })
     }
 
-    pub fn header(&self, state_diff: &StateDiff) -> Result<mp_block::Header, FromGatewayError> {
+    pub fn header(&self, state_diff: &mp_state_update::StateDiff) -> Result<mp_block::Header, FromGatewayError> {
         Ok(mp_block::Header {
             parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address.unwrap_or_default(),
@@ -243,6 +244,23 @@ pub struct ProviderBlockPending {
     pub transaction_receipts: Vec<ConfirmedReceipt>,
     #[serde(default)]
     pub starknet_version: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
+#[cfg_attr(test, derive(Eq))]
+pub struct ProviderBlockPreConfirmed {
+    pub status: BlockStatus,
+    pub starknet_version: Option<String>,
+    pub l1_da_mode: L1DataAvailabilityMode,
+    pub l1_gas_price: ResourcePrice,
+    pub l1_data_gas_price: ResourcePrice,
+    pub l2_gas_price: ResourcePrice,
+    pub timestamp: u64,
+    pub sequencer_address: Felt,
+    pub transactions: Vec<Transaction>,
+    pub transaction_receipts: Vec<ConfirmedReceipt>,
+    pub transaction_state_diffs: Vec<StateDiff>,
 }
 
 impl ProviderBlockPending {
@@ -304,7 +322,7 @@ impl ProviderBlockPending {
         })
     }
 
-    pub fn into_full_block(self, state_diff: StateDiff) -> Result<PendingFullBlock, FromGatewayError> {
+    pub fn into_full_block(self, state_diff: mp_state_update::StateDiff) -> Result<PendingFullBlock, FromGatewayError> {
         let header = self.header()?;
         let TransactionsReceiptsAndEvents { transactions, events } =
             convert_txs(self.transactions, self.transaction_receipts);
@@ -336,6 +354,7 @@ pub struct ResourcePrice {
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub enum BlockStatus {
     Pending,
+    PreConfirmed,
     Aborted,
     Reverted,
     AcceptedOnL2,

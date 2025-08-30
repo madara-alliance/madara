@@ -112,7 +112,7 @@ pub fn create_normalized_state_diff(
 
     Ok(StateDiff {
         storage_diffs,
-        deprecated_declared_classes,
+        old_declared_contracts: deprecated_declared_classes,
         declared_classes,
         nonces,
         deployed_contracts,
@@ -171,7 +171,7 @@ mod tests {
                                 storage_entries: vec![StorageEntry { key: key1.to_felt(), value: old_value1 }],
                             },
                         ],
-                        deprecated_declared_classes: vec![],
+                        old_declared_contracts: vec![],
                         declared_classes: vec![],
                         deployed_contracts: vec![
                             DeployedContractItem { address: addr1.to_felt(), class_hash: old_class_hash1.to_felt() },
@@ -258,7 +258,7 @@ mod tests {
         );
 
         assert_eq!(
-            result.deprecated_declared_classes,
+            result.old_declared_contracts,
             [legacy_class_hash.to_felt()].into_iter().sorted().collect::<Vec<_>>()
         );
 
