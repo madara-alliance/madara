@@ -6863,6 +6863,7 @@ dependencies = [
  "mc-db",
  "mc-exec",
  "mc-mempool",
+ "mc-settlement-client",
  "mc-submit-tx",
  "mp-block",
  "mp-chain-config",
@@ -7292,6 +7293,7 @@ version = "0.8.0"
 dependencies = [
  "alloy",
  "assert_matches",
+ "mp-rpc",
  "primitive-types",
  "rstest 0.18.2",
  "serde",

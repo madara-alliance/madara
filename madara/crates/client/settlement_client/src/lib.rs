@@ -15,7 +15,7 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 use url::Url;
 
-mod client;
+pub mod client;
 pub mod error;
 mod eth;
 pub mod gas_price;

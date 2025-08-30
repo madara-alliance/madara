@@ -10,6 +10,9 @@ pub enum SettlementClientError {
     #[error("Starknet client error: {0}")]
     Starknet(StarknetClientError),
 
+    #[error("Transaction not found")]
+    TxNotFound,
+
     #[error("Missing required field: {0}")]
     MissingField(&'static str),
 

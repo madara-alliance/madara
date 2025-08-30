@@ -1,6 +1,7 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_block::BlockId;
+use mp_rpc::v0_8_1::{L1TxnHash, TxnHashWithStatus};
 use starknet_types_core::felt::Felt;
 
 type SubscriptionItemPendingTxs = super::methods::ws::SubscriptionItem<mp_rpc::v0_8_1::PendingTxnInfo>;
@@ -65,4 +66,7 @@ pub trait StarknetReadRpcApi {
         contract_addresses: Option<Vec<Felt>>,
         contracts_storage_keys: Option<Vec<mp_rpc::v0_8_1::ContractStorageKeysItem>>,
     ) -> RpcResult<mp_rpc::v0_8_1::GetStorageProofResult>;
+
+    #[method(name = "getMessagesStatus")]
+    async fn get_messages_status(&self, tx_hash_l1: L1TxnHash) -> RpcResult<Vec<TxnHashWithStatus>>;
 }

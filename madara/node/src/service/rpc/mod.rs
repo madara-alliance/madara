@@ -4,6 +4,7 @@ use jsonrpsee::server::ServerHandle;
 use mc_block_production::BlockProductionHandle;
 use mc_db::MadaraBackend;
 use mc_rpc::{rpc_api_admin, rpc_api_user, Starknet};
+use mc_settlement_client::client::SettlementLayerProvider;
 use metrics::RpcMetrics;
 use mp_utils::service::{MadaraServiceId, PowerOfTwo, Service, ServiceId, ServiceRunner};
 use server::{start_server, ServerConfig};
@@ -26,6 +27,7 @@ pub struct RpcService {
     server_handle: Option<ServerHandle>,
     rpc_type: RpcType,
     block_prod_handle: Option<BlockProductionHandle>,
+    settlement_client: Option<Arc<dyn SettlementLayerProvider>>,
 }
 
 impl RpcService {
@@ -33,6 +35,7 @@ impl RpcService {
         config: RpcParams,
         backend: Arc<MadaraBackend>,
         submit_tx_provider: MakeSubmitTransactionSwitch,
+        settlement_client: Option<Arc<dyn SettlementLayerProvider>>,
     ) -> Self {
         Self {
             config,
@@ -41,6 +44,7 @@ impl RpcService {
             server_handle: None,
             rpc_type: RpcType::User,
             block_prod_handle: None,
+            settlement_client,
         }
     }
 
@@ -57,6 +61,7 @@ impl RpcService {
             server_handle: None,
             rpc_type: RpcType::Admin,
             block_prod_handle: Some(block_prod_handle),
+            settlement_client: None,
         }
     }
 }
@@ -67,6 +72,7 @@ impl Service for RpcService {
         let config = self.config.clone();
         let backend = Arc::clone(&self.backend);
         let submit_tx_provider = self.submit_tx_provider.clone();
+        let settlement_client = self.settlement_client.clone();
         let rpc_type = self.rpc_type.clone();
 
         let (stop_handle, server_handle) = jsonrpsee::server::stop_channel();
@@ -82,6 +88,7 @@ impl Service for RpcService {
                 submit_tx,
                 config.storage_proof_config(),
                 block_prod_handle,
+                settlement_client,
                 ctx.clone(),
             );
             let metrics = RpcMetrics::register()?;

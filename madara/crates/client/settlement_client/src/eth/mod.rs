@@ -8,7 +8,7 @@ use crate::utils::convert_log_state_update;
 use alloy::eips::{BlockId, BlockNumberOrTag};
 use alloy::primitives::{keccak256, Address, B256, I256, U256};
 use alloy::providers::{Provider, ProviderBuilder, ReqwestProvider, RootProvider};
-use alloy::rpc::types::Filter;
+use alloy::rpc::types::{Filter, FilteredParams};
 use alloy::sol;
 use alloy::sol_types::SolValue;
 use alloy::transports::http::{Client, Http};
@@ -17,7 +17,7 @@ use bitvec::macros::internal::funty::Fundamental;
 use error::EthereumClientError;
 use futures::stream::BoxStream;
 use futures::StreamExt;
-use mp_convert::{FeltExt, ToFelt};
+use mp_convert::{FeltExt, L1TransactionHash, ToFelt};
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use std::str::FromStr;
@@ -304,6 +304,33 @@ impl SettlementLayerProvider for EthereumClient {
 
         tracing::debug!("Returned");
         Ok(cancellation_timestamp._0 != U256::ZERO)
+    }
+
+    async fn get_messages_to_l2(
+        &self,
+        l1_tx_hash: L1TransactionHash,
+    ) -> Result<Vec<L1HandlerTransactionWithFee>, SettlementClientError> {
+        let l1_tx_hash = B256::from(l1_tx_hash.into_eth().0);
+        let receipt = self
+            .provider
+            .get_transaction_receipt(l1_tx_hash)
+            .await
+            .map_err(|e| -> SettlementClientError {
+                EthereumClientError::Rpc(format!("Failed to get transaction receipt: {}", e)).into()
+            })?
+            .ok_or(SettlementClientError::TxNotFound)?;
+
+        let filter = FilteredParams::new(Some(self.l1_core_contract.LogMessageToL2_filter().filter));
+
+        receipt
+            .inner
+            .logs()
+            .iter()
+            .filter(|log| filter.filter_address(&log.address()) && filter.filter_topics(log.topics()))
+            .filter_map(|log| log.log_decode::<LogMessageToL2>().ok())
+            .map(|log| log.inner.data)
+            .map(TryInto::try_into)
+            .collect::<Result<Vec<L1HandlerTransactionWithFee>, _>>()
     }
 
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {

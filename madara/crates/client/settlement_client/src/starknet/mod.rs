@@ -8,6 +8,7 @@ use async_trait::async_trait;
 use bigdecimal::ToPrimitive;
 use futures::stream::BoxStream;
 use futures::{StreamExt, TryStreamExt};
+use mp_convert::L1TransactionHash;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 use starknet_core::types::{BlockId, BlockTag, EmittedEvent, EventFilter, FunctionCall, MaybePendingBlockWithTxHashes};
@@ -341,6 +342,57 @@ impl SettlementLayerProvider for StarknetClient {
         tracing::debug!("Message status is: {:?}", status);
 
         Ok(matches!(status, MessageToAppchainStatus::Pending(_)))
+    }
+
+    async fn get_messages_to_l2(
+        &self,
+        l1_tx_hash: L1TransactionHash,
+    ) -> Result<Vec<L1HandlerTransactionWithFee>, SettlementClientError> {
+        let l1_tx_hash = l1_tx_hash.into_starknet().map_err(|e| -> SettlementClientError {
+            StarknetClientError::Conversion(format!("Invalid L1 transaction hash: {}", e)).into()
+        })?;
+        let receipt =
+            self.provider.get_transaction_receipt(l1_tx_hash).await.map_err(|e| -> SettlementClientError {
+                StarknetClientError::L1ToL2Messaging { message: format!("Failed to fetch transaction receipt: {}", e) }
+                    .into()
+            })?;
+
+        let block_number = receipt.block.block_number();
+        let block_hash = receipt.block.block_hash();
+
+        let events = match receipt.receipt {
+            starknet_core::types::TransactionReceipt::Invoke(receipt) => receipt.events,
+            starknet_core::types::TransactionReceipt::Declare(receipt) => receipt.events,
+            starknet_core::types::TransactionReceipt::Deploy(receipt) => receipt.events,
+            starknet_core::types::TransactionReceipt::DeployAccount(receipt) => receipt.events,
+            starknet_core::types::TransactionReceipt::L1Handler(receipt) => receipt.events,
+        };
+
+        let core_address = self.core_contract_address;
+        events
+            .into_iter()
+            .filter(|event| {
+                event.from_address == core_address
+                    && event.keys
+                        == vec![get_selector_from_name("MessageSent").expect("Failed to get MessageSent selector")]
+            })
+            .map(|event| EmittedEvent {
+                from_address: event.from_address,
+                keys: event.keys,
+                data: event.data,
+                block_hash,
+                block_number,
+                transaction_hash: l1_tx_hash,
+            })
+            .map(MessageToL2WithMetadata::try_from)
+            .map(|res| {
+                res.map(|m| m.message).map_err(|e| {
+                    SettlementClientError::from(StarknetClientError::L1ToL2Messaging {
+                        message: format!("Failed to parse MessageToL2 event: {e}"),
+                    })
+                })
+            })
+            .collect::<Result<Vec<L1HandlerTransactionWithFee>, SettlementClientError>>()
     }
 
     async fn get_block_n_timestamp(&self, l1_block_n: u64) -> Result<u64, SettlementClientError> {

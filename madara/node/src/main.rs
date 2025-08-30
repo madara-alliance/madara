@@ -265,8 +265,12 @@ async fn main() -> anyhow::Result<()> {
 
     // User-facing RPC
 
-    let service_rpc_user =
-        RpcService::user(run_cmd.rpc_params.clone(), Arc::clone(service_db.backend()), tx_submit.clone());
+    let service_rpc_user = RpcService::user(
+        run_cmd.rpc_params.clone(),
+        Arc::clone(service_db.backend()),
+        tx_submit.clone(),
+        service_l1_sync.provider(),
+    );
 
     // Admin-facing RPC (for node operators)
 

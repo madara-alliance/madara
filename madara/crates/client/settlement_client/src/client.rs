@@ -3,6 +3,7 @@ use crate::messaging::MessageToL2WithMetadata;
 use crate::state_update::{StateUpdate, StateUpdateWorker};
 use async_trait::async_trait;
 use futures::stream::BoxStream;
+use mp_convert::L1TransactionHash;
 use mp_transactions::L1HandlerTransactionWithFee;
 use mp_utils::service::ServiceContext;
 
@@ -107,6 +108,18 @@ pub trait SettlementLayerProvider: Send + Sync {
     /// - `true` if the message can be found on the core contract.
     /// - An Error if the call fail
     async fn message_to_l2_is_pending(&self, msg_hash: &[u8]) -> Result<bool, SettlementClientError>;
+
+    /// Fetches L1 to L2 messages associated with a specific L1 transaction hash
+    ///
+    /// # Arguments
+    /// * `l1_tx_hash` - The hash of the L1 transaction
+    /// # Returns
+    /// - A vector of L1 to L2 messages associated with the given L1 transaction hash
+    /// - An error if the call fails
+    async fn get_messages_to_l2(
+        &self,
+        l1_tx_hash: L1TransactionHash,
+    ) -> Result<Vec<L1HandlerTransactionWithFee>, SettlementClientError>;
 
     /// Return a block timestamp in second.
     ///

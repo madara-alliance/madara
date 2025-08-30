@@ -1,5 +1,5 @@
 use super::{
-    BlockHash, BlockNumber, BlockStatus, L1DaMode, PriceUnit, ResourcePrice, TransactionAndReceipt, TxnHash,
+    BlockHash, BlockNumber, BlockStatus, L1DaMode, PriceUnit, ResourcePrice, TransactionAndReceipt, TxnHash, TxnStatus,
     TxnWithHash,
 };
 use serde::{Deserialize, Serialize};
@@ -126,6 +126,14 @@ pub enum MaybePendingBlockWithTxHashes {
 pub enum MaybePendingBlockWithTxs {
     Block(BlockWithTxs),
     Pending(PendingBlockWithTxs),
+}
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+pub struct TxnHashWithStatus {
+    pub transaction_hash: TxnHash,
+    pub finality_status: TxnStatus,
+    #[serde(default)]
+    pub failure_reason: Option<String>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]

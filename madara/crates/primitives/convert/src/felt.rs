@@ -105,6 +105,12 @@ impl L1TransactionHash {
     }
 }
 
+impl From<mp_rpc::v0_8_1::L1TxnHash> for L1TransactionHash {
+    fn from(value: mp_rpc::v0_8_1::L1TxnHash) -> Self {
+        Self(value.0)
+    }
+}
+
 #[derive(Clone, Copy, Debug, serde::Deserialize, serde::Serialize)]
 #[serde(transparent)]
 pub struct L1CoreContractNonce(u64);
