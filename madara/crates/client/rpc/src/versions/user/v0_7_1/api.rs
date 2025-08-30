@@ -20,21 +20,21 @@ use starknet_types_core::felt::Felt;
 #[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetWriteRpcApi {
     /// Submit a new transaction to be added to the chain
-    #[method(name = "addInvokeTransaction", and_versions = ["V0_8_1"])]
+    #[method(name = "addInvokeTransaction")]
     async fn add_invoke_transaction(
         &self,
         invoke_transaction: BroadcastedInvokeTxn,
     ) -> RpcResult<AddInvokeTransactionResult>;
 
     /// Submit a new deploy account transaction
-    #[method(name = "addDeployAccountTransaction", and_versions = ["V0_8_1"])]
+    #[method(name = "addDeployAccountTransaction")]
     async fn add_deploy_account_transaction(
         &self,
         deploy_account_transaction: BroadcastedDeployAccountTxn,
     ) -> RpcResult<ContractAndTxnHash>;
 
     /// Submit a new class declaration transaction
-    #[method(name = "addDeclareTransaction", and_versions = ["V0_8_1"])]
+    #[method(name = "addDeclareTransaction")]
     async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash>;
 }
 
@@ -65,7 +65,7 @@ pub trait StarknetReadRpcApi {
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128>;
 
     /// Estimate the fee associated with transaction
-    #[method(name = "estimateFee", and_versions = ["V0_8_1"])]
+    #[method(name = "estimateFee")]
     async fn estimate_fee(
         &self,
         request: Vec<BroadcastedTxn>,
@@ -74,19 +74,19 @@ pub trait StarknetReadRpcApi {
     ) -> RpcResult<Vec<FeeEstimate>>;
 
     /// Estimate the L2 fee of a message sent on L1
-    #[method(name = "estimateMessageFee", and_versions = ["V0_8_1"])]
+    #[method(name = "estimateMessageFee")]
     async fn estimate_message_fee(&self, message: MsgFromL1, block_id: BlockId) -> RpcResult<FeeEstimate>;
 
     /// Get block information with full transactions and receipts given the block id
-    #[method(name = "getBlockWithReceipts", and_versions = ["V0_8_1"])]
-    async fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult>;
+    #[method(name = "getBlockWithReceipts")]
+    fn get_block_with_receipts(&self, block_id: BlockId) -> RpcResult<StarknetGetBlockWithTxsAndReceiptsResult>;
 
     /// Get block information with transaction hashes given the block id
-    #[method(name = "getBlockWithTxHashes", and_versions = ["V0_8_1"])]
+    #[method(name = "getBlockWithTxHashes")]
     fn get_block_with_tx_hashes(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxHashes>;
 
     /// Get block information with full transactions given the block id
-    #[method(name = "getBlockWithTxs", and_versions = ["V0_8_1"])]
+    #[method(name = "getBlockWithTxs")]
     fn get_block_with_txs(&self, block_id: BlockId) -> RpcResult<MaybePendingBlockWithTxs>;
 
     /// Get the contract class at a given contract address for a given block id
@@ -142,7 +142,7 @@ pub trait StarknetReadRpcApi {
 #[versioned_rpc("V0_7_1", "starknet")]
 pub trait StarknetTraceRpcApi {
     /// Returns the execution trace of a transaction by simulating it in the runtime.
-    #[method(name = "simulateTransactions", and_versions = ["V0_8_1"])]
+    #[method(name = "simulateTransactions")]
     async fn simulate_transactions(
         &self,
         block_id: BlockId,
