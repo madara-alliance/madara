@@ -12,7 +12,7 @@ use mp_rpc::v0_7_1::BroadcastedTxn;
 use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use rstest::fixture;
-use starknet_core::utils::get_selector_from_name;
+use starknet::core::utils::get_selector_from_name;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;

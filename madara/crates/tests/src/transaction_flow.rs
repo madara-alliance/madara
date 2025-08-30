@@ -8,6 +8,15 @@ use anyhow::bail;
 use assert_matches::assert_matches;
 use rand::{seq::SliceRandom, Rng, SeedableRng};
 use rstest::rstest;
+use starknet::core::{
+    types::{
+        BlockId, BlockTag, Call, ContractClass, ExecuteInvocation, ExecutionResult, Felt, FunctionCall,
+        MaybePendingBlockWithTxHashes, StarknetError, TransactionReceipt, TransactionReceiptWithBlockInfo,
+        TransactionTrace,
+    },
+    utils::starknet_keccak,
+};
+use starknet::providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, SequencerGatewayProvider};
 use starknet::{
     accounts::{Account, AccountError, AccountFactory, ConnectedAccount, OpenZeppelinAccountFactory},
     contract::ContractFactory,
@@ -16,15 +25,6 @@ use starknet::{
     accounts::{ExecutionEncoding, SingleOwnerAccount},
     signers::{LocalWallet, SigningKey},
 };
-use starknet_core::{
-    types::{
-        BlockId, BlockTag, Call, ContractClass, ExecuteInvocation, ExecutionResult, Felt, FunctionCall,
-        MaybePendingBlockWithTxHashes, StarknetError, TransactionReceipt, TransactionReceiptWithBlockInfo,
-        TransactionTrace,
-    },
-    utils::starknet_keccak,
-};
-use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError, SequencerGatewayProvider};
 use std::time::Duration;
 
 const GAS_PRICE: u128 = 128;
@@ -672,7 +672,7 @@ async fn declare_sierra_then_deploy(
     async fn perform_test<P: Provider + Sync + Send>(setup: &RunningTestSetup, provider: &P) {
         let mut nonce = setup.get_nonce(ACCOUNTS[0]).await;
 
-        let sierra_class: starknet_core::types::contract::SierraClass =
+        let sierra_class: starknet::core::types::contract::SierraClass =
             serde_json::from_slice(m_cairo_test_contracts::TEST_CONTRACT_SIERRA).unwrap();
         let flattened_class = sierra_class.clone().flatten().unwrap();
         let (compiled_class_hash, _compiled_class) =

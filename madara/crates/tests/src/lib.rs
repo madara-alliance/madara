@@ -14,9 +14,9 @@ mod transaction_flow;
 
 use anyhow::bail;
 use rstest::rstest;
-use starknet_core::types::Felt;
-use starknet_providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
-use starknet_providers::{Provider, SequencerGatewayProvider};
+use starknet::core::types::Felt;
+use starknet::providers::{jsonrpc::HttpTransport, JsonRpcClient, Url};
+use starknet::providers::{Provider, SequencerGatewayProvider};
 use std::io::{BufRead, BufReader};
 use std::process::Stdio;
 use std::sync::mpsc::TryRecvError;
@@ -380,7 +380,7 @@ fn madara_help_shows() {
 #[rstest]
 #[tokio::test]
 async fn madara_can_sync_a_few_blocks() {
-    use starknet_core::types::BlockHashAndNumber;
+    use starknet::core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;
 
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();
@@ -413,7 +413,7 @@ async fn madara_can_sync_a_few_blocks() {
 #[rstest]
 #[tokio::test]
 async fn madara_can_sync_and_restart() {
-    use starknet_core::types::BlockHashAndNumber;
+    use starknet::core::types::BlockHashAndNumber;
     use starknet_types_core::felt::Felt;
 
     let _ = tracing_subscriber::fmt().with_test_writer().try_init();

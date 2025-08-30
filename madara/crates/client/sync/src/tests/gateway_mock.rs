@@ -3,7 +3,7 @@ use mc_gateway_client::GatewayProvider;
 use mp_state_update::DeclaredClassItem;
 use rstest::*;
 use serde_json::{json, Value};
-use starknet_core::types::Felt;
+use starknet::core::types::Felt;
 use std::sync::Arc;
 
 pub struct GatewayMock {

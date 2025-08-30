@@ -1,6 +1,6 @@
 use serde::{de, Deserializer, Serializer};
 use serde_with::{DeserializeAs, SerializeAs};
-use starknet_core::types::Hash256;
+use starknet::core::types::Hash256;
 use std::fmt;
 
 /// Bincode-friendly [`SerializeAs`] and [`DeserializeAs`] implementation for [`Hash256`]

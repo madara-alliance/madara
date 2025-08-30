@@ -6,8 +6,7 @@ mod test_rpc_read_calls {
     use crate::{MadaraCmd, MadaraCmdBuilder};
     use flate2::read::GzDecoder;
     use rstest::rstest;
-    use starknet::macros::felt;
-    use starknet_core::types::{
+    use starknet::core::types::{
         BlockHashAndNumber, BlockId, BlockStatus, BlockWithReceipts, BlockWithTxHashes, BlockWithTxs,
         ComputationResources, ContractClass, ContractStorageDiffItem, DataAvailabilityResources, DataResources,
         DeclareTransaction, DeclareTransactionReceipt, DeclareTransactionV0, EmittedEvent, EventFilter, EventsPage,
@@ -17,11 +16,12 @@ mod test_rpc_read_calls {
         Transaction, TransactionExecutionStatus, TransactionFinalityStatus, TransactionReceipt,
         TransactionReceiptWithBlockInfo, TransactionStatus, TransactionWithReceipt,
     };
-    use starknet_core::types::{
+    use starknet::core::types::{
         BroadcastedDeployAccountTransaction, BroadcastedDeployAccountTransactionV1, BroadcastedTransaction, EthAddress,
         FeeEstimate, MsgFromL1, SimulationFlagForEstimateFee,
     };
-    use starknet_providers::Provider;
+    use starknet::macros::felt;
+    use starknet::providers::Provider;
     use std::any::Any;
     use std::fmt::Write;
     use std::io::Read;

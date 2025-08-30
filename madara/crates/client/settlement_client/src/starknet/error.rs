@@ -1,4 +1,4 @@
-use starknet_core::types::StarknetError;
+use starknet::core::types::StarknetError;
 use thiserror::Error;
 
 #[derive(Debug, Error)]

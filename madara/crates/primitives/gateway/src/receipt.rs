@@ -72,7 +72,7 @@ impl ConfirmedReceipt {
 
     fn into_mp_l1_handler(self, tx: &L1HandlerTransaction) -> mp_receipt::L1HandlerTransactionReceipt {
         let (from_address, payload) = tx.calldata.split_first().map(|(a, b)| (*a, b)).unwrap_or((Felt::ZERO, &[]));
-        let message_to_l2 = starknet_core::types::MsgToL2 {
+        let message_to_l2 = starknet::core::types::MsgToL2 {
             from_address: from_address.try_into().unwrap_or(
                 Felt::ZERO.try_into().expect("Failed to cnvert Felt::ZERO to an EthAddress, this should not happen!"),
             ),
