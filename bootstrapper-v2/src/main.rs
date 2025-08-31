@@ -20,10 +20,15 @@ fn main() -> Result<()> {
 
     match args.command {
         Commands::SetupBase(setup_base) => {
-            let config: BaseConfigOuter = serde_json::from_reader(File::open(setup_base.config_path)?)?;
+            let config: BaseConfigOuter = serde_json::from_reader(File::open(setup_base.config_path).context(
+                "Failed to read base layer config file.
+                Make sure the path exists and is readable",
+            )?)
+            .context("Failed to deserialize base layer config file")?;
 
-            let mut base_layer_setup =
-                config.get_base_layer_setup(setup_base.private_key, &setup_base.addresses_output_path)?;
+            let mut base_layer_setup = config
+                .get_base_layer_setup(setup_base.private_key, &setup_base.addresses_output_path)
+                .context("Failed to initialise base layer config")?;
 
             base_layer_setup.init().context("Failed to initialise the base layer setup")?;
             base_layer_setup.setup().context("Failed to setup base layer setup")?;

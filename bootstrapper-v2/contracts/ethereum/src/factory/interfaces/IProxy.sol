@@ -2,10 +2,15 @@
 pragma solidity ^0.8.13;
 
 interface IProxy {
-  function safeAddImplementation(
+  function addImplementation(
     address newImplementation,
-    bytes calldata data
+    bytes calldata data,
+    bool finalize
   ) external;
 
-  function upgradeTo(address newImplementation, bytes calldata data) external;
+  function upgradeTo(
+    address newImplementation,
+    bytes calldata data,
+    bool finalize
+  ) external;
 }

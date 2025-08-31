@@ -1,3 +1,4 @@
+use crate::setup::base_layer::ethereum::factory::Factory;
 use crate::setup::base_layer::BaseLayerSetupTrait;
 use serde::Deserialize;
 use std::collections::HashMap;
@@ -27,6 +28,7 @@ pub enum BaseLayerConfig {
         // This would save gas and cost, as the heavy implementation contracts are only deployed once.
         // This a map of the implementation contract name to the implementation contract address.
         implementation_addresses: HashMap<String, String>,
+        core_contract_init_data: Box<Factory::CoreContractInitData>,
     },
     Starknet {
         rpc_url: String,
@@ -45,12 +47,15 @@ impl BaseConfigOuter {
         addresses_output_path: &str,
     ) -> anyhow::Result<Box<dyn BaseLayerSetupTrait>> {
         match &self.base_layer {
-            BaseLayerConfig::Ethereum { rpc_url, implementation_addresses } => Ok(Box::new(EthereumSetup::new(
-                rpc_url.clone(),
-                private_key,
-                implementation_addresses.clone(),
-                addresses_output_path,
-            ))),
+            BaseLayerConfig::Ethereum { rpc_url, implementation_addresses, core_contract_init_data } => {
+                Ok(Box::new(EthereumSetup::new(
+                    rpc_url.clone(),
+                    private_key,
+                    implementation_addresses.clone(),
+                    *core_contract_init_data.clone(),
+                    addresses_output_path,
+                )))
+            }
             BaseLayerConfig::Starknet { rpc_url } => Ok(Box::new(StarknetSetup::new(rpc_url.clone(), private_key))),
         }
     }
