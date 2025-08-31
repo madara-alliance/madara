@@ -2,11 +2,14 @@ pub mod config;
 pub mod conversion;
 #[cfg(test)]
 pub mod tests;
+pub mod appchain_client;
+pub mod interfaces;
+pub mod utils;
 
 use std::sync::Arc;
 
-use appchain_core_contract_client::clients::StarknetCoreContractClient;
-use appchain_core_contract_client::interfaces::core_contract::CoreContract;
+use appchain_client::StarknetCoreContractClient;
+use interfaces::core_contract::CoreContract;
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
 use color_eyre::Result;

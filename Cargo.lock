@@ -1211,48 +1211,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c042108f3ed77fd83760a5fd79b53be043192bb3b9dba91d8c574c0ada7850c8"
 
 [[package]]
-name = "appchain-core-contract-client"
-version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
-dependencies = [
- "appchain-utils",
- "async-trait",
- "color-eyre",
- "dirs",
- "hex",
- "log",
- "num-traits 0.2.19",
- "serde_json",
- "starknet 0.14.0",
- "starknet-accounts 0.13.0",
- "starknet-core 0.13.0",
- "starknet-ff",
- "starknet-providers 0.13.0",
-]
-
-[[package]]
-name = "appchain-utils"
-version = "0.1.0"
-source = "git+https://github.com/karnotxyz/zaun?branch=v3-tx#abe7081638e8bb2e5f3c08801ff4c7a1e2f2263e"
-dependencies = [
- "async-trait",
- "color-eyre",
- "hex",
- "log",
- "num-traits 0.2.19",
- "serde_json",
- "starknet 0.14.0",
- "starknet-accounts 0.13.0",
- "starknet-contract 0.13.0",
- "starknet-core 0.13.0",
- "starknet-ff",
- "starknet-providers 0.13.0",
- "starknet-signers 0.11.0",
- "thiserror 1.0.65",
- "url",
-]
-
-[[package]]
 name = "ark-ec"
 version = "0.4.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2543,18 +2501,6 @@ name = "bech32"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d86b93f97252c47b41663388e6d155714a9d0c398b99f1005cbc5f978b29f445"
-
-[[package]]
-name = "bigdecimal"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a6773ddc0eafc0e509fb60e48dff7f450f8e674a0686ae8605e8d9901bd5eefa"
-dependencies = [
- "num-bigint",
- "num-integer",
- "num-traits 0.2.19",
- "serde",
-]
 
 [[package]]
 name = "bimap"
@@ -8248,7 +8194,6 @@ version = "0.8.0"
 dependencies = [
  "alloy 0.8.3",
  "alloy-primitives 0.8.18",
- "appchain-core-contract-client",
  "async-std",
  "async-trait",
  "build-version",
@@ -8256,6 +8201,7 @@ dependencies = [
  "color-eyre",
  "crypto-bigint 0.5.5",
  "dotenvy",
+ "hex",
  "lazy_static",
  "log",
  "mockall",
@@ -8271,7 +8217,11 @@ dependencies = [
  "serde",
  "serde_json",
  "starknet 0.14.0",
+ "starknet-accounts 0.13.0",
+ "starknet-core 0.13.0",
+ "starknet-providers 0.13.0",
  "tempfile",
+ "thiserror 2.0.3",
  "tokio",
  "tokio-test",
  "tracing",
@@ -11293,11 +11243,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7abf1b44ec5b18d87c1ae5f54590ca9d0699ef4dd5b2ffa66fc97f24613ec585"
 dependencies = [
  "ark-ff 0.4.2",
- "bigdecimal",
  "crypto-bigint 0.5.5",
  "getrandom",
  "hex",
- "serde",
 ]
 
 [[package]]

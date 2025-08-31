@@ -6,7 +6,6 @@ edition.workspace = true
 [dependencies]
 alloy = { workspace = true, features = ["full", "node-bindings"] }
 alloy-primitives = { workspace = true, default-features = false }
-appchain-core-contract-client = { workspace = true }
 async-trait = { workspace = true }
 c-kzg = { workspace = true }
 color-eyre = { workspace = true }
@@ -20,7 +19,11 @@ orchestrator-utils = { workspace = true }
 reqwest = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
+serde_json = { workspace = true }
 starknet = { workspace = true }
+starknet-core = { workspace = true }
+starknet-providers = { workspace = true }
+starknet-accounts = { workspace = true }
 tempfile.workspace = true
 tokio = { workspace = true }
 url = { workspace = true }
@@ -39,6 +42,8 @@ tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
+thiserror = {workspace = true}
+hex = {workspace = true}
 
 
 [dev-dependencies]
