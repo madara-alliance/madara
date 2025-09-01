@@ -11,12 +11,11 @@ use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::OnChainData;
 use crate::worker::utils::{fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block};
 use async_trait::async_trait;
-use cairo_vm::Felt252;
+// use cairo_vm::Felt252; // Unused
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use starknet_core::types::Felt;
-use starknet_os::io::output::StarknetOsOutput;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 
@@ -323,13 +322,13 @@ impl StateUpdateJobHandler {
         &self,
         config: Arc<Config>,
         block_no: u64,
-        snos: StarknetOsOutput,
+        snos: Vec<Felt>,
         nonce: u64,
         program_output: Vec<[u8; 32]>,
         blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
-        let last_tx_hash_executed = if snos.use_kzg_da == Felt252::ZERO {
+        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) {
             let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
             tracing::debug!(%proof_key, "Fetching snos proof file");
 
@@ -373,7 +372,7 @@ impl StateUpdateJobHandler {
                 )
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
-        } else if snos.use_kzg_da == Felt252::ONE {
+        } else if snos.get(8) == Some(&Felt::ONE) {
             settlement_client
                 .update_state_with_blobs(program_output, blob_data, nonce)
                 .await

@@ -17,7 +17,7 @@ pub fn register_gauge_metric_instrument(
     desc: String,
     unit: String,
 ) -> Gauge<f64> {
-    crate_meter.f64_gauge(instrument_name).with_description(desc).with_unit(unit).init()
+    crate_meter.f64_gauge(instrument_name).with_description(desc).with_unit(unit).build()
 }
 
 pub fn register_counter_metric_instrument(
@@ -26,5 +26,5 @@ pub fn register_counter_metric_instrument(
     desc: String,
     unit: String,
 ) -> Counter<f64> {
-    crate_meter.f64_counter(instrument_name).with_description(desc).with_unit(unit).init()
+    crate_meter.f64_counter(instrument_name).with_description(desc).with_unit(unit).build()
 }

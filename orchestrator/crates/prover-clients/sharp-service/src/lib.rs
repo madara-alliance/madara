@@ -9,7 +9,7 @@ use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
-use starknet_os::sharp::CairoJobStatus;
+use crate::types::CairoJobStatus;
 use uuid::Uuid;
 
 use crate::client::SharpClient;
@@ -54,8 +54,8 @@ impl ProverClient for SharpProverService {
         );
         match task {
             Task::CairoPie(cairo_pie) => {
-                let encoded_pie =
-                    starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
+                let encoded_pie = serde_json::to_string(cairo_pie.as_ref())
+                    .map_err(|e| ProverClientError::PieEncoding(e.to_string()))?;
                 let (_, job_key) = self.sharp_client.add_job(&encoded_pie, proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",
@@ -92,7 +92,7 @@ impl ProverClient for SharpProverService {
 
             // The `unwrap_or_default`s below is safe as it is just returning if any error logs
             // present
-            CairoJobStatus::FAILED => {
+            CairoJobStatus::Failed => {
                 tracing::error!(
                     log_type = "failed",
                     category = "get_task_status",
@@ -101,7 +101,7 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(TaskStatus::Failed(res.error_log.unwrap_or_default()))
             }
-            CairoJobStatus::INVALID => {
+            CairoJobStatus::Invalid => {
                 tracing::warn!(
                     log_type = "completed",
                     category = "get_task_status",
@@ -110,7 +110,7 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(TaskStatus::Failed(format!("Task is invalid: {:?}", res.invalid_reason.unwrap_or_default())))
             }
-            CairoJobStatus::UNKNOWN => {
+            CairoJobStatus::Unknown => {
                 tracing::warn!(
                     log_type = "unknown",
                     category = "get_task_status",
@@ -119,7 +119,7 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(TaskStatus::Failed(format!("Task not found: {}", job_key)))
             }
-            CairoJobStatus::IN_PROGRESS | CairoJobStatus::NOT_CREATED | CairoJobStatus::PROCESSED => {
+            CairoJobStatus::InProgress | CairoJobStatus::NotCreated | CairoJobStatus::Processed => {
                 tracing::info!(
                     log_type = "in_progress",
                     category = "get_task_status",
@@ -128,7 +128,7 @@ impl ProverClient for SharpProverService {
                 );
                 Ok(TaskStatus::Processing)
             }
-            CairoJobStatus::ONCHAIN => match fact {
+            CairoJobStatus::Onchain => match fact {
                 Some(fact_str) => {
                     let fact =
                         B256::from_str(&fact_str).map_err(|e| ProverClientError::FailedToConvertFact(e.to_string()))?;

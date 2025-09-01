@@ -9,7 +9,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
-use starknet_os::io::output::StarknetOsOutput;
+use starknet_core::types::Felt;
 
 pub mod fact_info;
 pub mod fact_node;
@@ -104,7 +104,7 @@ pub async fn fetch_snos_for_block(
     index: usize,
     config: Arc<Config>,
     snos_output_paths: &[String],
-) -> Result<StarknetOsOutput, JobError> {
+) -> Result<Vec<Felt>, JobError> {
     tracing::debug!(job_id = %internal_id, "Fetching SNOS output for block index {}", index);
 
     let storage_client = config.storage();

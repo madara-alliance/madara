@@ -9,19 +9,26 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::COMPILED_OS;
+// use crate::utils::COMPILED_OS; // Unused
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::fact_info::{build_on_chain_data, get_fact_info, get_fact_l2, get_program_output};
 use async_trait::async_trait;
 use bytes::Bytes;
-use cairo_vm::types::layout_name::LayoutName;
+// use cairo_vm::types::layout_name::LayoutName; // Unused
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
+use starknet_core::types::Felt;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use orchestrator_utils::layer::Layer;
-use prove_block::prove_block;
-use starknet_os::io::output::StarknetOsOutput;
+use snos_core::{
+    generate_pie,           // The main function
+    PieGenerationInput,     // Input struct
+    PieGenerationResult,    // Result struct  
+    // PieGenerationError,     // Error enum - Unused
+    ChainConfig,           // Chain configuration
+    OsHintsConfiguration,  // OS hints configuration
+};
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
@@ -77,15 +84,24 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!(job_id = %job.internal_id, "Calling prove_block function");
 
-        let (cairo_pie, snos_output) =
-            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, snos_metadata.full_output)
-                .await
+        let input = PieGenerationInput {
+            rpc_url: "https://random.xyz".to_string(),
+            blocks: vec![1309254],
+            chain_config: ChainConfig::default(),
+            os_hints_config: OsHintsConfiguration::default(),
+            output_path: None,  // No file output
+        };
+
+        let snos_output: PieGenerationResult =
+            generate_pie(input).await
                 .map_err(|e| {
                     error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
                     SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
                 })?;
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
-
+        
+        let cairo_pie = snos_output.output.cairo_pie;
+        let os_output = snos_output.output.os_output;
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
         // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
         // calldata based DA.
@@ -93,7 +109,7 @@ impl JobHandlerTrait for SnosJobHandler {
         //      we calculate the l2 fact
         // And in case of KZG flag == 1 :
         //      we calculate the fact info
-        let (fact_hash, program_output) = if snos_output.use_kzg_da == Felt252::ZERO {
+        let (fact_hash, program_output) = if os_output.get(8) == Some(&Felt::ZERO) {
             debug!(job_id = %job.internal_id, "Using calldata for settlement layer");
             // Get the program output from CairoPie
             let fact_hash = get_fact_l2(&cairo_pie, None).map_err(|e| {
@@ -105,7 +121,7 @@ impl JobHandlerTrait for SnosJobHandler {
                 JobError::FactError(FactError::ProgramOutputCompute)
             })?;
             (fact_hash, program_output)
-        } else if snos_output.use_kzg_da == Felt252::ONE {
+        } else if os_output.get(8) == Some(&Felt::ONE) {
             debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
             // Get the program output from CairoPie
             let fact_info = get_fact_info(&cairo_pie, None)?;
@@ -131,13 +147,13 @@ impl JobHandlerTrait for SnosJobHandler {
                 config.storage(),
                 &snos_metadata,
                 cairo_pie,
-                snos_output,
+                os_output,
                 program_output,
             )
             .await?;
         } else if config.layer() == &Layer::L2 {
             // Store the Cairo Pie path
-            self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, snos_output, program_output)
+            self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
                 .await?;
         }
 
@@ -189,7 +205,7 @@ impl SnosJobHandler {
         data_storage: &dyn StorageClient,
         snos_metadata: &SnosMetadata,
         cairo_pie: CairoPie,
-        snos_output: StarknetOsOutput,
+        snos_output: Vec<Felt>,
         program_output: Vec<Felt252>,
     ) -> Result<(), SnosError> {
         let on_chain_data = build_on_chain_data(&cairo_pie)
@@ -219,7 +235,7 @@ impl SnosJobHandler {
         data_storage: &dyn StorageClient,
         snos_metadata: &SnosMetadata,
         cairo_pie: CairoPie,
-        snos_output: StarknetOsOutput,
+        snos_output: Vec<Felt>,
         program_output: Vec<Felt252>,
     ) -> Result<(), SnosError> {
         // Get storage paths from metadata

@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
 use rstest::*;
-use starknet_os::io::output::StarknetOsOutput;
+use starknet_core::types::Felt;
 use url::Url;
 use uuid::Uuid;
 

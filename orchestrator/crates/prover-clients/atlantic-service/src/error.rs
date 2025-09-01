@@ -32,7 +32,7 @@ pub enum AtlanticError {
     TaskIdSplit,
 
     #[error("Failed to encode PIE")]
-    PieEncode(#[source] starknet_os::error::SnOsError),
+    PieEncode(String),
 
     #[error("Failed to get url as path segment mut. URL is cannot-be-a-base.")]
     PathSegmentMutFailOnUrl,
