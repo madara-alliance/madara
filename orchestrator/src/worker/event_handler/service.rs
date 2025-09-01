@@ -627,14 +627,16 @@ impl JobHandlerService {
         Ok(())
     }
     /// To get Box<dyn Worker> handler from `WorkerTriggerType`.
-    pub fn get_worker_handler_from_worker_trigger_type(worker_trigger_type: WorkerTriggerType) -> Box<dyn JobTrigger> {
+    pub async fn get_worker_handler_from_worker_trigger_type(
+        worker_trigger_type: WorkerTriggerType,
+    ) -> Box<dyn JobTrigger> {
         match worker_trigger_type {
             WorkerTriggerType::Snos => Box::new(SnosJobTrigger),
             WorkerTriggerType::Proving => Box::new(ProvingJobTrigger),
             WorkerTriggerType::DataSubmission => Box::new(DataSubmissionJobTrigger),
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
-            WorkerTriggerType::Batching => Box::new(BatchingTrigger),
+            WorkerTriggerType::Batching => Box::new(BatchingTrigger::new().await),
             WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
         }
     }

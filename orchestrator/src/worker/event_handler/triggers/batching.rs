@@ -14,16 +14,28 @@ use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
 use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::Task;
+use serde::Deserialize;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::Felt;
 use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
+use std::collections::HashSet;
+use std::fs::File;
+use std::io::Read;
 use std::sync::Arc;
 use tokio::try_join;
 
-pub struct BatchingTrigger;
+pub struct BatchingTrigger {
+    data: HashSet<u64>,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct BatchesData {
+    input_block: u64,
+}
 
 // This lock ensures that only one Batching Worker is running at a time.
 // The lock is acquired for 1 hour.
@@ -92,6 +104,28 @@ impl JobTrigger for BatchingTrigger {
 }
 
 impl BatchingTrigger {
+    pub async fn new() -> Self {
+        let mut res = Self { data: HashSet::new() };
+        res.load_data(std::env::var("BATCH_INFO").unwrap().as_str()).await;
+        res
+    }
+
+    async fn load_data(&mut self, file_path: &str) {
+        let mut string = String::new();
+        let mut file = File::open(file_path).unwrap();
+        file.read_to_string(&mut string).unwrap();
+        let block_nums: Vec<BatchesData> =
+            serde_json::from_str(&string).map_err(|e| eyre!("Failed to parse state update file: {}", e)).unwrap();
+
+        block_nums.iter().for_each(|block_num| {
+            self.data.insert(block_num.input_block);
+        })
+    }
+
+    fn should_start_new_batch(&self, block_number: u64) -> bool {
+        self.data.contains(&block_number)
+    }
+
     /// assign_batch_to_blocks assigns a batch to all the blocks from `start_block_number` to
     /// `end_block_number` and updates the state in DB and stores the output in storage
     async fn assign_batch_to_blocks(
