@@ -11,11 +11,15 @@ use cli::{CliArgs, Commands};
 
 use anyhow::{Context, Result};
 use config::{BaseConfigOuter, MadaraConfigOuter};
+use env_logger::Env;
 use setup::madara::MadaraSetup;
 use std::fs::File;
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     dotenvy::from_filename_override(".env")?;
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
+
     let args = CliArgs::parse();
 
     match args.command {
@@ -38,11 +42,11 @@ fn main() -> Result<()> {
             let madara_config: MadaraConfigOuter = serde_json::from_reader(File::open(&setup_madara.config_path)?)?;
             let base_layer_config: BaseConfigOuter = serde_json::from_reader(File::open(setup_madara.config_path)?)?;
 
-            let madara_setup = MadaraSetup::new(madara_config.madara, setup_madara.private_key);
+            let mut madara_setup = MadaraSetup::new(madara_config.madara);
             let base_layer_setup = base_layer_config
-                .get_base_layer_setup(setup_madara.base_layer_private_key, &setup_madara.base_addresses_path)?;
+                .get_base_layer_setup(setup_madara.base_layer_private_key.clone(), &setup_madara.base_addresses_path)?;
 
-            madara_setup.init().context("Failed to initialise the madara setup")?;
+            madara_setup.init(&setup_madara.private_key).await.context("Failed to initialise the madara setup")?;
             madara_setup
                 .setup(&setup_madara.base_addresses_path, &setup_madara.output_path)
                 .context("Failed to setup madara setup")?;
