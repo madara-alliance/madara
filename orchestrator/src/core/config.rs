@@ -106,6 +106,12 @@ pub struct ConfigParam {
     pub snos_layout_name: LayoutName,
     /// Layout to use for proving
     pub prover_layout_name: LayoutName,
+    /// Specifies if we should store job artifacts which are not used in the code i.e., not
+    /// necessary for the application, but can be used for auditing purposes.
+    ///
+    /// Currently, being used to check if we should store
+    /// * Aggregator Proof
+    pub store_audit_artifacts: bool,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -198,6 +204,7 @@ impl Config {
                 .context("Failed to get SNOS layout name")?,
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
                 .context("Failed to get prover layout name")?,
+            store_audit_artifacts: run_cmd.store_audit_artifacts,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
