@@ -22,7 +22,6 @@ reqwest.workspace = true
 rstest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-starknet-os.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 url.workspace = true

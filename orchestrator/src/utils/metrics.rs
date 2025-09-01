@@ -1,83 +1,70 @@
 use crate::core::client::database::constant::JOBS_COLLECTION;
-use once_cell;
-use once_cell::sync::Lazy;
-use opentelemetry::metrics::{Counter, Gauge};
+use crate::metrics::OrchestratorMetrics;
+use opentelemetry::metrics::{Counter, Histogram, Meter, ObservableGauge};
 use opentelemetry::{global, KeyValue};
-use orchestrator_utils::metrics::lib::{register_counter_metric_instrument, register_gauge_metric_instrument, Metrics};
-use orchestrator_utils::register_metric;
+use once_cell::sync::Lazy;
 
-register_metric!(ORCHESTRATOR_METRICS, OrchestratorMetrics);
+pub static ORCHESTRATOR_METRICS: Lazy<OrchestratorMetrics> = Lazy::new(|| {
+    OrchestratorMetrics::register()
+});
 
 pub struct OrchestratorMetrics {
-    pub block_gauge: Gauge<f64>,
-    pub successful_job_operations: Counter<f64>,
-    pub failed_job_operations: Counter<f64>,
-    pub failed_jobs: Counter<f64>,
-    pub verification_time: Gauge<f64>,
-    pub jobs_response_time: Gauge<f64>,
-    pub db_calls_response_time: Gauge<f64>,
+    pub block_gauge: ObservableGauge<f64>,
+    pub successful_job_operations: Counter<u64>,
+    pub failed_job_operations: Counter<u64>,
+    pub failed_jobs: Counter<u64>,
+    pub verification_time: Histogram<f64>,
+    pub jobs_response_time: Histogram<f64>,
+    pub db_calls_response_time: Histogram<f64>,
 }
 
-impl Metrics for OrchestratorMetrics {
-    fn register() -> Self {
-        // Register meter
-        let common_scope_attributes = vec![KeyValue::new("crate", "orchestrator")];
-        let orchestrator_meter = global::meter_with_version(
-            "crates.orchestrator.opentelemetry",
-            Some("0.17"),
-            Some("https://opentelemetry.io/schemas/1.2.0"),
-            Some(common_scope_attributes.clone()),
-        );
+impl OrchestratorMetrics {
+    pub fn register() -> Self {
+        // Create a meter (the API changed from 0.25.x)
+        let meter: Meter = global::meter("crates.orchestrator.opentelemetry");
 
-        // Register all instruments
-        let block_gauge = register_gauge_metric_instrument(
-            &orchestrator_meter,
-            "block_state".to_string(),
-            "A gauge to show block state at given time".to_string(),
-            "block".to_string(),
-        );
+        // --- Instruments ---
+        let block_gauge = meter
+            .f64_observable_gauge("block_state")
+            .with_description("A gauge to show block state at given time")
+            .with_unit("block")
+            .build();
 
-        let successful_job_operations = register_counter_metric_instrument(
-            &orchestrator_meter,
-            "successful_job_operations".to_string(),
-            "A counter to show count of successful job operations over time".to_string(),
-            String::from(JOBS_COLLECTION),
-        );
+        let successful_job_operations = meter
+            .u64_counter("successful_job_operations")
+            .with_description("Count of successful job operations over time")
+            .with_unit("jobs")
+            .build();
 
-        let failed_job_operations = register_counter_metric_instrument(
-            &orchestrator_meter,
-            "failed_job_operations".to_string(),
-            "A counter to show count of failed job operations over time".to_string(),
-            String::from(JOBS_COLLECTION),
-        );
+        let failed_job_operations = meter
+            .u64_counter("failed_job_operations")
+            .with_description("Count of failed job operations over time")
+            .with_unit("jobs")
+            .build();
 
-        let failed_jobs = register_counter_metric_instrument(
-            &orchestrator_meter,
-            "failed_jobs".to_string(),
-            "A counter to show count of failed jobs over time".to_string(),
-            String::from(JOBS_COLLECTION),
-        );
+        let failed_jobs = meter
+            .u64_counter("failed_jobs")
+            .with_description("Count of failed jobs over time")
+            .with_unit("jobs")
+            .build();
 
-        let verification_time = register_gauge_metric_instrument(
-            &orchestrator_meter,
-            "verification_time".to_string(),
-            "A gauge to show the time taken for verification of tasks".to_string(),
-            "ms".to_string(),
-        );
+        let verification_time = meter
+            .f64_histogram("verification_time")
+            .with_description("Time taken for verification of tasks")
+            .with_unit("ms")
+            .build();
 
-        let jobs_response_time = register_gauge_metric_instrument(
-            &orchestrator_meter,
-            "jobs_response_time".to_string(),
-            "A gauge to show response time of jobs over time".to_string(),
-            "s".to_string(),
-        );
+        let jobs_response_time = meter
+            .f64_histogram("jobs_response_time")
+            .with_description("Response time of jobs over time")
+            .with_unit("s")
+            .build();
 
-        let db_calls_response_time = register_gauge_metric_instrument(
-            &orchestrator_meter,
-            "db_calls_response_time".to_string(),
-            "A gauge to show response time of jobs over time".to_string(),
-            "s".to_string(),
-        );
+        let db_calls_response_time = meter
+            .f64_histogram("db_calls_response_time")
+            .with_description("Response time of DB calls over time")
+            .with_unit("s")
+            .build();
 
         Self {
             block_gauge,

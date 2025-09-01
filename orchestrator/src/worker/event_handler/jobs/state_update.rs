@@ -15,13 +15,12 @@ use crate::worker::utils::{
     fetch_blob_data_for_batch, fetch_blob_data_for_block, fetch_program_output_for_block, fetch_snos_for_block,
 };
 use async_trait::async_trait;
-use cairo_vm::Felt252;
+// use cairo_vm::Felt252; // Unused
 use color_eyre::eyre::eyre;
 use orchestrator_settlement_client_interface::SettlementVerificationStatus;
 use orchestrator_utils::collections::{has_dup, is_sorted};
 use orchestrator_utils::layer::Layer;
 use starknet_core::types::Felt;
-use starknet_os::io::output::StarknetOsOutput;
 use std::sync::Arc;
 use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, trace, warn};
@@ -438,23 +437,13 @@ impl StateUpdateJobHandler {
         &self,
         config: Arc<Config>,
         block_no: u64,
-        artifacts: StateUpdateArtifacts,
+        snos: Vec<Felt>,
+        nonce: u64,
+        program_output: Vec<[u8; 32]>,
+        blob_data: Vec<Vec<u8>>,
     ) -> Result<String, JobError> {
         let settlement_client = config.settlement_client();
-
-        // Trying to get snos output
-        let snos_output = match artifacts.snos_output {
-            Some(snos_output) => snos_output,
-            None => {
-                error!("SnosOutput not found during state update for block. Cannot proceed without it!");
-                return Err(JobError::Other(OtherError(eyre!(
-                    "SnosOutput not found during state update for block. Cannot proceed without it!"
-                ))));
-            }
-        };
-
-        // Check for the correctness of the use_kzg_da flag in snos_output
-        let last_tx_hash_executed = if snos_output.use_kzg_da == Felt252::ZERO {
+        let last_tx_hash_executed = if snos.get(8) == Some(&Felt::ZERO) {
             let proof_key = format!("{block_no}/{PROOF_FILE_NAME}");
             debug!(%proof_key, "Fetching snos proof file");
 
@@ -496,6 +485,11 @@ impl StateUpdateJobHandler {
                     onchain_data.on_chain_data_hash.0,
                     usize_to_bytes(onchain_data.on_chain_data_size),
                 )
+                .await
+                .map_err(|e| JobError::Other(OtherError(e)))?
+        } else if snos.get(8) == Some(&Felt::ONE) {
+            settlement_client
+                .update_state_with_blobs(program_output, blob_data, nonce)
                 .await
                 .map_err(|e| JobError::Other(OtherError(e)))?
         } else {
