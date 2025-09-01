@@ -40,9 +40,9 @@ pub struct AtlanticValidatedArgs {
 pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
     /// Optional fact-checker to verify the fact hash
-    ///
     /// * [None] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `true`
     /// * [Some] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `false`
+    ///
     /// Apart from using it to check the existence of the fact on verifier address when getting
     /// the status of a job, we also use it to determine if the proof needs to be mocked when
     /// creating a new bucket for aggregation
