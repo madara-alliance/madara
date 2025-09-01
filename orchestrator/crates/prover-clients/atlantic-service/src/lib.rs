@@ -42,11 +42,8 @@ pub struct AtlanticProverService {
     /// Optional fact-checker to verify the fact hash
     /// * [None] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `true`
     /// * [Some] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `false`
-    ///
-    /// Apart from using it to check the existence of the fact on verifier address when getting
-    /// the status of a job, we also use it to determine if the proof needs to be mocked when
-    /// creating a new bucket for aggregation
     pub fact_checker: Option<FactChecker>,
+    mock_fact_hash: bool,
     pub atlantic_api_key: String,
     pub proof_layout: LayoutName,
     pub atlantic_network: String,
@@ -273,11 +270,13 @@ impl AtlanticProverService {
         atlantic_api_key: String,
         job_config: AtlanticJobConfig,
         fact_checker: Option<FactChecker>,
+        mock_fact_hash: bool,
         cairo_verifier_program_hash: Option<String>,
     ) -> Self {
         Self {
             atlantic_client,
             fact_checker,
+            mock_fact_hash,
             atlantic_api_key,
             proof_layout: job_config.proof_layout.to_owned(),
             cairo_vm: job_config.cairo_vm,
@@ -312,6 +311,7 @@ impl AtlanticProverService {
                 network: atlantic_params.atlantic_network.clone(),
             },
             fact_checker,
+            atlantic_params.atlantic_mock_fact_hash.eq("true"),
             atlantic_params.cairo_verifier_program_hash.clone(),
         )
     }
@@ -332,6 +332,7 @@ impl AtlanticProverService {
                 network: "TESTNET".to_string(),
             },
             fact_checker,
+            atlantic_params.atlantic_mock_fact_hash.eq("true"),
             None,
         )
     }
@@ -349,6 +350,6 @@ impl AtlanticProverService {
     }
 
     fn should_mock_proof(&self) -> bool {
-        self.fact_checker.is_none()
+        self.mock_fact_hash
     }
 }
