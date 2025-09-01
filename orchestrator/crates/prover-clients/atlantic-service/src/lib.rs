@@ -39,6 +39,13 @@ pub struct AtlanticValidatedArgs {
 /// Atlantic is a SHARP wrapper service hosted by Herodotus.
 pub struct AtlanticProverService {
     pub atlantic_client: AtlanticClient,
+    /// Optional fact-checker to verify the fact hash
+    ///
+    /// * [None] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `true`
+    /// * [Some] if `MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH` env is set as `false`
+    /// Apart from using it to check the existence of the fact on verifier address when getting
+    /// the status of a job, we also use it to determine if the proof needs to be mocked when
+    /// creating a new bucket for aggregation
     pub fact_checker: Option<FactChecker>,
     pub atlantic_api_key: String,
     pub proof_layout: LayoutName,
@@ -87,7 +94,8 @@ impl ProverClient for AtlanticProverService {
                 Ok(atlantic_job_response.atlantic_query_id)
             }
             Task::CreateBucket => {
-                let response = self.atlantic_client.create_bucket(self.atlantic_api_key.clone()).await?;
+                let response =
+                    self.atlantic_client.create_bucket(self.atlantic_api_key.clone(), self.should_mock_proof()).await?;
                 tracing::debug!(bucket_id = %response.atlantic_bucket.id, "Successfully submitted create bucket task to atlantic: {:?}", response);
                 Ok(response.atlantic_bucket.id)
             }
@@ -338,5 +346,9 @@ impl AtlanticProverService {
                 atlantic_params.atlantic_settlement_layer.clone(),
             ))
         }
+    }
+
+    fn should_mock_proof(&self) -> bool {
+        self.fact_checker.is_none()
     }
 }
