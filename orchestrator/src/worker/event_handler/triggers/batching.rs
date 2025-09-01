@@ -223,7 +223,8 @@ impl BatchingTrigger {
 
                         if compressed_state_update.len() > MAX_BLOB_SIZE {
                             // We cannot add the current block in this batch
-
+                            panic!("Something is wrong. State update is too large to be added to the batch which should not happen.");
+                        } else if self.should_start_new_batch(block_number) {
                             // Close the current batch - store the state update, blob info in storage and update DB
                             self.close_batch(
                                 &current_batch,
