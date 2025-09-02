@@ -126,7 +126,7 @@ impl Default for OrchestratorConfig {
 
             max_block_to_process: None,
             min_block_to_process: None,
-            madara_version: "0.13.2".to_string(),
+            madara_version: "0.13.3".to_string(),
             logs: (false, true),
         }
     }

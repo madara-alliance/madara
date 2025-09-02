@@ -16,7 +16,7 @@ use crate::services::{
     orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode},
     pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError},
 };
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 
 #[derive(Debug, PartialEq, serde::Serialize)]
 pub enum DBState {
@@ -395,7 +395,7 @@ impl SetupConfigBuilder {
             .ethereum_rpc_url(anvil_config.endpoint())
             .mongodb(true)
             .mongodb_connection_url(mongodb_config.endpoint())
-            .atlantic_service_url(mock_prover_config.endpoint())
+            // .atlantic_service_url(mock_prover_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
             .env_var("AWS_ENDPOINT_URL", localstack_config.endpoint())

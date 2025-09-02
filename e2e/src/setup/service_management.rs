@@ -61,7 +61,7 @@ impl ServiceManager {
         self.setup_full_node_syncing(&mut services).await?;
 
         // Mock proving
-        self.setup_mock_prover(&mut services).await?;
+        // self.setup_mock_prover(&mut services).await?;
 
         // Orchestration
         self.setup_orchestration(&mut services).await?;
