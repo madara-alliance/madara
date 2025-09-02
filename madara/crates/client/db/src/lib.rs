@@ -9,7 +9,7 @@
 //!
 //! Storing new blocks is the responsibility of the consumers of this crate. In the madara node
 //! architecture, this means: the sync service `mc-sync` (when we are syncing new blocks), or the
-//! block production `mc-block-production` task when we are producing blocks. For the sake of
+//! block production `mc-block-production` task when we are producing new blocks. For the sake of
 //! documentation, we will call this service the _"block importer"_.
 //!
 //! We divide the backend storage API into two components: a high-level storage API, useful for full
@@ -17,7 +17,7 @@
 //! granular and targeted updates to the database but requires you to pay special attention to what
 //! you are doing.
 //!
-//! Note that the validity of the block being stored is not checked for neither of those APIs. It is
+//! Note that the validity of the block being stored is not checked by neither of those APIs. It is
 //! the responsibility of the block importer to check that blocks are valid before storing them in
 //! db.
 //!
@@ -33,8 +33,9 @@
 //! partial blocks: blocks are divided into _headers_, _transactions & receipts_, _classes_,
 //! _state diffs_ and _events_. These can be stored individually, so that for example if the node
 //! can store a block's header faster than its other components, it can move on to the next block
-//! and start storing _its_ header. Partial block storage allows you to make progress in block sync
-//! while minimizing the churn induced by certain heavy operations such as state root computation.
+//! and start storing _its_ header. Partial block storage allows the node to make progress in block
+//! sync while minimizing the churn induced by certain heavy operations such as state root
+//! computation.
 //!
 //! To store individual block components, refer to:
 //!
@@ -50,8 +51,8 @@
 //! ### Parallelism
 //!
 //! Each of the low-level API functions can be called in parallel, however, [`apply_to_global_trie`]
-//! needs to be called _sequentially_. This is because we cannot support updating the global trie
-//! across multiple blocks at once. However, parallelism is still used inside of that function -
+//! needs to be called _sequentially_. This is because we cannot update the global trie across
+//! multiple blocks at once. However, parallelism is still used inside of that function -
 //! parallelism within a single block.
 //!
 //! ### Head Status
@@ -60,22 +61,22 @@
 //! advancement of each component stored this way. For example, we might have stored block headers
 //! until block 6 but only have all block transactions and receipts until block 3.
 //!
-//! To address this issue, each block component has a [`BlockNStatus`] associated with it inside of
+//! To address this issue, each block component has a [`BlockNStatus`] associated to it inside of
 //! [`head_status`], which the block importer service can use however it wants. This includes block
-//! numbers for [`headers`], [`state diffs`], [`classes`], [`transactions`], [`events`], the
-//! [`global trie`]. Unless you use the high-level API, _you will have to set
-//! these manually_ using `backend.head_status.*.set_current`!
+//! numbers for [`headers`], [`state diffs`], [`classes`], [`transactions`], [`events`], and the
+//! [`global trie`]. Unless you use the high-level API, _you will have to set these manually_ using
+//! [`BlockNStatus::set_current`]!
 //!
 //! ### Sealing blocks
 //!
 //! [`head_status`] also contains an extra field, [`full block`], which acts differently from the
-//! rest in that it is set by the backend crate. _You should not set this manually yourself!_
+//! rest in that it is set by the backend crate. _You should not set this yourself!_
 //!
 //! The block importer service needs to call [`on_full_block_imported`] to mark a block as fully
-//! imported. This function will increment the [`full block`] field, marking a new block a available
-//! for query in the database (sealed). It will also do some extra tidying-up, such as recording
-//! metrics, flushing the database if needed, as well as creating db backups if the backup flag has
-//! been set when launching the node.
+//! imported. This function will increment [`full block`], marking a new block as available for
+//! query in the database (sealed). It will also do some extra cleanup, such as recording metrics,
+//! flushing the database if needed, as well as creating db backups if the backup flag has been set
+//! when launching the node.
 //!
 //! ## Querying the db
 //!
@@ -97,6 +98,7 @@
 //! [`store_events`]: MadaraBackend::store_events
 //! [`apply_to_global_trie`]: MadaraBackend::apply_to_global_trie
 //! [`BlockNStatus`]: chain_head::BlockNStatus
+//! [`BlockNStatus::set_current`]: chain_head::BlockNStatus::set_current
 //! [`head_status`]: MadaraBackend::head_status
 //! [`headers`]: ChainHead::headers
 //! [`state diffs`]: ChainHead::state_diffs
