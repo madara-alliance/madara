@@ -1,5 +1,5 @@
 /// Endpoint to fetch the artifacts from the herodotus service
-pub(crate) const ATLANTIC_FETCH_ARTIFACTS_BASE_URL: &str = "https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental";
+pub(crate) const ATLANTIC_FETCH_ARTIFACTS_BASE_URL: &str = "https://storage.googleapis.com/hero-atlantic";
 
 // File names of the artifacts that are downloaded from the herodotus service
 pub const CAIRO_PIE_FILE_NAME: &str = "pie.cairo0.zip";
