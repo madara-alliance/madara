@@ -5,6 +5,8 @@ version = 1
 name = "madara_factory_contracts"
 version = "0.1.0"
 dependencies = [
+ "openzeppelin_account",
+ "openzeppelin_introspection",
  "openzeppelin_presets",
  "snforge_std",
 ]

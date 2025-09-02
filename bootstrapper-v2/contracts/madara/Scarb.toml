@@ -6,6 +6,8 @@ edition = "2024_07"
 # See more keys and their definitions at https://docs.swmansion.com/scarb/docs/reference/manifest.html
 
 [dependencies]
+openzeppelin_account = "1.0.0"
+openzeppelin_introspection = "1.0.0"
 openzeppelin_presets = "1.0.0"
 starknet = "2.11.2"
 
