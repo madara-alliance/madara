@@ -101,6 +101,8 @@ COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_se
 COPY --from=builder-rust /app/orchestrator/crates/da-clients/ethereum/trusted_setup.txt /tmp/trusted_setup.txt
 COPY --from=builder-rust /tmp/kzg_dirs.txt /tmp/kzg_dirs.txt
 
+COPY ./orchestrator/scripts/paradex/data/batches_simple.json /usr/local/bin/batches.json
+
 RUN while read dir; do \
     mkdir -p "$dir" && \
     cp /tmp/trusted_setup.txt "$dir/trusted_setup.txt"; \
