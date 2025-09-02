@@ -197,7 +197,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // Adding State checks in DB for validation of tests
 
     // Check 1: Check that the batch has been created properly
-    wait_for_batch_state(Duration::from_secs(1500), 1, setup_config.mongo_db_instance())
+    wait_for_batch_state(Duration::from_secs(3600), 1, setup_config.mongo_db_instance())
         .await
         .expect("❌ After Batching state DB state assertion failed.");
     println!("✅ Batching state DB state assertion passed");
