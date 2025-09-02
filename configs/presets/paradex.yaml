@@ -19,7 +19,7 @@ parent_fee_token_address: "0x047adc7dee88eec362d71a52c25d40559a921434b2d90e75b6a
 eth_core_contract_address: "0xF338cad020D506e8e3d9B4854986E0EcE6C23640"
 
 # Most recent Starknet version supported
-latest_protocol_version: "0.13.2"
+latest_protocol_version: "0.13.5"
 block_time: "180h"
 pending_block_update_time: "100ms"
 
