@@ -163,6 +163,9 @@ pub struct RunCmd {
     /// This starts a local mock server that simulates the Atlantic prover service.
     #[clap(long)]
     pub mock_atlantic_server: bool,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", long)]
+    pub store_audit_artifacts: bool,
 }
 
 #[derive(Parser, Debug, Clone)]
