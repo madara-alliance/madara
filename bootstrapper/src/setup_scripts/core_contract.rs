@@ -1,4 +1,5 @@
 use ethers::types::I256;
+use starknet_types_core::felt::Felt;
 use std::str::FromStr;
 use std::time::Duration;
 use tokio::time::sleep;
@@ -52,11 +53,11 @@ impl<'a> CoreContractStarknetL1<'a> {
             .add_implementation_core_contract(
                 // this is to include support for block 0
                 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
-                I256::from_str("-1").unwrap(),
-                0u64.into(), // state root
-                0u64.into(), // block hash
-                program_hash,
-                config_hash,
+                I256::from_str("309145").unwrap(),
+                Felt::from_hex_unchecked("0x202a4cacba81696be382f87a4e47b907d49bc632240ff204ed332e0472e0248"), // state root
+                Felt::from_hex_unchecked("0x71eb13481e66671264239fc7925ed8a3af43d5407c86e815e62464ad483ec0b"), // block hash
+                Felt::from_hex_unchecked("0x054d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"), // os program hash
+                Felt::from_hex_unchecked("0x0504fa6e5eb930c0d8329d4a77d98391f2730dab8516600aeaf733a6123432"), // config hash
                 core_contract_client.implementation_address(),
                 hexstring_to_address(&self.arg_config.verifier_address),
                 false,
@@ -79,11 +80,11 @@ impl<'a> CoreContractStarknetL1<'a> {
             .upgrade_to_core_contract(
                 // this is to include support for block 0
                 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/StarknetState.sol#L32
-                I256::from_str("-1").unwrap(),
-                0u64.into(), // state root
-                0u64.into(), // block hash
-                program_hash,
-                config_hash,
+                I256::from_str("309145").unwrap(),
+                Felt::from_hex_unchecked("0x202a4cacba81696be382f87a4e47b907d49bc632240ff204ed332e0472e0248"), // state root
+                Felt::from_hex_unchecked("0x71eb13481e66671264239fc7925ed8a3af43d5407c86e815e62464ad483ec0b"), // block hash
+                Felt::from_hex_unchecked("0x054d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d"), // os program hash
+                Felt::from_hex_unchecked("0x0504fa6e5eb930c0d8329d4a77d98391f2730dab8516600aeaf733a6123432"), // config hash
                 core_contract_client.implementation_address(),
                 hexstring_to_address(&self.arg_config.verifier_address),
                 false,
