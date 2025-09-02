@@ -1,14 +1,14 @@
 use crate::types::params::OTELConfig;
 use crate::OrchestratorResult;
-use opentelemetry::trace::TracerProvider;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{ExportConfig, WithExportConfig};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
-use opentelemetry_sdk::{runtime, Resource};
+use opentelemetry_sdk::trace::{SdkTracerProvider, Tracer};
+use opentelemetry_sdk::{Resource};
 use std::time::Duration;
-use opentelemetry::logs::LoggerProvider;
 use tracing::warn;
 use tracing_opentelemetry::OpenTelemetryLayer;
 use tracing_subscriber::layer::SubscriberExt;
@@ -48,25 +48,28 @@ impl OrchestratorInstrumentation {
         }
     }
 
-    fn instrument_logger_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<LoggerProvider> {
-        Ok(opentelemetry_otlp::LogExporterBuilder::new()
-            .logging()
+    fn instrument_logger_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<SdkLoggerProvider> {
+        let exporter = opentelemetry_otlp::LogExporterBuilder::new()
+            .with_tonic()
+            .with_endpoint(endpoint.to_string())
+            .build()?;
+
+        let logger_provider = SdkLoggerProvider::builder()
             .with_resource(Resource::new(vec![KeyValue::new(
                 opentelemetry_semantic_conventions::resource::SERVICE_NAME,
                 format!("{}{}", config.service_name, "_logs_service"),
             )]))
-            .with_exporter(opentelemetry_otlp::LogExporterBuilder::new().tonic().with_endpoint(endpoint.to_string()))
-            .install_batch(runtime::Tokio)?)
+            .with_batch_exporter(exporter)
+            .build();
+
+        Ok(logger_provider)
     }
 
     fn instrument_metric_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<SdkMeterProvider> {
-        let export_config = ExportConfig { endpoint: Some(endpoint.to_string()), ..ExportConfig::default() };
-
-        // exporter API changed: no more DefaultAggregationSelector/TemporalitySelector
         let exporter = opentelemetry_otlp::MetricExporterBuilder::new()
-            .tonic()
-            .with_export_config(export_config)
-            .build_metrics_exporter()?;
+            .with_tonic()
+            .with_endpoint(endpoint.to_string())
+            .build()?;
 
         let reader = PeriodicReader::builder(exporter)
             .with_interval(Duration::from_secs(5))
@@ -85,18 +88,20 @@ impl OrchestratorInstrumentation {
     }
 
     fn instrument_tracer_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<Tracer> {
-        let batch_config = BatchConfigBuilder::default().build();
+        let exporter = opentelemetry_otlp::SpanExporterBuilder::new()
+            .with_tonic()
+            .with_endpoint(endpoint.to_string())
+            .build()?;
 
         let resource = Resource::new(vec![KeyValue::new(
             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
             format!("{}{}", config.service_name, "_trace_service"),
         )]);
 
-        let provider = opentelemetry_otlp::SpanExporterBuilder::new()
-            .tracing()
-            .with_trace_config(Config::default().with_resource(resource))
-            .with_batch_config(batch_config)
-            .install_batch(runtime::Tokio)?;
+        let provider = SdkTracerProvider::builder()
+            .with_resource(resource)
+            .with_batch_exporter(exporter)
+            .build();
 
         global::set_tracer_provider(provider.clone());
         Ok(provider.tracer(format!("{}{}", config.service_name, "_subscriber")))

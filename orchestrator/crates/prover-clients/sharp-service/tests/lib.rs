@@ -4,11 +4,11 @@ use constants::CAIRO_PIE_PATH;
 use httpmock::MockServer;
 use orchestrator_prover_client_interface::ProverClient;
 use orchestrator_prover_client_interface::{Task, TaskStatus};
+use orchestrator_sharp_service::types::CairoJobStatus;
 use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use serde_json::json;
-use orchestrator_sharp_service::types::CairoJobStatus;
 use url::Url;
 
 use crate::constants::TEST_FACT;

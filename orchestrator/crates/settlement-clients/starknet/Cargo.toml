@@ -21,14 +21,15 @@ rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 starknet = { workspace = true }
+starknet-accounts = { workspace = true }
 starknet-core = { workspace = true }
 starknet-providers = { workspace = true }
-starknet-accounts = { workspace = true }
 tempfile.workspace = true
 tokio = { workspace = true }
 url = { workspace = true }
 
 #Instrumentation
+hex = { workspace = true }
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }
 opentelemetry-appender-tracing = { workspace = true, default-features = false }
 opentelemetry-otlp = { workspace = true, features = [
@@ -38,12 +39,11 @@ opentelemetry-otlp = { workspace = true, features = [
 ] }
 opentelemetry-semantic-conventions = { workspace = true }
 opentelemetry_sdk = { workspace = true, features = ["rt-tokio", "logs"] }
+thiserror = { workspace = true }
 tracing = { workspace = true }
 tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
-thiserror = {workspace = true}
-hex = {workspace = true}
 
 
 [dev-dependencies]

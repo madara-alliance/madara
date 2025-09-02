@@ -17,18 +17,18 @@ use bytes::Bytes;
 // use cairo_vm::types::layout_name::LayoutName; // Unused
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
-use starknet_core::types::Felt;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use orchestrator_utils::layer::Layer;
 use snos_core::{
-    generate_pie,           // The main function
-    PieGenerationInput,     // Input struct
-    PieGenerationResult,    // Result struct  
+    generate_pie, // The main function
     // PieGenerationError,     // Error enum - Unused
-    ChainConfig,           // Chain configuration
-    OsHintsConfiguration,  // OS hints configuration
+    ChainConfig,          // Chain configuration
+    OsHintsConfiguration, // OS hints configuration
+    PieGenerationInput,   // Input struct
+    PieGenerationResult,  // Result struct
 };
+use starknet_core::types::Felt;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
@@ -89,17 +89,15 @@ impl JobHandlerTrait for SnosJobHandler {
             blocks: vec![1309254],
             chain_config: ChainConfig::default(),
             os_hints_config: OsHintsConfiguration::default(),
-            output_path: None,  // No file output
+            output_path: None, // No file output
         };
 
-        let snos_output: PieGenerationResult =
-            generate_pie(input).await
-                .map_err(|e| {
-                    error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
-                    SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
-                })?;
+        let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
+            error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
+            SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
+        })?;
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
-        
+
         let cairo_pie = snos_output.output.cairo_pie;
         let os_output = snos_output.output.os_output;
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
@@ -142,15 +140,8 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!(job_id = %job.internal_id, "Storing SNOS outputs");
         if config.layer() == &Layer::L3 {
             // Store the on-chain data path
-            self.store_l2(
-                internal_id.clone(),
-                config.storage(),
-                &snos_metadata,
-                cairo_pie,
-                os_output,
-                program_output,
-            )
-            .await?;
+            self.store_l2(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
+                .await?;
         } else if config.layer() == &Layer::L2 {
             // Store the Cairo Pie path
             self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)

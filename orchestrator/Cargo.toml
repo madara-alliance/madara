@@ -62,11 +62,11 @@ orchestrator-sharp-service = { workspace = true }
 orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
-snos-core = {workspace = true}
 rand = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+snos-core = { workspace = true }
 starknet = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }

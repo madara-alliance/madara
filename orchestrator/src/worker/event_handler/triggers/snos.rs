@@ -499,7 +499,7 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
                     KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                     KeyValue::new("operation_type", format!("{:?}", "create_job")),
                 ];
-                ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                ORCHESTRATOR_METRICS.failed_job_operations.add(1, &attributes);
             }
         }
     }

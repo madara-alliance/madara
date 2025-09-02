@@ -120,7 +120,9 @@ blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc
   "testing",
   "concurrency",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev="3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = ["testing"]}
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = [
+  "testing",
+] }
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
@@ -135,11 +137,7 @@ alloy = { version = "0.8.3", features = [
 opentelemetry = { version = "0.30.0", features = ["metrics", "logs"] }
 opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio", "logs"] }
 opentelemetry-stdout = { version = "0.30.0" }
-opentelemetry-otlp = { version = "0.30.0", features = [
-  "tonic",
-  "metrics",
-  "logs",
-] }
+opentelemetry-otlp = { version = "0.30.0", features = ["grpc-tonic", "metrics", "logs"] }
 opentelemetry-semantic-conventions = { version = "0.30.0" }
 opentelemetry-appender-tracing = { version = "0.30.0", default-features = false }
 tracing = { version = "0.1.40", default-features = false }
@@ -150,7 +148,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
 ] }
 tracing-test = "0.2.5"
-tracing-opentelemetry = "0.25.0"
+tracing-opentelemetry = "0.31.0"
 
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [
@@ -287,7 +285,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-snos-core = {git = "https://github.com/Mohiiit/snos-poc", rev="7f85f06546e27a8dd397f11544d79717db78a394"}
+snos-core = { git = "https://github.com/Mohiiit/snos-poc", rev = "7f85f06546e27a8dd397f11544d79717db78a394" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
