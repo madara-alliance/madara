@@ -55,10 +55,10 @@ impl OrchestratorInstrumentation {
             .build()?;
 
         let logger_provider = SdkLoggerProvider::builder()
-            .with_resource(Resource::new(vec![KeyValue::new(
+            .with_resource(Resource::builder_empty().with_attributes(vec![KeyValue::new(
                 opentelemetry_semantic_conventions::resource::SERVICE_NAME,
                 format!("{}{}", config.service_name, "_logs_service"),
-            )]))
+            )]).build())
             .with_batch_exporter(exporter)
             .build();
 
@@ -77,10 +77,10 @@ impl OrchestratorInstrumentation {
 
         let provider = SdkMeterProvider::builder()
             .with_reader(reader)
-            .with_resource(Resource::new(vec![KeyValue::new(
+            .with_resource(Resource::builder_empty().with_attributes(vec![KeyValue::new(
                 opentelemetry_semantic_conventions::resource::SERVICE_NAME,
                 format!("{}{}", config.service_name, "_meter_service"),
-            )]))
+            )]).build())
             .build();
 
         global::set_meter_provider(provider.clone());
@@ -93,10 +93,10 @@ impl OrchestratorInstrumentation {
             .with_endpoint(endpoint.to_string())
             .build()?;
 
-        let resource = Resource::new(vec![KeyValue::new(
+        let resource = Resource::builder_empty().with_attributes(vec![KeyValue::new(
             opentelemetry_semantic_conventions::resource::SERVICE_NAME,
             format!("{}{}", config.service_name, "_trace_service"),
-        )]);
+        )]).build();
 
         let provider = SdkTracerProvider::builder()
             .with_resource(resource)
