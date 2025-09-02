@@ -46,9 +46,10 @@ async fn main() -> Result<()> {
             let base_layer_setup = base_layer_config
                 .get_base_layer_setup(setup_madara.base_layer_private_key.clone(), &setup_madara.base_addresses_path)?;
 
-            madara_setup.init(&setup_madara.private_key).await.context("Failed to initialise the madara setup")?;
+            madara_setup.init(&setup_madara.private_key, &setup_madara.output_path).await.context("Failed to initialise the madara setup")?;
             madara_setup
                 .setup(&setup_madara.base_addresses_path, &setup_madara.output_path)
+                .await
                 .context("Failed to setup madara setup")?;
 
             base_layer_setup.post_madara_setup(&setup_madara.output_path).context("Failed to post madara setup")?;

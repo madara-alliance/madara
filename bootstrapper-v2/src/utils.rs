@@ -1,4 +1,13 @@
-use std::future::Future;
+use std::{future::Future, sync::Arc};
+
+use starknet::{
+    accounts::{Account, ConnectedAccount, SingleOwnerAccount},
+    core::types::{
+        contract::{CompiledClass, SierraClass},
+        BlockId, BlockTag,
+    },
+    signers::LocalWallet,
+};
 
 use anyhow::Context;
 use starknet::{
@@ -82,4 +91,35 @@ pub async fn wait_for_transaction(
     }
 
     Ok(())
+}
+
+pub async fn declare_contract(
+    sierra_path: &str,
+    casm_path: &str,
+    account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
+) -> Felt {
+    log::info!("sierra_path: {:?}", sierra_path);
+    log::info!("casm_path: {:?}", casm_path);
+    let contract_artifact: SierraClass = serde_json::from_reader(std::fs::File::open(sierra_path).unwrap()).unwrap();
+
+    let contract_artifact_casm: CompiledClass =
+        serde_json::from_reader(std::fs::File::open(casm_path).unwrap()).unwrap();
+    let class_hash = contract_artifact_casm.class_hash().unwrap();
+    let sierra_class_hash = contract_artifact.class_hash().unwrap();
+
+    if account.provider().get_class(BlockId::Tag(BlockTag::Pending), sierra_class_hash).await.is_ok() {
+        log::info!("Class already declared, skipping declaration.");
+        return sierra_class_hash;
+    }
+
+    let flattened_class = contract_artifact.flatten().unwrap();
+
+    let txn = account
+        .declare_v3(Arc::new(flattened_class), class_hash)
+        .gas(0)
+        .send()
+        .await
+        .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
+    wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.unwrap();
+    sierra_class_hash
 }

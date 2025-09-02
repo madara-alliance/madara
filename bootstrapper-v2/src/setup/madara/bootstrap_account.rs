@@ -3,7 +3,7 @@ use starknet::{
     accounts::{Account, AccountFactory, ArgentAccountFactory, ExecutionEncoding, SingleOwnerAccount},
     core::types::{
         contract::{CompiledClass, SierraClass},
-        BlockId, Felt,
+        BlockId, BlockTag, Felt,
     },
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider},
     signers::{LocalWallet, SigningKey},
@@ -29,8 +29,6 @@ impl<'a> BootstrapAccount<'a> {
             chain_id,
             ExecutionEncoding::New,
         );
-
-        println!("Account creation successful !!");
 
         Self { account, provider }
     }
@@ -139,13 +137,15 @@ impl<'a> BootstrapAccount<'a> {
         log::info!("Salt: {:#064x}", salt);
 
         // Create and return the new account instance
-        let new_account = SingleOwnerAccount::new(
+        let mut new_account = SingleOwnerAccount::new(
             self.provider.clone(),
             signer,
             deploy_result.contract_address,
             self.account.chain_id(),
             ExecutionEncoding::New,
         );
+
+        new_account.set_block_id(BlockId::Tag(BlockTag::Pending));
 
         Ok(new_account)
     }
