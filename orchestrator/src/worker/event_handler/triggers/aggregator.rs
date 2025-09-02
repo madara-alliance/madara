@@ -53,10 +53,11 @@ impl JobTrigger for AggregatorJobTrigger {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
                     num_blocks: batch.num_blocks,
-                    download_proof: Some(format!(
-                        "{}/batch/{}/{}",
-                        STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME
-                    )),
+                    download_proof: if config.params.store_audit_artifacts {
+                        Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME))
+                    } else {
+                        None
+                    },
                     blob_data_path: format!("{}/batch/{}", STORAGE_BLOB_DIR, batch.index),
                     cairo_pie_path: format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, CAIRO_PIE_FILE_NAME),
                     snos_output_path: format!(

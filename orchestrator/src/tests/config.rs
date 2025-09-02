@@ -644,6 +644,9 @@ pub(crate) fn get_env_params() -> EnvParams {
         server_config,
         snos_layout_name: LayoutName::all_cairo,
         prover_layout_name: LayoutName::dynamic,
+        store_audit_artifacts: get_env_var_or_default("MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", "false")
+            .parse::<bool>()
+            .unwrap_or(false),
     };
 
     let instrumentation_params = OTELConfig {
