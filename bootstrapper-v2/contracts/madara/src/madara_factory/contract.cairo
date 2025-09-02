@@ -17,6 +17,7 @@ mod MadaraFactory {
         token_bridge_class_hash: ClassHash,
         eic_class_hash: ClassHash,
         erc20_class_hash: ClassHash,
+        universal_deployer_class_hash: ClassHash,
         l1_eth_bridge_address: EthAddress,
         l1_erc20_bridge_address: EthAddress,
         owner: ContractAddress,
@@ -28,6 +29,7 @@ mod MadaraFactory {
         token_bridge_class: ClassHash,
         eic_class_hash: ClassHash,
         erc20_class_hash: ClassHash,
+        universal_deployer_class_hash: ClassHash,
         l1_eth_bridge_address: EthAddress,
         l1_erc20_bridge_address: EthAddress,
         initial_owner: ContractAddress,
@@ -35,6 +37,7 @@ mod MadaraFactory {
         self.token_bridge_class_hash.write(token_bridge_class);
         self.eic_class_hash.write(eic_class_hash);
         self.erc20_class_hash.write(erc20_class_hash);
+        self.universal_deployer_class_hash.write(universal_deployer_class_hash);
         self.l1_eth_bridge_address.write(l1_eth_bridge_address);
         self.l1_erc20_bridge_address.write(l1_erc20_bridge_address);
         self.owner.write(initial_owner);
@@ -45,7 +48,10 @@ mod MadaraFactory {
     impl MadaraFactoryImpl of IMadaraFactory<ContractState> {
         fn deploy_bridges(
             ref self: ContractState,
-        ) -> (ContractAddress, ContractAddress, ContractAddress) {
+        ) -> (ContractAddress, ContractAddress, ContractAddress, ContractAddress) {
+            // Deploy u universal deployer
+            let universal_deployer = self.deploy_universal_deployer();
+
             // Deploy Eth Bridge
             let l2_eth_bridge = self.deploy_eth_bridge();
 
@@ -63,8 +69,8 @@ mod MadaraFactory {
                 eic_data: Some(
                     EICData {
                         eic_hash: self.eic_class_hash.read(),
-                        // value of literal 'eth' is 0x657468 
-                        // This will be used in place of the address of the token on the L1, 
+                        // value of literal 'eth' is 0x657468
+                        // This will be used in place of the address of the token on the L1,
                         //as Eth does not have a token address on L1.
                         eic_init_data: ['eth', l2_eth_token.into()].span(),
                     },
@@ -81,7 +87,7 @@ mod MadaraFactory {
             // Deploy Token Bridge
             let l2_token_bridge = self.deploy_token_bridge();
 
-            (l2_eth_token, l2_eth_bridge, l2_token_bridge)
+            (universal_deployer, l2_eth_token, l2_eth_bridge, l2_token_bridge)
         }
 
         fn deploy_token_bridge(ref self: ContractState) -> ContractAddress {
@@ -107,7 +113,7 @@ mod MadaraFactory {
         fn deploy_eth_bridge(ref self: ContractState) -> ContractAddress {
            // Deploy l2 eth bridge
            let provisional_gov_admin = starknet::get_contract_address();
-            
+
            // Creating the calldata to be passed to
            // the constructor of the EthBridge contract
            let mut calldata = ArrayTrait::new();
@@ -123,7 +129,7 @@ mod MadaraFactory {
                .unwrap_syscall();
 
            // Setting up the bridge with the correct permissions and configurations
-           self.configure_bridge(l2_eth_bridge, self.l1_eth_bridge_address.read(), false); 
+           self.configure_bridge(l2_eth_bridge, self.l1_eth_bridge_address.read(), false);
 
            l2_eth_bridge
         }
@@ -135,17 +141,28 @@ mod MadaraFactory {
             'ETH'.serialize(ref calldata); // symbol
             18.serialize(ref calldata); // decimals
             0.serialize(ref calldata); // initial_supply
-            0.serialize(ref calldata); // initial_supply_recipient 
+            0.serialize(ref calldata); // initial_supply_recipient
             l2_eth_bridge.serialize(ref calldata); // permitted_minter
-            self.owner.read().serialize(ref calldata); // provisional_governance_admin 
+            self.owner.read().serialize(ref calldata); // provisional_governance_admin
             0.serialize(ref calldata); // upgrade_delay
 
             let (l2_eth_token, _) = deploy_syscall(
                 self.erc20_class_hash.read(), 'Eth_salt'.into(), calldata.span(), false,
             )
-                .unwrap_syscall(); 
+                .unwrap_syscall();
 
             l2_eth_token
+        }
+
+        fn deploy_universal_deployer(ref self: ContractState) -> ContractAddress {
+            // Deploy Universal Deployer
+            let mut calldata = ArrayTrait::new();
+            let (universal_deployer, _) = deploy_syscall(
+                self.universal_deployer_class_hash.read(), 0, calldata.span(), false,
+            )
+                .unwrap_syscall();
+
+            universal_deployer
         }
     }
 
@@ -170,9 +187,9 @@ mod MadaraFactory {
         // the app_governor role is granted only by the app_role_admin role.
         // the app_role_admin role is granted only by the governance_admin role.
 
-        // These roles are later removed 
+        // These roles are later removed
         // by the `remove_app_governor` and `remove_app_role_admin` functions.
-        // The governance_admin cannot be renounced, 
+        // The governance_admin cannot be renounced,
         // and can only be revoked by another governance_admin.
         fn configure_bridge(
             ref self: ContractState,
