@@ -1,6 +1,6 @@
 use once_cell::sync::Lazy;
-use opentelemetry::metrics::{Counter, Histogram, Meter, Gauge};
 use opentelemetry::global;
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
 pub static ORCHESTRATOR_METRICS: Lazy<OrchestratorMetrics> = Lazy::new(|| OrchestratorMetrics::register());
 

@@ -44,9 +44,7 @@ async fn handle_process_job_request(
     match JobService::queue_job_for_processing(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job queued for processing successfully");
-            ORCHESTRATOR_METRICS
-                .successful_job_operations
-                .add(1, &[KeyValue::new("operation_type", "queue_process")]);
+            ORCHESTRATOR_METRICS.successful_job_operations.add(1, &[KeyValue::new("operation_type", "queue_process")]);
             Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for processing", id))))
                 .into_response())
         }

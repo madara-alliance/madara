@@ -7,7 +7,7 @@ use opentelemetry_otlp::WithExportConfig;
 use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
 use opentelemetry_sdk::trace::{SdkTracerProvider, Tracer};
-use opentelemetry_sdk::{Resource};
+use opentelemetry_sdk::Resource;
 use std::time::Duration;
 use tracing::warn;
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -49,16 +49,18 @@ impl OrchestratorInstrumentation {
     }
 
     fn instrument_logger_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<SdkLoggerProvider> {
-        let exporter = opentelemetry_otlp::LogExporterBuilder::new()
-            .with_tonic()
-            .with_endpoint(endpoint.to_string())
-            .build()?;
+        let exporter =
+            opentelemetry_otlp::LogExporterBuilder::new().with_tonic().with_endpoint(endpoint.to_string()).build()?;
 
         let logger_provider = SdkLoggerProvider::builder()
-            .with_resource(Resource::builder_empty().with_attributes(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", config.service_name, "_logs_service"),
-            )]).build())
+            .with_resource(
+                Resource::builder_empty()
+                    .with_attributes(vec![KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                        format!("{}{}", config.service_name, "_logs_service"),
+                    )])
+                    .build(),
+            )
             .with_batch_exporter(exporter)
             .build();
 
@@ -71,16 +73,18 @@ impl OrchestratorInstrumentation {
             .with_endpoint(endpoint.to_string())
             .build()?;
 
-        let reader = PeriodicReader::builder(exporter)
-            .with_interval(Duration::from_secs(5))
-            .build();
+        let reader = PeriodicReader::builder(exporter).with_interval(Duration::from_secs(5)).build();
 
         let provider = SdkMeterProvider::builder()
             .with_reader(reader)
-            .with_resource(Resource::builder_empty().with_attributes(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", config.service_name, "_meter_service"),
-            )]).build())
+            .with_resource(
+                Resource::builder_empty()
+                    .with_attributes(vec![KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                        format!("{}{}", config.service_name, "_meter_service"),
+                    )])
+                    .build(),
+            )
             .build();
 
         global::set_meter_provider(provider.clone());
@@ -88,20 +92,17 @@ impl OrchestratorInstrumentation {
     }
 
     fn instrument_tracer_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<Tracer> {
-        let exporter = opentelemetry_otlp::SpanExporterBuilder::new()
-            .with_tonic()
-            .with_endpoint(endpoint.to_string())
-            .build()?;
+        let exporter =
+            opentelemetry_otlp::SpanExporterBuilder::new().with_tonic().with_endpoint(endpoint.to_string()).build()?;
 
-        let resource = Resource::builder_empty().with_attributes(vec![KeyValue::new(
-            opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-            format!("{}{}", config.service_name, "_trace_service"),
-        )]).build();
-
-        let provider = SdkTracerProvider::builder()
-            .with_resource(resource)
-            .with_batch_exporter(exporter)
+        let resource = Resource::builder_empty()
+            .with_attributes(vec![KeyValue::new(
+                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                format!("{}{}", config.service_name, "_trace_service"),
+            )])
             .build();
+
+        let provider = SdkTracerProvider::builder().with_resource(resource).with_batch_exporter(exporter).build();
 
         global::set_tracer_provider(provider.clone());
         Ok(provider.tracer(format!("{}{}", config.service_name, "_subscriber")))
