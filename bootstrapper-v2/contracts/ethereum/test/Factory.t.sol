@@ -4,19 +4,21 @@ pragma solidity ^0.8.13;
 import {Test, console} from "forge-std/Test.sol";
 import {Factory} from "src/factory/Factory.sol";
 import "src/factory/libraries/DataTypes.sol";
+import {ConfigureSingleBridgeEIC} from "src/eic/configureSingleBridge.sol";
 
 contract FactoryTest is Test {
   Factory public factory;
 
   function setUp() public {
+    ConfigureSingleBridgeEIC ethBridgeEIC = new ConfigureSingleBridgeEIC();
     ImplementationContracts
       memory implementationContracts = ImplementationContracts({
-        coreContract: address(0x009c65f85425c619a6cb6d29ff8d57ef696323d188),
-        manager: address(0x007cf4be31f546c04787886358b9486ca3d62b9acf),
-        registry: address(0x0033e45b187da34826abceda1039231be46f1b05af),
-        multiBridge: address(0x000c626fc4a447b01554518550e30600136864640b),
-        ethBridge: address(0x00a21ddc1f17df41589bc6a5209292aed2df61cc94),
-        ethBridgeEIC: address(0x002a590c461db46bca129e8dbe5c3998a8ff402e76)
+        ethBridgeEIC: address(ethBridgeEIC),
+        registry: address(0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0),
+        multiBridge: address(0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9),
+        coreContract: address(0x5FbDB2315678afecb367f032d93F642f64180aa3),
+        manager: address(0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512),
+        ethBridge: address(0xDc64a140Aa3E981100a9becA4E685f962f0cF6C9)
       });
     factory = new Factory(address(this), implementationContracts);
   }

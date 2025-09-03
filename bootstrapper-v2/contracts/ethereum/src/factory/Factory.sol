@@ -52,7 +52,7 @@ contract Factory is Ownable, Implementations {
     );
 
     // Deploying both Manager and Registry together
-    // as there cyclic dependency in their initalisers
+    // as there is a cyclic dependency in their initalisers
     // so we need the address of both before before initialising them
     (
       baseLayerContracts.manager,
@@ -69,7 +69,6 @@ contract Factory is Ownable, Implementations {
 
     baseLayerContracts.ethTokenBridge = setupEthBridge(
       implementationContracts.ethBridge,
-      address(baseLayerContracts.manager),
       address(baseLayerContracts.coreContract),
       implementationContracts.ethBridgeEIC,
       governor
@@ -165,14 +164,13 @@ contract Factory is Ownable, Implementations {
 
   function setupEthBridge(
     address ethBridgeImplementation,
-    address manager,
     address messagingContract, // coreContractProxy
     address eicContract,
     address governor
   ) public returns (address) {
     Proxy ethBridgePxoxy = new Proxy(0);
-
-    bytes memory initData = abi.encode(eicContract, manager, messagingContract);
+    // 'eth' is 0x657468
+    bytes memory initData = abi.encode(eicContract, messagingContract, 0x657468, address(0)) ;
 
     addImplementationAndUpgrade(
       address(ethBridgePxoxy),
