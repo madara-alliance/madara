@@ -167,6 +167,11 @@
 //! with avoiding bottlenecks in the validation pipeline affecting block production and therefore the
 //! liveliness of the chain.
 //!
+//! This crate implements a local gateway. For ways to connect, request and deserialize information
+//! from an existing gateway, check out the gateway client under `gateway/client`. Keep in mind that
+//! the gateway server is disabled by default and has to be explicitly enabled viat the cli on node
+//! startup.
+//!
 //! ## Available endpoints
 //!
 //! Below is a list of endpoints made available to the gateway. Keep in mind that the actual
