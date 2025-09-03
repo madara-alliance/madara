@@ -95,11 +95,12 @@ mod MadaraFactory {
             let l2_token_bridge = self.deploy_token_bridge();
 
             // Emit event with all deployed contract addresses
-            self.emit(Event::ContractsDeployed(ContractsDeployed {
-                l2_eth_token,
-                l2_eth_bridge,
-                l2_token_bridge,
-            }));
+            self
+                .emit(
+                    Event::ContractsDeployed(
+                        ContractsDeployed { l2_eth_token, l2_eth_bridge, l2_token_bridge },
+                    ),
+                );
 
             (l2_eth_token, l2_eth_bridge, l2_token_bridge)
         }
@@ -125,37 +126,41 @@ mod MadaraFactory {
         }
 
         fn deploy_eth_bridge(ref self: ContractState) -> ContractAddress {
-           // Deploy l2 eth bridge
-           let provisional_gov_admin = starknet::get_contract_address();
+            // Deploy l2 eth bridge
+            let provisional_gov_admin = starknet::get_contract_address();
 
-           // Creating the calldata to be passed to
-           // the constructor of the EthBridge contract
-           let mut calldata = ArrayTrait::new();
-           provisional_gov_admin.serialize(ref calldata);
-           0.serialize(ref calldata); // upgrade_delay
+            // Creating the calldata to be passed to
+            // the constructor of the EthBridge contract
+            let mut calldata = ArrayTrait::new();
+            provisional_gov_admin.serialize(ref calldata);
+            0.serialize(ref calldata); // upgrade_delay
 
-           let (l2_eth_bridge, _) = deploy_syscall(
-               self.token_bridge_class_hash.read(),
-               'Eth_bridge_salt'.into(),
-               calldata.span(),
-               false,
-           )
-               .unwrap_syscall();
+            let (l2_eth_bridge, _) = deploy_syscall(
+                self.token_bridge_class_hash.read(),
+                'Eth_bridge_salt'.into(),
+                calldata.span(),
+                false,
+            )
+                .unwrap_syscall();
 
-           // Setting up the bridge with the correct permissions and configurations
-           self.configure_bridge(l2_eth_bridge, self.l1_eth_bridge_address.read(), false);
+            // Setting up the bridge with the correct permissions and configurations
+            self.configure_bridge(l2_eth_bridge, self.l1_eth_bridge_address.read(), false);
 
-           l2_eth_bridge
+            l2_eth_bridge
         }
 
-        fn deploy_eth_token(ref self: ContractState, l2_eth_bridge: ContractAddress) -> ContractAddress {
+        fn deploy_eth_token(
+            ref self: ContractState, l2_eth_bridge: ContractAddress,
+        ) -> ContractAddress {
             // Deploy Eth Token
+            let initial_supply: u256 = 0;
             let mut calldata = ArrayTrait::new();
             'Ether'.serialize(ref calldata); // name
             'ETH'.serialize(ref calldata); // symbol
             18.serialize(ref calldata); // decimals
-            0.serialize(ref calldata); // initial_supply
-            0.serialize(ref calldata); // initial_supply_recipient
+            initial_supply.serialize(ref calldata); // initial_supply
+
+            self.owner.read().serialize(ref calldata); // initial_supply_recipient
             l2_eth_bridge.serialize(ref calldata); // permitted_minter
             self.owner.read().serialize(ref calldata); // provisional_governance_admin
             0.serialize(ref calldata); // upgrade_delay

@@ -9,9 +9,10 @@ mod EthBridgeEIC {
 }
 
 mod account {
-    mod component;
+    // mod component;
     mod contract;
-    mod interface;
+    // mod new_component;
+// mod utils;
 }
 
 mod interfaces {
