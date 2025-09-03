@@ -1,0 +1,13 @@
+{
+  "addresses": {
+    "madara_factory": "0x7a000ad8651756975066f7158f32ff4172617beb92b51bf6628b1e73efbe7cf",
+    "universal_deployer": "0x6149b4e56470abf66a1251c0328e9accecb37b5e37aee34954a3dd992fcb2ea"
+  },
+  "classes": {
+    "eic": "0x770c1dc9f273c24be1663950f9ad4bfc8f80f4eb34409d71832f11e1f0a2b42",
+    "erc20": "0x5327164fa21dca89a92e8eae8a5b7ab90f58373e71f0a16d285e5a4abe5a3cf",
+    "madara_factory": "0x180758cab3ef720bc312e1e949cdc3a5395d0393a70573573bac573a7cb1f22",
+    "token_bridge": "0x358663e6ed9d37efd33d4661e20b2bad143e0f92076b0c91fe65f31ccf55046",
+    "universal_deployer": "0xcec69ee87a9afd1e1f17715f04e6a05bf4cb229dc04948f3569f1bb61226f"
+  }
+}

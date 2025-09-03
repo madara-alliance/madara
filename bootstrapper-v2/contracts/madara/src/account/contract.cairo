@@ -6,11 +6,10 @@
 /// OpenZeppelin's upgradeable account which can change its public key and declare, deploy, or call
 /// contracts. Supports outside execution by implementing SRC9.
 #[starknet::contract(account)]
-pub mod AccountUpgradeable {
+pub mod Account {
     use openzeppelin_account::extensions::SRC9Component;
     use openzeppelin_introspection::src5::SRC5Component;
     use crate::account::component::AccountComponent;
-    use crate::account::interface::IDeployer;
 
     component!(path: AccountComponent, storage: account, event: AccountEvent);
     component!(path: SRC5Component, storage: src5, event: SRC5Event);

@@ -17,10 +17,22 @@ mod MadaraFactory {
         token_bridge_class_hash: ClassHash,
         eic_class_hash: ClassHash,
         erc20_class_hash: ClassHash,
-        universal_deployer_class_hash: ClassHash,
         l1_eth_bridge_address: EthAddress,
         l1_erc20_bridge_address: EthAddress,
         owner: ContractAddress,
+    }
+
+    #[event]
+    #[derive(Drop, starknet::Event)]
+    enum Event {
+        ContractsDeployed: ContractsDeployed,
+    }
+
+    #[derive(Drop, starknet::Event)]
+    struct ContractsDeployed {
+        l2_eth_token: ContractAddress,
+        l2_eth_bridge: ContractAddress,
+        l2_token_bridge: ContractAddress,
     }
 
     #[constructor]
@@ -29,7 +41,6 @@ mod MadaraFactory {
         token_bridge_class: ClassHash,
         eic_class_hash: ClassHash,
         erc20_class_hash: ClassHash,
-        universal_deployer_class_hash: ClassHash,
         l1_eth_bridge_address: EthAddress,
         l1_erc20_bridge_address: EthAddress,
         initial_owner: ContractAddress,
@@ -37,7 +48,6 @@ mod MadaraFactory {
         self.token_bridge_class_hash.write(token_bridge_class);
         self.eic_class_hash.write(eic_class_hash);
         self.erc20_class_hash.write(erc20_class_hash);
-        self.universal_deployer_class_hash.write(universal_deployer_class_hash);
         self.l1_eth_bridge_address.write(l1_eth_bridge_address);
         self.l1_erc20_bridge_address.write(l1_erc20_bridge_address);
         self.owner.write(initial_owner);
@@ -48,10 +58,7 @@ mod MadaraFactory {
     impl MadaraFactoryImpl of IMadaraFactory<ContractState> {
         fn deploy_bridges(
             ref self: ContractState,
-        ) -> (ContractAddress, ContractAddress, ContractAddress, ContractAddress) {
-            // Deploy u universal deployer
-            let universal_deployer = self.deploy_universal_deployer();
-
+        ) -> (ContractAddress, ContractAddress, ContractAddress) {
             // Deploy Eth Bridge
             let l2_eth_bridge = self.deploy_eth_bridge();
 
@@ -87,7 +94,14 @@ mod MadaraFactory {
             // Deploy Token Bridge
             let l2_token_bridge = self.deploy_token_bridge();
 
-            (universal_deployer, l2_eth_token, l2_eth_bridge, l2_token_bridge)
+            // Emit event with all deployed contract addresses
+            self.emit(Event::ContractsDeployed(ContractsDeployed {
+                l2_eth_token,
+                l2_eth_bridge,
+                l2_token_bridge,
+            }));
+
+            (l2_eth_token, l2_eth_bridge, l2_token_bridge)
         }
 
         fn deploy_token_bridge(ref self: ContractState) -> ContractAddress {
@@ -152,17 +166,6 @@ mod MadaraFactory {
                 .unwrap_syscall();
 
             l2_eth_token
-        }
-
-        fn deploy_universal_deployer(ref self: ContractState) -> ContractAddress {
-            // Deploy Universal Deployer
-            let mut calldata = ArrayTrait::new();
-            let (universal_deployer, _) = deploy_syscall(
-                self.universal_deployer_class_hash.read(), 0, calldata.span(), false,
-            )
-                .unwrap_syscall();
-
-            universal_deployer
         }
     }
 

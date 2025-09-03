@@ -1,6 +1,9 @@
 use anyhow::Context;
 use starknet::{
-    accounts::{Account, AccountFactory, ArgentAccountFactory, ExecutionEncoding, SingleOwnerAccount},
+    accounts::{
+        Account, AccountFactory, ExecutionEncoding, OpenZeppelinAccountFactory,
+        SingleOwnerAccount,
+    },
     core::types::{
         contract::{CompiledClass, SierraClass},
         BlockId, BlockTag, Felt,
@@ -40,27 +43,26 @@ impl<'a> BootstrapAccount<'a> {
     // A felt representation of the string 'BOOTSTRAP'.
     pub async fn bootstrap_declare(&self) -> anyhow::Result<()> {
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("../build-artifacts/argent/ArgentAccount.sierra.json").unwrap(),
+            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json").unwrap(),
         )
-        .context("Failed to read Argent sierra file")?;
+        .context("Failed to read OpenZeppelin Account sierra file")?;
 
         let contract_casm_artifact: CompiledClass =
-            serde_json::from_reader(std::fs::File::open("../build-artifacts/argent/ArgentAccount.casm.json").unwrap())
-                .context("Failed to read Argent casm file")?;
+            serde_json::from_reader(std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.compiled_contract_class.json").unwrap())
+                .context("Failed to read OpenZeppelin Account casm file")?;
 
         // Check if already declared
-
         if self
             .provider
             .get_class(BlockId::Tag(starknet::core::types::BlockTag::Pending), contract_artifact.class_hash()?)
             .await
             .is_ok()
         {
-            log::info!("Argent account contract already declared, skipping declaration.");
+            log::info!("OpenZeppelin Account contract already declared, skipping declaration.");
             return Ok(());
         }
 
-        // Class hash of the compiled CASM class from the `starknet-sierra-compile` command
+        // Class hash of the compiled CASM class
         let compiled_class_hash = contract_casm_artifact.class_hash()?;
 
         // We need to flatten the ABI into a string first
@@ -77,14 +79,14 @@ impl<'a> BootstrapAccount<'a> {
 
         log::info!("Transaction hash: {:#064x}", result.transaction_hash);
         log::info!(
-            "Account class hash: {:#064x} {:?} {:?}",
+            "OpenZeppelin Account class hash: {:#064x} {:?} {:?}",
             result.class_hash,
             compiled_class_hash,
             contract_artifact.class_hash()?
         );
 
-        wait_for_transaction(self.provider, result.transaction_hash, "Argent Declaration").await?;
-        log::info!("Argent account contract declared successfully !!");
+        wait_for_transaction(self.provider, result.transaction_hash, "OpenZeppelin Account Declaration").await?;
+        log::info!("OpenZeppelin Account contract declared successfully !!");
 
         Ok(())
     }
@@ -93,11 +95,11 @@ impl<'a> BootstrapAccount<'a> {
         &self,
         private_key: &str,
     ) -> anyhow::Result<SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>> {
-        // Read the Argent contract artifacts to get the class hash
+        // Read the OpenZeppelin Account contract artifacts to get the class hash
         let contract_artifact: SierraClass = serde_json::from_reader(
-            std::fs::File::open("../build-artifacts/argent/ArgentAccount.sierra.json").unwrap(),
+            std::fs::File::open("contracts/madara/target/dev/madara_factory_contracts_Account.contract_class.json").unwrap(),
         )
-        .context("Failed to read Argent sierra file")?;
+        .context("Failed to read OpenZeppelin Account sierra file")?;
 
         // Get the class hash
         let class_hash = contract_artifact.class_hash()?;
@@ -107,30 +109,29 @@ impl<'a> BootstrapAccount<'a> {
             Felt::from_hex(private_key).context("Invalid private key format")?,
         ));
 
-        let salt = Felt::from(123); // Random salt for deployment
+        let salt = Felt::from(123); // Salt for deployment
 
-        // Create an Argent account factory for deployment
-        let account_factory = ArgentAccountFactory::new(
+        // Create an OpenZeppelin account factory for deployment
+        let account_factory = OpenZeppelinAccountFactory::new(
             class_hash,
             self.account.chain_id(),
-            None, // guardian (None for no guardian)
             &signer,
             self.provider,
         )
         .await
-        .context("Failed to create Argent account factory")?;
+        .context("Failed to create OpenZeppelin account factory")?;
 
         // Deploy the account using the factory
         let deploy_result = account_factory
-            .deploy_v3(Felt::from(123))
+            .deploy_v3(salt)
             .gas(0)
             .gas_price(0)
             .send()
             .await
-            .context("Failed deploying argent account")?;
+            .context("Failed deploying OpenZeppelin account")?;
 
-        wait_for_transaction(self.provider, deploy_result.transaction_hash, "Account Deployment").await?;
-        log::info!("Account deployment successful!");
+        wait_for_transaction(self.provider, deploy_result.transaction_hash, "OpenZeppelin Account Deployment").await?;
+        log::info!("OpenZeppelin Account deployment successful!");
         log::info!("Transaction hash: {:#064x}", deploy_result.transaction_hash);
         log::info!("Account address: {:#064x}", deploy_result.contract_address);
         log::info!("Class hash: {:#064x}", class_hash);

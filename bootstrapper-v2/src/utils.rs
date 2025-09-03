@@ -1,15 +1,15 @@
 use std::{future::Future, sync::Arc};
 
+use anyhow::Context;
 use starknet::{
     accounts::{Account, ConnectedAccount, SingleOwnerAccount},
     core::types::{
         contract::{CompiledClass, SierraClass},
-        BlockId, BlockTag,
+        BlockId, BlockTag, Call, InvokeTransactionResult,
     },
     signers::LocalWallet,
 };
 
-use anyhow::Context;
 use starknet::{
     core::types::{ExecutionResult, Felt, TransactionReceipt, TransactionReceiptWithBlockInfo},
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Provider, ProviderError},
@@ -122,4 +122,27 @@ pub async fn declare_contract(
         .expect("Error in declaring the contract using Cairo 1 declaration using the provided account");
     wait_for_transaction(account.provider(), txn.transaction_hash, "declare_contract").await.unwrap();
     sierra_class_hash
+}
+
+pub async fn execute_v3(
+    account: &SingleOwnerAccount<JsonRpcClient<HttpTransport>, LocalWallet>,
+    calls: &Vec<Call>,
+) -> anyhow::Result<InvokeTransactionResult, anyhow::Error> {
+    let txn_res = account
+        .execute_v3(calls.clone())
+        .gas(0)
+        .gas_price(0)
+        .send()
+        .await
+        .context("Error in making execute_v3 the contract for calls {:?}")?;
+
+    wait_for_transaction(
+        account.provider(),
+        txn_res.transaction_hash,
+        &format!("invoking_contract for calls {:?}", calls),
+    )
+    .await
+    .unwrap();
+
+    Ok(txn_res)
 }
