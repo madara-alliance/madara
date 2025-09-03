@@ -165,15 +165,36 @@ impl GasPrices {
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self) -> Felt {
         println!("Computing GasPrices hash is called here!");
-        Poseidon::hash_array(&[
-            Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0"),
-            Felt::from(self.eth_l1_gas_price),
-            Felt::from(self.strk_l1_gas_price),
-            Felt::from(self.eth_l1_data_gas_price),
-            Felt::from(self.strk_l1_data_gas_price),
-            Felt::from(self.eth_l2_gas_price),
-            Felt::from(self.strk_l2_gas_price),
-        ])
+
+        let domain_separator = Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0");
+        let eth_l1_gas = Felt::from(self.eth_l1_gas_price);
+        let strk_l1_gas = Felt::from(self.strk_l1_gas_price);
+        let eth_l1_data_gas = Felt::from(self.eth_l1_data_gas_price);
+        let strk_l1_data_gas = Felt::from(self.strk_l1_data_gas_price);
+        let eth_l2_gas = Felt::from(self.eth_l2_gas_price);
+        let strk_l2_gas = Felt::from(self.strk_l2_gas_price);
+
+        println!("Domain separator: {:?}", domain_separator);
+        println!("ETH L1 gas price: {} -> {:?}", self.eth_l1_gas_price, eth_l1_gas);
+        println!("STRK L1 gas price: {} -> {:?}", self.strk_l1_gas_price, strk_l1_gas);
+        println!("ETH L1 data gas price: {} -> {:?}", self.eth_l1_data_gas_price, eth_l1_data_gas);
+        println!("STRK L1 data gas price: {} -> {:?}", self.strk_l1_data_gas_price, strk_l1_data_gas);
+        println!("ETH L2 gas price: {} -> {:?}", self.eth_l2_gas_price, eth_l2_gas);
+        println!("STRK L2 gas price: {} -> {:?}", self.strk_l2_gas_price, strk_l2_gas);
+
+        let hash = Poseidon::hash_array(&[
+            domain_separator,
+            eth_l1_gas,
+            strk_l1_gas,
+            eth_l1_data_gas,
+            strk_l1_data_gas,
+            eth_l2_gas,
+            strk_l2_gas,
+        ]);
+
+        println!("Computed hash: {:?}", hash);
+
+        hash
     }
 }
 

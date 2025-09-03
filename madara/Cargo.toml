@@ -127,8 +127,8 @@ starknet = "0.12.0"
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
-blockifier =  { git = "https://github.com/heemankv/sequencer", rev = "1dda315d8734f8ac6b012e20c4fa0fcf710c044b" }
-starknet_api = { git = "https://github.com/heemankv/sequencer", rev = "1dda315d8734f8ac6b012e20c4fa0fcf710c044b" }
+blockifier =  { git = "https://github.com/heemankv/sequencer", rev = "2ec3c025820be01e1e5f96707af976012d5bc0cc" }
+starknet_api = { git = "https://github.com/heemankv/sequencer", rev = "2ec3c025820be01e1e5f96707af976012d5bc0cc" }
 cairo-lang-starknet-classes = "2.12.0-dev.1"
 cairo-lang-utils = "2.12.0-dev.1"
 cairo-vm = "2.2.0"

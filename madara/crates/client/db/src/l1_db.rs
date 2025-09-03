@@ -175,7 +175,7 @@ impl MadaraBackend {
         //     max_change_denominator,
         // )
         // .max(self.chain_config().min_l2_gas_price);
-        let strk_l2_gas_price = 1_u128;
+        let strk_l2_gas_price = 25000_u128;
         if strk_per_eth.is_zero() {
             return Err(anyhow::anyhow!("STRK per ETH is zero, cannot calculate gas prices"));
         }

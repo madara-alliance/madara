@@ -7,6 +7,7 @@ use blockifier::{
 use mc_db::MadaraBackend;
 use mp_convert::Felt;
 use std::{any::Any, collections::HashMap, panic::AssertUnwindSafe, sync::Arc};
+use blockifier::blockifier::transaction_executor::BlockExecutionSummary;
 use tokio::sync::{
     mpsc::{self, UnboundedReceiver},
     oneshot,
@@ -48,7 +49,7 @@ pub enum ExecutorMessage {
         exec_ctx: BlockExecutionContext,
     },
     BatchExecuted(BatchExecutionResult),
-    EndBlock,
+    EndBlock(BlockExecutionSummary),
 }
 
 #[derive(Default, Debug)]
