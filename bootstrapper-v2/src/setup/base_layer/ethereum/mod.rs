@@ -14,10 +14,11 @@ use alloy::{
     sol_types::SolValue,
 };
 use anyhow::Context;
+use async_trait::async_trait;
+use log;
 use std::collections::HashMap;
 
 use factory::{Factory, FactoryDeploy};
-use tokio::runtime::Runtime;
 
 pub static IMPLEMENTATION_CONTRACTS: [&str; 6] =
     ["coreContract", "manager", "registry", "multiBridge", "ethBridge", "ethBridgeEIC"];
@@ -85,24 +86,35 @@ impl EthereumSetup {
 }
 
 // Base layer setup trait implementation
+#[async_trait]
 impl BaseLayerSetupTrait for EthereumSetup {
-    fn init(&mut self) -> anyhow::Result<()> {
+    async fn init(&mut self) -> anyhow::Result<()> {
         for contract in IMPLEMENTATION_CONTRACTS {
             // let address = self.implementation_address.get(contract).unwrap();
-            let rt = Runtime::new().context("Failed to create runtime")?;
-
             if contract == "coreContract" {
                 let artifact_path = "../build-artifacts/cairo_lang/Starknet.json";
-                let address = rt.block_on(self.deploy_contract_from_artifact(artifact_path))?;
+                let address = self
+                    .deploy_contract_from_artifact(artifact_path)
+                    .await
+                    .with_context(|| format!("Failed to deploy {}", contract))?;
 
-                println!("Deployed coreContract at address: {:?}", address);
+                log::info!("Deployed coreContract at address: {:?}", address);
+                self.implementation_address.insert(contract.to_string(), address.to_string());
+            } else if contract == "ethBridgeEIC" {
+                let artifact_path = "./contracts/ethereum/out/configureSingleBridge.sol/ConfigureSingleBridgeEIC.json";
+                let address = self
+                    .deploy_contract_from_artifact(artifact_path)
+                    .await
+                    .with_context(|| format!("Failed to deploy {}", contract))?;
+                log::info!("Deployed ConfigureSingleBridgeEIC at address: {:?}", address);
                 self.implementation_address.insert(contract.to_string(), address.to_string());
             } else {
                 let artifact_path = format!("../build-artifacts/starkgate_latest/solidity/{}.json", contract);
-                let address = rt
-                    .block_on(self.deploy_contract_from_artifact(&artifact_path))
+                let address = self
+                    .deploy_contract_from_artifact(&artifact_path)
+                    .await
                     .with_context(|| format!("Failed to deploy {}", contract))?;
-                println!("Deployed {} at address: {:?}", contract, address);
+                log::info!("Deployed {} at address: {:?}", contract, address);
                 self.implementation_address.insert(contract.to_string(), address.to_string());
             }
         }
@@ -114,9 +126,7 @@ impl BaseLayerSetupTrait for EthereumSetup {
         Ok(())
     }
 
-    fn setup(&mut self) -> anyhow::Result<()> {
-        let rt = Runtime::new().context("Failed to create runtime")?;
-
+    async fn setup(&mut self) -> anyhow::Result<()> {
         let provider = ProviderBuilder::new()
             .wallet(self.signer.clone())
             .connect_http(self.rpc_url.parse().expect("Invalid RPC URL"));
@@ -128,10 +138,10 @@ impl BaseLayerSetupTrait for EthereumSetup {
             serde_json::from_str(&implementations_addresses).context("Failed to parse implementation addresses")?;
 
         // Deploy the factory contract
-        let factory_deploy = rt
-            .block_on(FactoryDeploy::new(provider, self.signer.address(), implementation_contracts))
+        let factory_deploy = FactoryDeploy::new(provider, self.signer.address(), implementation_contracts)
+            .await
             .context("Failed to deploy Ethereum Factory")?;
-        println!("Deployed factory at {:?}", factory_deploy.address());
+        log::info!("Deployed factory at {:?}", factory_deploy.address());
 
         self.implementation_address.insert("base_layer_factory".to_string(), factory_deploy.address().to_string());
 
@@ -141,12 +151,10 @@ impl BaseLayerSetupTrait for EthereumSetup {
         )
         .context("Failed to save addresses")?;
 
-        rt.block_on(factory_deploy.setup(
-            self.core_contract_init_data.clone(),
-            self.signer.address(),
-            self.signer.address(),
-        ))
-        .context("Failed to initialize Ethereum Factory")?;
+        factory_deploy
+            .setup(self.core_contract_init_data.clone(), self.signer.address(), self.signer.address())
+            .await
+            .context("Failed to initialize Ethereum Factory")?;
 
         Ok(())
     }

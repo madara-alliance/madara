@@ -1,4 +1,5 @@
 use crate::setup::base_layer::BaseLayerSetupTrait;
+use async_trait::async_trait;
 use starknet::core::types::Felt;
 use starknet::{
     providers::{jsonrpc::HttpTransport, JsonRpcClient, Url},
@@ -23,13 +24,14 @@ impl StarknetSetup {
 }
 
 #[allow(unused_variables)]
+#[async_trait]
 impl BaseLayerSetupTrait for StarknetSetup {
     #[allow(unused_variables)]
-    fn init(&mut self) -> anyhow::Result<()> {
+    async fn init(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 
-    fn setup(&mut self) -> anyhow::Result<()> {
+    async fn setup(&mut self) -> anyhow::Result<()> {
         Ok(())
     }
 

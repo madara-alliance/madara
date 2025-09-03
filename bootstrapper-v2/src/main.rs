@@ -34,8 +34,8 @@ async fn main() -> Result<()> {
                 .get_base_layer_setup(setup_base.private_key, &setup_base.addresses_output_path)
                 .context("Failed to initialise base layer config")?;
 
-            base_layer_setup.init().context("Failed to initialise the base layer setup")?;
-            base_layer_setup.setup().context("Failed to setup base layer setup")?;
+            base_layer_setup.init().await.context("Failed to initialise the base layer setup")?;
+            base_layer_setup.setup().await.context("Failed to setup base layer setup")?;
         }
 
         Commands::SetupMadara(setup_madara) => {
@@ -46,7 +46,10 @@ async fn main() -> Result<()> {
             let base_layer_setup = base_layer_config
                 .get_base_layer_setup(setup_madara.base_layer_private_key.clone(), &setup_madara.base_addresses_path)?;
 
-            madara_setup.init(&setup_madara.private_key, &setup_madara.output_path).await.context("Failed to initialise the madara setup")?;
+            madara_setup
+                .init(&setup_madara.private_key, &setup_madara.output_path)
+                .await
+                .context("Failed to initialise the madara setup")?;
             madara_setup
                 .setup(&setup_madara.base_addresses_path, &setup_madara.output_path)
                 .await
