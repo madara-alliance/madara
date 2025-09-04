@@ -32,6 +32,7 @@ contract FactoryTest is Test {
       state: State({globalRoot: 0, blockNumber: 0, blockHash: 0})
     });
 
-    factory.setup(coreContractInitData, address(1), address(2));
+    BaseLayerContracts memory baselayer = factory.setup(coreContractInitData, address(1), address(2));
+    factory.setL2Bridge(1, 2, baselayer.ethTokenBridge, baselayer.tokenBridge);
   }
 }

@@ -35,7 +35,7 @@ impl BaseLayerSetupTrait for StarknetSetup {
         Ok(())
     }
 
-    fn post_madara_setup(&self, madara_addresses_path: &str) -> anyhow::Result<()> {
+    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> anyhow::Result<()> {
         Ok(())
     }
 }

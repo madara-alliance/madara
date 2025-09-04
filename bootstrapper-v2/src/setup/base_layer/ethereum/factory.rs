@@ -1,5 +1,7 @@
 use alloy::{primitives::Address, sol};
 use anyhow::Result;
+use futures_util::StreamExt;
+pub use Factory::BaseLayerContracts;
 use Factory::{CoreContractInitData, FactoryInstance, ImplementationContracts};
 
 // Factory contract for deploying other contracts
@@ -35,10 +37,27 @@ where
         core_contract_init_data: CoreContractInitData,
         operator: Address,
         governor: Address,
-    ) -> Result<()> {
+    ) -> Result<BaseLayerContracts> {
+        let contract_deployed_filter = self.factory_contract.BaseLayerContractsDeployed_filter().watch().await?;
         let tx_hash =
             self.factory_contract.setup(core_contract_init_data, operator, governor).send().await?.watch().await?;
-        println!("Factory setup transaction hash: {:?}", tx_hash);
-        Ok(())
+        log::info!("Factory setup transaction hash: {:?}", tx_hash);
+
+        // Wait for the BaseLayerContractsDeployed event
+        let mut event_stream = contract_deployed_filter.into_stream().take(1);
+        let event = event_stream
+            .next()
+            .await
+            .ok_or_else(|| anyhow::anyhow!("Failed to receive BaseLayerContractsDeployed event"))?;
+
+        match event {
+            Ok((event_data, log)) => {
+                log::info!("Received BaseLayerContractsDeployed event: {:?}", log);
+                log::info!("Base layer contracts: {:?}", event_data);
+                // Extract the BaseLayerContracts data from the event
+                Ok(event_data._baseLayerContracts)
+            }
+            Err(e) => Err(anyhow::anyhow!("Error receiving event: {:?}", e)),
+        }
     }
 }

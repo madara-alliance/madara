@@ -43,7 +43,7 @@ async fn main() -> Result<()> {
             let base_layer_config: BaseConfigOuter = serde_json::from_reader(File::open(setup_madara.config_path)?)?;
 
             let mut madara_setup = MadaraSetup::new(madara_config.madara);
-            let base_layer_setup = base_layer_config
+            let mut base_layer_setup = base_layer_config
                 .get_base_layer_setup(setup_madara.base_layer_private_key.clone(), &setup_madara.base_addresses_path)?;
 
             madara_setup
@@ -55,7 +55,10 @@ async fn main() -> Result<()> {
                 .await
                 .context("Failed to setup madara setup")?;
 
-            base_layer_setup.post_madara_setup(&setup_madara.output_path).context("Failed to post madara setup")?;
+            base_layer_setup
+                .post_madara_setup(&setup_madara.output_path)
+                .await
+                .context("Failed to complete post madara setup")?;
         }
     }
 

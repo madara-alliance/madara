@@ -14,8 +14,13 @@ import {IStarknetGovernor} from "./interfaces/IStarknetGovernor.sol";
 import {IProxyRoles} from "./interfaces/IProxyRoles.sol";
 
 import {console} from "forge-std/console.sol";
-
+// int.from_bytes(Web3.keccak(text="ROLE_APP_ROLE_ADMIN"), "big") & MASK_250 .
+bytes32 constant APP_ROLE_ADMIN = bytes32(
+    uint256(0x03e615638e0b79444a70f8c695bf8f2a47033bf1cf95691ec3130f64939cee99)
+);
 contract Factory is Ownable, Implementations {
+  event BaseLayerContractsDeployed(BaseLayerContracts _baseLayerContracts);
+
   constructor(
     address owner,
     ImplementationContracts memory _implementationContracts
@@ -60,7 +65,7 @@ contract Factory is Ownable, Implementations {
     ) = deployManagerAndRegistry();
 
     // Deploy and setup MuiltiBridge
-    address multiBridgeProxy = setupMultiBridge(
+    baseLayerContracts.tokenBridge = setupMultiBridge(
       implementationContracts.multiBridge,
       address(baseLayerContracts.manager),
       address(baseLayerContracts.coreContract),
@@ -85,11 +90,12 @@ contract Factory is Ownable, Implementations {
     setupManager(
       baseLayerContracts.manager,
       implementationContracts.manager,
-      multiBridgeProxy,
+      baseLayerContracts.tokenBridge,
       address(baseLayerContracts.registry),
       governor
     );
 
+    emit BaseLayerContractsDeployed(baseLayerContracts);
     return baseLayerContracts;
   }
 
@@ -170,7 +176,12 @@ contract Factory is Ownable, Implementations {
   ) public returns (address) {
     Proxy ethBridgePxoxy = new Proxy(0);
     // 'eth' is 0x657468
-    bytes memory initData = abi.encode(eicContract, messagingContract, 0x657468, address(0)) ;
+    bytes memory initData = abi.encode(
+      eicContract,
+      messagingContract,
+      0x657468,
+      address(0)
+    );
 
     addImplementationAndUpgrade(
       address(ethBridgePxoxy),
@@ -230,13 +241,13 @@ contract Factory is Ownable, Implementations {
     IRoles(ethTokenBridge).registerAppGovernor(address(this));
     IBridge(ethTokenBridge).setL2TokenBridge(l2EthBridgeAddress);
     IRoles(ethTokenBridge).revokeAppGovernor(address(this));
-    IRoles(ethTokenBridge).revokeAppRoleAdmin(address(this));
+    IRoles(ethTokenBridge).renounceRole(APP_ROLE_ADMIN, address(this));
 
     IRoles(tokenBridge).registerAppRoleAdmin(address(this));
     IRoles(tokenBridge).registerAppGovernor(address(this));
     IBridge(tokenBridge).setL2TokenBridge(l2Erc20BridgeAddress);
     IRoles(tokenBridge).revokeAppGovernor(address(this));
-    IRoles(tokenBridge).revokeAppRoleAdmin(address(this));
+    IRoles(tokenBridge).renounceRole(APP_ROLE_ADMIN, address(this));
   }
 
   function registerAdmins(

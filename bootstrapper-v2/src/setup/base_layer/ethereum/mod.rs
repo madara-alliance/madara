@@ -15,7 +15,9 @@ use alloy::{
 };
 use anyhow::Context;
 use async_trait::async_trait;
+use factory::BaseLayerContracts;
 use log;
+use serde_json;
 use std::collections::HashMap;
 
 use factory::{Factory, FactoryDeploy};
@@ -33,6 +35,7 @@ pub struct EthereumSetup {
     implementation_address: HashMap<String, String>,
     core_contract_init_data: Factory::CoreContractInitData,
     addresses_output_path: String,
+    base_layer_contracts: Option<BaseLayerContracts>,
 }
 
 impl EthereumSetup {
@@ -50,6 +53,7 @@ impl EthereumSetup {
             implementation_address,
             core_contract_init_data,
             addresses_output_path: addresses_output_path.to_string(),
+            base_layer_contracts: None,
         }
     }
 
@@ -82,6 +86,34 @@ impl EthereumSetup {
 
         let address = receipt.contract_address.context("No contract address in receipt")?;
         Ok(address)
+    }
+
+    /// Save the current class hashes and addresses to a JSON file
+    fn save_ethereum_addresses(&self) -> anyhow::Result<()> {
+        let base_layer_addresses = serde_json::json!({
+            "implementation_addresses": {
+                "coreContract": self.implementation_address.get("coreContract"),
+                "manager": self.implementation_address.get("manager"),
+                "registry": self.implementation_address.get("registry"),
+                "multiBridge": self.implementation_address.get("multiBridge"),
+                "ethBridge": self.implementation_address.get("ethBridge"),
+                "ethBridgeEIC": self.implementation_address.get("ethBridgeEIC"),
+                "base_layer_factory": self.implementation_address.get("base_layer_factory"),
+            },
+            "addresses": self.base_layer_contracts.as_ref().map(|contracts| {
+                serde_json::to_value(contracts).unwrap_or(serde_json::Value::Null)
+            }).unwrap_or(serde_json::Value::Null)
+        });
+
+        crate::utils::save_addresses_to_file(
+            serde_json::to_string_pretty(&base_layer_addresses)?,
+            &self.addresses_output_path,
+        )
+        .context("Failed to save addresses")?;
+
+        log::info!("Ethereum base layer addresses saved to: {}", self.addresses_output_path);
+
+        Ok(())
     }
 }
 
@@ -151,16 +183,95 @@ impl BaseLayerSetupTrait for EthereumSetup {
         )
         .context("Failed to save addresses")?;
 
-        factory_deploy
+        let base_layer_contracts = factory_deploy
             .setup(self.core_contract_init_data.clone(), self.signer.address(), self.signer.address())
             .await
             .context("Failed to initialize Ethereum Factory")?;
+
+        // Store the base layer contracts for later use
+        self.base_layer_contracts = Some(base_layer_contracts);
+
+        // Save the addresses including the deployed base layer contracts
+        self.save_ethereum_addresses()?;
 
         Ok(())
     }
 
     #[allow(unused_variables)]
-    fn post_madara_setup(&self, madara_addresses_path: &str) -> anyhow::Result<()> {
+    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> anyhow::Result<()> {
+        // Read the base layer factory address from addresses.json
+        let addresses_content =
+            std::fs::read_to_string(&self.addresses_output_path).context("Failed to read addresses.json")?;
+        let addresses: serde_json::Value =
+            serde_json::from_str(&addresses_content).context("Failed to parse addresses.json")?;
+
+        let base_layer_factory_address = addresses["implementation_addresses"]["base_layer_factory"]
+            .as_str()
+            .context("base_layer_factory address not found in addresses.json")?;
+
+        // Read the L2 bridge addresses from madara_addresses.json
+        let madara_addresses_content =
+            std::fs::read_to_string(madara_addresses_path).context("Failed to read madara_addresses.json")?;
+        let madara_addresses: serde_json::Value =
+            serde_json::from_str(&madara_addresses_content).context("Failed to parse madara_addresses.json")?;
+
+        let l2_eth_bridge_address = madara_addresses["addresses"]["l2_eth_bridge"]
+            .as_str()
+            .context("ethTokenBridge address not found in madara_addresses.json")?;
+        let l2_erc20_bridge_address = madara_addresses["addresses"]["l2_token_bridge"]
+            .as_str()
+            .context("tokenBridge address not found in madara_addresses.json")?;
+
+        // Read the deployed bridge addresses from addresses.json
+        let eth_token_bridge = addresses["addresses"]["ethTokenBridge"]
+            .as_str()
+            .context("ethTokenBridge address not found in addresses.json")?;
+        let token_bridge = addresses["addresses"]["tokenBridge"]
+            .as_str()
+            .context("tokenBridge address not found in addresses.json")?;
+
+        // Convert hex addresses to U256 format
+        let l2_eth_bridge_u256 = alloy::primitives::U256::from_str_radix(
+            l2_eth_bridge_address.strip_prefix("0x").unwrap_or(l2_eth_bridge_address),
+            16,
+        )
+        .context("Failed to convert l2EthBridgeAddress to U256")?;
+
+        let l2_erc20_bridge_u256 = alloy::primitives::U256::from_str_radix(
+            l2_erc20_bridge_address.strip_prefix("0x").unwrap_or(l2_erc20_bridge_address),
+            16,
+        )
+        .context("Failed to convert l2Erc20BridgeAddress to U256")?;
+
+        // Convert string addresses to Address format
+        let eth_token_bridge_address =
+            eth_token_bridge.parse::<alloy::primitives::Address>().context("Failed to parse ethTokenBridge address")?;
+        let token_bridge_address =
+            token_bridge.parse::<alloy::primitives::Address>().context("Failed to parse tokenBridge address")?;
+
+        // Create a provider and instantiate the factory contract
+        let provider = ProviderBuilder::new()
+            .wallet(self.signer.clone())
+            .connect_http(self.rpc_url.parse().expect("Invalid RPC URL"));
+
+        // Create a new factory instance with the deployed address
+        let factory_instance = Factory::new(
+            base_layer_factory_address
+                .parse::<alloy::primitives::Address>()
+                .context("Failed to parse base_layer_factory address")?,
+            provider,
+        );
+
+        // Call set_l2_bridge on the factory contract
+        factory_instance
+            .setL2Bridge(l2_eth_bridge_u256, l2_erc20_bridge_u256, eth_token_bridge_address, token_bridge_address)
+            .send()
+            .await?
+            .watch()
+            .await?;
+
+        log::info!("Successfully called set_l2_bridge on factory contract");
+
         Ok(())
     }
 }

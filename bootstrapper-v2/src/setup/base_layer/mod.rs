@@ -9,5 +9,5 @@ pub trait BaseLayerSetupTrait {
     /// It should be called before the base layer setup.
     async fn init(&mut self) -> Result<()>;
     async fn setup(&mut self) -> Result<()>;
-    fn post_madara_setup(&self, madara_addresses_path: &str) -> Result<()>;
+    async fn post_madara_setup(&mut self, madara_addresses_path: &str) -> Result<()>;
 }

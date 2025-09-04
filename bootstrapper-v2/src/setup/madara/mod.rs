@@ -142,16 +142,16 @@ impl MadaraSetup {
         let base_addresses_content = fs::read_to_string(base_addresses_path)
             .with_context(|| format!("Failed to read base addresses from: {}", base_addresses_path))?;
 
-        let base_addresses: HashMap<String, String> =
+        let base_addresses: serde_json::Value =
             serde_json::from_str(&base_addresses_content).with_context(|| "Failed to parse base addresses JSON")?;
 
-        let l1_eth_bridge_address = base_addresses
-            .get("ethBridge")
-            .ok_or_else(|| anyhow::anyhow!("ethBridge address not found in base addresses"))?;
+        let l1_eth_bridge_address = base_addresses["addresses"]["ethTokenBridge"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("ethTokenBridge address not found in base addresses"))?;
 
-        let l1_erc20_bridge_address = base_addresses
-            .get("multiBridge")
-            .ok_or_else(|| anyhow::anyhow!("multiBridge address not found in base addresses"))?;
+        let l1_erc20_bridge_address = base_addresses["addresses"]["tokenBridge"]
+            .as_str()
+            .ok_or_else(|| anyhow::anyhow!("tokenBridge address not found in base addresses"))?;
 
         log::info!("L1 ETH Bridge Address: {}", l1_eth_bridge_address);
         log::info!("L1 ERC20 Bridge Address: {}", l1_erc20_bridge_address);
