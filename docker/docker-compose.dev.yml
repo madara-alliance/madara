@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # LocalStack for AWS services emulation
+  localstack:
+    image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
+    container_name: localstack
+    ports:
+      - "4566:4566"            # LocalStack Gateway
+      - "4510-4559:4510-4559"  # External services port range
+    environment:
+      # Core settings
+      - DEBUG=${DEBUG:-1}
+      - SERVICES=s3,sqs,sns,dynamodb,secretsmanager,ssm,lambda,iam,events,scheduler,sts
+      - EAGER_SERVICE_LOADING=1
+      - PERSISTENCE=1
+
+      # AWS credentials (for local testing)
+      - AWS_ACCESS_KEY_ID=test
+      - AWS_SECRET_ACCESS_KEY=test
+      - AWS_DEFAULT_REGION=us-east-1
+
+      # LocalStack configuration
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - LOCALSTACK_HOST=localstack
+      - LAMBDA_EXECUTOR=docker
+      - HOSTNAME_EXTERNAL=localstack
+
+      # Additional settings
+      - DATA_DIR=/var/lib/localstack/data
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock"
+      - localstack-data:/var/lib/localstack/data
+    networks:
+      - orchestrator-dev
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4566/_localstack/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+
+  # MongoDB for orchestrator data persistence
+  mongodb:
+    image: mongo:latest
+    container_name: mongodb
+    ports:
+      - "27017:27017"
+    environment:
+      - MONGO_INITDB_ROOT_USERNAME=${MONGO_ROOT_USER:-admin}
+      - MONGO_INITDB_ROOT_PASSWORD=${MONGO_ROOT_PASSWORD:-admin123}
+      - MONGO_INITDB_DATABASE=${MONGO_DATABASE:-orchestrator}
+    volumes:
+      - mongodb-data:/data/db
+      - mongodb-config:/data/configdb
+    networks:
+      - orchestrator-dev
+    healthcheck:
+      test: echo 'db.runCommand("ping").ok' | mongosh localhost:27017/test --quiet
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    command: mongod --bind_ip_all
+
+volumes:
+  mongodb-data:
+    driver: local
+  mongodb-config:
+    driver: local
+  localstack-data:
+    driver: local
+
+networks:
+  orchestrator-dev:
+    driver: bridge
+    name: orchestrator-dev
