@@ -1,0 +1,43 @@
+groups:
+  - name: orchestrator_job_metrics
+    interval: 30s
+    rules:
+      # Simulated job status metrics (replace with actual metrics from orchestrator)
+      - record: orchestrator_jobs_by_status
+        expr: |
+          (
+            label_replace(successful_job_operations, "status", "Completed", "", "") * 0 + 10
+          ) or (
+            label_replace(failed_jobs, "status", "Failed", "", "") * 0 + 2
+          ) or (
+            vector(5) * 0 + 3 + label_join(vector(1), "status", "", "", "Created")
+          ) or (
+            vector(2) * 0 + 1 + label_join(vector(1), "status", "", "", "LockedForProcessing")
+          ) or (
+            vector(1) * 0 + 1 + label_join(vector(1), "status", "", "", "PendingVerification")
+          )
+
+      # Job type distribution (simulated - replace with actual metrics)
+      - record: orchestrator_jobs_by_type
+        expr: |
+          (
+            vector(10) * 0 + 5 + label_join(vector(1), "job_type", "", "", "SnosRun")
+          ) or (
+            vector(8) * 0 + 3 + label_join(vector(1), "job_type", "", "", "DataSubmission")
+          ) or (
+            vector(6) * 0 + 2 + label_join(vector(1), "job_type", "", "", "ProofCreation")
+          ) or (
+            vector(4) * 0 + 1 + label_join(vector(1), "job_type", "", "", "ProofRegistration")
+          ) or (
+            vector(3) * 0 + 1 + label_join(vector(1), "job_type", "", "", "StateTransition")
+          )
+
+      # Job created timestamp (simulated)
+      - record: orchestrator_job_created_timestamp
+        expr: |
+          time() - (rand() * 1800)
+
+      # Job retry count (simulated)
+      - record: orchestrator_job_retry_count
+        expr: |
+          floor(rand() * 4)

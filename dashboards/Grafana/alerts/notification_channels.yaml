@@ -1,0 +1,234 @@
+# Grafana Notification Channels Configuration
+# Configure these notification channels in Grafana for alert routing
+
+apiVersion: 1
+notifiers:
+  # Slack notification channel for critical alerts
+  - uid: slack-critical
+    name: Slack Critical Alerts
+    type: slack
+    isDefault: false
+    sendReminder: true
+    frequency: 5m
+    settings:
+      url: "${SLACK_WEBHOOK_URL_CRITICAL}"  # Set this in environment variables
+      recipient: "#madara-critical-alerts"
+      username: "Grafana Orchestrator Alerts"
+      icon_emoji: ":rotating_light:"
+      uploadImage: true
+      withImageUrl: true
+      mentionUsers: "here"
+      mentionGroups: ""
+      mentionChannel: "channel"
+      title: "Critical Alert: {{ .GroupLabels.alertname }}"
+      text: |
+        *Alert:* {{ .GroupLabels.alertname }}
+        *Severity:* {{ .CommonLabels.severity }}
+        *Component:* {{ .CommonLabels.component }}
+        {{ range .Alerts }}
+        *Summary:* {{ .Annotations.summary }}
+        *Description:* {{ .Annotations.description }}
+        *Runbook:* {{ .Annotations.runbook_url }}
+        {{ end }}
+    secureSettings:
+      url: "${SLACK_WEBHOOK_URL_CRITICAL}"
+
+  # Slack notification channel for warning alerts
+  - uid: slack-warning
+    name: Slack Warning Alerts
+    type: slack
+    isDefault: false
+    sendReminder: false
+    settings:
+      url: "${SLACK_WEBHOOK_URL_WARNING}"
+      recipient: "#madara-warnings"
+      username: "Grafana Orchestrator Alerts"
+      icon_emoji: ":warning:"
+      uploadImage: true
+      withImageUrl: true
+      title: "Warning: {{ .GroupLabels.alertname }}"
+      text: |
+        *Alert:* {{ .GroupLabels.alertname }}
+        *Severity:* {{ .CommonLabels.severity }}
+        {{ range .Alerts }}
+        *Summary:* {{ .Annotations.summary }}
+        {{ end }}
+    secureSettings:
+      url: "${SLACK_WEBHOOK_URL_WARNING}"
+
+  # PagerDuty for critical production alerts
+  - uid: pagerduty-critical
+    name: PagerDuty Critical
+    type: pagerduty
+    isDefault: false
+    sendReminder: false
+    settings:
+      integrationKey: "${PAGERDUTY_INTEGRATION_KEY}"
+      autoResolve: true
+      severity: critical
+      client: "Madara Orchestrator"
+      clientUrl: "{{ .ExternalURL }}"
+      customDetails:
+        component: "{{ .CommonLabels.component }}"
+        job_type: "{{ .CommonLabels.job_type }}"
+        severity: "{{ .CommonLabels.severity }}"
+    secureSettings:
+      integrationKey: "${PAGERDUTY_INTEGRATION_KEY}"
+
+  # Email notification for daily summaries
+  - uid: email-daily
+    name: Email Daily Summary
+    type: email
+    isDefault: false
+    sendReminder: false
+    settings:
+      addresses: "orchestrator-team@madara.io;devops@madara.io"
+      singleEmail: true
+      subject: "Orchestrator Daily Alert Summary"
+      message: |
+        Daily summary of orchestrator alerts:
+        
+        Alert: {{ .GroupLabels.alertname }}
+        Count: {{ len .Alerts }}
+        
+        {{ range .Alerts }}
+        - {{ .Annotations.summary }}
+        {{ end }}
+        
+        View dashboard: {{ .ExternalURL }}
+
+  # Webhook for custom integrations
+  - uid: webhook-custom
+    name: Custom Webhook
+    type: webhook
+    isDefault: false
+    sendReminder: false
+    settings:
+      url: "${CUSTOM_WEBHOOK_URL}"
+      httpMethod: POST
+      username: ""
+      password: ""
+      authorization_scheme: ""
+      authorization_credentials: ""
+      maxAlerts: 10
+    secureSettings:
+      password: "${WEBHOOK_PASSWORD}"
+
+# Alert Notification Policies
+# These define how alerts are routed to different channels based on labels
+notification_policies:
+  - name: critical_alerts_policy
+    uid: critical-policy
+    rules:
+      - matcher:
+          label: severity
+          match: equals
+          value: critical
+        receiver: 
+          - slack-critical
+          - pagerduty-critical
+        continue: true
+        group_wait: 30s
+        group_interval: 5m
+        repeat_interval: 4h
+
+  - name: warning_alerts_policy
+    uid: warning-policy
+    rules:
+      - matcher:
+          label: severity
+          match: equals
+          value: warning
+        receiver:
+          - slack-warning
+        continue: false
+        group_wait: 1m
+        group_interval: 10m
+        repeat_interval: 1h
+
+  - name: infrastructure_alerts_policy
+    uid: infra-policy
+    rules:
+      - matcher:
+          label: component
+          match: equals
+          value: infrastructure
+        receiver:
+          - slack-critical
+          - pagerduty-critical
+        continue: false
+        group_wait: 10s
+        group_interval: 5m
+        repeat_interval: 30m
+
+  - name: external_service_policy
+    uid: external-policy
+    rules:
+      - matcher:
+          label: component
+          match: equals
+          value: external
+        receiver:
+          - slack-critical
+        continue: false
+        group_wait: 1m
+        group_interval: 5m
+        repeat_interval: 1h
+
+# Contact Points (Grafana 9+ format)
+contact_points:
+  - name: "Critical Alerts"
+    uid: contact-critical
+    receivers:
+      - uid: slack-critical
+        type: slack
+        settings:
+          webhook_url: "${SLACK_WEBHOOK_URL_CRITICAL}"
+          title: "🚨 CRITICAL: {{ .GroupLabels.alertname }}"
+          text: "{{ range .Alerts }}{{ .Annotations.description }}{{ end }}"
+          mention_channel: "here"
+      - uid: pagerduty-critical
+        type: pagerduty
+        settings:
+          integration_key: "${PAGERDUTY_INTEGRATION_KEY}"
+          severity: critical
+
+  - name: "Warning Alerts"
+    uid: contact-warning
+    receivers:
+      - uid: slack-warning
+        type: slack
+        settings:
+          webhook_url: "${SLACK_WEBHOOK_URL_WARNING}"
+          title: "⚠️ WARNING: {{ .GroupLabels.alertname }}"
+          text: "{{ range .Alerts }}{{ .Annotations.summary }}{{ end }}"
+
+  - name: "Database Alerts"
+    uid: contact-database
+    receivers:
+      - uid: slack-db
+        type: slack
+        settings:
+          webhook_url: "${SLACK_WEBHOOK_URL_WARNING}"
+          recipient: "#database-alerts"
+          title: "🗄️ Database Alert: {{ .GroupLabels.alertname }}"
+
+# Mute Timings (for maintenance windows)
+mute_timings:
+  - name: weekend_maintenance
+    uid: mute-weekend
+    time_intervals:
+      - weekdays: [saturday, sunday]
+        times:
+          - start_time: "02:00"
+            end_time: "06:00"
+        location: "UTC"
+
+  - name: scheduled_maintenance
+    uid: mute-scheduled
+    time_intervals:
+      - weekdays: [wednesday]
+        times:
+          - start_time: "03:00"
+            end_time: "04:00"
+        location: "UTC"

@@ -1,0 +1,26 @@
+# Add this to your prometheus.yml configuration file
+
+scrape_configs:
+  # Blackbox exporter for health check monitoring
+  - job_name: 'blackbox'
+    metrics_path: /probe
+    params:
+      module: [orchestrator_health]
+    static_configs:
+      - targets:
+        - http://orchestrator:8080/health
+        - http://localhost:8080/health  # Alternative local endpoint
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115  # Blackbox exporter address
+  
+  # Direct orchestrator metrics (if exposed)
+  - job_name: 'orchestrator'
+    static_configs:
+      - targets: ['orchestrator:8080']
+    metrics_path: /metrics
+    scrape_interval: 15s
