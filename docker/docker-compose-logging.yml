@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # Loki - Log aggregation system
@@ -33,7 +33,7 @@ services:
     image: timberio/vector:latest-alpine
     container_name: vector
     ports:
-      - "8686:8686"  # Vector API
+      - "8686:8686" # Vector API
     volumes:
       - ./vector.toml:/etc/vector/vector.toml:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro
@@ -51,10 +51,10 @@ services:
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
     ports:
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
-      - "8888:8888"   # Prometheus metrics
-      - "8889:8889"   # Prometheus exporter metrics
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
+      - "8888:8888" # Prometheus metrics
+      - "8889:8889" # Prometheus exporter metrics
       - "13133:13133" # Health check
     depends_on:
       - loki

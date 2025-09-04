@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # Loki for log aggregation
@@ -35,11 +35,11 @@ services:
     ports:
       - "9090:9090"
     command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--web.console.libraries=/etc/prometheus/console_libraries'
-      - '--web.console.templates=/etc/prometheus/consoles'
-      - '--web.enable-lifecycle'
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.console.libraries=/etc/prometheus/console_libraries"
+      - "--web.console.templates=/etc/prometheus/consoles"
+      - "--web.enable-lifecycle"
     volumes:
       - ./configs/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - ./configs/prometheus/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
@@ -55,12 +55,12 @@ services:
     volumes:
       - ./configs/otel/otel-collector-config-fixed.yaml:/etc/otel-collector-config.yaml:ro
     ports:
-      - "1888:1888"   # pprof extension
-      - "8888:8888"   # Prometheus metrics exposed by the collector
-      - "8889:8889"   # Prometheus exporter metrics
+      - "1888:1888" # pprof extension
+      - "8888:8888" # Prometheus metrics exposed by the collector
+      - "8889:8889" # Prometheus exporter metrics
       - "13133:13133" # health_check extension
-      - "4317:4317"   # OTLP gRPC receiver
-      - "4318:4318"   # OTLP HTTP receiver
+      - "4317:4317" # OTLP gRPC receiver
+      - "4318:4318" # OTLP HTTP receiver
       - "55679:55679" # zpages extension
     depends_on:
       - prometheus
@@ -93,14 +93,14 @@ services:
   tempo:
     image: grafana/tempo:2.3.1
     container_name: tempo
-    command: [ "-config.file=/etc/tempo.yaml" ]
+    command: ["-config.file=/etc/tempo.yaml"]
     volumes:
       - ./configs/tempo/tempo-config.yaml:/etc/tempo.yaml:ro
       - tempo-data:/var/tempo
     ports:
-      - "3200:3200"   # tempo
-      - "4317"        # otlp grpc
-      - "4318"        # otlp http
+      - "3200:3200" # tempo
+      - "4317" # otlp grpc
+      - "4318" # otlp http
     networks:
       - monitoring
 
@@ -109,8 +109,8 @@ services:
     image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
     container_name: localstack
     ports:
-      - "4566:4566"            # LocalStack Gateway
-      - "4510-4559:4510-4559"  # External services port range
+      - "4566:4566" # LocalStack Gateway
+      - "4510-4559:4510-4559" # External services port range
     environment:
       - DEBUG=1
       - SERVICES=s3,sqs,sns,dynamodb,secretsmanager,ssm,lambda,iam,events,scheduler,sts

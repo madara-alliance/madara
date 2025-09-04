@@ -61,7 +61,7 @@ processors:
       - key: orchestrator.version
         value: "1.0.0"
         action: upsert
-  
+
   # Batch processor for better performance
   batch:
     timeout: 10s
@@ -90,12 +90,12 @@ service:
       receivers: [otlp]
       processors: [memory_limiter, resource, attributes, batch]
       exporters: [loki, debug]
-    
+
     metrics:
       receivers: [otlp, hostmetrics]
       processors: [memory_limiter, resource, batch]
       exporters: [prometheusremotewrite]
-    
+
     traces:
       receivers: [otlp]
       processors: [memory_limiter, resource, batch]

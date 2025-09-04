@@ -37,12 +37,12 @@ limits_config:
   max_entries_limit_per_query: 50000
   reject_old_samples: true
   reject_old_samples_max_age: 168h
-  
+
 ingester:
   chunk_idle_period: 30m
   max_chunk_age: 1h
   chunk_retain_period: 30s
-  
+
 compactor:
   retention_enabled: true
   retention_delete_delay: 2h

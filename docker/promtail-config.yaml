@@ -17,7 +17,7 @@ scrape_configs:
         labels:
           job: dockerlogs
           __path__: /var/lib/docker/containers/*/*log
-    
+
     pipeline_stages:
       - json:
           expressions:
@@ -54,18 +54,19 @@ scrape_configs:
         filters:
           - name: label
             values: ["com.docker.compose.service=orchestrator*"]
-    
+
     relabel_configs:
-      - source_labels: ['__meta_docker_container_name']
-        regex: '/(.*)'
-        target_label: 'container_name'
-      - source_labels: ['__meta_docker_container_id']
-        target_label: 'container_id'
-      - source_labels: ['__meta_docker_container_label_orchestrator_instance']
-        target_label: 'instance_id'
-      - source_labels: ['__meta_docker_container_label_com_docker_compose_service']
-        target_label: 'service'
-    
+      - source_labels: ["__meta_docker_container_name"]
+        regex: "/(.*)"
+        target_label: "container_name"
+      - source_labels: ["__meta_docker_container_id"]
+        target_label: "container_id"
+      - source_labels: ["__meta_docker_container_label_orchestrator_instance"]
+        target_label: "instance_id"
+      - source_labels:
+          ["__meta_docker_container_label_com_docker_compose_service"]
+        target_label: "service"
+
     pipeline_stages:
       # Parse orchestrator log format
       - regex:

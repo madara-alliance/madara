@@ -1,4 +1,4 @@
-version: '3.8'
+version: "3.8"
 
 services:
   # LocalStack for AWS services emulation
@@ -6,8 +6,8 @@ services:
     image: localstack/localstack@sha256:763947722c6c8d33d5fbf7e8d52b4bddec5be35274a0998fdc6176d733375314
     container_name: localstack
     ports:
-      - "4566:4566"            # LocalStack Gateway
-      - "4510-4559:4510-4559"  # External services port range
+      - "4566:4566" # LocalStack Gateway
+      - "4510-4559:4510-4559" # External services port range
     environment:
       # Core settings
       - DEBUG=${DEBUG:-1}
