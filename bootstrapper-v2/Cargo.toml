@@ -13,11 +13,11 @@ name = "bootstrapper-v2"
 
 [dependencies]
 alloy = { version = "1.0.25", features = [
-    "signers",
-    "signer-local",
-    "sol-types",
-    "contract",
-    "full",
+  "signers",
+  "signer-local",
+  "sol-types",
+  "contract",
+  "full",
 ] }
 anyhow = "1.0"
 async-trait = "0.1.89"
