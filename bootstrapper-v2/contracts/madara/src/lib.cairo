@@ -8,6 +8,10 @@ mod EthBridgeEIC {
     mod interface;
 }
 
+mod account {
+    mod contract;
+}
+
 mod interfaces {
     pub mod bridge;
     pub mod replaceable;
