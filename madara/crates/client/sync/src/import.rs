@@ -238,7 +238,7 @@ impl BlockImporterCtx {
         allow_pre_v0_13_2: bool,
     ) -> Result<(Felt, Felt), BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
-        let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_2);
+        let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_5);
         let is_pre_v0_13_2_special_case =
             allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
 
@@ -248,8 +248,8 @@ impl BlockImporterCtx {
                 println!("L1Handler transaction receipt: {:#?}", tx.receipt);
             }
         }
-        
-        
+
+
         // Verify transaction hashes. Also compute the (hash with signature, receipt hash).
         let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
             .par_iter()
@@ -499,7 +499,8 @@ impl BlockImporterCtx {
         allow_pre_v0_13_2: bool,
     ) -> Result<Felt, BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
-        let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_2);
+        let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_5);
+        // println!("StarkNet version: {:?}", starknet_version);
         let is_pre_v0_13_2_special_case =
             allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
 

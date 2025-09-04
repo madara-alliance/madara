@@ -60,11 +60,16 @@ impl Transaction {
     /// computing the transaction commitent uses a hash value that combines
     /// the transaction hash with the array of signature values.
     pub fn compute_hash_with_signature(&self, tx_hash: Felt, starknet_version: StarknetVersion) -> Felt {
+        // println!("compute_hash_with_signature");
         if starknet_version < StarknetVersion::V0_11_1 {
+            // println!("compute_hash_with_signature V0_11_1");
             self.compute_hash_with_signature_pre_v0_11_1(tx_hash)
+
         } else if starknet_version < StarknetVersion::V0_13_2 {
+            // println!("compute_hash_with_signature V0_13_2");
             self.compute_hash_with_signature_pre_v0_13_2(tx_hash)
         } else {
+            // println!("compute_hash_with_signature latest");
             self.compute_hash_with_signature_latest(tx_hash)
         }
     }
@@ -100,11 +105,9 @@ impl Transaction {
             Transaction::Deploy(_) | Transaction::L1Handler(_) => &[],
         };
 
-        let elements = if signature.is_empty() {
-            vec![tx_hash, Felt::ZERO]
-        } else {
-            std::iter::once(tx_hash).chain(signature.iter().copied()).collect()
-        };
+        let elements: Vec<Felt> = std::iter::once(tx_hash)
+            .chain(signature.iter().copied())
+            .collect();
 
         Poseidon::hash_array(&elements)
     }
