@@ -37,7 +37,6 @@ impl MockAtlanticServer {
         info!("Available endpoints:");
         info!("  POST   /atlantic-query        - Submit new job");
         info!("  GET    /atlantic-query/{{id}}  - Get job status");
-        info!("  GET    /queries/{{id}}/proof.json - Get proof data");
         info!("  GET    /is-alive                - Is alive check");
 
         if let Err(e) = axum::serve(listener, self.router).await {
@@ -57,6 +56,8 @@ impl MockAtlanticServer {
             failure_rate: 0.0,
             auto_complete_jobs: true,
             completion_delay_ms: 2000,
+            max_jobs_in_memory: 500,
+            max_concurrent_jobs: 10,
         };
         Self::new(addr, config)
     }
@@ -70,6 +71,8 @@ impl MockAtlanticServer {
             failure_rate,
             auto_complete_jobs: true,
             completion_delay_ms: 1500,
+            max_jobs_in_memory: 500,
+            max_concurrent_jobs: 5,
         };
         Self::new(addr, config)
     }
@@ -85,10 +88,17 @@ pub async fn start_mock_server_background(port: u16) -> tokio::task::JoinHandle<
     })
 }
 
+/// Start the mock Atlantic server with default configuration
+/// This function will block until the server is shut down
+pub async fn start_mock_atlantic_server() -> Result<(), Box<dyn std::error::Error>> {
+    let port = 4001; // Default Atlantic mock server port
+    let server = MockAtlanticServer::with_test_config(port);
+    server.run().await
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-
     use tokio::time::{sleep, Duration};
 
     #[tokio::test]
