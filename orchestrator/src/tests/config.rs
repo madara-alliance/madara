@@ -12,6 +12,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
+use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
 use crate::types::params::da::DAConfig;
 use crate::types::params::database::DatabaseArgs;
@@ -595,6 +596,16 @@ pub(crate) fn get_env_params() -> EnvParams {
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
     };
 
+    let batching_config = BatchingParams {
+        max_batch_time_seconds: get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS")
+            .parse::<u64>()
+            .unwrap(),
+        max_batch_size: get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BATCH_SIZE").parse::<u64>().unwrap(),
+        batching_worker_lock_duration: get_env_var_or_panic("MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS")
+            .parse::<u64>()
+            .unwrap(),
+    };
+
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
     let max_block: Option<u64> = Some(env.parse::<u64>().unwrap());
 
@@ -640,6 +651,7 @@ pub(crate) fn get_env_params() -> EnvParams {
         ))
         .unwrap_or_default(),
         snos_config,
+        batching_config,
         service_config,
         server_config,
         snos_layout_name: LayoutName::all_cairo,

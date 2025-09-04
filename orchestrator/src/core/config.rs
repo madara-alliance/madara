@@ -22,6 +22,7 @@ use url::Url;
 use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
+use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
 use crate::{
@@ -100,6 +101,7 @@ pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
+    pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
     /// Layout to use for running SNOS
@@ -198,6 +200,7 @@ impl Config {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
+            batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
             snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())
