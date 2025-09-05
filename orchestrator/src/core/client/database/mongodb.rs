@@ -21,6 +21,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
+use tracing::{debug, error, warn};
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -29,7 +30,7 @@ pub trait ToDocument {
 
 impl<T: Serialize> ToDocument for T {
     fn to_document(&self) -> Result<Document, DatabaseError> {
-        let doc = mongodb::bson::to_bson(self)?;
+        let doc = bson::to_bson(self)?;
 
         if let Bson::Document(doc) = doc {
             Ok(doc)
@@ -196,18 +197,18 @@ impl MongoDbClient {
         let cursor = collection.aggregate(pipeline, None).await?;
         let vec_items: Vec<T> = cursor
             .map_err(|e| {
-                tracing::error!(error = %e, category = "db_call", "Error retrieving document");
+                error!(error = %e, category = "db_call", "Error retrieving document");
                 DatabaseError::FailedToSerializeDocument(format!("Failed to retrieve document: {}", e))
             })
             .and_then(|doc| {
-                futures::future::ready(mongodb::bson::from_document::<T>(doc).map_err(|e| {
-                    tracing::error!(error = %e, category = "db_call", "Deserialization error");
+                futures::future::ready(bson::from_document::<T>(doc).map_err(|e| {
+                    error!(error = %e, category = "db_call", "Deserialization error");
                     DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e))
                 }))
             })
             .try_collect()
             .await?;
-        tracing::debug!(db_operation_name = "find", category = "db_call", "Fetched data from collection");
+        debug!("Fetched data from collection");
         let attributes = [KeyValue::new("db_operation_name", "find")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -228,38 +229,29 @@ impl MongoDbClient {
         options: Option<AggregateOptions>,
     ) -> Result<Vec<R>, DatabaseError>
     where
-        T: serde::de::DeserializeOwned + Unpin + Send + Sync + Sized,
-        R: serde::de::DeserializeOwned + Unpin + Send + Sync + Sized,
+        T: DeserializeOwned + Unpin + Send + Sync + Sized,
+        R: DeserializeOwned + Unpin + Send + Sync + Sized,
     {
-        let start = std::time::Instant::now();
+        let start = Instant::now();
 
-        tracing::debug!(
-            pipeline = ?pipeline,
-            category = "db_call",
-            "Executing aggregation pipeline"
-        );
+        debug!("Executing aggregation pipeline");
 
         let cursor = collection.aggregate(pipeline, options).await?;
         let vec_items: Vec<R> = cursor
             .map_err(|e| {
-                tracing::error!(error = %e, category = "db_call", "Error executing pipeline");
+                error!(error = %e, category = "db_call", "Error executing pipeline");
                 DatabaseError::FailedToSerializeDocument(format!("Failed to execute pipeline: {}", e))
             })
             .and_then(|doc| {
-                futures::future::ready(mongodb::bson::from_document::<R>(doc).map_err(|e| {
-                    tracing::error!(error = %e, category = "db_call", "Deserialization error");
+                futures::future::ready(bson::from_document::<R>(doc).map_err(|e| {
+                    error!(error = %e, category = "db_call", "Deserialization error");
                     DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
                 }))
             })
             .try_collect()
             .await?;
 
-        tracing::debug!(
-            db_operation_name = "execute_pipeline",
-            result_count = vec_items.len(),
-            category = "db_call",
-            "Pipeline execution completed"
-        );
+        debug!(result_count = vec_items.len(), "Pipeline execution completed");
 
         let duration = start.elapsed();
         let attrs = [KeyValue::new("db_operation_name", "execute_pipeline")];
@@ -288,7 +280,6 @@ impl DatabaseClient for MongoDbClient {
     /// * `job` - The job to be created
     /// # Returns
     /// * `Result<JobItem, DatabaseError>` - A Result indicating whether the operation was successful or not
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn create_job(&self, job: JobItem) -> Result<JobItem, DatabaseError> {
         let start = Instant::now();
         let options = UpdateOptions::builder().upsert(true).build();
@@ -311,33 +302,31 @@ impl DatabaseClient for MongoDbClient {
 
         if result.matched_count == 0 {
             let duration = start.elapsed();
-            tracing::debug!(duration = %duration.as_millis(), "Job created in MongoDB successfully");
+            debug!(duration = %duration.as_millis(), "Job created in MongoDB successfully");
 
             let attributes = [KeyValue::new("db_operation_name", "create_job")];
             ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
             Ok(job)
         } else {
-            return Err(DatabaseError::ItemAlreadyExists(format!(
+            Err(DatabaseError::ItemAlreadyExists(format!(
                 "Job already exists for internal_id {} and job_type {:?}",
                 job.internal_id, job.job_type
-            )));
+            )))
         }
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "id":  id
         };
-        tracing::debug!(job_id = %id, category = "db_call", "Fetched job by ID");
+        debug!("Fetched job by ID");
         let attributes = [KeyValue::new("db_operation_name", "get_job_by_id")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_job_by_internal_id_and_type(
         &self,
         internal_id: &str,
@@ -346,16 +335,15 @@ impl DatabaseClient for MongoDbClient {
         let start = Instant::now();
         let filter = doc! {
             "internal_id": internal_id,
-            "job_type": mongodb::bson::to_bson(&job_type)?,
+            "job_type": bson::to_bson(&job_type)?,
         };
-        tracing::debug!(internal_id = %internal_id, job_type = ?job_type, category = "db_call", "Fetched job by internal ID and type");
+        debug!("Fetched job by internal ID and type");
         let attributes = [KeyValue::new("db_operation_name", "get_job_by_internal_id_and_type")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn update_job(&self, current_job: &JobItem, update: JobItemUpdates) -> Result<JobItem, DatabaseError> {
         let start = Instant::now();
         // Filters to search for the job
@@ -391,26 +379,25 @@ impl DatabaseClient for MongoDbClient {
         let result = self.get_job_collection().find_one_and_update(filter, update, options).await?;
         match result {
             Some(job) => {
-                tracing::debug!(job_id = %current_job.id, category = "db_call", "Job updated successfully");
+                debug!("Job updated successfully");
                 let attributes = [KeyValue::new("db_operation_name", "update_job")];
                 let duration = start.elapsed();
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(job)
             }
             None => {
-                tracing::warn!(job_id = %current_job.id, category = "db_call", "Failed to update job. Job version is likely outdated");
+                warn!(version = %current_job.version, "Failed to update job. Job version is likely outdated");
                 Err(DatabaseError::UpdateFailed(format!("Failed to update job. Identifier - {}, ", current_job.id)))
             }
         }
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
         let pipeline = vec![
             doc! {
                 "$match": {
-                    "job_type": mongodb::bson::to_bson(&job_type)?
+                    "job_type": bson::to_bson(&job_type)?
                 }
             },
             doc! {
@@ -433,7 +420,7 @@ impl DatabaseClient for MongoDbClient {
             },
         ];
 
-        tracing::debug!(job_type = ?job_type, category = "db_call", "Fetching latest job by type");
+        debug!("Fetching latest job by type");
 
         let results = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
 
@@ -446,26 +433,23 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    /// function to get jobs that don't have a successor job.
+    /// Function to get jobs that don't have a successor job.
     ///
-    /// `job_a_type` : Type of job that we need to get that doesn't have any successor.
+    /// `job_a_type`: Type of job that we need to get that doesn't have any successor.
     ///
-    /// `job_a_status` : Status of job A.
+    /// `job_a_status`: Status of job A.
     ///
-    /// `job_b_type` : Type of job that we need to have as a successor for Job A.
+    /// `job_b_type`: Type of job that we need to have as a successor for Job A.
     ///
-    /// `job_b_status` : Status of job B which we want to check with.
+    /// `job_b_status`: Status of job B which we want to check with.
     ///
-    /// Eg :
-    ///
+    /// Example use case:
     /// Getting SNOS jobs that do not have a successive proving job initiated yet.
     ///
-    /// job_a_type : SnosRun
-    ///
-    /// job_a_status : Completed
-    ///
-    /// job_b_type : ProofCreation
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    /// # Arguments
+    /// `job_a_type`: SnosRun
+    /// `job_a_status`: Completed
+    /// `job_b_type`: ProofCreation
     async fn get_jobs_without_successor(
         &self,
         job_a_type: JobType,
@@ -515,17 +499,11 @@ impl DatabaseClient for MongoDbClient {
             },
         ];
 
-        tracing::debug!(
-            job_a_type = ?job_a_type,
-            job_a_status = ?job_a_status,
-            job_b_type = ?job_b_type,
-            category = "db_call",
-            "Fetching jobs without successor"
-        );
+        debug!("Fetching jobs without successor");
 
         let result = self.execute_pipeline::<JobItem, JobItem>(self.get_job_collection(), pipeline, None).await?;
 
-        tracing::debug!(job_count = result.len(), category = "db_call", "Retrieved jobs without successor");
+        debug!(job_count = result.len(), category = "db_call", "Retrieved jobs without successor");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_without_successor")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -533,7 +511,52 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_latest_job_by_type_and_status(
+        &self,
+        job_type: JobType,
+        job_status: JobStatus,
+    ) -> Result<Option<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        // Convert job_type to Bson
+        let job_type_bson = bson::to_bson(&job_type)?;
+        let status_bson = bson::to_bson(&job_status)?;
+
+        // Construct the aggregation pipeline
+        let pipeline = vec![
+            // Stage 1: Match by type plus status
+            doc! {
+                "$match": {
+                    "job_type": job_type_bson,
+                    "status": status_bson,
+                }
+            },
+            // Stage 2: Sort by block_number descending
+            doc! {
+                "$sort": {
+                    "metadata.specific.block_number": -1
+                }
+            },
+            // Stage 3: Take only the top document
+            doc! { "$limit": 1 },
+        ];
+
+        debug!("Fetching latest job by type and status");
+
+        let collection: Collection<JobItem> = self.get_job_collection();
+
+        // Execute the pipeline and convert Vec<JobItem> to Option<JobItem>
+        let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
+
+        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
+
+        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
+
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(result)
+    }
+
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
         job_type: JobType,
@@ -552,14 +575,13 @@ impl DatabaseClient for MongoDbClient {
             }
         };
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
-        tracing::debug!(job_type = ?job_type, job_status = ?job_status, internal_id = internal_id, category = "db_call", "Fetched jobs after internal ID by job type");
+        debug!("Fetched jobs after internal ID by job type");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_after_internal_id_by_job_type")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_types_and_statuses(
         &self,
         job_type: Vec<JobType>,
@@ -576,7 +598,7 @@ impl DatabaseClient for MongoDbClient {
             filter.insert("job_type", doc! { "$in": serialized_job_type? });
         }
 
-        // Only add status filter if the vector is not empty
+        // Only add the status filter if the vector is not empty
         if !job_status.is_empty() {
             let serialized_statuses: Result<Vec<Bson>, _> = job_status.iter().map(bson::to_bson).collect();
             filter.insert("status", doc! { "$in": serialized_statuses? });
@@ -585,27 +607,28 @@ impl DatabaseClient for MongoDbClient {
         let find_options = limit.map(|val| FindOptions::builder().limit(Some(val)).build());
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
-        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved jobs by type and statuses");
+        debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_types_and_status")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(jobs)
     }
 
-    /// function to get missing block numbers for jobs within a specified range.
+    /// Function to get missing block numbers for jobs within a specified range.
     ///
-    /// `job_type` : Type of job to check for missing blocks.
-    /// `lower_cap` : The minimum block number (inclusive).
-    /// `upper_cap` : The maximum block number (exclusive, following MongoDB $range behavior).
+    /// `job_type`: Type of job to check for missing blocks.
+    /// `lower_cap`: The minimum block number (inclusive).
+    /// `upper_cap`: The maximum block number (exclusive, following MongoDB $range behavior).
     ///
     /// Returns a vector of missing block numbers within the specified range.
     ///
-    /// Eg:
-    /// Getting missing SNOS jobs between blocks 2000 and 70000
-    /// job_type : SnosRun
-    /// lower_cap : 2000
-    /// upper_cap : 70000
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    /// Example use case:
+    /// Getting missing SNOS jobs between blocks 2000 and 70,000
+    ///
+    /// # Arguments
+    /// job_type: SnosRun
+    /// lower_cap: 2000
+    /// upper_cap: 70000
     async fn get_missing_block_numbers_by_type_and_caps(
         &self,
         job_type: JobType,
@@ -615,17 +638,17 @@ impl DatabaseClient for MongoDbClient {
     ) -> Result<Vec<u64>, DatabaseError> {
         let start = Instant::now();
         // Converting params to Bson
-        let job_type_bson = mongodb::bson::to_bson(&job_type)?;
+        let job_type_bson = bson::to_bson(&job_type)?;
 
-        // NOTE: This implementation is limited by mongodb's capbility to not support u64.
-        // i.e it will fail if upper_limit / lower_limit exceeds u32::MAX.
+        // NOTE: This implementation is limited by mongodb's ability to not support u64.
+        // i.e., it will fail if upper_limit / lower_limit exceeds u32::MAX.
 
         let lower_limit = u32::try_from(lower_cap).map_err(|e| {
-            tracing::error!(error = %e, category = "db_call", "Deserialization error");
+            error!(error = %e, "Deserialization error");
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
         let upper_limit = u32::try_from(upper_cap.saturating_add(1)).map_err(|e| {
-            tracing::error!(error = %e, category = "db_call", "Deserialization error");
+            error!(error = %e, "Deserialization error");
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
 
@@ -693,21 +716,15 @@ impl DatabaseClient for MongoDbClient {
             });
         }
 
-        tracing::debug!(
-            job_type = ?job_type,
-            lower_cap = lower_cap,
-            upper_cap = upper_cap,
-            category = "db_call",
-            "Fetching missing jobs by type and caps"
-        );
+        debug!("Fetching missing jobs by type and caps");
 
         let collection: Collection<JobItem> = self.get_job_collection();
 
-        // Execute pipeline and extract block numbers
+        // Execute the pipeline and extract block numbers
         let missing_blocks_response =
             self.execute_pipeline::<JobItem, MissingBlocksResponse>(collection, pipeline, None).await?;
 
-        tracing::debug!(job_count = missing_blocks_response.len(), category = "db_call", "Retrieved missing jobs");
+        debug!(job_count = missing_blocks_response.len(), "Retrieved missing jobs");
 
         // Handle the case where we might not get any results
         let block_numbers = if missing_blocks_response.is_empty() {
@@ -723,58 +740,6 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(block_numbers)
-    }
-
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
-    async fn get_latest_job_by_type_and_status(
-        &self,
-        job_type: JobType,
-        job_status: JobStatus,
-    ) -> Result<Option<JobItem>, DatabaseError> {
-        let start = Instant::now();
-
-        // Convert job_type to Bson
-        let job_type_bson = mongodb::bson::to_bson(&job_type)?;
-        let status_bson = mongodb::bson::to_bson(&job_status)?;
-
-        // Construct the aggregation pipeline
-        let pipeline = vec![
-            // Stage 1: Match by type + status
-            doc! {
-                "$match": {
-                    "job_type": job_type_bson,
-                    "status": status_bson,
-                }
-            },
-            // Stage 2: Sort by block_number descending
-            doc! {
-                "$sort": {
-                    "metadata.specific.block_number": -1
-                }
-            },
-            // Stage 3: Take only the top document
-            doc! { "$limit": 1 },
-        ];
-
-        tracing::debug!(
-            job_type = ?job_type,
-            job_status = ?job_status,
-            category = "db_call",
-            "Fetching latest job by type and status"
-        );
-
-        let collection: Collection<JobItem> = self.get_job_collection();
-
-        // Execute pipeline and convert Vec<JobItem> to Option<JobItem>
-        let results = self.execute_pipeline::<JobItem, JobItem>(collection, pipeline, None).await?;
-
-        let attributes = [KeyValue::new("db_operation_name", "get_latest_job_by_type_and_status")];
-
-        let result = vec_to_single_result(results, "get_latest_job_by_type_and_status")?;
-
-        let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(result)
     }
 
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
@@ -795,7 +760,7 @@ impl DatabaseClient for MongoDbClient {
         match cursor.try_next().await? {
             Some(doc) => {
                 // Try to deserialize and log any errors
-                match mongodb::bson::from_document::<Batch>(doc.clone()) {
+                match bson::from_document::<Batch>(doc.clone()) {
                     Ok(batch) => {
                         let attributes = [KeyValue::new("db_operation_name", "get_latest_batch")];
                         let duration = start.elapsed();
@@ -803,7 +768,7 @@ impl DatabaseClient for MongoDbClient {
                         Ok(Some(batch))
                     }
                     Err(e) => {
-                        tracing::error!(
+                        error!(
                             error = %e,
                             document = ?doc,
                             "Failed to deserialize document into Batch"
@@ -825,7 +790,7 @@ impl DatabaseClient for MongoDbClient {
         };
 
         let jobs: Vec<Batch> = self.get_batch_collection().find(filter, None).await?.try_collect().await?;
-        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved batch by indexes");
+        debug!(job_count = jobs.len(), "Retrieved batch by indexes");
         let attributes = [KeyValue::new("db_operation_name", "get_batches_by_indexes")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -845,6 +810,32 @@ impl DatabaseClient for MongoDbClient {
 
         let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
         self.update_batch(filter, update, options, start, index).await
+    }
+
+    async fn update_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<Batch, DatabaseError> {
+        // Find a batch and update it
+        let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
+        match result {
+            Some(updated_batch) => {
+                // Update done
+                let attributes = [KeyValue::new("db_operation_name", "update_batch")];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(updated_batch)
+            }
+            None => {
+                // Not found
+                error!(index = %index, category = "db_call", "Failed to update batch");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
+            }
+        }
     }
 
     async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
@@ -887,46 +878,20 @@ impl DatabaseClient for MongoDbClient {
         self.update_batch(filter, update, options, start, batch.index).await
     }
 
-    async fn update_batch(
-        &self,
-        filter: Document,
-        update: Document,
-        options: FindOneAndUpdateOptions,
-        start: Instant,
-        index: u64,
-    ) -> Result<Batch, DatabaseError> {
-        // Find a batch and update it
-        let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
-        match result {
-            Some(updated_batch) => {
-                // Update done
-                let attributes = [KeyValue::new("db_operation_name", "update_batch")];
-                let duration = start.elapsed();
-                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                Ok(updated_batch)
-            }
-            None => {
-                // Not found
-                tracing::error!(index = %index, category = "db_call", "Failed to update batch");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
-            }
-        }
-    }
-
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
 
         match self.get_batch_collection().insert_one(batch.clone(), InsertOneOptions::builder().build()).await {
             Ok(_) => {
                 let duration = start.elapsed();
-                tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
+                debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
 
                 let attributes = [KeyValue::new("db_operation_name", "create_batch")];
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(batch)
             }
             Err(err) => {
-                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
+                error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
                 Err(DatabaseError::InsertFailed(format!(
                     "Failed to insert batch {} with id {}: {}",
                     batch.index, batch.id, err
@@ -945,7 +910,7 @@ impl DatabaseClient for MongoDbClient {
 
         let batch = self.get_batch_collection().find_one(filter, None).await?;
 
-        tracing::debug!(category = "db_call", "Retrieved batch by block number");
+        debug!(category = "db_call", "Retrieved batch by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_batch_for_block")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -968,7 +933,7 @@ impl DatabaseClient for MongoDbClient {
 
         let batches = self.get_batch_collection().find(filter, find_options).await?.try_collect().await?;
 
-        tracing::debug!(category = "db_call", "Retrieved batches by statuses");
+        debug!(category = "db_call", "Retrieved batches by statuses");
         let attributes = [KeyValue::new("db_operation_name", "get_all_batches_by_status")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -999,14 +964,7 @@ impl DatabaseClient for MongoDbClient {
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
 
-        tracing::debug!(
-            job_type = ?job_type,
-            gte = gte,
-            lte = lte,
-            job_count = jobs.len(),
-            category = "db_call",
-            "Fetched jobs between internal IDs"
-        );
+        debug!(job_count = jobs.len(), "Fetched jobs between internal IDs");
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_between_internal_ids")];
         let duration = start.elapsed();
@@ -1015,7 +973,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_type_and_statuses(
         &self,
         job_type: &JobType,
@@ -1033,12 +990,7 @@ impl DatabaseClient for MongoDbClient {
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
 
-        tracing::debug!(
-            job_type = ?job_type,
-            job_count = jobs.len(),
-            category = "db_call",
-            "Retrieved jobs by type and statuses"
-        );
+        debug!(job_count = jobs.len(), "Retrieved jobs by type and statuses");
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_statuses")];
         let duration = start.elapsed();
@@ -1047,7 +999,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         let block_number_i64 = block_number as i64; // MongoDB typically handles numbers as i32 or i64
@@ -1057,18 +1008,18 @@ impl DatabaseClient for MongoDbClient {
             "metadata.specific.block_number": block_number_i64,
             "job_type": {
                 "$in": [
-                    mongodb::bson::to_bson(&JobType::SnosRun)?,
-                    mongodb::bson::to_bson(&JobType::ProofCreation)?,
-                    mongodb::bson::to_bson(&JobType::ProofRegistration)?,
-                    mongodb::bson::to_bson(&JobType::DataSubmission)?,
-                    mongodb::bson::to_bson(&JobType::Aggregator)?,
+                    bson::to_bson(&JobType::SnosRun)?,
+                    bson::to_bson(&JobType::ProofCreation)?,
+                    bson::to_bson(&JobType::ProofRegistration)?,
+                    bson::to_bson(&JobType::DataSubmission)?,
+                    bson::to_bson(&JobType::Aggregator)?,
                 ]
             }
         };
 
         // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
         let query2 = doc! {
-            "job_type": mongodb::bson::to_bson(&JobType::StateTransition)?,
+            "job_type": bson::to_bson(&JobType::StateTransition)?,
             "metadata.specific.context.to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
         };
 
@@ -1084,12 +1035,7 @@ impl DatabaseClient for MongoDbClient {
         let cursor2 = job_collection.find(query2, None).await?;
         results.extend(cursor2.try_collect::<Vec<JobItem>>().await?);
 
-        tracing::debug!(
-            block_number = block_number,
-            count = results.len(),
-            category = "db_call",
-            "Fetched jobs by block number"
-        );
+        debug!(count = results.len(), "Fetched jobs by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_block_number")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
@@ -1097,17 +1043,17 @@ impl DatabaseClient for MongoDbClient {
         Ok(results)
     }
 
-    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 
         // Calculate the cutoff time (current time - timeout)
         let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
 
-        // Query for jobs of specific type in LockedForProcessing status with process_started_at older than cutoff
+        // Query for jobs of the specific type in LockedForProcessing status with
+        // process_started_at older than cutoff
         let filter = doc! {
-            "job_type": mongodb::bson::to_bson(job_type)?,
-            "status": mongodb::bson::to_bson(&JobStatus::LockedForProcessing)?,
+            "job_type": bson::to_bson(job_type)?,
+            "status": bson::to_bson(&JobStatus::LockedForProcessing)?,
             "metadata.common.process_started_at": {
                 "$lt": cutoff_time.timestamp()
             }
@@ -1115,12 +1061,9 @@ impl DatabaseClient for MongoDbClient {
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
 
-        tracing::debug!(
-            job_type = ?job_type,
-            timeout_seconds = timeout_seconds,
+        debug!(
             cutoff_time = %cutoff_time,
             orphaned_count = jobs.len(),
-            category = "db_call",
             "Found orphaned jobs in LockedForProcessing status"
         );
 
@@ -1138,7 +1081,7 @@ fn vec_to_single_result<T>(results: Vec<T>, operation_name: &str) -> Result<Opti
         0 => Ok(None),
         1 => Ok(results.into_iter().next()),
         n => {
-            tracing::error!("Expected at most 1 result, got {} for operation: {}", n, operation_name);
+            error!("Expected at most 1 result, got {} for operation: {}", n, operation_name);
             Err(DatabaseError::FailedToSerializeDocument(format!(
                 "Expected at most 1 result, got {} for operation: {}",
                 n, operation_name
