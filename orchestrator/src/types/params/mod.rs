@@ -1,3 +1,4 @@
+pub mod batching;
 pub mod cloud_provider;
 pub mod da;
 pub mod database;

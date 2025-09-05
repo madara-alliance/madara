@@ -12,6 +12,7 @@ use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDA
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
+use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
@@ -24,10 +25,6 @@ use std::sync::Arc;
 use tokio::try_join;
 
 pub struct BatchingTrigger;
-
-// This lock ensures that only one Batching Worker is running at a time.
-// The lock is acquired for 1 hour.
-const BATCHING_WORKER_LOCK_DURATION: u64 = 60 * 60;
 
 // Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
 
@@ -42,7 +39,12 @@ impl JobTrigger for BatchingTrigger {
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
         match config
             .lock()
-            .acquire_lock("BatchingWorker", LockValue::Boolean(false), BATCHING_WORKER_LOCK_DURATION, None)
+            .acquire_lock(
+                "BatchingWorker",
+                LockValue::Boolean(false),
+                config.params.batching_config.batching_worker_lock_duration,
+                None,
+            )
             .await
         {
             Ok(_) => {
@@ -57,6 +59,15 @@ impl JobTrigger for BatchingTrigger {
             }
         }
 
+        // Getting the latest batch in DB
+        let latest_batch = config.database().get_latest_batch().await?;
+        let latest_block_in_db = latest_batch.clone().map_or(-1, |batch| batch.end_block as i64);
+
+        // Check if any existing batch needs to be closed
+        if let Some(batch) = latest_batch {
+            self.check_and_close_batch(&config, &batch).await?;
+        }
+
         // Getting the latest block number from Starknet
         let provider = config.madara_client();
         let block_number_provider = provider.block_number().await?;
@@ -68,10 +79,6 @@ impl JobTrigger for BatchingTrigger {
             .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
         tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch.");
-
-        // Getting the latest batch in DB
-        let latest_batch = config.database().get_latest_batch().await?;
-        let latest_block_in_db = latest_batch.map_or(-1, |batch| batch.end_block as i64);
 
         // Calculating the first block number to for which a batch needs to be assigned
         let first_block_to_assign_batch =
@@ -187,7 +194,7 @@ impl BatchingTrigger {
                             )
                             .await?;
 
-                        if compressed_state_update.len() > MAX_BLOB_SIZE {
+                        if self.should_close_batch(config, Some(compressed_state_update.len()), &current_batch) {
                             // We cannot add the current block in this batch
 
                             // Close the current batch - store the state update, blob info in storage and update DB
@@ -376,5 +383,40 @@ impl BatchingTrigger {
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
         100
+    }
+
+    async fn check_and_close_batch(&self, config: &Arc<Config>, batch: &Batch) -> Result<(), JobError> {
+        // Sending None for state update len since this won't be the reason to close an already existing batch
+        if self.should_close_batch(config, None, batch) {
+            config
+                .database()
+                .update_or_create_batch(
+                    batch,
+                    &BatchUpdates {
+                        end_block: Some(batch.end_block),
+                        is_batch_ready: Some(true),
+                        status: Some(BatchStatus::Closed),
+                    },
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Determines whether a new batch should be started based on the size of the compressed
+    /// state-update and the batch.
+    /// Returns true if a new batch should be started, false otherwise.
+    ///
+    /// Starts a new batch if:
+    /// 1. Length of the compressed state update has reached its max level
+    /// 2. The number of blocks in the batch has reached max level
+    /// 3. Time between now and when the batch started has exceeded max limit
+    /// 4. Batch is not yet closed
+    fn should_close_batch(&self, config: &Arc<Config>, state_update_len: Option<usize>, batch: &Batch) -> bool {
+        (!batch.is_batch_ready) && (state_update_len.is_some() && state_update_len.unwrap() > MAX_BLOB_SIZE)
+            || batch.num_blocks >= config.params.batching_config.max_batch_size
+            || (Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
+                >= config.params.batching_config.max_batch_time_seconds
     }
 }
