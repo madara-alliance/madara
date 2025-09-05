@@ -21,7 +21,7 @@ use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use std::time::Instant;
-use tracing::{debug, error, instrument, warn};
+use tracing::{debug, error, warn};
 use uuid::Uuid;
 
 pub trait ToDocument {
@@ -157,7 +157,6 @@ impl MongoDbClient {
     /// * `skip` - The skip to apply to the collection
     /// * `projection` - The projection to apply to the collection
     /// # Returns
-    #[instrument(skip_all, fields(db_operation_name = "find", function_type = "db_call"))]
     pub async fn find<T>(
         &self,
         collection: Collection<T>,
@@ -223,7 +222,6 @@ impl MongoDbClient {
     /// * `options` - Optional aggregation options
     /// # Returns
     /// * `Result<Vec<R>, DatabaseError>` - A Result containing the pipeline results or an error
-    #[instrument(skip_all, fields(db_operation_name = "execute_pipeline", function_type = "db_call"))]
     pub async fn execute_pipeline<T, R>(
         &self,
         collection: Collection<T>,
@@ -282,7 +280,6 @@ impl DatabaseClient for MongoDbClient {
     /// * `job` - The job to be created
     /// # Returns
     /// * `Result<JobItem, DatabaseError>` - A Result indicating whether the operation was successful or not
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn create_job(&self, job: JobItem) -> Result<JobItem, DatabaseError> {
         let start = Instant::now();
         let options = UpdateOptions::builder().upsert(true).build();
@@ -318,7 +315,6 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_job_by_id(&self, id: Uuid) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
@@ -331,7 +327,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_job_by_internal_id_and_type(
         &self,
         internal_id: &str,
@@ -349,7 +344,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(self.get_job_collection().find_one(filter, None).await?)
     }
 
-    #[instrument(skip_all, fields(function_type = "db_call", job_id = %current_job.id), ret, err)]
     async fn update_job(&self, current_job: &JobItem, update: JobItemUpdates) -> Result<JobItem, DatabaseError> {
         let start = Instant::now();
         // Filters to search for the job
@@ -398,7 +392,6 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type(&self, job_type: JobType) -> Result<Option<JobItem>, DatabaseError> {
         let start = Instant::now();
         let pipeline = vec![
@@ -457,7 +450,6 @@ impl DatabaseClient for MongoDbClient {
     /// `job_a_type`: SnosRun
     /// `job_a_status`: Completed
     /// `job_b_type`: ProofCreation
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_without_successor(
         &self,
         job_a_type: JobType,
@@ -519,7 +511,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_job_by_type_and_status(
         &self,
         job_type: JobType,
@@ -566,7 +557,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_after_internal_id_by_job_type(
         &self,
         job_type: JobType,
@@ -592,7 +582,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_types_and_statuses(
         &self,
         job_type: Vec<JobType>,
@@ -640,7 +629,6 @@ impl DatabaseClient for MongoDbClient {
     /// job_type: SnosRun
     /// lower_cap: 2000
     /// upper_cap: 70000
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_missing_block_numbers_by_type_and_caps(
         &self,
         job_type: JobType,
@@ -754,7 +742,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(block_numbers)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
         let start = Instant::now();
         let pipeline = vec![
@@ -794,7 +781,6 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
@@ -812,7 +798,6 @@ impl DatabaseClient for MongoDbClient {
     }
 
     /// Update a batch by its index
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! { "index": index as i64 };
@@ -853,7 +838,6 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    #[instrument(skip_all, fields(function_type = "db_call", index = %batch.index, id = %batch.id), ret, err)]
     async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
@@ -894,7 +878,6 @@ impl DatabaseClient for MongoDbClient {
         self.update_batch(filter, update, options, start, batch.index).await
     }
 
-    #[instrument(skip_all, fields(function_type = "db_call", index = %batch.index, id = %batch.id), ret, err)]
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
 
@@ -918,7 +901,6 @@ impl DatabaseClient for MongoDbClient {
     }
 
     /// get_batch_for_block - Returns the batch for a given block number
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
@@ -937,7 +919,6 @@ impl DatabaseClient for MongoDbClient {
     }
 
     /// get_batches_by_status - Returns a vector of Batch for which the status is the given status
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_batches_by_status(
         &self,
         status: BatchStatus,
@@ -960,7 +941,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(batches)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_between_internal_ids(
         &self,
         job_type: JobType,
@@ -993,7 +973,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_type_and_statuses(
         &self,
         job_type: &JobType,
@@ -1020,7 +999,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
         let block_number_i64 = block_number as i64; // MongoDB typically handles numbers as i32 or i64
@@ -1065,7 +1043,6 @@ impl DatabaseClient for MongoDbClient {
         Ok(results)
     }
 
-    #[instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
 

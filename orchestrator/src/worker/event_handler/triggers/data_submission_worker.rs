@@ -9,7 +9,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{error, info, instrument, trace, warn};
+use tracing::{error, info, trace, warn};
 
 pub struct DataSubmissionJobTrigger;
 
@@ -18,7 +18,6 @@ impl JobTrigger for DataSubmissionJobTrigger {
     // 0. All ids are assumed to be block numbers.
     // 1. Fetch the latest completed Proving jobs without Data Submission jobs as successor jobs
     // 2. Create jobs.
-    #[instrument(skip_all, fields(category = "DataSubmissionWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         trace!(log_type = "starting", "DataSubmissionWorker started.");
 

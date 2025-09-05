@@ -119,8 +119,8 @@ impl tracing::field::Visit for FieldExtractor {
 }
 
 /// Initialize the tracing subscriber with
-/// - PrettyFormatter for console readability
-/// - JsonFormatter for json logging (for integration with orchestrator)
+/// - PrettyFormatter for console readability (when LOG_FORMAT != "json")
+/// - JsonFormatter for json logging (when LOG_FORMAT = "json")
 ///
 /// This will also install color_eyre to handle the panic in the application
 pub fn init_logging() {
@@ -130,22 +130,37 @@ pub fn init_logging() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         // Fallback if RUST_LOG is not set or invalid
         EnvFilter::builder()
-            .with_default_directive(Level::DEBUG.into())
-            .parse("orchestrator=trace")
+            .with_default_directive(Level::INFO.into())
+            .parse("orchestrator=info")
             .expect("Invalid filter directive and Logger control")
     });
 
-    let fmt_layer = fmt::layer()
-        .json()
-        .with_current_span(true)
-        .with_span_list(true)
-        .with_target(true)
-        .with_thread_ids(true)
-        .with_file(true)
-        .with_line_number(true)
-        .event_format(PrettyFormatter);
+    // Check LOG_FORMAT environment variable
+    let log_format = std::env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
 
-    let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+    if log_format == "json" {
+        // JSON format for Loki/Grafana integration
+        let fmt_layer = fmt::layer()
+            .json()
+            .with_current_span(true)
+            .with_span_list(true)
+            .with_target(true)
+            .with_thread_ids(true)
+            .with_file(true)
+            .with_line_number(true);
 
-    tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+        let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+        tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+    } else {
+        // Pretty format for console readability
+        let fmt_layer = fmt::layer()
+            .with_target(true)
+            .with_thread_ids(false)
+            .with_file(true)
+            .with_line_number(true)
+            .event_format(PrettyFormatter);
+
+        let subscriber = Registry::default().with(env_filter).with(fmt_layer).with(ErrorLayer::default());
+        tracing::subscriber::set_global_default(subscriber).expect("Failed to set global default subscriber");
+    }
 }

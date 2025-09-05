@@ -12,7 +12,7 @@ use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use std::sync::Arc;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct AggregatorJobTrigger;
 
@@ -21,7 +21,6 @@ impl JobTrigger for AggregatorJobTrigger {
     /// 1. Fetch all the batches for which the status is Closed
     /// 2. Check if all the child jobs for this batch are Completed
     /// 3. Create the Aggregator job for all such Batches and update the Batch status
-    #[instrument(skip_all, fields(category = "AggregatorWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         info!(log_type = "starting", "AggregatorWorker started");
 

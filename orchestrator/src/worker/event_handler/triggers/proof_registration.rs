@@ -9,13 +9,12 @@ use async_trait::async_trait;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
-use tracing::{debug, error, info, instrument, trace, warn};
+use tracing::{debug, error, info, trace, warn};
 
 pub struct ProofRegistrationJobTrigger;
 
 #[async_trait]
 impl JobTrigger for ProofRegistrationJobTrigger {
-    #[instrument(skip_all, fields(category = "ProofRegistrationWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         trace!(log_type = "starting", "ProofRegistrationWorker started.");
 
