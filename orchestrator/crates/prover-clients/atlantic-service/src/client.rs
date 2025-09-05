@@ -143,6 +143,7 @@ impl AtlanticClient {
     pub async fn create_bucket(
         &self,
         atlantic_api_key: impl AsRef<str>,
+        mock_proof: bool,
     ) -> Result<AtlanticBucketResponse, AtlanticError> {
         // TODO: Use the aggregator version calculated from Madara Version being passed through ENV
         let response = self
@@ -161,6 +162,7 @@ impl AtlanticClient {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
                 },
+                mock_proof,
             })
             .map_err(AtlanticError::BodyParseError)?
             .send()
@@ -176,7 +178,7 @@ impl AtlanticClient {
     /// Close a bucket.
     /// No new child job can be added once the bucket is closed.
     /// We make sure that all the child jobs are completed before closing the bucket.
-    /// It's closed in Aggregator job.
+    /// It's closed in the Aggregator job.
     pub async fn close_bucket(
         &self,
         bucket_id: &str,
@@ -223,7 +225,7 @@ impl AtlanticClient {
         );
 
         let mut request = self.proving_layer.customize_request(
-            // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by Atlantic)
+            // NOTE: Removing layout from the query params as it is unnecessary now (as conveyed by the Atlantic team)
             self.client
                 .request()
                 .method(Method::POST)

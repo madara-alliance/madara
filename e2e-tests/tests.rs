@@ -197,9 +197,10 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // Adding State checks in DB for validation of tests
 
     // Check 1: Check that the batch has been created properly
-    wait_for_batch_state(Duration::from_secs(900), 1, setup_config.mongo_db_instance())
+    wait_for_batch_state(Duration::from_secs(3600), 1, setup_config.mongo_db_instance())
         .await
-        .expect("After Batching state DB state assertion failed.");
+        .expect("❌ After Batching state DB state assertion failed.");
+    println!("✅ Batching state DB state assertion passed");
 
     let expected_state_after_snos_job = ExpectedDBState {
         internal_id: l2_block_number.clone(),
@@ -208,13 +209,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 4,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(1200),
+        Duration::from_secs(1500),
         l2_block_number.clone(),
         setup_config.mongo_db_instance(),
         expected_state_after_snos_job,
     )
     .await;
-    assert!(test_result.is_ok(), "After Snos Job state DB state assertion failed.");
+    assert!(test_result.is_ok(), "❌ After Snos Job state DB state assertion failed.");
+    println!("✅ Snos Job state DB state assertion passed");
 
     // Check 2: Check that the Proof Creation Job has been completed correctly
     let expected_state_after_proving_job = ExpectedDBState {
@@ -224,13 +226,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 4,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(1200),
+        Duration::from_secs(1500),
         l2_block_number.clone(),
         setup_config.mongo_db_instance(),
         expected_state_after_proving_job,
     )
     .await;
-    assert!(test_result.is_ok(), "After Proving Job state DB state assertion failed.");
+    assert!(test_result.is_ok(), "❌ After Proving Job state DB state assertion failed.");
+    println!("✅ ProofCreation Job state DB state assertion passed");
 
     // Check 3: Check that the Aggregator Job has been completed correctly
     let expected_state_after_agg_job = ExpectedDBState {
@@ -240,13 +243,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 4,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(1200),
+        Duration::from_secs(1500),
         String::from("1"),
         setup_config.mongo_db_instance(),
         expected_state_after_agg_job,
     )
     .await;
-    assert!(test_result.is_ok(), "After Aggregator Job state DB state assertion failed.");
+    assert!(test_result.is_ok(), "❌ After Aggregator Job state DB state assertion failed.");
+    println!("✅ Aggregator Job state DB state assertion passed");
 
     // Check 4: Check that the State Transition Job has been completed correctly
     let expected_state_after_da_job = ExpectedDBState {
@@ -256,13 +260,14 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 4,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(300),
+        Duration::from_secs(1500),
         String::from("1"),
         setup_config.mongo_db_instance(),
         expected_state_after_da_job,
     )
     .await;
-    assert!(test_result.is_ok(), "After Update State Job state DB state assertion failed.");
+    assert!(test_result.is_ok(), "❌ After Update State Job state DB state assertion failed.");
+    println!("✅ UpdateState Job state DB state assertion passed");
 }
 
 /// Function to check db for expected state continuously

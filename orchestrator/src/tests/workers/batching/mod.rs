@@ -45,6 +45,7 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             num_blocks: 4,
             squashed_state_updates_path: "state_update/batch/1.json".to_string(),
             is_batch_ready: false,
+            created_at: chrono::Utc::now(),
             ..Default::default()
         };
         // Returning Some(existing_batch) to specify an existing batch

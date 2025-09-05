@@ -22,6 +22,7 @@ use url::Url;
 use crate::core::client::lock::mongodb::MongoLockClient;
 use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
+use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
 use crate::types::Layer;
 use crate::{
@@ -100,12 +101,19 @@ pub struct ConfigParam {
     pub madara_rpc_url: Url,
     pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
+    pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
     /// Layout to use for running SNOS
     pub snos_layout_name: LayoutName,
     /// Layout to use for proving
     pub prover_layout_name: LayoutName,
+    /// Specifies if we should store job artifacts which are not used in the code i.e., not
+    /// necessary for the application, but can be used for auditing purposes.
+    ///
+    /// Currently, being used to check if we should store
+    /// * Aggregator Proof
+    pub store_audit_artifacts: bool,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -192,12 +200,14 @@ impl Config {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
             madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
+            batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
             snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())
                 .context("Failed to get SNOS layout name")?,
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
                 .context("Failed to get prover layout name")?,
+            store_audit_artifacts: run_cmd.store_audit_artifacts,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
