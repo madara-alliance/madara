@@ -35,7 +35,6 @@ struct StateUpdateArtifacts {
 pub struct StateUpdateJobHandler;
 #[async_trait]
 impl JobHandlerTrait for StateUpdateJobHandler {
-    #[tracing::instrument(fields(category = "state_update"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         info!(log_type = "starting", "State update job creation started.");
 
@@ -75,7 +74,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// last time) will not actually work.
     ///
     /// TODO: Update the code in the future releases to fix this.
-    #[tracing::instrument(skip_all, fields(category = "state_update", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
         info!(log_type = "starting", "State update job processing started.");
@@ -179,7 +177,6 @@ impl JobHandlerTrait for StateUpdateJobHandler {
     /// 1. The last settlement tx hash is successful,
     /// 2. The expected last settled block from our configuration is indeed the one found in the
     ///    provider.
-    #[tracing::instrument(skip_all, fields(category = "state_update", job_id = %job.id, internal_id = %job.internal_id), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         info!(log_type = "starting", "State update job verification started.");
 

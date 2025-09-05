@@ -27,7 +27,6 @@ pub struct DAJobHandler;
 
 #[async_trait]
 impl JobHandlerTrait for DAJobHandler {
-    #[tracing::instrument(fields(category = "da"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
         info!(log_type = "starting", category = "da", function_type = "create_job",  block_no = %internal_id, "DA job creation started.");
 
@@ -37,7 +36,6 @@ impl JobHandlerTrait for DAJobHandler {
         Ok(job_item)
     }
 
-    #[tracing::instrument(fields(category = "da"), skip(self, config), ret, err)]
     async fn process_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<String, JobError> {
         let internal_id = job.internal_id.clone();
         info!(
@@ -149,7 +147,6 @@ impl JobHandlerTrait for DAJobHandler {
         Ok(external_id)
     }
 
-    #[tracing::instrument(fields(category = "da"), skip(self, config), ret, err)]
     async fn verify_job(&self, config: Arc<Config>, job: &mut JobItem) -> Result<JobVerificationStatus, JobError> {
         let internal_id = job.internal_id.clone();
         info!(
@@ -202,7 +199,6 @@ impl DAJobHandler {
         );
     }
 
-    #[tracing::instrument(skip(elements))]
     pub fn fft_transformation(elements: Vec<BigUint>) -> Result<Vec<BigUint>, JobError> {
         let xs: Vec<BigUint> = (0..BLOB_LEN)
             .map(|i| {

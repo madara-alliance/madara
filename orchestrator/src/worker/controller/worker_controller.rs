@@ -9,7 +9,7 @@ use futures::future::try_join_all;
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio_util::sync::CancellationToken;
-use tracing::{error, info, info_span, instrument, warn};
+use tracing::{error, info, info_span, warn};
 
 #[derive(Clone)]
 pub struct WorkerController {
@@ -147,7 +147,6 @@ impl WorkerController {
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
-    #[instrument(skip(self), fields(q = %q))]
     async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
         let span = info_span!("worker", q = ?q);
         let _guard = span.enter();
