@@ -843,6 +843,8 @@ pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     /// The max amount and max price per unit of L2 gas used in this tx
     pub l2_gas: ResourceBounds,
+    /// This should not be here, should be fixed with correct impl of rpc 0.8.0
+    pub l1_data_gas:  Option<ResourceBounds>,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]

@@ -723,10 +723,14 @@ impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     pub l2_gas: ResourceBounds,
+    /// This should not be here!
+    /// Also why do we have ResourceBoundsMapping in two places!
+    pub l1_data_gas:  Option<ResourceBounds>,
 }
 
 #[serde_as]
 #[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+/// Also why do we have ResourceBounds in two places!
 pub struct ResourceBounds {
     #[serde_as(as = "U64AsHex")]
     pub max_amount: u64,
@@ -734,17 +738,40 @@ pub struct ResourceBounds {
     pub max_price_per_unit: u128,
 }
 
+impl ResourceBounds {
+    fn zero() -> Self {
+        Self {
+            max_amount: 0,
+            max_price_per_unit: 0,
+        }
+    }
+
+    fn is_zero(&self) -> bool {
+        self.max_amount == 0 && self.max_price_per_unit == 0
+    }
+}
+
 impl From<ResourceBoundsMapping> for mp_rpc::ResourceBoundsMapping {
     fn from(resource: ResourceBoundsMapping) -> Self {
-        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
+        Self {
+            l1_gas: resource.l1_gas.into(),
+            l2_gas: resource.l2_gas.into(),
+            l1_data_gas: Some(resource.l1_data_gas.unwrap_or_else(ResourceBounds::zero).into())
+        }
     }
 }
 
 impl From<mp_rpc::ResourceBoundsMapping> for ResourceBoundsMapping {
     fn from(resource: mp_rpc::ResourceBoundsMapping) -> Self {
-        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
+        let x = Self {
+            l1_gas: resource.l1_gas.into(),
+            l2_gas: resource.l2_gas.into(),
+            l1_data_gas: resource.l1_data_gas.map(|data_gas| data_gas.into())
+        };
+        x
     }
 }
+
 
 impl From<ResourceBounds> for mp_rpc::ResourceBounds {
     fn from(resource: ResourceBounds) -> Self {

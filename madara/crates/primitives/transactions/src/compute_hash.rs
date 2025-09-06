@@ -4,12 +4,7 @@ use starknet_core::utils::starknet_keccak;
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 
-use crate::{
-    DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2,
-    DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3,
-    DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3,
-    L1HandlerTransaction, ResourceBoundsMapping, Transaction,
-};
+use crate::{DataAvailabilityMode, DeclareTransaction, DeclareTransactionV0, DeclareTransactionV1, DeclareTransactionV2, DeclareTransactionV3, DeployAccountTransaction, DeployAccountTransactionV1, DeployAccountTransactionV3, DeployTransaction, InvokeTransaction, InvokeTransactionV0, InvokeTransactionV1, InvokeTransactionV3, L1HandlerTransaction, ResourceBounds, ResourceBoundsMapping, Transaction};
 
 use super::SIMULATE_TX_VERSION_OFFSET;
 
@@ -486,35 +481,46 @@ pub fn compute_hash_given_contract_address(
 
 #[inline]
 fn compute_gas_hash(tip: u64, resource_bounds: &ResourceBoundsMapping) -> Felt {
-    let gas_as_felt = &[
+    // Start with tip, L1_GAS, and L2_GAS (matching Pathfinder's base logic)
+    let mut gas_elements = vec![
         Felt::from(tip),
-        prepare_resource_bound_value(resource_bounds, DataAvailabilityMode::L1),
-        prepare_resource_bound_value(resource_bounds, DataAvailabilityMode::L2),
+        prepare_resource_bound_value_pathfinder_style(&resource_bounds.l1_gas, b"L1_GAS"),
+        prepare_resource_bound_value_pathfinder_style(&resource_bounds.l2_gas, b"L2_GAS"),
     ];
-    Poseidon::hash_array(gas_as_felt)
+
+    // Conditionally add L1 data gas if it exists (matching Pathfinder's conditional logic)
+    if let Some(l1_data_gas) = &resource_bounds.l1_data_gas {
+        if !l1_data_gas.is_zero() {
+            gas_elements.push(prepare_resource_bound_value_pathfinder_style(l1_data_gas, b"L1_DATA"));
+        }
+    }
+
+    Poseidon::hash_array(&gas_elements)
 }
 
-// Use a mapping from execution resources to get corresponding fee bounds
-// Encodes this information into 32-byte buffer then converts it into Felt
-fn prepare_resource_bound_value(
-    resource_bounds_mapping: &ResourceBoundsMapping,
-    da_mode: DataAvailabilityMode,
+// Modified to match Pathfinder's buffer layout exactly
+fn prepare_resource_bound_value_pathfinder_style(
+    resource_bound: &ResourceBounds, // Note: Madara uses ResourceBounds, not ResourceBound
+    name: &[u8],
 ) -> Felt {
     let mut buffer = [0u8; 32];
 
-    buffer[2..8].copy_from_slice(match da_mode {
-        DataAvailabilityMode::L1 => L1_GAS,
-        DataAvailabilityMode::L2 => L2_GAS,
-    });
-    let resource_bounds = match da_mode {
-        DataAvailabilityMode::L1 => resource_bounds_mapping.l1_gas.clone(),
-        DataAvailabilityMode::L2 => resource_bounds_mapping.l2_gas.clone(),
-    };
-    buffer[8..16].copy_from_slice(&resource_bounds.max_amount.to_be_bytes());
-    buffer[16..].copy_from_slice(&resource_bounds.max_price_per_unit.to_be_bytes());
+    // Split buffer to match Pathfinder's layout: [gas_kind(8) | max_amount(8) | max_price(16)]
+    let (remainder, max_price) = buffer.split_at_mut(128 / 8); // 128/8 = 16 bytes for max_price
+    let (gas_kind, max_amount) = remainder.split_at_mut(64 / 8); // 64/8 = 8 bytes for gas_kind
+
+    // Right-pad the gas kind name (matching Pathfinder's padding logic)
+    let padding = gas_kind.len() - name.len();
+    gas_kind[padding..].copy_from_slice(name);
+
+    // Copy max_amount and max_price (matching Pathfinder's field access pattern)
+    // Note: Assuming Madara's ResourceBounds has same field names as Pathfinder's ResourceBound
+    max_amount.copy_from_slice(&resource_bound.max_amount.to_be_bytes());
+    max_price.copy_from_slice(&resource_bound.max_price_per_unit.to_be_bytes());
 
     Felt::from_bytes_be(&buffer)
 }
+
 
 fn prepare_data_availability_modes(
     nonce_data_availability_mode: DataAvailabilityMode,

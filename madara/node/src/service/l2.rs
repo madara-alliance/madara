@@ -69,7 +69,7 @@ impl Service for SyncService {
         let this = self.start_args.take().expect("Service already started");
         let importer = Arc::new(BlockImporter::new(
             this.db_backend.clone(),
-            BlockValidationConfig::default().trust_parent_hash(this.params.unsafe_starting_block.is_some()).all_verifications_disabled(false),
+            BlockValidationConfig::default().trust_parent_hash(this.params.unsafe_starting_block.is_some()).all_verifications_disabled(true),
         ));
 
         let config = SyncControllerConfig::default()
