@@ -1,7 +1,6 @@
 use crate::utils::invoke_contract;
 use crate::utils::LocalWalletSignerMiddleware;
 use color_eyre::Result;
-use starknet::core::types::U256;
 use starknet::core::types::{Felt, InvokeTransactionResult};
 
 pub struct CoreContract {

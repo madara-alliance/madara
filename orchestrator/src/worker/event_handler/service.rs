@@ -614,13 +614,13 @@ impl JobHandlerService {
         attributes: &[KeyValue],
     ) -> Result<(), JobError> {
         let block_number = if let JobType::StateTransition = job_type {
-            parse_string(
+            parse_string::<u64>(
                 external_id
                     .unwrap_string()
                     .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
             )
         } else {
-            parse_string(internal_id)
+            parse_string::<u64>(internal_id)
         }?;
 
         // ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);

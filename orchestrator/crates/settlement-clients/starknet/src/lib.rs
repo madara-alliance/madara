@@ -26,8 +26,7 @@ use starknet::signers::{LocalWallet, SigningKey};
 use tokio::time::{sleep, Duration};
 
 use crate::conversion::{slice_slice_u8_to_vec_field, u64_from_felt};
-
-pub type LocalWalletSignerMiddleware = Arc<SingleOwnerAccount<Arc<JsonRpcClient<HttpTransport>>, LocalWallet>>;
+use crate::utils::LocalWalletSignerMiddleware;
 
 pub struct StarknetSettlementClient {
     pub account: LocalWalletSignerMiddleware,

@@ -29,7 +29,6 @@ use snos_core::{
     PieGenerationInput,   // Input struct
     PieGenerationResult,  // Result struct
 };
-use starknet_core::types::Felt;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
@@ -206,7 +205,6 @@ impl SnosJobHandler {
         data_storage: &dyn StorageClient,
         snos_metadata: &SnosMetadata,
         cairo_pie: CairoPie,
-        snos_output: Vec<Felt>,
         snos_output: Vec<Felt>,
         program_output: Vec<Felt252>,
     ) -> Result<(), SnosError> {

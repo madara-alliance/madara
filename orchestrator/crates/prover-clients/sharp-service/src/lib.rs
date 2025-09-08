@@ -13,7 +13,6 @@ use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
     CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
-use crate::types::CairoJobStatus;
 use uuid::Uuid;
 
 use crate::client::SharpClient;
