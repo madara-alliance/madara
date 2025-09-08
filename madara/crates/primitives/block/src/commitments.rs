@@ -187,7 +187,7 @@ pub fn compute_event_commitment(
     if starknet_version < StarknetVersion::V0_13_2 {
         compute_merkle_root::<Pedersen>(peekable)
     } else {
-        println!("THIS IS WHERE WE COMPUTE EVENTS #3");
+        // println!("THIS IS WHERE WE COMPUTE EVENTS #3");
         compute_merkle_root::<Poseidon>(peekable)
     }
 }
@@ -221,7 +221,7 @@ pub fn compute_receipt_commitment(
 // It seems lambdaclass' crypto lib does not do simd hashing, we may want to look into that.
 pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator<Item = Felt>) -> Felt {
     //TODO: replace the identifier by an empty slice when bonsai supports it
-    println!("THIS IS WHERE WE COMPUTE EVENTS #4");
+    // println!("THIS IS WHERE WE COMPUTE EVENTS #4");
 
     const IDENTIFIER: &[u8] = b"0xinmemory";
     let config = bonsai_trie::BonsaiStorageConfig::default();

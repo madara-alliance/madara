@@ -299,7 +299,7 @@ impl BlockProductionTask {
         let n_txs = block.transactions.len();
 
 
-        println!("This is inside close_and_save_block that calls add_full_block_with_classes ");
+        // println!("This is inside close_and_save_block that calls add_full_block_with_classes ");
         // Close and import the block
         let block_hash = self
             .backend
@@ -432,7 +432,7 @@ impl BlockProductionTask {
                     .context("Updating mempool state")?;
 
                 let (block, classes) = state.block.into_full_block_with_classes(&self.backend, state.block_n)?;
-                println!("This is where we process reply");
+                // println!("This is where we process reply");
                 let block_hash = self
                     .close_and_save_block(state.block_n, block, classes, state.tx_executed_for_tick)
                     .await

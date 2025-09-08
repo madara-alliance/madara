@@ -18,16 +18,16 @@ impl TryFrom<&ConvertedClass> for RunnableCompiledClass {
                 let mut sierra_version = info.contract_class.sierra_version().map_err(|_| {
                     ProgramError::Parse(serde_json::Error::custom("Failed to get sierra version from program"))
                 })?;
-                
+
                 // let myhash = Felt::from_str("0x65b23055536eea6ee47143c5af666fe8e6504def015be54ea225ee11a39da45").unwrap();
                 // if myhash == info.compiled_class_hash {
                 //     sierra_version = SierraVersion::new(
                 //         1,7,0
                 //     )
                 // }
-                
-                println!("DEBUG Sierra version: {:?}", sierra_version);
-                println!("DEBUG Sierra version: {:?}", info.compiled_class_hash);
+
+                // println!("DEBUG Sierra version: {:?}", sierra_version);
+                // println!("DEBUG Sierra version: {:?}", info.compiled_class_hash);
                 RunnableCompiledClass::try_from(ApiContractClass::V1((compiled.as_ref().try_into()?, sierra_version)))
             }
         }

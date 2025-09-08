@@ -168,8 +168,8 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u64,
 ) -> anyhow::Result<BlockExecutionContext> {
-    println!("Creating execution context");
-    println!("This is where we set the block_timestamp for each block !");
+    // println!("Creating execution context");
+    // println!("This is where we set the block_timestamp for each block !");
 
     let original_rpc = std::env::var("RPC_URL_ORIGINAL_NODE")
         .unwrap_or_else(|_| "default_rpc_url".to_string());
@@ -178,8 +178,8 @@ pub(crate) fn create_execution_context(
     let rt = tokio::runtime::Runtime::new()?;
     let block_timestamp = rt.block_on(get_block_timestamp(original_rpc.as_str(), block_n)).unwrap();
 
-    println!("Got the block timestamp from Paradex {}", block_timestamp);
-    println!("Here is the global state root for block number {}", block_n);
+    // println!("Got the block timestamp from Paradex {}", block_timestamp);
+    // println!("Here is the global state root for block number {}", block_n);
 
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,

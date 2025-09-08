@@ -229,7 +229,7 @@ impl ExecutorThread {
             previous_l2_gas_used,
         )?;
 
-        println!("Execution context created : {:?}", exec_ctx);
+        // println!("Execution context created : {:?}", exec_ctx);
 
         // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
