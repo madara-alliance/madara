@@ -716,9 +716,8 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 
 [[package]]
 name = "apollo_compilation_utils"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "086ad26f558eea2a36c05b0205ec05facd242fa317fe01ddc9380667786da9dd"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.12.0-dev.1",
@@ -736,9 +735,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_compile_to_native"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0991c3c7d8f17263c29b7125f2b63d7edc57624f9a3189041ff1650a81ca31ba"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_config",
@@ -752,9 +750,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_config"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c39449bebca20ed3afc6dad368d2fbb530133befaeb5830c932eae7d3bd462e"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -765,14 +762,14 @@ dependencies = [
  "strum_macros 0.25.3",
  "thiserror 1.0.69",
  "tracing",
+ "url",
  "validator",
 ]
 
 [[package]]
 name = "apollo_infra_utils"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ac9378ed6b1957b7327c407dd81a0c768e0f04184784f4702c0aae42cefcfdbd"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "assert-json-diff",
  "colored 3.0.0",
@@ -788,9 +785,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_metrics"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "09bb2ff0d8a95283888804decabd00a269f0c42af0411cfa722211a376db829c"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "indexmap 2.9.0",
  "metrics",
@@ -1704,9 +1700,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cff1846a7ae3878bebad894513928c04c28293baa75c7ea98d3aece3c6d4ba2d"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
@@ -1754,9 +1749,8 @@ dependencies = [
 
 [[package]]
 name = "blockifier_test_utils"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f7aee3ed7cb993720fd5955e2edbffa109ede40186c690503fb93ebaffbf436"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -3664,9 +3658,9 @@ dependencies = [
 
 [[package]]
 name = "cairo-native"
-version = "0.5.0-rc.5"
+version = "0.5.0-rc.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6629dd8614a0745e588d71542d570f0c74bf74a704382c806822fbc43708d4d9"
+checksum = "4a0d61db673287e071a97aca5b1127dddd40f97d8247818f2d5d37ba94a78c74"
 dependencies = [
  "anyhow",
  "aquamarine",
@@ -9936,9 +9930,8 @@ dependencies = [
 
 [[package]]
 name = "starknet_api"
-version = "0.15.0-rc.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e148691693b2882d9a25bd1af3eaa001120317c78cd2251399ca71f3c3f23fe"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "base64 0.13.1",

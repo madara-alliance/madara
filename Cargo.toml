@@ -138,7 +138,7 @@ opentelemetry = { version = "0.30.0", features = ["metrics", "logs"] }
 opentelemetry_sdk = { version = "0.30.0", features = ["rt-tokio", "logs"] }
 opentelemetry-stdout = { version = "0.30.0" }
 opentelemetry-otlp = { version = "0.30.0", features = [
-  "tonic",
+  "grpc-tonic",
   "metrics",
   "logs",
 ] }
@@ -152,7 +152,7 @@ tracing-subscriber = { version = "0.3.18", features = [
   "std",
 ] }
 tracing-test = "0.2.5"
-tracing-opentelemetry = "0.25.0"
+tracing-opentelemetry = "0.31.0"
 
 # Networking
 jsonrpsee = { version = "0.22", default-features = false, features = [

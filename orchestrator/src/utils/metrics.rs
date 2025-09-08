@@ -1,14 +1,11 @@
-use crate::metrics::OrchestratorMetrics;
-use opentelemetry::metrics::{Counter, Histogram, Meter, ObservableGauge};
-use opentelemetry::{global, KeyValue};
 use once_cell::sync::Lazy;
+use opentelemetry::global;
+use opentelemetry::metrics::{Counter, Gauge, Histogram, Meter};
 
-pub static ORCHESTRATOR_METRICS: Lazy<OrchestratorMetrics> = Lazy::new(|| {
-    OrchestratorMetrics::register()
-});
+pub static ORCHESTRATOR_METRICS: Lazy<OrchestratorMetrics> = Lazy::new(|| OrchestratorMetrics::register());
 
 pub struct OrchestratorMetrics {
-    pub block_gauge: ObservableGauge<f64>,
+    pub block_gauge: Gauge<f64>,
     pub successful_job_operations: Counter<u64>,
     pub failed_job_operations: Counter<u64>,
     pub failed_jobs: Counter<u64>,
@@ -24,7 +21,7 @@ impl OrchestratorMetrics {
 
         // --- Instruments ---
         let block_gauge = meter
-            .f64_observable_gauge("block_state")
+            .f64_gauge("block_state")
             .with_description("A gauge to show block state at given time")
             .with_unit("block")
             .build();
