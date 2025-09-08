@@ -8712,6 +8712,8 @@ dependencies = [
  "starknet 0.14.0",
  "starknet-core 0.13.0",
  "starknet-crypto 0.7.4",
+ "starknet-types-core 0.1.9",
+ "starknet_api 0.15.0-rc.2",
  "strum 0.26.3",
  "strum_macros 0.26.4",
  "swiftness_proof_parser",

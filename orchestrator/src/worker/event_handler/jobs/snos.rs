@@ -20,6 +20,7 @@ use cairo_vm::Felt252;
 use starknet_core::types::Felt;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
+use orchestrator_utils::env_utils::get_env_var_or_panic;
 use orchestrator_utils::layer::Layer;
 use snos_core::{
     generate_pie, // The main function
@@ -29,11 +30,48 @@ use snos_core::{
     PieGenerationInput,   // Input struct
     PieGenerationResult,  // Result struct
 };
+use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
+use starknet::providers::Provider;
+use starknet::providers::Url;
+use starknet_api::core::{ChainId, ContractAddress};
+
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
 
 pub struct SnosJobHandler;
+
+#[async_trait]
+pub trait ChainConfigFromExt {
+    async fn get_chain_config(rpc_url: String) -> Result<ChainConfig>;
+}
+
+#[async_trait]
+impl ChainConfigFromExt for ChainConfig {
+    async fn get_chain_config(rpc_url: String) -> Result<ChainConfig> {
+        let rpc_url = Url::parse(&rpc_url)?;
+        let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
+        let chain_id = provider.chain_id().await?;
+        let strk_fee_token_address_env_var =
+            get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_NATIVE_FEE_TOKEN_ADDRESS");
+        let strk_fee_token_address =
+            ContractAddress::try_from(Felt::from_hex_unchecked(&strk_fee_token_address_env_var))?;
+        Ok(ChainConfig { chain_id: ChainId::from(chain_id.to_string()), strk_fee_token_address })
+    }
+}
+
+trait OsHintsConfigurationFromLayer {
+    fn with_layer(layer: Layer) -> OsHintsConfiguration;
+}
+
+impl OsHintsConfigurationFromLayer for OsHintsConfiguration {
+    fn with_layer(layer: Layer) -> OsHintsConfiguration {
+        match layer {
+            Layer::L2 => OsHintsConfiguration { debug_mode: true, full_output: true, use_kzg_da: false },
+            Layer::L3 => OsHintsConfiguration { debug_mode: true, full_output: false, use_kzg_da: false },
+        }
+    }
+}
 
 #[async_trait]
 impl JobHandlerTrait for SnosJobHandler {
@@ -84,12 +122,16 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!(job_id = %job.internal_id, "Calling prove_block function");
 
+        let rpc_url = get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL");
         let input = PieGenerationInput {
-            rpc_url: "https://random.xyz".to_string(),
-            blocks: vec![1309254],
-            chain_config: ChainConfig::default(),
-            os_hints_config: OsHintsConfiguration::default(),
-            output_path: None,  // No file output
+            rpc_url: rpc_url.clone(),
+            blocks: vec![block_number],
+
+            chain_config: ChainConfig::get_chain_config(rpc_url)
+                .await
+                .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
+            os_hints_config: OsHintsConfiguration::with_layer(config.layer().clone()),
+            output_path: None, // No file output
         };
 
         let snos_output: PieGenerationResult =

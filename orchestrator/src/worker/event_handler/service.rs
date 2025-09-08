@@ -614,16 +614,16 @@ impl JobHandlerService {
         attributes: &[KeyValue],
     ) -> Result<(), JobError> {
         let block_number = if let JobType::StateTransition = job_type {
-            parse_string::<u64>(
+            parse_string(
                 external_id
                     .unwrap_string()
                     .map_err(|e| JobError::Other(OtherError::from(format!("Could not parse string: {e}"))))?,
             )
         } else {
-            parse_string::<u64>(internal_id)
+            parse_string(internal_id)
         }?;
 
-        // ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
+        ORCHESTRATOR_METRICS.block_gauge.record(block_number, attributes);
         Ok(())
     }
     /// To get Box<dyn Worker> handler from `WorkerTriggerType`.
