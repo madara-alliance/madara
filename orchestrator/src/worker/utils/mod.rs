@@ -10,7 +10,7 @@ use crate::error::other::OtherError;
 use alloy::primitives::U256;
 use color_eyre::eyre::eyre;
 pub(crate) use orchestrator_ethereum_settlement_client::conversion::hex_string_to_u8_vec;
-use starknet_os::io::output::StarknetOsOutput;
+// use starknet_os::io::output::StarknetOsOutput;
 use starknet_core::types::Felt;
 
 pub mod fact_info;

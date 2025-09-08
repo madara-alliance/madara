@@ -12,7 +12,7 @@ use orchestrator_gps_fact_checker::FactChecker;
 use orchestrator_prover_client_interface::{
     CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
 };
-use starknet_os::sharp::CairoJobStatus;
+use crate::types::CairoJobStatus;
 use uuid::Uuid;
 
 use crate::client::SharpClient;
@@ -54,8 +54,8 @@ impl ProverClient for SharpProverService {
         );
         match task {
             Task::CreateJob(CreateJobInfo { cairo_pie, .. }) => {
-                let encoded_pie =
-                    starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
+                let encoded_pie = serde_json::to_string(cairo_pie.as_ref())
+                    .map_err(|e| ProverClientError::PieEncoding(e.to_string()))?;
                 let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",

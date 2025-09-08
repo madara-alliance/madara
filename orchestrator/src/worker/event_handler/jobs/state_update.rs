@@ -26,7 +26,7 @@ use swiftness_proof_parser::{parse, StarkProof};
 use tracing::{debug, error, info, trace, warn};
 
 struct StateUpdateArtifacts {
-    snos_output: Option<StarknetOsOutput>,
+    snos_output: Option<Vec<Felt>>,
     program_output: Vec<[u8; 32]>,
     blob_data: Vec<Vec<u8>>,
 }

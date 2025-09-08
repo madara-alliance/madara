@@ -1,4 +1,3 @@
-use crate::core::client::database::constant::JOBS_COLLECTION;
 use crate::metrics::OrchestratorMetrics;
 use opentelemetry::metrics::{Counter, Histogram, Meter, ObservableGauge};
 use opentelemetry::{global, KeyValue};

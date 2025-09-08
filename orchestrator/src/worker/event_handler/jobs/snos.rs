@@ -116,7 +116,7 @@ impl JobHandlerTrait for SnosJobHandler {
                 error!(job_id = %job.internal_id, error = %e, "Failed to get fact hash");
                 JobError::FactError(FactError::L2FactCompute)
             })?;
-            let program_output = get_program_output(&cairo_pie).map_err(|e| {
+            let program_output = get_program_output(&cairo_pie, false).map_err(|e| {
                 error!(job_id = %job.internal_id, error = %e, "Failed to get program output");
                 JobError::FactError(FactError::ProgramOutputCompute)
             })?;
@@ -124,7 +124,7 @@ impl JobHandlerTrait for SnosJobHandler {
         } else if os_output.get(8) == Some(&Felt::ONE) {
             debug!(job_id = %job.internal_id, "Using blobs for settlement layer");
             // Get the program output from CairoPie
-            let fact_info = get_fact_info(&cairo_pie, None)?;
+            let fact_info = get_fact_info(&cairo_pie, None, false)?;
             (fact_info.fact, fact_info.program_output)
         } else {
             error!(job_id = %job.internal_id, "Invalid KZG flag");
