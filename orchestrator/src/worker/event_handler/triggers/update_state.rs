@@ -226,30 +226,34 @@ impl UpdateStateJobTrigger {
                 state_metadata.blob_data_paths.push(blob_path.clone());
             }
         }
-        // Create job metadata
-        let metadata = JobMetadata {
-            common: CommonMetadata::default(),
-            specific: JobSpecificMetadata::StateUpdate(state_metadata),
-        };
 
-        // Create the state transition job
-        let new_job_id = blocks_to_process[0].to_string();
-        match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
-            .await
-        {
-            Ok(_) => tracing::info!(block_id = %new_job_id, "Successfully created new state transition job"),
-            Err(e) => {
-                tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
-                let attributes = [
-                    KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
-                    KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                ];
-                ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
-                return Err(e.into());
-            }
+        Ok(())
+    }
+
+    async fn collect_paths_l2(
+        &self,
+        config: &Arc<Config>,
+        batches_to_process: &Vec<u64>,
+        state_metadata: &mut StateUpdateMetadata,
+    ) -> color_eyre::Result<()> {
+        for batch_no in batches_to_process {
+            // Get the aggregator job metadata for the batch
+            let aggregator_job = config
+                .database()
+                .get_job_by_internal_id_and_type(&batch_no.to_string(), &JobType::Aggregator)
+                .await?
+                .ok_or_else(|| eyre!("SNOS job not found for block {}", batch_no))?;
+            let aggregator_metadata: AggregatorMetadata = aggregator_job.metadata.specific.try_into().map_err(|e| {
+                tracing::error!(job_id = %aggregator_job.internal_id, error = %e, "Invalid metadata type for Aggregator job");
+                e
+            })?;
+
+            // Add the snos output path, program output path and blob data path in state transition metadata
+            state_metadata.snos_output_paths.push(aggregator_metadata.snos_output_path.clone());
+            state_metadata.program_output_paths.push(aggregator_metadata.program_output_path.clone());
+            state_metadata.blob_data_paths.push(aggregator_metadata.blob_data_path.clone());
         }
 
-        tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
         Ok(())
     }
 }

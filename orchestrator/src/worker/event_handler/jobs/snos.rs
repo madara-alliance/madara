@@ -21,8 +21,15 @@ use starknet_core::types::Felt;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use orchestrator_utils::layer::Layer;
-use prove_block::prove_block;
-use starknet_os::io::output::StarknetOsOutput;
+use snos_core::{
+    generate_pie, // The main function
+    // PieGenerationError,     // Error enum - Unused
+    ChainConfig,          // Chain configuration
+    OsHintsConfiguration, // OS hints configuration
+    PieGenerationInput,   // Input struct
+    PieGenerationResult,  // Result struct
+};
+use starknet_core::types::Felt;
 use std::sync::Arc;
 use tempfile::NamedTempFile;
 use tracing::{debug, error};
@@ -78,15 +85,24 @@ impl JobHandlerTrait for SnosJobHandler {
         let snos_url = snos_url.trim_end_matches('/');
         debug!(job_id = %job.internal_id, "Calling prove_block function");
 
-        let (cairo_pie, snos_output) =
-            prove_block(COMPILED_OS, block_number, snos_url, LayoutName::all_cairo, snos_metadata.full_output)
-                .await
+        let input = PieGenerationInput {
+            rpc_url: "https://random.xyz".to_string(),
+            blocks: vec![1309254],
+            chain_config: ChainConfig::default(),
+            os_hints_config: OsHintsConfiguration::default(),
+            output_path: None,  // No file output
+        };
+
+        let snos_output: PieGenerationResult =
+            generate_pie(input).await
                 .map_err(|e| {
                     error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
                     SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
                 })?;
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
-
+        
+        let cairo_pie = snos_output.output.cairo_pie;
+        let os_output = snos_output.output.os_output;
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
         // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
         // calldata based DA.
@@ -132,7 +148,7 @@ impl JobHandlerTrait for SnosJobHandler {
                 config.storage(),
                 &snos_metadata,
                 cairo_pie,
-                snos_output,
+                os_output,
                 program_output,
             )
             .await?;
@@ -190,6 +206,7 @@ impl SnosJobHandler {
         data_storage: &dyn StorageClient,
         snos_metadata: &SnosMetadata,
         cairo_pie: CairoPie,
+        snos_output: Vec<Felt>,
         snos_output: Vec<Felt>,
         program_output: Vec<Felt252>,
     ) -> Result<(), SnosError> {

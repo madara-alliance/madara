@@ -10,8 +10,10 @@ use alloy_primitives::B256;
 use async_trait::async_trait;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_gps_fact_checker::FactChecker;
-use orchestrator_prover_client_interface::{ProverClient, ProverClientError, Task, TaskStatus};
-use starknet_os::sharp::CairoJobStatus;
+use orchestrator_prover_client_interface::{
+    CreateJobInfo, ProverClient, ProverClientError, Task, TaskStatus, TaskType,
+};
+use crate::types::CairoJobStatus;
 use uuid::Uuid;
 
 use crate::client::SharpClient;
@@ -52,10 +54,10 @@ impl ProverClient for SharpProverService {
             "Submitting Cairo PIE task."
         );
         match task {
-            Task::CairoPie(cairo_pie) => {
-                let encoded_pie =
-                    starknet_os::sharp::pie::encode_pie_mem(*cairo_pie).map_err(ProverClientError::PieEncoding)?;
-                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, proof_layout).await?;
+            Task::CreateJob(CreateJobInfo { cairo_pie, .. }) => {
+                let encoded_pie = serde_json::to_string(cairo_pie.as_ref())
+                    .map_err(|e| ProverClientError::PieEncoding(e.to_string()))?;
+                let (_, job_key) = self.sharp_client.add_job(&encoded_pie, self.proof_layout).await?;
                 tracing::info!(
                     log_type = "completed",
                     category = "submit_task",
