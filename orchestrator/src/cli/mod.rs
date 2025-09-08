@@ -8,6 +8,7 @@ pub use service::ServiceCliArgs as ServiceParams;
 use url::Url;
 
 pub mod alert;
+pub mod batching;
 pub mod cron;
 pub mod da;
 pub mod database;
@@ -144,6 +145,9 @@ pub struct RunCmd {
     #[clap(flatten)]
     pub snos_args: snos::SNOSCliArgs,
 
+    #[clap(flatten)]
+    pub batching_args: batching::BatchingCliArgs,
+
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
 
@@ -163,6 +167,9 @@ pub struct RunCmd {
     /// This starts a local mock server that simulates the Atlantic prover service.
     #[clap(long)]
     pub mock_atlantic_server: bool,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", long)]
+    pub store_audit_artifacts: bool,
 }
 
 #[derive(Parser, Debug, Clone)]
