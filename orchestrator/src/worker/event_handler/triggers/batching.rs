@@ -27,6 +27,7 @@ use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
 use tokio::try_join;
+use tracing::{debug, error, info, trace};
 
 pub struct BatchingTrigger {
     data: HashSet<u64>,
@@ -46,7 +47,7 @@ impl JobTrigger for BatchingTrigger {
     /// 2. Fetch the last batch and check its `end_block`
     /// 3. Assign batches to all the remaining blocks and store the squashed state update in storage
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
+        info!(log_type = "starting", "BatchingWorker started");
 
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
         match config
@@ -61,12 +62,12 @@ impl JobTrigger for BatchingTrigger {
         {
             Ok(_) => {
                 // Lock acquired successfully
-                tracing::info!("BatchingWorker acquired lock");
+                info!("BatchingWorker acquired lock");
             }
             Err(err) => {
                 // Failed to acquire lock
                 // Returning safely
-                tracing::info!("BatchingWorker failed to acquire lock, returning safely: {}", err);
+                info!("BatchingWorker failed to acquire lock, returning safely: {}", err);
                 return Ok(());
             }
         }
@@ -90,7 +91,7 @@ impl JobTrigger for BatchingTrigger {
             .max_block_to_process
             .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
-        tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch.");
+        debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch");
 
         // Calculating the first block number to for which a batch needs to be assigned
         let first_block_to_assign_batch =
@@ -105,7 +106,7 @@ impl JobTrigger for BatchingTrigger {
         // Releasing the lock
         config.lock().release_lock("BatchingWorker", None).await?;
 
-        tracing::trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
+        trace!(log_type = "completed", "BatchingWorker completed.");
         Ok(())
     }
 }
@@ -134,7 +135,7 @@ impl BatchingTrigger {
     }
 
     /// assign_batch_to_blocks assigns a batch to all the blocks from `start_block_number` to
-    /// `end_block_number` and updates the state in DB and stores the output in storage
+    /// `end_block_number`, updates the state in DB and stores the result in storage
     async fn assign_batch_to_blocks(
         &self,
         start_block_number: u64,
@@ -143,7 +144,7 @@ impl BatchingTrigger {
     ) -> Result<(), JobError> {
         if end_block_number < start_block_number {
             return Err(JobError::Other(OtherError(eyre!(
-                "end_block_number {} is smaller than start_block_number {}",
+                "Failed to assign batch to blocks as end_block_number ({}) is smaller than start_block_number ({})",
                 end_block_number,
                 start_block_number
             ))));
@@ -260,7 +261,7 @@ impl BatchingTrigger {
                 }
             }
             PendingUpdate(_) => {
-                tracing::info!("Skipping batching for block {} as it is still pending", block_number);
+                info!("Skipping batching for block {} as it is still pending", block_number);
                 Ok((prev_state_update, current_batch))
             }
         }
@@ -268,15 +269,14 @@ impl BatchingTrigger {
 
     async fn start_batch(&self, config: &Arc<Config>, index: u64, start_block: u64) -> Result<Batch, JobError> {
         // Start a new bucket
-        let bucket_id = config
-            .prover_client()
-            .submit_task(Task::CreateBucket)
-            .await
-            .map_err(|e| {
-                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
-            })?;
-        tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
+        let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
+            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+            JobError::Other(OtherError(eyre!(
+                "Prover Client Error: Failed to submit create bucket task to prover client, {}",
+                e
+            ))) // TODO: Add a new error type to be used for prover client error
+        })?;
+        info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
         Ok(Batch::new(
             index,
             start_block,

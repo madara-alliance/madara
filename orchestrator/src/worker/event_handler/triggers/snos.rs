@@ -14,7 +14,7 @@ use opentelemetry::KeyValue;
 use starknet::providers::Provider;
 use std::cmp::{max, min};
 use std::sync::Arc;
-use tracing::debug;
+use tracing::{debug, error, info, instrument, warn};
 
 /// Triggers the creation of SNOS (Starknet Network Operating System) jobs.
 ///
@@ -76,17 +76,18 @@ impl JobTrigger for SnosJobTrigger {
     /// - Returns early if no slots are available for new jobs
     /// - Respects concurrency limits defined in service configuration
     /// - Processes blocks in order while filling available slots efficiently
+    #[instrument(skip_all, fields(category = "SnosWorker"), ret, err)]
     async fn run_worker(&self, config: Arc<Config>) -> Result<()> {
         // Self-healing: recover any orphaned SNOS jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::SnosRun).await {
-            tracing::error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
+            error!(error = %e, "Failed to heal orphaned SNOS jobs, continuing with normal processing");
         }
 
         let bounds = self.calculate_processing_bounds(&config).await?;
         let mut context = self.initialize_scheduling_context(&config, bounds).await?;
 
         if context.available_slots == 0 {
-            tracing::warn!("All slots occupied by pre-existing jobs, skipping SNOS job creation!");
+            warn!("All slots occupied by pre-existing jobs, skipping SNOS job creation!");
             return Ok(());
         }
 
@@ -292,9 +293,9 @@ impl SnosJobTrigger {
         end: u64,
         range_name: &str,
     ) -> Result<()> {
-        // Skip if range is invalid or empty
+        // Skip if the range is invalid or empty
         if start >= end || end == 0 {
-            tracing::debug!("Skipping {} range: start={}, end={}", range_name, start, end);
+            debug!("Skipping {} range: start={}, end={}", range_name, start, end);
             return Ok(());
         }
 
@@ -326,11 +327,11 @@ impl SnosJobTrigger {
     /// * `Result<()>` - Success or error from job creation process
     async fn create_scheduled_jobs(&self, config: &Arc<Config>, blocks: Vec<u64>) -> Result<()> {
         if blocks.is_empty() {
-            tracing::info!("No blocks to process, skipping job creation");
+            info!("No blocks to process, skipping job creation");
             return Ok(());
         }
 
-        tracing::info!("Creating SNOS jobs for {} blocks: {:?}", blocks.len(), blocks);
+        info!("Creating SNOS jobs for {} blocks: {:?}", blocks.len(), blocks);
         create_jobs_snos(config.clone(), blocks).await
     }
 
@@ -518,9 +519,9 @@ async fn create_jobs_snos(config: Arc<Config>, block_numbers_to_pocesss: Vec<u64
         let metadata = create_job_metadata(block_num, config.snos_config().snos_full_output);
 
         match JobHandlerService::create_job(JobType::SnosRun, block_num.to_string(), metadata, config.clone()).await {
-            Ok(_) => tracing::info!("Successfully created new Snos job: {}", block_num),
+            Ok(_) => info!("Successfully created new Snos job: {}", block_num),
             Err(e) => {
-                tracing::warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
+                warn!(block_id = %block_num, error = %e, "Failed to create new Snos job");
                 let attributes = [
                     KeyValue::new("operation_job_type", format!("{:?}", JobType::SnosRun)),
                     KeyValue::new("operation_type", format!("{:?}", "create_job")),

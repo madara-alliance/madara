@@ -65,6 +65,13 @@ async fn main() {
     }
 }
 
+/// Initializes the orchestrator with the provided configuration
+/// It does the following:
+/// 1. Start instrumentation
+/// 2. Generate [Config] from [RunCmd]
+/// 3. Starts the server for sending manual requests
+/// 4. Initialize worker
+/// 5. Setup signal handling for graceful shutdown
 async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
     let config = OTELConfig::try_from(run_cmd.instrumentation_args.clone())?;
     let instrumentation = OrchestratorInstrumentation::new(&config)?;
@@ -90,7 +97,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
 
     info!("Initiating orchestrator shutdown sequence (triggered by: {})", shutdown_signal);
 
-    // Perform graceful shutdown with timeout
+    // Perform a graceful shutdown with timeout
     let shutdown_result = signal_handler
         .handle_graceful_shutdown(
             || async {

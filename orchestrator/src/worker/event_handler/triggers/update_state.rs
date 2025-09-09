@@ -14,6 +14,7 @@ use itertools::Itertools;
 use opentelemetry::KeyValue;
 use orchestrator_utils::layer::Layer;
 use std::sync::Arc;
+use tracing::{error, info, trace, warn};
 
 pub struct UpdateStateJobTrigger;
 
@@ -25,11 +26,11 @@ impl JobTrigger for UpdateStateJobTrigger {
     /// 3. Sanitize and Trim this list of batches
     /// 4. Create a StateTransition job for doing state transitions for all the batches in this list
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
+        trace!(log_type = "starting", "UpdateStateWorker started.");
 
         // Self-healing: recover any orphaned StateTransition jobs before creating new ones
         if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
-            tracing::error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
+            error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
         }
 
         let parent_job_type = match config.layer() {
@@ -44,7 +45,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             Some(job) => {
                 if job.status != JobStatus::Completed {
                     // If we already have a StateTransition job which is not completed, don't start a new job as it can cause issues
-                    tracing::warn!(
+                    warn!(
                         "There's already a pending update state job. Parallel jobs can cause nonce issues or can \
                          completely fail as the update logic needs to be strictly ordered. Returning safely..."
                     );
@@ -52,12 +53,10 @@ impl JobTrigger for UpdateStateJobTrigger {
                 }
 
                 // Extract blocks/batches from state transition metadata
-                let state_update_metadata: StateUpdateMetadata = job.metadata.specific
-                    .try_into()
-                    .map_err(|e| {
-                        tracing::error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for state transition job");
-                        e
-                    })?;
+                let state_update_metadata: StateUpdateMetadata = job.metadata.specific.try_into().map_err(|e| {
+                    error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for state transition job");
+                    e
+                })?;
 
                 let mut processed = match state_update_metadata.context {
                     SettlementContext::Block(block) => block.to_settle,
@@ -82,7 +81,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                 )
             }
             None => {
-                tracing::warn!("No previous state transition job found, fetching latest parent job");
+                warn!("No previous state transition job found, fetching latest parent job");
                 // Getting the latest parent job in case no latest state update job is present
                 (
                     config
@@ -99,7 +98,7 @@ impl JobTrigger for UpdateStateJobTrigger {
 
         // no parent jobs completed after the last settled block
         if to_process.is_empty() {
-            tracing::warn!("No parent jobs completed after the last settled block/batch. Returning safely...");
+            warn!("No parent jobs completed after the last settled block/batch. Returning safely...");
             return Ok(());
         }
 
@@ -107,7 +106,7 @@ impl JobTrigger for UpdateStateJobTrigger {
         match last_processed {
             Some(last_block) => {
                 if to_process[0] != last_block + 1 {
-                    tracing::warn!(
+                    warn!(
                         "Parent job for the block/batch just after the last settled block/batch ({}) is not yet completed. Returning safely...", last_block
                     );
                     return Ok(());
@@ -118,7 +117,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                     Layer::L2 => {
                         // if the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to 1
                         if to_process[0] != 1 {
-                            tracing::warn!("Aggregator job for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", to_process[0]);
+                            warn!("Aggregator job for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", to_process[0]);
                             return Ok(());
                         }
                     }
@@ -126,7 +125,7 @@ impl JobTrigger for UpdateStateJobTrigger {
                         // If the last processed block is not there, check if the first being processed is equal to min_block_to_process (default=0)
                         let min_block_to_process = config.service_config().min_block_to_process;
                         if to_process[0] != min_block_to_process {
-                            tracing::warn!("DA job for the first block is not yet completed. Returning safely...");
+                            warn!("DA job for the first block is not yet completed. Returning safely...");
                             return Ok(());
                         }
                     }
@@ -167,9 +166,9 @@ impl JobTrigger for UpdateStateJobTrigger {
         match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
             .await
         {
-            Ok(_) => tracing::info!(job_id = %new_job_id, "Successfully created new state transition job"),
+            Ok(_) => info!(job_id = %new_job_id, "Successfully created new state transition job"),
             Err(e) => {
-                tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
+                error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
                 let attributes = [
                     KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
                     KeyValue::new("operation_type", format!("{:?}", "create_job")),
@@ -179,7 +178,7 @@ impl JobTrigger for UpdateStateJobTrigger {
             }
         }
 
-        tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
+        trace!(log_type = "completed", "UpdateStateWorker completed.");
         Ok(())
     }
 }
@@ -199,7 +198,7 @@ impl UpdateStateJobTrigger {
                 .await?
                 .ok_or_else(|| eyre!("SNOS job not found for block {}", block_number))?;
             let snos_metadata: SnosMetadata = snos_job.metadata.specific.try_into().map_err(|e| {
-                tracing::error!(job_id = %snos_job.internal_id, error = %e, "Invalid metadata type for SNOS job");
+                error!(job_id = %snos_job.internal_id, error = %e, "Invalid metadata type for SNOS job");
                 e
             })?;
 
@@ -218,7 +217,7 @@ impl UpdateStateJobTrigger {
                 .ok_or_else(|| eyre!("DA job not found for block {}", block_number))?;
 
             let da_metadata: DaMetadata = da_job.metadata.specific.try_into().map_err(|e| {
-                tracing::error!(job_id = %da_job.internal_id, error = %e, "Invalid metadata type for DA job");
+                error!(job_id = %da_job.internal_id, error = %e, "Invalid metadata type for DA job");
                 e
             })?;
 
@@ -244,7 +243,7 @@ impl UpdateStateJobTrigger {
                 .await?
                 .ok_or_else(|| eyre!("SNOS job not found for block {}", batch_no))?;
             let aggregator_metadata: AggregatorMetadata = aggregator_job.metadata.specific.try_into().map_err(|e| {
-                tracing::error!(job_id = %aggregator_job.internal_id, error = %e, "Invalid metadata type for Aggregator job");
+                error!(job_id = %aggregator_job.internal_id, error = %e, "Invalid metadata type for Aggregator job");
                 e
             })?;
 
