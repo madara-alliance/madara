@@ -8,6 +8,7 @@ pub use service::ServiceCliArgs as ServiceParams;
 use url::Url;
 
 pub mod alert;
+pub mod batching;
 pub mod cron;
 pub mod da;
 pub mod database;
@@ -143,6 +144,9 @@ pub struct RunCmd {
     // SNOS
     #[clap(flatten)]
     pub snos_args: snos::SNOSCliArgs,
+
+    #[clap(flatten)]
+    pub batching_args: batching::BatchingCliArgs,
 
     #[arg(env = "MADARA_ORCHESTRATOR_MADARA_RPC_URL", long, required = true)]
     pub madara_rpc_url: Url,
