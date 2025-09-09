@@ -27,7 +27,7 @@ function checkBlockContinuity(data) {
       continue; // Skip this pair if properties are missing
     }
 
-    if (currentOutputBlock !== nextInputBlock) {
+    if (currentOutputBlock + 1 !== nextInputBlock) {
       console.error(`Continuity broken at index ${i}:`);
       console.error(`  data[${i}].outputBlock: ${currentOutputBlock}`);
       console.error(`  data[${i + 1}].inputBlock: ${nextInputBlock}`);

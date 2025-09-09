@@ -289,10 +289,17 @@ async function getContractTransactionsStreaming(
  * Main function to demonstrate usage
  */
 async function main() {
+  const apiKey = "";
+
+  // Paradex Mainnet 0.13.2
+  // const contractAddress = "0xF338cad020D506e8e3d9B4854986E0EcE6C23640";
+  // const startBlock = 20_706_985;
+  // const endBlock = 22_391_353;
+
+  // Paradex Testnet 0.13.2
   const contractAddress = "0x11bACdFbBcd3Febe5e8CEAa75E0Ef6444d9B45FB";
-  const apiKey = "HABZB4I5S1I24KWRUBNWFGURSXGHQVIBID";
-  const startBlock = 6577430;
-  const endBlock = 7986093;
+  const startBlock = 6_577_430;
+  const endBlock = 7_986_093;
 
   try {
     console.log("Fetching all transactions for contract:", contractAddress);
@@ -320,12 +327,6 @@ async function main() {
     console.error("Failed to fetch transactions:", error.message);
   }
 }
-
-// Export functions
-module.exports = {
-  getContractTransactions,
-  getContractTransactionsStreaming,
-};
 
 // Run if called directly
 if (require.main === module) {
