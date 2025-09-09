@@ -227,7 +227,7 @@ impl EventWorker {
         );
 
         let worker_handler =
-            JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone());
+            JobHandlerService::get_worker_handler_from_worker_trigger_type(worker_message.worker.clone()).await;
 
         debug!(worker_type = ?worker_message.worker, "Running worker");
 
