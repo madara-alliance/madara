@@ -10,7 +10,6 @@ use orchestrator_sharp_service::{SharpProverService, SharpValidatedArgs};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use rstest::rstest;
 use serde_json::json;
-use orchestrator_sharp_service::types::CairoJobStatus;
 use url::Url;
 
 use crate::constants::{TEST_FACT, TEST_JOB_ID};
@@ -64,14 +63,14 @@ async fn prover_client_submit_task_works() {
 }
 
 #[rstest]
-#[case(CairoJobStatus::FAILED)]
-#[case(CairoJobStatus::INVALID)]
-#[case(CairoJobStatus::UNKNOWN)]
-#[case(CairoJobStatus::IN_PROGRESS)]
-#[case(CairoJobStatus::NOT_CREATED)]
-#[case(CairoJobStatus::PROCESSED)]
+#[case(CairoJobStatus::Failed)]
+#[case(CairoJobStatus::Invalid)]
+#[case(CairoJobStatus::Unknown)]
+#[case(CairoJobStatus::InProgress)]
+#[case(CairoJobStatus::NotCreated)]
+#[case(CairoJobStatus::Processed)]
 #[ignore]
-#[case(CairoJobStatus::ONCHAIN)]
+#[case(CairoJobStatus::Onchain)]
 #[tokio::test]
 async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobStatus) {
     dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
@@ -106,52 +105,52 @@ async fn prover_client_get_task_status_works(#[case] cairo_job_status: CairoJobS
 
 fn get_task_status_expectation(cairo_job_status: &CairoJobStatus) -> TaskStatus {
     match cairo_job_status {
-        CairoJobStatus::FAILED => TaskStatus::Failed("Sharp task failed".to_string()),
-        CairoJobStatus::INVALID => TaskStatus::Failed("Task is invalid: INVALID_CAIRO_PIE_FILE_FORMAT".to_string()),
-        CairoJobStatus::UNKNOWN => TaskStatus::Failed("".to_string()),
-        CairoJobStatus::IN_PROGRESS | CairoJobStatus::NOT_CREATED | CairoJobStatus::PROCESSED => TaskStatus::Processing,
-        CairoJobStatus::ONCHAIN => TaskStatus::Failed(format!("Fact {} is not valid or not registered", TEST_FACT)),
+        CairoJobStatus::Failed => TaskStatus::Failed("Sharp task failed".to_string()),
+        CairoJobStatus::Invalid => TaskStatus::Failed("Task is invalid: INVALID_CAIRO_PIE_FILE_FORMAT".to_string()),
+        CairoJobStatus::Unknown => TaskStatus::Failed("".to_string()),
+        CairoJobStatus::InProgress | CairoJobStatus::NotCreated | CairoJobStatus::Processed => TaskStatus::Processing,
+        CairoJobStatus::Onchain => TaskStatus::Failed(format!("Fact {} is not valid or not registered", TEST_FACT)),
     }
 }
 
 fn get_task_status_sharp_response(cairo_job_status: &CairoJobStatus) -> serde_json::Value {
     match cairo_job_status {
-        CairoJobStatus::FAILED => json!(
+        CairoJobStatus::Failed => json!(
             {
                 "status" : "FAILED",
                 "error_log" : "Sharp task failed"
             }
         ),
-        CairoJobStatus::INVALID => json!(
+        CairoJobStatus::Invalid => json!(
             {
                 "status": "INVALID",
                 "invalid_reason": "INVALID_CAIRO_PIE_FILE_FORMAT",
                 "error_log": "The Cairo PIE file has a wrong format. Deserialization ended with exception: Invalid prefix for zip file.."}
         ),
-        CairoJobStatus::UNKNOWN => json!(
+        CairoJobStatus::Unknown => json!(
             {
                 "status" : "FAILED"
             }
         ),
-        CairoJobStatus::IN_PROGRESS => json!(
+        CairoJobStatus::InProgress => json!(
             {
                 "status": "IN_PROGRESS",
                 "validation_done": false
             }
         ),
-        CairoJobStatus::NOT_CREATED => json!(
+        CairoJobStatus::NotCreated => json!(
             {
                 "status": "NOT_CREATED",
                 "validation_done": false
             }
         ),
-        CairoJobStatus::PROCESSED => json!(
+        CairoJobStatus::Processed => json!(
             {
                 "status": "PROCESSED",
                 "validation_done": false
             }
         ),
-        CairoJobStatus::ONCHAIN => json!(
+        CairoJobStatus::Onchain => json!(
             {
                 "status": "ONCHAIN",
                 "validation_done": true

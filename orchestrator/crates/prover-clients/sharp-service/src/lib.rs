@@ -1,7 +1,7 @@
 pub mod client;
 mod constants;
 pub mod error;
-mod types;
+pub mod types;
 
 use std::str::FromStr;
 
