@@ -1,8 +1,8 @@
 use chrono::Utc;
 use opentelemetry::KeyValue;
 
-use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::job_item::JobItem;
+use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
 /// Helper functions to record metrics at various points in the job lifecycle
@@ -137,28 +137,22 @@ impl MetricsRecorder {
 
     /// Record proof generation time
     pub fn record_proof_generation_time(proof_type: &str, duration_seconds: f64) {
-        let attributes = [
-            KeyValue::new("proof_type", proof_type.to_string()),
-        ];
+        let attributes = [KeyValue::new("proof_type", proof_type.to_string())];
 
         ORCHESTRATOR_METRICS.proof_generation_time.record(duration_seconds, &attributes);
     }
 
     /// Record settlement time
     pub fn record_settlement_time(job_type: &JobType, duration_seconds: f64) {
-        let attributes = [
-            KeyValue::new("operation_job_type", format!("{:?}", job_type)),
-            KeyValue::new("settlement_layer", "L1"),
-        ];
+        let attributes =
+            [KeyValue::new("operation_job_type", format!("{:?}", job_type)), KeyValue::new("settlement_layer", "L1")];
 
         ORCHESTRATOR_METRICS.settlement_time.record(duration_seconds, &attributes);
     }
 
     /// Record active jobs count (should be called when jobs change state)
     pub async fn record_active_jobs(count: f64) {
-        let attributes = [
-            KeyValue::new("status", "processing"),
-        ];
+        let attributes = [KeyValue::new("status", "processing")];
 
         ORCHESTRATOR_METRICS.active_jobs_count.record(count, &attributes);
     }
@@ -171,11 +165,7 @@ impl MetricsRecorder {
     }
 
     /// Check and record SLA breaches
-    pub fn check_and_record_sla_breach(
-        job: &JobItem,
-        max_e2e_seconds: i64,
-        sla_type: &str,
-    ) {
+    pub fn check_and_record_sla_breach(job: &JobItem, max_e2e_seconds: i64, sla_type: &str) {
         let age_seconds = Utc::now().signed_duration_since(job.created_at).num_seconds();
 
         if age_seconds > max_e2e_seconds {

@@ -130,7 +130,7 @@ impl JobHandlerTrait for DAJobHandler {
 
         // Publish to DA layer with timing
         let settlement_start = Instant::now();
-        
+
         let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await.map_err(|e| {
             error!(job_id = ?job.id, error = ?e, "Failed to publish state diff to DA layer");
             JobError::Other(OtherError(e))

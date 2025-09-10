@@ -84,7 +84,7 @@ pub trait JobTrigger: Send + Sync {
         for mut job in orphaned_jobs {
             // Record orphaned job metric
             MetricsRecorder::record_orphaned_job(&job);
-            
+
             job.metadata.common.process_started_at = None;
 
             let update_result = config
