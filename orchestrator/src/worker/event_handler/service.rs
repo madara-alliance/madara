@@ -162,7 +162,13 @@ impl JobHandlerService {
                 info!(job_id = ?id, status = ?job.status, "Processing job");
             }
             _ => {
-                warn!(job_id = ?id, status = ?job.status, "Cannot process job with current status");
+                warn!(
+                    job_id = ?id,
+                    status = ?job.status,
+                    job_type = ?job.job_type,
+                    internal_id = ?job.internal_id,
+                    "Cannot process job with current status"
+                );
                 return Err(JobError::InvalidStatus { id, job_status: job.status });
             }
         }
