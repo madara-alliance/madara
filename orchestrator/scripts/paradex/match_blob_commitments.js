@@ -2,24 +2,39 @@ const fs = require('fs').promises;
 const {MongoClient} = require('mongodb');
 const {ethers} = require('ethers');
 
-// Configuration
+// Configuration from environment variables
 const CONFIG = {
-    mongoUrl: '', // Update with your MongoDB URL
-    dbName: '', // Update with your database name
-    collectionName: 'jobs', // Update with your collection name
-    ethereumRpcUrl: "", // Update with your Ethereum RPC URL (Alchemy/Infura)
-    inputFilePath: '', // Path to your JSON input file
+    mongoUrl: process.env.MONGO_URL || '',
+    dbName: process.env.DB_NAME || '',
+    collectionName: 'jobs',
+    ethereumRpcUrl: process.env.RPC_URL || '',
+    inputFilePath: process.env.INPUT_FILE_PATH || '',
     logFilePath: './blob_comparison_log.txt'
 };
 
 class BlobCommitmentMatcher {
-    constructor() {
+    constructor(maxIndexes = null) {
         this.mongoClient = null;
         this.ethProvider = null;
         this.logEntries = [];
+        this.maxIndexes = maxIndexes;
     }
 
     async initialize() {
+        // Validate required environment variables
+        const requiredEnvVars = {
+            'MONGO_URL': CONFIG.mongoUrl,
+            'DB_NAME': CONFIG.dbName,
+            'RPC_URL': CONFIG.ethereumRpcUrl,
+            'INPUT_FILE_PATH': CONFIG.inputFilePath
+        };
+
+        for (const [varName, value] of Object.entries(requiredEnvVars)) {
+            if (!value) {
+                throw new Error(`Required environment variable ${varName} is not set`);
+            }
+        }
+
         // Initialize MongoDB connection
         this.mongoClient = new MongoClient(CONFIG.mongoUrl);
         await this.mongoClient.connect();
@@ -33,7 +48,14 @@ class BlobCommitmentMatcher {
     async readInputData() {
         try {
             const data = await fs.readFile(CONFIG.inputFilePath, 'utf8');
-            return JSON.parse(data);
+            const parsedData = JSON.parse(data);
+
+            // Limit the data if maxIndexes is specified
+            if (this.maxIndexes && this.maxIndexes > 0) {
+                return parsedData.slice(0, this.maxIndexes);
+            }
+
+            return parsedData;
         } catch (error) {
             throw new Error(`Failed to read input file: ${error.message}`);
         }
@@ -238,13 +260,14 @@ class BlobCommitmentMatcher {
         try {
             await this.initialize();
 
-            // Initialize log file
-            const logHeader = `Blob Commitment Comparison Log - Started at ${new Date().toISOString()}\n${'='.repeat(80)}\n`;
+            // Initialize log file with configuration info
+            const configInfo = this.maxIndexes ? ` (Processing first ${this.maxIndexes} entries)` : ' (Processing all entries)';
+            const logHeader = `Blob Commitment Comparison Log - Started at ${new Date().toISOString()}${configInfo}\n${'='.repeat(80)}\n`;
             await fs.writeFile(CONFIG.logFilePath, logHeader);
 
             // Read input data
             const inputData = await this.readInputData();
-            console.log(`Loaded ${inputData.length} entries from input file`);
+            console.log(`Loaded ${inputData.length} entries from input file${this.maxIndexes ? ` (limited to ${this.maxIndexes})` : ''}`);
 
             // Process each entry
             const results = [];
@@ -261,7 +284,7 @@ class BlobCommitmentMatcher {
             const errorCount = results.filter(r => r.status === 'ERROR').length;
             const mismatchCount = results.filter(r => r.status === 'SUCCESS' && !r.commitmentsMatch).length;
 
-            const summary = `\n${'='.repeat(80)}\nSUMMARY:\nTotal entries: ${results.length}\nSuccessful matches: ${successCount}\nMismatches: ${mismatchCount}\nErrors: ${errorCount}\nCompleted at: ${new Date().toISOString()}\n`;
+            const summary = `\n${'='.repeat(80)}\nSUMMARY:\nTotal entries processed: ${results.length}\nSuccessful matches: ${successCount}\nMismatches: ${mismatchCount}\nErrors: ${errorCount}\nCompleted at: ${new Date().toISOString()}\n`;
 
             await fs.appendFile(CONFIG.logFilePath, summary);
             console.log('Processing completed. Check the log file for detailed results.');
@@ -278,10 +301,65 @@ class BlobCommitmentMatcher {
     }
 }
 
+// Parse command line arguments
+function parseArgs() {
+    const args = process.argv.slice(2);
+    let maxIndexes = null;
+
+    // Look for --count or -c argument
+    const countIndex = args.findIndex(arg => arg === '--count' || arg === '-c');
+    if (countIndex !== -1 && countIndex + 1 < args.length) {
+        const countValue = parseInt(args[countIndex + 1]);
+        if (isNaN(countValue) || countValue <= 0) {
+            console.error('Error: Count must be a positive integer');
+            process.exit(1);
+        }
+        maxIndexes = countValue;
+    }
+
+    // Look for --help or -h argument
+    if (args.includes('--help') || args.includes('-h')) {
+        console.log(`
+Usage: node script.js [options]
+
+Options:
+  -c, --count <number>    Number of entries to process (default: all)
+  -h, --help             Show this help message
+
+Environment Variables Required:
+  MONGO_URL              MongoDB connection URL
+  DB_NAME                MongoDB database name
+  RPC_URL                Ethereum RPC URL (Alchemy/Infura)
+  INPUT_FILE_PATH        Path to the JSON input file
+
+Examples:
+  MONGO_URL="mongodb://localhost:27017" DB_NAME="mydb" RPC_URL="https://mainnet.infura.io/v3/KEY" INPUT_FILE_PATH="./data.json" node script.js
+  MONGO_URL="mongodb://localhost:27017" DB_NAME="mydb" RPC_URL="https://mainnet.infura.io/v3/KEY" INPUT_FILE_PATH="./data.json" node script.js --count 10
+        `);
+        process.exit(0);
+    }
+
+    return { maxIndexes };
+}
+
 // Usage
 async function main() {
-    const matcher = new BlobCommitmentMatcher();
-    await matcher.run();
+    try {
+        const { maxIndexes } = parseArgs();
+
+        console.log('Starting Blob Commitment Matcher...');
+        if (maxIndexes) {
+            console.log(`Will process first ${maxIndexes} entries`);
+        } else {
+            console.log('Will process all entries');
+        }
+
+        const matcher = new BlobCommitmentMatcher(maxIndexes);
+        await matcher.run();
+    } catch (error) {
+        console.error('Application error:', error.message);
+        process.exit(1);
+    }
 }
 
 // Run the script
