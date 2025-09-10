@@ -7,6 +7,7 @@ use mp_state_update::{
     StorageEntry,
 };
 use std::collections::HashMap;
+use mp_class::ConvertedClass;
 
 /// Create a state diff out of a merged state map.
 /// The resulting state diff is normalized: when merging state maps together, if for example a transaction changed a
@@ -17,6 +18,7 @@ pub fn create_normalized_state_diff(
     backend: &MadaraBackend,
     on_top_of: &Option<DbBlockId>,
     unnormalized_state_map: StateMaps,
+    unnormalised_declared_classes : Vec<ConvertedClass>
 ) -> anyhow::Result<StateDiff> {
     fn sorted_by_key<T, K: Ord, F: FnMut(&T) -> K>(mut vec: Vec<T>, f: F) -> Vec<T> {
         vec.sort_by_key(f);
@@ -63,10 +65,27 @@ pub fn create_normalized_state_diff(
                 Either::Right(class_hash.to_felt())
             }
         });
-    let (declared_classes, deprecated_declared_classes) = (
-        sorted_by_key(declared_classes, |entry| entry.class_hash),
-        sorted_by_key(deprecated_declared_classes, |class_hash| *class_hash),
-    );
+
+    let (declared_classes_2, deprecated_declared_classes_2): (Vec<DeclaredClassItem>, Vec<Felt>) =
+        unnormalised_declared_classes.into_iter().partition_map(|item| {
+            match item {
+                ConvertedClass::Sierra(sierra_class_hash) => Either::Left(DeclaredClassItem {
+                    class_hash: sierra_class_hash.class_hash,
+                    compiled_class_hash: sierra_class_hash.info.compiled_class_hash,
+                }),
+                ConvertedClass::Legacy(legacy_class_hash) => Either::Right(legacy_class_hash.class_hash),
+            }
+        });
+
+    println!("declared_classes_2: {:?}", declared_classes_2);
+    println!("deprecated_declared_classes_2: {:?}", deprecated_declared_classes_2);
+
+    let mut declared_classes = sorted_by_key(declared_classes, |entry| entry.class_hash);
+    declared_classes.extend(sorted_by_key(declared_classes_2, |entry| entry.class_hash));
+
+    let mut deprecated_declared_classes = sorted_by_key(deprecated_declared_classes, |class_hash| *class_hash);
+    deprecated_declared_classes.extend(sorted_by_key(deprecated_declared_classes_2, |class_hash| *class_hash));
+   
 
     // Same here: duplicate is not possible for nonces.
     let nonces = sorted_by_key(

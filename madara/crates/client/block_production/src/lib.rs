@@ -80,7 +80,7 @@ impl PendingBlockState {
         Ok((
             PendingFullBlock {
                 header: self.header,
-                state_diff: mc_exec::state_diff::create_normalized_state_diff(backend, &on_top_of_block_id, self.state)
+                state_diff: mc_exec::state_diff::create_normalized_state_diff(backend, &on_top_of_block_id, self.state, self.declared_classes.clone())
                     .context("Converting state map to state diff")?,
                 transactions: self.transactions,
                 events: self.events,
