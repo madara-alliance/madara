@@ -1,4 +1,4 @@
-use crate::{prelude::*, rocksdb::{RocksDBStorage}};
+use crate::{prelude::*, rocksdb::RocksDBStorage};
 use mp_state_update::StateDiff;
 use starknet_types_core::{
     felt::Felt,
@@ -7,7 +7,6 @@ use starknet_types_core::{
 
 mod classes;
 mod contracts;
-
 
 pub mod bonsai_identifier {
     pub const CONTRACT: &[u8] = b"0xcontract";

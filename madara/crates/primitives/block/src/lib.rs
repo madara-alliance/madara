@@ -15,9 +15,9 @@ pub mod event_with_info;
 pub mod header;
 pub mod to_rpc;
 
-pub use mp_transactions::Transaction;
 pub use event_with_info::EventWithInfo;
 pub use header::Header;
+pub use mp_transactions::Transaction;
 pub use primitive_types::{H160, U256};
 
 pub type BlockId = mp_rpc::v0_7_1::BlockId;
@@ -186,12 +186,13 @@ impl MadaraPreconfirmedBlockInfo {
 pub struct MadaraBlockInfo {
     pub header: Header,
     pub block_hash: Felt,
+    pub total_l2_gas_used: u128,
     pub tx_hashes: Vec<Felt>,
 }
 
 impl MadaraBlockInfo {
-    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
-        Self { header, block_hash, tx_hashes }
+    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt, total_l2_gas_used: u128) -> Self {
+        Self { header, block_hash, tx_hashes, total_l2_gas_used }
     }
 }
 
@@ -395,7 +396,7 @@ mod tests {
         let pending = MadaraPreconfirmedBlockInfo::new(PreconfirmedHeader::default(), tx_hashes_pending.clone());
         let pending_as_maybe_pending: MadaraMaybePreconfirmedBlockInfo = pending.clone().into();
         let tx_hashes_not_pending = vec![Felt::from(3), Felt::from(4)];
-        let not_pending = MadaraBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5));
+        let not_pending = MadaraBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5), 0);
         let not_pending_as_maybe_pending: MadaraMaybePreconfirmedBlockInfo = not_pending.clone().into();
 
         assert_eq!(not_pending_as_maybe_pending.as_closed(), Some(&not_pending));

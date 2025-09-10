@@ -57,13 +57,13 @@ starknet_api.workspace = true
 # Other
 anyhow.workspace = true
 async-trait.workspace = true
+dashmap.workspace = true
+futures.workspace = true
 mockall = { workspace = true, optional = true }
 smallvec.workspace = true
 thiserror.workspace = true
 tokio.workspace = true
 tokio-util.workspace = true
-futures.workspace = true
-dashmap.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

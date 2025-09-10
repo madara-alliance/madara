@@ -1,7 +1,7 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
 use mc_db::sync_status::SyncStatus;
-use mc_db::{MadaraBackend};
+use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use mp_gateway::block::ProviderBlockHeader;
 use std::sync::Arc;
@@ -176,11 +176,10 @@ impl<P: ForwardPipeline> SyncController<P> {
             );
 
             let probe_height = if let Some(v) = self.probe.last_val() {
-                self.backend
-                    .set_sync_status(SyncStatus::Running {
-                        highest_block_n: v.block_number,
-                        highest_block_hash: v.block_hash,
-                    });
+                self.backend.set_sync_status(SyncStatus::Running {
+                    highest_block_n: v.block_number,
+                    highest_block_hash: v.block_hash,
+                });
                 Some(v.block_number)
             } else {
                 None

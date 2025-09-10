@@ -2,7 +2,7 @@
 
 pub(crate) use crate::{
     storage::{MadaraStorage, MadaraStorageRead, MadaraStorageWrite},
-    MadaraBackend, MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView
+    MadaraBackend, MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView,
 };
 pub(crate) use anyhow::{bail, ensure, Context, Result};
 pub(crate) use futures::StreamExt;

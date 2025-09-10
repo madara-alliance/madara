@@ -1,5 +1,5 @@
 use anyhow::Context;
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
     BlockHeaderWithSignatures, Header, TransactionWithReceipt,
@@ -134,12 +134,12 @@ impl BlockImporter {
     }
 
     fn ctx(&self) -> BlockImporterCtx {
-        BlockImporterCtx { db: self.db.clone(), config: self.config.clone() }
+        BlockImporterCtx { backend: self.db.clone(), config: self.config.clone() }
     }
 }
 
 pub struct BlockImporterCtx {
-    db: Arc<MadaraBackend>,
+    backend: Arc<MadaraBackend>,
     config: BlockValidationConfig,
 }
 impl BlockImporterCtx {
@@ -183,8 +183,8 @@ impl BlockImporterCtx {
         const MAINNET_FIRST_V0_13_2: u64 = 671813;
 
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
-            && ((self.db.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
-                || (self.db.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
+            && ((self.backend.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
+                || (self.backend.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2))
         {
             // Skip integrity check.
             return Ok(());
@@ -193,7 +193,7 @@ impl BlockImporterCtx {
         // verify block_hash
         let block_hash = signed_header
             .header
-            .compute_hash(self.db.chain_config().chain_id.to_felt(), /* pre_v0_13_2_override */ true);
+            .compute_hash(self.backend.chain_config().chain_id.to_felt(), /* pre_v0_13_2_override */ true);
         if !self.config.no_check && signed_header.block_hash != block_hash {
             return Err(BlockImportError::BlockHash { got: signed_header.block_hash, expected: block_hash });
         }
@@ -202,7 +202,7 @@ impl BlockImporterCtx {
     }
 
     pub fn save_header(&self, block_n: u64, signed_header: BlockHeaderWithSignatures) -> Result<(), BlockImportError> {
-        self.db.write_access().write_header(signed_header).map_err(|error| BlockImportError::InternalDb {
+        self.backend.write_access().write_header(signed_header).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing block header for {block_n}").into(),
         })?;
@@ -231,7 +231,7 @@ impl BlockImporterCtx {
             .enumerate()
             .map(|(_index, tx)| {
                 let got = tx.transaction.compute_hash(
-                    self.db.chain_config().chain_id.to_felt(),
+                    self.backend.chain_config().chain_id.to_felt(),
                     starknet_version,
                     /* is_query */ false,
                 );
@@ -276,7 +276,7 @@ impl BlockImporterCtx {
         transactions: Vec<TransactionWithReceipt>,
     ) -> Result<(), BlockImportError> {
         tracing::debug!("Storing transactions for {block_n:?}");
-        self.db.write_access().write_transactions(block_n, &transactions).map_err(|error| {
+        self.backend.write_access().write_transactions(block_n, &transactions).map_err(|error| {
             BlockImportError::InternalDb { error, context: format!("Storing transactions for {block_n}").into() }
         })?;
         Ok(())
@@ -389,7 +389,7 @@ impl BlockImporterCtx {
                         .map_err(|e| BlockImportError::ComputeClassHash { class_hash, error: e })?;
 
                     if let Some(block_n) = block_n {
-                        if self.db.chain_config().chain_id == ChainId::Mainnet {
+                        if self.backend.chain_config().chain_id == ChainId::Mainnet {
                             // We do not actually implement class hash verification for some cairo 0 classes.
                             // See [`mp_class::mainnet_legacy_class_hashes`] for more information about this; but this
                             // only applies to a few classes on mainnet in total. We have decided to just hardcode them.
@@ -412,7 +412,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_classes(&self, block_n: u64, classes: Vec<ConvertedClass>) -> Result<(), BlockImportError> {
-        self.db.write_access().write_classes(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
+        self.backend.write_access().write_classes(block_n, &classes).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing classes for {block_n}").into(),
         })?;
@@ -451,7 +451,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
-        self.db.write_access().write_state_diff(block_n, &state_diff).map_err(|error| {
+        self.backend.write_access().write_state_diff(block_n, &state_diff).map_err(|error| {
             BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }
         })?;
         Ok(())
@@ -495,7 +495,7 @@ impl BlockImporterCtx {
 
     /// Called in a rayon-pool context.
     pub fn save_events(&self, block_n: u64, events: Vec<EventWithTransactionHash>) -> Result<(), BlockImportError> {
-        self.db.write_access().write_events(block_n, &events).map_err(|error| BlockImportError::InternalDb {
+        self.backend.write_access().write_events(block_n, &events).map_err(|error| BlockImportError::InternalDb {
             error,
             context: format!("Storing events for {block_n}").into(),
         })?;
@@ -513,7 +513,7 @@ impl BlockImporterCtx {
         state_diffs: Vec<StateDiff>,
     ) -> Result<(), BlockImportError> {
         // don't re-import the blocks we've already imported.
-        let next_to_import = self.db.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
+        let next_to_import = self.backend.get_latest_applied_trie_update()?.map(|n| n + 1).unwrap_or(0);
         let already_imported_count = next_to_import.saturating_sub(block_range.start);
         let state_diffs = state_diffs.iter().skip(already_imported_count as _);
         block_range.start += already_imported_count;
@@ -522,19 +522,20 @@ impl BlockImporterCtx {
             return Ok(()); // range is empty
         };
 
-        let got = self.db.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
-            BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
-        })?;
+        let got =
+            self.backend.write_access().apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
+                BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
+            })?;
 
-        self.db.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
+        self.backend.write_latest_applied_trie_update(&block_range.end.checked_sub(1))?;
 
         // Sanity check: verify state root.
         if !self.config.no_check {
             let expected = self
+                .backend
                 .db
-                .block_view_on_confirmed(last_block_n)
-                .context("Block header cannot be found")?
-                .get_block_info()?
+                .get_block_info(last_block_n)? // Raw get
+                .context("Block header can't be found")?
                 .header
                 .global_state_root;
 

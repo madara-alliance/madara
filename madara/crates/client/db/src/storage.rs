@@ -1,10 +1,9 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
-use anyhow::Result;
+use crate::prelude::*;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
 };
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass};
-use mp_convert::Felt;
 use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
@@ -48,7 +47,7 @@ pub struct ClassInfoWithBlockN {
 #[derive(Clone, Debug, serde::Deserialize, serde::Serialize)]
 pub struct CompiledSierraWithBlockN {
     pub block_number: u64,
-    pub compiled_sierra: CompiledSierra,
+    pub compiled_sierra: Arc<CompiledSierra>,
 }
 
 #[derive(Clone, serde::Serialize, serde::Deserialize)]

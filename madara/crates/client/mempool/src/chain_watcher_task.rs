@@ -13,7 +13,7 @@ use std::{collections::HashMap, sync::Arc};
 
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     fn set_transaction_status(&self, tx_hash: Felt, value: Option<TransactionStatus>) {
-        if let Some(value) = value.as_ref().and_then(|status| status.as_preconfirmed()).clone() {
+        if let Some(value) = value.as_ref().and_then(|status| status.as_preconfirmed()) {
             self.preconfirmed_transactions_statuses.insert(tx_hash, value.clone());
         }
         self.watch_transaction_status.publish(&tx_hash, value);
@@ -97,6 +97,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     v.wait_until_outdated().await;
                     v
                 })) => {
+                    tracing::debug!("Mempool task: preconfirmed update.");
                     // Candidates that were not executed are most likely rejected transactions. We don't want them back into the mempool.
                     // Otherwise, we run the risk of having these transactions looping from mempool to block building to mempool repeatedly!
                     put_back_into_mempool = false;
@@ -115,13 +116,13 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
                     // Process new executed transactions.
                     self.update_block_transaction_statuses(
-                        &current_head,
+                        current_head,
                         preconfirmed.get_block_info().tx_hashes[previous_num_txs..].iter().cloned().enumerate(),
                         &mut removed,
                     )?;
                     // Candidate transactions.
                     self.update_block_transaction_statuses(
-                        &current_head,
+                        current_head,
                         preconfirmed.candidate_transactions().iter().enumerate().map(|(candidate_index, tx)| {
                             (candidate_index + preconfirmed.num_executed_transactions(), tx.hash)
                         }),
@@ -140,6 +141,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
                 // New block on l2: either confirmed or pre-confirmed.
                 mut new_head = new_heads_subscription.next_block_view() => {
+                    tracing::debug!("Mempool task: new head.");
                     // If the previous head was preconfirmed, mark all of its transactions as removed.
                     if let Some(preconfirmed) = current_head.as_ref().and_then(|v| v.as_preconfirmed()) {
                         let view_on_parent = preconfirmed.state_view_on_parent();
@@ -211,6 +213,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 new_head_on_l1 = l1_new_heads_subscription.next_block_view(),
                     if *l1_new_heads_subscription.current() < new_heads_subscription.current().latest_confirmed_block_n() =>
                 {
+                    tracing::debug!("Mempool task: new head on l1.");
                     let new_head_on_l1: MadaraBlockView<D> = new_head_on_l1.into();
                     self.update_block_transaction_statuses(
                         &new_head_on_l1,
@@ -224,6 +227,8 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                     return Ok(())
                 }
             }
+
+            tracing::debug!("Mempool task: #nonce_updates={} #removed={}, put_back_into_mempool={put_back_into_mempool}.", nonce_updates.len(), removed.len());
 
             // Update nonces
             if !nonce_updates.is_empty() {

@@ -1,6 +1,6 @@
+use crate::{header::PreconfirmedHeader, MadaraBlockInfo};
 use mp_chain_config::StarknetVersion;
 use mp_convert::Felt;
-use crate::{header::PreconfirmedHeader, MadaraBlockInfo};
 
 impl PreconfirmedHeader {
     pub fn into_rpc_v0_7_1(self, parent_block_hash: Felt) -> mp_rpc::v0_7_1::PendingBlockHeader {

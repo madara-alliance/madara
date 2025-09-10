@@ -43,7 +43,11 @@ impl fmt::Display for DevnetKeys {
 }
 
 /// Returns an `u128`. This is for tests only as an ERC20 contract may have a higher balance than an u128.
-pub fn get_bal_contract(view: &MadaraStateView, contract_address: Felt, fee_token_address: Felt) -> anyhow::Result<Felt> {
+pub fn get_bal_contract(
+    view: &MadaraStateView,
+    contract_address: Felt,
+    fee_token_address: Felt,
+) -> anyhow::Result<Felt> {
     let low_key = get_fee_token_var_address(
         contract_address
             .try_into()
@@ -62,7 +66,7 @@ pub fn get_bal_contract(view: &MadaraStateView, contract_address: Felt, fee_toke
 
 /// (STRK in FRI, ETH in WEI)
 pub fn get_fee_tokens_balance(
-    backend: &MadaraStateView<>,
+    backend: &MadaraStateView,
     contract_address: Felt,
 ) -> anyhow::Result<ContractFeeTokensBalance> {
     Ok(ContractFeeTokensBalance {

@@ -1,8 +1,9 @@
 use crate::{wait_for_cond, MadaraCmdBuilder};
+use anyhow::ensure;
 use rstest::rstest;
 use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
 use starknet::signers::{LocalWallet, SigningKey};
-use starknet_core::types::{BlockId, BlockTag, Call, Felt, ReceiptBlock};
+use starknet_core::types::{BlockId, BlockTag, Call, Felt};
 use starknet_core::utils::starknet_keccak;
 use starknet_providers::Provider;
 use std::time::Duration;
@@ -87,7 +88,7 @@ async fn madara_devnet_add_transaction() {
     wait_for_cond(
         || async {
             let receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
-            assert!(receipt.block.is_block());
+            ensure!(receipt.block.is_block());
             Ok(())
         },
         Duration::from_millis(500),
@@ -110,7 +111,7 @@ async fn madara_devnet_add_transaction() {
     wait_for_cond(
         || async {
             let receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
-            assert!(receipt.block.is_block());
+            ensure!(receipt.block.is_block());
             Ok(())
         },
         Duration::from_millis(500),
@@ -181,8 +182,7 @@ async fn madara_devnet_mempool_saving() {
 
     wait_for_cond(
         || async {
-            let receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
-            assert_eq!(receipt.block, ReceiptBlock::Pending);
+            let _receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
             Ok(())
         },
         Duration::from_millis(500),

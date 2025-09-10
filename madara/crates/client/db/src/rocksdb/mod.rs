@@ -2,12 +2,20 @@ use crate::{
     preconfirmed::PreconfirmedExecutedTransaction,
     prelude::*,
     rocksdb::{
-        backup::BackupManager, column::{Column, ALL_COLUMNS}, meta::StoredChainTipWithoutContent, options::rocksdb_global_options, snapshots::Snapshots, update_global_trie::apply_to_global_trie
+        backup::BackupManager,
+        column::{Column, ALL_COLUMNS},
+        meta::StoredChainTipWithoutContent,
+        metrics::DbMetrics,
+        options::rocksdb_global_options,
+        snapshots::Snapshots,
+        update_global_trie::apply_to_global_trie,
     },
     storage::{
-        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead, MadaraStorageWrite, StorageChainTip, StoredChainInfo, StorageTxIndex
+        ClassInfoWithBlockN, CompiledSierraWithBlockN, DevnetPredeployedKeys, EventFilter, MadaraStorageRead,
+        MadaraStorageWrite, StorageChainTip, StorageTxIndex, StoredChainInfo,
     },
 };
+use bincode::Options;
 use mp_block::{EventWithInfo, MadaraBlockInfo, TransactionWithReceipt};
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
@@ -26,10 +34,12 @@ mod iter_pinned;
 mod l1_to_l2_messages;
 mod mempool;
 mod meta;
+mod metrics;
 mod options;
 mod rocksdb_snapshot;
 mod snapshots;
 mod state;
+
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
 pub mod trie;
 // TODO: remove this pub. this is temporary until get_storage_proof is properly abstracted.
@@ -42,12 +52,26 @@ pub use options::{RocksDBConfig, StatsLevel};
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
 
+fn bincode_opts() -> impl bincode::Options {
+    bincode::DefaultOptions::new()
+}
+
 fn serialize_to_smallvec<A: smallvec::Array<Item = u8>>(
     value: &impl serde::Serialize,
 ) -> Result<smallvec::SmallVec<A>, bincode::Error> {
-    let mut v = Default::default();
-    bincode::serialize_into(&mut v, value)?;
+    let mut opt = bincode_opts();
+    let mut v = smallvec::SmallVec::with_capacity((&mut opt).serialized_size(value)? as usize);
+    // this *doesn't* call serialized_size under the hood - we have to do it ourselves to match this optimisation that `serialize` also benefits.
+    opt.serialize_into(&mut v, value)?;
     Ok(v)
+}
+
+fn serialize(value: &impl serde::Serialize) -> Result<Vec<u8>, bincode::Error> {
+    bincode_opts().serialize(value) // this calls serialized_size under the hood to get the vec capacity beforehand
+}
+
+fn deserialize<T: serde::de::DeserializeOwned>(bytes: impl AsRef<[u8]>) -> Result<T, bincode::Error> {
+    bincode_opts().deserialize(bytes.as_ref())
 }
 
 struct RocksDBStorageInner {
@@ -58,9 +82,9 @@ struct RocksDBStorageInner {
 
 impl Drop for RocksDBStorageInner {
     fn drop(&mut self) {
-        // tracing::info!("⏳ Gracefully closing the database...");
+        tracing::debug!("⏳ Gracefully closing the database...");
         self.flush().expect("Error when flushing the database"); // flush :)
-        self.db.cancel_all_background_work(true);
+        self.db.cancel_all_background_work(/* wait */ true);
     }
 }
 
@@ -99,6 +123,7 @@ pub struct RocksDBStorage {
     inner: Arc<RocksDBStorageInner>,
     backup: BackupManager,
     snapshots: Arc<Snapshots>,
+    metrics: DbMetrics,
 }
 
 impl RocksDBStorage {
@@ -125,6 +150,7 @@ impl RocksDBStorage {
         Ok(Self {
             inner,
             snapshots: snapshot.into(),
+            metrics: DbMetrics::register().context("Registering database metrics")?,
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
     }
@@ -254,6 +280,7 @@ impl MadaraStorageRead for RocksDBStorage {
 
 impl MadaraStorageWrite for RocksDBStorage {
     fn write_header(&self, header: mp_block::BlockHeaderWithSignatures) -> Result<()> {
+        tracing::debug!("Writing header {}", header.header.block_number);
         let block_n = header.header.block_number;
         self.inner
             .blocks_store_block_header(header)
@@ -261,6 +288,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
+        tracing::debug!("Writing transactions {block_n} {txs:?}");
         // Save l1 core contract nonce to tx mapping.
         self.inner
             .messages_to_l2_write_trasactions(
@@ -270,11 +298,11 @@ impl MadaraStorageWrite for RocksDBStorage {
 
         self.inner
             .blocks_store_transactions(block_n, txs)
-            .context("Storing transactions")
             .with_context(|| format!("Storing transactions for block_n={block_n}"))
     }
 
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
+        tracing::debug!("Writing state diff {block_n}");
         self.inner
             .blocks_store_state_diff(block_n, value)
             .with_context(|| format!("Storing state diff for block_n={block_n}"))?;
@@ -284,6 +312,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn write_events(&self, block_n: u64, events: &[mp_receipt::EventWithTransactionHash]) -> Result<()> {
+        tracing::debug!("Writing events {block_n}");
         self.inner
             .blocks_store_events_to_receipts(block_n, events)
             .with_context(|| format!("Storing events to receipts for block_n={block_n}"))?;
@@ -293,55 +322,70 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()> {
+        tracing::debug!("Writing classes {block_n}");
         self.inner.store_classes(block_n, converted_classes)
     }
 
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()> {
+        tracing::debug!("Replace chain tip {chain_tip:?}");
         self.inner.replace_chain_tip(chain_tip).context("Replacing chain tip in db")
     }
 
     fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()> {
+        tracing::debug!("Append preconfirmed content start_tx_index={start_tx_index}, new_txs={}", txs.len());
         self.inner.append_preconfirmed_content(start_tx_index, txs).context("Appending to preconfirmed content to db")
     }
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {
+        tracing::debug!(
+            "Write l1 handler tx hash by nonce core_contract_nonce={core_contract_nonce}, txn_hash={txn_hash:#x}"
+        );
         self.inner.write_l1_handler_txn_hash_by_nonce(core_contract_nonce, txn_hash).with_context(|| {
             format!("Writing l1 handler txn hash by nonce nonce={core_contract_nonce} txn_hash={txn_hash:#x}")
         })
     }
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
+        tracing::debug!("Write pending message to l2 nonce={}", msg.tx.nonce);
         let nonce = msg.tx.nonce;
         self.inner
             .write_pending_message_to_l2(msg)
             .with_context(|| format!("Writing pending message to l2 nonce={nonce}"))
     }
     fn remove_pending_message_to_l2(&self, core_contract_nonce: u64) -> Result<()> {
+        tracing::debug!("Remove pending message to l2 nonce={core_contract_nonce}");
         self.inner
             .remove_pending_message_to_l2(core_contract_nonce)
             .with_context(|| format!("Removing pending message to l2 nonce={core_contract_nonce}"))
     }
 
     fn write_chain_info(&self, info: &StoredChainInfo) -> Result<()> {
+        tracing::debug!("Write chain info");
         self.inner.write_chain_info(info)
     }
     fn write_devnet_predeployed_keys(&self, devnet_keys: &DevnetPredeployedKeys) -> Result<()> {
+        tracing::debug!("Write devnet keys");
         self.inner.write_devnet_predeployed_keys(devnet_keys).context("Writing devnet predeployed keys to db")
     }
     fn write_l1_messaging_sync_tip(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("Write l1 messaging tip block_n={block_n}");
         self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
     }
     fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("Write confirmed on l1 tip block_n={block_n}");
         self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
     }
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
+        tracing::debug!("Write latest applied trie update block_n={block_n:?}");
         self.inner.write_latest_applied_trie_update(block_n).context("Writing latest applied trie update block_n")
     }
 
     fn remove_mempool_transactions(&self, tx_hashes: impl IntoIterator<Item = Felt>) -> Result<()> {
+        tracing::debug!("Remove mempool transactions");
         self.inner.remove_mempool_transactions(tx_hashes).context("Removing mempool transactions from db")
     }
     fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         let tx_hash = tx.hash;
+        tracing::debug!("Writing mempool transaction from db for tx_hash={tx_hash:#x}");
         self.inner
             .write_mempool_transaction(tx)
             .with_context(|| format!("Writing mempool transaction from db for tx_hash={tx_hash:#x}"))
@@ -352,16 +396,20 @@ impl MadaraStorageWrite for RocksDBStorage {
         start_block_n: u64,
         state_diffs: impl IntoIterator<Item = &'a StateDiff>,
     ) -> Result<Felt> {
+        tracing::debug!("Applying state diff to global trie start_block_n={start_block_n}");
         apply_to_global_trie(self, start_block_n, state_diffs).context("Applying state diff to global trie")
     }
 
     fn flush(&self) -> Result<()> {
+        tracing::debug!("Flushing");
         self.inner.flush().context("Flushing RocksDB database")?;
         self.backup.backup_if_enabled(&self.inner).context("Backing up RocksDB database")
     }
 
     fn on_new_confirmed_head(&self, block_n: u64) -> Result<()> {
+        tracing::debug!("on_new_confirmed_head block_n={block_n}");
         self.snapshots.set_new_head(block_n);
+        self.metrics.update(self);
         Ok(())
     }
 }

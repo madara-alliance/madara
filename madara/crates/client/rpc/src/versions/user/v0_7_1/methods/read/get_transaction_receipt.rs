@@ -29,6 +29,7 @@ pub fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
+    tracing::debug!("get tx receipt {transaction_hash:#x}");
     let view = starknet.backend.view_on_latest();
     let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
     let transaction = res.get_transaction()?;

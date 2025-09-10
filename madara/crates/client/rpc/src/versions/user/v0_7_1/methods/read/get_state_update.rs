@@ -47,7 +47,10 @@ pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcRe
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates}, StarknetRpcApiError};
+    use crate::{
+        test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates},
+        StarknetRpcApiError,
+    };
     use mp_block::BlockTag;
     use rstest::rstest;
 

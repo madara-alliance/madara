@@ -17,18 +17,18 @@ pub struct WatchL1Confirmed<D: MadaraStorageRead> {
 impl<D: MadaraStorageRead> WatchL1Confirmed<D> {
     fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
         let subscription = backend.latest_l1_confirmed.subscribe();
-        let current_value = subscription.borrow().clone();
+        let current_value = *subscription.borrow();
         Self { _backend: backend.clone(), current_value, subscription }
     }
     pub fn current(&self) -> &Option<u64> {
         &self.current_value
     }
     pub fn refresh(&mut self) {
-        self.current_value = self.subscription.borrow_and_update().clone();
+        self.current_value = *self.subscription.borrow_and_update();
     }
     pub async fn recv(&mut self) -> &Option<u64> {
         self.subscription.changed().await.expect("Channel closed");
-        self.current_value = self.subscription.borrow_and_update().clone();
+        self.current_value = *self.subscription.borrow_and_update();
         &self.current_value
     }
 }
@@ -47,7 +47,7 @@ pub struct SubscribeNewL1Heads<D: MadaraStorageRead> {
 impl<D: MadaraStorageRead> SubscribeNewL1Heads<D> {
     fn new(backend: &Arc<MadaraBackend<D>>) -> Self {
         let subscription = WatchL1Confirmed::new(backend);
-        let current_value = subscription.current_value.clone();
+        let current_value = subscription.current_value;
         Self { backend: backend.clone(), current_value, subscription }
     }
     pub fn set_start_from(&mut self, block_n: u64) {
@@ -75,7 +75,7 @@ impl<D: MadaraStorageRead> SubscribeNewL1Heads<D> {
 
     /// Returns [`None`] for pre-genesis.
     pub fn current_block_view(&self) -> Option<MadaraConfirmedBlockView<D>> {
-        self.current_value.clone().and_then(|val| self.backend.block_view_on_confirmed(val))
+        self.current_value.and_then(|val| self.backend.block_view_on_confirmed(val))
     }
     pub async fn next_block_view(&mut self) -> MadaraConfirmedBlockView<D> {
         self.next_head().await;
@@ -157,7 +157,7 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
     pub async fn next_head(&mut self) -> &ChainTip {
         loop {
             // Inclusive bound.
-            let next_block_to_return = self.current_value.block_n().map(|v| v + 1).unwrap_or(0);
+            let next_block_to_return = self.current_value.latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
             // Exclusive bound.
             let highest_block_plus_one =
                 self.subscription.current().latest_confirmed_block_n().map(|v| v + 1).unwrap_or(0);
@@ -167,7 +167,10 @@ impl<D: MadaraStorageRead> SubscribeNewHeads<D> {
                 return &self.current_value;
             }
 
-            if self.subscription.current().is_preconfirmed() && self.tag == SubscribeNewBlocksTag::Preconfirmed {
+            if self.tag == SubscribeNewBlocksTag::Preconfirmed
+                && self.subscription.current().is_preconfirmed()
+                && self.subscription.current() != &self.current_value
+            {
                 self.current_value = self.subscription.current().clone();
                 return &self.current_value;
             }

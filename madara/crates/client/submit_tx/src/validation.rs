@@ -287,7 +287,7 @@ impl TransactionValidator {
 
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
-            let mut validator = MadaraBlockView::from(self.backend.block_view_on_preconfirmed_or_fake())
+            let mut validator = MadaraBlockView::from(self.backend.block_view_on_preconfirmed_or_fake()?)
                 .new_execution_context()?
                 .into_transaction_validator();
             validator.perform_validations(account_tx.clone())?

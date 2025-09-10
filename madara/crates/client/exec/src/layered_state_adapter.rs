@@ -1,4 +1,5 @@
 use crate::BlockifierStateAdapter;
+use anyhow::Context;
 use blockifier::{
     execution::contract_class::RunnableCompiledClass,
     state::{
@@ -8,7 +9,7 @@ use blockifier::{
     },
 };
 use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead};
-use mp_block::{header::GasPrices};
+use mp_block::header::GasPrices;
 use mp_convert::Felt;
 use starknet_api::{
     contract_class::ContractClass as ApiContractClass,
@@ -44,18 +45,18 @@ impl<D: MadaraStorageRead> LayeredStateAdapter<D> {
         let view = backend.view_on_latest_confirmed();
         let block_number = view.latest_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0);
 
+        let l1_gas_quote = backend
+            .get_last_l1_gas_quote()
+            .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+
         let gas_prices = if let Some(block) = view.block_view_on_latest_confirmed() {
-            let latest_gas_prices = block.get_block_info()?.header.gas_prices.clone();
+            let block_info = block.get_block_info()?;
+            let previous_strk_l2_gas_price = block_info.header.gas_prices.strk_l2_gas_price;
+            let previous_l2_gas_used = block_info.total_l2_gas_used;
 
-            let latest_gas_used = block
-                .get_executed_transactions(..)?
-                .iter()
-                .map(|tx| tx.receipt.execution_resources().total_gas_consumed.l2_gas)
-                .sum::<u128>();
-
-            backend.calculate_gas_prices(latest_gas_prices.strk_l2_gas_price, latest_gas_used)?
+            backend.calculate_gas_prices(&l1_gas_quote, previous_strk_l2_gas_price, previous_l2_gas_used)?
         } else {
-            backend.calculate_gas_prices(0, 0)?
+            backend.calculate_gas_prices(&l1_gas_quote, 0, 0)?
         };
 
         Ok(Self {

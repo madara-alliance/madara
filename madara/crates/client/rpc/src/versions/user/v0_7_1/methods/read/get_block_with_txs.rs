@@ -174,11 +174,8 @@ mod tests {
     fn test_get_block_with_txs_not_found(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
         let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
 
-        assert_eq!(get_block_with_txs(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound.into()));
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
         let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
-        assert_eq!(
-            get_block_with_txs(&rpc, BlockId::Hash(does_not_exist)),
-            Err(StarknetRpcApiError::BlockNotFound.into())
-        );
+        assert_eq!(get_block_with_txs(&rpc, BlockId::Hash(does_not_exist)), Err(StarknetRpcApiError::BlockNotFound));
     }
 }

@@ -54,7 +54,7 @@ pub struct TransactionWithHashAndContractAddress {
     /// This field is always filled in with the sender_address, but it is the deployed
     /// contract address in case of DeployAccount. For L1HandlerTransactions this is the
     /// contract address receiving the l1 message.
-    pub contract_address: Felt
+    pub contract_address: Felt,
 }
 
 /// A transaction that has been validated, but not yet included into a block.

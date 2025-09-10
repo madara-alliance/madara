@@ -18,7 +18,7 @@ impl RocksDBStorageInner {
             ReadOptions::default(),
             IteratorMode::Start,
         )
-        .into_iter_values(|v| bincode::deserialize::<ValidatedTransaction>(&v))
+        .into_iter_values(|v| super::deserialize::<ValidatedTransaction>(&v))
         .map(|r| Ok(r??))
     }
 
@@ -29,7 +29,7 @@ impl RocksDBStorageInner {
         let mut batch = WriteBatchWithTransaction::default();
         for tx_hash in tx_hashes {
             tracing::debug!("remove_mempool_tx {:#x}", tx_hash);
-            batch.delete_cf(&col, bincode::serialize(&tx_hash)?);
+            batch.delete_cf(&col, super::serialize(&tx_hash)?);
         }
 
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
@@ -39,7 +39,7 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self, tx), fields(module = "MempoolDB"))]
     pub(super) fn write_mempool_transaction(&self, tx: &ValidatedTransaction) -> Result<()> {
         let col = self.get_column(MEMPOOL_TRANSACTIONS_COLUMN);
-        self.db.put_cf(&col, bincode::serialize(&tx.hash)?, bincode::serialize(&tx)?)?;
+        self.db.put_cf(&col, super::serialize(&tx.hash)?, super::serialize(&tx)?)?;
         Ok(())
     }
 }

@@ -104,7 +104,12 @@ impl BlockCommitments {
 }
 
 impl PreconfirmedHeader {
-    pub fn into_confirmed_header(self, parent_block_hash: Felt, commitments: BlockCommitments, global_state_root: Felt) -> Header {
+    pub fn into_confirmed_header(
+        self,
+        parent_block_hash: Felt,
+        commitments: BlockCommitments,
+        global_state_root: Felt,
+    ) -> Header {
         Header {
             parent_block_hash,
             block_number: self.block_number,

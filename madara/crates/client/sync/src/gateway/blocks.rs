@@ -150,24 +150,29 @@ pub fn gateway_preconfirmed_block_sync(
                         .latest_confirmed_block_n()
                         .map(|n| n + 1)
                         .unwrap_or(/* genesis */ 0);
+                    tracing::debug!("Sync Get Preconfirmed block #{block_number}.");
                     tokio::select! {
                         biased;
                         _ = subscription.recv() => continue, // Abort request and restart
-                        preconfirmed = client.get_preconfirmed_block(block_number) => break (preconfirmed, block_number),
+                        preconfirmed = client.get_preconfirmed_block(block_number) => {
+                            break (preconfirmed, block_number)
+                        }
                     }
                 };
                 let block = match block {
                     Ok(block) => block,
                     Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
-                        tracing::debug!("Preconfirmed block not found.");
+                        tracing::debug!("Preconfirmed block #{block_number} not found.");
                         return Ok(None);
                     }
                     Err(other) => {
                         // non-compliant gateway?
-                        tracing::warn!("Error while getting the pre-confirmed block from the gateway: {other:#}");
+                        tracing::warn!("Error while getting the pre-confirmed block #{block_number} from the gateway: {other:#}");
                         return Ok(None);
                     }
                 };
+
+                tracing::debug!("Got Preconfirmed block #{block_number}.");
 
                 let n_executed = block.num_executed_transactions();
                 let header = block.header(block_number)?;
@@ -176,6 +181,9 @@ pub fn gateway_preconfirmed_block_sync(
                 let mut common_prefix = None;
 
                 if let Some(in_backend) = backend.block_view_on_preconfirmed() {
+                    if in_backend.block_number() != block_number {
+                        return Ok(None)
+                    }
                     // True if this gateway block should be considered as a new pre-confirmed block entirely.
                     let new_preconfirmed = in_backend.header() != &header
                         || in_backend.num_executed_transactions() > n_executed
@@ -220,6 +228,8 @@ pub fn gateway_preconfirmed_block_sync(
                     })
                     .collect();
 
+                tracing::debug!("Gateay preconfirmed block sync: common_prefix={common_prefix:?} {header:?} {executed:?}, {candidates:?}");
+
                 if common_prefix.is_none() {
                     // New preconfirmed block (replaces the current one if there is one)
                     backend
@@ -235,6 +245,6 @@ pub fn gateway_preconfirmed_block_sync(
                 Ok(Some(()))
             }
         },
-        Duration::from_secs(1),
+        Duration::from_millis(200),
     )
 }

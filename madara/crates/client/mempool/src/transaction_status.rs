@@ -71,11 +71,11 @@ impl<D: MadaraStorageRead> WatchTransactionStatus<D> {
 
 impl<D: MadaraStorageRead> Mempool<D> {
     pub fn get_transaction_status(&self, transaction_hash: &Felt) -> anyhow::Result<Option<TransactionStatus>> {
-        if let Some(got) = self.preconfirmed_transactions_statuses.get(&transaction_hash) {
+        if let Some(got) = self.preconfirmed_transactions_statuses.get(transaction_hash) {
             return Ok(Some(TransactionStatus::Preconfirmed(got.clone())));
         }
         let view = self.backend.view_on_latest();
-        Ok(view.find_transaction_by_hash(&transaction_hash)?.map(
+        Ok(view.find_transaction_by_hash(transaction_hash)?.map(
             |ExecutedTransactionWithBlockView { transaction_index, block }| TransactionStatus::Confirmed {
                 block_number: block.block_number(),
                 transaction_index,

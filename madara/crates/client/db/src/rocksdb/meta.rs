@@ -71,7 +71,7 @@ impl RocksDBStorageInner {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_DEVNET_KEYS_KEY)? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     /// Set the devnet predeployed contracts keys.
@@ -80,7 +80,7 @@ impl RocksDBStorageInner {
         self.db.put_cf_opt(
             &self.get_column(META_COLUMN),
             META_DEVNET_KEYS_KEY,
-            bincode::serialize(&devnet_keys)?,
+            super::serialize(&devnet_keys)?,
             &self.writeopts_no_wal,
         )?;
         Ok(())
@@ -118,7 +118,7 @@ impl RocksDBStorageInner {
                 // Write new preconfirmed content.
                 for (tx_index, val) in content.iter().enumerate() {
                     let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
-                    batch.put_cf(&preconfirmed_col, &tx_index.to_be_bytes(), bincode::serialize(&val)?);
+                    batch.put_cf(&preconfirmed_col, tx_index.to_be_bytes(), super::serialize(&val)?);
                 }
             }
         };
@@ -133,7 +133,7 @@ impl RocksDBStorageInner {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_CHAIN_TIP_KEY)? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize::<StoredChainTipWithoutContent>(&res)?))
+        Ok(Some(super::deserialize::<StoredChainTipWithoutContent>(&res)?))
     }
 
     #[tracing::instrument(skip(self, txs))]
@@ -147,7 +147,7 @@ impl RocksDBStorageInner {
         for (i, value) in txs.iter().enumerate() {
             let tx_index = start_tx_index + i as u64;
             let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
-            batch.put_cf(&col, &tx_index.to_be_bytes(), bincode::serialize(&value)?);
+            batch.put_cf(&col, tx_index.to_be_bytes(), super::serialize(&value)?);
         }
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
         Ok(())
@@ -166,7 +166,7 @@ impl RocksDBStorageInner {
                     ReadOptions::default(),
                     IteratorMode::Start,
                 )
-                .into_iter_values(|bytes| bincode::deserialize::<PreconfirmedExecutedTransaction>(bytes))
+                .into_iter_values(|bytes| super::deserialize::<PreconfirmedExecutedTransaction>(bytes))
                 .map(|res| Ok(res??))
                 .collect::<Result<_>>()?;
 
@@ -180,7 +180,7 @@ impl RocksDBStorageInner {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_CHAIN_INFO_KEY)? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
@@ -199,17 +199,25 @@ impl RocksDBStorageInner {
         let Some(res) = self.db.get_pinned_cf(&self.get_column(META_COLUMN), META_LATEST_APPLIED_TRIE_UPDATE)? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {
-        self.db.put_cf_opt(
-            &self.get_column(META_COLUMN),
-            META_LATEST_APPLIED_TRIE_UPDATE,
-            super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
-            &self.writeopts_no_wal,
-        )?;
+        if let Some(block_n) = block_n {
+            self.db.put_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_LATEST_APPLIED_TRIE_UPDATE,
+                super::serialize_to_smallvec::<[u8; 128]>(block_n)?,
+                &self.writeopts_no_wal,
+            )?;
+        } else {
+            self.db.delete_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_LATEST_APPLIED_TRIE_UPDATE,
+                &self.writeopts_no_wal,
+            )?;
+        }
         Ok(())
     }
 }

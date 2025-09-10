@@ -35,55 +35,53 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn find_block_hash(&self, block_hash: &Felt) -> Result<Option<u64>> {
         let Some(res) =
-            self.db.get_pinned_cf(&self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN), &block_hash.to_bytes_be())?
+            self.db.get_pinned_cf(&self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN), block_hash.to_bytes_be())?
         else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize::<u32>(&res)?.into()))
+        Ok(Some(super::deserialize::<u32>(&res)?.into()))
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>> {
-        let Some(res) = self.db.get_pinned_cf(&self.get_column(TX_HASH_TO_INDEX_COLUMN), &tx_hash.to_bytes_be())?
-        else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(TX_HASH_TO_INDEX_COLUMN), tx_hash.to_bytes_be())? else {
             return Ok(None);
         };
-        let res = bincode::deserialize::<(u32, u32)>(&res)?;
+        let res = super::deserialize::<(u32, u16)>(&res)?;
         Ok(Some(StorageTxIndex { block_number: res.0.into(), transaction_index: res.1.into() }))
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_block_info(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>> {
         let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
-        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_INFO_COLUMN), &block_n.to_be_bytes())? else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_INFO_COLUMN), block_n.to_be_bytes())? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>> {
         let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
-        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_STATE_DIFF_COLUMN), &block_n.to_be_bytes())?
-        else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_STATE_DIFF_COLUMN), block_n.to_be_bytes())? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
         let Some((block_n, tx_index)) = Option::zip(u32::try_from(block_n).ok(), u16::try_from(tx_index).ok()) else {
-            return Ok(None); // If it overflows u32, it means it is not found. (we can't store block_n/tx_index > u32::MAX)
+            return Ok(None); // If it overflows u32, it means it is not found. (we can't store block_n > u32::MAX / tx_index > u16::MAX)
         };
         let Some(res) = self.db.get_pinned_cf(
             &self.get_column(BLOCK_TRANSACTIONS_COLUMN),
-            &make_transaction_column_key(block_n, tx_index),
+            make_transaction_column_key(block_n, tx_index),
         )?
         else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
@@ -95,7 +93,7 @@ impl RocksDBStorageInner {
         let Some((block_n, from_tx_index)) =
             Option::zip(u32::try_from(block_n).ok(), u16::try_from(from_tx_index).ok())
         else {
-            return Either::Left(iter::empty()); // If it overflows u32, it means it is not found. (we can't store block_n/tx_index > u32::MAX)
+            return Either::Left(iter::empty()); // If it overflows u32, it means it is not found. (we can't store block_n > u32::MAX / tx_index > u16::MAX)
         };
         let from = make_transaction_column_key(block_n, from_tx_index);
 
@@ -107,7 +105,7 @@ impl RocksDBStorageInner {
             options,
             IteratorMode::From(&from, rocksdb::Direction::Forward),
         )
-        .into_iter_values(|bytes| bincode::deserialize::<TransactionWithReceipt>(bytes))
+        .into_iter_values(|bytes| super::deserialize::<TransactionWithReceipt>(bytes))
         .map(|res| Ok(res??));
 
         Either::Right(iter)
@@ -121,12 +119,17 @@ impl RocksDBStorageInner {
         let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
 
-        let info = MadaraBlockInfo { header: header.header, block_hash: header.block_hash, tx_hashes: vec![] };
+        let info = MadaraBlockInfo {
+            header: header.header,
+            block_hash: header.block_hash,
+            tx_hashes: vec![],
+            total_l2_gas_used: 0,
+        };
 
-        batch.put_cf(&block_info_col, block_n.to_be_bytes(), bincode::serialize(&info)?);
+        batch.put_cf(&block_info_col, block_n.to_be_bytes(), super::serialize(&info)?);
         batch.put_cf(
             &block_hash_to_block_n_col,
-            &header.block_hash.to_bytes_be(),
+            header.block_hash.to_bytes_be(),
             &super::serialize_to_smallvec::<[u8; 16]>(&block_n)?,
         );
 
@@ -138,43 +141,49 @@ impl RocksDBStorageInner {
     pub(super) fn blocks_store_transactions(&self, block_number: u64, value: &[TransactionWithReceipt]) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
 
+        tracing::debug!("Write {block_number} => {:?}", value.iter().map(|v| v.receipt.transaction_hash()).collect::<Vec<_>>());
+
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
         let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
 
+        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
+
         for (tx_index, transaction) in value.iter().enumerate() {
+            let tx_index_u16 = u16::try_from(tx_index).context("Converting tx_index to u16")?;
             batch.put_cf(
                 &tx_hash_to_index_col,
                 transaction.receipt.transaction_hash().to_bytes_be(),
-                super::serialize_to_smallvec::<[u8; 16]>(&StorageTxIndex { block_number, transaction_index: tx_index as _ })?,
+                super::serialize_to_smallvec::<[u8; 16]>(&(block_n_u32, tx_index_u16))?,
             );
-            let block_n = u32::try_from(block_number).context("Converting block_n to u32")?;
-            let tx_index = u16::try_from(tx_index).context("Converting tx_index to u16")?;
             batch.put_cf(
                 &block_txs_col,
-                make_transaction_column_key(block_n, tx_index),
-                bincode::serialize(transaction)?,
+                make_transaction_column_key(block_n_u32, tx_index_u16),
+                super::serialize(transaction)?,
             );
         }
 
-        // update block info tx hashes (we should get rid of this field at some point IMO)
-        let mut block_info: MadaraBlockInfo = bincode::deserialize(
-            &self.db.get_pinned_cf(&block_info_col, block_number.to_be_bytes())?.context("Block info not found")?,
+        // Update block info tx hashes
+        // Also update total_l2_gas_used.
+        let mut block_info: MadaraBlockInfo = super::deserialize(
+            &self.db.get_pinned_cf(&block_info_col, block_n_u32.to_be_bytes())?.context("Block info not found")?,
         )?;
+        block_info.total_l2_gas_used = value.iter().map(|tx| tx.receipt.l2_gas_used()).sum();
         block_info.tx_hashes =
             value.iter().map(|tx_with_receipt| *tx_with_receipt.receipt.transaction_hash()).collect();
-        batch.put_cf(&block_info_col, block_number.to_be_bytes(), bincode::serialize(&block_info)?);
+        batch.put_cf(&block_info_col, block_n_u32.to_be_bytes(), super::serialize(&block_info)?);
 
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
         Ok(())
     }
 
     #[tracing::instrument(skip(self, value))]
-    pub(super) fn blocks_store_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
+    pub(super) fn blocks_store_state_diff(&self, block_number: u64, value: &StateDiff) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
+        let block_n_u32 = u32::try_from(block_number).context("Converting block_n to u32")?;
 
         let block_n_to_state_diff = self.get_column(BLOCK_STATE_DIFF_COLUMN);
-        batch.put_cf(&block_n_to_state_diff, &block_n.to_be_bytes(), &bincode::serialize(value)?);
+        batch.put_cf(&block_n_to_state_diff, block_n_u32.to_be_bytes(), &super::serialize(value)?);
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
 
         Ok(())
@@ -205,7 +214,7 @@ impl RocksDBStorageInner {
             batch.put_cf(
                 &block_txs_col,
                 make_transaction_column_key(block_n, tx_index),
-                bincode::serialize(&transaction)?,
+                super::serialize(&transaction)?,
             );
         }
 

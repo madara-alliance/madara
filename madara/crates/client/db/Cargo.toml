@@ -31,10 +31,10 @@ mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
+blockifier = { workspace = true }
 bonsai-trie = { workspace = true }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
-blockifier = { workspace = true }
 
 # Other
 alloy.workspace = true
@@ -42,13 +42,16 @@ anyhow.workspace = true
 bigdecimal = { workspace = true }
 bincode = { workspace = true }
 bitvec = { workspace = true }
+dashmap.workspace = true
 futures = { workspace = true }
+itertools.workspace = true
 librocksdb-sys = { workspace = true }
 num-traits = { workspace = true }
 rayon = { workspace = true }
 rocksdb.workspace = true
 serde = { workspace = true }
 siphasher.workspace = true
+smallvec = { version = "1.15.0", features = ["write"] }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 tokio = { workspace = true, features = [
@@ -57,9 +60,6 @@ tokio = { workspace = true, features = [
   "test-util",
   "signal",
 ] }
-smallvec = { version = "1.15.0", features = ["write"] }
-itertools.workspace = true
-dashmap.workspace = true
 
 #Instrumentation
 opentelemetry = { workspace = true, features = ["metrics", "logs"] }

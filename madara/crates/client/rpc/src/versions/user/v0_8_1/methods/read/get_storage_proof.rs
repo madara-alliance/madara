@@ -91,11 +91,11 @@ pub fn get_storage_proof(
         starknet.backend.block_view(block_id)?.into_confirmed().context("View cannot be preconfirmed here")?;
 
     let Some(latest) = starknet.backend.latest_confirmed_block_n() else {
-        return Err(StarknetRpcApiError::NoBlocks.into());
+        return Err(StarknetRpcApiError::NoBlocks);
     };
 
     if latest.saturating_sub(block_view.block_number()) > starknet.storage_proof_config.max_distance {
-        return Err(StarknetRpcApiError::CannotMakeProofOnOldBlock.into());
+        return Err(StarknetRpcApiError::CannotMakeProofOnOldBlock);
     }
 
     let block_hash = block_view.get_block_info()?.block_hash;
@@ -116,8 +116,7 @@ pub fn get_storage_proof(
             kind: StorageProofLimit::MaxKeys,
             limit: starknet.storage_proof_config.max_keys,
             got: proof_keys,
-        }
-        .into());
+        });
     }
 
     let n_tries = saturating_sum(
@@ -130,8 +129,7 @@ pub fn get_storage_proof(
             kind: StorageProofLimit::MaxUsedTries,
             limit: starknet.storage_proof_config.max_tries,
             got: n_tries,
-        }
-        .into());
+        });
     }
 
     // Make the proofs.

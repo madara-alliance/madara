@@ -40,9 +40,9 @@ impl RocksDBStorageInner {
             )
             .into_iter_items(|(k, v)| {
                 let block_n = u32::from_be_bytes(k.try_into().context("Expected key to be u32")?);
-                anyhow::Ok((u64::from(block_n), bincode::deserialize(&v).context("Deserializing event bloom filter")?))
+                anyhow::Ok((u64::from(block_n), super::deserialize(v).context("Deserializing event bloom filter")?))
             })
-            .map(|res| Ok(res??)),
+            .map(|res| res?),
         )
     }
 
@@ -137,8 +137,8 @@ impl RocksDBStorageInner {
 
         self.db.put_cf_opt(
             &self.get_column(EVENTS_BLOOM_COLUMN),
-            &block_n.to_be_bytes(),
-            &bincode::serialize(&writer)?,
+            block_n.to_be_bytes(),
+            &super::serialize(&writer)?,
             &self.writeopts_no_wal,
         )?;
         Ok(())

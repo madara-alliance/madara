@@ -414,11 +414,11 @@ mod tests {
             AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
-            if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
+            if !chain.backend.block_view_on_preconfirmed_or_fake().unwrap().get_block_info().tx_hashes.is_empty() {
                 break;
             }
         }
-        let pending_view = chain.backend.block_view_on_preconfirmed_or_fake();
+        let pending_view = chain.backend.block_view_on_preconfirmed_or_fake().unwrap();
         assert_eq!(pending_view.get_block_info().tx_hashes.len(), 1);
         tracing::debug!("receipt: {:?}", pending_view.get_executed_transaction(0).unwrap().receipt);
 
@@ -439,10 +439,7 @@ mod tests {
     #[rstest]
     #[case::should_fail_no_fund(false, false, Duration::from_secs(500000), false)]
     #[case::should_work_all_in_pending_block(true, false, Duration::from_secs(500000), true)]
-    #[case::should_work_across_block_boundary(true, true, Duration::from_millis(300), true)]
-    // FIXME: flaky
-    // #[case::should_work_across_block_boundary(true, true, None, Duration::from_secs(1), true)]
-    // #[ignore = "should_work_across_block_boundary"]
+    #[case::should_work_across_block_boundary(true, true, Duration::from_secs(5), true)]
     #[tokio::test]
     async fn test_account_deploy(
         #[case] transfer_fees: bool,
@@ -504,17 +501,16 @@ mod tests {
                 .await
                 .unwrap();
             tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
-            let notif = if wait_block_time {
-                BlockProductionStateNotification::ClosedBlock
-            } else {
-                BlockProductionStateNotification::UpdatedPendingBlock
-            };
 
-            for _ in 0..10 {
-                assert_eq!(notifications.recv().await.unwrap(), notif);
-                if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
-                    break;
-                }
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            if wait_block_time {
+                assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+                let _found = chain
+                    .backend
+                    .view_on_latest_confirmed()
+                    .find_transaction_by_hash(&transfer_txn.transaction_hash)
+                    .unwrap()
+                    .unwrap();
             }
         }
 
@@ -561,17 +557,15 @@ mod tests {
 
         let res = res.unwrap();
 
-        let notif = if wait_block_time {
-            BlockProductionStateNotification::ClosedBlock
-        } else {
-            BlockProductionStateNotification::UpdatedPendingBlock
-        };
-
-        for _ in 0..10 {
-            assert_eq!(notifications.recv().await.unwrap(), notif);
-            if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
-                break;
-            }
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        if wait_block_time {
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
+            let _found = chain
+                .backend
+                .view_on_latest_confirmed()
+                .find_transaction_by_hash(&res.transaction_hash)
+                .unwrap()
+                .unwrap();
         }
 
         assert_eq!(res.contract_address, account.address);
@@ -647,12 +641,12 @@ mod tests {
 
         for _ in 0..10 {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
-            if !chain.backend.block_view_on_preconfirmed_or_fake().get_block_info().tx_hashes.is_empty() {
+            if !chain.backend.block_view_on_preconfirmed_or_fake().unwrap().get_block_info().tx_hashes.is_empty() {
                 break;
             }
         }
 
-        let block_txs = chain.backend.block_view_on_preconfirmed_or_fake().get_executed_transactions(..);
+        let block_txs = chain.backend.block_view_on_preconfirmed_or_fake().unwrap().get_executed_transactions(..);
 
         assert_eq!(block_txs.len(), 1);
         tracing::info!("receipt: {:?}", block_txs[0].receipt);

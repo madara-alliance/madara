@@ -30,7 +30,12 @@ impl fmt::Debug for Snapshots {
 }
 
 impl Snapshots {
-    pub fn new(db: Arc<RocksDBStorageInner>, head_block_n: Option<u64>, max_kept_snapshots: Option<usize>, snapshot_interval: u64) -> Self {
+    pub fn new(
+        db: Arc<RocksDBStorageInner>,
+        head_block_n: Option<u64>,
+        max_kept_snapshots: Option<usize>,
+        snapshot_interval: u64,
+    ) -> Self {
         let head = Arc::new(SnapshotWithDBArc::new(Arc::clone(&db)));
         Self {
             db,

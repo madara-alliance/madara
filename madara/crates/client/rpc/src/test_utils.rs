@@ -24,7 +24,7 @@ use mp_rpc::v0_7_1::{
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
-    StorageEntry, TransactionStateUpdate,
+    StorageEntry,
 };
 use mp_transactions::{validated::TxTimestamp, InvokeTransaction, InvokeTransactionV0, Transaction};
 use mp_utils::service::ServiceContext;
@@ -588,10 +588,7 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         backend
             .write_access()
             .new_preconfirmed(PreconfirmedBlock::new_with_content(
-                PreconfirmedHeader {
-                    protocol_version: StarknetVersion::V0_13_2,
-                    ..Default::default()
-                },
+                PreconfirmedHeader { protocol_version: StarknetVersion::V0_13_2, ..Default::default() },
                 vec![PreconfirmedExecutedTransaction {
                     transaction: TransactionWithReceipt {
                         transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {

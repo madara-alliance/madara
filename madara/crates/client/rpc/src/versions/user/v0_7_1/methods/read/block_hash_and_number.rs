@@ -69,10 +69,7 @@ mod tests {
 
         backend
             .write_access()
-            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
-                block_number: 2,
-                ..Default::default()
-            }))
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 2, ..Default::default() }))
             .unwrap();
 
         assert_eq!(
@@ -90,10 +87,7 @@ mod tests {
         // pending block should not be taken into account
         backend
             .write_access()
-            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader {
-                block_number: 0,
-                ..Default::default()
-            }))
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 0, ..Default::default() }))
             .unwrap();
 
         assert_eq!(block_hash_and_number(&rpc), Err(StarknetRpcApiError::NoBlocks));

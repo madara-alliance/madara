@@ -238,7 +238,11 @@ impl InnerMempool {
 
     /// Applies the [EvictionScore] policy: we remove the least desirable transaction in the mempool if it is less desirable than this
     /// new one.
-    fn try_make_room_for(&mut self, new_tx: &EvictionScore, removed_txs: &mut impl Extend<ValidatedTransaction>) -> bool {
+    fn try_make_room_for(
+        &mut self,
+        new_tx: &EvictionScore,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) -> bool {
         tracing::debug!("Try make room for {new_tx:?}");
         let Some(account_key) = self.eviction_queue.get_next_if_less_desirable_than(new_tx) else {
             return false;
@@ -299,7 +303,11 @@ impl InnerMempool {
     /// * `now`: current time.
     /// * `removed_txs`: if any transaction is removed from the mempool during insertion. This helps
     ///   the caller do bookkeeping if necessary (remove from db, send update notifications...)
-    pub fn remove_all_ttl_exceeded_txs(&mut self, now: TxTimestamp, removed_txs: &mut impl Extend<ValidatedTransaction>) {
+    pub fn remove_all_ttl_exceeded_txs(
+        &mut self,
+        now: TxTimestamp,
+        removed_txs: &mut impl Extend<ValidatedTransaction>,
+    ) {
         let Some(ttl) = self.config.ttl else { return };
         let limit_ts = now.saturating_sub(ttl);
         while let Some(tx_key) = self.timestamp_queue.first_older_than(limit_ts) {

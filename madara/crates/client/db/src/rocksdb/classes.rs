@@ -1,5 +1,7 @@
 use crate::{
-    prelude::*, rocksdb::{Column, RocksDBStorageInner, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE}, storage::{ClassInfoWithBlockN, CompiledSierraWithBlockN}
+    prelude::*,
+    rocksdb::{Column, RocksDBStorageInner, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE},
+    storage::{ClassInfoWithBlockN, CompiledSierraWithBlockN},
 };
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
@@ -13,28 +15,25 @@ pub const CLASS_COMPILED_COLUMN: Column = Column::new("class_compiled").set_poin
 impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn get_class(&self, class_hash: &Felt) -> Result<Option<ClassInfoWithBlockN>> {
-        let Some(res) = self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), &class_hash.to_bytes_be())? else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())? else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn get_class_compiled(
-        &self,
-        compiled_class_hash: &Felt,
-    ) -> Result<Option<CompiledSierraWithBlockN>> {
+    pub(super) fn get_class_compiled(&self, compiled_class_hash: &Felt) -> Result<Option<CompiledSierraWithBlockN>> {
         let Some(res) =
-            self.db.get_pinned_cf(&self.get_column(CLASS_COMPILED_COLUMN), &compiled_class_hash.to_bytes_be())?
+            self.db.get_pinned_cf(&self.get_column(CLASS_COMPILED_COLUMN), compiled_class_hash.to_bytes_be())?
         else {
             return Ok(None);
         };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     #[tracing::instrument(skip(self))]
     pub(super) fn contains_class(&self, class_hash: &Felt) -> Result<bool> {
-        Ok(self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), &class_hash.to_bytes_be())?.is_some())
+        Ok(self.db.get_pinned_cf(&self.get_column(CLASS_INFO_COLUMN), class_hash.to_bytes_be())?.is_some())
     }
 
     #[tracing::instrument(skip(self, converted_classes))]
@@ -45,12 +44,14 @@ impl RocksDBStorageInner {
                 let mut batch = WriteBatchWithTransaction::default();
                 for converted_class in chunk {
                     // this is a patch because some legacy classes are declared multiple times
-                    if !self.contains_class(&converted_class.class_hash())? {
-                        // TODO: find a way to avoid this allocation
+                    if !self.contains_class(converted_class.class_hash())? {
                         batch.put_cf(
                             col,
-                            &converted_class.class_hash().to_bytes_be(),
-                            bincode::serialize(&ClassInfoWithBlockN { class_info: converted_class.info(), block_number })?,
+                            converted_class.class_hash().to_bytes_be(),
+                            super::serialize(&ClassInfoWithBlockN {
+                                class_info: converted_class.info(),
+                                block_number,
+                            })?,
                         );
                     }
                 }
@@ -71,8 +72,15 @@ impl RocksDBStorageInner {
                 || self.get_column(CLASS_COMPILED_COLUMN),
                 |col, chunk| {
                     let mut batch = WriteBatchWithTransaction::default();
-                    for (key, value) in chunk {
-                        batch.put_cf(col, &key.to_bytes_be(), bincode::serialize(&value)?);
+                    for (key, compiled_sierra) in chunk {
+                        batch.put_cf(
+                            col,
+                            key.to_bytes_be(),
+                            super::serialize(&CompiledSierraWithBlockN {
+                                block_number,
+                                compiled_sierra: compiled_sierra.clone(),
+                            })?,
+                        );
                     }
                     self.db.write_opt(batch, &self.writeopts_no_wal)?;
                     anyhow::Ok(())

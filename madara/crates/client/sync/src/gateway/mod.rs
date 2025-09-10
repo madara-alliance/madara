@@ -174,8 +174,8 @@ impl ForwardPipeline for GatewayForwardSync {
 
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
-                // Notify of a new full block here.
-                self.backend.write_access().on_new_block_imported(block_n)?;
+                // Mark the block as fully imported.
+                self.backend.write_access().new_confirmed_block(block_n)?;
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }

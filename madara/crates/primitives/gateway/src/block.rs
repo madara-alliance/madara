@@ -303,8 +303,8 @@ impl ProviderBlockPreConfirmed {
         let mut transactions = self
             .transactions
             .into_iter()
-            .zip(self.transaction_receipts.into_iter())
-            .zip(self.transaction_state_diffs.into_iter())
+            .zip(self.transaction_receipts)
+            .zip(self.transaction_state_diffs)
             .skip(skip_first_n)
             .peekable();
 

@@ -74,7 +74,8 @@ pub fn contract_trie_root(
     let leaf_hashes: Vec<_> = contract_leafs
         .into_par_iter()
         .map(|(contract_address, mut leaf)| {
-            let storage_root = contract_storage_trie.root_hash(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
+            let storage_root =
+                contract_storage_trie.root_hash(&contract_address.to_bytes_be()).map_err(WrappedBonsaiError)?;
             leaf.storage_root = Some(storage_root);
             let leaf_hash = contract_state_leaf_hash(backend, &contract_address, &leaf, block_number)?;
             let bytes = contract_address.to_bytes_be();
@@ -118,7 +119,9 @@ fn contract_state_leaf_hash(
         .nonce
         .unwrap_or(backend.inner.get_contract_nonce_at(block_number, contract_address)?.unwrap_or(Felt::ZERO));
 
-    let class_hash = if let Some(class_hash) = contract_leaf.class_hash {class_hash} else {
+    let class_hash = if let Some(class_hash) = contract_leaf.class_hash {
+        class_hash
+    } else {
         backend.inner.get_contract_class_hash_at(block_number, contract_address)?.unwrap_or(Felt::ZERO)
     };
 
@@ -132,9 +135,9 @@ fn contract_state_leaf_hash(
 
 #[cfg(test)]
 mod contract_trie_root_tests {
+    use super::*;
     use crate::{rocksdb::update_global_trie::tests::setup_test_backend, MadaraBackend};
     use mp_chain_config::ChainConfig;
-    use super::*;
     use rstest::*;
     use std::sync::Arc;
 
@@ -172,9 +175,15 @@ mod contract_trie_root_tests {
         let block_number = 1;
 
         // Call the function and print the result
-        let result =
-            contract_trie_root(&backend.db, &deployed_contracts, &replaced_classes, &nonces, &storage_diffs, block_number)
-                .unwrap();
+        let result = contract_trie_root(
+            &backend.db,
+            &deployed_contracts,
+            &replaced_classes,
+            &nonces,
+            &storage_diffs,
+            block_number,
+        )
+        .unwrap();
 
         assert_eq!(
             result,

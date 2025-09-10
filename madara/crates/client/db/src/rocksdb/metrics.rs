@@ -1,10 +1,12 @@
-use crate::{Column, DatabaseExt, DB};
 use anyhow::Context as _;
 use mc_analytics::register_gauge_metric_instrument;
 use opentelemetry::global::Error;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, KeyValue};
 use rocksdb::perf::MemoryUsageBuilder;
+
+use crate::rocksdb::column::ALL_COLUMNS;
+use crate::rocksdb::RocksDBStorage;
 #[derive(Clone, Debug)]
 pub struct DbMetrics {
     pub db_size: Gauge<u64>,
@@ -72,22 +74,22 @@ impl DbMetrics {
         Ok(Self { db_size, column_sizes, mem_table_total, mem_table_unflushed, mem_table_readers_total, cache_total })
     }
 
-    pub fn try_update(&self, db: &DB) -> anyhow::Result<u64> {
+    pub fn try_update(&self, db: &RocksDBStorage) -> anyhow::Result<u64> {
         let mut storage_size = 0;
 
-        for &column in Column::ALL.iter() {
-            let cf_handle = db.get_column(column);
-            let cf_metadata = db.get_column_family_metadata_cf(&cf_handle);
+        for column in ALL_COLUMNS {
+            let cf_handle = db.inner.get_column(column.clone());
+            let cf_metadata = db.inner.db.get_column_family_metadata_cf(&cf_handle);
             let column_size = cf_metadata.size;
             storage_size += column_size;
 
-            self.column_sizes.record(column_size, &[KeyValue::new("column", column.rocksdb_name())]);
+            self.column_sizes.record(column_size, &[KeyValue::new("column", column.rocksdb_name)]);
         }
 
         self.db_size.record(storage_size, &[]);
 
         let mut builder = MemoryUsageBuilder::new().context("Creating memory usage builder")?;
-        builder.add_db(db);
+        builder.add_db(&db.inner.db);
         let mem_usage = builder.build().context("Getting memory usage")?;
         self.mem_table_total.record(mem_usage.approximate_mem_table_total(), &[]);
         self.mem_table_unflushed.record(mem_usage.approximate_mem_table_unflushed(), &[]);
@@ -98,7 +100,7 @@ impl DbMetrics {
     }
 
     /// Returns the total storage size
-    pub fn update(&self, db: &DB) -> u64 {
+    pub fn update(&self, db: &RocksDBStorage) -> u64 {
         match self.try_update(db) {
             Ok(res) => res,
             Err(err) => {

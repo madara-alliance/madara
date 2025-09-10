@@ -1,4 +1,4 @@
-use crate::{prelude::*, ChainTip};
+use crate::{preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
 
 mod block;
 mod block_confirmed;
@@ -9,7 +9,10 @@ mod state;
 pub use block::MadaraBlockView;
 pub use block_confirmed::MadaraConfirmedBlockView;
 pub use block_preconfirmed::MadaraPreconfirmedBlockView;
-use mp_block::TransactionWithReceipt;
+use mp_block::{
+    header::{BlockTimestamp, PreconfirmedHeader},
+    TransactionWithReceipt,
+};
 pub use state::MadaraStateView;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -54,14 +57,52 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a view on the preconfirmed block. This view is used to query content and listen for changes in that block.
     /// This returns a fake preconfirmed block if there is not currently one in the backend.
     /// The preconfirmed block view will not include candidate transactions.
-    pub fn block_view_on_preconfirmed_or_fake(self: &Arc<Self>) -> MadaraPreconfirmedBlockView<D> {
-        MadaraPreconfirmedBlockView::new(
-            self.clone(),
-            self.preconfirmed_block().unwrap_or_else(|| {
-                // fake preconfirmed block.
-                todo!()
-            }),
-        )
+    pub fn block_view_on_preconfirmed_or_fake(self: &Arc<Self>) -> Result<MadaraPreconfirmedBlockView<D>> {
+        let chain_tip = self.chain_tip.borrow();
+        // TODO: cache the preconfirmed fake blocks.
+        let block = match &*chain_tip {
+            // Real preconfirmed block.
+            ChainTip::Preconfirmed(block) => block.clone(),
+            // Fake preconfirmed block, based on the previous block header. Most recent gas prices.
+            ChainTip::Confirmed(parent_block_number) => {
+                let parent_block_info = self
+                    .block_view_on_confirmed(*parent_block_number)
+                    .context("Parent block should be found")?
+                    .get_block_info()?;
+                PreconfirmedBlock::new(PreconfirmedHeader {
+                    block_number: *parent_block_number + 1,
+                    sequencer_address: parent_block_info.header.sequencer_address,
+                    block_timestamp: BlockTimestamp::now(),
+                    protocol_version: parent_block_info.header.protocol_version,
+                    gas_prices: if let Some(quote) = self.get_last_l1_gas_quote() {
+                        self.calculate_gas_prices(
+                            &quote,
+                            parent_block_info.header.gas_prices.strk_l2_gas_price,
+                            parent_block_info.total_l2_gas_used,
+                        )?
+                    } else {
+                        parent_block_info.header.gas_prices
+                    },
+                    l1_da_mode: parent_block_info.header.l1_da_mode,
+                })
+                .into()
+            }
+            // Fake preconfirmed block, based on chain config. Most recent gas prices.
+            ChainTip::Empty => PreconfirmedBlock::new(PreconfirmedHeader {
+                block_number: 0,
+                sequencer_address: self.chain_config().sequencer_address.to_felt(),
+                block_timestamp: BlockTimestamp::now(),
+                protocol_version: self.chain_config().latest_protocol_version,
+                gas_prices: if let Some(quote) = self.get_last_l1_gas_quote() {
+                    self.calculate_gas_prices(&quote, 0, 0)?
+                } else {
+                    Default::default()
+                },
+                l1_da_mode: self.chain_config().l1_da_mode,
+            })
+            .into(),
+        };
+        Ok(MadaraPreconfirmedBlockView::new(self.clone(), block))
     }
 
     /// Returns a state view on the latest confirmed block state. This view can be used to query the state from this block and earlier.
@@ -83,6 +124,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
     }
 
     /// The preconfirmed block view will not include candidate transactions.
+    /// This does not check that the block actually exists when given a confirmed block. Please be aware of that.
     pub fn block_view_on_tip(self: &Arc<MadaraBackend<D>>, tip: ChainTip) -> Option<MadaraBlockView<D>> {
         match tip {
             ChainTip::Empty => None,
@@ -91,6 +133,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         }
     }
     /// The preconfirmed block view will not include candidate transactions.
+    /// This does not check that the block actually exists when given a confirmed block. Please be aware of that.
     pub fn view_on_tip(self: &Arc<MadaraBackend<D>>, tip: ChainTip) -> MadaraStateView<D> {
         match tip {
             ChainTip::Empty => MadaraStateView::Empty(self.clone()),
@@ -115,7 +158,7 @@ fn normalize_transactions_range(bounds: impl std::ops::RangeBounds<u64>) -> (usi
     let end_tx_index = match end {
         Bound::Excluded(end) => end,
         Bound::Included(end) => end.saturating_add(1),
-        Bound::Unbounded => u64::MAX.into(),
+        Bound::Unbounded => u64::MAX,
     };
     let end_tx_index = usize::try_from(end_tx_index).unwrap_or(usize::MAX);
 

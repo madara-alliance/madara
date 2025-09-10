@@ -26,8 +26,8 @@ starknet-types-core.workspace = true
 starknet_api.workspace = true
 
 mc-db.workspace = true
-mc-mempool.workspace = true
 mc-exec.workspace = true
+mc-mempool.workspace = true
 mp-class.workspace = true
 mp-convert.workspace = true
 mp-rpc.workspace = true

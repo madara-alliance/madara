@@ -75,7 +75,7 @@ fn make_storage_column_key(contract_address: &Felt, storage_key: &Felt, block_n:
 }
 
 // prefix [<contract_address 32 bytes>] | <block_n 4 bytes>
-const CONTRACT_KEY_LEN: usize = 32 * 2 + size_of::<u32>();
+const CONTRACT_KEY_LEN: usize = 32 + size_of::<u32>();
 fn make_contract_column_key(contract_address: &Felt, block_n: u32) -> [u8; CONTRACT_KEY_LEN] {
     let mut key = [0u8; CONTRACT_KEY_LEN];
     key[..32].copy_from_slice(&contract_address.to_bytes_be());
@@ -92,9 +92,9 @@ impl RocksDBStorageInner {
     ) -> Result<Option<V>> {
         let mut options = ReadOptions::default();
         options.set_prefix_same_as_start(true);
-        let mode = IteratorMode::From(&bin_prefix, rocksdb::Direction::Forward); // Iterate forward since we reversed block_n order (this is faster)
+        let mode = IteratorMode::From(bin_prefix, rocksdb::Direction::Forward); // Iterate forward since we reversed block_n order (this is faster)
         let mut iter = DBIterator::new_cf(&self.db, &self.get_column(col), options, mode)
-            .into_iter_values(|bytes| bincode::deserialize(bytes));
+            .into_iter_values(|bytes| super::deserialize(bytes));
         let n = iter.next();
 
         Ok(n.transpose()?.transpose()?)
@@ -103,7 +103,7 @@ impl RocksDBStorageInner {
     fn db_history_kv_contains(&self, bin_prefix: &[u8], col: Column) -> Result<bool> {
         let mut options = ReadOptions::default();
         options.set_prefix_same_as_start(true);
-        let mode = IteratorMode::From(&bin_prefix, rocksdb::Direction::Forward); // Iterate forward since we reversed block_n order (this is faster)
+        let mode = IteratorMode::From(bin_prefix, rocksdb::Direction::Forward); // Iterate forward since we reversed block_n order (this is faster)
         let mut iter = DBIterator::new_cf(&self.db, &self.get_column(col), options, mode);
         Ok(iter.next()?)
     }

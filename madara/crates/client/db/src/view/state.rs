@@ -129,7 +129,9 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
 
     pub fn get_contract_storage(&self, contract_address: &Felt, key: &Felt) -> Result<Option<Felt>> {
         let state_diff_key = (*contract_address, *key);
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.storage_diffs.get(&state_diff_key).copied()) {
+        if let Some(res) =
+            self.lookup_preconfirmed_state(|(_, s)| s.state_diff.storage_diffs.get(&state_diff_key).copied())
+        {
             return Ok(Some(res));
         }
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
@@ -145,7 +147,9 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
     }
 
     pub fn get_contract_class_hash(&self, contract_address: &Felt) -> Result<Option<Felt>> {
-        if let Some(res) = self.lookup_preconfirmed_state(|(_, s)| s.state_diff.contract_class_hashes.get(contract_address).copied()) {
+        if let Some(res) =
+            self.lookup_preconfirmed_state(|(_, s)| s.state_diff.contract_class_hashes.get(contract_address).copied())
+        {
             return Ok(Some(*res.class_hash()));
         }
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
@@ -155,7 +159,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
     pub fn is_contract_deployed(&self, contract_address: &Felt) -> Result<bool> {
         if self
             .lookup_preconfirmed_state(|(_, s)| {
-                if s.state_diff.contract_class_hashes.contains_key(&contract_address) {
+                if s.state_diff.contract_class_hashes.contains_key(contract_address) {
                     Some(())
                 } else {
                     None
@@ -197,7 +201,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
         let Some(block_n) = self.latest_confirmed_block_n() else { return Ok(None) };
         let Some(class) = self.backend().db.get_class_compiled(compiled_class_hash)? else { return Ok(None) };
         if class.block_number <= block_n {
-            Ok(Some(class.compiled_sierra.into()))
+            Ok(Some(class.compiled_sierra))
         } else {
             Ok(None)
         }
@@ -268,7 +272,7 @@ impl<D: MadaraStorageRead> MadaraStateView<D> {
                 .nth(tx_index_i)
                 .map(|tx| tx.transaction.clone()));
         }
-        if !self.latest_confirmed_block_n().is_some_and(|on_block_n| on_block_n >= block_number) {
+        if self.latest_confirmed_block_n().is_none_or(|on_block_n| on_block_n < block_number) {
             return Ok(None);
         }
 

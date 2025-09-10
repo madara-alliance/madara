@@ -23,13 +23,11 @@ mod tests {
     #[case::v0_13_6(1_556_533)]
     #[tokio::test]
     async fn get_block_compute_hash_header(client_mainnet_fixture: GatewayProvider, #[case] block_n: u64) {
-        let res = client_mainnet_fixture
-            .get_state_update_with_block(BlockId::Number(block_n))
-            .await
-            .unwrap();
+        let res = client_mainnet_fixture.get_state_update_with_block(BlockId::Number(block_n)).await.unwrap();
         println!("expected_block_hash: 0x{:x}", res.block.block_hash);
         let chain_id = ChainId::Mainnet.to_felt();
-        let computed_block_hash = res.block.header(&res.state_update.state_diff.into()).unwrap().compute_hash(chain_id, false);
+        let computed_block_hash =
+            res.block.header(&res.state_update.state_diff.into()).unwrap().compute_hash(chain_id, false);
         println!("computed_block_hash: 0x{:x}", computed_block_hash);
         assert!(computed_block_hash == res.block.block_hash, "Computed block hash does not match expected block hash");
     }

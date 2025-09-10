@@ -23,7 +23,7 @@ pub fn get_nonce(starknet: &Starknet, block_id: BlockId, contract_address: Felt)
     let view = starknet.backend.view_on(&block_id)?;
 
     if !view.is_contract_deployed(&contract_address)? {
-        return Err(StarknetRpcApiError::contract_not_found())
+        return Err(StarknetRpcApiError::contract_not_found());
     }
 
     Ok(view.get_contract_nonce(&contract_address)?.unwrap_or(Felt::ZERO))

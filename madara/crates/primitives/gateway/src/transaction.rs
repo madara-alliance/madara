@@ -137,7 +137,7 @@ impl InvokeTransaction {
             InvokeTransaction::V3(_) => 3,
         }
     }
-    
+
     pub fn transaction_hash(&self) -> &Felt {
         match self {
             Self::V0(tx) => &tx.transaction_hash,
@@ -356,7 +356,7 @@ impl DeclareTransaction {
             DeclareTransaction::V3(_) => 3,
         }
     }
-    
+
     pub fn transaction_hash(&self) -> &Felt {
         match self {
             Self::V0(tx) => &tx.transaction_hash,
@@ -613,7 +613,7 @@ impl DeployAccountTransaction {
             DeployAccountTransaction::V3(_) => 3,
         }
     }
-    
+
     pub fn transaction_hash(&self) -> &Felt {
         match self {
             Self::V1(tx) => &tx.transaction_hash,

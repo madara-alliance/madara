@@ -59,19 +59,16 @@ impl StateViewResolvable for BlockId {
             Self::Tag(BlockTag::Pending) => Ok(backend.view_on_latest()),
             Self::Tag(BlockTag::Latest) => Ok(backend.view_on_latest_confirmed()),
             Self::Hash(hash) => {
-                if let Some(block_n) = backend.db.find_block_hash(&hash)? {
-                    Ok(backend
-                        .view_on_confirmed(block_n)
-                        .with_context(|| {
-                            format!("Block with hash {hash:#x} was found at {block_n} but no such block exists")
-                        })?
-                        .into())
+                if let Some(block_n) = backend.db.find_block_hash(hash)? {
+                    Ok(backend.view_on_confirmed(block_n).with_context(|| {
+                        format!("Block with hash {hash:#x} was found at {block_n} but no such block exists")
+                    })?)
                 } else {
                     Err(BlockResolutionError::BlockHashNotFound)
                 }
             }
             Self::Number(block_n) => {
-                backend.view_on_confirmed(*block_n).map(Into::into).ok_or(BlockResolutionError::BlockNumberNotFound)
+                backend.view_on_confirmed(*block_n).ok_or(BlockResolutionError::BlockNumberNotFound)
             }
         }
     }
@@ -84,12 +81,12 @@ impl BlockViewResolvable for BlockId {
         backend: &Arc<MadaraBackend<D>>,
     ) -> Result<MadaraBlockView<D>, Self::Error> {
         match self {
-            Self::Tag(BlockTag::Pending) => Ok(backend.block_view_on_preconfirmed_or_fake().into()),
+            Self::Tag(BlockTag::Pending) => Ok(backend.block_view_on_preconfirmed_or_fake()?.into()),
             Self::Tag(BlockTag::Latest) => {
                 backend.block_view_on_last_confirmed().map(|b| b.into()).ok_or(BlockResolutionError::NoBlocks)
             }
             Self::Hash(hash) => {
-                if let Some(block_n) = backend.db.find_block_hash(&hash)? {
+                if let Some(block_n) = backend.db.find_block_hash(hash)? {
                     Ok(backend
                         .block_view_on_confirmed(block_n)
                         .with_context(|| {

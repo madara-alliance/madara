@@ -72,8 +72,7 @@ impl<D: MadaraStorageRead> MadaraConfirmedBlockView<D> {
     }
 
     pub fn get_executed_transaction(&self, tx_index: u64) -> Result<Option<TransactionWithReceipt>> {
-        let Some(tx_index) = usize::try_from(tx_index).ok() else { return Ok(None) };
-        Ok(self.backend.db.get_transaction(self.block_number, tx_index as u64)?)
+        self.backend.db.get_transaction(self.block_number, tx_index)
     }
 
     pub fn get_executed_transactions(

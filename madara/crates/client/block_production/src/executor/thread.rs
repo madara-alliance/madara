@@ -14,10 +14,7 @@ use std::{
     mem,
     sync::Arc,
 };
-use tokio::{
-    sync::mpsc,
-    time::Instant,
-};
+use tokio::{sync::mpsc, time::Instant};
 
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
@@ -416,7 +413,9 @@ impl ExecutorThread {
             tracing::debug!("Block now full: {:?}", block_full);
 
             let exec_result = super::BatchExecutionResult { executed_txs, blockifier_results, stats };
-            if self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err() {
+            if exec_result.stats.n_executed > 0
+                && self.replies_sender.blocking_send(super::ExecutorMessage::BatchExecuted(exec_result)).is_err()
+            {
                 // Receiver closed
                 break Ok(());
             }

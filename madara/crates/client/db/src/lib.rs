@@ -57,7 +57,6 @@ use mp_transactions::L1HandlerTransactionWithFee;
 use prelude::*;
 use std::path::Path;
 
-// mod db_metrics;
 mod db_version;
 mod prelude;
 pub mod storage;
@@ -280,7 +279,7 @@ impl MadaraBackend<RocksDBStorage> {
     ) -> Result<Arc<Self>> {
         // check if the db version is compatible with the current binary
         tracing::debug!("checking db version");
-        if let Some(db_version) = db_version::check_db_version(&base_path).context("Checking database version")? {
+        if let Some(db_version) = db_version::check_db_version(base_path).context("Checking database version")? {
             tracing::debug!("version of existing db is {db_version}");
         }
         let db_path = base_path.join("db");
@@ -301,7 +300,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
         self.chain_tip.borrow().is_preconfirmed()
     }
     pub fn latest_l1_confirmed_block_n(&self) -> Option<u64> {
-        self.latest_l1_confirmed.borrow().clone()
+        *self.latest_l1_confirmed.borrow()
     }
 
     fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
@@ -344,16 +343,22 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // TODO: detect if the transition is valid, throw an error otherwise
 
-        // Write to db if needed.
-        let saved_tip = if self.inner.config.save_preconfirmed {
+        let current_tip_in_db = if self.inner.config.save_preconfirmed {
+            &current_tip
+        } else {
+            // Remove the pre-confirmed case: we save the parent confirmed in that case.
+            &ChainTip::on_confirmed_block_n_or_empty(current_tip.latest_confirmed_block_n())
+        };
+
+        let new_tip_in_db = if self.inner.config.save_preconfirmed {
             &new_tip
         } else {
             // Remove the pre-confirmed case: we save the parent confirmed in that case.
             &ChainTip::on_confirmed_block_n_or_empty(new_tip.latest_confirmed_block_n())
         };
-        if &current_tip != saved_tip {
-            // Save to db.
-            self.inner.db.replace_chain_tip(&saved_tip.to_storage())?;
+        // Write to db if needed.
+        if current_tip_in_db != new_tip_in_db {
+            self.inner.db.replace_chain_tip(&new_tip_in_db.to_storage())?;
         }
 
         // Write to the backend. This also sends the notification to subscribers :)
@@ -394,10 +399,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         let block_hash = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
 
-        // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(ChainTip::Confirmed(block.header.block_number))?;
-
-        self.on_new_block_imported(block.header.block_number)?;
+        self.new_confirmed_block(block.header.block_number)?;
 
         Ok(block_hash)
     }
@@ -424,10 +426,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         let block_n = block.header.block_number;
         self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
 
-        // Advance chain & clear preconfirmed atomically
-        self.replace_chain_tip(ChainTip::Confirmed(block_n))?;
-
-        self.on_new_block_imported(block_n)
+        self.new_confirmed_block(block_n)
     }
 
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
@@ -466,7 +465,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.write_transactions(block.header.block_number, &block.transactions)?;
         self.write_state_diff(block.header.block_number, &block.state_diff)?;
         self.write_events(block.header.block_number, &block.events)?;
-        self.write_classes(block.header.block_number, &classes)?;
+        self.write_classes(block.header.block_number, classes)?;
 
         Ok(block_hash)
     }
@@ -534,26 +533,27 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
     /// saves block parts separately for performance reasons.
-    /// This function in particular marks a fully imported block as confirmed.
+    /// This function in particular marks a fully imported block as confirmed. It also clears the current preconfirmed block, if any.
     ///
     /// **Warning**: The caller must ensure this new imported block is the one following the current confirmed block.
     /// You are not allowed to call this function with earlier or later blocks.
     /// In addition, you must have fully imported the block using the low level writing primitives for each of the block
     /// parts.
-    pub fn on_new_block_imported(&self, block_n: u64) -> Result<()> {
+    pub fn new_confirmed_block(&self, block_number: u64) -> Result<()> {
         if self
             .inner
             .config
             .flush_every_n_blocks
-            .is_some_and(|flush_every_n_blocks| block_n.checked_rem(flush_every_n_blocks) == Some(0))
+            .is_some_and(|flush_every_n_blocks| block_number.checked_rem(flush_every_n_blocks) == Some(0))
         {
             tracing::debug!("Flushing.");
             self.inner.db.flush()?;
         }
 
-        self.inner.db.on_new_confirmed_head(block_n)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
+        self.inner.db.on_new_confirmed_head(block_number)?; // Update snapshots for storage proofs. (FIXME: decouple this logic)
 
-        // self.update_metrics();
+        // Advance chain & clear preconfirmed atomically
+        self.replace_chain_tip(ChainTip::Confirmed(block_number))?;
 
         Ok(())
     }

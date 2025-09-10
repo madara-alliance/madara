@@ -17,7 +17,7 @@ use starknet_types_core::felt::Felt;
 /// * `class_hash` - The class hash of the given contract
 pub fn get_class_hash_at(starknet: &Starknet, block_id: BlockId, contract_address: Felt) -> StarknetRpcResult<Felt> {
     let view = starknet.backend.view_on(&block_id)?;
-    Ok(view.get_contract_class_hash(&contract_address)?.ok_or(StarknetRpcApiError::contract_not_found())?)
+    view.get_contract_class_hash(&contract_address)?.ok_or(StarknetRpcApiError::contract_not_found())
 }
 
 #[cfg(test)]

@@ -36,12 +36,7 @@ impl RocksDBStorageInner {
     /// If the message is already pending, this will overwrite it.
     pub fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()> {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
-        self.db.put_cf_opt(
-            &pending_cf,
-            msg.tx.nonce.to_be_bytes(),
-            bincode::serialize(&msg)?,
-            &self.writeopts_no_wal,
-        )?;
+        self.db.put_cf_opt(&pending_cf, msg.tx.nonce.to_be_bytes(), super::serialize(&msg)?, &self.writeopts_no_wal)?;
         Ok(())
     }
 
@@ -56,7 +51,7 @@ impl RocksDBStorageInner {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
         self.db.get_pinned_cf(&pending_cf, core_contract_nonce.to_be_bytes())?;
         let Some(res) = self.db.get_pinned_cf(&pending_cf, core_contract_nonce.to_be_bytes())? else { return Ok(None) };
-        Ok(Some(bincode::deserialize(&res)?))
+        Ok(Some(super::deserialize(&res)?))
     }
 
     pub fn get_next_pending_message_to_l2(&self, start_nonce: u64) -> Result<Option<L1HandlerTransactionWithFee>> {
@@ -68,7 +63,7 @@ impl RocksDBStorageInner {
             std::result::Result<_, Box<bincode::ErrorKind>>,
             fn(&[u8]) -> std::result::Result<_, Box<bincode::ErrorKind>>,
         > = DBIterator::new_cf(&self.db, &pending_cf, ReadOptions::default(), mode)
-            .into_iter_values(|v| bincode::deserialize(v));
+            .into_iter_values(|v| super::deserialize(v));
 
         iter.next().transpose()?.transpose().map_err(Into::into)
     }

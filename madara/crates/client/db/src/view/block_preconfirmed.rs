@@ -21,7 +21,7 @@ pub struct PreconfirmedContentRef<'a, D: MadaraStorageRead> {
     guard: tokio::sync::watch::Ref<'a, PreconfirmedBlockInner>,
     view: &'a MadaraPreconfirmedBlockView<D>,
 }
-impl<'a, D: MadaraStorageRead> PreconfirmedContentRef<'a, D> {
+impl<D: MadaraStorageRead> PreconfirmedContentRef<'_, D> {
     pub fn executed_transactions(
         &self,
     ) -> impl DoubleEndedIterator<Item = &PreconfirmedExecutedTransaction> + Clone + ExactSizeIterator {
@@ -256,7 +256,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         // Aggregate all transaction state diffs.
 
         let mut contract_class_hashes: HashMap<Felt, Felt> = Default::default();
-        let mut nonces: Vec<NonceUpdate> = Default::default();
+        let mut nonces: HashMap<Felt, Felt> = Default::default(); // This must be a map since some keys may be duplicated and we only want one entry in that case.
         let mut declared_classes: Vec<DeclaredClassItem> = Default::default();
         let mut old_declared_contracts: Vec<Felt> = Default::default();
         {
@@ -274,10 +274,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
                     .extend(tx.state_diff.contract_class_hashes.iter().map(|(k, v)| (*k, *v.class_hash())));
 
                 // Nonces.
-                nonces.extend(tx.state_diff.nonces.iter().map(|(contract_address, nonce)| NonceUpdate {
-                    contract_address: *contract_address,
-                    nonce: *nonce,
-                }));
+                nonces.extend(tx.state_diff.nonces.iter().map(|(contract_address, nonce)| (*contract_address, *nonce)));
 
                 // Classes.
                 for (&class_hash, &compiled_class_hash) in &tx.state_diff.declared_classes {
@@ -347,7 +344,10 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
 
         // Nonce entries do not need to be checked against the database, since they can never take a previous value.
         // Same with the classes: they can only be declared once.
-        let nonces = sorted_by_key(nonces, |entry| entry.contract_address);
+        let nonces = sorted_by_key(
+            nonces.into_iter().map(|(contract_address, nonce)| NonceUpdate { contract_address, nonce }).collect(),
+            |entry| entry.contract_address,
+        );
         let declared_classes = sorted_by_key(declared_classes, |entry| entry.class_hash);
         let old_declared_contracts = sorted_by_key(old_declared_contracts, |class_hash| *class_hash);
 

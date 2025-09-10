@@ -81,7 +81,7 @@ impl<D: MadaraStorageRead> Mempool<D> {
 }
 
 impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
-    pub async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
+    async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
         if !self.config.save_to_db {
             // If saving is disabled, we don't want to read from db. Otherwise, if there are txs in the database, they will be re-inserted
             // everytime we restart the node, but will never be removed from db once they're consumed.
@@ -178,7 +178,7 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         Ok(())
     }
 
-    pub async fn run_ttl_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
+    async fn run_ttl_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         if self.ttl.is_none() {
             // no need to do anything more
             ctx.cancelled().await;
