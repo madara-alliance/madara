@@ -3,6 +3,7 @@ use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::{CreateJobInfo, Task, TaskStatus, TaskType};
 use std::sync::Arc;
+use std::time::Instant;
 
 use crate::core::config::Config;
 use crate::error::job::proving::ProvingError;
@@ -12,6 +13,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{JobMetadata, ProvingInputType, ProvingMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use tracing::{debug, error, info};
 
@@ -61,6 +63,9 @@ impl JobHandlerTrait for ProvingJobHandler {
 
         debug!("Submitting task to prover client");
 
+        // Track proof generation time
+        let proof_start = Instant::now();
+
         let external_id = config
             .prover_client()
             .submit_task(Task::CreateJob(CreateJobInfo {
@@ -73,6 +78,10 @@ impl JobHandlerTrait for ProvingJobHandler {
             .inspect_err(|e| {
                 error!(error = %e, "Failed to submit task to prover client");
             })?;
+
+        // Record proof submission time (this is just the submission, actual proof generation is async)
+        let proof_duration = proof_start.elapsed().as_secs_f64();
+        MetricsRecorder::record_proof_generation_time("proof_submission", proof_duration);
 
         Ok(external_id)
     }

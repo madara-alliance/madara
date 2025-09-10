@@ -1,6 +1,5 @@
-use chrono::{DateTime, Utc};
+use chrono::Utc;
 use opentelemetry::KeyValue;
-use std::time::Instant;
 
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::job_item::JobItem;
@@ -17,12 +16,12 @@ impl MetricsRecorder {
         let attributes = [
             KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
             KeyValue::new("operation_type", "create_job"),
-            KeyValue::new("service_name", "${namespace}"), // Will be replaced by actual namespace
+            KeyValue::new("service_name", "${namespace}"),
         ];
 
         // Record that a job entered the queue
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
-        
+
         // TODO: Query DB to get current queue depth for this job type
         // This would require async context - implement in service layer
     }
@@ -60,12 +59,6 @@ impl MetricsRecorder {
 
     /// Record metrics when job verification starts
     pub fn record_verification_started(job: &JobItem) {
-        let attributes = [
-            KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
-            KeyValue::new("operation_type", "verify_job"),
-            KeyValue::new("internal_id", job.internal_id.clone()),
-        ];
-
         // Record state transition
         let transition_attrs = [
             KeyValue::new("from_state", JobStatus::LockedForProcessing.to_string()),
@@ -161,16 +154,6 @@ impl MetricsRecorder {
         ORCHESTRATOR_METRICS.settlement_time.record(duration_seconds, &attributes);
     }
 
-    /// Record current queue depth (should be called periodically)
-    pub async fn record_queue_depth(job_type: &JobType, depth: f64) {
-        let attributes = [
-            KeyValue::new("operation_job_type", format!("{:?}", job_type)),
-            KeyValue::new("queue_type", "process"),
-        ];
-
-        ORCHESTRATOR_METRICS.job_queue_depth.record(depth, &attributes);
-    }
-
     /// Record active jobs count (should be called when jobs change state)
     pub async fn record_active_jobs(count: f64) {
         let attributes = [
@@ -194,7 +177,7 @@ impl MetricsRecorder {
         sla_type: &str,
     ) {
         let age_seconds = Utc::now().signed_duration_since(job.created_at).num_seconds();
-        
+
         if age_seconds > max_e2e_seconds {
             let attributes = [
                 KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
@@ -214,19 +197,5 @@ impl MetricsRecorder {
         ];
 
         ORCHESTRATOR_METRICS.orphaned_jobs.add(1.0, &attributes);
-    }
-
-    /// Calculate and record throughput metrics (should be called periodically)
-    pub async fn record_throughput_metrics(
-        jobs_last_minute: f64,
-        blocks_last_hour: f64,
-    ) {
-        ORCHESTRATOR_METRICS.jobs_per_minute.record(jobs_last_minute, &[]);
-        ORCHESTRATOR_METRICS.blocks_per_hour.record(blocks_last_hour, &[]);
-    }
-
-    /// Record P99 job age (should be called periodically)
-    pub async fn record_job_age_p99(p99_age_seconds: f64) {
-        ORCHESTRATOR_METRICS.job_age_p99.record(p99_age_seconds, &[]);
     }
 }

@@ -9,6 +9,7 @@ pub(crate) mod update_state;
 use crate::core::config::Config;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use async_trait::async_trait;
 use std::sync::Arc;
 
@@ -81,6 +82,9 @@ pub trait JobTrigger: Send + Sync {
         let mut healed_count = 0;
 
         for mut job in orphaned_jobs {
+            // Record orphaned job metric
+            MetricsRecorder::record_orphaned_job(&job);
+            
             job.metadata.common.process_started_at = None;
 
             let update_result = config
