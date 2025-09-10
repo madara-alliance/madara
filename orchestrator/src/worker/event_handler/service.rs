@@ -12,7 +12,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::JobMetadata;
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, SettlementContext, StateUpdateMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -109,7 +109,37 @@ impl JobHandlerService {
         );
 
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&internal_id)?, &attributes);
+
+        // For Aggregator and StateUpdate jobs, use the last block in the batch instead of batch number
+        let block_number = match job_type {
+            JobType::StateTransition => {
+                // Try to get the last block from StateUpdate metadata
+                if let Ok(state_metadata) = TryInto::<StateUpdateMetadata>::try_into(job_item.metadata.specific.clone())
+                {
+                    match &state_metadata.context {
+                        SettlementContext::Block(data) | SettlementContext::Batch(data) => data
+                            .to_settle
+                            .last()
+                            .copied()
+                            .map(|v| v as f64)
+                            .unwrap_or_else(|| parse_string(&internal_id).unwrap_or(0.0)),
+                    }
+                } else {
+                    parse_string(&internal_id)?
+                }
+            }
+            JobType::Aggregator => {
+                // For Aggregator, use the actual end_block from the batch
+                if let Ok(agg_metadata) = TryInto::<AggregatorMetadata>::try_into(job_item.metadata.specific.clone()) {
+                    agg_metadata.end_block as f64
+                } else {
+                    parse_string(&internal_id)?
+                }
+            }
+            _ => parse_string(&internal_id)?,
+        };
+
+        ORCHESTRATOR_METRICS.block_gauge.record(block_number, &attributes);
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(())

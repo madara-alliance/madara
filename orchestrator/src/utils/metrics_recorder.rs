@@ -7,7 +7,6 @@ use crate::utils::metrics::ORCHESTRATOR_METRICS;
 
 /// Helper functions to record metrics at various points in the job lifecycle
 /// These should be called from the existing service handlers without modifying the DB model
-
 pub struct MetricsRecorder;
 
 impl MetricsRecorder {
