@@ -187,7 +187,12 @@ impl EventWorker {
                 debug!(job_id = %queue_message.id, "Calling JobHandlerService::process_job");
 
                 JobHandlerService::process_job(queue_message.id, self.config.clone()).await.map_err(|e| {
-                    error!(job_id = %queue_message.id, error = %e, "Job processing failed");
+                    error!(
+                        job_id = %queue_message.id,
+                        error = %e,
+                        error_type = %std::any::type_name_of_val(&e),
+                        "Job processing failed"
+                    );
                     ConsumptionError::Other(OtherError::from(e.to_string()))
                 })?;
 
@@ -197,7 +202,12 @@ impl EventWorker {
                 debug!(job_id = %queue_message.id, "Calling JobHandlerService::verify_job");
 
                 JobHandlerService::verify_job(queue_message.id, self.config.clone()).await.map_err(|e| {
-                    error!(job_id = %queue_message.id, error = %e, "Job verification failed");
+                    error!(
+                        job_id = %queue_message.id,
+                        error = %e,
+                        error_type = %std::any::type_name_of_val(&e),
+                        "Job verification failed"
+                    );
                     ConsumptionError::Other(OtherError::from(e.to_string()))
                 })?;
 

@@ -12,11 +12,12 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::JobMetadata;
+use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, SettlementContext, StateUpdateMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
+use crate::utils::metrics_recorder::MetricsRecorder;
 #[double]
 use crate::worker::event_handler::factory::factory;
 use crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger;
@@ -88,6 +89,10 @@ impl JobHandlerService {
         let job_item = job_handler.create_job(internal_id.clone(), metadata).await?;
         config.database().create_job(job_item.clone()).await?;
         info!("Job item inside the create job function: {:?}", job_item);
+
+        // Record metrics for job creation
+        MetricsRecorder::record_job_created(&job_item);
+
         JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
 
         let attributes = [
@@ -104,7 +109,37 @@ impl JobHandlerService {
         );
 
         let duration = start.elapsed();
-        ORCHESTRATOR_METRICS.block_gauge.record(parse_string(&internal_id)?, &attributes);
+
+        // For Aggregator and StateUpdate jobs, use the last block in the batch instead of batch number
+        let block_number = match job_type {
+            JobType::StateTransition => {
+                // Try to get the last block from StateUpdate metadata
+                if let Ok(state_metadata) = TryInto::<StateUpdateMetadata>::try_into(job_item.metadata.specific.clone())
+                {
+                    match &state_metadata.context {
+                        SettlementContext::Block(data) | SettlementContext::Batch(data) => data
+                            .to_settle
+                            .last()
+                            .copied()
+                            .map(|v| v as f64)
+                            .unwrap_or_else(|| parse_string(&internal_id).unwrap_or(0.0)),
+                    }
+                } else {
+                    parse_string(&internal_id)?
+                }
+            }
+            JobType::Aggregator => {
+                // For Aggregator, use the actual end_block from the batch
+                if let Ok(agg_metadata) = TryInto::<AggregatorMetadata>::try_into(job_item.metadata.specific.clone()) {
+                    agg_metadata.end_block as f64
+                } else {
+                    parse_string(&internal_id)?
+                }
+            }
+            _ => parse_string(&internal_id)?,
+        };
+
+        ORCHESTRATOR_METRICS.block_gauge.record(block_number, &attributes);
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
         Ok(())
@@ -152,6 +187,10 @@ impl JobHandlerService {
         Span::current().record("job_type", format!("{:?}", job.job_type));
         Span::current().record("internal_id", job.internal_id.clone());
 
+        // Calculate and record queue wait time
+        let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
+        MetricsRecorder::record_job_processing_started(&job, queue_wait_time);
+
         debug!(job_id = ?id, status = ?job.status, "Current job status");
         match job.status {
             // We only want to process jobs that are in the created or verification failed state,
@@ -160,9 +199,20 @@ impl JobHandlerService {
             // failed, and we want to retry
             JobStatus::Created | JobStatus::VerificationFailed | JobStatus::PendingRetry => {
                 info!(job_id = ?id, status = ?job.status, "Processing job");
+
+                // Record retry if this is not the first attempt
+                if job.status == JobStatus::VerificationFailed || job.status == JobStatus::PendingRetry {
+                    MetricsRecorder::record_job_retry(&job, &job.status.to_string());
+                }
             }
             _ => {
-                warn!(job_id = ?id, status = ?job.status, "Cannot process job with current status");
+                warn!(
+                    job_id = ?id,
+                    status = ?job.status,
+                    job_type = ?job.job_type,
+                    internal_id = ?job.internal_id,
+                    "Cannot process job with current status"
+                );
                 return Err(JobError::InvalidStatus { id, job_status: job.status });
             }
         }
@@ -174,6 +224,16 @@ impl JobHandlerService {
         // it would fail to update the job in the database because the version would be outdated
         debug!(job_id = ?id, "Updating job status to LockedForProcessing");
         job.metadata.common.process_started_at = Some(Utc::now());
+
+        // Record state transition
+        ORCHESTRATOR_METRICS.job_state_transitions.add(
+            1.0,
+            &[
+                KeyValue::new("from_state", job.status.to_string()),
+                KeyValue::new("to_state", JobStatus::LockedForProcessing.to_string()),
+                KeyValue::new("operation_job_type", format!("{:?}", job.job_type)),
+            ],
+        );
         let mut job = config
             .database()
             .update_job(
@@ -332,6 +392,10 @@ impl JobHandlerService {
         debug!(job_id = ?id, "Verifying job with handler");
 
         job.metadata.common.verification_started_at = Some(Utc::now());
+
+        // Record verification started
+        MetricsRecorder::record_verification_started(&job);
+
         let mut job = config
             .database()
             .update_job(&job, JobItemUpdates::new().update_metadata(job.metadata.clone()).build())
@@ -367,6 +431,14 @@ impl JobHandlerService {
 
                 // Update verification completed timestamp and update status
                 job.metadata.common.verification_completed_at = Some(Utc::now());
+
+                // Record E2E latency and completion
+                let e2e_duration = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
+                MetricsRecorder::record_job_completed(&job, e2e_duration);
+
+                // Check SLA compliance (example: 5 minute SLA)
+                MetricsRecorder::check_and_record_sla_breach(&job, 300, "e2e_time");
+
                 config
                     .database()
                     .update_job(
@@ -389,6 +461,9 @@ impl JobHandlerService {
                 // Update metadata with error information
                 job.metadata.common.failure_reason = Some(e.clone());
                 operation_job_status = Some(JobStatus::VerificationFailed);
+
+                // Record job failure
+                MetricsRecorder::record_job_failed(&job, &e);
 
                 if job.metadata.common.process_attempt_no < job_handler.max_process_attempts() {
                     info!(
@@ -414,6 +489,10 @@ impl JobHandlerService {
                     JobService::add_job_to_process_queue(job.id, &job.job_type, config.clone()).await?;
                 } else {
                     warn!(job_id = ?id, "Max process attempts reached. Job will not be retried");
+
+                    // Record job abandoned after max retries
+                    let retry_count = job.metadata.common.process_attempt_no;
+                    MetricsRecorder::record_job_abandoned(&job, retry_count as i32);
                     return JobService::move_job_to_failed(
                         &job,
                         config.clone(),
@@ -430,6 +509,10 @@ impl JobHandlerService {
 
                 if job.metadata.common.verification_attempt_no >= job_handler.max_verification_attempts() {
                     warn!(job_id = ?id, "Max verification attempts reached. Marking job as timed out");
+
+                    // Record timeout metric
+                    MetricsRecorder::record_job_timeout(&job);
+
                     config
                         .database()
                         .update_job(&job, JobItemUpdates::new().update_status(JobStatus::VerificationTimeout).build())

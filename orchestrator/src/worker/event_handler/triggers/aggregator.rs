@@ -54,6 +54,8 @@ impl JobTrigger for AggregatorJobTrigger {
                     batch_num: batch.index,
                     bucket_id: batch.bucket_id,
                     num_blocks: batch.num_blocks,
+                    start_block: batch.start_block,
+                    end_block: batch.end_block,
                     download_proof: if config.params.store_audit_artifacts {
                         Some(format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, batch.index, PROOF_FILE_NAME))
                     } else {

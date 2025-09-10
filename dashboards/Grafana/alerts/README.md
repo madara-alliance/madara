@@ -2,37 +2,45 @@
 
 ## Overview
 
-This directory contains comprehensive alert rules and notification configurations for monitoring the Madara Orchestrator system. The alerts are designed to detect issues early and provide actionable insights for maintaining system health.
+This directory contains comprehensive alert rules and notification configurations for monitoring the Madara Orchestrator system.
+The alerts are designed to detect issues early and provide actionable insights for maintaining system health.
 
 ## Alert Categories
 
 ### 1. System Health Alerts
+
 - **Orchestrator Service Down**: Detects when the main orchestrator service is unresponsive
 - **Health Check Failures**: Monitors the `/health` endpoint availability
 
 ### 2. Job Processing Pipeline Alerts
+
 - **Block Processing Lag**: Detects when one job type is significantly behind others
 - **High Job Failure Rate**: Alerts when job failure rate exceeds thresholds
 - **No Block Progress**: Detects system stalls when no blocks are being processed
 
 ### 3. Performance & SLA Alerts
+
 - **Job Response Time**: Monitors processing time for each job type
 - **Database Response Time**: Tracks MongoDB performance
 
 ### 4. External Dependencies
+
 - **Prover Service Failures**: Detects issues with proof generation services
 - **DA Layer Issues**: Monitors data availability layer connectivity
 - **Settlement Layer Issues**: Tracks L1/settlement layer interactions
 
 ### 5. Queue & Worker Health
+
 - **Queue Depth Monitoring**: Alerts on message backlog
 - **Worker Restart Detection**: Tracks unexpected worker failures
 
 ### 6. Resource Management
+
 - **Batch Size Monitoring**: Prevents exceeding blob size limits
 - **Graceful Shutdown Monitoring**: Ensures clean shutdowns
 
 ### 7. Data Integrity
+
 - **Jobs Stuck in Locked State**: Detects potential deadlocks
 - **Verification Failure Patterns**: Identifies systematic issues
 - **Consecutive Failures**: Tracks repeated failures requiring intervention
@@ -87,6 +95,7 @@ Alternatively, you can import via Grafana UI:
 5. Repeat for `advanced_alerts.yaml`
 
 For notification channels:
+
 1. Navigate to **Alerting** → **Contact points**
 2. Click **Add contact point**
 3. Configure based on `notification_channels.yaml`
@@ -213,18 +222,21 @@ Then create corresponding alert rules.
 ## Troubleshooting
 
 ### Alerts Not Firing
+
 - Check Prometheus is scraping metrics
 - Verify alert rule syntax
 - Check datasource UID matches
 - Review alert conditions and thresholds
 
 ### Notifications Not Received
+
 - Verify webhook URLs are correct
 - Check network connectivity
 - Review notification channel configuration
 - Check Grafana logs for delivery errors
 
 ### False Positives
+
 - Adjust thresholds based on baseline
 - Increase evaluation period (for parameter)
 - Add additional conditions
@@ -253,6 +265,7 @@ Then create corresponding alert rules.
 ## Support
 
 For issues or questions about alerts:
+
 - Check orchestrator logs: `kubectl logs -n madara orchestrator`
 - Review Grafana alert state: Alerting → Alert rules
-- Contact: orchestrator-team@madara.io
+- Contact: <orchestrator-team@madara.io>

@@ -8,6 +8,7 @@ use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::metrics_recorder::MetricsRecorder;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
@@ -21,6 +22,7 @@ use starknet_core::types::{
 use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
 use std::sync::Arc;
+use std::time::Instant;
 use tracing::{debug, error, info, trace, warn};
 
 pub struct DAJobHandler;
@@ -126,11 +128,17 @@ impl JobHandlerTrait for DAJobHandler {
             })?
         }
 
-        // Publish to DA layer
+        // Publish to DA layer with timing
+        let settlement_start = Instant::now();
+
         let external_id = config.da_client().publish_state_diff(blob_array, &[0; 32]).await.map_err(|e| {
             error!(job_id = ?job.id, error = ?e, "Failed to publish state diff to DA layer");
             JobError::Other(OtherError(e))
         })?;
+
+        // Record settlement time
+        let settlement_duration = settlement_start.elapsed().as_secs_f64();
+        MetricsRecorder::record_settlement_time(&job.job_type, settlement_duration);
 
         da_metadata.tx_hash = Some(external_id.clone());
         job.metadata.specific = JobSpecificMetadata::Da(da_metadata);
