@@ -328,8 +328,7 @@ impl ExecutorThread {
                             || !state.consumed_l1_to_l2_nonces().insert(nonce)
                         // insert: Returns true if it was already consumed in the current state.
                         {
-                            tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
-                            continue;
+                            println!("L1 Core Contract nonce already consumed: {nonce}");
                         }
                     }
                     to_exec.push(tx, additional_info)
