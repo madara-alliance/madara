@@ -1,4 +1,3 @@
-
 use mc_db::{rocksdb::RocksDBConfig, MadaraBackendConfig};
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -141,7 +140,7 @@ impl BackendParams {
         }
     }
     pub fn rocksdb_config(&self) -> RocksDBConfig {
-        RocksDBConfig { 
+        RocksDBConfig {
             enable_statistics: self.db_enable_statistics,
             statistics_period_sec: self.db_statistics_period_sec,
             statistics_level: self.db_statistics_level.unwrap_or(StatsLevel::All).into(),
@@ -154,7 +153,6 @@ impl BackendParams {
             snapshot_interval: self.db_snapshot_interval,
             backup_dir: self.backup_dir.clone(),
             restore_from_latest_backup: self.restore_from_latest_backup,
-            
-         }
+        }
     }
 }

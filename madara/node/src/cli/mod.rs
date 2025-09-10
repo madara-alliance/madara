@@ -9,9 +9,9 @@ use std::str::FromStr;
 use std::sync::Arc;
 
 pub mod analytics;
+pub mod backend;
 pub mod block_production;
 pub mod chain_config_overrides;
-pub mod backend;
 pub mod gateway;
 pub mod l1;
 pub mod l2;
@@ -20,9 +20,9 @@ pub mod telemetry;
 pub mod validator;
 
 pub use analytics::*;
+pub use backend::*;
 pub use block_production::*;
 pub use chain_config_overrides::*;
-pub use backend::*;
 pub use gateway::*;
 pub use l1::*;
 pub use rpc::*;

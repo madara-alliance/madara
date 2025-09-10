@@ -6,7 +6,7 @@ mod service;
 mod submit_tx;
 mod util;
 
-use crate::service::L1SyncConfig;
+use crate::service::{L1SyncConfig, MempoolService};
 use anyhow::{bail, Context};
 use clap::Parser;
 use cli::RunCmd;
@@ -18,7 +18,6 @@ use http::{HeaderName, HeaderValue};
 use mc_analytics::Analytics;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
-use mc_mempool::{Mempool, MempoolConfig};
 use mc_settlement_client::gas_price::L1BlockMetrics;
 use mc_submit_tx::{SubmitTransaction, TransactionValidator};
 use mc_telemetry::{SysInfo, TelemetryService};
@@ -144,11 +143,7 @@ async fn main() -> anyhow::Result<()> {
     )
     .context("Starting madara backend")?;
 
-    // declare mempool here so that it can be used to process l1->l2 messages in the l1 service
-    let mempool =
-        Mempool::new(Arc::clone(&backend), MempoolConfig { save_to_db: !run_cmd.validator_params.no_mempool_saving });
-    mempool.load_txs_from_db().await.context("Loading mempool transactions")?;
-    let mempool = Arc::new(mempool);
+    let service_mempool = MempoolService::new(&run_cmd, backend.clone());
 
     let (l1_head_snd, l1_head_recv) = tokio::sync::watch::channel(None);
     let service_l1_sync = L1SyncService::new(
@@ -156,7 +151,6 @@ async fn main() -> anyhow::Result<()> {
         backend.clone(),
         L1SyncConfig {
             l1_core_address: chain_config.eth_core_contract_address.clone(),
-            authority: run_cmd.is_sequencer(),
             l1_block_metrics: L1BlockMetrics::register().context("Initializing L1 Block Metrics")?.into(),
             l1_head_snd,
         },
@@ -233,14 +227,14 @@ async fn main() -> anyhow::Result<()> {
     let service_block_production = BlockProductionService::new(
         &run_cmd.block_production_params,
         &backend,
-        Arc::clone(&mempool),
+        service_mempool.mempool(),
         service_l1_sync.client(),
     )?;
 
     // Add transaction provider
 
     let mempool_tx_validator = Arc::new(TransactionValidator::new(
-        Arc::clone(&mempool) as _,
+        service_mempool.mempool() as _,
         backend.clone(),
         run_cmd.validator_params.as_validator_config(),
     ));
@@ -259,7 +253,7 @@ async fn main() -> anyhow::Result<()> {
     let tx_submit =
         MakeSubmitTransactionSwitch::new(Arc::clone(&gateway_submit_tx) as _, Arc::clone(&mempool_tx_validator) as _);
     let validated_tx_submit =
-        MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, Arc::clone(&mempool) as _);
+        MakeSubmitValidatedTransactionSwitch::new(Arc::clone(&gateway_client) as _, service_mempool.mempool() as _);
 
     // User-facing RPC
 
@@ -296,6 +290,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = ServiceMonitor::default()
+        .with(service_mempool)?
         .with(service_l1_sync)?
         .with(service_l2_sync)?
         .with(service_block_production)?
@@ -312,6 +307,8 @@ async fn main() -> anyhow::Result<()> {
     let l1_sync_enabled = !run_cmd.l1_sync_params.l1_sync_disabled;
     let l1_endpoint_some = run_cmd.l1_sync_params.l1_endpoint.is_some();
     let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
+
+    app.activate(MadaraServiceId::Mempool);
 
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
         app.activate(MadaraServiceId::L1Sync);

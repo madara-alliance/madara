@@ -33,7 +33,7 @@ struct StartArgs {
     db_backend: Arc<MadaraBackend>,
     params: L2SyncParams,
     warp_update: Option<WarpUpdateConfig>,
-    unsafe_starting_block_enabled: bool
+    unsafe_starting_block_enabled: bool,
 }
 
 #[derive(Clone)]
@@ -48,7 +48,7 @@ impl SyncService {
         db: &Arc<MadaraBackend>,
         l1_head_recv: L1HeadReceiver,
         warp_update: Option<WarpUpdateConfig>,
-        unsafe_starting_block_enabled: bool
+        unsafe_starting_block_enabled: bool,
     ) -> anyhow::Result<Self> {
         Ok(Self {
             start_args: (!config.l2_sync_disabled).then_some(StartArgs {
@@ -56,7 +56,7 @@ impl SyncService {
                 db_backend: db.clone(),
                 params: config.clone(),
                 warp_update,
-                unsafe_starting_block_enabled
+                unsafe_starting_block_enabled,
             }),
             disabled: config.l2_sync_disabled,
         })

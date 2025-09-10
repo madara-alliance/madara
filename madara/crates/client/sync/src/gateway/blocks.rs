@@ -167,7 +167,9 @@ pub fn gateway_preconfirmed_block_sync(
                     }
                     Err(other) => {
                         // non-compliant gateway?
-                        tracing::warn!("Error while getting the pre-confirmed block #{block_number} from the gateway: {other:#}");
+                        tracing::warn!(
+                            "Error while getting the pre-confirmed block #{block_number} from the gateway: {other:#}"
+                        );
                         return Ok(None);
                     }
                 };
@@ -180,22 +182,39 @@ pub fn gateway_preconfirmed_block_sync(
                 // How many of these transactions do we already have? When None, we need to make a new pre-confirmed block.
                 let mut common_prefix = None;
 
-                if let Some(in_backend) = backend.block_view_on_preconfirmed() {
+                if let Some(mut in_backend) = backend.block_view_on_preconfirmed() {
+                    in_backend.refresh_with_candidates(); // we want to compare candidates too.
+
                     if in_backend.block_number() != block_number {
-                        return Ok(None)
+                        return Ok(None);
                     }
+
                     // True if this gateway block should be considered as a new pre-confirmed block entirely.
                     let new_preconfirmed = in_backend.header() != &header
                         || in_backend.num_executed_transactions() > n_executed
-                        || in_backend.borrow_content().executed_transactions().zip(&block.transactions).all(
-                            // Compare hashes
-                            // TODO: should we compute these hashes? probably not?
-                            |(in_backend, gateway_tx)| {
-                                in_backend.transaction.receipt.transaction_hash() != gateway_tx.transaction_hash()
-                            },
+                        ||
+                        // Compare hashes
+                        // TODO: should we compute these hashes? probably not?
+                        Iterator::ne(
+                            in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
+                            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash())
                         );
 
-                    common_prefix = new_preconfirmed.then_some(in_backend.num_executed_transactions());
+                    if !new_preconfirmed {
+                        common_prefix = Some(in_backend.num_executed_transactions());
+                    }
+
+                    // Whether there was no change at all (no need to update the backend)
+                    let has_not_changed = !new_preconfirmed
+                        && in_backend.num_executed_transactions() == n_executed
+                        // Compare candidate hashes.
+                        && Iterator::eq(
+                            in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
+                            block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
+                        );
+                    if has_not_changed {
+                        return Ok(None);
+                    }
                 }
 
                 let arrived_at = TxTimestamp::now();

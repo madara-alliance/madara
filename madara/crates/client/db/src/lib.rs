@@ -263,6 +263,10 @@ impl<D: MadaraStorage> MadaraBackend<D> {
 impl MadaraBackend<RocksDBStorage> {
     #[cfg(any(test, feature = "testing"))]
     pub fn open_for_testing(chain_config: Arc<ChainConfig>) -> Arc<Self> {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
         let temp_dir = tempfile::TempDir::with_prefix("madara-test").unwrap();
         let db = RocksDBStorage::open(temp_dir.as_ref(), Default::default()).unwrap();
         let mut backend = Self::new_and_init(db, chain_config, Default::default()).unwrap();
