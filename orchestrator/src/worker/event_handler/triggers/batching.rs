@@ -12,6 +12,7 @@ use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDA
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
+use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
 use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
@@ -22,12 +23,9 @@ use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
 use tokio::try_join;
+use tracing::{debug, error, info, trace};
 
 pub struct BatchingTrigger;
-
-// This lock ensures that only one Batching Worker is running at a time.
-// The lock is acquired for 1 hour.
-const BATCHING_WORKER_LOCK_DURATION: u64 = 60 * 60;
 
 // Community doc for v0.13.2 - https://community.starknet.io/t/starknet-v0-13-2-pre-release-notes/114223
 
@@ -37,24 +35,38 @@ impl JobTrigger for BatchingTrigger {
     /// 2. Fetch the last batch and check its `end_block`
     /// 3. Assign batches to all the remaining blocks and store the squashed state update in storage
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
-        tracing::info!(log_type = "starting", category = "BatchingWorker", "BatchingWorker started");
+        info!(log_type = "starting", "BatchingWorker started");
 
         // Trying to acquire lock on Batching Worker (Taking a lock for 1 hr)
         match config
             .lock()
-            .acquire_lock("BatchingWorker", LockValue::Boolean(false), BATCHING_WORKER_LOCK_DURATION, None)
+            .acquire_lock(
+                "BatchingWorker",
+                LockValue::Boolean(false),
+                config.params.batching_config.batching_worker_lock_duration,
+                None,
+            )
             .await
         {
             Ok(_) => {
                 // Lock acquired successfully
-                tracing::info!("BatchingWorker acquired lock");
+                info!("BatchingWorker acquired lock");
             }
             Err(err) => {
                 // Failed to acquire lock
                 // Returning safely
-                tracing::info!("BatchingWorker failed to acquire lock, returning safely: {}", err);
+                info!("BatchingWorker failed to acquire lock, returning safely: {}", err);
                 return Ok(());
             }
+        }
+
+        // Getting the latest batch in DB
+        let latest_batch = config.database().get_latest_batch().await?;
+        let latest_block_in_db = latest_batch.clone().map_or(-1, |batch| batch.end_block as i64);
+
+        // Check if any existing batch needs to be closed
+        if let Some(batch) = latest_batch {
+            self.check_and_close_batch(&config, &batch).await?;
         }
 
         // Getting the latest block number from Starknet
@@ -67,11 +79,7 @@ impl JobTrigger for BatchingTrigger {
             .max_block_to_process
             .map_or(block_number_provider, |max_block| min(max_block, block_number_provider));
 
-        tracing::debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch.");
-
-        // Getting the latest batch in DB
-        let latest_batch = config.database().get_latest_batch().await?;
-        let latest_block_in_db = latest_batch.map_or(-1, |batch| batch.end_block as i64);
+        debug!(latest_block_number = %last_block_to_assign_batch, "Calculated latest block number to batch");
 
         // Calculating the first block number to for which a batch needs to be assigned
         let first_block_to_assign_batch =
@@ -86,14 +94,14 @@ impl JobTrigger for BatchingTrigger {
         // Releasing the lock
         config.lock().release_lock("BatchingWorker", None).await?;
 
-        tracing::trace!(log_type = "completed", category = "BatchingWorker", "BatchingWorker completed.");
+        trace!(log_type = "completed", "BatchingWorker completed.");
         Ok(())
     }
 }
 
 impl BatchingTrigger {
     /// assign_batch_to_blocks assigns a batch to all the blocks from `start_block_number` to
-    /// `end_block_number` and updates the state in DB and stores the output in storage
+    /// `end_block_number`, updates the state in DB and stores the result in storage
     async fn assign_batch_to_blocks(
         &self,
         start_block_number: u64,
@@ -102,7 +110,7 @@ impl BatchingTrigger {
     ) -> Result<(), JobError> {
         if end_block_number < start_block_number {
             return Err(JobError::Other(OtherError(eyre!(
-                "end_block_number {} is smaller than start_block_number {}",
+                "Failed to assign batch to blocks as end_block_number ({}) is smaller than start_block_number ({})",
                 end_block_number,
                 start_block_number
             ))));
@@ -187,7 +195,7 @@ impl BatchingTrigger {
                             )
                             .await?;
 
-                        if compressed_state_update.len() > MAX_BLOB_SIZE {
+                        if self.should_close_batch(config, Some(compressed_state_update.len()), &current_batch) {
                             // We cannot add the current block in this batch
 
                             // Close the current batch - store the state update, blob info in storage and update DB
@@ -218,7 +226,7 @@ impl BatchingTrigger {
                 }
             }
             PendingUpdate(_) => {
-                tracing::info!("Skipping batching for block {} as it is still pending", block_number);
+                info!("Skipping batching for block {} as it is still pending", block_number);
                 Ok((prev_state_update, current_batch))
             }
         }
@@ -226,15 +234,14 @@ impl BatchingTrigger {
 
     async fn start_batch(&self, config: &Arc<Config>, index: u64, start_block: u64) -> Result<Batch, JobError> {
         // Start a new bucket
-        let bucket_id = config
-            .prover_client()
-            .submit_task(Task::CreateBucket)
-            .await
-            .map_err(|e| {
-                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
-            })?;
-        tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
+        let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
+            error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+            JobError::Other(OtherError(eyre!(
+                "Prover Client Error: Failed to submit create bucket task to prover client, {}",
+                e
+            ))) // TODO: Add a new error type to be used for prover client error
+        })?;
+        info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
         Ok(Batch::new(
             index,
             start_block,
@@ -376,5 +383,41 @@ impl BatchingTrigger {
 
     fn max_blocks_to_process_at_once(&self) -> u64 {
         100
+    }
+
+    async fn check_and_close_batch(&self, config: &Arc<Config>, batch: &Batch) -> Result<(), JobError> {
+        // Sending None for state update len since this won't be the reason to close an already existing batch
+        if self.should_close_batch(config, None, batch) {
+            config
+                .database()
+                .update_or_create_batch(
+                    batch,
+                    &BatchUpdates {
+                        end_block: Some(batch.end_block),
+                        is_batch_ready: Some(true),
+                        status: Some(BatchStatus::Closed),
+                    },
+                )
+                .await?;
+        }
+
+        Ok(())
+    }
+
+    /// Determines whether a new batch should be started based on the size of the compressed
+    /// state-update and the batch.
+    /// Returns true if a new batch should be started, false otherwise.
+    ///
+    /// Starts a new batch if:
+    /// 1. Length of the compressed state update has reached its max level
+    /// 2. The number of blocks in the batch has reached max level
+    /// 3. Time between now and when the batch started has exceeded max limit
+    /// 4. Batch is not yet closed
+    fn should_close_batch(&self, config: &Arc<Config>, state_update_len: Option<usize>, batch: &Batch) -> bool {
+        (!batch.is_batch_ready)
+            && ((state_update_len.is_some() && state_update_len.unwrap() > MAX_BLOB_SIZE)
+                || (batch.num_blocks >= config.params.batching_config.max_batch_size)
+                || ((Utc::now().round_subsecs(0) - batch.created_at).abs().num_seconds() as u64
+                    >= config.params.batching_config.max_batch_time_seconds))
     }
 }
