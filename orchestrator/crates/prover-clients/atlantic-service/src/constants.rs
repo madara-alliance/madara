@@ -7,8 +7,7 @@ pub const SNOS_OUTPUT_FILE_NAME: &str = "snos_output.json";
 pub const PROOF_FILE_NAME: &str = "proof.json";
 
 /// Endpoint to download the proof from the herodotus service
-pub(crate) const ATLANTIC_PROOF_URL: &str =
-    "https://s3.pl-waw.scw.cloud/atlantic-k8s-experimental/queries/{}/proof.json";
+pub(crate) const ATLANTIC_PROOF_URL: &str = "https://storage.googleapis.com/hero-atlantic/queries/{}/proof.json";
 
 // Aggregator job configurations
 pub(crate) const AGGREGATOR_USE_KZG_DA: bool = true;

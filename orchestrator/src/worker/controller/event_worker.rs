@@ -18,7 +18,7 @@ use uuid::Uuid;
 pub struct EventWorker {
     config: Arc<Config>,
     queue_type: QueueType,
-    queue_control: QueueControlConfig,
+    _queue_control: QueueControlConfig,
     cancellation_token: CancellationToken,
 }
 
@@ -30,17 +30,11 @@ impl EventWorker {
     ) -> EventSystemResult<Self> {
         info!("Initializing Event Worker for Queue {:?}", queue_type);
 
-        let queue_config = QUEUES.get(&queue_type)
-            .ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
+        let queue_config = QUEUES.get(&queue_type).ok_or(ConsumptionError::QueueNotFound(queue_type.to_string()))?;
 
         let queue_control = queue_config.queue_control.clone();
 
-        Ok(Self {
-            queue_type,
-            config,
-            queue_control,
-            cancellation_token,
-        })
+        Ok(Self { queue_type, config, _queue_control: queue_control, cancellation_token })
     }
 
     /// Triggers a graceful shutdown
@@ -95,11 +89,7 @@ impl EventWorker {
     }
 
     /// Process message with a single root span that captures all job processing
-    async fn process_message(
-        &self,
-        message: Delivery,
-        parsed_message: ParsedMessage,
-    ) -> EventSystemResult<()> {
+    async fn process_message(&self, message: Delivery, parsed_message: ParsedMessage) -> EventSystemResult<()> {
         let start = Instant::now();
 
         // Create single root span based on job ID or trigger type
@@ -114,34 +104,37 @@ impl EventWorker {
 
             // Handle the message - all logs inside will be captured
             let handling_result = match parsed_message {
-                ParsedMessage::JobQueue(ref msg) => {
-                    self.handle_job_queue(msg).await
-                }
-                ParsedMessage::WorkerTrigger(ref msg) => {
-                    self.handle_worker_trigger(msg).await
-                }
+                ParsedMessage::JobQueue(ref msg) => self.handle_job_queue(msg).await,
+                ParsedMessage::WorkerTrigger(ref msg) => self.handle_worker_trigger(msg).await,
             };
 
             // Post-processing
             let ack_result = match &handling_result {
                 Ok(_) => {
                     info!("Job completed successfully, acknowledging message");
-                    message.ack().await
-                        .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))
+                    message.ack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))
                 }
                 Err(e) => {
                     error!(error = %e, "Job failed, sending to DLQ");
-                    message.nack().await
-                        .map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))
+                    message.nack().await.map_err(|e| ConsumptionError::FailedToAcknowledgeMessage(e.0.to_string()))
                 }
             };
 
             let duration = start.elapsed();
-            info!(
-                duration_ms = duration.as_millis(),
-                success = handling_result.is_ok(),
-                "Job processing completed"
-            );
+            match &parsed_message {
+                ParsedMessage::JobQueue(msg) => info!(
+                    job_id = %msg.id,
+                    duration_ms = duration.as_millis(),
+                    success = handling_result.is_ok(),
+                    "Job processing completed"
+                ),
+                ParsedMessage::WorkerTrigger(msg) => info!(
+                    worker = ?msg.worker,
+                    duration_ms = duration.as_millis(),
+                    success = handling_result.is_ok(),
+                    "Worker trigger completed"
+                ),
+            }
 
             handling_result.and(ack_result.map_err(|e| e.into()))
         }
@@ -193,24 +186,20 @@ impl EventWorker {
             JobState::Processing => {
                 debug!(job_id = %queue_message.id, "Calling JobHandlerService::process_job");
 
-                JobHandlerService::process_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| {
-                        error!(job_id = %queue_message.id, error = %e, "Job processing failed");
-                        ConsumptionError::Other(OtherError::from(e.to_string()))
-                    })?;
+                JobHandlerService::process_job(queue_message.id, self.config.clone()).await.map_err(|e| {
+                    error!(job_id = %queue_message.id, error = %e, "Job processing failed");
+                    ConsumptionError::Other(OtherError::from(e.to_string()))
+                })?;
 
                 info!(job_id = %queue_message.id, "Job processing completed");
             }
             JobState::Verification => {
                 debug!(job_id = %queue_message.id, "Calling JobHandlerService::verify_job");
 
-                JobHandlerService::verify_job(queue_message.id, self.config.clone())
-                    .await
-                    .map_err(|e| {
-                        error!(job_id = %queue_message.id, error = %e, "Job verification failed");
-                        ConsumptionError::Other(OtherError::from(e.to_string()))
-                    })?;
+                JobHandlerService::verify_job(queue_message.id, self.config.clone()).await.map_err(|e| {
+                    error!(job_id = %queue_message.id, error = %e, "Job verification failed");
+                    ConsumptionError::Other(OtherError::from(e.to_string()))
+                })?;
 
                 info!(job_id = %queue_message.id, "Job verification completed");
             }
@@ -231,13 +220,10 @@ impl EventWorker {
 
         debug!(worker_type = ?worker_message.worker, "Running worker");
 
-        worker_handler
-            .run_worker_if_enabled(self.config.clone())
-            .await
-            .map_err(|e| {
-                error!(worker_type = ?worker_message.worker, error = %e, "Worker trigger failed");
-                ConsumptionError::Other(OtherError::from(e.to_string()))
-            })?;
+        worker_handler.run_worker_if_enabled(self.config.clone()).await.map_err(|e| {
+            error!(worker_type = ?worker_message.worker, error = %e, "Worker trigger failed");
+            ConsumptionError::Other(OtherError::from(e.to_string()))
+        })?;
 
         info!(worker_type = ?worker_message.worker, "Worker trigger completed");
 
@@ -250,7 +236,9 @@ impl EventWorker {
         match self.queue_type {
             QueueType::SnosJobProcessing | QueueType::SnosJobVerification => "SnosRun",
             QueueType::ProvingJobProcessing | QueueType::ProvingJobVerification => "ProofCreation",
-            QueueType::ProofRegistrationJobProcessing | QueueType::ProofRegistrationJobVerification => "ProofRegistration",
+            QueueType::ProofRegistrationJobProcessing | QueueType::ProofRegistrationJobVerification => {
+                "ProofRegistration"
+            }
             QueueType::DataSubmissionJobProcessing | QueueType::DataSubmissionJobVerification => "DataSubmission",
             QueueType::UpdateStateJobProcessing | QueueType::UpdateStateJobVerification => "StateTransition",
             QueueType::AggregatorJobProcessing | QueueType::AggregatorJobVerification => "Aggregator",
@@ -279,12 +267,8 @@ impl EventWorker {
 
     fn parse_message(&self, message: &Delivery) -> EventSystemResult<ParsedMessage> {
         match self.queue_type {
-            QueueType::WorkerTrigger => {
-                WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger)
-            }
-            _ => {
-                JobQueueMessage::parse_message(message).map(ParsedMessage::JobQueue)
-            }
+            QueueType::WorkerTrigger => WorkerTriggerMessage::parse_message(message).map(ParsedMessage::WorkerTrigger),
+            _ => JobQueueMessage::parse_message(message).map(ParsedMessage::JobQueue),
         }
     }
 }
