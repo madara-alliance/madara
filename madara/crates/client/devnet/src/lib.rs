@@ -413,7 +413,7 @@ mod tests {
         let _task =
             AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
         for _ in 0..10 {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if !chain.backend.block_view_on_preconfirmed_or_fake().unwrap().get_block_info().tx_hashes.is_empty() {
                 break;
             }
@@ -502,7 +502,7 @@ mod tests {
                 .unwrap();
             tracing::debug!("tx hash: {:#x}", transfer_txn.transaction_hash);
 
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if wait_block_time {
                 assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
                 let _found = chain
@@ -557,7 +557,7 @@ mod tests {
 
         let res = res.unwrap();
 
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         if wait_block_time {
             assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
             let _found = chain
@@ -640,7 +640,7 @@ mod tests {
             AbortOnDrop::spawn(async move { block_production.run(ServiceContext::new_for_testing()).await.unwrap() });
 
         for _ in 0..10 {
-            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+            assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
             if !chain.backend.block_view_on_preconfirmed_or_fake().unwrap().get_block_info().tx_hashes.is_empty() {
                 break;
             }

@@ -65,7 +65,7 @@ async fn test_probed(mut ctx: TestContext) {
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 3 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
-    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
 
     assert_eq!(ctx.backend.block_view_on_confirmed(0).unwrap().get_block_info().unwrap().block_hash, felt!("0x10"));
     assert_eq!(ctx.backend.block_view_on_confirmed(1).unwrap().get_block_info().unwrap().block_hash, felt!("0x11"));
@@ -122,7 +122,7 @@ async fn test_pending_block_update(mut ctx: TestContext) {
     pending_block_mock.delete();
     let mut pending_block_mock = ctx.gateway_mock.mock_block_pending_with_ts(2, 1000000000000);
 
-    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
 
     assert!(ctx.backend.has_preconfirmed_block());
     assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_timestamp.0, 1000000000000);
@@ -132,7 +132,7 @@ async fn test_pending_block_update(mut ctx: TestContext) {
     pending_block_mock.delete();
     ctx.gateway_mock.mock_block_pending_with_ts(2, 1999999999999);
 
-    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
 
     assert!(ctx.backend.has_preconfirmed_block());
     assert_eq!(ctx.backend.block_view_on_preconfirmed().unwrap().header().block_timestamp.0, 1999999999999);
@@ -237,7 +237,7 @@ async fn test_stop_on_sync(mut ctx: TestContext) {
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::SyncingTo { target: 3 });
     assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::Idle);
-    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPendingBlock);
+    assert_eq!(ctx.service_state_recv.recv().await.unwrap(), ServiceEvent::UpdatedPreconfirmedBlock);
     assert_eq!(ctx.service_state_recv.recv().await, None); // task ended
 
     assert_eq!(ctx.backend.block_view_on_confirmed(0).unwrap().get_block_info().unwrap().block_hash, felt!("0x10"));

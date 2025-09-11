@@ -37,7 +37,7 @@ pub use handle::BlockProductionHandle;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BlockProductionStateNotification {
     ClosedBlock,
-    UpdatedPendingBlock,
+    BatchExecuted,
 }
 
 #[derive(Debug)]
@@ -273,7 +273,7 @@ impl BlockProductionTask {
 
                 state.append_batch(batch_execution_result).await?;
 
-                self.send_state_notification(BlockProductionStateNotification::UpdatedPendingBlock);
+                self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
             }
             ExecutorMessage::EndBlock => {
                 tracing::debug!("Received ExecutorMessage::EndBlock");
@@ -905,11 +905,11 @@ pub(crate) mod tests {
             AbortOnDrop::spawn(
                 async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
             );
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
         let closed_1 = devnet_setup.backend.block_view_on_confirmed(1).unwrap();
         let closed_2 = devnet_setup.backend.block_view_on_confirmed(2).unwrap();
@@ -982,7 +982,7 @@ pub(crate) mod tests {
         )
         .await;
 
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
         assert_eq!(
             devnet_setup
@@ -1009,7 +1009,7 @@ pub(crate) mod tests {
         );
         devnet_setup.tx_validator.submit_invoke_transaction(tx).await.unwrap();
 
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
         assert_eq!(
             devnet_setup
@@ -1044,7 +1044,7 @@ pub(crate) mod tests {
             /* paid_fee_on_l1 */ 128328,
         ));
 
-        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::UpdatedPendingBlock);
+        assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
 
         let receipt =
             devnet_setup.backend.block_view_on_preconfirmed().unwrap().get_executed_transaction(0).unwrap().receipt;

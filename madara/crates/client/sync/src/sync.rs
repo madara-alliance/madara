@@ -25,7 +25,7 @@ pub trait ForwardPipeline {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ServiceEvent {
     Starting,
-    UpdatedPendingBlock,
+    UpdatedPreconfirmedBlock,
     Idle,
     SyncingTo { target: u64 },
 }
@@ -235,7 +235,7 @@ impl<P: ForwardPipeline> SyncController<P> {
                     let res = res?;
                     tracing::debug!("Pending probe successful: {}", res.is_some());
                     if res.is_some() {
-                        self.config.service_state_sender.send(ServiceEvent::UpdatedPendingBlock);
+                        self.config.service_state_sender.send(ServiceEvent::UpdatedPreconfirmedBlock);
                     }
                 }
                 else => break Ok(()),

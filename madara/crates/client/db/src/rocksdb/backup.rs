@@ -14,8 +14,8 @@ pub struct BackupManager(Option<std::sync::mpsc::Sender<BackupRequest>>);
 
 impl BackupManager {
     pub fn start_if_enabled(db_path: &Path, config: &RocksDBConfig) -> Result<Self> {
-        // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using a mpsc channel
-        // There is also another oneshot channel involved: when restoring the db at startup, we want to wait for the backupengine to finish restoration before returning from open()
+        // when backups are enabled, a thread is spawned that owns the rocksdb BackupEngine (it is not thread safe) and it receives backup requests using an mpsc channel
+        // There is also another oneshot channel involved: when restoring the db at startup, we want to wait for the backupengine to finish restorating before returning from open()
         let Some(backup_dir) = config.backup_dir.clone() else { return Ok(Self(None)) };
 
         let (restored_cb_sender, restored_cb_recv) = std::sync::mpsc::channel();
