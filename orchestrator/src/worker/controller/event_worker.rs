@@ -147,12 +147,13 @@ impl EventWorker {
         match parsed_message {
             ParsedMessage::JobQueue(msg) => {
                 // Use job ID as the primary identifier
+                let trigger_id = Uuid::new_v4();
                 tracing::info_span!(
                     "job_processing",
                     job_id = %msg.id,
                     queue = %self.queue_type,
                     job_type = %self.get_job_type_from_queue(),
-                    trace_id = %msg.id,  // Use job ID as trace ID for correlation
+                    trace_id = %trigger_id,
                     span_type = "root"
                 )
             }

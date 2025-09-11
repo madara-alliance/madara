@@ -34,7 +34,6 @@ use crate::worker::service::JobService;
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If job processing fails
-#[instrument(skip(config), fields(job_id = %id))]
 async fn handle_process_job_request(
     Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
@@ -77,7 +76,6 @@ async fn handle_process_job_request(
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If queueing for verification fails
-#[instrument(skip(config), fields(job_id = %id))]
 async fn handle_verify_job_request(
     Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
@@ -117,7 +115,6 @@ async fn handle_verify_job_request(
 /// # Errors
 /// * `JobRouteError::InvalidId` - If the provided ID is not a valid UUID
 /// * `JobRouteError::ProcessingError` - If retry attempt fails
-#[instrument(skip(config), fields(job_id = %id))]
 async fn handle_retry_job_request(
     Path(JobId { id }): Path<JobId>,
     State(config): State<Arc<Config>>,
@@ -171,7 +168,6 @@ pub fn job_router(config: Arc<Config>) -> Router {
 ///
 /// # Returns
 /// * `JobRouteResult<BlockJobStatusResponse>` - Success response with job statuses or error details
-#[instrument(skip(config), fields(block_number = %block_number))]
 async fn handle_get_job_status_by_block_request(
     Path(block_number): Path<u64>,
     State(config): State<Arc<Config>>,

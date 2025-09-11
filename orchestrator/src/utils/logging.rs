@@ -202,48 +202,37 @@ where
             root.insert("message".to_string(), Value::String(message));
         }
 
-        // All other fields go under "fields" object
-        if !visitor.fields.is_empty() {
-            root.insert("fields".to_string(), Value::Object(visitor.fields));
-        }
-
-        // Attach span context if present
+        // Collect all fields (both event fields and span fields)
+        let mut all_fields = visitor.fields;
+        
+        // Extract span fields and merge them into the main fields object
         if let Some(span) = ctx.lookup_current() {
-            let mut span_obj = Map::new();
-            // span name
+            // Add span name as a field
             let span_name = span.metadata().name().to_string();
-            span_obj.insert("name".to_string(), Value::String(span_name));
+            all_fields.insert("span_name".to_string(), Value::String(span_name));
 
-            // raw formatted fields (best-effort until we parse them explicitly)
+            // Extract and parse span fields
             if let Some(fields) = span.extensions().get::<fmt::FormattedFields<N>>() {
                 let raw = fields.to_string();
-                span_obj.insert("raw".to_string(), Value::String(raw.clone()));
-
+                
                 // Parse k=v, comma-separated; tolerate quoted values
-                let mut inject_kv = |k: &str, v: String| {
-                    span_obj.insert(k.to_string(), Value::String(v));
-                };
-
                 for part in raw.split(',') {
                     let kv = part.trim();
                     if let Some((k, v)) = kv.split_once('=') {
                         let key = k.trim();
                         let val = v.trim().trim_matches('"').to_string();
-                        // Normalize some known keys
-                        match key {
-                            "job_id" | "queue" | "span_type" | "trace_id" | "trigger_id" | "job_type" | "worker" => {
-                                inject_kv(key, val);
-                            }
-                            _ => {
-                                // ignore unknown span fields here
-                                let _ = &val;
-                            }
-                        }
+                        
+                        // Add all span fields directly to the fields object
+                        // This includes job_id, queue, span_type, trace_id, trigger_id, job_type, worker, etc.
+                        all_fields.insert(key.to_string(), Value::String(val));
                     }
                 }
             }
-
-            root.insert("span".to_string(), Value::Object(span_obj));
+        }
+        
+        // Insert all fields at once under "fields" object
+        if !all_fields.is_empty() {
+            root.insert("fields".to_string(), Value::Object(all_fields));
         }
 
         // Write one-line JSON
