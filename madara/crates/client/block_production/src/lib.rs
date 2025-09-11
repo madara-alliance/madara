@@ -841,7 +841,7 @@ pub(crate) mod tests {
         // Now we check this was the case.
         assert_eq!(devnet_setup.backend.latest_block_n(), Some(1));
         assert_eq!(devnet_setup.backend.latest_confirmed_block_n(), Some(1));
-        assert_eq!(devnet_setup.backend.has_preconfirmed_block(), false);
+        assert!(!devnet_setup.backend.has_preconfirmed_block());
 
         let block = devnet_setup.backend.block_view_on_latest().unwrap().into_confirmed().unwrap();
 

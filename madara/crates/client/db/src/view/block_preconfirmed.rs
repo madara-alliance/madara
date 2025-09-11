@@ -428,18 +428,22 @@ mod tests {
                 &FullBlockWithoutCommitments {
                     header: PreconfirmedHeader { block_number: 0, ..Default::default() },
                     state_diff: StateDiff {
-                        storage_diffs: vec![ContractStorageDiffItem {
-                            address: Felt::from(100u64),
-                            storage_entries: vec![
-                                StorageEntry { key: Felt::from(1u64), value: Felt::from(42u64) },
-                                StorageEntry { key: Felt::from(19u64), value: Felt::from(19u64) },
-                            ],
-                        }, ContractStorageDiffItem {
-                            address: Felt::from(405u64),
-                            storage_entries: vec![
-                                StorageEntry { key: Felt::from(405u64), value: Felt::from(405u64) },
-                            ],
-                        }],
+                        storage_diffs: vec![
+                            ContractStorageDiffItem {
+                                address: Felt::from(100u64),
+                                storage_entries: vec![
+                                    StorageEntry { key: Felt::from(1u64), value: Felt::from(42u64) },
+                                    StorageEntry { key: Felt::from(19u64), value: Felt::from(19u64) },
+                                ],
+                            },
+                            ContractStorageDiffItem {
+                                address: Felt::from(405u64),
+                                storage_entries: vec![StorageEntry {
+                                    key: Felt::from(405u64),
+                                    value: Felt::from(405u64),
+                                }],
+                            },
+                        ],
                         deployed_contracts: vec![DeployedContractItem {
                             address: Felt::from(100u64),
                             class_hash: Felt::from(200u64),

@@ -87,13 +87,12 @@ impl CompressedLegacyContractClass {
 
 #[cfg(test)]
 mod tests {
+    use crate::ContractClass;
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
     use starknet_providers::Url;
     use starknet_providers::{Provider, SequencerGatewayProvider};
     use starknet_types_core::felt::Felt;
-
-    use crate::ContractClass;
 
     #[tokio::test]
     async fn test_compute_sierra_class_hash() {
