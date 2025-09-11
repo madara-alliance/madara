@@ -238,7 +238,7 @@ impl BatchingTrigger {
     async fn start_batch(&self, config: &Arc<Config>, index: u64, start_block: u64) -> Result<Batch, JobError> {
         // Start timing batch creation
         let start_time = Instant::now();
-        
+
         // Start a new bucket
         let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
@@ -248,7 +248,7 @@ impl BatchingTrigger {
             ))) // TODO: Add a new error type to be used for prover client error
         })?;
         info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
-        
+
         let batch = Batch::new(
             index,
             start_block,
@@ -256,7 +256,7 @@ impl BatchingTrigger {
             self.get_blob_dir_path(index),
             bucket_id.clone(),
         );
-        
+
         // Record batch creation time
         let duration = start_time.elapsed();
         let attributes = [
@@ -265,17 +265,17 @@ impl BatchingTrigger {
             KeyValue::new("bucket_id", bucket_id.to_string()),
         ];
         ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
-        
+
         // Update batching rate (batches per hour)
         // This is a simple counter that will be used to calculate rate in Grafana
         ORCHESTRATOR_METRICS.batching_rate.record(1.0, &attributes);
-        
+
         info!(
             index = %index,
             duration_seconds = %duration.as_secs_f64(),
             "Batch created successfully"
         );
-        
+
         Ok(batch)
     }
 
