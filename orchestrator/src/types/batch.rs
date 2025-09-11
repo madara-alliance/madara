@@ -4,8 +4,15 @@ use mongodb::bson::serde_helpers::{chrono_datetime_as_bson_datetime, uuid_1_as_b
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
+pub enum BatchType {
+    #[default]
+    AggregatorBatch,
+    SnosBatch
+}
+
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, strum_macros::Display, Eq, Default)]
-pub enum BatchStatus {
+pub enum AggregatorBatchStatus {
     /// Batch is open and new blocks can be added to it
     #[default]
     Open,
@@ -31,19 +38,27 @@ pub enum BatchStatus {
 }
 
 #[derive(Serialize, Debug, Clone)]
-pub struct BatchUpdates {
+pub struct AggregatorBatchUpdates {
     pub end_block: Option<u64>,
     pub is_batch_ready: Option<bool>,
-    pub status: Option<BatchStatus>,
+    pub status: Option<AggregatorBatchStatus>,
+}
+
+#[derive(Serialize, Debug, Clone)]
+pub struct SnosBatchUpdates {
+    pub end_block: Option<u64>,
+    pub status: Option<SnosBatchStatus>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
-pub struct Batch {
+pub struct AggregatorBatch {
     /// Unique identifier for the batch
     #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
     pub id: Uuid,
     /// Index of the batch
     pub index: u64,
+    /// Type of the batch
+    pub batch_type: BatchType,
     /// Number of blocks in the batch
     pub num_blocks: u64,
     /// Start and end block numbers of the batch (both inclusive)
@@ -66,10 +81,10 @@ pub struct Batch {
     /// Bucket ID for the batch, received from the prover client
     pub bucket_id: String,
     /// Status of the batch
-    pub status: BatchStatus,
+    pub status: AggregatorBatchStatus,
 }
 
-impl Batch {
+impl AggregatorBatch {
     pub fn new(
         index: u64,
         start_block: u64,
@@ -91,5 +106,81 @@ impl Batch {
             bucket_id,
             ..Self::default()
         }
+    }
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq, strum_macros::Display, Debug, Clone, Default)]
+pub enum SnosBatchStatus {
+    #[default]
+    Open,
+    Closed,
+    SnosJobCreated
+}
+
+#[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone, Default)]
+pub struct SnosBatch {
+    /// Unique identifier for the batch
+    #[cfg_attr(feature = "with_mongodb", serde(rename = "_id", with = "uuid_1_as_binary"))]
+    pub id: Uuid,
+    /// Index of the batch
+    pub index: u64,
+    /// Type of the batch
+    pub batch_type: BatchType,
+    /// Number of blocks in the batch
+    pub num_blocks: u64,
+    /// Start and end block numbers of the batch (both inclusive)
+    pub start_block: u64,
+    pub end_block: u64,
+    /// timestamp when the batch was created
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
+    pub created_at: DateTime<Utc>,
+    /// timestamp when the batch was last updated
+    #[cfg_attr(feature = "with_mongodb", serde(with = "chrono_datetime_as_bson_datetime"))]
+    pub updated_at: DateTime<Utc>,
+    /// Status of the batch
+    pub status: SnosBatchStatus,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub enum Batch {
+    Aggregator(AggregatorBatch),
+    Snos(SnosBatch),
+}
+
+impl Batch {
+    pub fn batch_type(&self) -> BatchType {
+        match self {
+            Batch::Aggregator(_) => BatchType::AggregatorBatch,
+            Batch::Snos(_) => BatchType::SnosBatch,
+        }
+    }
+}
+
+#[allow(dead_code)]
+impl SnosBatch {
+    /// Creates a new SNOS batch
+    /// 
+    /// # Arguments
+    /// * `index` - The index of the batch, a monotonically increasing number
+    /// * `start_block` - The start block number of the batch
+    /// * `end_block` - The end block number of the batch
+    /// 
+    /// # Returns
+    /// A new `SnosBatch` instance
+    pub fn new(index: u64, start_block: u64, end_block: u64) -> Self {
+        let num_blocks = end_block - start_block + 1;
+        Self {
+            id: Uuid::new_v4(),
+            index,
+            num_blocks,
+            start_block,
+            end_block,
+            batch_type: BatchType::SnosBatch,
+            status: SnosBatchStatus::Open,
+            created_at: Utc::now().round_subsecs(0),
+            updated_at: Utc::now().round_subsecs(0),
+            ..Self::default()
+        }
+
     }
 }

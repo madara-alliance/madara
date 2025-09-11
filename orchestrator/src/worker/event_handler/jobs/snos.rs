@@ -17,7 +17,6 @@ use bytes::Bytes;
 // use cairo_vm::types::layout_name::LayoutName; // Unused
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use cairo_vm::Felt252;
-use starknet_core::types::Felt;
 use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
@@ -34,6 +33,7 @@ use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::providers::Url;
 use starknet_api::core::{ChainId, ContractAddress};
+use starknet_core::types::Felt;
 
 use std::sync::Arc;
 use tempfile::NamedTempFile;
@@ -51,12 +51,24 @@ impl ChainConfigFromExt for ChainConfig {
     async fn get_chain_config(rpc_url: String) -> Result<ChainConfig> {
         let rpc_url = Url::parse(&rpc_url)?;
         let provider = JsonRpcClient::new(HttpTransport::new(rpc_url));
-        let chain_id = provider.chain_id().await?;
+        let chain_id_in_hex = provider.chain_id().await?.to_fixed_hex_string();
+
+        let chain_id_decoded = String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)
+            .expect("Failed to decode chain id");
+        let chain_id = ChainId::Other(chain_id_decoded);
+
+        // tracing::info!(
+        //     "chain id in hex: {:?}, chain id decoded: {:?}, chain id: {:?}, default: {:?}",
+        //     chain_id_in_hex,
+        //     String::from_utf8(hex::decode(chain_id_in_hex.trim_start_matches("0x"))?)?,
+        //     chain_id.to_string(),
+        //     ChainConfig::default().chain_id.to_string()
+        // );
         let strk_fee_token_address_env_var =
             get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_NATIVE_FEE_TOKEN_ADDRESS");
         let strk_fee_token_address =
             ContractAddress::try_from(Felt::from_hex_unchecked(&strk_fee_token_address_env_var))?;
-        Ok(ChainConfig { chain_id: ChainId::from(chain_id.to_string()), strk_fee_token_address })
+        Ok(ChainConfig { chain_id, strk_fee_token_address })
     }
 }
 
@@ -114,19 +126,20 @@ impl JobHandlerTrait for SnosJobHandler {
 
         debug!("SNOS metadata retrieved {:?}", snos_metadata);
 
-        // Get block number from metadata
-        let block_number = snos_metadata.block_number;
-        debug!(job_id = %job.internal_id, block_number = %block_number, "Retrieved block number from metadata");
+        // Get block number from metadata (using start_block as the primary block for processing)
+        let start_block_number = snos_metadata.start_block;
+        let end_block_number = snos_metadata.end_block;
+        debug!(job_id = %job.internal_id, start_block = %snos_metadata.start_block, end_block = %snos_metadata.end_block, num_blocks = %snos_metadata.num_blocks, "Retrieved batch information from metadata");
 
-        let snos_url = config.snos_config().rpc_for_snos.to_string();
-        let snos_url = snos_url.trim_end_matches('/');
+        let _snos_url = config.snos_config().rpc_for_snos.to_string();
+        let _snos_url = _snos_url.trim_end_matches('/');
         debug!(job_id = %job.internal_id, "Calling prove_block function");
 
         let rpc_url = get_env_var_or_panic("MADARA_ORCHESTRATOR_MADARA_RPC_URL");
         let input = PieGenerationInput {
             rpc_url: rpc_url.clone(),
-            blocks: vec![block_number],
-
+            blocks: (start_block_number..=end_block_number).collect(),
+            // chain_config: ChainConfig::default(),
             chain_config: ChainConfig::get_chain_config(rpc_url)
                 .await
                 .map_err(|e| JobError::Other(OtherError(eyre!("Failed to get chain config: {}", e))))?,
@@ -134,14 +147,12 @@ impl JobHandlerTrait for SnosJobHandler {
             output_path: None, // No file output
         };
 
-        let snos_output: PieGenerationResult =
-            generate_pie(input).await
-                .map_err(|e| {
-                    error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
-                    SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
-                })?;
+        let snos_output: PieGenerationResult = generate_pie(input).await.map_err(|e| {
+            error!(job_id = %job.internal_id, error = %e, "SNOS execution failed");
+            SnosError::SnosExecutionError { internal_id: job.internal_id.clone(), message: e.to_string() }
+        })?;
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
-        
+
         let cairo_pie = snos_output.output.cairo_pie;
         let os_output = snos_output.output.os_output;
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
@@ -184,15 +195,8 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!(job_id = %job.internal_id, "Storing SNOS outputs");
         if config.layer() == &Layer::L3 {
             // Store the on-chain data path
-            self.store_l2(
-                internal_id.clone(),
-                config.storage(),
-                &snos_metadata,
-                cairo_pie,
-                os_output,
-                program_output,
-            )
-            .await?;
+            self.store_l2(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
+                .await?;
         } else if config.layer() == &Layer::L2 {
             // Store the Cairo Pie path
             self.store(internal_id.clone(), config.storage(), &snos_metadata, cairo_pie, os_output, program_output)
@@ -204,11 +208,13 @@ impl JobHandlerTrait for SnosJobHandler {
             category = "snos",
             function_type = "process_job",
             job_id = ?job.id,
-            block_no = %block_number,
+            batch_index = %snos_metadata.snos_batch_index,
+            start_block = %snos_metadata.start_block,
+            end_block = %snos_metadata.end_block,
             "SNOS job processed successfully."
         );
 
-        Ok(block_number.to_string())
+        Ok(snos_metadata.snos_batch_index.to_string())
     }
 
     #[tracing::instrument(fields(category = "snos"), skip(self, _config), ret, err)]

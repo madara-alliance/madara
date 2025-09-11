@@ -2,7 +2,7 @@ pub mod constant;
 pub mod error;
 pub mod mongodb;
 
-use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
+use crate::types::batch::{AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, Batch, BatchType, SnosBatch, SnosBatchStatus, SnosBatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -77,28 +77,55 @@ pub trait DatabaseClient: Send + Sync {
         limit: Option<i64>,
     ) -> Result<Vec<u64>, DatabaseError>;
 
+    /// get_latest_batch - Get the latest batch from DB based on batch type. Returns `None` if the DB is empty
+    async fn get_latest_batch(&self, batch_type: BatchType) -> Result<Option<Batch>, DatabaseError>;
+
+    /// get_latest_snos_batch - Get the latest SNOS batch from DB. Returns `None` if the DB is empty
+    async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError>;
+    /// get_snos_batch_by_index - Get the snos batch by indexk
+    async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError>;
+    /// update_snos_batch_status_by_index - Update the snos batch status by index
+    async fn update_snos_batch_status_by_index(&self, index: u64, status: SnosBatchStatus) -> Result<SnosBatch, DatabaseError>;
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
-    async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
+    async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError>;
     /// get_batches_by_index - Get all the batches with the given indexes
-    async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError>;
-    async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError>;
-    async fn update_batch(
+    async fn get_aggregator_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<AggregatorBatch>, DatabaseError>;
+    async fn update_aggregator_batch_status_by_index(&self, index: u64, status: AggregatorBatchStatus) -> Result<AggregatorBatch, DatabaseError>;
+    async fn update_aggregator_batch(
         &self,
         filter: Document,
         update: Document,
         options: FindOneAndUpdateOptions,
         start: Instant,
         index: u64,
-    ) -> Result<Batch, DatabaseError>;
+    ) -> Result<AggregatorBatch, DatabaseError>;
+
+    async fn update_snos_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<SnosBatch, DatabaseError>;
     /// update_batch - Update the bath
-    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError>;
+    async fn update_or_create_aggregator_batch(&self, batch: &AggregatorBatch, update: &AggregatorBatchUpdates) -> Result<AggregatorBatch, DatabaseError>;
     /// create_batch - Create a new batch
-    async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
+    async fn create_aggregator_batch(&self, batch: AggregatorBatch) -> Result<AggregatorBatch, DatabaseError>;
     /// get_batch_for_block - Returns the batch for a given block
-    async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError>;
+    async fn get_aggregator_batch_for_block(&self, block_number: u64) -> Result<Option<AggregatorBatch>, DatabaseError>;
     /// get_batches_by_status - Get all the batches by that matches the given status
-    async fn get_batches_by_status(&self, status: BatchStatus, limit: Option<i64>)
-        -> Result<Vec<Batch>, DatabaseError>;
+    async fn get_aggregator_batches_by_status(&self, status: AggregatorBatchStatus, limit: Option<i64>)
+        -> Result<Vec<AggregatorBatch>, DatabaseError>;
+
+    /// get_snos_batches_by_status - Get all the snos batches by that matches the given status
+    async fn get_snos_batches_by_status(&self, status: SnosBatchStatus, limit: Option<i64>) -> Result<Vec<SnosBatch>, DatabaseError>;
+
+    /// update_or_create_snos_batch - Update the snos batch
+    async fn update_or_create_snos_batch(&self, batch: &SnosBatch, update: &SnosBatchUpdates) -> Result<SnosBatch, DatabaseError>;
+    /// create_snos_batch - Create a new snos batch
+    async fn create_snos_batch(&self, batch: SnosBatch) -> Result<SnosBatch, DatabaseError>;
+    
     async fn get_jobs_between_internal_ids(
         &self,
         job_type: JobType,

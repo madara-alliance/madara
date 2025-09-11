@@ -311,7 +311,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         let expected_last_block_number = match config.layer() {
             Layer::L2 => {
                 // Get the batch details for the last-settled batch
-                let batch = config.database().get_batches_by_indexes(vec![*last_settled]).await?;
+                let batch = config.database().get_aggregator_batches_by_indexes(vec![*last_settled]).await?;
                 if batch.is_empty() {
                     Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", last_settled))))
                 } else {

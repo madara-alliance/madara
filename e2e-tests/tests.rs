@@ -15,7 +15,7 @@ use mongodb::bson::doc;
 use orchestrator::core::client::database::constant::{BATCHES_COLLECTION, JOBS_COLLECTION};
 use orchestrator::core::client::queue::sqs::InnerSQS;
 use orchestrator::core::client::SQS;
-use orchestrator::types::batch::Batch;
+use orchestrator::types::batch::AggregatorBatch;
 use orchestrator::types::constant::{
     BLOB_DATA_FILE_NAME, CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
@@ -349,9 +349,9 @@ async fn get_job_state_by_type(
 }
 
 /// Get Batch from DB
-async fn get_batch_by_index(mongo_db_server: &MongoDbServer, index: u64) -> color_eyre::Result<Option<Batch>> {
+async fn get_batch_by_index(mongo_db_server: &MongoDbServer, index: u64) -> color_eyre::Result<Option<AggregatorBatch>> {
     let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
-    let collection = mongo_db_client.database("orchestrator").collection::<Batch>(BATCHES_COLLECTION);
+    let collection = mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
     let batch = collection.find_one(filter, None).await?;
     match batch {
@@ -363,7 +363,7 @@ async fn get_batch_by_index(mongo_db_server: &MongoDbServer, index: u64) -> colo
 /// Update Batch state to Completed in DB
 async fn update_batch_state(mongo_db_server: &MongoDbServer, index: u64) -> color_eyre::Result<()> {
     let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
-    let collection = mongo_db_client.database("orchestrator").collection::<Batch>(BATCHES_COLLECTION);
+    let collection = mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };
     let update = doc! { "$set": { "is_batch_ready": true, "status": "Closed" } };
     collection.update_one(filter, update, None).await?;
@@ -541,7 +541,10 @@ pub async fn mock_starknet_get_latest_block(starknet_client: &mut StarknetClient
 pub async fn put_job_data_in_db_snos(mongo_db: &MongoDbServer, l2_block_number: String) -> Uuid {
     // Create the SNOS-specific metadata
     let snos_metadata = SnosMetadata {
-        block_number: l2_block_number.parse().expect("Invalid block number"),
+        start_block: l2_block_number.parse().expect("Invalid block number"),
+        end_block: l2_block_number.parse().expect("Invalid block number"),
+        num_blocks: 1,
+        snos_batch_index: 1,
         full_output: false,
         cairo_pie_path: Some(format!("{}/{}", &l2_block_number, CAIRO_PIE_FILE_NAME)),
         on_chain_data_path: Some(format!("{}/{}", &l2_block_number, ON_CHAIN_DATA_FILE_NAME)),
