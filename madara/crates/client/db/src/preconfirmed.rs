@@ -32,7 +32,7 @@ impl PreconfirmedExecutedTransaction {
 
 #[derive(Debug, Clone, serde::Deserialize, serde::Serialize, PartialEq, Eq)]
 pub enum PreconfirmedTransaction {
-    Executed(PreconfirmedExecutedTransaction),
+    Executed(Box<PreconfirmedExecutedTransaction>),
     Candidate(Arc<ValidatedTransaction>),
 }
 
@@ -87,7 +87,7 @@ impl PreconfirmedBlockInner {
 
     /// Removes all candidate transactions.
     pub fn append_executed(&mut self, txs: impl IntoIterator<Item = PreconfirmedExecutedTransaction>) {
-        self.txs.splice(self.n_executed.., txs.into_iter().map(PreconfirmedTransaction::Executed));
+        self.txs.splice(self.n_executed.., txs.into_iter().map(Into::into).map(PreconfirmedTransaction::Executed));
         self.n_executed = self.txs.len();
     }
     pub fn append_candidates(&mut self, txs: impl IntoIterator<Item = Arc<ValidatedTransaction>>) {

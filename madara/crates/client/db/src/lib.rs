@@ -76,7 +76,7 @@ pub use storage::{
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
 
 /// Current chain tip.
-#[derive(Debug, Default, Clone)]
+#[derive(Default, Clone)]
 pub enum ChainTip {
     /// Empty pre-genesis state. There are no blocks currently in the backend.
     #[default]
@@ -100,6 +100,18 @@ impl PartialEq for ChainTip {
     }
 }
 impl Eq for ChainTip {}
+
+impl fmt::Debug for ChainTip {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Empty => write!(f, "Empty"),
+            Self::Confirmed(block_n) => write!(f, "Confirmed block_n={block_n}"),
+            Self::Preconfirmed(preconfirmed_block) => {
+                write!(f, "Preconfirmed block_n={}", preconfirmed_block.header.block_number)
+            }
+        }
+    }
+}
 
 impl ChainTip {
     pub fn on_confirmed_block_n_or_empty(block_n: Option<u64>) -> Self {
@@ -248,6 +260,7 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     /// modified in an unexpected way. In practice, this means:
     /// - You are allowed to use the `write_*` low-level functions to write block parts concurrently.
     /// - You are not allowed to use the other functions to advance the chain tip
+    ///
     /// Failure to do so could result in errors and/or invalid state, which includes invalid state being saved to the database.
     /// The functions are still safe to use, since it's a logic error and not a memory safety issue.
     ///
@@ -257,6 +270,17 @@ impl<D: MadaraStorage> MadaraBackend<D> {
     // ways to make the aforementioned logic errors unrepreasentable by designing the API a little better.
     pub fn write_access(self: &Arc<Self>) -> MadaraBackendWriter<D> {
         MadaraBackendWriter { inner: self.clone() }
+    }
+
+    /// Set the current latest block confirmed on L1. This will also wake watchers to L1 head changes.
+    ///
+    /// Warning: It is invalid to set this new `latest_l1_confirmed` to a lower value than the current one, or
+    /// to a higher value than the current block on l2.
+    // FIXME: In these cases, the update should not succeed and an error should be returned.
+    pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
+        self.db.write_confirmed_on_l1_tip(latest_l1_confirmed)?;
+        self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
+        Ok(())
     }
 }
 
@@ -292,6 +316,14 @@ impl MadaraBackend<RocksDBStorage> {
     }
 }
 
+#[derive(Clone, Debug)]
+pub struct AddFullBlockResult {
+    pub new_state_root: Felt,
+    pub commitments: BlockCommitments,
+    pub block_hash: Felt,
+    pub parent_block_hash: Felt,
+}
+
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     pub fn latest_confirmed_block_n(&self) -> Option<u64> {
         self.chain_tip.borrow().latest_confirmed_block_n()
@@ -309,16 +341,6 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     fn preconfirmed_block(&self) -> Option<Arc<PreconfirmedBlock>> {
         self.chain_tip.borrow().as_preconfirmed().cloned()
-    }
-
-    /// Set the current latest block confirmed on L1. This will also wake watchers to L1 head changes.
-    ///
-    /// Warning: It is invalid to set this new `latest_l1_confirmed` to a lower value than the current one, or
-    /// to a higher value than the current block on l2.
-    // FIXME: In these cases, the update should not succeed and an error should be returned.
-    pub fn set_latest_l1_confirmed(&self, latest_l1_confirmed: Option<u64>) -> Result<()> {
-        self.latest_l1_confirmed.send_replace(latest_l1_confirmed);
-        Ok(())
     }
 
     /// Get the latest block_n that was in the db when this backend instance was initialized.
@@ -345,7 +367,34 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // race condition, we have explicitely forbidden `MadaraBackendWriter` as a whole to be used concurrently.
         let current_tip = self.inner.chain_tip.borrow().clone();
 
-        // TODO: detect if the transition is valid, throw an error otherwise
+        // Detect if state transition is valid.
+        match (&current_tip, &new_tip) {
+            // Adding the genesis block, which can be preconfirmed or confirmed. Replacing empty with empty won't work (block_n returns None).
+            (ChainTip::Empty, block) => ensure!(block.block_n() == Some(0), "Can only replace the empty chain tip with a genesis block. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
+            // Never valid.
+            (_, ChainTip::Empty) => bail!("Cannot replace the chain tip to empty. [current_tip={current_tip:?}, new_tip={new_tip:?}]"),
+            // Block is closed, preconfirmed replaces confirmed at same height.
+            // OR: preconfirmed block is being cleared.
+            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Confirmed(new_block_n)) => ensure!(
+                preconfirmed.header.block_number == *new_block_n || preconfirmed.header.block_number == *new_block_n + 1,
+                "Replacing chain tip from preconfirmed to confirmed requires the new block_n to match the previous one, or be one less than it. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+            // New preconfirmed at same height, replacing the previous proposal.
+            (ChainTip::Preconfirmed(preconfirmed), ChainTip::Preconfirmed(new_preconfirmed)) => ensure!(
+                preconfirmed.header.block_number == new_preconfirmed.header.block_number,
+                "Replacing chain tip from preconfirmed to preconfirmed requires the new block_n to match the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+            // New preconfirmed block on top of a confirmed block.
+            (ChainTip::Confirmed(block_n), ChainTip::Preconfirmed(preconfirmed)) => ensure!(
+                block_n + 1 == preconfirmed.header.block_number,
+                "Replacing chain tip from confirmed to preconfirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+            // New confirmed block is added on top of a confirmed block.
+            (ChainTip::Confirmed(block_n), ChainTip::Confirmed(new_block_n)) => ensure!(
+                block_n + 1 == *new_block_n,
+                "Replacing chain tip from confirmed to confirmed requires the new block_n to be one plus the previous one. [current_tip={current_tip:?}, new_tip={new_tip:?}]"
+            ),
+        }
 
         let current_tip_in_db = if self.inner.config.save_preconfirmed {
             &current_tip
@@ -392,7 +441,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
-    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<Felt> {
+    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<AddFullBlockResult> {
         let (block, classes) = self
             .inner
             .block_view_on_preconfirmed()
@@ -401,11 +450,11 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
 
         // Write the block & apply to global trie
 
-        let block_hash = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
+        let result = self.write_new_confirmed_inner(&block, &classes, pre_v0_13_2_hash_override)?;
 
         self.new_confirmed_block(block.header.block_number)?;
 
-        Ok(block_hash)
+        Ok(result)
     }
 
     /// Clears the current preconfirmed block. Does nothing when the backend has no preconfirmed block.
@@ -419,18 +468,19 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.replace_chain_tip(ChainTip::Preconfirmed(Arc::new(block)))
     }
 
-    /// Add a block.
+    /// Add a block. Returns the block hash.
     /// Warning: Caller is responsible for ensuring the block_number is the one following the current confirmed block.
     pub fn add_full_block_with_classes(
         &self,
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
-    ) -> Result<()> {
+    ) -> Result<AddFullBlockResult> {
         let block_n = block.header.block_number;
-        self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
+        let result = self.write_new_confirmed_inner(block, classes, pre_v0_13_2_hash_override)?;
 
-        self.new_confirmed_block(block_n)
+        self.new_confirmed_block(block_n)?;
+        Ok(result)
     }
 
     /// Does not change the chain tip. Performs merkelization (global tries update) and block hash computation, and saves
@@ -440,7 +490,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         block: &FullBlockWithoutCommitments,
         classes: &[ConvertedClass],
         pre_v0_13_2_hash_override: bool,
-    ) -> Result<Felt> {
+    ) -> Result<AddFullBlockResult> {
         let parent_block_hash = if let Some(last_block) = self.inner.block_view_on_last_confirmed() {
             last_block.get_block_info()?.block_hash
         } else {
@@ -460,7 +510,8 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         // Global state root and block hash.
         let global_state_root = self.apply_to_global_trie(block.header.block_number, [&block.state_diff])?;
 
-        let header = block.header.clone().into_confirmed_header(parent_block_hash, commitments, global_state_root);
+        let header =
+            block.header.clone().into_confirmed_header(parent_block_hash, commitments.clone(), global_state_root);
         let block_hash = header.compute_hash(self.inner.chain_config.chain_id.to_felt(), pre_v0_13_2_hash_override);
 
         // Save the block.
@@ -471,7 +522,7 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
         self.write_events(block.header.block_number, &block.events)?;
         self.write_classes(block.header.block_number, classes)?;
 
-        Ok(block_hash)
+        Ok(AddFullBlockResult { new_state_root: global_state_root, commitments, block_hash, parent_block_hash })
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which
@@ -594,7 +645,7 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 }
 // Delegate these db reads/writes. These are related to specific services, and are not specific to a block view / the chain tip writer handle.
 impl<D: MadaraStorageWrite> MadaraBackend<D> {
-    pub fn write_l1_messaging_sync_tip(&self, l1_block_n: u64) -> Result<()> {
+    pub fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()> {
         self.db.write_l1_messaging_sync_tip(l1_block_n)
     }
     pub fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()> {

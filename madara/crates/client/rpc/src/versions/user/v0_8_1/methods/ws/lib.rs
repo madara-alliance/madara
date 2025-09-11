@@ -10,6 +10,8 @@ use super::starknet_unsubscribe::*;
 // use super::subscribe_transaction_status::*;
 
 #[jsonrpsee::core::async_trait]
+// FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
+#[allow(unused)]
 impl StarknetWsRpcApiV0_8_1Server for crate::Starknet {
     async fn subscribe_new_heads(
         &self,

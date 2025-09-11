@@ -3,9 +3,9 @@ use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::types::ContinuationToken;
 use crate::Starknet;
 use anyhow::Context;
-use mc_db::EventFilter;
-use mp_block::{BlockId, BlockTag, EventWithInfo};
-use mp_rpc::v0_7_1::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
+use mc_db::{EventFilter, MadaraStateView};
+use mp_block::{BlockId, EventWithInfo};
+use mp_rpc::v0_7_1::{EventFilterWithPageRequest, EventsChunk};
 
 /// Returns all events matching the given filter.
 ///
@@ -32,6 +32,8 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
     let keys = filter.keys;
     let chunk_size = filter.chunk_size as usize;
 
+    let view = starknet.backend.view_on_latest();
+
     if keys.as_ref().map(|k| k.iter().map(|pattern| pattern.len()).sum()).unwrap_or(0) > MAX_EVENTS_KEYS {
         return Err(StarknetRpcApiError::TooManyKeysInFilter);
     }
@@ -40,11 +42,11 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
     }
 
     // Get the block numbers for the requested range
-    let (from_block, to_block, _) = block_range(starknet, filter.from_block, filter.to_block)?;
+    let (from_block, to_block, _) = block_range(&view, filter.from_block, filter.to_block)?;
 
     let continuation_token = match filter.continuation_token {
         Some(token) => ContinuationToken::parse(token).map_err(|_| StarknetRpcApiError::InvalidContinuationToken)?,
-        None => ContinuationToken { block_n: from_block, event_n: 0 },
+        None => ContinuationToken { block_number: from_block, event_n: 0 },
     };
 
     // Verify that the requested range is valid
@@ -52,12 +54,10 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
         return Ok(EventsChunk { events: vec![], continuation_token: None });
     }
 
-    let from_block = continuation_token.block_n;
+    let from_block = continuation_token.block_number;
     let from_event_n = continuation_token.event_n as usize;
 
-    let mut events_infos = starknet
-        .backend
-        .view_on_latest()
+    let mut events_infos = view
         .get_events(EventFilter {
             start_block: from_block,
             start_event_index: from_event_n,
@@ -70,46 +70,29 @@ pub fn get_events(starknet: &Starknet, filter: EventFilterWithPageRequest) -> St
 
     let mut continuation_token = None;
     if events_infos.len() > chunk_size {
-        continuation_token = events_infos.pop().and_then(|event_info| match event_info {
-            EventWithInfo { block_number: Some(block_n), event_index_in_block, .. } => {
-                Some(ContinuationToken { block_n, event_n: (event_index_in_block + 1) as u64 })
-            }
-            _ => None,
+        continuation_token = events_infos.pop().map(|EventWithInfo { block_number, event_index_in_block, .. }| {
+            ContinuationToken { block_number, event_n: (event_index_in_block + 1) }
         });
     }
 
     Ok(EventsChunk {
-        events: events_infos
-            .into_iter()
-            .map(|event_info| EmittedEvent {
-                event: Event {
-                    from_address: event_info.event.from_address,
-                    event_content: EventContent { keys: event_info.event.keys, data: event_info.event.data },
-                },
-                block_hash: event_info.block_hash,
-                block_number: event_info.block_number,
-                transaction_hash: event_info.transaction_hash,
-            })
-            .collect(),
+        events: events_infos.into_iter().map(|event_info| event_info.into()).collect(),
         continuation_token: continuation_token.map(|token| token.to_string()),
     })
 }
 
 fn block_range(
-    starknet: &Starknet,
+    view: &MadaraStateView,
     from_block: Option<BlockId>,
     to_block: Option<BlockId>,
 ) -> StarknetRpcResult<(u64, u64, u64)> {
-    let latest_block_n = starknet.backend.latest_confirmed_block_n().ok_or(StarknetRpcApiError::NoBlocks)?;
     let from_block_n = match from_block {
-        Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.backend.block_view(&block_id)?.block_number(),
+        Some(block_id) => view.view_on(&block_id)?.latest_block_n().unwrap_or(0),
         None => 0,
     };
     let to_block_n = match to_block {
-        Some(BlockId::Tag(BlockTag::Pending)) => latest_block_n + 1,
-        Some(block_id) => starknet.backend.block_view(&block_id)?.block_number(),
-        None => latest_block_n,
+        Some(block_id) => view.view_on(&block_id)?.latest_block_n().unwrap_or(0),
+        None => view.latest_block_n().unwrap_or(0),
     };
-    Ok((from_block_n, to_block_n, latest_block_n))
+    Ok((from_block_n, to_block_n, view.latest_block_n().unwrap_or(0)))
 }

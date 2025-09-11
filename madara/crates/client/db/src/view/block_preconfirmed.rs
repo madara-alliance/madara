@@ -206,7 +206,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
     }
 
     pub fn get_executed_transaction(&self, transaction_index: u64) -> Option<TransactionWithReceipt> {
-        let Some(transaction_index) = usize::try_from(transaction_index).ok() else { return None };
+        let transaction_index = usize::try_from(transaction_index).ok()?;
         self.borrow_content().executed_transactions().nth(transaction_index).map(|tx| &tx.transaction).cloned()
     }
 
@@ -405,5 +405,246 @@ impl PreconfirmedBlockChange {
             Self::NewPreconfirmed { removed_candidates, .. } => mem::take(removed_candidates),
             _ => vec![],
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mp_block::Transaction;
+    use mp_chain_config::ChainConfig;
+    use mp_receipt::{InvokeTransactionReceipt, TransactionReceipt};
+    use mp_state_update::{ClassUpdateItem, TransactionStateUpdate};
+    use mp_transactions::{InvokeTransaction, InvokeTransactionV0};
+
+    #[rstest::rstest]
+    fn test_normalized_state_diff() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+        // Block #0 - setup initial state
+        backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                    state_diff: StateDiff {
+                        storage_diffs: vec![ContractStorageDiffItem {
+                            address: Felt::from(100u64),
+                            storage_entries: vec![
+                                StorageEntry { key: Felt::from(1u64), value: Felt::from(42u64) },
+                                StorageEntry { key: Felt::from(19u64), value: Felt::from(19u64) },
+                            ],
+                        }, ContractStorageDiffItem {
+                            address: Felt::from(405u64),
+                            storage_entries: vec![
+                                StorageEntry { key: Felt::from(405u64), value: Felt::from(405u64) },
+                            ],
+                        }],
+                        deployed_contracts: vec![DeployedContractItem {
+                            address: Felt::from(100u64),
+                            class_hash: Felt::from(200u64),
+                        }],
+                        nonces: vec![NonceUpdate { contract_address: Felt::from(100u64), nonce: Felt::from(5u64) }],
+                        declared_classes: vec![DeclaredClassItem {
+                            class_hash: Felt::from(300u64),
+                            compiled_class_hash: Felt::from(301u64),
+                        }],
+                        old_declared_contracts: vec![Felt::from(400u64)],
+                        replaced_classes: vec![],
+                    },
+                    transactions: vec![],
+                    events: vec![],
+                },
+                &[],
+                false,
+            )
+            .unwrap();
+
+        let dummy_tx = TransactionWithReceipt {
+            transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0::default())),
+            receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt::default()),
+        };
+
+        // Preconfirmed block #1 on top of confirmed block #0
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new_with_content(
+                PreconfirmedHeader { block_number: 1, ..Default::default() },
+                vec![
+                    // Tx #0 - Various state changes
+                    PreconfirmedExecutedTransaction {
+                        transaction: dummy_tx.clone(),
+                        state_diff: TransactionStateUpdate {
+                            // Storage: change existing key, add new key, set key that will be reverted
+                            storage_diffs: [
+                                ((Felt::from(100u64), Felt::from(1u64)), Felt::from(99u64)), // change existing 42->99
+                                ((Felt::from(100u64), Felt::from(2u64)), Felt::from(50u64)), // new key
+                                ((Felt::from(100u64), Felt::from(3u64)), Felt::from(77u64)), // will be reverted
+                                ((Felt::from(100u64), Felt::from(19u64)), Felt::from(20u64)), // will be reverted
+                                ((Felt::from(101u64), Felt::from(1u64)), Felt::from(88u64)), // new contract storage
+                                ((Felt::from(405u64), Felt::from(405u64)), Felt::from(406u64)), // will be reverted
+                            ]
+                            .into(),
+                            // Deploy new contract, replace existing contract class
+                            contract_class_hashes: [
+                                (Felt::from(101u64), ClassUpdateItem::DeployedContract(Felt::from(201u64))),
+                                (Felt::from(100u64), ClassUpdateItem::ReplacedClass(Felt::from(202u64))),
+                            ]
+                            .into(),
+                            // Declare both legacy and sierra classes (unique classes)
+                            declared_classes: [
+                                (Felt::from(500u64), DeclaredClassCompiledClass::Legacy),
+                                (Felt::from(600u64), DeclaredClassCompiledClass::Sierra(Felt::from(601u64))),
+                            ]
+                            .into(),
+                            // Update nonces
+                            nonces: [(Felt::from(100u64), Felt::from(6u64)), (Felt::from(101u64), Felt::from(1u64))]
+                                .into(),
+                        },
+                        declared_class: None,
+                        arrived_at: Default::default(),
+                    },
+                    // Tx #1 - Revert some changes, make additional changes
+                    PreconfirmedExecutedTransaction {
+                        transaction: dummy_tx,
+                        state_diff: TransactionStateUpdate {
+                            // Revert key 3 back to 0 (should be excluded), update key 1 again, new key with original value
+                            storage_diffs: [
+                                ((Felt::from(100u64), Felt::from(3u64)), Felt::ZERO), // revert to default
+                                ((Felt::from(100u64), Felt::from(1u64)), Felt::from(123u64)), // update again 99->123
+                                ((Felt::from(100u64), Felt::from(19u64)), Felt::from(19u64)), // revert to old value
+                                ((Felt::from(102u64), Felt::from(1u64)), Felt::from(33u64)), // completely new contract
+                                ((Felt::from(405u64), Felt::from(405u64)), Felt::from(405u64)), // revert to old value
+                            ]
+                            .into(),
+                            // Deploy another contract, try to "replace" contract 101 with same class (should be ignored)
+                            contract_class_hashes: [
+                                (Felt::from(102u64), ClassUpdateItem::DeployedContract(Felt::from(203u64))),
+                                (Felt::from(101u64), ClassUpdateItem::ReplacedClass(Felt::from(201u64))), // same as current, should be ignored
+                            ]
+                            .into(),
+                            // Declare only new classes (can't redeclare existing ones)
+                            declared_classes: [(
+                                Felt::from(700u64),
+                                DeclaredClassCompiledClass::Sierra(Felt::from(701u64)),
+                            )]
+                            .into(),
+                            // More nonce updates
+                            nonces: [(Felt::from(100u64), Felt::from(7u64)), (Felt::from(102u64), Felt::from(2u64))]
+                                .into(),
+                        },
+                        declared_class: None,
+                        arrived_at: Default::default(),
+                    },
+                ],
+                vec![], // no candidates
+            ))
+            .unwrap();
+
+        let result = backend.block_view_on_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
+
+        assert_eq!(
+            result,
+            StateDiff {
+                // Storage: only changed values, sorted by contract address then key
+                storage_diffs: vec![
+                    // No block hash entry. (address Felt::ONE)
+                    ContractStorageDiffItem {
+                        address: Felt::from(100u64),
+                        storage_entries: vec![
+                            StorageEntry { key: Felt::from(1u64), value: Felt::from(123u64) }, // 42->123
+                            StorageEntry { key: Felt::from(2u64), value: Felt::from(50u64) },  // 0->50
+                                                                                               // key 3 reverted to 0, excluded
+                                                                                               // key 4 set to 42 (same as key 1 original), excluded
+                        ],
+                    },
+                    ContractStorageDiffItem {
+                        address: Felt::from(101u64),
+                        storage_entries: vec![StorageEntry { key: Felt::from(1u64), value: Felt::from(88u64) }], // 0->88
+                    },
+                    ContractStorageDiffItem {
+                        address: Felt::from(102u64),
+                        storage_entries: vec![StorageEntry { key: Felt::from(1u64), value: Felt::from(33u64) }], // 0->33
+                    },
+                ],
+                // Legacy classes, sorted
+                old_declared_contracts: vec![Felt::from(500u64)],
+                // Sierra classes, sorted
+                declared_classes: vec![
+                    DeclaredClassItem { class_hash: Felt::from(600u64), compiled_class_hash: Felt::from(601u64) },
+                    DeclaredClassItem { class_hash: Felt::from(700u64), compiled_class_hash: Felt::from(701u64) },
+                ],
+                // New deployments, sorted by address
+                deployed_contracts: vec![
+                    DeployedContractItem { address: Felt::from(101u64), class_hash: Felt::from(201u64) },
+                    DeployedContractItem { address: Felt::from(102u64), class_hash: Felt::from(203u64) },
+                ],
+                // Class replacements, sorted by address
+                replaced_classes: vec![
+                    ReplacedClassItem { contract_address: Felt::from(100u64), class_hash: Felt::from(202u64) }, // 200->202
+                ],
+                // Final nonce values, sorted by address
+                nonces: vec![
+                    NonceUpdate { contract_address: Felt::from(100u64), nonce: Felt::from(7u64) }, // 5->7
+                    NonceUpdate { contract_address: Felt::from(101u64), nonce: Felt::from(1u64) }, // 0->1
+                    NonceUpdate { contract_address: Felt::from(102u64), nonce: Felt::from(2u64) }, // 0->2
+                ],
+            }
+        );
+    }
+
+    #[rstest::rstest]
+    fn test_normalized_state_diff_block_hash_entry() {
+        let backend = MadaraBackend::open_for_testing(ChainConfig::madara_test().into());
+
+        // Block #0 - setup initial state
+        let block_hash = backend
+            .write_access()
+            .add_full_block_with_classes(
+                &FullBlockWithoutCommitments {
+                    header: PreconfirmedHeader { block_number: 0, ..Default::default() },
+                    state_diff: Default::default(),
+                    transactions: vec![],
+                    events: vec![],
+                },
+                &[],
+                false,
+            )
+            .unwrap()
+            .block_hash;
+
+        for block_number in 1..10 {
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader { block_number, ..Default::default() },
+                        state_diff: Default::default(),
+                        transactions: vec![],
+                        events: vec![],
+                    },
+                    &[],
+                    false,
+                )
+                .unwrap();
+        }
+
+        backend
+            .write_access()
+            .new_preconfirmed(PreconfirmedBlock::new(PreconfirmedHeader { block_number: 10, ..Default::default() }))
+            .unwrap();
+
+        let result = backend.block_view_on_preconfirmed().unwrap().get_normalized_state_diff().unwrap();
+
+        assert_eq!(
+            result,
+            StateDiff {
+                storage_diffs: vec![ContractStorageDiffItem {
+                    address: Felt::ONE, // block hash entry
+                    storage_entries: vec![StorageEntry { key: Felt::from(0u64), value: block_hash }],
+                },],
+                ..Default::default()
+            }
+        );
     }
 }

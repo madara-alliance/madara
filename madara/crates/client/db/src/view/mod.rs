@@ -172,6 +172,7 @@ mod tests {
     use super::normalize_transactions_range;
 
     #[test]
+    #[allow(clippy::reversed_empty_ranges)]
     fn test_normalize_transactions_range() {
         assert_eq!(normalize_transactions_range(5..10), (5, 5));
         assert_eq!(normalize_transactions_range(5..=10), (5, 6));
@@ -182,6 +183,6 @@ mod tests {
         assert_eq!(normalize_transactions_range(5..), (5, usize::MAX - 5));
         assert_eq!(normalize_transactions_range(..), (0, usize::MAX));
         assert_eq!(normalize_transactions_range(0..5), (0, 5));
-        assert_eq!(normalize_transactions_range(10..5), (10, 0)); // backwards
+        assert_eq!(normalize_transactions_range(10..5), (10, 0)); // backwards (empty)
     }
 }

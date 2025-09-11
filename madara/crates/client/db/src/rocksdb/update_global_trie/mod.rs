@@ -63,7 +63,6 @@ mod tests {
     use crate::MadaraBackend;
     use mp_chain_config::ChainConfig;
     use rstest::*;
-    use starknet_api::felt;
     use std::sync::Arc;
 
     #[fixture]
@@ -79,16 +78,16 @@ mod tests {
     /// input combinations and produces the expected results.
     #[rstest]
     #[case::non_zero_inputs(
-            felt!("0x123456"),  // Non-zero contracts trie root
-            felt!("0x789abc"),  // Non-zero classes trie root
-            // Expected result: Poseidon hash of STARKNET_STATE_PREFIX and both non-zero roots
-            felt!("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e")
-        )]
+        Felt::from_hex_unchecked("0x123456"),  // Non-zero contracts trie root
+        Felt::from_hex_unchecked("0x789abc"),  // Non-zero classes trie root
+        // Expected result: Poseidon hash of STARKNET_STATE_PREFIX and both non-zero roots
+        Felt::from_hex_unchecked("0x6beb971880d4b4996b10fe613b8d49fa3dda8f8b63156c919077e08c534d06e")
+    )]
     #[case::zero_class_trie_root(
-            felt!("0x123456"),  // Non-zero contracts trie root
-            felt!("0x0"),       // Zero classes trie root
-            felt!("0x123456")   // Expected result: same as contracts trie root
-        )]
+        Felt::from_hex_unchecked("0x123456"),  // Non-zero contracts trie root
+        Felt::from_hex_unchecked("0x0"),       // Zero classes trie root
+        Felt::from_hex_unchecked("0x123456")   // Expected result: same as contracts trie root
+    )]
     fn test_calculate_state_root(
         #[case] contracts_trie_root: Felt,
         #[case] classes_trie_root: Felt,

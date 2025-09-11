@@ -58,11 +58,7 @@ impl RocksDBStorageInner {
         let pending_cf = self.get_column(L1_TO_L2_PENDING_MESSAGE_BY_NONCE);
         let binding = start_nonce.to_be_bytes();
         let mode = rocksdb::IteratorMode::From(&binding, rocksdb::Direction::Forward);
-        let mut iter: super::iter_pinned::DBValueIterator<
-            '_,
-            std::result::Result<_, Box<bincode::ErrorKind>>,
-            fn(&[u8]) -> std::result::Result<_, Box<bincode::ErrorKind>>,
-        > = DBIterator::new_cf(&self.db, &pending_cf, ReadOptions::default(), mode)
+        let mut iter = DBIterator::new_cf(&self.db, &pending_cf, ReadOptions::default(), mode)
             .into_iter_values(|v| super::deserialize(v));
 
         iter.next().transpose()?.transpose().map_err(Into::into)

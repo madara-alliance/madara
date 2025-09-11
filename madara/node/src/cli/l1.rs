@@ -111,7 +111,7 @@ pub struct L1SyncParams {
     /// The usual cases for this is:
     /// - When settling on Ethereum, which is the case for Starknet Mainnet, we are usually running an L2 - because Ethrereum is an L1 and doesn't settle on any other chain.
     /// - When settling on Starknet, we are usually running an L3; because Starknet is already an L2 because it settles on Ethereum.
-    /// 
+    ///
     /// This language can be quite confusing at times, because it doesn't really matter for madara whether the settlement layer itself settles on anything else. As
     /// a simplification, all of the madara node documentation will usually use the term "L1" when talking about the *settlement layer* ("the layer above") and L2 when
     /// talking about the current chain.

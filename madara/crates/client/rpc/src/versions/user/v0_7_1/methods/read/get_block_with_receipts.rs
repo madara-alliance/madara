@@ -75,6 +75,7 @@ mod tests {
         errors::StarknetRpcApiError,
         test_utils::{rpc_test_setup, sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
+    use assert_matches::assert_matches;
     use mc_db::MadaraBackend;
     use mp_block::{
         header::{BlockTimestamp, GasPrices, PreconfirmedHeader},
@@ -106,7 +107,7 @@ mod tests {
                 block_hash: block_hashes[0],
                 parent_hash: Felt::ZERO,
                 block_number: 0,
-                new_root: Felt::from_hex_unchecked("0x88912"),
+                new_root: Felt::from_hex_unchecked("0x0"),
                 timestamp: 43,
                 sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
                 l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
@@ -202,7 +203,7 @@ mod tests {
     #[rstest]
     fn test_get_block_with_receipts_pending_always_present(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
         let (backend, rpc) = rpc_test_setup;
-        backend
+        let block_hash = backend
             .write_access()
             .add_full_block_with_classes(
                 &FullBlockWithoutCommitments {
@@ -244,20 +245,27 @@ mod tests {
                 &[],
                 true,
             )
-            .unwrap();
+            .unwrap()
+            .block_hash;
 
-        let res = StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
-            transactions: vec![],
+        assert_matches!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), StarknetGetBlockWithTxsAndReceiptsResult::Pending(PendingBlockWithReceipts {
+            transactions,
             pending_block_header: PendingBlockHeader {
-                parent_hash: Felt::from_hex_unchecked("0x1777177171"),
-                sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                timestamp: 43,
-                starknet_version: StarknetVersion::V0_13_1_1.to_string(),
-                l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
-                l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+                parent_hash,
+                sequencer_address,
+                timestamp: _,
+                starknet_version,
+                l1_data_gas_price,
+                l1_gas_price,
                 l1_da_mode: L1DaMode::Blob,
             },
+        }) => {
+            assert_eq!(parent_hash, block_hash);
+            assert_eq!(transactions, vec![]);
+            assert_eq!(sequencer_address, Felt::from_hex_unchecked("0xbabaa"));
+            assert_eq!(starknet_version, StarknetVersion::V0_13_1_1.to_string());
+            assert_eq!(l1_data_gas_price, ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() });
+            assert_eq!(l1_gas_price, ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() });
         });
-        assert_eq!(get_block_with_receipts(&rpc, BlockId::Tag(BlockTag::Pending)).unwrap(), res);
     }
 }

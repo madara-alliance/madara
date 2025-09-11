@@ -8,10 +8,10 @@ pub struct EventWithInfo {
     /// The raw event data.
     pub event: mp_receipt::Event,
 
-    /// The number of the block in which the event was emitted, None for pending blocks.
-    pub block_number: Option<u64>,
+    /// The number of the block in which the event was emitted.
+    pub block_number: u64,
 
-    /// The hash of the block where the event occurred, None for pending blocks.
+    /// The hash of the block where the event occurred, None for preconfirmed blocks.
     pub block_hash: Option<Felt>,
 
     /// The hash of the transaction that emitted this event.
@@ -22,7 +22,7 @@ pub struct EventWithInfo {
 
     /// The index of the event in the block (not in the transaction).
     /// This allows deterministic ordering of events within the block.
-    pub event_index_in_block: usize,
+    pub event_index_in_block: u64,
 
     /// Whether or not the event was found in the preconfirmed block.
     pub in_preconfirmed: bool,
@@ -33,7 +33,8 @@ impl From<EventWithInfo> for mp_rpc::v0_7_1::EmittedEvent {
         mp_rpc::v0_7_1::EmittedEvent {
             event: event_with_info.event.into(),
             block_hash: event_with_info.block_hash,
-            block_number: event_with_info.block_number,
+            // v0_7_1 expects None when the event is in the pending block.
+            block_number: if event_with_info.in_preconfirmed { None } else { Some(event_with_info.block_number) },
             transaction_hash: event_with_info.transaction_hash,
         }
     }

@@ -170,7 +170,9 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u128,
 ) -> anyhow::Result<BlockExecutionContext> {
-    let l1_gas_quote = backend.get_last_l1_gas_quote().context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
+    let l1_gas_quote = backend
+        .get_last_l1_gas_quote()
+        .context("No L1 gas quote available. Ensure that the L1 gas quote is set before calculating gas prices.")?;
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
         block_timestamp: SystemTime::now(),

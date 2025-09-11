@@ -94,7 +94,7 @@ mod tests {
                 block_hash: block_hashes[0],
                 parent_hash: Felt::ZERO,
                 block_number: 0,
-                new_root: Felt::from_hex_unchecked("0x88912"),
+                new_root: Felt::from_hex_unchecked("0x0"),
                 timestamp: 43,
                 sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
                 l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },

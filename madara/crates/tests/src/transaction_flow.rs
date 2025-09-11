@@ -653,8 +653,7 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
 #[case::single_node_rpc(SequencerOnly, false)]
 #[case::single_node(SequencerOnly, true)]
 async fn declare_sierra_then_deploy(#[case] setup: TestSetup, #[case] via_gateway_api: bool) {
-    let setup =
-        SetupBuilder::new(setup).with_block_time("500ms").run().await;
+    let setup = SetupBuilder::new(setup).with_block_time("500ms").run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(setup: &RunningTestSetup, provider: &P) {
         let mut nonce = setup.get_nonce(ACCOUNTS[0]).await;

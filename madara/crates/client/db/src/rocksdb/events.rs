@@ -104,7 +104,7 @@ impl RocksDBStorageInner {
                         tx.receipt.into_events().into_iter().enumerate().map(move |(event_index, event)| {
                             EventWithInfo {
                                 event,
-                                block_number: Some(current_block),
+                                block_number: current_block,
                                 block_hash: Some(block_info.block_hash),
                                 transaction_hash,
                                 transaction_index: tx_index as _,
@@ -113,9 +113,9 @@ impl RocksDBStorageInner {
                             }
                         })
                     })
-                    .skip(skip_events)
                     // Take exactly enough events to fill the requested chunk size.
                     .filter(|event| filter.matches(&event.event))
+                    .skip(skip_events)
                     .take(filter.max_events - events_infos.len()),
                 )
             })?;

@@ -102,7 +102,7 @@ pub fn sample_chain_for_block_getters(
 
 /// Transactions and blocks testing, no state diff, no converted class
 pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> SampleChainForBlockGetters {
-    let block_hashes = vec![Felt::ONE, Felt::from_hex_unchecked("0xff"), Felt::from_hex_unchecked("0xffabab")];
+    let mut block_hashes = vec![];
     let tx_hashes = vec![
         Felt::from_hex_unchecked("0x8888888"),
         Felt::from_hex_unchecked("0xdd848484"),
@@ -208,95 +208,39 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
 
     {
         // Block 0
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 0,
-                        sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
-                        block_timestamp: BlockTimestamp(43),
-                        protocol_version: StarknetVersion::V0_13_1_1,
-                        gas_prices: GasPrices {
-                            eth_l1_gas_price: 123,
-                            strk_l1_gas_price: 12,
-                            eth_l1_data_gas_price: 44,
-                            strk_l1_data_gas_price: 52,
-                            eth_l2_gas_price: 0,
-                            strk_l2_gas_price: 0,
+        block_hashes.push(
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader {
+                            block_number: 0,
+                            sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                            block_timestamp: BlockTimestamp(43),
+                            protocol_version: StarknetVersion::V0_13_1_1,
+                            gas_prices: GasPrices {
+                                eth_l1_gas_price: 123,
+                                strk_l1_gas_price: 12,
+                                eth_l1_data_gas_price: 44,
+                                strk_l1_data_gas_price: 52,
+                                eth_l2_gas_price: 0,
+                                strk_l2_gas_price: 0,
+                            },
+                            l1_da_mode: L1DataAvailabilityMode::Blob,
                         },
-                        l1_da_mode: L1DataAvailabilityMode::Blob,
-                    },
-                    state_diff: Default::default(),
-                    transactions: vec![TransactionWithReceipt {
-                        transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                            max_fee: Felt::from_hex_unchecked("0x12"),
-                            signature: vec![].into(),
-                            contract_address: Felt::from_hex_unchecked("0x4343"),
-                            entry_point_selector: Felt::from_hex_unchecked("0x1212"),
-                            calldata: vec![Felt::from_hex_unchecked("0x2828")].into(),
-                        })),
-                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                            transaction_hash: Felt::from_hex_unchecked("0x8888888"),
-                            actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x9"), unit: PriceUnit::Wei },
-                            messages_sent: vec![],
-                            events: vec![],
-                            execution_resources: ExecutionResources::default(),
-                            execution_result: ExecutionResult::Succeeded,
-                        }),
-                    }],
-                    events: vec![],
-                },
-                &[],
-                false,
-            )
-            .unwrap();
-
-        // Block 1
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 1,
-                        l1_da_mode: L1DataAvailabilityMode::Calldata,
-                        protocol_version: StarknetVersion::V0_13_2,
-                        ..Default::default()
-                    },
-                    state_diff: Default::default(),
-                    transactions: Default::default(),
-                    events: Default::default(),
-                },
-                &[],
-                false,
-            )
-            .unwrap();
-
-        // Block 2
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 2,
-                        l1_da_mode: L1DataAvailabilityMode::Blob,
-                        protocol_version: StarknetVersion::V0_13_2,
-                        ..Default::default()
-                    },
-                    state_diff: Default::default(),
-                    transactions: vec![
-                        TransactionWithReceipt {
+                        state_diff: Default::default(),
+                        transactions: vec![TransactionWithReceipt {
                             transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                                max_fee: Felt::from_hex_unchecked("0xb12"),
+                                max_fee: Felt::from_hex_unchecked("0x12"),
                                 signature: vec![].into(),
-                                contract_address: Felt::from_hex_unchecked("0x434b3"),
-                                entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                                calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
+                                contract_address: Felt::from_hex_unchecked("0x4343"),
+                                entry_point_selector: Felt::from_hex_unchecked("0x1212"),
+                                calldata: vec![Felt::from_hex_unchecked("0x2828")].into(),
                             })),
                             receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                                transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
+                                transaction_hash: Felt::from_hex_unchecked("0x8888888"),
                                 actual_fee: FeePayment {
-                                    amount: Felt::from_hex_unchecked("0x94"),
+                                    amount: Felt::from_hex_unchecked("0x9"),
                                     unit: PriceUnit::Wei,
                                 },
                                 messages_sent: vec![],
@@ -304,34 +248,102 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                                 execution_resources: ExecutionResources::default(),
                                 execution_result: ExecutionResult::Succeeded,
                             }),
+                        }],
+                        events: vec![],
+                    },
+                    &[],
+                    false,
+                )
+                .unwrap()
+                .block_hash,
+        );
+
+        // Block 1
+        block_hashes.push(
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader {
+                            block_number: 1,
+                            l1_da_mode: L1DataAvailabilityMode::Calldata,
+                            protocol_version: StarknetVersion::V0_13_2,
+                            ..Default::default()
                         },
-                        TransactionWithReceipt {
-                            transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                                max_fee: Felt::from_hex_unchecked("0xb12"),
-                                signature: vec![].into(),
-                                contract_address: Felt::from_hex_unchecked("0x434b3"),
-                                entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
-                                calldata: vec![Felt::from_hex_unchecked("0x2828eeb")].into(),
-                            })),
-                            receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                                transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
-                                actual_fee: FeePayment {
-                                    amount: Felt::from_hex_unchecked("0x94dd"),
-                                    unit: PriceUnit::Fri,
-                                },
-                                messages_sent: vec![],
-                                events: vec![],
-                                execution_resources: ExecutionResources::default(),
-                                execution_result: ExecutionResult::Reverted { reason: "too bad".into() },
-                            }),
+                        state_diff: Default::default(),
+                        transactions: Default::default(),
+                        events: Default::default(),
+                    },
+                    &[],
+                    false,
+                )
+                .unwrap()
+                .block_hash,
+        );
+
+        // Block 2
+        block_hashes.push(
+            backend
+                .write_access()
+                .add_full_block_with_classes(
+                    &FullBlockWithoutCommitments {
+                        header: PreconfirmedHeader {
+                            block_number: 2,
+                            l1_da_mode: L1DataAvailabilityMode::Blob,
+                            protocol_version: StarknetVersion::V0_13_2,
+                            ..Default::default()
                         },
-                    ],
-                    events: vec![],
-                },
-                &[],
-                true,
-            )
-            .unwrap();
+                        state_diff: Default::default(),
+                        transactions: vec![
+                            TransactionWithReceipt {
+                                transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                                    max_fee: Felt::from_hex_unchecked("0xb12"),
+                                    signature: vec![].into(),
+                                    contract_address: Felt::from_hex_unchecked("0x434b3"),
+                                    entry_point_selector: Felt::from_hex_unchecked("0x12123"),
+                                    calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
+                                })),
+                                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                                    transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
+                                    actual_fee: FeePayment {
+                                        amount: Felt::from_hex_unchecked("0x94"),
+                                        unit: PriceUnit::Wei,
+                                    },
+                                    messages_sent: vec![],
+                                    events: vec![],
+                                    execution_resources: ExecutionResources::default(),
+                                    execution_result: ExecutionResult::Succeeded,
+                                }),
+                            },
+                            TransactionWithReceipt {
+                                transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                                    max_fee: Felt::from_hex_unchecked("0xb12"),
+                                    signature: vec![].into(),
+                                    contract_address: Felt::from_hex_unchecked("0x434b3"),
+                                    entry_point_selector: Felt::from_hex_unchecked("0x1212223"),
+                                    calldata: vec![Felt::from_hex_unchecked("0x2828eeb")].into(),
+                                })),
+                                receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                                    transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
+                                    actual_fee: FeePayment {
+                                        amount: Felt::from_hex_unchecked("0x94dd"),
+                                        unit: PriceUnit::Fri,
+                                    },
+                                    messages_sent: vec![],
+                                    events: vec![],
+                                    execution_resources: ExecutionResources::default(),
+                                    execution_result: ExecutionResult::Reverted { reason: "too bad".into() },
+                                }),
+                            },
+                        ],
+                        events: vec![],
+                    },
+                    &[],
+                    true,
+                )
+                .unwrap()
+                .block_hash,
+        );
 
         // Pending
         backend
@@ -340,6 +352,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                 PreconfirmedHeader {
                     protocol_version: StarknetVersion::V0_13_2,
                     l1_da_mode: L1DataAvailabilityMode::Blob,
+                    block_number: 3,
                     ..Default::default()
                 },
                 vec![PreconfirmedExecutedTransaction {
@@ -368,6 +381,8 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
             ))
             .unwrap();
     }
+
+    backend.set_latest_l1_confirmed(Some(0)).unwrap();
 
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
@@ -410,16 +425,8 @@ pub fn sample_chain_for_state_updates(
 
 /// State diff
 pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> SampleChainForStateUpdates {
-    let block_hashes = vec![
-        Felt::from_hex_unchecked("0x9999999eee"),
-        Felt::from_hex_unchecked("0x9999"),
-        Felt::from_hex_unchecked("0xffa00abab"),
-    ];
-    let state_roots = vec![
-        Felt::from_hex_unchecked("0xbabababa"),
-        Felt::from_hex_unchecked("0xbabababa123"),
-        Felt::from_hex_unchecked("0xbabababa123456"),
-    ];
+    let mut block_hashes = vec![];
+    let mut state_roots = vec![];
     let class_hashes = vec![
         Felt::from_hex_unchecked("0x9100000001"),
         Felt::from_hex_unchecked("0x9100000002"),
@@ -526,112 +533,116 @@ pub fn make_sample_chain_for_state_updates(backend: &Arc<MadaraBackend>) -> Samp
         },
     ];
 
-    {
-        // Block 0
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 0,
-                        protocol_version: StarknetVersion::V0_13_2,
-                        ..Default::default()
-                    },
-                    state_diff: state_diffs[0].clone(),
-                    transactions: vec![],
-                    events: vec![],
+    // Block 0
+    let res = backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader {
+                    block_number: 0,
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
                 },
-                &[],
-                true,
-            )
-            .unwrap();
+                state_diff: state_diffs[0].clone(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            true,
+        )
+        .unwrap();
+    block_hashes.push(res.block_hash);
+    state_roots.push(res.new_state_root);
 
-        // Block 1
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 1,
-                        protocol_version: StarknetVersion::V0_13_2,
-                        ..Default::default()
-                    },
-                    state_diff: state_diffs[1].clone(),
-                    transactions: vec![],
-                    events: vec![],
+    // Block 1
+    let res = backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader {
+                    block_number: 1,
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
                 },
-                &[],
-                true,
-            )
-            .unwrap();
+                state_diff: state_diffs[1].clone(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            true,
+        )
+        .unwrap();
+    block_hashes.push(res.block_hash);
+    state_roots.push(res.new_state_root);
 
-        // Block 2
-        backend
-            .write_access()
-            .add_full_block_with_classes(
-                &FullBlockWithoutCommitments {
-                    header: PreconfirmedHeader {
-                        block_number: 2,
-                        protocol_version: StarknetVersion::V0_13_2,
-                        ..Default::default()
-                    },
-                    state_diff: state_diffs[2].clone(),
-                    transactions: vec![],
-                    events: vec![],
+    // Block 2
+    let res = backend
+        .write_access()
+        .add_full_block_with_classes(
+            &FullBlockWithoutCommitments {
+                header: PreconfirmedHeader {
+                    block_number: 2,
+                    protocol_version: StarknetVersion::V0_13_2,
+                    ..Default::default()
                 },
-                &[],
-                true,
-            )
-            .unwrap();
+                state_diff: state_diffs[2].clone(),
+                transactions: vec![],
+                events: vec![],
+            },
+            &[],
+            true,
+        )
+        .unwrap();
+    block_hashes.push(res.block_hash);
+    state_roots.push(res.new_state_root);
 
-        // Pending
-        backend
-            .write_access()
-            .new_preconfirmed(PreconfirmedBlock::new_with_content(
-                PreconfirmedHeader { protocol_version: StarknetVersion::V0_13_2, ..Default::default() },
-                vec![PreconfirmedExecutedTransaction {
-                    transaction: TransactionWithReceipt {
-                        transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
-                            max_fee: Felt::from_hex_unchecked("0xb12"),
-                            signature: vec![].into(),
-                            contract_address: Felt::from_hex_unchecked("0x434b3"),
-                            entry_point_selector: Felt::from_hex_unchecked("0x12123"),
-                            calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
-                        })),
-                        receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
-                            transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
-                            actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
-                            messages_sent: vec![],
-                            events: vec![],
-                            execution_resources: ExecutionResources::default(),
-                            execution_result: ExecutionResult::Succeeded,
-                        }),
-                    },
-                    state_diff: state_diffs[3].clone().into(),
-                    declared_class: Some(ConvertedClass::Sierra(SierraConvertedClass {
-                        class_hash: class_hashes[2],
-                        info: SierraClassInfo {
-                            contract_class: FlattenedSierraClass {
-                                sierra_program: vec![],
-                                contract_class_version: Default::default(),
-                                entry_points_by_type: EntryPointsByType {
-                                    constructor: vec![],
-                                    external: vec![],
-                                    l1_handler: vec![],
-                                },
-                                abi: Default::default(),
-                            }
-                            .into(),
-                            compiled_class_hash: compiled_class_hashes[2],
-                        },
-                        compiled: CompiledSierra(Default::default()).into(),
+    // Pending
+    backend
+        .write_access()
+        .new_preconfirmed(PreconfirmedBlock::new_with_content(
+            PreconfirmedHeader { protocol_version: StarknetVersion::V0_13_2, block_number: 3, ..Default::default() },
+            vec![PreconfirmedExecutedTransaction {
+                transaction: TransactionWithReceipt {
+                    transaction: Transaction::Invoke(InvokeTransaction::V0(InvokeTransactionV0 {
+                        max_fee: Felt::from_hex_unchecked("0xb12"),
+                        signature: vec![].into(),
+                        contract_address: Felt::from_hex_unchecked("0x434b3"),
+                        entry_point_selector: Felt::from_hex_unchecked("0x12123"),
+                        calldata: vec![Felt::from_hex_unchecked("0x2828b")].into(),
                     })),
-                    arrived_at: TxTimestamp::default(),
-                }],
-                [],
-            ))
-            .unwrap();
-    }
+                    receipt: TransactionReceipt::Invoke(InvokeTransactionReceipt {
+                        transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                        actual_fee: FeePayment { amount: Felt::from_hex_unchecked("0x94"), unit: PriceUnit::Wei },
+                        messages_sent: vec![],
+                        events: vec![],
+                        execution_resources: ExecutionResources::default(),
+                        execution_result: ExecutionResult::Succeeded,
+                    }),
+                },
+                state_diff: state_diffs[3].clone().into(),
+                declared_class: Some(ConvertedClass::Sierra(SierraConvertedClass {
+                    class_hash: class_hashes[2],
+                    info: SierraClassInfo {
+                        contract_class: FlattenedSierraClass {
+                            sierra_program: vec![],
+                            contract_class_version: Default::default(),
+                            entry_points_by_type: EntryPointsByType {
+                                constructor: vec![],
+                                external: vec![],
+                                l1_handler: vec![],
+                            },
+                            abi: Default::default(),
+                        }
+                        .into(),
+                        compiled_class_hash: compiled_class_hashes[2],
+                    },
+                    compiled: CompiledSierra(Default::default()).into(),
+                })),
+                arrived_at: TxTimestamp::default(),
+            }],
+            [],
+        ))
+        .unwrap();
 
     SampleChainForStateUpdates {
         block_hashes,

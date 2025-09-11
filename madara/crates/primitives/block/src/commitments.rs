@@ -14,6 +14,7 @@ pub struct CommitmentComputationContext {
     pub chain_id: Felt,
 }
 
+#[derive(Clone, Debug)]
 pub struct TransactionAndReceiptCommitment {
     pub transaction_commitment: Felt,
     pub receipt_commitment: Felt,
@@ -50,6 +51,7 @@ impl TransactionAndReceiptCommitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct StateDiffCommitment {
     pub state_diff_commitment: Felt,
     pub state_diff_length: u64,
@@ -61,6 +63,7 @@ impl StateDiffCommitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct EventsCommitment {
     pub events_commitment: Felt,
     pub events_count: u64,
@@ -80,6 +83,7 @@ impl EventsCommitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct BlockCommitments {
     pub transaction: TransactionAndReceiptCommitment,
     pub state_diff: StateDiffCommitment,
@@ -211,7 +215,7 @@ mod tests {
 
     fn dummy_header() -> PreconfirmedHeader {
         PreconfirmedHeader {
-            block_number: 0,
+            block_number: 1,
             sequencer_address: Felt::ZERO,
             block_timestamp: BlockTimestamp(0),
             protocol_version: StarknetVersion::V0_13_2,
@@ -224,7 +228,6 @@ mod tests {
     #[rstest]
     #[case::success(
         dummy_header(),
-        1,
         felt!("0x123"),
         ChainId::Sepolia,
         false,
@@ -232,7 +235,6 @@ mod tests {
     )]
     fn test_block_hash(
         #[case] header: PreconfirmedHeader,
-        #[case] _block_number: u64,
         #[case] global_state_root: Felt,
         #[case] chain_id: ChainId,
         #[case] pre_v0_13_2_override: bool,

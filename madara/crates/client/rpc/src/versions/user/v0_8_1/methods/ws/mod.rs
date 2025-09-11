@@ -1,11 +1,19 @@
 pub mod lib;
 pub mod starknet_unsubscribe;
+// FIXME(subscriptions): Re-add subscriptions.
 // pub mod subscribe_events;
+// FIXME(subscriptions): Re-add subscriptions.
 // pub mod subscribe_new_heads;
+// FIXME(subscriptions): Re-add subscriptions.
 // pub mod subscribe_pending_transactions;
+// FIXME(subscriptions): Re-add subscriptions.
 // pub mod subscribe_transaction_status;
 
+// FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
+#[allow(unused)]
 const BLOCK_PAST_LIMIT: u64 = 1024;
+// FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
+#[allow(unused)]
 const ADDRESS_FILTER_LIMIT: u64 = 128;
 
 #[derive(PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]

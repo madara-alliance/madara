@@ -27,14 +27,13 @@ mod tests {
     use mc_db::{preconfirmed::PreconfirmedBlock, MadaraBackend};
     use mp_block::{header::PreconfirmedHeader, FullBlockWithoutCommitments};
     use rstest::rstest;
-    use starknet_types_core::felt::Felt;
     use std::sync::Arc;
 
     #[rstest]
     fn test_block_hash_and_number(rpc_test_setup: (Arc<MadaraBackend>, Starknet)) {
         let (backend, rpc) = rpc_test_setup;
 
-        backend
+        let block_hash_0 = backend
             .write_access()
             .add_full_block_with_classes(
                 &FullBlockWithoutCommitments {
@@ -44,11 +43,15 @@ mod tests {
                 &[],
                 true,
             )
-            .unwrap();
+            .unwrap()
+            .block_hash;
 
-        assert_eq!(block_hash_and_number(&rpc).unwrap(), BlockHashAndNumber { block_hash: Felt::ONE, block_number: 0 });
+        assert_eq!(
+            block_hash_and_number(&rpc).unwrap(),
+            BlockHashAndNumber { block_hash: block_hash_0, block_number: 0 }
+        );
 
-        backend
+        let block_hash_1 = backend
             .write_access()
             .add_full_block_with_classes(
                 &FullBlockWithoutCommitments {
@@ -58,11 +61,12 @@ mod tests {
                 &[],
                 true,
             )
-            .unwrap();
+            .unwrap()
+            .block_hash;
 
         assert_eq!(
             block_hash_and_number(&rpc).unwrap(),
-            BlockHashAndNumber { block_hash: Felt::from_hex_unchecked("0x12345"), block_number: 1 }
+            BlockHashAndNumber { block_hash: block_hash_1, block_number: 1 }
         );
 
         // pending block should not be taken into account
@@ -74,7 +78,7 @@ mod tests {
 
         assert_eq!(
             block_hash_and_number(&rpc).unwrap(),
-            BlockHashAndNumber { block_hash: Felt::from_hex_unchecked("0x12345"), block_number: 1 }
+            BlockHashAndNumber { block_hash: block_hash_1, block_number: 1 }
         );
     }
 

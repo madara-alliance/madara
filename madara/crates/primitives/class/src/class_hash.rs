@@ -89,6 +89,7 @@ impl CompressedLegacyContractClass {
 mod tests {
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
+    use starknet_providers::Url;
     use starknet_providers::{Provider, SequencerGatewayProvider};
     use starknet_types_core::felt::Felt;
 
@@ -96,7 +97,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_compute_sierra_class_hash() {
-        let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
+        let provider = SequencerGatewayProvider::new(
+            Url::parse("https://gatway.alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
+            starknet_core::chain_id::MAINNET,
+        );
 
         let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
 

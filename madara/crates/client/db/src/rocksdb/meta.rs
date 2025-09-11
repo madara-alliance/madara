@@ -26,13 +26,21 @@ pub enum StoredChainTipWithoutContent {
 impl RocksDBStorageInner {
     /// Set the latest l1_block synced for the messaging worker.
     #[tracing::instrument(skip(self))]
-    pub(super) fn write_l1_messaging_sync_tip(&self, block_n: u64) -> Result<()> {
-        self.db.put_cf_opt(
-            &self.get_column(META_COLUMN),
-            META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
-            block_n.to_be_bytes(),
-            &self.writeopts_no_wal,
-        )?;
+    pub(super) fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
+        if let Some(block_n) = block_n {
+            self.db.put_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
+                block_n.to_be_bytes(),
+                &self.writeopts_no_wal,
+            )?;
+        } else {
+            self.db.delete_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_LAST_SYNCED_L1_EVENT_BLOCK_KEY,
+                &self.writeopts_no_wal,
+            )?;
+        }
         Ok(())
     }
 
@@ -47,13 +55,21 @@ impl RocksDBStorageInner {
     }
 
     #[tracing::instrument(skip(self))]
-    pub(super) fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()> {
-        self.db.put_cf_opt(
-            &self.get_column(META_COLUMN),
-            META_CONFIRMED_ON_L1_TIP_KEY,
-            block_n.to_be_bytes(),
-            &self.writeopts_no_wal,
-        )?;
+    pub(super) fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
+        if let Some(block_n) = block_n {
+            self.db.put_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_CONFIRMED_ON_L1_TIP_KEY,
+                block_n.to_be_bytes(),
+                &self.writeopts_no_wal,
+            )?;
+        } else {
+            self.db.delete_cf_opt(
+                &self.get_column(META_COLUMN),
+                META_CONFIRMED_ON_L1_TIP_KEY,
+                &self.writeopts_no_wal,
+            )?;
+        }
         Ok(())
     }
 

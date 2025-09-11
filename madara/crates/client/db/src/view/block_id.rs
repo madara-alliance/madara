@@ -35,7 +35,7 @@ pub trait StateViewResolvable: Sized {
     type Error;
     fn resolve_state_view<D: MadaraStorageRead>(
         &self,
-        backend: &Arc<MadaraBackend<D>>,
+        view: &MadaraStateView<D>,
     ) -> Result<MadaraStateView<D>, Self::Error>;
 }
 
@@ -43,9 +43,9 @@ impl<T: StateViewResolvable> StateViewResolvable for &T {
     type Error = T::Error;
     fn resolve_state_view<D: MadaraStorageRead>(
         &self,
-        backend: &Arc<MadaraBackend<D>>,
+        view: &MadaraStateView<D>,
     ) -> Result<MadaraStateView<D>, Self::Error> {
-        (*self).resolve_state_view(backend)
+        (*self).resolve_state_view(view)
     }
 }
 
@@ -53,23 +53,21 @@ impl StateViewResolvable for BlockId {
     type Error = BlockResolutionError;
     fn resolve_state_view<D: MadaraStorageRead>(
         &self,
-        backend: &Arc<MadaraBackend<D>>,
+        view: &MadaraStateView<D>,
     ) -> Result<MadaraStateView<D>, Self::Error> {
         match self {
-            Self::Tag(BlockTag::Pending) => Ok(backend.view_on_latest()),
-            Self::Tag(BlockTag::Latest) => Ok(backend.view_on_latest_confirmed()),
+            Self::Tag(BlockTag::Pending) => Ok(view.clone()), // Same view.
+            Self::Tag(BlockTag::Latest) => Ok(view.view_on_latest_confirmed()),
             Self::Hash(hash) => {
-                if let Some(block_n) = backend.db.find_block_hash(hash)? {
-                    Ok(backend.view_on_confirmed(block_n).with_context(|| {
+                if let Some(block_n) = view.find_block_by_hash(hash)? {
+                    Ok(view.view_on_confirmed(block_n).with_context(|| {
                         format!("Block with hash {hash:#x} was found at {block_n} but no such block exists")
                     })?)
                 } else {
                     Err(BlockResolutionError::BlockHashNotFound)
                 }
             }
-            Self::Number(block_n) => {
-                backend.view_on_confirmed(*block_n).ok_or(BlockResolutionError::BlockNumberNotFound)
-            }
+            Self::Number(block_n) => view.view_on_confirmed(*block_n).ok_or(BlockResolutionError::BlockNumberNotFound),
         }
     }
 }
@@ -105,6 +103,13 @@ impl BlockViewResolvable for BlockId {
     }
 }
 
+impl<D: MadaraStorageRead> MadaraStateView<D> {
+    /// Returns a state view on the latest confirmed block state. This view can be used to query the state from this block and earlier.
+    pub fn view_on<R: StateViewResolvable>(&self, block_id: R) -> Result<MadaraStateView<D>, R::Error> {
+        block_id.resolve_state_view(self)
+    }
+}
+
 impl<D: MadaraStorageRead> MadaraBackend<D> {
     /// Returns a view on a block. This view is used to query content from that block.
     ///
@@ -115,6 +120,6 @@ impl<D: MadaraStorageRead> MadaraBackend<D> {
 
     /// Returns a state view on the latest confirmed block state. This view can be used to query the state from this block and earlier.
     pub fn view_on<R: StateViewResolvable>(self: &Arc<Self>, block_id: R) -> Result<MadaraStateView<D>, R::Error> {
-        block_id.resolve_state_view(self)
+        block_id.resolve_state_view(&self.view_on_latest())
     }
 }

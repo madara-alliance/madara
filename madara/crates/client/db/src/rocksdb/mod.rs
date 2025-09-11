@@ -366,12 +366,12 @@ impl MadaraStorageWrite for RocksDBStorage {
         tracing::debug!("Write devnet keys");
         self.inner.write_devnet_predeployed_keys(devnet_keys).context("Writing devnet predeployed keys to db")
     }
-    fn write_l1_messaging_sync_tip(&self, block_n: u64) -> Result<()> {
-        tracing::debug!("Write l1 messaging tip block_n={block_n}");
+    fn write_l1_messaging_sync_tip(&self, block_n: Option<u64>) -> Result<()> {
+        tracing::debug!("Write l1 messaging tip block_n={block_n:?}");
         self.inner.write_l1_messaging_sync_tip(block_n).context("Writing l1 messaging sync tip")
     }
-    fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()> {
-        tracing::debug!("Write confirmed on l1 tip block_n={block_n}");
+    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()> {
+        tracing::debug!("Write confirmed on l1 tip block_n={block_n:?}");
         self.inner.write_confirmed_on_l1_tip(block_n).context("Writing confirmed on l1 tip")
     }
     fn write_latest_applied_trie_update(&self, block_n: &Option<u64>) -> Result<()> {

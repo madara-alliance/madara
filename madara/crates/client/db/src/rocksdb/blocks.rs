@@ -141,7 +141,10 @@ impl RocksDBStorageInner {
     pub(super) fn blocks_store_transactions(&self, block_number: u64, value: &[TransactionWithReceipt]) -> Result<()> {
         let mut batch = WriteBatchWithTransaction::default();
 
-        tracing::debug!("Write {block_number} => {:?}", value.iter().map(|v| v.receipt.transaction_hash()).collect::<Vec<_>>());
+        tracing::debug!(
+            "Write {block_number} => {:?}",
+            value.iter().map(|v| v.receipt.transaction_hash()).collect::<Vec<_>>()
+        );
 
         let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);

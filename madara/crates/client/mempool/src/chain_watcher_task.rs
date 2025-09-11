@@ -228,7 +228,11 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
                 }
             }
 
-            tracing::debug!("Mempool task: #nonce_updates={} #removed={}, put_back_into_mempool={put_back_into_mempool}.", nonce_updates.len(), removed.len());
+            tracing::debug!(
+                "Mempool task: #nonce_updates={} #removed={}, put_back_into_mempool={put_back_into_mempool}.",
+                nonce_updates.len(),
+                removed.len()
+            );
 
             // Update nonces
             if !nonce_updates.is_empty() {

@@ -139,9 +139,9 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn replace_chain_tip(&self, chain_tip: &StorageChainTip) -> Result<()>;
     fn append_preconfirmed_content(&self, start_tx_index: u64, txs: &[PreconfirmedExecutedTransaction]) -> Result<()>;
     /// Set the latest block confirmed on l1.
-    fn write_confirmed_on_l1_tip(&self, block_n: u64) -> Result<()>;
+    fn write_confirmed_on_l1_tip(&self, block_n: Option<u64>) -> Result<()>;
     /// Write the latest l1_block synced for the messaging worker.
-    fn write_l1_messaging_sync_tip(&self, l1_block_n: u64) -> Result<()>;
+    fn write_l1_messaging_sync_tip(&self, l1_block_n: Option<u64>) -> Result<()>;
 
     fn write_l1_handler_txn_hash_by_nonce(&self, core_contract_nonce: u64, txn_hash: &Felt) -> Result<()>;
     fn write_pending_message_to_l2(&self, msg: &L1HandlerTransactionWithFee) -> Result<()>;

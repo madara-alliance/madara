@@ -119,6 +119,8 @@ impl WsSubscribeHandles {
         Self { handles: std::sync::Arc::new(dashmap::DashMap::new()) }
     }
 
+    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
+    #[allow(unused)]
     pub async fn subscription_register(&self, id: jsonrpsee::types::SubscriptionId<'static>) -> WsSubscriptionGuard {
         let id = match id {
             jsonrpsee::types::SubscriptionId::Num(id) => id,
@@ -147,11 +149,15 @@ impl WsSubscribeHandles {
 
 pub(crate) struct WsSubscriptionGuard {
     id: u64,
+    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
+    #[allow(unused)]
     handle: std::sync::Arc<tokio::sync::Notify>,
     map: std::sync::Arc<dashmap::DashMap<u64, std::sync::Arc<tokio::sync::Notify>>>,
 }
 
 impl WsSubscriptionGuard {
+    // FIXME(subscriptions): Remove this #[allow(unused)] once subscriptions are back.
+    #[allow(unused)]
     pub async fn cancelled(&self) {
         self.handle.notified().await
     }

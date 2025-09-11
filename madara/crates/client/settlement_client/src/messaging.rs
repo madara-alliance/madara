@@ -103,10 +103,13 @@ async fn sync_inner(
         .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e)))?
     {
         block_n
-    } else {
+    } else if !replay_max_duration.is_zero() {
+        tracing::debug!("Getting latest block_n from settlement layer.");
         let latest_block_n = settlement_client.get_latest_block_number().await?;
         tracing::debug!("Find start, latest {latest_block_n}...");
         find_start_block::find_replay_block_n_start(&settlement_client, replay_max_duration, latest_block_n).await?
+    } else {
+        settlement_client.get_latest_block_number().await?
     };
 
     tracing::info!("⟠  Starting L1 Messages Syncing from block #{from_l1_block_n}...");
@@ -148,9 +151,9 @@ async fn sync_inner(
                 match block_n {
                     Err(err) => tracing::debug!("Error while parsing the next ethereum message: {err:#}"),
                     Ok((tx_hash, block_n)) => {
-                        tracing::debug!("Processed {tx_hash} {block_n}");
+                        tracing::debug!("Processed {tx_hash:#x} {block_n}");
                         tracing::debug!("Set l1_messaging_sync_tip={block_n}");
-                        backend.set_latest_l1_confirmed(Some(block_n)).map_err(|e| {
+                        backend.write_l1_messaging_sync_tip(Some(block_n)).map_err(|e| {
                             SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e))
                         })?;
                         notify_consumer.notify_waiters(); // notify
@@ -199,14 +202,18 @@ mod messaging_module_tests {
     }
 
     #[fixture]
-    async fn setup_messaging_tests() -> MessagingTestRunner {
+    async fn setup_messaging_tests(#[default(false)] msg_replay_enabled: bool) -> MessagingTestRunner {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
         // Set up chain info
         let mut chain_config = ChainConfig::madara_test();
-        chain_config.l1_messages_replay_max_duration = Duration::from_secs(30);
+        if msg_replay_enabled {
+            chain_config.l1_messages_replay_max_duration = Duration::from_secs(30);
+        } else {
+            chain_config.l1_messages_replay_max_duration = Default::default();
+        }
         let chain_config = Arc::new(chain_config);
 
         // Initialize database service
@@ -225,6 +232,7 @@ mod messaging_module_tests {
     }
 
     fn mock_l1_handler_tx(mock: &mut MockSettlementLayerProvider, nonce: u64, is_pending: bool, has_cancel_req: bool) {
+        tracing::debug!("{:?}", create_mock_event(0, nonce).message);
         mock.expect_calculate_message_hash()
             .with(predicate::eq(create_mock_event(0, nonce).message))
             .returning(move |_| Ok(vec![nonce as u8; 32]));
@@ -237,7 +245,7 @@ mod messaging_module_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn test_sync_processes_new_messages(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
@@ -245,23 +253,13 @@ mod messaging_module_tests {
 
         // Setup mock event and configure backend
         let mock_event1 = create_mock_event(100, 1);
-        let mock_event2 = create_mock_event(100, 2);
-        let mock_event3 = create_mock_event(100, 5);
-        let mock_event4 = create_mock_event(103, 10);
-        let mock_event5 = create_mock_event(103, 18);
         let notify = Arc::new(Notify::new());
 
         // Setup mock for last synced block
-        db.set_latest_l1_confirmed(Some(99))?;
+        db.write_l1_messaging_sync_tip(Some(99))?;
 
         // Mock get_messaging_stream
-        let events = vec![
-            mock_event1.clone(),
-            mock_event2.clone(),
-            mock_event3.clone(),
-            mock_event4.clone(),
-            mock_event5.clone(),
-        ];
+        let events = vec![mock_event1.clone()];
         client
             .expect_messages_to_l2_stream()
             .times(1)
@@ -300,9 +298,11 @@ mod messaging_module_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn test_sync_catches_earlier_messages(
-        #[future] setup_messaging_tests: MessagingTestRunner,
+        #[future]
+        #[with(/* enable replay */ true)]
+        setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
         let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
 
