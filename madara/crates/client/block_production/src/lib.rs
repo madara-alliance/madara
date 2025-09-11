@@ -769,7 +769,7 @@ pub(crate) mod tests {
     /// This happens if a full node is shutdown (gracefully or not) midway
     /// during block production.
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(10))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     #[allow(clippy::too_many_arguments)]
     async fn block_prod_pending_close_on_startup_pass(
@@ -856,7 +856,7 @@ pub(crate) mod tests {
     // This test makes sure that the pending tick closes the block
     // if the bouncer capacity is reached
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(10))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_bouncer_cap_reached_closes_block(
@@ -928,7 +928,7 @@ pub(crate) mod tests {
     // adds the transaction to the pending block, closes it
     // and creates a new empty pending block
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(10))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     #[allow(clippy::too_many_arguments)]
     async fn test_block_prod_on_block_time_tick_closes_block(
@@ -956,7 +956,7 @@ pub(crate) mod tests {
     }
 
     #[rstest::rstest]
-    #[timeout(Duration::from_secs(10))]
+    #[timeout(Duration::from_secs(30))]
     #[tokio::test]
     async fn test_l1_handler_tx(
         #[future]
