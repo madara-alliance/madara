@@ -360,4 +360,3 @@ async fn test_create_snos_batch() {
     assert_eq!(retrieved_batch.num_blocks, 101); // 200 - 100 + 1
     assert_eq!(retrieved_batch.status, SnosBatchStatus::Open);
 }
-

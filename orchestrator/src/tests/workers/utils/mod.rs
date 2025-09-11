@@ -149,13 +149,13 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
         // For any other job types, use a default metadata structure
         _ => JobMetadata {
             common: CommonMetadata::default(),
-            specific: JobSpecificMetadata::Snos(SnosMetadata { 
+            specific: JobSpecificMetadata::Snos(SnosMetadata {
                 snos_batch_index: 1,
                 start_block: block_number,
                 end_block: block_number,
                 num_blocks: 1,
                 full_output: true,
-                ..Default::default() 
+                ..Default::default()
             }),
         },
     }

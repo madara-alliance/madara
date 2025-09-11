@@ -147,15 +147,14 @@ async fn test_snos_worker(
     // Mock latest SNOS job
     let latest_snos_job = latest_snos_completed.map(|block_num| {
         let mut job_item = get_job_item_mock_by_id(block_num.to_string(), Uuid::new_v4());
-        job_item.metadata.specific =
-            JobSpecificMetadata::Snos(SnosMetadata { 
-                snos_batch_index: 1,
-                start_block: block_num,
-                end_block: block_num,
-                num_blocks: 1,
-                full_output: true,
-                ..Default::default() 
-            });
+        job_item.metadata.specific = JobSpecificMetadata::Snos(SnosMetadata {
+            snos_batch_index: 1,
+            start_block: block_num,
+            end_block: block_num,
+            num_blocks: 1,
+            full_output: true,
+            ..Default::default()
+        });
         job_item.status = JobStatus::Completed;
         job_item
     });
@@ -353,9 +352,7 @@ async fn test_create_snos_job_for_existing_batch() -> Result<(), Box<dyn Error>>
     // Mock get_snos_batches_by_indices to return our test batch
     let test_batch = crate::types::batch::SnosBatch::new(1, 100, 200);
     let test_batch_clone = test_batch.clone();
-    db.expect_get_snos_batches_by_indices()
-        .with(eq(vec![1]))
-        .returning(move |_| Ok(vec![test_batch_clone.clone()]));
+    db.expect_get_snos_batches_by_indices().with(eq(vec![1])).returning(move |_| Ok(vec![test_batch_clone.clone()]));
 
     // Mock job creation for our test batch
     let uuid = Uuid::new_v4();
@@ -367,9 +364,7 @@ async fn test_create_snos_job_for_existing_batch() -> Result<(), Box<dyn Error>>
         .with(eq("1".to_string()), mockall::predicate::always())
         .returning(move |_, _| Ok(job_item_clone.clone()));
 
-    db.expect_create_job()
-        .withf(move |item| item.internal_id == "1")
-        .returning(move |_| Ok(job_item.clone()));
+    db.expect_create_job().withf(move |item| item.internal_id == "1").returning(move |_| Ok(job_item.clone()));
 
     // Mock batch status update
     db.expect_update_snos_batch_status_by_index()
@@ -403,9 +398,7 @@ async fn test_create_snos_job_for_existing_batch() -> Result<(), Box<dyn Error>>
         .await;
 
     // Run the SNOS worker
-    let result = crate::worker::event_handler::triggers::snos::SnosJobTrigger
-        .run_worker(services.config)
-        .await;
+    let result = crate::worker::event_handler::triggers::snos::SnosJobTrigger.run_worker(services.config).await;
 
     // Verify the worker succeeded
     assert!(result.is_ok(), "SNOS job trigger run_worker should succeed");

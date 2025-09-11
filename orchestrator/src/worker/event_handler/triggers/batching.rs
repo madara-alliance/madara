@@ -16,6 +16,7 @@ use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
+use orchestrator_prover_client_interface::Task;
 use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
@@ -320,15 +321,14 @@ impl BatchingTrigger {
         start_block: u64,
     ) -> Result<AggregatorBatch, JobError> {
         // Start a new bucket
-        // let bucket_id = config
-        //     .prover_client()
-        //     .submit_task(Task::CreateBucket)
-        //     .await
-        //     .map_err(|e| {
-        //         tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
-        //         JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
-        //     })?;
-        let bucket_id = 123;
+        let bucket_id = config
+            .prover_client()
+            .submit_task(Task::CreateBucket)
+            .await
+            .map_err(|e| {
+                tracing::error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
+                JobError::Other(OtherError(eyre!("Prover Client Error: Failed to submit create bucket task to prover client, {}", e))) // TODO: Add a new error type to be used for prover client error
+            })?;
         tracing::info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
         Ok(AggregatorBatch::new(
             index,
