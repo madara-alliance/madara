@@ -5,10 +5,9 @@ use crate::utils::tx_api_to_blockifier;
 use crate::utils::ResultExt;
 use crate::Starknet;
 use blockifier::transaction::account_transaction::ExecutionFlags;
-use mc_exec::execution::TxInfo;
 use mc_exec::ExecutionContext;
 use mp_block::BlockId;
-use mp_rpc::v0_7_1::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
+use mp_rpc::v0_8_1::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 use std::sync::Arc;
 
@@ -50,8 +49,6 @@ pub async fn estimate_fee(
         .collect::<Result<Vec<_>, ToBlockifierError>>()
         .or_internal_server_error("Failed to convert BroadcastedTransaction to AccountTransaction")?;
 
-    let tips = transactions.iter().map(|tx| tx.tip().unwrap_or_default()).collect::<Vec<_>>();
-
     let execution_results = exec_context.re_execute_transactions([], transactions)?;
 
     let fee_estimates = execution_results.iter().enumerate().try_fold(
@@ -63,8 +60,7 @@ pub async fn estimate_fee(
                     error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
                 });
             }
-            let tip = tips[index];
-            acc.push(exec_context.execution_result_to_fee_estimate_legacy(result, tip));
+            acc.push(exec_context.execution_result_to_fee_estimate(result));
             Ok(acc)
         },
     )?;
