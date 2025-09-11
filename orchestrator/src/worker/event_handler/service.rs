@@ -109,30 +109,23 @@ impl JobHandlerService {
 
         let duration = start.elapsed();
 
-        // For Aggregator and StateUpdate jobs, use the last block in the batch instead of batch number
+        // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
         let block_number = match job_type {
             JobType::StateTransition => {
-                // Try to get the last block from StateUpdate metadata
-                if let Ok(state_metadata) = TryInto::<StateUpdateMetadata>::try_into(job_item.metadata.specific.clone())
-                {
-                    match &state_metadata.context {
-                        SettlementContext::Block(data) | SettlementContext::Batch(data) => data
-                            .to_settle
-                            .last()
-                            .copied()
-                            .map(|v| v as f64)
-                            .unwrap_or_else(|| parse_string(&internal_id).unwrap_or(0.0)),
-                    }
-                } else {
-                    parse_string(&internal_id)?
+                let batch_number = parse_string(&internal_id)?;
+
+                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    _ => batch_number,
                 }
             }
             JobType::Aggregator => {
-                // For Aggregator, use the actual end_block from the batch
-                if let Ok(agg_metadata) = TryInto::<AggregatorMetadata>::try_into(job_item.metadata.specific.clone()) {
-                    agg_metadata.end_block as f64
-                } else {
-                    parse_string(&internal_id)?
+                let batch_number = parse_string(&internal_id)?;
+
+                // Fetch the batch from the database
+                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    _ => batch_number,
                 }
             }
             _ => parse_string(&internal_id)?,
