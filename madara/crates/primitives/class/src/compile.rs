@@ -444,15 +444,20 @@ fn felt_to_big_uint(value: &Felt) -> BigUint {
 
 #[cfg(test)]
 mod tests {
+    use starknet_core::chain_id;
     use crate::ContractClass;
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
-    use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_providers::{Provider, SequencerGatewayProvider, Url};
     use starknet_types_core::felt::Felt;
 
     #[tokio::test]
     async fn test_compressed_legacy_class_to_blockifier() {
-        let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
+        let provider = SequencerGatewayProvider::new(
+            Url::parse("https://alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
+            chain_id::MAINNET,
+        );
         let class_hash = Felt::from_hex_unchecked("0x25ec026985a3bf9d0cc1fe17326b245dfdc3ff89b8fde106542a3ea56c5a918");
         let _class: ContractClass =
             provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await.unwrap().into();
@@ -460,7 +465,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_flattened_sierra_class_to_blockifier() {
-        let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
+        let provider = SequencerGatewayProvider::new(
+            Url::parse("https://alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
+            chain_id::MAINNET,
+        );
 
         let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
         let expected_compiled_class_hash =

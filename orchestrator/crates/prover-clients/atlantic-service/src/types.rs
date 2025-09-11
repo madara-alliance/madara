@@ -69,6 +69,7 @@ pub struct AtlanticCreateBucketRequest {
     pub node_width: Option<String>,
     pub aggregator_version: AtlanticAggregatorVersion,
     pub aggregator_params: AtlanticAggregatorParams,
+    pub mock_proof: bool,
 }
 
 #[derive(Default, Debug, Clone, Serialize, Deserialize)]
