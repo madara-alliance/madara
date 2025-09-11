@@ -17,6 +17,7 @@ use mp_block::{BlockHeaderWithSignatures, MadaraPendingBlock};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_receipt::EventWithTransactionHash;
+use std::str::FromStr;
 use mp_receipt::TransactionReceipt;
 use mp_state_update::StateDiff;
 use starknet_types_core::felt::Felt;
@@ -71,8 +72,22 @@ struct JsonRpcResponse {
 }
 
 #[derive(Debug, Deserialize)]
+struct JsonRpcResponse2 {
+    id: u32,
+    jsonrpc: String,
+    result: BlockResult2,
+}
+
+#[derive(Debug, Deserialize)]
 struct BlockResult {
     timestamp: u64,
+    // We only care about timestamp, but the API returns many other fields
+    // Using serde's flatten or ignoring other fields with #[serde(other)]
+}
+
+#[derive(Debug, Deserialize)]
+struct BlockResult2 {
+    block_hash: String,
     // We only care about timestamp, but the API returns many other fields
     // Using serde's flatten or ignoring other fields with #[serde(other)]
 }
@@ -123,6 +138,35 @@ pub async fn get_block_timestamp(rpc_url: &str, block_number: u64) -> Result<u64
     Ok(json_response.result.timestamp)
 }
 
+pub async fn get_block_hash(rpc_url: &str, block_number: u64) -> Result<String, StarknetError> {
+    let client = reqwest::Client::new();
+
+    let request_body = JsonRpcRequest {
+        id: 1,
+        jsonrpc: "2.0".to_string(),
+        method: "starknet_getBlockWithTxHashes".to_string(),
+        params: vec![json!({ "block_number": block_number })],
+    };
+
+    let response = client
+        .post(rpc_url)
+        .header("accept", "application/json")
+        .header("content-type", "application/json")
+        .json(&request_body)
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        return Err(StarknetError::ApiError(format!("HTTP error: {}", response.status())));
+    }
+
+    let json_response: JsonRpcResponse2 = response.json().await?;
+
+    Ok(json_response.result.block_hash)
+}
+
+
+
 impl MadaraBackend {
     /// Add a new block to the db, calling the `on_full_block_imported` handler that handles flushes and backups when they are enabled,
     /// and update all the statuses.
@@ -154,10 +198,46 @@ impl MadaraBackend {
             new_global_state_root,
             pre_v0_13_2_hash_override,
         );
+
+        println!("Yes bro this is called!");
         let block_hash = block.block_hash;
 
-        let events = block.events.clone();
+        let original_rpc = std::env::var("RPC_URL_ORIGINAL_NODE")
+            .unwrap_or_else(|_| "default_rpc_url".to_string());
 
+        // Try to fetch paradex block hash, but treat any error as a mismatch
+        let paradex_block_hash_result = get_block_hash(original_rpc.as_str(), block_n).await;
+
+        let hashes_match = match paradex_block_hash_result {
+            Ok(hash_str) => {
+                match Felt::from_str(hash_str.as_str()) {
+                    Ok(paradex_block_hash) => {
+                        println!("Yes Madara bro {:?}", block.block_hash);
+                        println!("Yes Paradex bro {:?}", paradex_block_hash);
+                        paradex_block_hash == block.block_hash
+                    }
+                    Err(e) => {
+                        println!("Failed to parse paradex block hash: {:?}", e);
+                        false // Treat parse error as mismatch
+                    }
+                }
+            }
+            Err(e) => {
+                println!("Failed to fetch paradex block hash: {:?}", e);
+                false // Treat fetch error as mismatch
+            }
+        };
+
+        if !hashes_match {
+            println!("HEEEEEEMMAAANNNKKKKKKKKK, removing db!");
+            self.clear_pending_block().unwrap();
+            self.flush()?;
+            // Now shutdown Madara !
+            return Ok(block_hash)
+        }
+
+        println!("Yes Madara bro Continuing");
+        let events = block.events.clone();
         let block_info = self.store_full_block(block)?;
         self.head_status.headers.set_current(Some(block_n));
         self.head_status.transactions.set_current(Some(block_n));
