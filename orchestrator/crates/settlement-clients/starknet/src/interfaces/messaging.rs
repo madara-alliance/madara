@@ -24,13 +24,7 @@ impl Messaging {
         calldata.push(selector);
         calldata.extend(payload);
 
-        invoke_contract(
-            &self.signer,
-            self.address,
-            "send_message_to_appchain",
-            calldata,
-        )
-        .await
+        invoke_contract(&self.signer, self.address, "send_message_to_appchain", calldata).await
     }
 
     pub async fn consume_message_from_appchain(
@@ -42,13 +36,7 @@ impl Messaging {
         calldata.push(from_address);
         calldata.extend(payload);
 
-        invoke_contract(
-            &self.signer,
-            self.address,
-            "consume_message_from_appchain",
-            calldata,
-        )
-        .await
+        invoke_contract(&self.signer, self.address, "consume_message_from_appchain", calldata).await
     }
 
     pub async fn start_message_cancellation(
@@ -64,13 +52,7 @@ impl Messaging {
         calldata.push(nonce);
         calldata.extend(payload);
 
-        invoke_contract(
-            &self.signer,
-            self.address,
-            "start_message_cancellation",
-            calldata,
-        )
-        .await
+        invoke_contract(&self.signer, self.address, "start_message_cancellation", calldata).await
     }
 
     pub async fn cancel_message(

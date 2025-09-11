@@ -122,7 +122,9 @@ blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc
   "testing",
   "concurrency",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev="3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = ["testing"]}
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = [
+  "testing",
+] }
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
@@ -291,7 +293,7 @@ majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
 prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
-snos-core = {git = "https://github.com/Mohiiit/snos-poc", rev="7f85f06546e27a8dd397f11544d79717db78a394"}
+snos-core = { git = "https://github.com/Mohiiit/snos-poc", rev = "7f85f06546e27a8dd397f11544d79717db78a394" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }

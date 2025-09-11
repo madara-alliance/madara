@@ -415,7 +415,17 @@ impl StateUpdateJobHandler {
     ) -> Result<String, JobError> {
         match config.layer() {
             Layer::L2 => self.update_state_for_batch(config, nonce, artifacts).await,
-            Layer::L3 => self.update_state_for_block(config, to_settle_num, artifacts.snos_output.unwrap(), nonce, artifacts.program_output, artifacts.blob_data).await,
+            Layer::L3 => {
+                self.update_state_for_block(
+                    config,
+                    to_settle_num,
+                    artifacts.snos_output.unwrap(),
+                    nonce,
+                    artifacts.program_output,
+                    artifacts.blob_data,
+                )
+                .await
+            }
         }
     }
 

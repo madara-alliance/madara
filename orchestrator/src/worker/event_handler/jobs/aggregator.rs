@@ -78,7 +78,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
 
         config
             .database()
-            .update_aggregator_batch_status_by_index(metadata.batch_num, AggregatorBatchStatus::PendingAggregatorVerification)
+            .update_aggregator_batch_status_by_index(
+                metadata.batch_num,
+                AggregatorBatchStatus::PendingAggregatorVerification,
+            )
             .await?;
 
         Ok(external_id)
@@ -193,7 +196,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
                 // Update the batch status to ReadyForStateUpdate
                 config
                     .database()
-                    .update_aggregator_batch_status_by_index(metadata.batch_num, AggregatorBatchStatus::ReadyForStateUpdate)
+                    .update_aggregator_batch_status_by_index(
+                        metadata.batch_num,
+                        AggregatorBatchStatus::ReadyForStateUpdate,
+                    )
                     .await?;
 
                 tracing::info!(
@@ -211,7 +217,10 @@ impl JobHandlerTrait for AggregatorJobHandler {
             TaskStatus::Failed(err) => {
                 config
                     .database()
-                    .update_aggregator_batch_status_by_index(metadata.batch_num, AggregatorBatchStatus::VerificationFailed)
+                    .update_aggregator_batch_status_by_index(
+                        metadata.batch_num,
+                        AggregatorBatchStatus::VerificationFailed,
+                    )
                     .await?;
                 tracing::info!(
                     log_type = "failed",

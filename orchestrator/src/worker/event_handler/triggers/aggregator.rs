@@ -24,7 +24,8 @@ impl JobTrigger for AggregatorJobTrigger {
         tracing::info!(log_type = "starting", category = "AggregatorWorker", "AggregatorWorker started.");
 
         // Get all the closed batches
-        let closed_batches = config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
+        let closed_batches =
+            config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
 
         tracing::debug!("Found {} closed batches", closed_batches.len());
 
@@ -79,7 +80,10 @@ impl JobTrigger for AggregatorJobTrigger {
                 Ok(_) => {
                     config
                         .database()
-                        .update_aggregator_batch_status_by_index(batch.index, AggregatorBatchStatus::PendingAggregatorRun)
+                        .update_aggregator_batch_status_by_index(
+                            batch.index,
+                            AggregatorBatchStatus::PendingAggregatorRun,
+                        )
                         .await?;
                     tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }

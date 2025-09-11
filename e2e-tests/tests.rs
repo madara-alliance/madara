@@ -349,7 +349,10 @@ async fn get_job_state_by_type(
 }
 
 /// Get Batch from DB
-async fn get_batch_by_index(mongo_db_server: &MongoDbServer, index: u64) -> color_eyre::Result<Option<AggregatorBatch>> {
+async fn get_batch_by_index(
+    mongo_db_server: &MongoDbServer,
+    index: u64,
+) -> color_eyre::Result<Option<AggregatorBatch>> {
     let mongo_db_client = get_mongo_db_client(mongo_db_server).await;
     let collection = mongo_db_client.database("orchestrator").collection::<AggregatorBatch>(BATCHES_COLLECTION);
     let filter = doc! { "index": index as i64 };

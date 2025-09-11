@@ -8,7 +8,7 @@ use uuid::Uuid;
 pub enum BatchType {
     #[default]
     AggregatorBatch,
-    SnosBatch
+    SnosBatch,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, PartialOrd, strum_macros::Display, Eq, Default)]
@@ -114,7 +114,7 @@ pub enum SnosBatchStatus {
     #[default]
     Open,
     Closed,
-    SnosJobCreated
+    SnosJobCreated,
 }
 
 #[derive(Serialize, Deserialize, Eq, PartialEq, Debug, Clone, Default)]
@@ -159,12 +159,12 @@ impl Batch {
 #[allow(dead_code)]
 impl SnosBatch {
     /// Creates a new SNOS batch
-    /// 
+    ///
     /// # Arguments
     /// * `index` - The index of the batch, a monotonically increasing number
     /// * `start_block` - The start block number of the batch
     /// * `end_block` - The end block number of the batch
-    /// 
+    ///
     /// # Returns
     /// A new `SnosBatch` instance
     pub fn new(index: u64, start_block: u64, end_block: u64) -> Self {
@@ -181,6 +181,5 @@ impl SnosBatch {
             updated_at: Utc::now().round_subsecs(0),
             ..Self::default()
         }
-
     }
 }

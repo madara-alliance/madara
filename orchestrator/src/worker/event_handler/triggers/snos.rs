@@ -300,7 +300,8 @@ impl SnosJobTrigger {
             return Ok(());
         }
 
-        let missing_snos_batches = self.get_missing_blocks_in_range(config, start, end, context.available_slots).await?;
+        let missing_snos_batches =
+            self.get_missing_blocks_in_range(config, start, end, context.available_slots).await?;
 
         context.available_slots = context.available_slots.saturating_sub(missing_snos_batches.len() as u64);
         // Make sure that if any of the missing snos batch already present
@@ -525,9 +526,16 @@ async fn create_jobs_snos(config: Arc<Config>, batch_indices_to_process: Vec<u64
 
     // Create jobs for all identified batch indices
     for snos_batch in snos_batches {
-        let metadata = create_job_metadata(snos_batch.start_block, snos_batch.end_block, snos_batch.num_blocks, config.snos_config().snos_full_output);
+        let metadata = create_job_metadata(
+            snos_batch.start_block,
+            snos_batch.end_block,
+            snos_batch.num_blocks,
+            config.snos_config().snos_full_output,
+        );
 
-        match JobHandlerService::create_job(JobType::SnosRun, snos_batch.index.to_string(), metadata, config.clone()).await {
+        match JobHandlerService::create_job(JobType::SnosRun, snos_batch.index.to_string(), metadata, config.clone())
+            .await
+        {
             Ok(_) => tracing::info!("Successfully created new Snos job for batch index: {}", snos_batch.index),
             Err(e) => {
                 tracing::warn!(batch_index = %snos_batch.index, error = %e, "Failed to create new Snos job");
