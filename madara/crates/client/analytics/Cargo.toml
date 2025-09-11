@@ -31,3 +31,6 @@ tracing-core = { workspace = true, default-features = false }
 tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = ["env-filter"] }
 url = { workspace = true }
+
+[dev-dependencies]
+mp-utils = { workspace = true }
