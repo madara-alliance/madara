@@ -204,7 +204,7 @@ where
 
         // Collect all fields (both event fields and span fields)
         let mut all_fields = visitor.fields;
-        
+
         // Extract span fields and merge them into the main fields object
         if let Some(span) = ctx.lookup_current() {
             // Add span name as a field
@@ -214,14 +214,14 @@ where
             // Extract and parse span fields
             if let Some(fields) = span.extensions().get::<fmt::FormattedFields<N>>() {
                 let raw = fields.to_string();
-                
+
                 // Parse k=v, comma-separated; tolerate quoted values
                 for part in raw.split(',') {
                     let kv = part.trim();
                     if let Some((k, v)) = kv.split_once('=') {
                         let key = k.trim();
                         let val = v.trim().trim_matches('"').to_string();
-                        
+
                         // Add all span fields directly to the fields object
                         // This includes job_id, queue, span_type, trace_id, trigger_id, job_type, worker, etc.
                         all_fields.insert(key.to_string(), Value::String(val));
@@ -229,7 +229,7 @@ where
                 }
             }
         }
-        
+
         // Insert all fields at once under "fields" object
         if !all_fields.is_empty() {
             root.insert("fields".to_string(), Value::Object(all_fields));

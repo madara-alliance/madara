@@ -30,7 +30,7 @@ use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use crate::worker::utils::conversion::parse_string;
-use tracing::{debug, error, info, instrument, warn, Span};
+use tracing::{debug, error, info, warn, Span};
 
 pub struct JobHandlerService;
 
@@ -180,7 +180,6 @@ impl JobHandlerService {
             block_no = %internal_id,
             "General process job started for block"
         );
-
 
         // Calculate and record queue wait time
         let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
