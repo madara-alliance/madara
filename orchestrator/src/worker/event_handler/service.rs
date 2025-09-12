@@ -12,7 +12,7 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_updates::JobItemUpdates;
-use crate::types::jobs::metadata::{AggregatorMetadata, JobMetadata, SettlementContext, StateUpdateMetadata};
+use crate::types::jobs::metadata::JobMetadata;
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::jobs::WorkerTriggerType;
@@ -30,7 +30,7 @@ use crate::worker::event_handler::triggers::update_state::UpdateStateJobTrigger;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::service::JobService;
 use crate::worker::utils::conversion::parse_string;
-use tracing::{debug, error, info, instrument, warn, Span};
+use tracing::{debug, error, info, warn, Span};
 
 pub struct JobHandlerService;
 
@@ -54,7 +54,6 @@ impl JobHandlerService {
     /// # Notes
     /// * Skips creation if the job already exists with the same `internal_id` and `job_type`
     /// * Automatically adds the job to the process queue upon successful creation
-    #[instrument(fields(category = "general"), skip(config), ret, err)]
     pub async fn create_job(
         job_type: JobType,
         internal_id: String,
@@ -110,30 +109,23 @@ impl JobHandlerService {
 
         let duration = start.elapsed();
 
-        // For Aggregator and StateUpdate jobs, use the last block in the batch instead of batch number
+        // For Aggregator and StateUpdate jobs, fetch the actual block numbers from the batch
         let block_number = match job_type {
             JobType::StateTransition => {
-                // Try to get the last block from StateUpdate metadata
-                if let Ok(state_metadata) = TryInto::<StateUpdateMetadata>::try_into(job_item.metadata.specific.clone())
-                {
-                    match &state_metadata.context {
-                        SettlementContext::Block(data) | SettlementContext::Batch(data) => data
-                            .to_settle
-                            .last()
-                            .copied()
-                            .map(|v| v as f64)
-                            .unwrap_or_else(|| parse_string(&internal_id).unwrap_or(0.0)),
-                    }
-                } else {
-                    parse_string(&internal_id)?
+                let batch_number = parse_string(&internal_id)?;
+
+                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    _ => batch_number,
                 }
             }
             JobType::Aggregator => {
-                // For Aggregator, use the actual end_block from the batch
-                if let Ok(agg_metadata) = TryInto::<AggregatorMetadata>::try_into(job_item.metadata.specific.clone()) {
-                    agg_metadata.end_block as f64
-                } else {
-                    parse_string(&internal_id)?
+                let batch_number = parse_string(&internal_id)?;
+
+                // Fetch the batch from the database
+                match config.database().get_batches_by_indexes(vec![batch_number as u64]).await {
+                    Ok(batches) if !batches.is_empty() => batches[0].end_block as f64,
+                    _ => batch_number,
                 }
             }
             _ => parse_string(&internal_id)?,
@@ -170,7 +162,6 @@ impl JobHandlerService {
     /// * Updates the job version to prevent concurrent processing
     /// * Adds processing completion timestamp to metadata
     /// * Automatically adds the job to verification queue upon successful processing
-    #[instrument(skip(config), fields(category = "general", job, job_type, internal_id), ret, err)]
     pub async fn process_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
@@ -182,10 +173,6 @@ impl JobHandlerService {
             block_no = %internal_id,
             "General process job started for block"
         );
-
-        Span::current().record("job", format!("{:?}", job.clone()));
-        Span::current().record("job_type", format!("{:?}", job.job_type));
-        Span::current().record("internal_id", job.internal_id.clone());
 
         // Calculate and record queue wait time
         let queue_wait_time = Utc::now().signed_duration_since(job.created_at).num_seconds() as f64;
@@ -366,16 +353,11 @@ impl JobHandlerService {
     /// * Only jobs in `PendingVerification` or `VerificationTimeout` status can be verified
     /// * Automatically retries processing if verification fails and the max attempts are not reached
     /// * Removes processing_finished_at from metadata upon successful verification
-    #[instrument(skip(config), fields(category = "general", job, job_type, internal_id, verification_status), ret, err)]
     pub async fn verify_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id.clone();
         info!(log_type = "starting", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job started for block");
-
-        Span::current().record("job", format!("{:?}", job.clone()));
-        Span::current().record("job_type", format!("{:?}", job.job_type.clone()));
-        Span::current().record("internal_id", job.internal_id.clone());
 
         match job.status {
             // Jobs with `VerificationTimeout` will be retired manually after resetting verification attempt number to 0.
@@ -576,14 +558,10 @@ impl JobHandlerService {
     /// * Logs error if the job status `Completed` is existing on DL queue
     /// * Updates job status to Failed and records failure reason in metadata
     /// * Updates metrics for failed jobs
-    #[instrument(skip(config), fields(job_status, job_type), ret, err)]
     pub async fn handle_job_failure(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let job = JobService::get_job(id, config.clone()).await?.clone();
         let internal_id = job.internal_id.clone();
         info!(log_type = "starting", category = "general", function_type = "handle_job_failure", block_no = %internal_id, "General handle job failure started for block");
-
-        Span::current().record("job_status", format!("{:?}", job.status));
-        Span::current().record("job_type", format!("{:?}", job.job_type));
 
         debug!(job_id = ?id, job_status = ?job.status, job_type = ?job.job_type, block_no = %internal_id, "Job details for failure handling for block");
         let status = job.status.clone().to_string();
@@ -612,7 +590,6 @@ impl JobHandlerService {
     /// * Only jobs in Failed status can be retried
     /// * Transitions through PendingRetry status before normal processing
     /// * Uses standard process_job function after status update
-    #[instrument(skip(config), fields(category = "general"), ret, err)]
     pub async fn retry_job(id: Uuid, config: Arc<Config>) -> Result<(), JobError> {
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id.clone();

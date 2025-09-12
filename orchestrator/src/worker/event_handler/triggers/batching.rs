@@ -9,11 +9,13 @@ use crate::error::job::JobError;
 use crate::error::other::OtherError;
 use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::constant::{MAX_BLOB_SIZE, STORAGE_BLOB_DIR, STORAGE_STATE_UPDATE_DIR};
+use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::triggers::JobTrigger;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use bytes::Bytes;
 use chrono::{SubsecRound, Utc};
 use color_eyre::eyre::eyre;
+use opentelemetry::KeyValue;
 use orchestrator_prover_client_interface::Task;
 use serde::Deserialize;
 use starknet::core::types::{BlockId, StateUpdate};
@@ -26,6 +28,7 @@ use std::collections::HashSet;
 use std::fs::File;
 use std::io::Read;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::try_join;
 use tracing::{debug, error, info, trace};
 
@@ -268,6 +271,9 @@ impl BatchingTrigger {
     }
 
     async fn start_batch(&self, config: &Arc<Config>, index: u64, start_block: u64) -> Result<Batch, JobError> {
+        // Start timing batch creation
+        let start_time = Instant::now();
+
         // Start a new bucket
         let bucket_id = config.prover_client().submit_task(Task::CreateBucket).await.map_err(|e| {
             error!(bucket_index = %index, error = %e, "Failed to submit create bucket task to prover client, {}", e);
@@ -277,13 +283,35 @@ impl BatchingTrigger {
             ))) // TODO: Add a new error type to be used for prover client error
         })?;
         info!(index = %index, bucket_id = %bucket_id, "Created new bucket successfully");
-        Ok(Batch::new(
+
+        let batch = Batch::new(
             index,
             start_block,
             self.get_state_update_file_path(index),
             self.get_blob_dir_path(index),
-            bucket_id,
-        ))
+            bucket_id.clone(),
+        );
+
+        // Record batch creation time
+        let duration = start_time.elapsed();
+        let attributes = [
+            KeyValue::new("batch_index", index.to_string()),
+            KeyValue::new("start_block", start_block.to_string()),
+            KeyValue::new("bucket_id", bucket_id.to_string()),
+        ];
+        ORCHESTRATOR_METRICS.batch_creation_time.record(duration.as_secs_f64(), &attributes);
+
+        // Update batching rate (batches per hour)
+        // This is a simple counter that will be used to calculate rate in Grafana
+        ORCHESTRATOR_METRICS.batching_rate.record(1.0, &attributes);
+
+        info!(
+            index = %index,
+            duration_seconds = %duration.as_secs_f64(),
+            "Batch created successfully"
+        );
+
+        Ok(batch)
     }
 
     /// close_batch stores the state update, blob information in storage, and update DB

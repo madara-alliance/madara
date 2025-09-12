@@ -1,0 +1,1199 @@
+{
+  "dashboard": {
+    "annotations": {
+      "list": [
+        {
+          "builtIn": 1,
+          "datasource": {
+            "type": "grafana",
+            "uid": "-- Grafana --"
+          },
+          "enable": true,
+          "hide": true,
+          "iconColor": "rgba(0, 211, 255, 1)",
+          "name": "Annotations & Alerts",
+          "type": "dashboard"
+        }
+      ]
+    },
+    "description": "Comprehensive Madara Orchestrator monitoring dashboard with all key metrics",
+    "editable": true,
+    "fiscalYearStartMonth": 0,
+    "graphTooltip": 1,
+    "id": 703,
+    "links": [],
+    "panels": [
+      {
+        "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+        "id": 100,
+        "panels": [],
+        "title": "📊 System Overview & Health",
+        "type": "row"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Overall system health based on job success rates",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "max": 100,
+            "min": 0,
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red"},
+                {"color": "yellow", "value": 70},
+                {"color": "green", "value": 90}
+              ]
+            },
+            "unit": "percent"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 6, "w": 4, "x": 0, "y": 1},
+        "id": 1,
+        "options": {
+          "minVizHeight": 75,
+          "minVizWidth": 75,
+          "orientation": "auto",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showThresholdLabels": false,
+          "showThresholdMarkers": true,
+          "sizing": "auto"
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "100 * (sum(rate(successful_job_operations_jobs_total{service_name=\"${namespace}\"}[$__rate_interval])) / (sum(rate(successful_job_operations_jobs_total{service_name=\"${namespace}\"}[$__rate_interval])) + sum(rate(failed_job_operations_jobs_total{service_name=\"${namespace}\"}[$__rate_interval]))))",
+            "legendFormat": "Health Score",
+            "refId": "A"
+          }
+        ],
+        "title": "System Health Score",
+        "type": "gauge"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Current block processing status by job type",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "green"}]
+            },
+            "unit": "none"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 6, "w": 8, "x": 4, "y": 1},
+        "id": 2,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "auto",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "auto",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "max by(operation_job_type) (block_state{service_name=\"${namespace}\", operation_job_status=\"Completed\"})",
+            "legendFormat": "{{operation_job_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Latest Blocks by Job Type",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Number of blocks behind by job type",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 6, "w": 8, "x": 12, "y": 1},
+        "id": 3,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "auto",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "auto",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "max(block_state{operation_job_status=\"Completed\", service_name=\"${namespace}\"}) - min by(operation_job_type) (block_state{operation_job_type=~\"SnosRun|ProofCreation|StateTransition|Aggregator\", operation_job_status=\"Completed\", service_name=\"${namespace}\"})",
+            "legendFormat": "{{operation_job_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Blocks Behind",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Job processing rate",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "red"},
+                {"color": "yellow", "value": 10},
+                {"color": "green", "value": 50}
+              ]
+            }
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 6, "w": 4, "x": 20, "y": 1},
+        "id": 4,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "center",
+          "orientation": "auto",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "auto",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "editorMode": "code",
+            "expr": "sum(rate(successful_job_operations_jobs_total{service_name=\"${namespace}\"}[$__rate_interval])) * 60",
+            "legendFormat": "Jobs/min",
+            "range": true,
+            "refId": "A"
+          }
+        ],
+        "title": "Jobs Per Minute",
+        "type": "stat"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7},
+        "id": 101,
+        "panels": [],
+        "title": "📈 Job Success/Failure Metrics",
+        "type": "row"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {"type": "linear"},
+              "showPoints": "never",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {"mode": "off"}
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "green"}]
+            },
+            "unit": "ops"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 9, "x": 0, "y": 8},
+        "id": 5,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "multi",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum by(operation_job_type) (rate(successful_job_operations_jobs_total{operation_job_type=~\"SnosRun|ProofCreation|StateTransition|Aggregator\", service_name=\"${namespace}\", operation_type!=\"\"}[$__rate_interval]))",
+            "legendFormat": "{{operation_job_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Job Success Rate by Type",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 4, "x": 9, "y": 8},
+        "id": 27,
+        "options": {
+          "colorMode": "value",
+          "graphMode": "area",
+          "justifyMode": "auto",
+          "orientation": "auto",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "auto",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(job_abandoned_count_jobs_total{service_name=\"${namespace}\"}[1h]))",
+            "legendFormat": "Abandoned",
+            "refId": "A"
+          }
+        ],
+        "title": "Jobs Abandoned (1h)",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 7, "x": 13, "y": 8},
+        "id": 26,
+        "options": {
+          "displayMode": "lcd",
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": false
+          },
+          "maxVizHeight": 300,
+          "minVizHeight": 16,
+          "minVizWidth": 8,
+          "namePlacement": "auto",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showUnfilled": true,
+          "sizing": "auto",
+          "text": {},
+          "valueMode": "color"
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum by (operation_job_type) (increase(orphaned_jobs_total{service_name=\"${namespace}\"}[1h]))",
+            "legendFormat": "{{operation_job_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Orphaned Jobs (1h)",
+        "type": "bargauge"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Failed SNOS Run jobs in last hour",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [
+              {
+                "options": {
+                  "match": "null",
+                  "result": {"index": 0, "text": "0"}
+                },
+                "type": "special"
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "orange", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 4, "w": 2, "x": 20, "y": 8},
+        "id": 28,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "horizontal",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value_and_name",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(failed_job_operations_jobs_total{operation_job_type=\"SnosRun\", service_name=\"${namespace}\"}[1h])) or vector(0)",
+            "legendFormat": "SNOS Run",
+            "refId": "A"
+          }
+        ],
+        "title": "SNOS Run Failures",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Failed Proof Creation jobs in last hour",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [
+              {
+                "options": {
+                  "match": "null",
+                  "result": {"index": 0, "text": "0"}
+                },
+                "type": "special"
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "orange", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 4, "w": 2, "x": 22, "y": 8},
+        "id": 31,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "horizontal",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value_and_name",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(failed_job_operations_jobs_total{operation_job_type=\"ProofCreation\", service_name=\"${namespace}\"}[1h])) or vector(0)",
+            "legendFormat": "Proof Creation",
+            "refId": "A"
+          }
+        ],
+        "title": "Proof Creation Failures",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Failed Aggregation jobs in last hour",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [
+              {
+                "options": {
+                  "match": "null",
+                  "result": {"index": 0, "text": "0"}
+                },
+                "type": "special"
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "orange", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 4, "w": 2, "x": 20, "y": 12},
+        "id": 32,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "horizontal",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value_and_name",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(failed_job_operations_jobs_total{operation_job_type=\"Aggregator\", service_name=\"${namespace}\"}[1h])) or vector(0)",
+            "legendFormat": "Aggregation",
+            "refId": "A"
+          }
+        ],
+        "title": "Aggregation Failures",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "Failed State Update jobs in last hour",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [
+              {
+                "options": {
+                  "match": "null",
+                  "result": {"index": 0, "text": "0"}
+                },
+                "type": "special"
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "orange", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 4, "w": 2, "x": 22, "y": 12},
+        "id": 33,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "none",
+          "justifyMode": "center",
+          "orientation": "horizontal",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": false,
+          "textMode": "value_and_name",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(failed_job_operations_jobs_total{operation_job_type=\"StateTransition\", service_name=\"${namespace}\"}[1h])) or vector(0)",
+            "legendFormat": "State Update",
+            "refId": "A"
+          }
+        ],
+        "title": "State Update Failures",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [
+              {
+                "options": {
+                  "match": "null",
+                  "result": {"index": 0, "text": "No Failures ✓"}
+                },
+                "type": "special"
+              }
+            ],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "orange", "value": 5},
+                {"color": "red", "value": 10}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 3, "w": 11, "x": 0, "y": 16},
+        "id": 29,
+        "options": {
+          "colorMode": "background",
+          "graphMode": "area",
+          "justifyMode": "center",
+          "orientation": "auto",
+          "percentChangeColorMode": "standard",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showPercentChange": true,
+          "textMode": "auto",
+          "wideLayout": true
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(failed_job_operations_jobs_total{service_name=\"${namespace}\"}[1h]))",
+            "legendFormat": "Total Failures",
+            "refId": "A"
+          }
+        ],
+        "title": "Failures Last Hour",
+        "type": "stat"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "description": "1-minute resolution to catch sudden failure spikes",
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "Failures",
+              "axisPlacement": "auto",
+              "fillOpacity": 80,
+              "gradientMode": "scheme",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "lineWidth": 1,
+              "scaleDistribution": {"type": "linear"},
+              "thresholdsStyle": {"mode": "area"}
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 1},
+                {"color": "red", "value": 5}
+              ]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 3, "w": 13, "x": 11, "y": 16},
+        "id": 30,
+        "options": {
+          "barRadius": 0,
+          "barWidth": 0.95,
+          "fullHighlight": false,
+          "groupWidth": 0.7,
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": false
+          },
+          "orientation": "auto",
+          "showValue": "auto",
+          "stacking": "none",
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          },
+          "xField": "Time",
+          "xTickLabelRotation": 0,
+          "xTickLabelSpacing": 0
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum(increase(failed_job_operations_jobs_total{service_name=\"${namespace}\"}[1m]))",
+            "legendFormat": "Failures/min",
+            "refId": "A"
+          }
+        ],
+        "title": "Failure Rate Spike Detector",
+        "type": "barchart"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
+        "id": 102,
+        "panels": [],
+        "title": "🔄 Job Lifecycle & Queue Metrics",
+        "type": "row"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              }
+            },
+            "mappings": [],
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 0, "y": 20},
+        "id": 20,
+        "options": {
+          "displayLabels": ["name", "percent"],
+          "legend": {
+            "displayMode": "list",
+            "placement": "right",
+            "showLegend": true,
+            "values": ["value"]
+          },
+          "pieType": "pie",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "single",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum by (from_state, to_state) (increase(job_state_transitions_jobs_total{service_name=\"${namespace}\"}[5m]))",
+            "legendFormat": "{{from_state}} → {{to_state}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Job State Transitions (5m)",
+        "type": "piechart"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "continuous-RdYlGr"},
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "bars",
+              "fillOpacity": 100,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {"type": "linear"},
+              "showPoints": "never",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "normal"
+              },
+              "thresholdsStyle": {"mode": "off"}
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "green"}]
+            },
+            "unit": "short"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 8, "y": 20},
+        "id": 21,
+        "options": {
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum by (operation_job_type, retry_reason) (increase(job_retry_count_jobs_total{service_name=\"${namespace}\"}[1h]))",
+            "legendFormat": "{{operation_job_type}} - {{retry_reason}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Job Retry Count by Type (1h)",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "yellow", "value": 30},
+                {"color": "red", "value": 60}
+              ]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 8, "x": 16, "y": 20},
+        "id": 22,
+        "options": {
+          "displayMode": "lcd",
+          "legend": {
+            "calcs": [],
+            "displayMode": "list",
+            "placement": "bottom",
+            "showLegend": false
+          },
+          "maxVizHeight": 300,
+          "minVizHeight": 16,
+          "minVizWidth": 8,
+          "namePlacement": "auto",
+          "orientation": "horizontal",
+          "reduceOptions": {
+            "calcs": ["lastNotNull"],
+            "fields": "",
+            "values": false
+          },
+          "showUnfilled": true,
+          "sizing": "auto",
+          "text": {},
+          "valueMode": "color"
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "avg by (operation_job_type) (job_queue_wait_time_seconds{service_name=\"${namespace}\"})",
+            "legendFormat": "{{operation_job_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Average Queue Wait Time",
+        "type": "bargauge"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+        "id": 103,
+        "panels": [],
+        "title": "⚡ Performance & Latency Metrics",
+        "type": "row"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "Latency (s)",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 2,
+              "pointSize": 5,
+              "scaleDistribution": {"type": "linear"},
+              "showPoints": "never",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {"mode": "off"}
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "green"}]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29},
+        "id": 23,
+        "options": {
+          "legend": {
+            "calcs": ["mean", "lastNotNull", "max"],
+            "displayMode": "table",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "multi",
+            "sort": "desc"
+          }
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "avg by (operation_job_type) (job_e2e_latency_seconds{service_name=\"${namespace}\"})",
+            "legendFormat": "{{operation_job_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "End-to-End Job Latency",
+        "type": "timeseries"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "palette-classic"},
+            "custom": {
+              "axisBorderShow": false,
+              "axisCenteredZero": false,
+              "axisColorMode": "text",
+              "axisLabel": "Time (s)",
+              "axisPlacement": "auto",
+              "barAlignment": 0,
+              "barWidthFactor": 0.6,
+              "drawStyle": "line",
+              "fillOpacity": 10,
+              "gradientMode": "none",
+              "hideFrom": {
+                "legend": false,
+                "tooltip": false,
+                "viz": false
+              },
+              "insertNulls": false,
+              "lineInterpolation": "linear",
+              "lineWidth": 1,
+              "pointSize": 5,
+              "scaleDistribution": {"type": "linear"},
+              "showPoints": "never",
+              "spanNulls": false,
+              "stacking": {
+                "group": "A",
+                "mode": "none"
+              },
+              "thresholdsStyle": {"mode": "off"}
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [{"color": "green"}]
+            },
+            "unit": "s"
+          },
+          "overrides": []
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29},
+        "id": 24,
+        "options": {
+          "legend": {
+            "calcs": ["mean", "max"],
+            "displayMode": "table",
+            "placement": "bottom",
+            "showLegend": true
+          },
+          "tooltip": {
+            "hideZeros": false,
+            "mode": "multi",
+            "sort": "none"
+          }
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "avg by (proof_type) (proof_generation_time_seconds{service_name=\"${namespace}\"})",
+            "legendFormat": "{{proof_type}}",
+            "refId": "A"
+          }
+        ],
+        "title": "Proof Generation Time",
+        "type": "timeseries"
+      },
+      {
+        "collapsed": false,
+        "gridPos": {"h": 1, "w": 24, "x": 0, "y": 37},
+        "id": 104,
+        "panels": [],
+        "title": "🚨 SLA & Health Metrics",
+        "type": "row"
+      },
+      {
+        "datasource": {"type": "prometheus", "uid": "${datasource}"},
+        "fieldConfig": {
+          "defaults": {
+            "color": {"mode": "thresholds"},
+            "custom": {
+              "align": "auto",
+              "cellOptions": {"type": "auto"},
+              "inspect": false
+            },
+            "mappings": [],
+            "thresholds": {
+              "mode": "absolute",
+              "steps": [
+                {"color": "green"},
+                {"color": "red", "value": 1}
+              ]
+            }
+          },
+          "overrides": [
+            {
+              "matcher": {"id": "byName", "options": "SLA Breaches"},
+              "properties": [
+                {
+                  "id": "custom.cellOptions",
+                  "value": {"type": "color-background"}
+                }
+              ]
+            }
+          ]
+        },
+        "gridPos": {"h": 8, "w": 12, "x": 0, "y": 38},
+        "id": 25,
+        "options": {
+          "cellHeight": "sm",
+          "footer": {
+            "countRows": false,
+            "enablePagination": false,
+            "fields": "",
+            "reducer": ["sum"],
+            "show": false
+          },
+          "showHeader": true,
+          "sortBy": [
+            {
+              "desc": true,
+              "displayName": "SLA Breaches"
+            }
+          ]
+        },
+        "pluginVersion": "11.6.0",
+        "targets": [
+          {
+            "expr": "sum by (operation_job_type, sla_type) (increase(sla_breach_count_jobs_total{service_name=\"${namespace}\"}[1h]))",
+            "format": "table",
+            "legendFormat": "__auto",
+            "refId": "A"
+          }
+        ],
+        "title": "SLA Breaches (1h)",
+        "transformations": [
+          {
+            "id": "organize",
+            "options": {
+              "excludeByName": {"Time": true},
+              "indexByName": {},
+              "renameByName": {
+                "Value": "SLA Breaches",
+                "operation_job_type": "Job Type",
+                "sla_type": "SLA Type"
+              }
+            }
+          }
+        ],
+        "type": "table"
+      }
+    ],
+    "preload": false,
+    "refresh": "10s",
+    "schemaVersion": 41,
+    "tags": ["madara", "orchestrator", "monitoring", "full-view"],
+    "templating": {
+      "list": [
+        {
+          "current": {
+            "text": "VictoriaMetrics",
+            "value": "P4169E866C3094E38"
+          },
+          "includeAll": false,
+          "label": "Datasource",
+          "name": "datasource",
+          "query": "prometheus",
+          "refresh": 1,
+          "type": "datasource"
+        },
+        {
+          "current": {
+            "text": "paradex-mainnet-lt_meter_service",
+            "value": "paradex-mainnet-lt_meter_service"
+          },
+          "label": "Service Name",
+          "name": "namespace",
+          "query": "paradex-mainnet-lt_meter_service",
+          "type": "textbox"
+        }
+      ]
+    },
+    "time": {
+      "from": "now-6h",
+      "to": "now"
+    },
+    "timepicker": {},
+    "timezone": "browser",
+    "title": "Madara Orchestrator - Full View",
+    "uid": "dexnhk9hmt3b4c",
+    "version": 16
+  }
+}

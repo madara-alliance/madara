@@ -144,27 +144,27 @@ impl EventWorker {
 
     /// Create a single span for the entire job processing
     fn create_job_span(&self, parsed_message: &ParsedMessage) -> Span {
+        let correlation_id = Uuid::new_v4();
         match parsed_message {
             ParsedMessage::JobQueue(msg) => {
-                // Use job ID as the primary identifier
                 tracing::info_span!(
                     "job_processing",
                     job_id = %msg.id,
+                    subject_id = %msg.id,
                     queue = %self.queue_type,
                     job_type = %self.get_job_type_from_queue(),
-                    trace_id = %msg.id,  // Use job ID as trace ID for correlation
+                    correlation_id = %correlation_id,
+                    trace_id = %correlation_id,
                     span_type = "root"
                 )
             }
             ParsedMessage::WorkerTrigger(msg) => {
-                // For triggers, create a unique ID
-                let trigger_id = Uuid::new_v4();
                 tracing::info_span!(
                     "worker_trigger",
-                    trigger_id = %trigger_id,
                     worker = ?msg.worker,
                     queue = %self.queue_type,
-                    trace_id = %trigger_id,
+                    correlation_id = %correlation_id,
+                    trace_id = %correlation_id,
                     span_type = "root"
                 )
             }

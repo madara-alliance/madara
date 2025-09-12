@@ -41,6 +41,8 @@ pub struct OrchestratorMetrics {
     // SLA Metrics
     pub sla_breach_count: Counter<f64>,
     pub job_age_p99: Gauge<f64>,
+    pub batching_rate: Gauge<f64>,
+    pub batch_creation_time: Gauge<f64>,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -237,6 +239,21 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
+        // Batching Metrics
+        let batching_rate = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "batching_rate".to_string(),
+            "Number of batches created per hour".to_string(),
+            "batches/hour".to_string(),
+        );
+
+        let batch_creation_time = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "batch_creation_time".to_string(),
+            "Average time to create a batch".to_string(),
+            "s".to_string(),
+        );
+
         Self {
             block_gauge,
             successful_job_operations,
@@ -263,6 +280,8 @@ impl Metrics for OrchestratorMetrics {
             active_jobs_count,
             sla_breach_count,
             job_age_p99,
+            batching_rate,
+            batch_creation_time,
         }
     }
 }
