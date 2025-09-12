@@ -10,6 +10,7 @@ use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 use rocksdb::{IteratorMode, ReadOptions};
 use std::collections::HashMap;
 
+// TODO: Remove the need for this struct.
 #[derive(Debug)]
 struct ContractDbBlockUpdate {
     contract_class_updates: Vec<(Felt, Felt)>,
@@ -186,6 +187,38 @@ impl RocksDBStorageInner {
                 anyhow::Ok(())
             },
         )?;
+
+        Ok(())
+    }
+
+    pub(crate) fn state_remove(
+        &self,
+        block_n: u64,
+        value: &StateDiff,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let value = ContractDbBlockUpdate::from_state_diff(value.clone());
+
+        let contract_class_hash_col = self.get_column(CONTRACT_CLASS_HASH_COLUMN);
+        let contract_nonce_col = self.get_column(CONTRACT_NONCE_COLUMN);
+        let contract_storage_col = self.get_column(CONTRACT_STORAGE_COLUMN);
+
+        let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
+
+        // Class hashes
+        for (contract_address, _class_hash) in &value.contract_class_updates {
+            batch.delete_cf(&contract_class_hash_col, make_contract_column_key(contract_address, block_n_u32));
+        }
+
+        // Nonces
+        for (contract_address, _nonce) in &value.contract_nonces_updates {
+            batch.delete_cf(&contract_nonce_col, make_contract_column_key(contract_address, block_n_u32));
+        }
+
+        // Contract storage (kv)
+        for ((contract_address, key), _value) in &value.contract_kv_updates {
+            batch.delete_cf(&contract_storage_col, make_storage_column_key(contract_address, key, block_n_u32));
+        }
 
         Ok(())
     }

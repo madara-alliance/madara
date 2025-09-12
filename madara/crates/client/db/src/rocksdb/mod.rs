@@ -115,6 +115,57 @@ impl RocksDBStorageInner {
 
         Ok(())
     }
+
+    /// This method also works for partially saved blocks. (that's important for mc-sync, which may create partial blocks past the chain tip.
+    /// We also want to remove them!)
+    fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()> {
+        // Find the last block. We want to revert blocks in reverse order to make sure we can recover if the node
+        // crashes at any point during the call of this function.
+
+        tracing::debug!("Remove blocks starting_from_block_n={starting_from_block_n}");
+
+        let mut last_block_n_exclusive = starting_from_block_n;
+        while self.get_block_info(last_block_n_exclusive)?.is_some() {
+            last_block_n_exclusive += 1;
+        }
+
+        tracing::debug!("Removing blocks range {starting_from_block_n}..{last_block_n_exclusive} in reverse order");
+
+        // Reverse order
+        for block_n in (starting_from_block_n..last_block_n_exclusive).rev() {
+            let block_info = self.get_block_info(block_n)?.context("Block should be found")?;
+            tracing::debug!("Remove block block_n={block_n}");
+
+            let mut batch = WriteBatchWithTransaction::default();
+            {
+                if let Some(state_diff) = self.get_block_state_diff(block_n)? {
+                    // State diff is in db.
+                    self.classes_remove(state_diff.all_declared_classes(), &mut batch)?;
+                    self.state_remove(block_n, &state_diff, &mut batch)?;
+                }
+
+                // This vec is empty if transactions for this block are not yet imported.
+                let transactions: Vec<_> = self
+                    .get_block_transactions(block_n, /* from_tx_index */ 0)
+                    .take(block_info.tx_hashes.len())
+                    .collect::<Result<_>>()?;
+
+                self.events_remove_block(block_n, &mut batch)?;
+                self.message_to_l2_remove_txns(
+                    transactions.iter().filter_map(|v| v.transaction.as_l1_handler()).map(|tx| tx.nonce),
+                    &mut batch,
+                )?;
+
+                self.blocks_remove_block(&block_info, &mut batch)?;
+            }
+
+            self.db
+                .write(batch)
+                .with_context(|| format!("Committing changes removing block_n={block_n} from database"))?;
+        }
+
+        Ok(())
+    }
 }
 
 /// Implementation of [`MadaraStorageRead`] and [`MadaraStorageWrite`] interface using rocksdb.
@@ -411,5 +462,12 @@ impl MadaraStorageWrite for RocksDBStorage {
         self.snapshots.set_new_head(block_n);
         self.metrics.update(self);
         Ok(())
+    }
+
+    fn remove_all_blocks_starting_from(&self, starting_from_block_n: u64) -> Result<()> {
+        tracing::debug!("remove_all_blocks_starting_from starting_from_block_n={starting_from_block_n}");
+        self.inner
+            .remove_all_blocks_starting_from(starting_from_block_n)
+            .with_context(|| format!("Removing all blocks in range [{starting_from_block_n}..] from database"))
     }
 }

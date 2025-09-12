@@ -1,13 +1,13 @@
 use crate::{
     prelude::*,
-    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner},
+    rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
     storage::StorageTxIndex,
 };
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
-use rocksdb::{IteratorMode, ReadOptions, WriteBatchWithTransaction};
+use rocksdb::{IteratorMode, ReadOptions};
 use std::iter;
 
 /// <block_hash 32 bytes> => bincode(block_n)
@@ -222,6 +222,40 @@ impl RocksDBStorageInner {
         }
 
         self.db.write_opt(batch, &self.writeopts_no_wal)?;
+        Ok(())
+    }
+
+    #[tracing::instrument(skip(self, batch))]
+    pub(super) fn blocks_remove_block(
+        &self,
+        block_info: &MadaraBlockInfo,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let block_hash_to_block_n_col = self.get_column(BLOCK_HASH_TO_BLOCK_N_COLUMN);
+        let block_info_col = self.get_column(BLOCK_INFO_COLUMN);
+        let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
+        let tx_hash_to_index_col = self.get_column(TX_HASH_TO_INDEX_COLUMN);
+        let block_n_to_state_diff = self.get_column(BLOCK_STATE_DIFF_COLUMN);
+
+        let block_n_u32 = u32::try_from(block_info.header.block_number).context("Converting block_n to u32")?;
+
+        // Delete transactions
+        for (tx_index, tx_hash) in block_info.tx_hashes.iter().enumerate() {
+            let tx_index_u16 = u16::try_from(tx_index).context("Converting block_n to u32")?;
+            batch.delete_cf(&block_txs_col, make_transaction_column_key(block_n_u32, tx_index_u16));
+
+            // Tx hash to index entry
+            batch.delete_cf(&tx_hash_to_index_col, tx_hash.to_bytes_be());
+        }
+
+        // Delete header
+        batch.delete_cf(&block_info_col, block_n_u32.to_be_bytes());
+        // Block hash to block n entry
+        batch.delete_cf(&block_hash_to_block_n_col, block_info.block_hash.to_bytes_be());
+
+        // Delete state diff
+        batch.delete_cf(&block_n_to_state_diff, block_n_u32.to_be_bytes());
+
         Ok(())
     }
 }

@@ -5,6 +5,7 @@ use crate::{
 };
 use mp_class::ConvertedClass;
 use mp_convert::Felt;
+use mp_state_update::DeclaredClassCompiledClass;
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
 
 /// <class_hash 32 bytes> => bincode(class_info)
@@ -86,6 +87,24 @@ impl RocksDBStorageInner {
                     anyhow::Ok(())
                 },
             )?;
+
+        Ok(())
+    }
+
+    pub(crate) fn classes_remove(
+        &self,
+        classes: impl IntoIterator<Item = (Felt, DeclaredClassCompiledClass)>,
+        batch: &mut WriteBatchWithTransaction,
+    ) -> Result<()> {
+        let class_info_col = self.get_column(CLASS_INFO_COLUMN);
+        let class_compiled_col = self.get_column(CLASS_COMPILED_COLUMN);
+
+        for (class_hash, compiled_class_hash) in classes {
+            batch.delete_cf(&class_info_col, class_hash.to_bytes_be());
+            if let DeclaredClassCompiledClass::Sierra(compiled_class_hash) = compiled_class_hash {
+                batch.delete_cf(&class_compiled_col, compiled_class_hash.to_bytes_be());
+            }
+        }
 
         Ok(())
     }

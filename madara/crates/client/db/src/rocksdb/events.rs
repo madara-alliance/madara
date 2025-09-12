@@ -3,7 +3,7 @@ use crate::{
     rocksdb::{
         events_bloom_filter::{EventBloomReader, EventBloomSearcher, EventBloomWriter},
         iter_pinned::DBIterator,
-        Column, RocksDBStorageInner,
+        Column, RocksDBStorageInner, WriteBatchWithTransaction,
     },
     storage::EventFilter,
 };
@@ -127,7 +127,7 @@ impl RocksDBStorageInner {
         Ok(events_infos)
     }
 
-    pub fn store_events_bloom(&self, block_n: u64, value: &[EventWithTransactionHash]) -> Result<()> {
+    pub(super) fn store_events_bloom(&self, block_n: u64, value: &[EventWithTransactionHash]) -> Result<()> {
         if value.is_empty() {
             return Ok(());
         }
@@ -141,6 +141,12 @@ impl RocksDBStorageInner {
             &super::serialize(&writer)?,
             &self.writeopts_no_wal,
         )?;
+        Ok(())
+    }
+
+    pub(super) fn events_remove_block(&self, block_n: u64, batch: &mut WriteBatchWithTransaction) -> Result<()> {
+        let block_n_u32 = u32::try_from(block_n).context("Converting block_n to u32")?;
+        batch.delete_cf(&self.get_column(EVENTS_BLOOM_COLUMN), block_n_u32.to_be_bytes());
         Ok(())
     }
 }
