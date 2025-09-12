@@ -1,6 +1,6 @@
 //! v0.8.1 of the API.
 pub use crate::custom::{
-    BlockId, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, SyncingStatus,
+    BlockId, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, L1TxnHash, SyncingStatus,
 };
 
 mod starknet_api_openrpc;

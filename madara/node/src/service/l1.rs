@@ -1,6 +1,7 @@
 use crate::cli::l1::{L1SyncParams, MadaraSettlementLayer};
 use anyhow::{bail, Context};
 use mc_db::MadaraBackend;
+use mc_settlement_client::client::SettlementLayerProvider;
 use mc_settlement_client::gas_price::GasPriceProviderConfigBuilder;
 use mc_settlement_client::state_update::L1HeadSender;
 use mc_settlement_client::sync::SyncWorkerConfig;
@@ -122,6 +123,10 @@ impl L1SyncService {
         } else {
             Arc::new(L1SyncDisabledClient)
         }
+    }
+
+    pub fn provider(&self) -> Option<Arc<dyn SettlementLayerProvider>> {
+        self.client.as_ref().map(|c| c.provider())
     }
 }
 
