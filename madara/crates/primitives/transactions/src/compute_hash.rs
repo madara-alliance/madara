@@ -52,13 +52,15 @@ impl Transaction {
     /// Compute the combined hash of the transaction hash and the signature.
     ///
     /// Since the transaction hash doesn't take the signature values as its input
-    /// computing the transaction commitent uses a hash value that combines
+    /// computing the transaction commitment uses a hash value that combines
     /// the transaction hash with the array of signature values.
     pub fn compute_hash_with_signature(&self, tx_hash: Felt, starknet_version: StarknetVersion) -> Felt {
         if starknet_version < StarknetVersion::V0_11_1 {
             self.compute_hash_with_signature_pre_v0_11_1(tx_hash)
         } else if starknet_version < StarknetVersion::V0_13_2 {
             self.compute_hash_with_signature_pre_v0_13_2(tx_hash)
+        } else if starknet_version < StarknetVersion::V0_13_4 {
+            self.compute_hash_with_signature_pre_v0_13_4(tx_hash)
         } else {
             self.compute_hash_with_signature_latest(tx_hash)
         }
@@ -85,6 +87,23 @@ impl Transaction {
         };
 
         Pedersen::hash(&tx_hash, &signature_hash)
+    }
+
+    fn compute_hash_with_signature_pre_v0_13_4(&self, tx_hash: Felt) -> Felt {
+        let signature = match self {
+            Transaction::Invoke(tx) => tx.signature(),
+            Transaction::Declare(tx) => tx.signature(),
+            Transaction::DeployAccount(tx) => tx.signature(),
+            Transaction::Deploy(_) | Transaction::L1Handler(_) => &[],
+        };
+
+        let elements = if signature.is_empty() {
+            vec![tx_hash, Felt::ZERO]
+        } else {
+            std::iter::once(tx_hash).chain(signature.iter().copied()).collect()
+        };
+
+        Poseidon::hash_array(&elements)
     }
 
     fn compute_hash_with_signature_latest(&self, tx_hash: Felt) -> Felt {
