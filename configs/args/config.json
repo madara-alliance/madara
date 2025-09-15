@@ -13,7 +13,7 @@
     "gateway": false,
     "rpc": false
   },
-  "db_params": {
+  "backend_params": {
     "base_path": "../madara-db",
     "backup_dir": null,
     "restore_from_latest_backup": false,

@@ -144,6 +144,9 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
 
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
     fn on_txs_removed(&self, removed: &[ValidatedTransaction]) {
+        if removed.is_empty() {
+            return;
+        }
         if self.config.save_to_db {
             if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.hash)) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");

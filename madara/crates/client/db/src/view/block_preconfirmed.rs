@@ -366,7 +366,7 @@ impl<D: MadaraStorageRead> MadaraPreconfirmedBlockView<D> {
         let header = self.block.header.clone();
 
         // We don't care about the candidate transactions.
-        let mut executed_transactions: Vec<_> = self.block.content.borrow().executed_transactions().cloned().collect();
+        let mut executed_transactions: Vec<_> = self.borrow_content().executed_transactions().cloned().collect();
 
         let state_diff = self.get_normalized_state_diff().context("Creating normalized state diff")?;
         let classes: Vec<_> = executed_transactions.iter_mut().filter_map(|tx| tx.declared_class.take()).collect();

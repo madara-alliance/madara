@@ -245,6 +245,10 @@ impl<D: MadaraStorage> MadaraBackend<D> {
             self.db.get_chain_tip()?
         });
         self.starting_block = chain_tip.latest_confirmed_block_n();
+        // On startup, remove all blocks past the chain tip, in case we have partial blocks in db.
+        self.db.remove_all_blocks_starting_from(
+            chain_tip.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(/* genesis */ 0),
+        )?;
         self.chain_tip.send_replace(chain_tip);
 
         // Init L1 head
