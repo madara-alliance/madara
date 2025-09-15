@@ -35,6 +35,7 @@ pub trait SettlementClient: Send + Sync {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
+        to_block_num: u64,
     ) -> Result<String>;
 
     /// Should verify the inclusion of a tx in the settlement layer

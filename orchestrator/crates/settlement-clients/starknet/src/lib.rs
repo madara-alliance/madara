@@ -204,6 +204,7 @@ impl SettlementClient for StarknetSettlementClient {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         nonce: u64,
+        _to_block_num: u64,
     ) -> Result<String> {
         !unimplemented!("not implemented yet.")
     }

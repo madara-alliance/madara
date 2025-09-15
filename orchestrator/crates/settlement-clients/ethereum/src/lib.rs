@@ -11,9 +11,9 @@ use alloy::eips::eip2718::Encodable2718;
 use alloy::eips::eip2930::AccessList;
 use alloy::eips::eip4844::BYTES_PER_BLOB;
 use alloy::hex;
-use alloy::network::EthereumWallet;
+use alloy::network::{Ethereum, EthereumWallet};
 use alloy::primitives::{Address, Bytes, B256, U256};
-use alloy::providers::{Provider, ProviderBuilder};
+use alloy::providers::{PendingTransactionBuilder, Provider, ProviderBuilder};
 use alloy::rpc::types::TransactionReceipt;
 use alloy::signers::local::PrivateKeySigner;
 use async_trait::async_trait;
@@ -31,16 +31,19 @@ use crate::clients::StarknetValidityContractClient;
 use crate::conversion::{slice_u8_to_u256, vec_u8_32_to_vec_u256};
 pub mod clients;
 pub mod conversion;
+mod error;
 pub mod tests;
 pub mod types;
+
+use crate::error::SendTransactionError;
+use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 use alloy::providers::RootProvider;
 use alloy::transports::http::Http;
 use lazy_static::lazy_static;
+use log::warn;
 use mockall::automock;
 use reqwest::Client;
 use tokio::time::sleep;
-
-use crate::types::{bytes_be_to_u128, convert_stark_bigint_to_u256};
 
 // For more details on state update, refer to the core contract logic
 // https://github.com/starkware-libs/cairo-lang/blob/master/src/starkware/starknet/solidity/Output.sol
@@ -55,6 +58,11 @@ pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
 const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
 const TX_WAIT_SLEEP_DELAY_SECS: u64 = 60;
+
+// Ethereum Gas Price Estimation
+const GAS_PRICE_MULTIPLIER_START: f64 = 1.2;
+const GAS_PRICE_INCREMENT_PERCENTAGE: f64 = 1.5; // 50%
+const GAS_PRICE_MIN_INCREMENT_PERCENTAGE: f64 = 1.1; // 10%
 
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
@@ -239,6 +247,7 @@ impl SettlementClient for EthereumSettlementClient {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         _nonce: u64,
+        to_block_num: u64,
     ) -> Result<String> {
         tracing::info!(
             log_type = "starting",
@@ -246,83 +255,59 @@ impl SettlementClient for EthereumSettlementClient {
             function_type = "blobs",
             "Updating state with blobs."
         );
-        // Prepare sidecar for transaction
-        let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &KZG_SETTINGS).await?;
-        let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
 
-        let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
-
-        // Get EIP1559 estimate, chain ID and blob base fee
-        let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
-        let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
-
-        let max_fee_per_blob_gas: u128 = self.provider.get_blob_base_fee().await?.to_string().parse()?;
-
-        let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
-
-        // add a safety margin to the gas price to handle fluctuations
-        let add_safety_margin = |n: u128, div_factor: u128| n + n / div_factor;
-
-        let max_fee_per_gas: u128 = eip1559_est.max_fee_per_gas.to_string().parse()?;
-        let max_priority_fee_per_gas: u128 = eip1559_est.max_priority_fee_per_gas.to_string().parse()?;
-
-        let tx: TxEip4844 = TxEip4844 {
-            chain_id,
-            nonce,
-            // we noticed Starknet uses the same limit on mainnet
-            // https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
-            gas_limit: 5_500_000,
-            max_fee_per_gas: add_safety_margin(max_fee_per_gas, 5),
-            max_priority_fee_per_gas: add_safety_margin(max_priority_fee_per_gas, 5),
-            to: self.core_contract_client.contract_address(),
-            value: U256::from(0),
-            access_list: AccessList(vec![]),
-            blob_versioned_hashes: sidecar.versioned_hashes().collect(),
-            max_fee_per_blob_gas: add_safety_margin(max_fee_per_blob_gas, 5),
-            input: Bytes::from(hex::decode(input_bytes)?),
-        };
-
-        let tx_sidecar = TxEip4844WithSidecar { tx: tx.clone(), sidecar: sidecar.clone() };
-
-        let mut variant = TxEip4844Variant::from(tx_sidecar);
-        let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
-        let tx_signed = variant.into_signed(signature);
-        let tx_envelope: TxEnvelope = tx_signed.into();
-
-        #[cfg(feature = "testing")]
-        let pending_transaction = {
-            let txn_request = {
-                test_config::configure_transaction(self.provider.clone(), tx_envelope, self.impersonate_account).await
-            };
-            self.provider.send_transaction(txn_request).await?
-        };
-
-        #[cfg(not(feature = "testing"))]
-        let pending_transaction = {
-            let encoded = tx_envelope.encoded_2718();
-            self.provider.send_raw_transaction(encoded.as_slice()).await?
-        };
-
-        tracing::info!(
-            log_type = "completed",
-            category = "update_state",
-            function_type = "blobs",
-            "State updated with blobs."
-        );
-
-        log::warn!("⏳ Waiting for txn finality.......");
-
-        let res = self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?;
-
-        match res {
-            Some(_) => {
-                log::info!("Txn hash : {:?} Finalized ✅", pending_transaction.tx_hash().to_string());
-            }
-            None => {
-                log::error!("Txn hash not finalised");
+        if let Some(last_settled_block) = self.get_last_settled_block().await? {
+            if last_settled_block >= to_block_num {
+                warn!(
+                    "Contract state ({}) already ahead of the block to be settled ({}). Skipping update state call.",
+                    last_settled_block, to_block_num
+                );
+                // Send a dummy txn hash
+                return Ok(format!("0x{:x}", B256::from_str("0")?));
             }
         }
-        Ok(pending_transaction.tx_hash().to_string())
+
+        let mut mul_factor = GAS_PRICE_MULTIPLIER_START;
+
+        loop {
+            // Create a EIP4844 transaction with the given program output and state diff
+            let tx_envelope = self.create_transaction(program_output.clone(), state_diff.clone(), mul_factor).await?;
+            let pending_transaction = match self.send_transaction(tx_envelope).await {
+                Result::Ok(pending_transaction) => pending_transaction,
+                Err(e) => match e {
+                    SendTransactionError::ReplacementTransactionUnderpriced(e) => {
+                        warn!("Failed to send the state update transaction: {:?} with {:?} multiplication factor, trying again...", e, mul_factor);
+                        mul_factor = self.get_next_mul_factor(mul_factor)?;
+                        continue;
+                    }
+                    SendTransactionError::Other(_) => {
+                        bail!("Failed to send state update transaction: {:?}", e);
+                    }
+                },
+            };
+
+            tracing::info!(
+                log_type = "completed",
+                category = "update_state",
+                function_type = "blobs",
+                "State updated with blobs."
+            );
+
+            tracing::warn!("⏳ Waiting for txn finality...");
+
+            // Waiting for transaction finality
+            let res = self.wait_for_tx_finality(&pending_transaction.tx_hash().to_string()).await?;
+
+            match res {
+                Some(_) => {
+                    tracing::info!("✅ Txn hash : {:?} Finalized", pending_transaction.tx_hash().to_string());
+                }
+                None => {
+                    tracing::error!("❌ Txn hash: {:?}  not finalised", pending_transaction.tx_hash().to_string());
+                }
+            }
+            return Ok(pending_transaction.tx_hash().to_string());
+        }
     }
 
     /// Should verify the inclusion of a tx in the settlement layer
@@ -459,6 +444,117 @@ impl EthereumSettlementClient {
             kzg_proofs.into_iter().map(|proof| proof.to_bytes().into_inner()).collect();
 
         Ok(get_input_data_for_eip_4844(program_output, kzg_proofs_bytes)?)
+    }
+
+    async fn create_transaction(
+        &self,
+        program_output: Vec<[u8; 32]>,
+        state_diff: Vec<Vec<u8>>,
+        mul_factor: f64,
+    ) -> Result<TxEnvelope> {
+        // Prepare sidecar for transaction
+        let (sidecar_blobs, sidecar_commitments, sidecar_proofs) = prepare_sidecar(&state_diff, &KZG_SETTINGS).await?;
+        let sidecar = BlobTransactionSidecar::new(sidecar_blobs, sidecar_commitments, sidecar_proofs);
+
+        // Get chain id and nonce for the transaction
+        let chain_id: u64 = self.provider.get_chain_id().await?.to_string().parse()?;
+        let nonce = self.provider.get_transaction_count(self.wallet_address).await?.to_string().parse()?;
+
+        // Get gas price estimates with margin
+        let (max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas) =
+            self.get_gas_price_estimates(mul_factor).await?;
+
+        // Prepare input bytes for transaction
+        let input_bytes = Self::build_input_bytes(program_output, state_diff).await?;
+
+        // Prepare EIP4844 transaction
+        let tx = TxEip4844 {
+            chain_id,
+            nonce,
+            // we noticed Starknet uses the same limit on the mainnet
+            // https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
+            gas_limit: 5_500_000,
+            max_fee_per_blob_gas,
+            max_fee_per_gas,
+            max_priority_fee_per_gas,
+            to: self.core_contract_client.contract_address(),
+            value: U256::from(0),
+            access_list: AccessList(vec![]),
+            blob_versioned_hashes: sidecar.versioned_hashes().collect(),
+            input: Bytes::from(hex::decode(input_bytes)?),
+        };
+
+        // Add sidecar to transaction
+        let tx_with_sidecar = TxEip4844WithSidecar { tx, sidecar: sidecar.clone() };
+        let mut variant = TxEip4844Variant::from(tx_with_sidecar);
+        // Sign transaction
+        let signature = self.wallet.default_signer().sign_transaction(&mut variant).await?;
+        let tx_signed = variant.into_signed(signature);
+        Ok(tx_signed.into())
+    }
+
+    async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<(u128, u128, u128)> {
+        let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
+
+        let max_fee_per_gas: u128 =
+            self.add_safety_margin(eip1559_est.max_fee_per_gas.to_string().parse()?, mul_factor);
+        let max_priority_fee_per_gas: u128 =
+            self.add_safety_margin(eip1559_est.max_priority_fee_per_gas.to_string().parse()?, mul_factor);
+        let max_fee_per_blob_gas: u128 =
+            self.add_safety_margin(self.provider.get_blob_base_fee().await?.to_string().parse()?, mul_factor);
+
+        Ok((max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas))
+    }
+
+    // add a safety margin to the gas price to handle fluctuations
+    fn add_safety_margin(&self, value: u128, mul_factor: f64) -> u128 {
+        (value as f64 * mul_factor) as u128
+    }
+
+    fn get_next_mul_factor(&self, mul_factor: f64) -> Result<f64> {
+        let min_mul_factor = GAS_PRICE_MIN_INCREMENT_PERCENTAGE * mul_factor;
+        let max_mul_factor = GAS_PRICE_INCREMENT_PERCENTAGE * mul_factor;
+
+        if min_mul_factor > self.max_gas_price_mul_factor {
+            bail!("Gas price multiplier is too high")
+        } else {
+            Ok(self.max_gas_price_mul_factor.min(max_mul_factor))
+        }
+    }
+
+    /// Method to send transaction with a retry mechanism
+    /// The transaction is retried when the transaction is rejected because a transaction with the
+    /// same nonce is already in the mempool. In that case, we'll send more transactions with
+    /// an increasing gas price multiplication factor. The multiplication factor is capped by
+    /// `MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR` env variable.
+    async fn send_transaction(
+        &self,
+        tx_envelope: TxEnvelope,
+    ) -> Result<PendingTransactionBuilder<Http<Client>, Ethereum>, SendTransactionError> {
+        // Sending transaction when testing
+        #[cfg(feature = "testing")]
+        let pending_transaction = {
+            let txn_request = {
+                test_config::configure_transaction(self.provider.clone(), tx_envelope, self.impersonate_account).await
+            };
+            self.provider.send_transaction(txn_request).await?
+        };
+
+        // Sending transaction when not testing
+        #[cfg(not(feature = "testing"))]
+        let pending_transaction = {
+            let encoded = tx_envelope.encoded_2718();
+            self.provider.send_raw_transaction(encoded.as_slice()).await.map_err(|e| {
+                if e.to_string().contains("error code -32000: replacement transaction underpriced") {
+                    warn!("Transaction rejected because of insufficient gas price");
+                    SendTransactionError::ReplacementTransactionUnderpriced(e)
+                } else {
+                    SendTransactionError::Other(e)
+                }
+            })?
+        };
+
+        Result::Ok(pending_transaction)
     }
 }
 
