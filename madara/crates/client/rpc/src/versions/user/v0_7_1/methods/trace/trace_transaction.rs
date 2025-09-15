@@ -6,7 +6,7 @@ use mc_exec::execution_result_to_tx_trace;
 use mc_exec::transaction::to_blockifier_transaction;
 use mc_exec::ExecutionContext;
 use mp_chain_config::StarknetVersion;
-use mp_rpc::TraceTransactionResult;
+use mp_rpc::v0_7_1::TraceTransactionResult;
 use starknet_api::transaction::TransactionHash;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;

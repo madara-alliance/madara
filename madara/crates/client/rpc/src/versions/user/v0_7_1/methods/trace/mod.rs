@@ -1,7 +1,7 @@
 use crate::{versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_block::BlockId;
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     BroadcastedTxn, SimulateTransactionsResult, SimulationFlag, TraceBlockTransactionsResult, TraceTransactionResult,
 };
 use simulate_transactions::simulate_transactions;

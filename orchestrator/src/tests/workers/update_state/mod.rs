@@ -7,7 +7,9 @@ use uuid::Uuid;
 use crate::tests::config::{ConfigType, TestConfigBuilder};
 use crate::tests::workers::utils::{create_and_store_prerequisite_jobs, get_job_item_mock_by_id};
 use crate::types::constant::{BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME};
-use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{
+    CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
 use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
@@ -47,8 +49,8 @@ async fn update_state_worker_first_block() {
         .build()
         .await;
 
-    // Create both SNOS and DA jobs for block 0 with Completed status
-    let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 0, JobStatus::Completed).await.unwrap();
+    // Create both SNOS and Aggregator jobs for block 0 with Completed status
+    let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 1, JobStatus::Completed).await.unwrap();
 
     let ctx = get_job_handler_context();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
@@ -62,7 +64,8 @@ async fn update_state_worker_first_block() {
 
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
-    assert_eq!(state_metadata.blocks_to_settle, vec![0]);
+    let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
+    assert_eq!(data.to_settle, vec![1]);
 }
 
 #[rstest]
@@ -74,7 +77,7 @@ async fn update_state_worker_first_block_missing() {
         .build()
         .await;
 
-    // Create both SNOS and DA jobs for block 2 with Completed status
+    // Create both SNOS and Aggregator jobs for block 2 with Completed status
     // Note: Block 0 and 1 are missing, so the worker should not create a job
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 2, JobStatus::Completed).await.unwrap();
 
@@ -89,17 +92,17 @@ async fn update_state_worker_first_block_missing() {
 
 #[rstest]
 #[tokio::test]
-async fn update_state_worker_selects_consective_blocks() {
+async fn update_state_worker_selects_consecutive_blocks() {
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
         .build()
         .await;
 
-    // Create both SNOS and DA jobs for blocks 0, 1, and 3 with Completed status
-    let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 0, JobStatus::Completed).await.unwrap();
+    // Create both SNOS and Aggregator jobs for blocks 0, 1, and 3 with Completed status
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 1, JobStatus::Completed).await.unwrap();
-    let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 3, JobStatus::Completed).await.unwrap();
+    let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 2, JobStatus::Completed).await.unwrap();
+    let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 4, JobStatus::Completed).await.unwrap();
 
     let ctx = get_job_handler_context();
     ctx.expect().with(eq(JobType::StateTransition)).returning(move |_| Arc::new(Box::new(StateUpdateJobHandler)));
@@ -114,7 +117,8 @@ async fn update_state_worker_selects_consective_blocks() {
 
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
-    assert_eq!(state_metadata.blocks_to_settle, vec![0, 1]);
+    let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
+    assert_eq!(data.to_settle, vec![1, 2]);
 }
 
 #[rstest]
@@ -126,7 +130,7 @@ async fn update_state_worker_continues_from_previous_state_update() {
         .build()
         .await;
 
-    // Create both SNOS and DA jobs for block 5 with Completed status
+    // Create both SNOS and Aggregator jobs for block 5 with Completed status
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 5, JobStatus::Completed).await.unwrap();
 
     // add state transition job for blocks 0-4
@@ -136,7 +140,6 @@ async fn update_state_worker_continues_from_previous_state_update() {
 
     // Create proper StateUpdateMetadata with blocks 0-4
     let state_metadata = StateUpdateMetadata {
-        blocks_to_settle: vec![0, 1, 2, 3, 4],
         snos_output_paths: vec![
             format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
             format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
@@ -158,8 +161,8 @@ async fn update_state_worker_continues_from_previous_state_update() {
             format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
             format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
         ],
-        last_failed_block_no: None,
         tx_hashes: Vec::new(),
+        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
     };
 
     job_item.metadata =
@@ -180,7 +183,8 @@ async fn update_state_worker_continues_from_previous_state_update() {
 
     // Get the blocks to settle from the StateUpdateMetadata
     let state_metadata: StateUpdateMetadata = latest_job.metadata.specific.clone().try_into().unwrap();
-    assert_eq!(state_metadata.blocks_to_settle, vec![5]);
+    let SettlementContext::Batch(data) = state_metadata.context else { panic!("Failed to get Block context") };
+    assert_eq!(data.to_settle, vec![5]);
 }
 
 #[rstest]
@@ -192,7 +196,7 @@ async fn update_state_worker_next_block_missing() {
         .build()
         .await;
 
-    // Create both SNOS and DA jobs for block 6 with Completed status
+    // Create both SNOS and Aggregator jobs for block 6 with Completed status
     // Note: Block 5 is missing, so the worker should not create a job
     let (_, _) = create_and_store_prerequisite_jobs(services.config.clone(), 6, JobStatus::Completed).await.unwrap();
 
@@ -204,7 +208,6 @@ async fn update_state_worker_next_block_missing() {
 
     // Create proper StateUpdateMetadata with blocks 0-4
     let state_metadata = StateUpdateMetadata {
-        blocks_to_settle: vec![0, 1, 2, 3, 4],
         snos_output_paths: vec![
             format!("{}/{}", 0, SNOS_OUTPUT_FILE_NAME),
             format!("{}/{}", 1, SNOS_OUTPUT_FILE_NAME),
@@ -226,8 +229,8 @@ async fn update_state_worker_next_block_missing() {
             format!("{}/{}", 3, BLOB_DATA_FILE_NAME),
             format!("{}/{}", 4, BLOB_DATA_FILE_NAME),
         ],
-        last_failed_block_no: None,
         tx_hashes: Vec::new(),
+        context: SettlementContext::Block(SettlementContextData { to_settle: vec![0, 1, 2, 3, 4], last_failed: None }),
     };
 
     job_item.metadata =

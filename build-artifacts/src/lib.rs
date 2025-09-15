@@ -117,6 +117,7 @@ pub fn get_version(version_file: &impl VersionFile) -> Result<u32, BuildError> {
 /// compiling the artifacts with this build script. This is used to avoid re-compiling artifacts
 /// after they have been linked as a docker volume and causing docker-in-docker errors.
 pub fn get_or_compile_artifacts(parent_levels: usize) -> Result<(), BuildError> {
+    // if the env variable is present, we return early
     if std::env::var("RUST_BUILD_DOCKER").is_ok() {
         return Ok(());
     }
@@ -184,10 +185,9 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
 
 fn build_artifacts(root: &RootDir) -> Result<(), BuildError> {
     let err_msg = "Failed to build artifacts, make sure that docker and GNU make are installed";
-
     let root = root.0.to_string_lossy();
     let mut make = std::process::Command::new("sh");
-    let cmd = make.arg("-c").arg(format!("yes | make -C {root} artifacts"));
+    let cmd = make.arg("-c").arg(format!("yes N | make -C {root} artifacts"));
     cmd.status().expect(err_msg).success().then_some(()).ok_or_else(|| err_handl(cmd, err_msg))
 }
 

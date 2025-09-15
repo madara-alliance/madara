@@ -1,6 +1,6 @@
 use crate::{versions::user::v0_7_1::StarknetWriteRpcApiV0_7_1Server, Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };

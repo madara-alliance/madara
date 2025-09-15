@@ -16,20 +16,24 @@ env:
 jobs:
   # Run prettier for code formatting
   prettier:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Run prettier
         run: npm install && npx prettier --check .
 
   # Check markdown files for style consistency
   markdown-lint:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Lint root markdown
         uses: avto-dev/markdown-lint@v1
@@ -40,9 +44,11 @@ jobs:
 
   # Check TOML files for formatting
   toml-lint:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Taplo Format Check
         uses: addnab/docker-run-action@v3

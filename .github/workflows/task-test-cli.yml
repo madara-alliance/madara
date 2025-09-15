@@ -8,10 +8,12 @@ on:
 
 jobs:
   test-cli:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -20,7 +22,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-key: madara-${{ runner.os }}-rust-1.86
+          cache-key: madara-${{ runner.os }}
 
       - name: Run cli without arguments
         run: |

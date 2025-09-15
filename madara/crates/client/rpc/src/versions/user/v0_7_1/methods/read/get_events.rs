@@ -1,5 +1,5 @@
 use mp_block::{BlockId, BlockTag, EventWithInfo};
-use mp_rpc::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
+use mp_rpc::v0_7_1::{EmittedEvent, Event, EventContent, EventFilterWithPageRequest, EventsChunk};
 
 use crate::constants::{MAX_EVENTS_CHUNK_SIZE, MAX_EVENTS_KEYS};
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};

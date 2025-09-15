@@ -19,10 +19,12 @@ on:
 
 jobs:
   test-js:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4

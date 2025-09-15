@@ -16,4 +16,7 @@ pub trait StorageClient: Send + Sync {
     async fn put_data(&self, data: Bytes, key: &str) -> Result<(), StorageError>;
     /// Delete a bucket
     async fn delete_data(&self, key: &str) -> Result<(), StorageError>;
+
+    /// List files in a directory
+    async fn list_files_in_dir(&self, dir_path: &str) -> Result<Vec<String>, StorageError>;
 }

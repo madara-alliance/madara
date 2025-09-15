@@ -2,13 +2,13 @@ use crate::core::config::Config;
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
-use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
+use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SnosMetadata};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
 use async_trait::async_trait;
-use color_eyre::eyre::{Result, WrapErr};
+use color_eyre::eyre::{eyre, Result, WrapErr};
 use num_traits::ToPrimitive;
 use opentelemetry::KeyValue;
 use starknet::providers::Provider;
@@ -409,15 +409,41 @@ impl SnosJobTrigger {
     /// * `Result<Option<u64>>` - Latest state update block or database error
     ///
     /// # Panics
-    /// - If database returns StateTransition job with non-StateUpdate metadata
+    /// - If the database returns the StateTransition job with non-StateUpdate metadata
     async fn get_latest_completed_state_update_block(&self, config: &Arc<Config>) -> Result<Option<u64>> {
         let db = config.database();
+
+        // Get the latest completed StateTransition job
         match db.get_latest_job_by_type_and_status(JobType::StateTransition, JobStatus::Completed).await? {
-            None => Ok(None),
             Some(job_item) => match job_item.metadata.specific {
-                JobSpecificMetadata::StateUpdate(metadata) => Ok(metadata.blocks_to_settle.iter().max().copied()),
+                // Match based on state update context type
+                // Block - Settling without applicative recursion (i.e., L3)
+                // Batch - Settling with applicative recursion (i.e., L2)
+                JobSpecificMetadata::StateUpdate(metadata) => match metadata.context {
+                    // Return the max block from the last state transition job
+                    SettlementContext::Block(data) => Ok(data.to_settle.iter().max().copied()),
+                    SettlementContext::Batch(data) => {
+                        // Get the last batch from the last state transition job
+                        let last_settled_batch = data.to_settle.iter().max().copied();
+                        match last_settled_batch {
+                            Some(last_settled_batch_num) => {
+                                // Get the batch details for the last-settled batch
+                                let batch = db.get_batches_by_indexes(vec![last_settled_batch_num]).await?;
+                                if batch.is_empty() {
+                                    Err(eyre!("Failed to fetch latest batch {} from database", last_settled_batch_num))
+                                } else {
+                                    // Return the end block of the last batch
+                                    Ok(Some(batch[0].end_block))
+                                }
+                            }
+                            None => Ok(None),
+                        }
+                    }
+                },
                 _ => panic!("Unexpected metadata type for StateUpdate job"),
             },
+            // No completed StateTransition job, so no completed state update block
+            None => Ok(None),
         }
     }
 

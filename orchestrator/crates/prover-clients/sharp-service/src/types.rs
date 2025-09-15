@@ -20,3 +20,16 @@ pub struct SharpGetStatusResponse {
     pub error_log: Option<String>,
     pub validation_done: Option<bool>,
 }
+
+/// **IMPORTANT NOTE: THIS IS A MOCK RESPONSE FOR E2E TEST**
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct SharpCreateBucketResponse {
+    pub code: String,
+    pub bucket_id: String,
+}
+
+/// **IMPORTANT NOTE: THIS IS A MOCK RESPONSE FOR E2E TEST**
+#[derive(Default, Debug, Clone, Serialize, Deserialize)]
+pub struct SharpGetAggTaskIdResponse {
+    pub task_id: String,
+}

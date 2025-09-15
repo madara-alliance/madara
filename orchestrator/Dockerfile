@@ -66,6 +66,7 @@ RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \
 
 COPY Cargo.toml Cargo.lock ./
 COPY orchestrator orchestrator
+COPY test_utils test_utils
 COPY build-artifacts build-artifacts
 
 RUN --mount=type=cache,target=$SCCACHE_DIR,sharing=locked \

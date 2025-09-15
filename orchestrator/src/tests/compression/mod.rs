@@ -32,6 +32,7 @@ async fn test_state_update_to_blob_data_flow(#[case] version: StarknetVersion) -
     // squashed_state_update.json
     // stateful_compressed_state_update.json
     // stateless_compressed_state_update.json
+    // ... other files
     let data_dir = setup_test_data(vec![("8373665.tar.gz", true)]).await?;
 
     let state_updates_path = data_dir.path().join("8373665/state_updates.json").to_str().unwrap().to_string();

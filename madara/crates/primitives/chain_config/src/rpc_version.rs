@@ -2,7 +2,7 @@ use std::hash::Hash;
 use std::str::FromStr;
 
 const SUPPORTED_RPC_VERSIONS: [RpcVersion; 3] =
-    [RpcVersion::RPC_VERSION_0_7_1, RpcVersion::RPC_VERSION_0_8_0, RpcVersion::RPC_VERSION_ADMIN_0_1_0];
+    [RpcVersion::RPC_VERSION_0_7_1, RpcVersion::RPC_VERSION_0_8_1, RpcVersion::RPC_VERSION_ADMIN_0_1_0];
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Hash)]
 pub struct RpcVersion([u8; 3]);
@@ -80,8 +80,8 @@ impl RpcVersion {
     }
 
     pub const RPC_VERSION_0_7_1: RpcVersion = RpcVersion([0, 7, 1]);
-    pub const RPC_VERSION_0_8_0: RpcVersion = RpcVersion([0, 8, 0]);
-    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_8_0;
+    pub const RPC_VERSION_0_8_1: RpcVersion = RpcVersion([0, 8, 1]);
+    pub const RPC_VERSION_LATEST: RpcVersion = Self::RPC_VERSION_0_8_1;
 
     pub const RPC_VERSION_ADMIN_0_1_0: RpcVersion = RpcVersion([0, 1, 0]);
     pub const RPC_VERSION_LATEST_ADMIN: RpcVersion = Self::RPC_VERSION_ADMIN_0_1_0;
@@ -178,12 +178,12 @@ mod tests {
             RpcVersion::RPC_VERSION_0_7_1
         );
         assert_eq!(
-            RpcVersion::from_request_path("/rpc/v0_8_0/", RpcVersion::RPC_VERSION_LATEST).unwrap(),
-            RpcVersion::RPC_VERSION_0_8_0
+            RpcVersion::from_request_path("/rpc/v0_8_1/", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_0_8_1
         );
         assert_eq!(
-            RpcVersion::from_request_path("/rpc/v0_8_0", RpcVersion::RPC_VERSION_LATEST).unwrap(),
-            RpcVersion::RPC_VERSION_0_8_0
+            RpcVersion::from_request_path("/rpc/v0_8_1", RpcVersion::RPC_VERSION_LATEST).unwrap(),
+            RpcVersion::RPC_VERSION_0_8_1
         );
     }
 

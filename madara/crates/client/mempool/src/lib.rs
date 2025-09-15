@@ -99,7 +99,7 @@ impl From<MempoolError> for SubmitTransactionError {
             }
             E::InnerMempool(TxInsertionError::MinTipBump { min_tip_bump }) => rejected(
                 ValidateFailure,
-                format!("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 10.0),
+                format!("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 100.0),
             ),
             E::InnerMempool(TxInsertionError::InvalidContractAddress) => {
                 rejected(ValidateFailure, "Invalid contract address")

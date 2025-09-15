@@ -3,6 +3,7 @@
 pub mod alert;
 pub mod database;
 pub mod event_bus;
+pub mod lock;
 pub mod queue;
 pub mod storage;
 

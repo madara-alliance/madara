@@ -3,11 +3,12 @@ use base64::Engine;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_utils::http_client::HttpClient;
 use reqwest::{Certificate, Identity, Method, StatusCode};
+use tracing::debug;
 use url::Url;
 use uuid::Uuid;
 
 use crate::error::SharpError;
-use crate::types::{SharpAddJobResponse, SharpGetStatusResponse};
+use crate::types::{SharpAddJobResponse, SharpCreateBucketResponse, SharpGetAggTaskIdResponse, SharpGetStatusResponse};
 use crate::SharpValidatedArgs;
 
 /// SHARP API async wrapper
@@ -87,6 +88,73 @@ impl SharpClient {
                 Ok((result, cairo_key))
             }
             code => Err(SharpError::SharpService(code)),
+        }
+    }
+
+    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
+    pub async fn create_bucket(&self) -> Result<SharpCreateBucketResponse, SharpError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::POST)
+            .path("create_bucket")
+            .send()
+            .await
+            .map_err(SharpError::CloseBucketFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(SharpError::CreateBucketFailure),
+            false => Err(SharpError::SharpService(response.status())),
+        }
+    }
+
+    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
+    pub async fn close_bucket(&self, bucket_id: &str) -> Result<(), SharpError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::POST)
+            .path("close_bucket")
+            .query_param("bucket_id", bucket_id)
+            .send()
+            .await
+            .map_err(SharpError::CloseBucketFailure)?;
+
+        match response.status().is_success() {
+            true => Ok(()),
+            false => Err(SharpError::SharpService(response.status())),
+        }
+    }
+
+    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
+    pub async fn get_aggregator_task_id(&self, bucket_id: &str) -> Result<SharpGetAggTaskIdResponse, SharpError> {
+        let response = self
+            .client
+            .request()
+            .method(Method::POST)
+            .path("aggregator_task_id")
+            .query_param("bucket_id", bucket_id)
+            .send()
+            .await
+            .map_err(SharpError::CreateBucketFailure)?;
+
+        match response.status().is_success() {
+            true => response.json().await.map_err(SharpError::CreateBucketFailure),
+            false => Err(SharpError::SharpService(response.status())),
+        }
+    }
+
+    /// **IMPORTANT NOTE: THIS IS A MOCK IMPLEMENTATION FOR E2E TEST**
+    pub async fn get_artifacts(&self, artifact_path: String) -> Result<Vec<u8>, SharpError> {
+        debug!("Getting artifacts from {}", artifact_path);
+        let client = reqwest::Client::new();
+        let response = client.get(&artifact_path).send().await.map_err(SharpError::GetJobArtifactsFailure)?;
+
+        if response.status().is_success() {
+            let response_text = response.bytes().await.map_err(SharpError::GetJobArtifactsFailure)?;
+            Ok(response_text.to_vec())
+        } else {
+            Err(SharpError::SharpService(response.status()))
         }
     }
 

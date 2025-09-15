@@ -97,11 +97,11 @@ impl WorkerController {
         vec![
             QueueType::SnosJobProcessing,
             QueueType::ProvingJobProcessing,
-            QueueType::DataSubmissionJobProcessing,
+            QueueType::AggregatorJobProcessing,
             QueueType::UpdateStateJobProcessing,
             QueueType::SnosJobVerification,
             QueueType::ProvingJobVerification,
-            QueueType::DataSubmissionJobVerification,
+            QueueType::AggregatorJobVerification,
             QueueType::UpdateStateJobVerification,
             QueueType::WorkerTrigger,
             QueueType::JobHandleFailure,

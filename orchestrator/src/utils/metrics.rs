@@ -1,3 +1,4 @@
+use crate::core::client::database::constant::JOBS_COLLECTION;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::{Counter, Gauge};
@@ -40,21 +41,21 @@ impl Metrics for OrchestratorMetrics {
             &orchestrator_meter,
             "successful_job_operations".to_string(),
             "A counter to show count of successful job operations over time".to_string(),
-            "jobs".to_string(),
+            String::from(JOBS_COLLECTION),
         );
 
         let failed_job_operations = register_counter_metric_instrument(
             &orchestrator_meter,
             "failed_job_operations".to_string(),
             "A counter to show count of failed job operations over time".to_string(),
-            "jobs".to_string(),
+            String::from(JOBS_COLLECTION),
         );
 
         let failed_jobs = register_counter_metric_instrument(
             &orchestrator_meter,
             "failed_jobs".to_string(),
             "A counter to show count of failed jobs over time".to_string(),
-            "jobs".to_string(),
+            String::from(JOBS_COLLECTION),
         );
 
         let verification_time = register_gauge_metric_instrument(

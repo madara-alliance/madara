@@ -3,6 +3,7 @@ use std::str::FromStr as _;
 use std::sync::Arc;
 
 use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::lock::{LockClient, MockLockClient};
 use crate::core::client::queue::MockQueueClient;
 use crate::core::client::storage::MockStorageClient;
 use crate::core::client::AlertClient;
@@ -11,6 +12,7 @@ use crate::core::config::{Config, ConfigParam, StarknetVersion};
 use crate::core::{DatabaseClient, QueueClient, StorageClient};
 use crate::server::{get_server_url, setup_server};
 use crate::tests::common::{create_queues, create_sns_arn, drop_database};
+use crate::types::params::batching::BatchingParams;
 use crate::types::params::cloud_provider::AWSCredentials;
 use crate::types::params::da::DAConfig;
 use crate::types::params::database::DatabaseArgs;
@@ -50,6 +52,7 @@ pub enum MockType {
 
     Alerts(Box<dyn AlertClient>),
     Database(Box<dyn DatabaseClient>),
+    Lock(Box<dyn LockClient>),
     Queue(Box<dyn QueueClient>),
     Storage(Box<dyn StorageClient>),
 }
@@ -84,6 +87,7 @@ macro_rules! impl_mock_from {
 impl_mock_from! {
     MockProverClient => ProverClient,
     MockDatabaseClient => Database,
+    MockLockClient => Lock,
     MockDaClient => DaClient,
     MockQueueClient => Queue,
     MockStorageClient => Storage,
@@ -107,6 +111,8 @@ pub struct TestConfigBuilder {
     alerts_type: ConfigType,
     /// The database client
     database_type: ConfigType,
+    /// The lock client
+    lock_type: ConfigType,
     /// Queue client
     queue_type: ConfigType,
     /// Storage client
@@ -145,6 +151,7 @@ impl TestConfigBuilder {
             prover_client_type: ConfigType::default(),
             settlement_client_type: ConfigType::default(),
             database_type: ConfigType::default(),
+            lock_type: ConfigType::default(),
             queue_type: ConfigType::default(),
             storage_type: ConfigType::default(),
             alerts_type: ConfigType::default(),
@@ -194,8 +201,14 @@ impl TestConfigBuilder {
         self.queue_type = queue_type;
         self
     }
+
     pub fn configure_database(mut self, database_type: ConfigType) -> TestConfigBuilder {
         self.database_type = database_type;
+        self
+    }
+
+    pub fn configure_lock_client(mut self, lock_type: ConfigType) -> TestConfigBuilder {
+        self.lock_type = lock_type;
         self
     }
 
@@ -235,6 +248,7 @@ impl TestConfigBuilder {
             prover_client_type,
             settlement_client_type,
             database_type,
+            lock_type,
             queue_type,
             storage_type,
             api_server_type,
@@ -259,6 +273,7 @@ impl TestConfigBuilder {
         let storage =
             implement_client::init_storage_client(storage_type, &params.storage_params, provider_config.clone()).await;
         let database = implement_client::init_database(database_type, &params.db_params).await;
+        let lock = implement_client::init_lock_client(lock_type, &params.db_params).await;
         let queue =
             implement_client::init_queue_client(queue_type, params.queue_params.clone(), provider_config.clone()).await;
         // Deleting and Creating the queues in sqs.
@@ -286,6 +301,7 @@ impl TestConfigBuilder {
             starknet_client,
             database,
             storage,
+            lock,
             alerts,
             queue,
             prover_client,
@@ -338,6 +354,7 @@ pub mod implement_client {
     use super::{ConfigType, EnvParams, MockType};
     use crate::core::client::alert::MockAlertClient;
     use crate::core::client::database::MockDatabaseClient;
+    use crate::core::client::lock::{LockClient, MockLockClient};
     use crate::core::client::queue::MockQueueClient;
     use crate::core::client::storage::MockStorageClient;
     use crate::core::client::AlertClient;
@@ -369,6 +386,7 @@ pub mod implement_client {
     implement_mock_client_conversion!(StorageClient, Storage);
     implement_mock_client_conversion!(QueueClient, Queue);
     implement_mock_client_conversion!(DatabaseClient, Database);
+    implement_mock_client_conversion!(LockClient, Lock);
     implement_mock_client_conversion!(AlertClient, Alerts);
     implement_mock_client_conversion!(ProverClient, ProverClient);
     implement_mock_client_conversion!(SettlementClient, SettlementClient);
@@ -398,7 +416,7 @@ pub mod implement_client {
     pub(crate) fn init_prover_client(service: ConfigType, params: &EnvParams) -> Box<dyn ProverClient> {
         match service {
             ConfigType::Mock(client) => client.into(),
-            ConfigType::Actual => Config::build_prover_service(&params.prover_params),
+            ConfigType::Actual => Config::build_prover_service(&params.prover_params, &params.orchestrator_params),
             ConfigType::Dummy => Box::new(MockProverClient::new()),
         }
     }
@@ -458,6 +476,14 @@ pub mod implement_client {
                 Config::build_database_client(database_params).await.expect("error creating database client")
             }
             ConfigType::Dummy => Box::new(MockDatabaseClient::new()),
+        }
+    }
+
+    pub(crate) async fn init_lock_client(service: ConfigType, database_params: &DatabaseArgs) -> Box<dyn LockClient> {
+        match service {
+            ConfigType::Mock(client) => client.into(),
+            ConfigType::Actual => Config::build_lock_client(database_params).await.expect("error creating lock client"),
+            ConfigType::Dummy => Box::new(MockLockClient::new()),
         }
     }
 
@@ -570,6 +596,16 @@ pub(crate) fn get_env_params() -> EnvParams {
         snos_full_output: get_env_var_or_panic("MADARA_ORCHESTRATOR_SNOS_FULL_OUTPUT").parse::<bool>().unwrap_or(false),
     };
 
+    let batching_config = BatchingParams {
+        max_batch_time_seconds: get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BATCH_TIME_SECONDS")
+            .parse::<u64>()
+            .unwrap(),
+        max_batch_size: get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BATCH_SIZE").parse::<u64>().unwrap(),
+        batching_worker_lock_duration: get_env_var_or_panic("MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS")
+            .parse::<u64>()
+            .unwrap(),
+    };
+
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
     let max_block: Option<u64> = Some(env.parse::<u64>().unwrap());
 
@@ -615,10 +651,14 @@ pub(crate) fn get_env_params() -> EnvParams {
         ))
         .unwrap_or_default(),
         snos_config,
+        batching_config,
         service_config,
         server_config,
         snos_layout_name: LayoutName::all_cairo,
         prover_layout_name: LayoutName::dynamic,
+        store_audit_artifacts: get_env_var_or_default("MADARA_ORCHESTRATOR_STORE_AUDIT_ARTIFACTS", "false")
+            .parse::<bool>()
+            .unwrap_or(false),
     };
 
     let instrumentation_params = OTELConfig {
