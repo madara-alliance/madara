@@ -61,7 +61,6 @@ async fn test_process_job_attempt_not_present_fails() {
     );
 }
 
-// TODO : make this test work
 #[rstest]
 #[case(None, vec![651053, 651054, 651055], 0)]
 #[case(Some(651054), vec![651053, 651054, 651055], 1)]
@@ -77,7 +76,7 @@ async fn test_process_job_works(
     let mut settlement_client = MockSettlementClient::new();
     let mut database_client = MockDatabaseClient::new();
 
-    let last_block_to_process = blocks_to_process.last().unwrap().clone();
+    let last_block_to_process = *blocks_to_process.last().unwrap();
 
     // Mock the get batch by indexes method
     database_client.expect_get_batches_by_indexes().returning(move |_| {
