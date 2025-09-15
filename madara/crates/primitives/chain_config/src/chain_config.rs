@@ -285,7 +285,7 @@ impl ChainConfig {
                     n_txs: usize::MAX,
                     proving_gas: GasAmount(10_000_000_000),
                 },
-                builtin_weights: BuiltinWeights::default()
+                builtin_weights: BuiltinWeights::default(),
             },
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress(
@@ -375,8 +375,6 @@ impl ChainConfig {
     ) -> Result<VersionedConstants, UnsupportedProtocolVersion> {
         for (k, constants) in self.versioned_constants.0.iter().rev() {
             if k <= &version {
-                // println!("2 HEEMANK Block Info: {:?}", version);
-                // println!("2 HEEMANK Block Info: {:?}", constants);
                 return Ok(constants.clone());
             }
         }

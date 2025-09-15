@@ -196,10 +196,6 @@ impl ExecutionContext {
             use_kzg_da: l1_da_mode == L1DataAvailabilityMode::Blob,
         };
 
-        // println!("HEEMANK Block Info: {:?}", protocol_version);
-        // println!("HEEMANK Block Info: {:?}", versioned_constants);
-
-
         Ok(ExecutionContext {
             block_context: BlockContext::new(
                 block_info,
