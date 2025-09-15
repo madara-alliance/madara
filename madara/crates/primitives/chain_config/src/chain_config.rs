@@ -209,7 +209,6 @@ impl ChainConfig {
             serde_yaml::from_value(config_value.get("versioned_constants_path").cloned().unwrap_or_default())
                 .context("While deserializing versioned constants file paths")?;
 
-        println!("Version Constants file paths: {:?}", versioned_constants_file_paths);
         let versioned_constants = {
             // add the defaults VersionedConstants
             let mut versioned_constants = ChainVersionedConstants::default();

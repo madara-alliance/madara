@@ -65,24 +65,10 @@ struct JsonRpcRequest {
 }
 
 #[derive(Debug, Deserialize)]
-struct JsonRpcResponse {
-    id: u32,
-    jsonrpc: String,
-    result: BlockResult,
-}
-
-#[derive(Debug, Deserialize)]
 struct JsonRpcResponse2 {
     id: u32,
     jsonrpc: String,
     result: BlockResult2,
-}
-
-#[derive(Debug, Deserialize)]
-struct BlockResult {
-    timestamp: u64,
-    // We only care about timestamp, but the API returns many other fields
-    // Using serde's flatten or ignoring other fields with #[serde(other)]
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,33 +95,6 @@ impl From<serde_json::Error> for StarknetError {
     fn from(err: serde_json::Error) -> Self {
         StarknetError::ParseError(err)
     }
-}
-
-pub async fn get_block_timestamp(rpc_url: &str, block_number: u64) -> Result<u64, StarknetError> {
-    let client = reqwest::Client::new();
-
-    let request_body = JsonRpcRequest {
-        id: 1,
-        jsonrpc: "2.0".to_string(),
-        method: "starknet_getBlockWithTxHashes".to_string(),
-        params: vec![json!({ "block_number": block_number })],
-    };
-
-    let response = client
-        .post(rpc_url)
-        .header("accept", "application/json")
-        .header("content-type", "application/json")
-        .json(&request_body)
-        .send()
-        .await?;
-
-    if !response.status().is_success() {
-        return Err(StarknetError::ApiError(format!("HTTP error: {}", response.status())));
-    }
-
-    let json_response: JsonRpcResponse = response.json().await?;
-
-    Ok(json_response.result.timestamp)
 }
 
 pub async fn get_block_hash(rpc_url: &str, block_number: u64) -> Result<String, StarknetError> {
@@ -199,7 +158,6 @@ impl MadaraBackend {
             pre_v0_13_2_hash_override,
         );
 
-        println!("Yes bro this is called!");
         let block_hash = block.block_hash;
 
         let original_rpc = std::env::var("RPC_URL_ORIGINAL_NODE")
@@ -212,8 +170,8 @@ impl MadaraBackend {
             Ok(hash_str) => {
                 match Felt::from_str(hash_str.as_str()) {
                     Ok(paradex_block_hash) => {
-                        println!("Yes Madara bro {:?}", block.block_hash);
-                        println!("Yes Paradex bro {:?}", paradex_block_hash);
+                        println!("Madara Block Hash {:?}", block.block_hash);
+                        println!("Paradex Block Hash {:?}", paradex_block_hash);
                         paradex_block_hash == block.block_hash
                     }
                     Err(e) => {
@@ -229,14 +187,13 @@ impl MadaraBackend {
         };
 
         if !hashes_match {
-            println!("HEEEEEEMMAAANNNKKKKKKKKK, removing db!");
+            println!("Paradex and Madara block hashes do not match");
             self.clear_pending_block().unwrap();
             self.flush()?;
-            // Now shutdown Madara !
             return Ok(block_hash)
         }
 
-        println!("Yes Madara bro Continuing");
+        println!("Paradex and Madara block hashes match");
         let events = block.events.clone();
         let block_info = self.store_full_block(block)?;
         self.head_status.headers.set_current(Some(block_n));

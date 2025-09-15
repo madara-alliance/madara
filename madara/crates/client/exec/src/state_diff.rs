@@ -77,15 +77,12 @@ pub fn create_normalized_state_diff(
             }
         });
 
-    // println!("declared_classes_2: {:?}", declared_classes_2);
-    // println!("deprecated_declared_classes_2: {:?}", deprecated_declared_classes_2);
-
     let mut declared_classes = sorted_by_key(declared_classes, |entry| entry.class_hash);
     declared_classes.extend(sorted_by_key(declared_classes_2, |entry| entry.class_hash));
 
     let mut deprecated_declared_classes = sorted_by_key(deprecated_declared_classes, |class_hash| *class_hash);
     deprecated_declared_classes.extend(sorted_by_key(deprecated_declared_classes_2, |class_hash| *class_hash));
-   
+
 
     // Same here: duplicate is not possible for nonces.
     let nonces = sorted_by_key(

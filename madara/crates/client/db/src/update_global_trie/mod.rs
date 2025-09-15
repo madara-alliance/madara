@@ -53,9 +53,6 @@ fn calculate_state_root(contracts_trie_root: Felt, classes_trie_root: Felt) -> F
     if classes_trie_root == Felt::ZERO {
         contracts_trie_root
     } else {
-        // println!("This is where we calculate the state root");
-        // println!("This is contracts_trie_root : {:?}", contracts_trie_root);
-        // println!("This is classes_trie_root : {:?}", classes_trie_root);
         Poseidon::hash_array(&[STARKNET_STATE_PREFIX, contracts_trie_root, classes_trie_root])
     }
 }

@@ -495,46 +495,43 @@ pub fn compute_hash_given_contract_address(
 
 #[inline]
 fn compute_gas_hash(tip: u64, resource_bounds: &ResourceBoundsMapping) -> Felt {
-    // Start with tip, L1_GAS, and L2_GAS (matching Pathfinder's base logic)
+    // Start with tip, L1_GAS, and L2_GAS
     let mut gas_elements = vec![
         Felt::from(tip),
-        prepare_resource_bound_value_pathfinder_style(&resource_bounds.l1_gas, b"L1_GAS"),
-        prepare_resource_bound_value_pathfinder_style(&resource_bounds.l2_gas, b"L2_GAS"),
+        prepare_resource_bound_value(&resource_bounds.l1_gas, b"L1_GAS"),
+        prepare_resource_bound_value(&resource_bounds.l2_gas, b"L2_GAS"),
     ];
 
-    // Conditionally add L1 data gas if it exists (matching Pathfinder's conditional logic)
+    // Conditionally add L1 data gas if it exists
     if let Some(l1_data_gas) = &resource_bounds.l1_data_gas {
         if !l1_data_gas.is_zero() {
-            gas_elements.push(prepare_resource_bound_value_pathfinder_style(l1_data_gas, b"L1_DATA"));
+            gas_elements.push(prepare_resource_bound_value(l1_data_gas, b"L1_DATA"));
         }
     }
 
     Poseidon::hash_array(&gas_elements)
 }
 
-// Modified to match Pathfinder's buffer layout exactly
-fn prepare_resource_bound_value_pathfinder_style(
-    resource_bound: &ResourceBounds, // Note: Madara uses ResourceBounds, not ResourceBound
+fn prepare_resource_bound_value(
+    resource_bound: &ResourceBounds,
     name: &[u8],
 ) -> Felt {
     let mut buffer = [0u8; 32];
 
-    // Split buffer to match Pathfinder's layout: [gas_kind(8) | max_amount(8) | max_price(16)]
+    // Split buffer: [gas_kind(8) | max_amount(8) | max_price(16)]
     let (remainder, max_price) = buffer.split_at_mut(128 / 8); // 128/8 = 16 bytes for max_price
     let (gas_kind, max_amount) = remainder.split_at_mut(64 / 8); // 64/8 = 8 bytes for gas_kind
 
-    // Right-pad the gas kind name (matching Pathfinder's padding logic)
+    // Right-pad the gas kind name
     let padding = gas_kind.len() - name.len();
     gas_kind[padding..].copy_from_slice(name);
 
-    // Copy max_amount and max_price (matching Pathfinder's field access pattern)
-    // Note: Assuming Madara's ResourceBounds has same field names as Pathfinder's ResourceBound
+    // Copy max_amount and max_price
     max_amount.copy_from_slice(&resource_bound.max_amount.to_be_bytes());
     max_price.copy_from_slice(&resource_bound.max_price_per_unit.to_be_bytes());
 
     Felt::from_bytes_be(&buffer)
 }
-
 
 fn prepare_data_availability_modes(
     nonce_data_availability_mode: DataAvailabilityMode,

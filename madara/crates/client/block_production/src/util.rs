@@ -1,5 +1,4 @@
 use blockifier::transaction::transaction_execution::Transaction;
-use mc_db::storage_updates::get_block_timestamp;
 use mc_db::MadaraBackend;
 use mp_block::header::{BlockTimestamp, GasPrices, PendingHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};

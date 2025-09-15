@@ -229,7 +229,6 @@ impl ExecutorThread {
             previous_l2_gas_used,
         )?;
 
-        // println!("Execution context created : {:?}", exec_ctx);
 
         // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
@@ -328,7 +327,7 @@ impl ExecutorThread {
                             || !state.consumed_l1_to_l2_nonces().insert(nonce)
                         // insert: Returns true if it was already consumed in the current state.
                         {
-                            println!("L1 Core Contract nonce already consumed: {nonce}");
+                            tracing::info!("L1 Core Contract nonce already consumed: {nonce}");
                         }
                     }
                     to_exec.push(tx, additional_info)

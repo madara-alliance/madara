@@ -28,13 +28,6 @@ impl TransactionAndReceiptCommitment {
         // Override pre-v0.13.2 transaction hash computation
         let starknet_version = StarknetVersion::max(ctx.protocol_version, StarknetVersion::V0_13_2);
 
-        // HERE!!!
-        for tx in transactions {
-            if let Transaction::L1Handler(_) = &tx.transaction {
-                println!("L1Handler transaction receipt: {:#?}", tx.receipt);
-            }
-        }
-
         // Verify transaction hashes. Also compute the (hash with signature, receipt hash).
         let tx_hashes_with_signature_and_receipt_hashes: Vec<_> = transactions
             .par_iter()
@@ -49,9 +42,6 @@ impl TransactionAndReceiptCommitment {
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(fst, _)| *fst),
             ctx.protocol_version,
         );
-
-        // let x: Vec<Felt> = tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd).collect();
-        // println!("receipt commitment is here {:?}", x);
 
         let receipt_commitment = compute_receipt_commitment(
             tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd),
@@ -119,40 +109,7 @@ use reqwest;
 use serde_json::{json, Value};
 use std::error::Error;
 
-pub async fn get_block_timestamp(block_n: u64) -> Result<u64, Box<dyn Error>> {
-    let client = reqwest::Client::new();
-
-    let payload = json!({
-        "id": 1,
-        "jsonrpc": "2.0",
-        "method": "starknet_getBlockWithTxHashes",
-        "params": [
-            {
-                "block_number": block_n
-            }
-        ]
-    });
-
-    let response = client
-        .post("https://docs-demo.strk-mainnet.quiknode.pro/rpc/v0_8")
-        .header("accept", "application/json")
-        .header("content-type", "application/json")
-        .json(&payload)
-        .send()
-        .await?;
-
-    let json_response: Value = response.json().await?;
-
-    // Extract timestamp from the JSON-RPC response
-    let timestamp = json_response["result"]["timestamp"].as_u64().ok_or("Failed to parse timestamp")?;
-
-    Ok(timestamp)
-}
-
-use crate::header::GasPrices;
-use mp_convert::FixedPoint;
 use mp_transactions::Transaction;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 impl PendingHeader {
     pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64) -> Header {
@@ -187,7 +144,6 @@ pub fn compute_event_commitment(
     if starknet_version < StarknetVersion::V0_13_2 {
         compute_merkle_root::<Pedersen>(peekable)
     } else {
-        // println!("THIS IS WHERE WE COMPUTE EVENTS #3");
         compute_merkle_root::<Poseidon>(peekable)
     }
 }
@@ -221,7 +177,6 @@ pub fn compute_receipt_commitment(
 // It seems lambdaclass' crypto lib does not do simd hashing, we may want to look into that.
 pub fn compute_merkle_root<H: StarkHash + Send + Sync>(values: impl IntoIterator<Item = Felt>) -> Felt {
     //TODO: replace the identifier by an empty slice when bonsai supports it
-    // println!("THIS IS WHERE WE COMPUTE EVENTS #4");
 
     const IDENTIFIER: &[u8] = b"0xinmemory";
     let config = bonsai_trie::BonsaiStorageConfig::default();

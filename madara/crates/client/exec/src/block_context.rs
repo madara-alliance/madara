@@ -35,7 +35,6 @@ impl MadaraBackendExecutionExt for MadaraBackend {
         state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
     ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error> {
-        println!("Creating executor for block production with : {:?}", self.chain_config().block_production_concurrency.blockifier_config());
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),
             BlockContext::new(

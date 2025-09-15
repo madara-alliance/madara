@@ -6,8 +6,6 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Pedersen, Poseidon, StarkHash},
 };
-use std::str::FromStr;
-
 
 pub mod from_blockifier;
 

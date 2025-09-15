@@ -278,9 +278,6 @@ impl BlockImporterCtx {
             return Err(BlockImportError::TransactionCommitment { got: transaction_commitment, expected });
         }
 
-        let x: Vec<Felt> = tx_hashes_with_signature_and_receipt_hashes.iter().map(|(_, snd)| *snd).collect();
-        println!("receipt commitment is here {:?}", x);
-
         // Verify receipt commitment.
         let expected = check_against.receipt_commitment.unwrap_or_default();
         let receipt_commitment = compute_receipt_commitment(
@@ -497,7 +494,6 @@ impl BlockImporterCtx {
     ) -> Result<Felt, BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
         let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_2);
-        // println!("StarkNet version: {:?}", starknet_version);
         let is_pre_v0_13_2_special_case =
             allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
 
@@ -515,8 +511,6 @@ impl BlockImporterCtx {
         // Verify events commitment.
         let expected = check_against.event_commitment;
         let got = compute_event_commitment(event_hashes, starknet_version);
-        println!("Expected commitment : {}", expected);
-        println!("got commitment : {}", got);
 
         if !self.config.no_check && !is_pre_v0_13_2_special_case && expected != got {
             return Err(BlockImportError::EventCommitment { got, expected });

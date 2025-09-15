@@ -724,13 +724,11 @@ pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     pub l2_gas: ResourceBounds,
     /// This should not be here!
-    /// Also why do we have ResourceBoundsMapping in two places!
     pub l1_data_gas:  Option<ResourceBounds>,
 }
 
 #[serde_as]
 #[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-/// Also why do we have ResourceBounds in two places!
 pub struct ResourceBounds {
     #[serde_as(as = "U64AsHex")]
     pub max_amount: u64,

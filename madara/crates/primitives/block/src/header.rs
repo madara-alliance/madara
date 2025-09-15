@@ -171,38 +171,19 @@ impl GasPrices {
     }
 
     /// https://docs.starknet.io/architecture/blocks/#block_hash
+
     pub fn compute_hash(&self) -> Felt {
-        // println!("Computing GasPrices hash is called here!");
-
         let domain_separator = Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0");
-        let eth_l1_gas = Felt::from(self.eth_l1_gas_price);
-        let strk_l1_gas = Felt::from(self.strk_l1_gas_price);
-        let eth_l1_data_gas = Felt::from(self.eth_l1_data_gas_price);
-        let strk_l1_data_gas = Felt::from(self.strk_l1_data_gas_price);
-        let eth_l2_gas = Felt::from(self.eth_l2_gas_price);
-        let strk_l2_gas = Felt::from(self.strk_l2_gas_price);
 
-        // println!("Domain separator: {:?}", domain_separator);
-        // println!("ETH L1 gas price: {} -> {:?}", self.eth_l1_gas_price, eth_l1_gas);
-        // println!("STRK L1 gas price: {} -> {:?}", self.strk_l1_gas_price, strk_l1_gas);
-        // println!("ETH L1 data gas price: {} -> {:?}", self.eth_l1_data_gas_price, eth_l1_data_gas);
-        // println!("STRK L1 data gas price: {} -> {:?}", self.strk_l1_data_gas_price, strk_l1_data_gas);
-        // println!("ETH L2 gas price: {} -> {:?}", self.eth_l2_gas_price, eth_l2_gas);
-        // println!("STRK L2 gas price: {} -> {:?}", self.strk_l2_gas_price, strk_l2_gas);
-
-        let hash = Poseidon::hash_array(&[
+        Poseidon::hash_array(&[
             domain_separator,
-            eth_l1_gas,
-            strk_l1_gas,
-            eth_l1_data_gas,
-            strk_l1_data_gas,
-            eth_l2_gas,
-            strk_l2_gas,
-        ]);
-
-        println!("Computed hash: {:?}", hash);
-
-        hash
+            Felt::from(self.eth_l1_gas_price),
+            Felt::from(self.strk_l1_gas_price),
+            Felt::from(self.eth_l1_data_gas_price),
+            Felt::from(self.strk_l1_data_gas_price),
+            Felt::from(self.eth_l2_gas_price),
+            Felt::from(self.strk_l2_gas_price),
+        ])
     }
 }
 
@@ -257,7 +238,6 @@ impl Header {
     /// Compute the hash of the header.
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self, chain_id: Felt, pre_v0_13_2_override: bool) -> Felt {
-        // println!("Computing Block hash is called here!");
         let hash_version = if self.protocol_version < StarknetVersion::V0_13_2 && pre_v0_13_2_override {
             StarknetVersion::V0_13_2
         } else {
@@ -265,10 +245,8 @@ impl Header {
         };
 
         if hash_version.is_pre_v0_7() {
-            println!("Computing Block hash compute_hash_inner_pre_v0_7");
             self.compute_hash_inner_pre_v0_7(chain_id)
         } else if hash_version < StarknetVersion::V0_13_2 {
-            println!("Computing Block hash ");
             Pedersen::hash_array(&[
                 Felt::from(self.block_number),
                 self.global_state_root,
@@ -283,10 +261,8 @@ impl Header {
                 self.parent_block_hash,
             ])
         } else if hash_version < StarknetVersion::V0_13_4 {
-            println!("Computing Block hash compute_hash_inner_v0");
             self.compute_hash_inner_v0()
         } else {
-            // println!("Computing Block hash compute_hash_inner_v1");
             self.compute_hash_inner_v1()
         }
     }
