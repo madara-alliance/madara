@@ -198,7 +198,8 @@ impl BlockImporterCtx {
         const SEPOLIA_FIRST_V0_13_2: u64 = 86311;
         // First v0.13.2 mainnet block: https://voyager.online/block/671813.
         const MAINNET_FIRST_V0_13_2: u64 = 671813;
-        
+
+        // First V0.13.2 Paradex block: https://voyager.prod.paradex.trade/block/95270
         const PARADEX_MAINNET_FIRST_V0_13_2: u64 = 95271;
         
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
