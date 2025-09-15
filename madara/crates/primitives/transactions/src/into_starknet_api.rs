@@ -1,5 +1,7 @@
 use std::sync::Arc;
-
+use starknet_api::block::GasPrice;
+use starknet_api::execution_resources::GasAmount;
+use starknet_api::transaction::fields::AllResourceBounds;
 use starknet_types_core::felt::Felt;
 
 use crate::{
@@ -464,19 +466,46 @@ impl From<DataAvailabilityMode> for starknet_api::data_availability::DataAvailab
 
 impl From<starknet_api::transaction::fields::ValidResourceBounds> for ResourceBoundsMapping {
     fn from(value: starknet_api::transaction::fields::ValidResourceBounds) -> Self {
-        ResourceBoundsMapping { l1_gas: value.get_l1_bounds().into(), l2_gas: value.get_l2_bounds().into() }
+        let res_bounds = match value {
+            starknet_api::transaction::fields::ValidResourceBounds::L1Gas(_) => {
+                ResourceBoundsMapping { l1_gas: value.get_l1_bounds().into(), l2_gas: value.get_l2_bounds().into(), l1_data_gas: None}
+            }
+            starknet_api::transaction::fields::ValidResourceBounds::AllResources(val) => {
+                ResourceBoundsMapping { l1_gas: val.l1_gas.into(), l2_gas: val.l2_gas.into(), l1_data_gas: Some(val.l1_data_gas.into())}
+            }
+        };
+        res_bounds
     }
 }
+
+
+impl From<ResourceBounds> for starknet_api::transaction::fields::ResourceBounds {
+    fn from(resource: ResourceBounds) -> Self {
+        Self { max_amount: GasAmount(resource.max_amount), max_price_per_unit: GasPrice(resource.max_price_per_unit) }
+    }
+}
+
 
 impl From<&ResourceBoundsMapping> for starknet_api::transaction::fields::ValidResourceBounds {
     fn from(resources: &ResourceBoundsMapping) -> Self {
         // TODO(v0.13.3): We need to put AllResources instead of L1Gas here to support v0.13.3.
-        starknet_api::transaction::fields::ValidResourceBounds::L1Gas(
-            starknet_api::transaction::fields::ResourceBounds {
-                max_amount: resources.l1_gas.max_amount.into(),
-                max_price_per_unit: resources.l1_gas.max_price_per_unit.into(),
-            },
-        )
+        // if l1_gas.max_amount == 0_u64
+        // if l1_data_gas.max_amount != 0_64
+        let x =  if resources.l1_gas.max_amount == 0_u64 || (resources.l1_data_gas.is_some() && !resources.l1_data_gas.clone().unwrap().is_zero()) {
+            starknet_api::transaction::fields::ValidResourceBounds::AllResources(AllResourceBounds {
+                l1_gas: resources.l1_gas.clone().into(),
+                l2_gas: resources.l2_gas.clone().into(),
+                l1_data_gas: resources.l1_data_gas.clone().unwrap().into(),
+            })
+        } else {
+            starknet_api::transaction::fields::ValidResourceBounds::L1Gas(
+                starknet_api::transaction::fields::ResourceBounds {
+                    max_amount: resources.l1_gas.max_amount.into(),
+                    max_price_per_unit: resources.l1_gas.max_price_per_unit.into(),
+                },
+            )
+        };
+        x
     }
 }
 

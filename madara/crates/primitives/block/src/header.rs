@@ -44,6 +44,12 @@ impl BlockTimestamp {
     }
 }
 
+impl From<u64> for BlockTimestamp {
+    fn from(value: u64) -> Self {
+        Self(value)
+    }
+}
+
 impl From<SystemTime> for BlockTimestamp {
     fn from(value: SystemTime) -> Self {
         Self(value.duration_since(SystemTime::UNIX_EPOCH).expect("SystemTime::now() < Unix epoch").as_secs())
@@ -117,6 +123,14 @@ pub struct GasPrices {
     pub strk_l2_gas_price: u128,
 }
 
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct CustomHeader {
+    pub block_n: u64,
+    pub timestamp: u64,
+    pub gas_prices: GasPrices,
+}
+
+
 // Starknet API can't have null gas prices, so the default null gas prices are set to 1.
 impl From<&GasPrices> for starknet_api::block::GasPrices {
     fn from(gas_prices: &GasPrices) -> Self {
@@ -165,15 +179,37 @@ impl GasPrices {
 
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self) -> Felt {
-        Poseidon::hash_array(&[
-            Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0"),
-            Felt::from(self.eth_l1_gas_price),
-            Felt::from(self.strk_l1_gas_price),
-            Felt::from(self.eth_l1_data_gas_price),
-            Felt::from(self.strk_l1_data_gas_price),
-            Felt::from(self.eth_l2_gas_price),
-            Felt::from(self.strk_l2_gas_price),
-        ])
+        // println!("Computing GasPrices hash is called here!");
+
+        let domain_separator = Felt::from_bytes_be_slice(b"STARKNET_GAS_PRICES0");
+        let eth_l1_gas = Felt::from(self.eth_l1_gas_price);
+        let strk_l1_gas = Felt::from(self.strk_l1_gas_price);
+        let eth_l1_data_gas = Felt::from(self.eth_l1_data_gas_price);
+        let strk_l1_data_gas = Felt::from(self.strk_l1_data_gas_price);
+        let eth_l2_gas = Felt::from(self.eth_l2_gas_price);
+        let strk_l2_gas = Felt::from(self.strk_l2_gas_price);
+
+        // println!("Domain separator: {:?}", domain_separator);
+        // println!("ETH L1 gas price: {} -> {:?}", self.eth_l1_gas_price, eth_l1_gas);
+        // println!("STRK L1 gas price: {} -> {:?}", self.strk_l1_gas_price, strk_l1_gas);
+        // println!("ETH L1 data gas price: {} -> {:?}", self.eth_l1_data_gas_price, eth_l1_data_gas);
+        // println!("STRK L1 data gas price: {} -> {:?}", self.strk_l1_data_gas_price, strk_l1_data_gas);
+        // println!("ETH L2 gas price: {} -> {:?}", self.eth_l2_gas_price, eth_l2_gas);
+        // println!("STRK L2 gas price: {} -> {:?}", self.strk_l2_gas_price, strk_l2_gas);
+
+        let hash = Poseidon::hash_array(&[
+            domain_separator,
+            eth_l1_gas,
+            strk_l1_gas,
+            eth_l1_data_gas,
+            strk_l1_data_gas,
+            eth_l2_gas,
+            strk_l2_gas,
+        ]);
+
+        println!("Computed hash: {:?}", hash);
+
+        hash
     }
 }
 
@@ -228,6 +264,7 @@ impl Header {
     /// Compute the hash of the header.
     /// https://docs.starknet.io/architecture/blocks/#block_hash
     pub fn compute_hash(&self, chain_id: Felt, pre_v0_13_2_override: bool) -> Felt {
+        // println!("Computing Block hash is called here!");
         let hash_version = if self.protocol_version < StarknetVersion::V0_13_2 && pre_v0_13_2_override {
             StarknetVersion::V0_13_2
         } else {
@@ -235,8 +272,10 @@ impl Header {
         };
 
         if hash_version.is_pre_v0_7() {
+            println!("Computing Block hash compute_hash_inner_pre_v0_7");
             self.compute_hash_inner_pre_v0_7(chain_id)
         } else if hash_version < StarknetVersion::V0_13_2 {
+            println!("Computing Block hash ");
             Pedersen::hash_array(&[
                 Felt::from(self.block_number),
                 self.global_state_root,
@@ -251,8 +290,10 @@ impl Header {
                 self.parent_block_hash,
             ])
         } else if hash_version < StarknetVersion::V0_13_4 {
+            println!("Computing Block hash compute_hash_inner_v0");
             self.compute_hash_inner_v0()
         } else {
+            // println!("Computing Block hash compute_hash_inner_v1");
             self.compute_hash_inner_v1()
         }
     }
@@ -275,18 +316,51 @@ impl Header {
     }
 
     fn compute_hash_inner_v0(&self) -> Felt {
-        Poseidon::hash_array(&[
+        println!("compute_hash_inner_v0 debug:");
+        println!("  block_number: {:?}", self.block_number);
+        println!("  global_state_root: {:?}", self.global_state_root);
+        println!("  sequencer_address: {:?}", self.sequencer_address);
+        println!("  block_timestamp.0: {:?}", self.block_timestamp.0);
+        println!("  transaction_count: {:?}", self.transaction_count);
+        println!("  event_count: {:?}", self.event_count);
+        println!("  state_diff_length: {:?}", self.state_diff_length);
+        println!("  l1_da_mode: {:?}", self.l1_da_mode);
+        println!("  state_diff_commitment: {:?}", self.state_diff_commitment);
+        println!("  transaction_commitment: {:?}", self.transaction_commitment);
+        println!("  event_commitment: {:?}", self.event_commitment);
+        println!("  receipt_commitment: {:?}", self.receipt_commitment);
+        println!("  gas_prices.eth_l1_gas_price: {:?}", self.gas_prices.eth_l1_gas_price);
+        println!("  gas_prices.strk_l1_gas_price: {:?}", self.gas_prices.strk_l1_gas_price);
+        println!("  gas_prices.eth_l1_data_gas_price: {:?}", self.gas_prices.eth_l1_data_gas_price);
+        println!("  gas_prices.strk_l1_data_gas_price: {:?}", self.gas_prices.strk_l1_data_gas_price);
+        println!("  protocol_version: {:?}", self.protocol_version);
+        println!("  parent_block_hash: {:?}", self.parent_block_hash);
+
+        // Also print the computed values used in the hash
+        let timestamp_felt = Felt::from(self.block_timestamp.0);
+        let concat_counts_result = concat_counts(
+            self.transaction_count,
+            self.event_count,
+            self.state_diff_length.unwrap_or(0),
+            self.l1_da_mode,
+        );
+        let protocol_version_felt = Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes());
+
+        println!("  Computed values:");
+        println!("  timestamp_felt: {:?}", timestamp_felt);
+        println!("  concat_counts_result: {:?}", concat_counts_result);
+        println!("  state_diff_length.unwrap_or(0): {:?}", self.state_diff_length.unwrap_or(0));
+        println!("  state_diff_commitment.unwrap_or(Felt::ZERO): {:?}", self.state_diff_commitment.unwrap_or(Felt::ZERO));
+        println!("  receipt_commitment.unwrap_or(Felt::ZERO): {:?}", self.receipt_commitment.unwrap_or(Felt::ZERO));
+        println!("  protocol_version_felt: {:?}", protocol_version_felt);
+
+        let block_hash = Poseidon::hash_array(&[
             Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH0"),
             Felt::from(self.block_number),
             self.global_state_root,
             self.sequencer_address,
-            Felt::from(self.block_timestamp.0),
-            concat_counts(
-                self.transaction_count,
-                self.event_count,
-                self.state_diff_length.unwrap_or(0),
-                self.l1_da_mode,
-            ),
+            timestamp_felt,
+            concat_counts_result,
             self.state_diff_commitment.unwrap_or(Felt::ZERO),
             self.transaction_commitment,
             self.event_commitment,
@@ -295,34 +369,73 @@ impl Header {
             self.gas_prices.strk_l1_gas_price.into(),
             self.gas_prices.eth_l1_data_gas_price.into(),
             self.gas_prices.strk_l1_data_gas_price.into(),
-            Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes()),
+            protocol_version_felt,
             Felt::ZERO,
             self.parent_block_hash,
-        ])
+        ]);
+        println!("  block_hash: {:?}", block_hash);
+        block_hash
     }
 
     fn compute_hash_inner_v1(&self) -> Felt {
-        Poseidon::hash_array(&[
+        println!("compute_hash_inner_v1 debug:");
+        println!("  block_number: {:?}", self.block_number);
+        println!("  global_state_root: {:?}", self.global_state_root);
+        println!("  sequencer_address: {:?}", self.sequencer_address);
+        println!("  block_timestamp.0: {:?}", self.block_timestamp.0);
+        println!("  transaction_count: {:?}", self.transaction_count);
+        println!("  event_count: {:?}", self.event_count);
+        println!("  state_diff_length: {:?}", self.state_diff_length);
+        println!("  l1_da_mode: {:?}", self.l1_da_mode);
+        println!("  state_diff_commitment: {:?}", self.state_diff_commitment);
+        println!("  transaction_commitment: {:?}", self.transaction_commitment);
+        println!("  event_commitment: {:?}", self.event_commitment);
+        println!("  receipt_commitment: {:?}", self.receipt_commitment);
+        println!("  gas_prices.eth_l1_gas_price: {:?}", self.gas_prices.eth_l1_gas_price);
+        println!("  gas_prices.strk_l1_gas_price: {:?}", self.gas_prices.strk_l1_gas_price);
+        println!("  gas_prices.eth_l1_data_gas_price: {:?}", self.gas_prices.eth_l1_data_gas_price);
+        println!("  gas_prices.strk_l1_data_gas_price: {:?}", self.gas_prices.strk_l1_data_gas_price);
+        println!("  protocol_version: {:?}", self.protocol_version);
+        println!("  parent_block_hash: {:?}", self.parent_block_hash);
+
+        // Also print the computed values used in the hash
+        let timestamp_felt = Felt::from(self.block_timestamp.0);
+        let concat_counts_result = concat_counts(
+            self.transaction_count,
+            self.event_count,
+            self.state_diff_length.unwrap_or(0),
+            self.l1_da_mode,
+        );
+        let gas_prices_hash = self.gas_prices.compute_hash();
+        let protocol_version_felt = Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes());
+
+        println!("  Computed values:");
+        println!("  timestamp_felt: {:?}", timestamp_felt);
+        println!("  concat_counts_result: {:?}", concat_counts_result);
+        println!("  state_diff_length.unwrap_or(0): {:?}", self.state_diff_length.unwrap_or(0));
+        println!("  state_diff_commitment.unwrap_or(Felt::ZERO): {:?}", self.state_diff_commitment.unwrap_or(Felt::ZERO));
+        println!("  receipt_commitment.unwrap_or(Felt::ZERO): {:?}", self.receipt_commitment.unwrap_or(Felt::ZERO));
+        println!("  gas_prices_hash: {:?}", gas_prices_hash);
+        println!("  protocol_version_felt: {:?}", protocol_version_felt);
+
+        let block_hash = Poseidon::hash_array(&[
             Felt::from_bytes_be_slice(b"STARKNET_BLOCK_HASH1"),
             Felt::from(self.block_number),
             self.global_state_root,
             self.sequencer_address,
-            Felt::from(self.block_timestamp.0),
-            concat_counts(
-                self.transaction_count,
-                self.event_count,
-                self.state_diff_length.unwrap_or(0),
-                self.l1_da_mode,
-            ),
+            timestamp_felt,
+            concat_counts_result,
             self.state_diff_commitment.unwrap_or(Felt::ZERO),
             self.transaction_commitment,
             self.event_commitment,
             self.receipt_commitment.unwrap_or(Felt::ZERO),
-            self.gas_prices.compute_hash(),
-            Felt::from_bytes_be_slice(self.protocol_version.to_string().as_bytes()),
+            gas_prices_hash,
+            protocol_version_felt,
             Felt::ZERO,
             self.parent_block_hash,
-        ])
+        ]);
+        println!("  block_hash: {:?}", block_hash);
+        block_hash
     }
 }
 

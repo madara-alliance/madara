@@ -3,7 +3,7 @@
 use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
-use blockifier::state::cached_state::{StateMaps, StorageEntry};
+use blockifier::state::cached_state::{CommitmentStateDiff, StateMaps, StorageEntry, StorageView};
 use executor::{BatchExecutionResult, ExecutorMessage};
 use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
@@ -27,6 +27,8 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
+use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
+use starknet_api::state::StorageKey;
 use tokio::sync::mpsc;
 use util::{BlockExecutionContext, ExecutionStats};
 
@@ -39,7 +41,7 @@ mod util;
 pub use handle::BlockProductionHandle;
 
 #[derive(Debug, Clone)]
-struct PendingBlockState {
+pub struct PendingBlockState {
     pub header: PendingHeader,
     pub transactions: Vec<TransactionWithReceipt>,
     pub events: Vec<EventWithTransactionHash>,
@@ -78,7 +80,7 @@ impl PendingBlockState {
         Ok((
             PendingFullBlock {
                 header: self.header,
-                state_diff: mc_exec::state_diff::create_normalized_state_diff(backend, &on_top_of_block_id, self.state)
+                state_diff: mc_exec::state_diff::create_normalized_state_diff(backend, &on_top_of_block_id, self.state, self.declared_classes.clone())
                     .context("Converting state map to state diff")?,
                 transactions: self.transactions,
                 events: self.events,
@@ -272,12 +274,12 @@ impl BlockProductionTask {
 
         tracing::debug!("Close pending block on startup.");
 
-        let (block, declared_classes) = get_pending_block_from_db(&self.backend)?;
+        // let (block, declared_classes) = get_pending_block_from_db(&self.backend)?;
 
         self.backend.clear_pending_block().context("Error clearing pending block")?;
 
-        let block_n = self.backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
-        self.close_and_save_block(block_n, block, declared_classes, vec![]).await?;
+        // let block_n = self.backend.get_latest_block_n().context("Getting latest block n")?.map(|n| n + 1).unwrap_or(0);
+        // self.close_and_save_block(block_n, block, declared_classes, vec![]).await?;
 
         Ok(())
     }
@@ -296,6 +298,8 @@ impl BlockProductionTask {
 
         let n_txs = block.transactions.len();
 
+
+        // println!("This is inside close_and_save_block that calls add_full_block_with_classes ");
         // Close and import the block
         let block_hash = self
             .backend
@@ -364,12 +368,57 @@ impl BlockProductionTask {
                 };
                 state.append_batch(batch_execution_result);
             }
-            ExecutorMessage::EndBlock => {
+            ExecutorMessage::EndBlock(block_exec_summary) => {
                 tracing::debug!("Received ExecutorMessage::EndBlock");
                 let current_state = self.current_state.take().context("No current state")?;
-                let TaskState::Executing(state) = current_state else {
+                let TaskState::Executing(mut state) = current_state else {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
+
+                // pub struct CommitmentStateDiff {
+                //     // Contract instance attributes (per address).
+                //     pub address_to_class_hash: IndexMap<ContractAddress, ClassHash>,
+                //     pub address_to_nonce: IndexMap<ContractAddress, Nonce>,
+                //     pub storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>>,
+                //
+                //     // Global attributes.
+                //     pub class_hash_to_compiled_class_hash: IndexMap<ClassHash, CompiledClassHash>,
+                // }
+
+                // pub struct StateMaps {
+                //     pub nonces: HashMap<ContractAddress, Nonce>,
+                //     pub class_hashes: HashMap<ContractAddress, ClassHash>,
+                //     pub storage: HashMap<StorageEntry, Felt>,
+                //     pub compiled_class_hashes: HashMap<ClassHash, CompiledClassHash>,
+                //     pub declared_contracts: HashMap<ClassHash, bool>,
+                // }
+
+                // I need to convert from CommitmentStateDiff to StateMaps
+                // I have StateMaps to CommitmentStateDiff available
+
+                // impl From<StateMaps> for CommitmentStateDiff {
+                //     fn from(diff: StateMaps) -> Self {
+                //         Self {
+                //             address_to_class_hash: IndexMap::from_iter(diff.class_hashes),
+                //             storage_updates: StorageDiff::from(StorageView(diff.storage)),
+                //             class_hash_to_compiled_class_hash: IndexMap::from_iter(diff.compiled_class_hashes),
+                //             address_to_nonce: IndexMap::from_iter(diff.nonces),
+                //         }
+                //     }
+                // }
+
+                let new_state: StateMaps = block_exec_summary.state_diff.into();
+
+                let new_block: PendingBlockState = PendingBlockState {
+                    header : state.block.header.clone(),
+                    transactions: state.block.transactions.clone(),
+                    events: state.block.events.clone(),
+                    declared_classes: state.block.declared_classes.clone(),
+                    consumed_core_contract_nonces: state.block.consumed_core_contract_nonces.clone(),
+                    state: new_state,
+                };
+
+                state.block = new_block;
 
                 self.mempool
                     .on_tx_batch_executed(
@@ -383,6 +432,7 @@ impl BlockProductionTask {
                     .context("Updating mempool state")?;
 
                 let (block, classes) = state.block.into_full_block_with_classes(&self.backend, state.block_n)?;
+                // println!("This is where we process reply");
                 let block_hash = self
                     .close_and_save_block(state.block_n, block, classes, state.tx_executed_for_tick)
                     .await

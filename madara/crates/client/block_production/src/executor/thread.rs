@@ -229,6 +229,8 @@ impl ExecutorThread {
             previous_l2_gas_used,
         )?;
 
+        // println!("Execution context created : {:?}", exec_ctx);
+
         // Create the TransactionExecution, but reuse the layered_state_adapter.
         let mut executor =
             self.backend.new_executor_for_block_production(state.state_adaptor, exec_ctx.to_blockifier()?)?;
@@ -326,8 +328,7 @@ impl ExecutorThread {
                             || !state.consumed_l1_to_l2_nonces().insert(nonce)
                         // insert: Returns true if it was already consumed in the current state.
                         {
-                            tracing::debug!("L1 Core Contract nonce already consumed: {nonce}");
-                            continue;
+                            println!("L1 Core Contract nonce already consumed: {nonce}");
                         }
                     }
                     to_exec.push(tx, additional_info)
@@ -337,7 +338,7 @@ impl ExecutorThread {
             // Create a new execution state (new block) if it does not already exist.
             // This transitions the state machine from ExecutorState::NewBlock to ExecutorState::Executing, and
             // creates the blockifier TransactionExecutor.
-            let execution_state = match state {
+            let mut execution_state = match state {
                 ExecutorThreadState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorThreadState::NewBlock(state_new_block) => {
                     // Create new execution state.
@@ -369,6 +370,8 @@ impl ExecutorThread {
 
             let exec_start_time = Instant::now();
 
+            let block_context_here = execution_state.exec_ctx.protocol_version;
+            let something = execution_state.executor.block_context.clone().versioned_constants().clone();
             // TODO: we should use the execution deadline option
             // Execute the transactions.
             let blockifier_results =
@@ -390,7 +393,7 @@ impl ExecutorThread {
             // Results are processed async, outside of the executor.
             for (btx, res) in executed_txs.txs.iter().zip(blockifier_results.iter()) {
                 match res {
-                    Ok((execution_info, _state_diff)) => {
+                    Ok((execution_info, state_diff)) => {
                         tracing::trace!("Successful execution of transaction {:#x}", btx.tx_hash().to_felt());
 
                         stats.n_added_to_block += 1;
@@ -444,8 +447,9 @@ impl ExecutorThread {
                     execution_state.exec_ctx.block_n,
                 );
 
-                if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock).is_err() {
-                    // Receiver closed
+                let block_exec_summary = execution_state.executor.finalize().unwrap();
+
+                if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock(block_exec_summary)).is_err() {
                     break Ok(());
                 }
                 next_block_deadline = Instant::now() + block_time;

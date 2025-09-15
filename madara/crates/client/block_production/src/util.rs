@@ -1,4 +1,5 @@
 use blockifier::transaction::transaction_execution::Transaction;
+use mc_db::storage_updates::get_block_timestamp;
 use mc_db::MadaraBackend;
 use mp_block::header::{BlockTimestamp, GasPrices, PendingHeader};
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
@@ -9,7 +10,7 @@ use std::{
     collections::VecDeque,
     ops::{Add, AddAssign},
     sync::Arc,
-    time::{Duration, SystemTime},
+    time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
 // TODO: add these to metrics
@@ -166,11 +167,24 @@ pub(crate) fn create_execution_context(
     previous_l2_gas_price: u128,
     previous_l2_gas_used: u64,
 ) -> anyhow::Result<BlockExecutionContext> {
+    let mut block_timestamp = 0;
+    let mut gas_prices = GasPrices::default();
+
+    if let Some(custom_header) = backend.get_custom_header() {
+        if custom_header.block_n == block_n {
+            block_timestamp = custom_header.timestamp;
+            gas_prices = custom_header.gas_prices;
+        }
+    } else {
+        gas_prices = backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?;
+    }
+
+
     Ok(BlockExecutionContext {
         sequencer_address: **backend.chain_config().sequencer_address,
-        block_timestamp: SystemTime::now(),
+        block_timestamp: UNIX_EPOCH + Duration::from_secs(block_timestamp),
         protocol_version: backend.chain_config().latest_protocol_version,
-        gas_prices: backend.calculate_gas_prices(previous_l2_gas_price, previous_l2_gas_used)?,
+        gas_prices,
         l1_da_mode: backend.chain_config().l1_da_mode,
         block_n,
     })
