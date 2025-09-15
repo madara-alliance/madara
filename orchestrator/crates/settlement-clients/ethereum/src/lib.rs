@@ -73,6 +73,8 @@ pub struct EthereumSettlementValidatedArgs {
     pub l1_core_contract_address: Address,
 
     pub starknet_operator_address: Address,
+
+    pub max_gas_price_mul_factor: f64,
 }
 
 #[allow(dead_code)]
@@ -82,6 +84,7 @@ pub struct EthereumSettlementClient {
     wallet_address: Address,
     provider: Arc<RootProvider<Http<Client>>>,
     impersonate_account: Option<Address>,
+    max_gas_price_mul_factor: f64,
 }
 
 impl EthereumSettlementClient {
@@ -105,7 +108,14 @@ impl EthereumSettlementClient {
         let core_contract_client =
             StarknetValidityContractClient::new(settlement_cfg.l1_core_contract_address, filler_provider);
 
-        EthereumSettlementClient { provider, core_contract_client, wallet, wallet_address, impersonate_account: None }
+        EthereumSettlementClient {
+            provider,
+            core_contract_client,
+            wallet,
+            wallet_address,
+            impersonate_account: None,
+            max_gas_price_mul_factor: settlement_cfg.max_gas_price_mul_factor,
+        }
     }
 
     #[cfg(feature = "testing")]
@@ -131,6 +141,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
+            max_gas_price_mul_factor: 1f64,
         }
     }
 

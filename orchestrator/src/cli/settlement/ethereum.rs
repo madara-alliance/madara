@@ -2,7 +2,7 @@ use clap::Args;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address"])]
+#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address", "max_gas_price_mul_factor"])]
 pub struct EthereumSettlementCliArgs {
     /// Use the Ethereum settlement layer.
     #[arg(long)]
@@ -23,4 +23,7 @@ pub struct EthereumSettlementCliArgs {
     /// The address of the Starknet operator.
     #[arg(env = "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS", long)]
     pub starknet_operator_address: Option<String>,
+
+    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long)]
+    pub max_gas_price_mul_factor: f64,
 }
