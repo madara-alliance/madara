@@ -6,6 +6,7 @@ use mp_rpc::{
 };
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
+use mp_block::header::{CustomHeader, GasPrices};
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -60,6 +61,10 @@ pub trait MadaraWriteRpcApi {
     /// Only works in block production mode.
     #[method(name = "addL1HandlerMessage")]
     async fn add_l1_handler_message(&self, l1_handler_message: L1HandlerTransactionWithFee) -> RpcResult<L1HandlerTransactionResult>;
+
+    /// Use custom headers
+    #[method(name = "setCustomBlockHeader")]
+    async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

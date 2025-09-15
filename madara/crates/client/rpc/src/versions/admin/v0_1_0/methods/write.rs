@@ -8,6 +8,7 @@ use mp_rpc::{
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 use tokio::sync::Notify;
 use std::sync::Arc;
+use mp_block::header::CustomHeader;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -96,6 +97,11 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
                 .submit_l1_handler_transaction(l1_handler_message)
                 .await
                 .map_err(StarknetRpcApiError::from)?)
+    }
+
+    async fn set_block_header(&self, custom_block_headers: CustomHeader) -> RpcResult<()> {
+        self.backend.set_custom_header(custom_block_headers);
+        Ok(())
     }
 
 }

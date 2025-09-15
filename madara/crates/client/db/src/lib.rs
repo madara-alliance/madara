@@ -56,7 +56,7 @@ use rocksdb_options::rocksdb_global_options;
 use snapshots::Snapshots;
 use starknet_types_core::hash::{Pedersen, Poseidon, StarkHash};
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 use std::{fmt, fs};
 use tokio::sync::{mpsc, oneshot, RwLock};
 use watch::BlockWatch;
@@ -93,6 +93,8 @@ pub use rocksdb_options::{RocksDBConfig, StatsLevel};
 pub use watch::{ClosedBlocksReceiver, LastBlockOnL1Receiver, PendingBlockReceiver, PendingTxsReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
+use mp_block::header::{CustomHeader, GasPrices};
+
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 
 const DB_UPDATES_BATCH_SIZE: usize = 1024;
@@ -375,6 +377,9 @@ pub struct MadaraBackend {
     _temp_dir: Option<tempfile::TempDir>,
     sync_status: SyncStatusCell,
     starting_block: Option<u64>,
+
+    // only for testing impl, should not be used for production!
+    custom_header: Mutex<Option<CustomHeader>>,
 }
 
 impl fmt::Debug for MadaraBackend {
@@ -524,6 +529,7 @@ impl MadaraBackend {
             watch_gas_quote: tokio::sync::watch::channel(None).0,
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
+            custom_header: Mutex::new(None),
         };
         backend.watch_blocks.init_initial_values(&backend).context("Initializing watch channels initial values")?;
         Ok(backend)
@@ -708,6 +714,18 @@ impl MadaraBackend {
     pub fn update_metrics(&self) -> u64 {
         self.db_metrics.update(&self.db)
     }
+
+    /// Allows using custom headers for the next block, once used; the data is dumped
+    pub fn get_custom_header(&self) -> Option<CustomHeader> {
+        let mut guard = self.custom_header.lock().unwrap();
+        guard.take() // This takes the value and replaces it with None
+    }
+
+    pub fn set_custom_header(&self, custom_header: CustomHeader) {
+        let mut guard = self.custom_header.lock().unwrap();
+        *guard = Some(custom_header);
+    }
+
 }
 
 pub mod bonsai_identifier {

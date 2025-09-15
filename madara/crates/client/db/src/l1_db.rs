@@ -3,7 +3,7 @@ use alloy::primitives::U256;
 use bigdecimal::ToPrimitive;
 use mp_block::header::GasPrices;
 use mp_block::L1GasQuote;
-use mp_convert::Felt;
+use mp_convert::{Felt, FixedPoint};
 use mp_receipt::L1HandlerTransactionReceipt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use num_traits::Zero;
@@ -141,8 +141,6 @@ impl MadaraBackend {
         previous_strk_l2_gas_price: u128,
         previous_l2_gas_used: u64,
     ) -> anyhow::Result<GasPrices> {
-        use mp_convert::FixedPoint;
-
         let l1_gas_quote = L1GasQuote {
             l1_gas_price: 1000000000,
             l1_data_gas_price: 100000,
@@ -168,14 +166,13 @@ impl MadaraBackend {
 
         let l2_gas_target = self.chain_config().l2_gas_target;
         let max_change_denominator = self.chain_config().l2_gas_price_max_change_denominator;
-        // let strk_l2_gas_price = calculate_gas_price(
-        //     previous_strk_l2_gas_price,
-        //     previous_l2_gas_used,
-        //     l2_gas_target,
-        //     max_change_denominator,
-        // )
-        // .max(self.chain_config().min_l2_gas_price);
-        let strk_l2_gas_price = 25000_u128;
+        let strk_l2_gas_price = calculate_gas_price(
+            previous_strk_l2_gas_price,
+            previous_l2_gas_used,
+            l2_gas_target,
+            max_change_denominator,
+        )
+            .max(self.chain_config().min_l2_gas_price);
         if strk_per_eth.is_zero() {
             return Err(anyhow::anyhow!("STRK per ETH is zero, cannot calculate gas prices"));
         }

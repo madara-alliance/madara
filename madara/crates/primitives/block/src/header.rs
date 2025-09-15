@@ -123,6 +123,14 @@ pub struct GasPrices {
     pub strk_l2_gas_price: u128,
 }
 
+#[derive(Default, Clone, Serialize, Deserialize)]
+pub struct CustomHeader {
+    pub block_n: u64,
+    pub timestamp: u64,
+    pub gas_prices: GasPrices,
+}
+
+
 // Starknet API can't have null gas prices, so the default null gas prices are set to 1.
 impl From<&GasPrices> for starknet_api::block::GasPrices {
     fn from(gas_prices: &GasPrices) -> Self {
