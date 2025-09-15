@@ -201,7 +201,7 @@ impl BlockImporterCtx {
 
         // First V0.13.2 Paradex block: https://voyager.prod.paradex.trade/block/95270
         const PARADEX_MAINNET_FIRST_V0_13_2: u64 = 95271;
-        
+
         if signed_header.header.protocol_version < StarknetVersion::V0_13_2
             && ((self.db.chain_config().chain_id == ChainId::Sepolia && block_n < SEPOLIA_FIRST_V0_13_2)
                 || (self.db.chain_config().chain_id == ChainId::Mainnet && block_n < MAINNET_FIRST_V0_13_2)
@@ -243,7 +243,7 @@ impl BlockImporterCtx {
         allow_pre_v0_13_2: bool,
     ) -> Result<(Felt, Felt), BlockImportError> {
         // Override pre-v0.13.2 transaction hash computation
-        let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_5);
+        let starknet_version = StarknetVersion::max(check_against.protocol_version, StarknetVersion::V0_13_2);
         let is_pre_v0_13_2_special_case =
             allow_pre_v0_13_2 && check_against.protocol_version < StarknetVersion::V0_13_2;
 
