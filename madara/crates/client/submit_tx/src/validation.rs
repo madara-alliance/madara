@@ -17,7 +17,7 @@ use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::{TxTimestamp, ValidatedMempoolTx}, IntoStarknetApiExt, L1HandlerTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError, Transaction};
+use mp_transactions::{validated::{TxTimestamp, ValidatedMempoolTx}, IntoStarknetApiExt, L1HandlerTransactionResult, L1HandlerTransactionWithFee, ToBlockifierError};
 use starknet_api::{
     executable_transaction::{AccountTransaction as ApiAccountTransaction, TransactionType},
     transaction::TransactionVersion,

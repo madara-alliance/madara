@@ -3,7 +3,7 @@ use alloy::primitives::U256;
 use bigdecimal::ToPrimitive;
 use mp_block::header::GasPrices;
 use mp_block::L1GasQuote;
-use mp_convert::{Felt, FixedPoint};
+use mp_convert::Felt;
 use mp_receipt::L1HandlerTransactionReceipt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
 use num_traits::Zero;

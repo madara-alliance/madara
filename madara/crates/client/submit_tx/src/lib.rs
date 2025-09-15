@@ -3,7 +3,7 @@ use mp_rpc::{
     admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::{validated::ValidatedMempoolTx, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 mod error;
 mod validation;

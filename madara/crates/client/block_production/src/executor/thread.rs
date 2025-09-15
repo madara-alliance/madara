@@ -337,7 +337,7 @@ impl ExecutorThread {
             // Create a new execution state (new block) if it does not already exist.
             // This transitions the state machine from ExecutorState::NewBlock to ExecutorState::Executing, and
             // creates the blockifier TransactionExecutor.
-            let mut execution_state = match state {
+            let execution_state = match state {
                 ExecutorThreadState::Executing(ref mut executor_state_executing) => executor_state_executing,
                 ExecutorThreadState::NewBlock(state_new_block) => {
                     // Create new execution state.

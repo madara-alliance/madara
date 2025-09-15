@@ -93,7 +93,7 @@ pub use rocksdb_options::{RocksDBConfig, StatsLevel};
 pub use watch::{ClosedBlocksReceiver, LastBlockOnL1Receiver, PendingBlockReceiver, PendingTxsReceiver};
 pub type DB = DBWithThreadMode<MultiThreaded>;
 pub use rocksdb;
-use mp_block::header::{CustomHeader, GasPrices};
+use mp_block::header::CustomHeader;
 
 pub type WriteBatchWithTransaction = rocksdb::WriteBatchWithTransaction<false>;
 

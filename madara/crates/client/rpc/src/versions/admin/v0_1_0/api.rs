@@ -6,7 +6,7 @@ use mp_rpc::{
 };
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
-use mp_block::header::{CustomHeader, GasPrices};
+use mp_block::header::CustomHeader;
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 #[derive(Serialize, Deserialize, Debug)]

@@ -3,7 +3,7 @@
 use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
-use blockifier::state::cached_state::{CommitmentStateDiff, StateMaps, StorageEntry, StorageView};
+use blockifier::state::cached_state::{StateMaps, StorageEntry};
 use executor::{BatchExecutionResult, ExecutorMessage};
 use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
@@ -27,8 +27,6 @@ use std::collections::{HashMap, HashSet};
 use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
-use starknet_api::core::{ClassHash, CompiledClassHash, ContractAddress, Nonce};
-use starknet_api::state::StorageKey;
 use tokio::sync::mpsc;
 use util::{BlockExecutionContext, ExecutionStats};
 

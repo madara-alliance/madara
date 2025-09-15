@@ -6,8 +6,6 @@ use mp_rpc::{
     BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
-use tokio::sync::Notify;
-use std::sync::Arc;
 use mp_block::header::CustomHeader;
 
 #[async_trait]

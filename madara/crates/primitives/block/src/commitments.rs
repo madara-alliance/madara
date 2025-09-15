@@ -1,5 +1,4 @@
 use crate::{header::PendingHeader, Header, TransactionWithReceipt};
-use bigdecimal::ToPrimitive;
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
 use mp_receipt::EventWithTransactionHash;
@@ -9,7 +8,6 @@ use starknet_types_core::{
     felt::Felt,
     hash::{Pedersen, Poseidon, StarkHash},
 };
-use std::str::FromStr;
 
 pub struct CommitmentComputationContext {
     pub protocol_version: StarknetVersion,
@@ -105,11 +103,7 @@ impl BlockCommitments {
     }
 }
 
-use reqwest;
-use serde_json::{json, Value};
-use std::error::Error;
 
-use mp_transactions::Transaction;
 
 impl PendingHeader {
     pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64) -> Header {

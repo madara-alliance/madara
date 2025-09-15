@@ -17,7 +17,6 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRef
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
-use mp_transactions::Transaction;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {

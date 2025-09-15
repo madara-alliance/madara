@@ -100,7 +100,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
         .collect();
 
     // get all validate_calls
-    let validate_calls = res.clone().validate_call_info.iter().flat_map(|call_info| call_info.iter());
+    let validate_calls = res.validate_call_info.iter().flat_map(|call_info| call_info.iter());
 
     let validate_events = validate_calls
         .flat_map(|call| {
@@ -121,7 +121,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
     let final_validate_events: Vec<Event> = validate_events_with_order.into_iter().map(|(event, _)| event).collect();
 
     // get all execute_calls
-    let execute_calls = res.clone().execute_call_info.iter().flat_map(|call_info| call_info.iter());
+    let execute_calls = res.execute_call_info.iter().flat_map(|call_info| call_info.iter());
 
     let execute_events = execute_calls
         .flat_map(|call| {
@@ -143,7 +143,7 @@ pub fn from_blockifier_execution_info(res: &TransactionExecutionInfo, tx: &Trans
 
 
     // get all fee_transfer_calls
-    let fee_transfer_calls = res.clone().fee_transfer_call_info.iter().flat_map(|call_info| call_info.iter());
+    let fee_transfer_calls = res.fee_transfer_call_info.iter().flat_map(|call_info| call_info.iter());
 
     let fee_transfer_events = fee_transfer_calls
         .flat_map(|call| {

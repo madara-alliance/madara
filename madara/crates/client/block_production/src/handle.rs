@@ -9,7 +9,7 @@ use mp_rpc::{
 use mp_transactions::validated::ValidatedMempoolTx;
 use std::sync::Arc;
 use tokio::sync::{mpsc, oneshot};
-use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionResult, L1HandlerTransactionWithFee};
+use mp_transactions::{L1HandlerTransactionResult, L1HandlerTransactionWithFee};
 
 struct BypassInput(mpsc::Sender<ValidatedMempoolTx>);
 
