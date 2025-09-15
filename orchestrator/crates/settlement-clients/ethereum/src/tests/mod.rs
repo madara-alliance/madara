@@ -200,6 +200,9 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+                .parse()
+                .expect("Invalid max gas price mul factor"),
         };
 
         // Deploying a dummy contract
@@ -223,7 +226,7 @@ mod settlement_client_tests {
 
         // Calling update_state_with_blobs
         let update_state_result = ethereum_settlement_client
-            .update_state_with_blobs(program_output, blob_data_vec, nonce)
+            .update_state_with_blobs(program_output, blob_data_vec, nonce, 0)
             .await
             .expect("Could not go through update_state_with_blobs.");
 
@@ -280,6 +283,9 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+                .parse()
+                .expect("Invalid max gas price mul factor"),
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -308,7 +314,7 @@ mod settlement_client_tests {
 
         // Calling update_state_with_blobs
         let update_state_result = ethereum_settlement_client
-            .update_state_with_blobs(program_output.clone(), blob_data_vec, nonce)
+            .update_state_with_blobs(program_output.clone(), blob_data_vec, nonce, 0) // Keeping `to_block_num=0` so that the transaction is actually made
             .await
             .expect("Could not go through update_state_with_blobs.");
 
@@ -352,6 +358,9 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            max_gas_price_mul_factor: get_env_var_or_panic("MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR")
+                .parse()
+                .expect("Invalid max gas price mul factor"),
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(

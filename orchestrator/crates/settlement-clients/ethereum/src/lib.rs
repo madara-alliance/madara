@@ -149,7 +149,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
-            max_gas_price_mul_factor: 1f64,
+            max_gas_price_mul_factor: 2f64,
         }
     }
 
