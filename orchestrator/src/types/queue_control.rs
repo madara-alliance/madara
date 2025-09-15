@@ -64,7 +64,9 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::default_with_message_count(200),
+            queue_control: QueueControlConfig::default_with_message_count(
+                std::env::var("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS").unwrap().parse().unwrap(),
+            ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
@@ -82,7 +84,9 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
         QueueConfig {
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
-            queue_control: QueueControlConfig::new(10),
+            queue_control: QueueControlConfig::default_with_message_count(
+                std::env::var("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS").unwrap().parse().unwrap(),
+            ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
     );
