@@ -256,6 +256,7 @@ impl SettlementClient for EthereumSettlementClient {
             "Updating state with blobs."
         );
 
+        #[cfg(not(feature = "testing"))]
         if let Some(last_settled_block) = self.get_last_settled_block().await? {
             if last_settled_block >= to_block_num {
                 warn!(
@@ -300,10 +301,10 @@ impl SettlementClient for EthereumSettlementClient {
 
             match res {
                 Some(_) => {
-                    tracing::info!("✅ Txn hash : {:?} Finalized", pending_transaction.tx_hash().to_string());
+                    tracing::info!("✅ Txn hash : {:?} finalized", pending_transaction.tx_hash().to_string());
                 }
                 None => {
-                    tracing::error!("❌ Txn hash: {:?}  not finalised", pending_transaction.tx_hash().to_string());
+                    tracing::error!("❌ Txn hash: {:?} not finalised", pending_transaction.tx_hash().to_string());
                 }
             }
             return Ok(pending_transaction.tx_hash().to_string());

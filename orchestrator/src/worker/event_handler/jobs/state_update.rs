@@ -101,7 +101,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         // Get the state transition metadata
         let mut state_metadata: StateUpdateMetadata = job.metadata.specific.clone().try_into()?;
 
-        let (block_or_batch_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
+        let (blocks_or_batches_to_settle, last_failed_block_or_batch) = match state_metadata.context.clone() {
             SettlementContext::Block(data) => {
                 self.validate_block_numbers(config.clone(), &data.to_settle).await?;
                 debug!(job_id = %job.internal_id, blocks = ?data.to_settle, "Validated block numbers");
@@ -113,7 +113,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
         };
 
         // Filter block numbers if there was a previous failure
-        let filtered_indices: Vec<usize> = block_or_batch_to_settle
+        let filtered_indices: Vec<usize> = blocks_or_batches_to_settle
             .iter()
             .enumerate()
             .filter(|(_, &num)| num >= last_failed_block_or_batch)
@@ -130,7 +130,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
 
         // Loop over the indices to process
         for &i in &filtered_indices {
-            let to_settle_num = block_or_batch_to_settle[i];
+            let to_settle_num = blocks_or_batches_to_settle[i];
             debug!(job_id = %job.internal_id, num = %to_settle_num, "Processing block/batch");
 
             // Get the artifacts for the block/batch
@@ -184,7 +184,7 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             nonce += 1;
         }
 
-        let val = block_or_batch_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
+        let val = blocks_or_batches_to_settle.last().ok_or_else(|| StateUpdateError::LastNumberReturnedError)?;
 
         info!(
             log_type = "completed",

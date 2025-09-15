@@ -1,7 +1,23 @@
-use std::fs;
 use std::fs::read_to_string;
 use std::path::PathBuf;
 
+use crate::core::client::database::MockDatabaseClient;
+use crate::core::client::storage::MockStorageClient;
+use crate::error::job::state_update::StateUpdateError;
+use crate::error::job::JobError;
+use crate::tests::common::default_job_item;
+use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::types::batch::Batch;
+use crate::types::constant::{
+    BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
+};
+use crate::types::jobs::metadata::{
+    CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
+};
+use crate::types::jobs::types::{JobStatus, JobType};
+use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
+use crate::worker::event_handler::jobs::JobHandlerTrait;
+use crate::worker::utils::hex_string_to_u8_vec;
 use assert_matches::assert_matches;
 use bytes::Bytes;
 use httpmock::prelude::*;
@@ -13,22 +29,6 @@ use rstest::*;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
 use url::Url;
-
-use crate::core::client::storage::MockStorageClient;
-use crate::error::job::state_update::StateUpdateError;
-use crate::error::job::JobError;
-use crate::tests::common::default_job_item;
-use crate::tests::config::{ConfigType, TestConfigBuilder};
-use crate::types::constant::{
-    BLOB_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR, STORAGE_BLOB_DIR,
-};
-use crate::types::jobs::metadata::{
-    CommonMetadata, JobMetadata, JobSpecificMetadata, SettlementContext, SettlementContextData, StateUpdateMetadata,
-};
-use crate::types::jobs::types::{JobStatus, JobType};
-use crate::worker::event_handler::jobs::state_update::StateUpdateJobHandler;
-use crate::worker::event_handler::jobs::JobHandlerTrait;
-use crate::worker::utils::hex_string_to_u8_vec;
 
 lazy_static! {
     pub static ref CURRENT_PATH: PathBuf = std::env::current_dir().expect("Failed to get Current Path");
@@ -75,6 +75,14 @@ async fn test_process_job_works(
 
     // Mocking the settlement client.
     let mut settlement_client = MockSettlementClient::new();
+    let mut database_client = MockDatabaseClient::new();
+
+    let last_block_to_process = blocks_to_process.last().unwrap().clone();
+
+    // Mock the get batch by indexes method
+    database_client.expect_get_batches_by_indexes().returning(move |_| {
+        Ok(vec![Batch::new(0, last_block_to_process + 1, String::from(""), String::from(""), String::from(""))])
+    });
 
     // This must be the last block number and should be returned as an output from the process job.
     let last_block_number = blocks_to_process[blocks_to_process.len() - 1];
@@ -82,7 +90,7 @@ async fn test_process_job_works(
     // Adding expectations for each block number to be called by settlement client.
     for block in blocks_to_process.iter().skip(processing_start_index as usize) {
         // Getting the blob data from file.
-        let blob_data = fs::read_to_string(
+        let blob_data = read_to_string(
             CURRENT_PATH.join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, BLOB_DATA_FILE_NAME)),
         )
         .unwrap();
@@ -116,6 +124,7 @@ async fn test_process_job_works(
     let services = TestConfigBuilder::new()
         .configure_storage_client(ConfigType::Actual)
         .configure_settlement_client(settlement_client.into())
+        .configure_database(database_client.into())
         .build()
         .await;
 
@@ -129,7 +138,7 @@ async fn test_process_job_works(
     for block in blocks_to_process.iter() {
         // Getting the blob data from file.
         let blob_data_key = format!("{}/batch/{}", STORAGE_BLOB_DIR, block);
-        let blob_data = fs::read_to_string(
+        let blob_data = read_to_string(
             CURRENT_PATH.join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, BLOB_DATA_FILE_NAME)),
         )
         .unwrap();
@@ -137,7 +146,7 @@ async fn test_process_job_works(
 
         // Getting the snos data from file.
         let snos_output_key = format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, block, SNOS_OUTPUT_FILE_NAME);
-        let snos_output_data = fs::read_to_string(
+        let snos_output_data = read_to_string(
             CURRENT_PATH.join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block, SNOS_OUTPUT_FILE_NAME)),
         )
         .unwrap();
@@ -226,6 +235,12 @@ async fn process_job_works_unit_test() {
     // Mocking settlement and storage client
     let mut settlement_client = MockSettlementClient::new();
     let mut storage_client = MockStorageClient::new();
+    let mut database_client = MockDatabaseClient::new();
+
+    // Mock the get batch by indexes method
+    database_client
+        .expect_get_batches_by_indexes()
+        .returning(|_| Ok(vec![Batch::new(0, 651057, String::from(""), String::from(""), String::from(""))]));
 
     // Mock the latest block settled
     settlement_client.expect_get_last_settled_block().returning(|| Ok(Some(651052_u64)));
@@ -236,7 +251,7 @@ async fn process_job_works_unit_test() {
 
         // Setting expectation for SNOS output
         let snos_output_key = format!("{}/batch/{}/{}", STORAGE_ARTIFACTS_DIR, block_no, SNOS_OUTPUT_FILE_NAME);
-        let snos_output_data = fs::read_to_string(
+        let snos_output_data = read_to_string(
             CURRENT_PATH
                 .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, SNOS_OUTPUT_FILE_NAME)),
         )
@@ -248,7 +263,7 @@ async fn process_job_works_unit_test() {
 
         // Setting expectation for blob data
         let blob_data_key = format!("{}/batch/{}", STORAGE_BLOB_DIR, block_no);
-        let blob_data = fs::read_to_string(
+        let blob_data = read_to_string(
             CURRENT_PATH
                 .join(format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, BLOB_DATA_FILE_NAME)),
         )
@@ -302,6 +317,7 @@ async fn process_job_works_unit_test() {
     let services = TestConfigBuilder::new()
         .configure_settlement_client(settlement_client.into())
         .configure_storage_client(storage_client.into())
+        .configure_database(database_client.into())
         .build()
         .await;
 
@@ -450,7 +466,7 @@ async fn process_job_invalid_input_gap_panics() {
 
 async fn load_state_diff_file(block_no: u64) -> Vec<u8> {
     let file_path = format!("src/tests/jobs/state_update_job/test_data/{}/{}", block_no, BLOB_DATA_FILE_NAME);
-    let file_data = fs::read_to_string(file_path).expect("Unable to read blob_data.txt").replace("0x", "");
+    let file_data = read_to_string(file_path).expect("Unable to read blob_data.txt").replace("0x", "");
     hex_string_to_u8_vec(&file_data).unwrap()
 }
 
