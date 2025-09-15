@@ -374,50 +374,10 @@ impl BlockProductionTask {
                     anyhow::bail!("Invalid executor state transition: expected current state to be Executing")
                 };
 
-                // pub struct CommitmentStateDiff {
-                //     // Contract instance attributes (per address).
-                //     pub address_to_class_hash: IndexMap<ContractAddress, ClassHash>,
-                //     pub address_to_nonce: IndexMap<ContractAddress, Nonce>,
-                //     pub storage_updates: IndexMap<ContractAddress, IndexMap<StorageKey, Felt>>,
-                //
-                //     // Global attributes.
-                //     pub class_hash_to_compiled_class_hash: IndexMap<ClassHash, CompiledClassHash>,
-                // }
-
-                // pub struct StateMaps {
-                //     pub nonces: HashMap<ContractAddress, Nonce>,
-                //     pub class_hashes: HashMap<ContractAddress, ClassHash>,
-                //     pub storage: HashMap<StorageEntry, Felt>,
-                //     pub compiled_class_hashes: HashMap<ClassHash, CompiledClassHash>,
-                //     pub declared_contracts: HashMap<ClassHash, bool>,
-                // }
-
-                // I need to convert from CommitmentStateDiff to StateMaps
-                // I have StateMaps to CommitmentStateDiff available
-
-                // impl From<StateMaps> for CommitmentStateDiff {
-                //     fn from(diff: StateMaps) -> Self {
-                //         Self {
-                //             address_to_class_hash: IndexMap::from_iter(diff.class_hashes),
-                //             storage_updates: StorageDiff::from(StorageView(diff.storage)),
-                //             class_hash_to_compiled_class_hash: IndexMap::from_iter(diff.compiled_class_hashes),
-                //             address_to_nonce: IndexMap::from_iter(diff.nonces),
-                //         }
-                //     }
-                // }
-
-                let new_state: StateMaps = block_exec_summary.state_diff.into();
-
-                let new_block: PendingBlockState = PendingBlockState {
-                    header : state.block.header.clone(),
-                    transactions: state.block.transactions.clone(),
-                    events: state.block.events.clone(),
-                    declared_classes: state.block.declared_classes.clone(),
-                    consumed_core_contract_nonces: state.block.consumed_core_contract_nonces.clone(),
-                    state: new_state,
+                state.block = PendingBlockState {
+                    state: block_exec_summary.state_diff.into(),
+                    ..state.block
                 };
-
-                state.block = new_block;
 
                 self.mempool
                     .on_tx_batch_executed(

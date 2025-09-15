@@ -16,6 +16,7 @@ const INVOKE_PREFIX: Felt = Felt::from_hex_unchecked("0x696e766f6b65"); // b"inv
 const L1_HANDLER_PREFIX: Felt = Felt::from_hex_unchecked("0x6c315f68616e646c6572"); // b"l1_handler"
 
 const L1_GAS: &[u8] = b"L1_GAS";
+const L1_DATA: &[u8] = b"L1_DATA";
 const L2_GAS: &[u8] = b"L2_GAS";
 const PEDERSEN_EMPTY: Felt =
     Felt::from_hex_unchecked("0x49ee3eba8c1600700ee1b87eb599f16716b0b1022947733551fde4050ca6804");
@@ -498,14 +499,14 @@ fn compute_gas_hash(tip: u64, resource_bounds: &ResourceBoundsMapping) -> Felt {
     // Start with tip, L1_GAS, and L2_GAS
     let mut gas_elements = vec![
         Felt::from(tip),
-        prepare_resource_bound_value(&resource_bounds.l1_gas, b"L1_GAS"),
-        prepare_resource_bound_value(&resource_bounds.l2_gas, b"L2_GAS"),
+        prepare_resource_bound_value(&resource_bounds.l1_gas, L1_GAS),
+        prepare_resource_bound_value(&resource_bounds.l2_gas, L2_GAS),
     ];
 
     // Conditionally add L1 data gas if it exists
     if let Some(l1_data_gas) = &resource_bounds.l1_data_gas {
         if !l1_data_gas.is_zero() {
-            gas_elements.push(prepare_resource_bound_value(l1_data_gas, b"L1_DATA"));
+            gas_elements.push(prepare_resource_bound_value(l1_data_gas, L1_DATA));
         }
     }
 

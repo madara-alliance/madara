@@ -1,9 +1,7 @@
-use std::str::FromStr;
 use blockifier::execution::contract_class::RunnableCompiledClass;
 use cairo_vm::types::errors::program_errors::ProgramError;
 use serde::de::Error as _;
-use starknet_api::contract_class::{ContractClass as ApiContractClass, SierraVersion};
-use starknet_types_core::felt::Felt;
+use starknet_api::contract_class::{ContractClass as ApiContractClass};
 use crate::{ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
 
 impl TryFrom<&ConvertedClass> for RunnableCompiledClass {
