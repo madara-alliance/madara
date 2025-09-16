@@ -1,8 +1,4 @@
-use super::handler::{
-    handle_add_transaction, handle_get_block, handle_get_block_traces, handle_get_class_by_hash,
-    handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key,
-    handle_get_signature, handle_get_state_update,
-};
+use super::handler::{handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_traces, handle_get_class_by_hash, handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key, handle_get_signature, handle_get_state_update};
 use super::helpers::{not_found_response, service_unavailable_response};
 use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_block};
 use crate::service::GatewayServerConfig;
@@ -80,6 +76,9 @@ async fn feeder_gateway_router(
         }
         (&Method::GET, "feeder_gateway/get_public_key") => {
             Ok(handle_get_public_key(backend).await.unwrap_or_else(Into::into))
+        }
+        (&Method::GET, "feeder_gateway/get_block_bouncer_weights") => {
+            Ok(handle_get_block_bouncer_config(req, backend).await.unwrap_or_else(Into::into))
         }
         _ => {
             tracing::debug!(target: "feeder_gateway", "Feeder gateway received invalid request: {path}");

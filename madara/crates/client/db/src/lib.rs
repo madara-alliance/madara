@@ -43,6 +43,7 @@ use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
+use blockifier::bouncer::BouncerWeights;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::BlockHeaderWithSignatures;
@@ -554,6 +555,15 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     /// You are only allowed to write block parts past the latest confirmed block.
     pub fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()> {
         self.inner.db.write_state_diff(block_n, value)
+    }
+
+    /// Lower level access to writing primitives. This is only used by the sync process, which
+    /// saves block parts separately for performance reasons.
+    ///
+    /// **Warning**: The caller must ensure no block parts is saved on top of an existing confirmed block.
+    /// You are only allowed to write block parts past the latest confirmed block.
+    pub fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()> {
+        self.inner.db.write_bouncer_weights(block_n, value)
     }
 
     /// Lower level access to writing primitives. This is only used by the sync process, which

@@ -18,6 +18,8 @@ use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
+use blockifier::bouncer::BouncerWeights;
+
 
 impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {
@@ -55,6 +57,15 @@ impl GatewayProvider {
             .with_block_id(&block_id);
 
         request.send_get::<ProviderStateUpdate>().await
+    }
+
+    pub async fn get_block_bouncer_weights(&self, block_number: u64) -> Result<BouncerWeights, SequencerError> {
+        let request = RequestBuilder::new(&self.client, self.feeder_gateway_url.clone(), self.headers.clone())
+            .add_uri_segment("get_block_bouncer_weights")
+            .expect("Failed to add URI segment. This should not fail in prod")
+            .with_block_id(&BlockId::Number(block_number));
+
+        request.send_get::<BouncerWeights>().await
     }
 
     pub async fn get_state_update_with_block(

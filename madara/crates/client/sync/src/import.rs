@@ -17,6 +17,7 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRef
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
+use blockifier::bouncer::BouncerWeights;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {
@@ -452,6 +453,14 @@ impl BlockImporterCtx {
     /// Called in a rayon-pool context.
     pub fn save_state_diff(&self, block_n: u64, state_diff: StateDiff) -> Result<(), BlockImportError> {
         self.backend.write_access().write_state_diff(block_n, &state_diff).map_err(|error| {
+            BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }
+        })?;
+        Ok(())
+    }
+
+    /// Called in a rayon-pool context.
+    pub fn save_bouncer_weights(&self, block_n: u64, bouncer_weights: BouncerWeights) -> Result<(), BlockImportError> {
+        self.backend.write_access().write_bouncer_weights(block_n, &bouncer_weights).map_err(|error| {
             BlockImportError::InternalDb { error, context: format!("Storing state_diff for {block_n}").into() }
         })?;
         Ok(())

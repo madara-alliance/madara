@@ -8,7 +8,7 @@ use crate::{L1DataAvailabilityMode, StarknetVersion};
 use anyhow::{bail, Context, Result};
 use blockifier::blockifier::config::ConcurrencyConfig;
 use blockifier::blockifier_versioned_constants::{RawVersionedConstants, VersionedConstants};
-use blockifier::bouncer::{BouncerConfig, BouncerWeights};
+use blockifier::bouncer::{BouncerConfig, BouncerWeights, BuiltinWeights};
 use blockifier::context::{ChainInfo, FeeTokenAddresses};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
@@ -267,7 +267,9 @@ impl ChainConfig {
                     state_diff_size: 131072,
                     sierra_gas: GasAmount(10_000_000_000),
                     n_txs: usize::MAX,
+                    proving_gas: GasAmount(10_000_000_000)
                 },
+                builtin_weights: BuiltinWeights::default()
             },
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress(

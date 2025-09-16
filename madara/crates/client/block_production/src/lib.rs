@@ -275,7 +275,7 @@ impl BlockProductionTask {
 
                 self.send_state_notification(BlockProductionStateNotification::BatchExecuted);
             }
-            ExecutorMessage::EndBlock => {
+            ExecutorMessage::EndBlock(block_exec_summary) => {
                 tracing::debug!("Received ExecutorMessage::EndBlock");
                 let current_state = self.current_state.take().context("No current state")?;
                 let TaskState::Executing(state) = current_state else {
@@ -299,6 +299,11 @@ impl BlockProductionTask {
                             .remove_pending_message_to_l2(l1_nonce)
                             .context("Removing pending message to l2 from database")?;
                     }
+
+                    backend.write_access().write_bouncer_weights(state.block_number, &block_exec_summary.bouncer_weights).context("Saving Bouncer Weights for SNOS")?;
+
+                    let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
+                    backend.write_access().write_state_diff(state.block_number, &state_diff).context("Updating State Diff with alias")?;
 
                     backend
                         .write_access()

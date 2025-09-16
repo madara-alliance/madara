@@ -8,6 +8,8 @@ use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
+use blockifier::bouncer::BouncerWeights;
+
 
 #[derive(Debug, Clone)]
 pub struct EventFilter {
@@ -85,6 +87,7 @@ pub trait MadaraStorageRead: Send + Sync + 'static {
     fn find_transaction_hash(&self, tx_hash: &Felt) -> Result<Option<StorageTxIndex>>;
     fn get_block_info(&self, block_n: u64) -> Result<Option<MadaraBlockInfo>>;
     fn get_block_state_diff(&self, block_n: u64) -> Result<Option<StateDiff>>;
+    fn get_block_bouncer_weights(&self, block_n: u64) -> Result<Option<BouncerWeights>>;
     fn get_transaction(&self, block_n: u64, tx_index: u64) -> Result<Option<TransactionWithReceipt>>;
     fn get_block_transactions(
         &self,
@@ -133,6 +136,7 @@ pub trait MadaraStorageWrite: Send + Sync + 'static {
     fn write_header(&self, header: BlockHeaderWithSignatures) -> Result<()>;
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()>;
     fn write_state_diff(&self, block_n: u64, value: &StateDiff) -> Result<()>;
+    fn write_bouncer_weights(&self, block_n: u64, value: &BouncerWeights) -> Result<()>;
     fn write_events(&self, block_n: u64, txs: &[EventWithTransactionHash]) -> Result<()>;
     fn write_classes(&self, block_n: u64, converted_classes: &[ConvertedClass]) -> Result<()>;
 
