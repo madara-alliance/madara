@@ -18,7 +18,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (Transaction, AdditionalTxInfo) {
-    let (tx, _ts, declared_class) = tx
+    let (tx, ts, declared_class) = tx
         .into_validated_tx(
             backend.chain_config().chain_id.to_felt(),
             StarknetVersion::LATEST,
@@ -27,7 +27,7 @@ fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (Transaction
         .unwrap()
         .into_blockifier_for_sequencing()
         .unwrap();
-    (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default() })
+    (tx, AdditionalTxInfo { declared_class, arrived_at: ts })
 }
 
 fn make_l1_handler_tx(
