@@ -4,16 +4,16 @@ use crate::{
     probe::ThrottledRepeatedFuture,
 };
 use anyhow::Context;
-use mc_db::MadaraBackend;
-use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockHeaderWithSignatures, BlockId, BlockTag, FullBlock, Header, PendingFullBlock};
-use mp_gateway::{
-    error::{SequencerError, StarknetErrorCode},
-    state_update::ProviderStateUpdateWithBlockPendingMaybe,
+use mc_db::{
+    preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
+    MadaraBackend,
 };
+use mc_gateway_client::GatewayProvider;
+use mp_block::{BlockHeaderWithSignatures, BlockId, FullBlock, Header};
+use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
+use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};
 use mp_utils::AbortOnDrop;
-use starknet_core::types::Felt;
 use std::{ops::Range, sync::Arc, time::Duration};
 
 pub type GatewayBlockSync = PipelineController<GatewaySyncSteps>;
@@ -27,7 +27,7 @@ pub fn block_with_state_update_pipeline(
     keep_pre_v0_13_2_hashes: bool,
 ) -> GatewayBlockSync {
     PipelineController::new(
-        GatewaySyncSteps { backend, importer, client, keep_pre_v0_13_2_hashes },
+        GatewaySyncSteps { _backend: backend, importer, client, keep_pre_v0_13_2_hashes },
         parallelization,
         batch_size,
         starting_block_n,
@@ -36,7 +36,7 @@ pub fn block_with_state_update_pipeline(
 
 // TODO: check that the headers follow each other
 pub struct GatewaySyncSteps {
-    backend: Arc<MadaraBackend>,
+    _backend: Arc<MadaraBackend>,
     importer: Arc<BlockImporter>,
     client: Arc<GatewayProvider>,
     keep_pre_v0_13_2_hashes: bool,
@@ -60,10 +60,6 @@ impl PipelineSteps for GatewaySyncSteps {
                     .get_state_update_with_block(BlockId::Number(block_n))
                     .await
                     .with_context(|| format!("Getting state update with block_n={block_n}"))?;
-
-                let ProviderStateUpdateWithBlockPendingMaybe::NonPending(block) = block else {
-                    anyhow::bail!("Asked for a block_n, got a pending one")
-                };
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 
@@ -132,108 +128,142 @@ impl PipelineSteps for GatewaySyncSteps {
         input: Self::SequentialStepInput,
     ) -> anyhow::Result<ApplyOutcome<Self::Output>> {
         tracing::debug!("Gateway sync sequential step: {block_range:?}");
-        if let Some(block_n) = block_range.last() {
-            self.backend.clear_pending_block().context("Clearing pending block")?;
-            self.backend.head_status().headers.set_current(Some(block_n));
-            self.backend.head_status().state_diffs.set_current(Some(block_n));
-            self.backend.head_status().transactions.set_current(Some(block_n));
-            self.backend.head_status().events.set_current(Some(block_n));
-            self.backend.save_head_status_to_db()?;
-        }
         Ok(ApplyOutcome::Success(input))
     }
 }
 
-pub fn gateway_pending_block_sync(
+pub fn gateway_preconfirmed_block_sync(
     client: Arc<GatewayProvider>,
-    importer: Arc<BlockImporter>,
+    _importer: Arc<BlockImporter>,
     backend: Arc<MadaraBackend>,
 ) -> ThrottledRepeatedFuture<()> {
     ThrottledRepeatedFuture::new(
         move |_| {
             let client = client.clone();
-            let importer = importer.clone();
             let backend = backend.clone();
             async move {
-                let block = match client.get_state_update_with_block(BlockId::Tag(BlockTag::Pending)).await {
+                // We do some shenanigans to abort the request if a new block has been imported.
+                let mut subscription = backend.watch_chain_tip();
+                let (block, block_number) = loop {
+                    let block_number = subscription
+                        .current()
+                        .latest_confirmed_block_n()
+                        .map(|n| n + 1)
+                        .unwrap_or(/* genesis */ 0);
+                    tracing::debug!("Sync Get Preconfirmed block #{block_number}.");
+                    tokio::select! {
+                        biased;
+                        _ = subscription.recv() => continue, // Abort request and restart
+                        preconfirmed = client.get_preconfirmed_block(block_number) => {
+                            break (preconfirmed, block_number)
+                        }
+                    }
+                };
+                let block = match block {
                     Ok(block) => block,
-                    // Sometimes the gateway returns the latest closed block instead of the pending one, because there is no pending block.
-                    // Deserialization fails in this case.
-                    Err(SequencerError::DeserializeBody { .. }) => return Ok(None),
                     Err(SequencerError::StarknetError(err)) if err.code == StarknetErrorCode::BlockNotFound => {
-                        tracing::debug!("Pending block not found.");
+                        tracing::debug!("Preconfirmed block #{block_number} not found.");
                         return Ok(None);
                     }
                     Err(other) => {
                         // non-compliant gateway?
-                        tracing::warn!("Could not parse the pending block returned by the gateway: {other:#}");
+                        tracing::warn!(
+                            "Error while getting the pre-confirmed block #{block_number} from the gateway: {other:#}"
+                        );
                         return Ok(None);
                     }
                 };
 
-                let ProviderStateUpdateWithBlockPendingMaybe::Pending(block) = block else {
-                    tracing::debug!("Asked for a pending block, got a closed one");
-                    return Ok(None);
-                };
+                tracing::debug!("Got Preconfirmed block #{block_number}.");
 
-                let parent_hash = backend
-                    .get_block_hash(&BlockId::Tag(BlockTag::Latest))
-                    .context("Getting latest block hash")?
-                    .unwrap_or(Felt::ZERO);
+                let n_executed = block.num_executed_transactions();
+                let header = block.header(block_number)?;
 
-                if block.block.parent_block_hash != parent_hash {
-                    tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
-                    return Ok(None);
-                }
+                // How many of these transactions do we already have? When None, we need to make a new pre-confirmed block.
+                let mut common_prefix = None;
 
-                if backend.has_pending_block().context("Checking if db has a pending block")? {
-                    let db_block = backend
-                        .get_block_info(&BlockId::Tag(BlockTag::Pending))
-                        .context("Getting latest block hash")?
-                        .context("Backend should have a pending block")?;
-                    let db_block = db_block.as_pending().context("Asked for a pending block, got a closed one.")?;
+                if let Some(mut in_backend) = backend.block_view_on_preconfirmed() {
+                    in_backend.refresh_with_candidates(); // we want to compare candidates too.
 
-                    // if header, tx count, and tx hashes match, we'll just consider the block as being unchanged since last time.
-                    let block_has_not_changed = block.block.header().context("Parsing gateway pending block")?
-                        == db_block.header
-                        && block.block.transaction_receipts.len() == db_block.tx_hashes.len()
-                        && block
-                            .block
-                            .transaction_receipts
-                            .iter()
-                            .map(|tx| &tx.transaction_hash)
-                            .eq(db_block.tx_hashes.iter());
+                    if in_backend.block_number() != block_number {
+                        return Ok(None);
+                    }
 
-                    if block_has_not_changed {
+                    // True if this gateway block should be considered as a new pre-confirmed block entirely.
+                    let new_preconfirmed = in_backend.header() != &header
+                        || in_backend.num_executed_transactions() > n_executed
+                        ||
+                        // Compare hashes
+                        // TODO: should we compute these hashes? probably not?
+                        Iterator::ne(
+                            in_backend.borrow_content().executed_transactions().map(|tx| tx.transaction.receipt.transaction_hash()),
+                            block.transactions[..n_executed].iter().map(|tx| tx.transaction_hash())
+                        );
+
+                    if !new_preconfirmed {
+                        common_prefix = Some(in_backend.num_executed_transactions());
+                    }
+
+                    // Whether there was no change at all (no need to update the backend)
+                    let has_not_changed = !new_preconfirmed
+                        && in_backend.num_executed_transactions() == n_executed
+                        // Compare candidate hashes.
+                        && Iterator::eq(
+                            in_backend.candidate_transactions().iter().map(|tx| &tx.hash),
+                            block.transactions[n_executed..].iter().map(|tx| tx.transaction_hash()),
+                        );
+                    if has_not_changed {
                         return Ok(None);
                     }
                 }
 
-                tracing::debug!("Importing pending block with parent_hash {parent_hash:#x}");
+                let arrived_at = TxTimestamp::now();
 
-                let block: PendingFullBlock = block.into_full_block().context("Parsing gateway pending block")?;
+                let (executed, candidates) =
+                    block.into_transactions(/* skip_first_n */ common_prefix.unwrap_or(0));
 
-                let classes = super::classes::get_classes(
-                    &client,
-                    BlockId::Tag(BlockTag::Pending),
-                    &block.state_diff.all_declared_classes(),
-                )
-                .await
-                .context("Getting pending block classes")?;
-
-                importer
-                    .run_in_rayon_pool(move |importer| {
-                        let classes =
-                            importer.verify_compile_classes(None, classes, &block.state_diff.all_declared_classes())?;
-                        importer.save_pending_classes(classes)?;
-                        importer.save_pending_block(block)?;
-                        anyhow::Ok(())
+                let executed: Vec<_> = executed
+                    .into_iter()
+                    .map(|(transaction, state_diff)| PreconfirmedExecutedTransaction {
+                        transaction,
+                        state_diff,
+                        declared_class: None, // It seems we can't get the declared classes from the preconfirmed block :/
+                        arrived_at,
                     })
-                    .await?;
+                    .collect();
+
+                let candidates: Vec<_> = candidates
+                    .into_iter()
+                    .map(|transaction| {
+                        ValidatedTransaction {
+                            transaction: transaction.transaction.transaction,
+                            paid_fee_on_l1: None,
+                            contract_address: transaction.contract_address,
+                            arrived_at,
+                            declared_class: None, // Ditto.
+                            hash: transaction.transaction.hash,
+                        }
+                        .into()
+                    })
+                    .collect();
+
+                tracing::debug!("Gateay preconfirmed block sync: common_prefix={common_prefix:?} {header:?} {executed:?}, {candidates:?}");
+
+                if common_prefix.is_none() {
+                    // New preconfirmed block (replaces the current one if there is one)
+                    backend
+                        .write_access()
+                        .new_preconfirmed(PreconfirmedBlock::new_with_content(header, executed, candidates))?;
+                } else {
+                    // Append to current pre-confirmed block.
+                    backend
+                        .write_access()
+                        .append_to_preconfirmed(&executed, /* replace_candidates */ candidates)?;
+                }
 
                 Ok(Some(()))
             }
         },
-        Duration::from_secs(1),
+        Duration::from_millis(200),
     )
 }

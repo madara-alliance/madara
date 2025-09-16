@@ -1,25 +1,22 @@
 use anyhow::Context;
-use async_trait::async_trait;
-use mc_db::db_block_id::DbBlockId;
-use mc_db::{MadaraBackend, MadaraStorageError};
-use mc_submit_tx::{
-    RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError, SubmitValidatedTransaction,
-};
+use dashmap::DashMap;
+use mc_db::{rocksdb::RocksDBStorage, MadaraBackend, MadaraStorageRead, MadaraStorageWrite};
 use metrics::MempoolMetrics;
-use mp_convert::ToFelt;
-use mp_state_update::NonceUpdate;
-use mp_transactions::validated::{TxTimestamp, ValidatedMempoolTx, ValidatedToBlockifierTxError};
+use mp_transactions::validated::{TxTimestamp, ValidatedToBlockifierTxError, ValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use notify::MempoolInnerWithNotify;
 use starknet_api::core::Nonce;
 use starknet_types_core::felt::Felt;
-use std::borrow::Cow;
-use std::collections::HashSet;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
 use std::time::Duration;
+use topic_pubsub::TopicWatchPubsub;
+use transaction_status::{PreConfirmationStatus, TransactionStatus};
 
+mod chain_watcher_task;
 mod inner;
 mod notify;
+mod topic_pubsub;
+mod transaction_status;
 
 pub use inner::*;
 pub use notify::MempoolWriteAccess;
@@ -27,11 +24,9 @@ pub use notify::MempoolWriteAccess;
 pub mod metrics;
 
 #[derive(thiserror::Error, Debug)]
-pub enum MempoolError {
-    #[error("Storage error: {0:#}")]
-    StorageError(#[from] MadaraStorageError),
+pub enum MempoolInsertionError {
     #[error(transparent)]
-    Internal(anyhow::Error),
+    Internal(#[from] anyhow::Error),
     #[error(transparent)]
     InnerMempool(#[from] TxInsertionError),
     #[error("Converting validated transaction: {0:#}")]
@@ -58,102 +53,46 @@ impl MempoolConfig {
     }
 }
 
-pub struct Mempool {
-    backend: Arc<MadaraBackend>,
+/// Mempool also holds all of the transaction statuses.
+pub struct Mempool<D: MadaraStorageRead = RocksDBStorage> {
+    backend: Arc<MadaraBackend<D>>,
     inner: MempoolInnerWithNotify,
     metrics: MempoolMetrics,
     config: MempoolConfig,
     ttl: Option<Duration>,
-    /// Temporary: this will move to the backend. Used for getting tx statuses.
-    tx_sender: tokio::sync::broadcast::Sender<Felt>,
-    /// Temporary: this will move to the backend. Used for getting tx statuses.
-    received_txs: RwLock<HashSet<Felt>>,
+    /// Pubsub for transaction statuses.
+    watch_transaction_status: TopicWatchPubsub<Felt, Option<TransactionStatus>>,
+    /// All current transaction statuses for mempool & preconfirmed block.
+    preconfirmed_transactions_statuses: DashMap<Felt, PreConfirmationStatus>,
 }
 
-impl From<MempoolError> for SubmitTransactionError {
-    fn from(value: MempoolError) -> Self {
-        use MempoolError as E;
-        use RejectedTransactionErrorKind::*;
-        use SubmitTransactionError::*;
-
-        fn rejected(
-            kind: RejectedTransactionErrorKind,
-            message: impl Into<Cow<'static, str>>,
-        ) -> SubmitTransactionError {
-            SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))
-        }
-
-        match value {
-            err @ (E::StorageError(_) | E::ValidatedToBlockifier(_) | E::Internal(_)) => Internal(anyhow::anyhow!(err)),
-            err @ E::InnerMempool(TxInsertionError::TooOld { .. }) => Internal(anyhow::anyhow!(err)),
-            E::InnerMempool(TxInsertionError::DuplicateTxn) => {
-                rejected(DuplicatedTransaction, "A transaction with this hash already exists in the transaction pool")
-            }
-            E::InnerMempool(TxInsertionError::Limit(limit)) => rejected(TransactionLimitExceeded, format!("{limit:#}")),
-            E::InnerMempool(TxInsertionError::NonceConflict) => rejected(
-                InvalidTransactionNonce,
-                "A transaction with this nonce already exists in the transaction pool",
-            ),
-            E::InnerMempool(TxInsertionError::PendingDeclare) => {
-                rejected(InvalidTransactionNonce, "Cannot add a declare transaction with a future nonce")
-            }
-            E::InnerMempool(TxInsertionError::MinTipBump { min_tip_bump }) => rejected(
-                ValidateFailure,
-                format!("Replacing a transaction requires increasing the tip by at least {}%", min_tip_bump * 100.0),
-            ),
-            E::InnerMempool(TxInsertionError::InvalidContractAddress) => {
-                rejected(ValidateFailure, "Invalid contract address")
-            }
-            E::InnerMempool(TxInsertionError::NonceTooLow { account_nonce }) => rejected(
-                InvalidTransactionNonce,
-                format!("Nonce needs to be greater than the account nonce {:#x}", account_nonce.to_felt()),
-            ),
-            E::InvalidNonce => rejected(InvalidTransactionNonce, "Invalid transaction nonce"),
-        }
-    }
-}
-
-#[async_trait]
-impl SubmitValidatedTransaction for Mempool {
-    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
-        self.accept_tx(tx).await?;
-        Ok(())
-    }
-
-    async fn received_transaction(&self, hash: Felt) -> Option<bool> {
-        Some(self.received_txs.read().expect("Poisoned lock").contains(&hash))
-    }
-
-    async fn subscribe_new_transactions(&self) -> Option<tokio::sync::broadcast::Receiver<Felt>> {
-        Some(self.tx_sender.subscribe())
-    }
-}
-
-impl Mempool {
-    pub fn new(backend: Arc<MadaraBackend>, config: MempoolConfig) -> Self {
+impl<D: MadaraStorageRead> Mempool<D> {
+    pub fn new(backend: Arc<MadaraBackend<D>>, config: MempoolConfig) -> Self {
         Mempool {
             inner: MempoolInnerWithNotify::new(backend.chain_config()),
             ttl: backend.chain_config().mempool_ttl,
             backend,
             config,
             metrics: MempoolMetrics::register(),
-            tx_sender: tokio::sync::broadcast::channel(100).0,
-            received_txs: Default::default(),
+            watch_transaction_status: Default::default(),
+            preconfirmed_transactions_statuses: Default::default(),
         }
     }
+}
 
-    pub async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
+impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
+    async fn load_txs_from_db(&self) -> Result<(), anyhow::Error> {
         if !self.config.save_to_db {
             // If saving is disabled, we don't want to read from db. Otherwise, if there are txs in the database, they will be re-inserted
             // everytime we restart the node, but will never be removed from db once they're consumed.
             return Ok(());
         }
-        for res in self.backend.get_mempool_transactions() {
+        for res in self.backend.get_saved_mempool_transactions() {
             let tx = res.context("Getting mempool transactions")?;
             let is_new_tx = false; // do not trigger metrics update and db update.
             if let Err(err) = self.add_tx(tx, is_new_tx).await {
                 match err {
-                    MempoolError::InnerMempool(TxInsertionError::TooOld { .. }) => {} // do nothing
+                    MempoolInsertionError::InnerMempool(TxInsertionError::TooOld { .. }) => {} // do nothing
                     err => tracing::warn!("Could not re-add mempool transaction from db: {err:#}"),
                 }
             }
@@ -161,20 +100,20 @@ impl Mempool {
         Ok(())
     }
 
-    /// Accept a new transaction.
-    async fn accept_tx(&self, tx: ValidatedMempoolTx) -> Result<(), MempoolError> {
+    /// Accept a new validated transaction.
+    pub async fn accept_tx(&self, tx: ValidatedTransaction) -> Result<(), MempoolInsertionError> {
         self.add_tx(tx, /* is_new_tx */ true).await
     }
 
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
-    async fn add_tx(&self, tx: ValidatedMempoolTx, is_new_tx: bool) -> Result<(), MempoolError> {
-        tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.tx_hash);
+    async fn add_tx(&self, tx: ValidatedTransaction, is_new_tx: bool) -> Result<(), MempoolInsertionError> {
+        tracing::debug!("Accepting transaction tx_hash={:#x} is_new_tx={is_new_tx}", tx.hash);
 
         let now = TxTimestamp::now();
         let account_nonce =
-            self.backend.get_contract_nonce_at(&DbBlockId::Pending, &tx.contract_address)?.unwrap_or(Felt::ZERO);
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedMempoolTx; 1]>::new();
-        // Lock is acquired here and dropped immediately after.
+            self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
+        // Guard is immediately dropped.
         let ret = self.inner.write().await.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
@@ -185,77 +124,47 @@ impl Mempool {
 
     /// Update secondary state when a new transaction has been successfully added to the mempool.
     /// Use `is_new_tx: false` when loading transactions from db, so that we skip saving in db and updating metrics.
-    fn on_tx_added(&self, tx: &ValidatedMempoolTx, is_new_tx: bool) {
-        tracing::debug!("Accepted transaction tx_hash={:#x}", tx.tx_hash);
+    fn on_tx_added(&self, tx: &ValidatedTransaction, is_new_tx: bool) {
+        tracing::debug!("Accepted transaction tx_hash={:#x}", tx.hash);
         if is_new_tx {
             self.metrics.accepted_transaction_counter.add(1, &[]);
             if self.config.save_to_db {
-                if let Err(err) = self.backend.save_mempool_transaction(tx) {
+                if let Err(err) = self.backend.write_saved_mempool_transaction(tx) {
                     tracing::error!("Could not add mempool transaction to database: {err:#}");
                 }
             }
         }
-        self.received_txs.write().expect("Poisoned lock").insert(tx.tx_hash);
-        let _ = self.tx_sender.send(tx.tx_hash);
+
+        if let dashmap::Entry::Vacant(entry) = self.preconfirmed_transactions_statuses.entry(tx.hash) {
+            let status = PreConfirmationStatus::Received(Arc::new(tx.clone()));
+            entry.insert(status.clone());
+            self.watch_transaction_status.publish(&tx.hash, Some(TransactionStatus::Preconfirmed(status)));
+        }
     }
 
     /// Update secondary state when a new transaction has been successfully removed from the mempool.
-    fn on_txs_removed(&self, removed: &[ValidatedMempoolTx]) {
+    fn on_txs_removed(&self, removed: &[ValidatedTransaction]) {
+        if removed.is_empty() {
+            return;
+        }
         if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_mempool_transactions(removed.iter().map(|tx| tx.tx_hash)) {
+            if let Err(err) = self.backend.remove_saved_mempool_transactions(removed.iter().map(|tx| tx.hash)) {
                 tracing::error!("Could not remove mempool transactions from database: {err:#}");
             }
         }
-        let mut lock = self.received_txs.write().expect("Poisoned lock");
+
         for tx in removed {
-            tracing::debug!("Removed transaction tx_hash={:#x}", tx.tx_hash);
-            lock.remove(&tx.tx_hash);
-        }
-        // TODO: tell self.tx_sender about the removal
-    }
-
-    /// Temporary: this will move to the backend. Called by block production & locally when txs are added to the chain.
-    fn remove_from_received(&self, txs: &[Felt]) {
-        if self.config.save_to_db {
-            if let Err(err) = self.backend.remove_mempool_transactions(txs.iter().copied()) {
-                tracing::error!("Could not remove mempool transactions from database: {err:#}");
-            }
-            // TODO: tell self.tx_sender about the removal
-        }
-        let mut lock = self.received_txs.write().expect("Poisoned lock");
-        for tx in txs {
-            lock.remove(tx);
-        }
-    }
-
-    /// This is called directly by the block production task for now.
-    pub async fn on_tx_batch_executed(
-        &self,
-        new_nonce_updates: impl IntoIterator<Item = NonceUpdate>,
-        executed_txs: impl IntoIterator<Item = Felt>,
-    ) -> anyhow::Result<()> {
-        let updates = new_nonce_updates
-            .into_iter()
-            .map(|el| Ok((el.contract_address.try_into()?, Nonce(el.nonce))))
-            .collect::<anyhow::Result<Vec<_>>>()?;
-        let executed_txs = executed_txs.into_iter().collect::<Vec<_>>();
-
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedMempoolTx; 1]>::new();
-        {
-            let mut lock = self.inner.write().await;
-            for (contract_address, nonce) in updates {
-                lock.update_account_nonce(&contract_address, &nonce, &mut removed_txs);
+            if let dashmap::Entry::Occupied(entry) = self.preconfirmed_transactions_statuses.entry(tx.hash) {
+                if matches!(entry.get(), PreConfirmationStatus::Received(_)) {
+                    entry.remove();
+                    self.watch_transaction_status.publish(&tx.hash, None);
+                }
             }
         }
-        self.on_txs_removed(&removed_txs);
-
-        self.remove_from_received(&executed_txs);
-
-        Ok(())
     }
 
     async fn remove_ttl_exceeded_txs(&self) -> anyhow::Result<()> {
-        let mut removed_txs = smallvec::SmallVec::<[ValidatedMempoolTx; 1]>::new();
+        let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
         let now = TxTimestamp::now();
         {
             let mut lock = self.inner.write().await;
@@ -265,9 +174,14 @@ impl Mempool {
         Ok(())
     }
 
-    pub async fn run_mempool_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
+    pub async fn run_mempool_task(&self, ctx: ServiceContext) -> anyhow::Result<()> {
         self.load_txs_from_db().await.context("Loading transactions from db on mempool startup.")?;
 
+        tokio::try_join!(self.run_ttl_task(ctx.clone()), self.run_chain_watcher_task(ctx))?;
+        Ok(())
+    }
+
+    async fn run_ttl_task(&self, mut ctx: ServiceContext) -> anyhow::Result<()> {
         if self.ttl.is_none() {
             // no need to do anything more
             ctx.cancelled().await;
@@ -292,7 +206,7 @@ impl Mempool {
         &self,
         contract_address: Felt,
         nonce: Felt,
-        f: impl FnOnce(&ValidatedMempoolTx) -> R,
+        f: impl FnOnce(&ValidatedTransaction) -> R,
     ) -> Option<R> {
         let lock = self.inner.read().await;
         lock.get_transaction(&contract_address.try_into().ok()?, &Nonce(nonce)).map(f)
@@ -317,7 +231,7 @@ pub struct MempoolConsumer {
     lock: MempoolWriteAccess,
 }
 impl Iterator for MempoolConsumer {
-    type Item = ValidatedMempoolTx;
+    type Item = ValidatedTransaction;
     fn next(&mut self) -> Option<Self::Item> {
         self.lock.pop_next_ready()
     }
@@ -346,12 +260,12 @@ pub(crate) mod tests {
         Felt::from_hex_unchecked("0x055be462e718c4166d656d11f89e341115b8bc82389c3762a10eade04fcb225d");
 
     #[rstest::fixture]
-    pub fn tx_account(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedMempoolTx {
+    pub fn tx_account(#[default(CONTRACT_ADDRESS)] contract_address: Felt) -> ValidatedTransaction {
         use std::sync::atomic::{AtomicU64, Ordering::Relaxed};
         static HASH: AtomicU64 = AtomicU64::new(0);
         let tx_hash = TransactionHash(HASH.fetch_add(1, Relaxed).into());
 
-        ValidatedMempoolTx::from_starknet_api(
+        ValidatedTransaction::from_starknet_api(
             starknet_api::executable_transaction::AccountTransaction::Invoke(
                 starknet_api::executable_transaction::InvokeTransaction {
                     tx: starknet_api::transaction::InvokeTransaction::V3(
@@ -379,7 +293,7 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_accept_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, tx_account: ValidatedMempoolTx) {
+    async fn mempool_accept_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, tx_account: ValidatedTransaction) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::default());
         let result = mempool.accept_tx(tx_account).await;
@@ -393,7 +307,7 @@ pub(crate) mod tests {
     #[rstest::rstest]
     #[timeout(Duration::from_millis(1_000))]
     #[tokio::test]
-    async fn mempool_take_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, mut tx_account: ValidatedMempoolTx) {
+    async fn mempool_take_tx_pass(#[future] backend: Arc<mc_db::MadaraBackend>, mut tx_account: ValidatedTransaction) {
         let backend = backend.await;
         let mempool = Mempool::new(backend, MempoolConfig::default());
         let timestamp = TxTimestamp::now();

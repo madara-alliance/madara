@@ -1,4 +1,4 @@
-use crate::{header::PendingHeader, Header, TransactionWithReceipt};
+use crate::{header::PreconfirmedHeader, Header, TransactionWithReceipt};
 use bitvec::vec::BitVec;
 use mp_chain_config::StarknetVersion;
 use mp_receipt::EventWithTransactionHash;
@@ -14,6 +14,7 @@ pub struct CommitmentComputationContext {
     pub chain_id: Felt,
 }
 
+#[derive(Clone, Debug)]
 pub struct TransactionAndReceiptCommitment {
     pub transaction_commitment: Felt,
     pub receipt_commitment: Felt,
@@ -50,6 +51,7 @@ impl TransactionAndReceiptCommitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct StateDiffCommitment {
     pub state_diff_commitment: Felt,
     pub state_diff_length: u64,
@@ -61,6 +63,7 @@ impl StateDiffCommitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct EventsCommitment {
     pub events_commitment: Felt,
     pub events_count: u64,
@@ -80,6 +83,7 @@ impl EventsCommitment {
     }
 }
 
+#[derive(Clone, Debug)]
 pub struct BlockCommitments {
     pub transaction: TransactionAndReceiptCommitment,
     pub state_diff: StateDiffCommitment,
@@ -103,11 +107,16 @@ impl BlockCommitments {
     }
 }
 
-impl PendingHeader {
-    pub fn to_closed_header(self, commitments: BlockCommitments, global_state_root: Felt, block_number: u64) -> Header {
+impl PreconfirmedHeader {
+    pub fn into_confirmed_header(
+        self,
+        parent_block_hash: Felt,
+        commitments: BlockCommitments,
+        global_state_root: Felt,
+    ) -> Header {
         Header {
-            parent_block_hash: self.parent_block_hash,
-            block_number,
+            parent_block_hash,
+            block_number: self.block_number,
             sequencer_address: self.sequencer_address,
             block_timestamp: self.block_timestamp,
             protocol_version: self.protocol_version,
@@ -204,9 +213,9 @@ mod tests {
         assert_eq!(root, Felt::from_hex_unchecked("0x3b5cc7f1292eb3847c3f902d048a7e5dc7702d1c191ccd17c2d33f797e6fc32"));
     }
 
-    fn dummy_header() -> PendingHeader {
-        PendingHeader {
-            parent_block_hash: Felt::ZERO,
+    fn dummy_header() -> PreconfirmedHeader {
+        PreconfirmedHeader {
+            block_number: 1,
             sequencer_address: Felt::ZERO,
             block_timestamp: BlockTimestamp(0),
             protocol_version: StarknetVersion::V0_13_2,
@@ -219,15 +228,13 @@ mod tests {
     #[rstest]
     #[case::success(
         dummy_header(),
-        1,
         felt!("0x123"),
         ChainId::Sepolia,
         false,
         felt!("0x1d34b8dac9b07ed61607e909ec2de11fc7d61d3899ebc59ca44f188ba4b7391"),
     )]
     fn test_block_hash(
-        #[case] header: PendingHeader,
-        #[case] block_number: u64,
+        #[case] header: PreconfirmedHeader,
         #[case] global_state_root: Felt,
         #[case] chain_id: ChainId,
         #[case] pre_v0_13_2_override: bool,
@@ -237,7 +244,7 @@ mod tests {
             CommitmentComputationContext { protocol_version: header.protocol_version, chain_id: chain_id.to_felt() };
         let commitments = BlockCommitments::compute(&ctx, &[], &StateDiff::default(), &[]);
 
-        let closed_header = header.to_closed_header(commitments, global_state_root, block_number);
+        let closed_header = header.into_confirmed_header(Felt::ZERO, commitments, global_state_root);
         let block_hash = closed_header.compute_hash(chain_id.to_felt(), pre_v0_13_2_override);
         assert_eq!(expected, block_hash);
     }

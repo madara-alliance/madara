@@ -1,6 +1,7 @@
 use crate::{metrics::SyncMetrics, probe::ThrottledRepeatedFuture, util::ServiceStateSender};
 use futures::{future::OptionFuture, Future};
-use mc_db::{MadaraBackend, SyncStatus};
+use mc_db::sync_status::SyncStatus;
+use mc_db::MadaraBackend;
 use mc_settlement_client::state_update::{L1HeadReceiver, StateUpdate};
 use mp_gateway::block::ProviderBlockHeader;
 use std::sync::Arc;
@@ -24,7 +25,7 @@ pub trait ForwardPipeline {
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ServiceEvent {
     Starting,
-    UpdatedPendingBlock,
+    UpdatedPreconfirmedBlock,
     Idle,
     SyncingTo { target: u64 },
 }
@@ -175,12 +176,10 @@ impl<P: ForwardPipeline> SyncController<P> {
             );
 
             let probe_height = if let Some(v) = self.probe.last_val() {
-                self.backend
-                    .set_sync_status(SyncStatus::Running {
-                        highest_block_n: v.block_number,
-                        highest_block_hash: v.block_hash,
-                    })
-                    .await;
+                self.backend.set_sync_status(SyncStatus::Running {
+                    highest_block_n: v.block_number,
+                    highest_block_hash: v.block_hash,
+                });
                 Some(v.block_number)
             } else {
                 None
@@ -236,7 +235,7 @@ impl<P: ForwardPipeline> SyncController<P> {
                     let res = res?;
                     tracing::debug!("Pending probe successful: {}", res.is_some());
                     if res.is_some() {
-                        self.config.service_state_sender.send(ServiceEvent::UpdatedPendingBlock);
+                        self.config.service_state_sender.send(ServiceEvent::UpdatedPreconfirmedBlock);
                     }
                 }
                 else => break Ok(()),
