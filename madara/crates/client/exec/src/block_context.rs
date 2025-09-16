@@ -15,16 +15,16 @@ use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mp_block::MadaraMaybePendingBlockInfo;
 use mp_chain_config::L1DataAvailabilityMode;
 
-use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdaptor};
+use crate::{blockifier_state_adapter::BlockifierStateAdapter, Error, LayeredStateAdapter};
 
 /// Extension trait that provides execution capabilities on the madara backend.
 pub trait MadaraBackendExecutionExt {
     /// Executor used for producing blocks.
     fn new_executor_for_block_production(
         self: &Arc<Self>,
-        state_adaptor: LayeredStateAdaptor,
+        state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
-    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error>;
+    ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error>;
     /// Executor used for validating transactions on top of the pending block.
     fn new_transaction_validator(self: &Arc<Self>) -> Result<StatefulValidator<BlockifierStateAdapter>, Error>;
 }
@@ -32,9 +32,9 @@ pub trait MadaraBackendExecutionExt {
 impl MadaraBackendExecutionExt for MadaraBackend {
     fn new_executor_for_block_production(
         self: &Arc<Self>,
-        state_adaptor: LayeredStateAdaptor,
+        state_adaptor: LayeredStateAdapter,
         block_info: BlockInfo,
-    ) -> Result<TransactionExecutor<LayeredStateAdaptor>, Error> {
+    ) -> Result<TransactionExecutor<LayeredStateAdapter>, Error> {
         Ok(TransactionExecutor::new(
             CachedState::new(state_adaptor),
             BlockContext::new(
@@ -64,7 +64,7 @@ impl MadaraBackendExecutionExt for MadaraBackend {
                         .sequencer_address
                         .try_into()
                         .map_err(|_| Error::InvalidSequencerAddress(pending_block.header.sequencer_address))?,
-                    gas_prices: (&pending_block.header.l1_gas_price).into(),
+                    gas_prices: (&pending_block.header.gas_prices).into(),
                     use_kzg_da: pending_block.header.l1_da_mode == L1DataAvailabilityMode::Blob,
                 },
                 self.chain_config().blockifier_chain_info(),
@@ -171,14 +171,14 @@ impl ExecutionContext {
                 block.header.protocol_version,
                 block.header.block_timestamp,
                 block.header.sequencer_address,
-                block.header.l1_gas_price.clone(),
+                block.header.gas_prices.clone(),
                 block.header.l1_da_mode,
             ),
             MadaraMaybePendingBlockInfo::NotPending(block) => (
                 block.header.protocol_version,
                 block.header.block_timestamp,
                 block.header.sequencer_address,
-                block.header.l1_gas_price.clone(),
+                block.header.gas_prices.clone(),
                 block.header.l1_da_mode,
             ),
         };

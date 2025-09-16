@@ -7,7 +7,7 @@ use url::Url;
 
 use mp_utils::parsers::{parse_duration, parse_url};
 
-#[derive(Clone, Debug, FromStr, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, FromStr, Deserialize, Serialize)]
 pub enum MadaraSettlementLayer {
     Eth,
     Starknet,
@@ -33,27 +33,23 @@ pub struct L1SyncParams {
     pub l1_endpoint: Option<Url>,
 
     /// Fix the gas price. If the gas price is fixed it won't fetch the fee history from the ethereum.
-    #[clap(env = "MADARA_GAS_PRICE", long, alias = "gas-price")]
-    pub gas_price: Option<u64>,
+    #[clap(env = "MADARA_L1_GAS_PRICE", long)]
+    pub l1_gas_price: Option<u64>,
 
     /// Fix the blob gas price. If the gas price is fixed it won't fetch the fee history from the ethereum.
-    #[clap(env = "MADARA_DATA_GAS_PRICE", long, alias = "blob-gas-price")]
+    #[clap(env = "MADARA_DATA_GAS_PRICE", long)]
     pub blob_gas_price: Option<u64>,
 
-    /// Fix the strk gas price. If the strk gas price is fixed it won't fetch eth <-> strk price from the oracle.
-    #[clap(env = "MADARA_STRK_GAS_PRICE", long, alias = "strk-gas-price")]
-    pub strk_gas_price: Option<u64>,
-
-    /// Fix the strk blob gas price. If the strk blob gas price is fixed it won't fetch eth <-> strk price from the oracle.
-    #[clap(env = "MADARA_STRK_DATA_GAS_PRICE", long, alias = "strk-blob-gas-price")]
-    pub strk_blob_gas_price: Option<u64>,
+    /// Fix the eth <-> strk rate. If the strk rate is fixed it won't fetch eth <-> strk price from the oracle.
+    #[clap(env = "MADARA_STRK_PER_ETH", long)]
+    pub strk_per_eth: Option<f64>,
 
     /// Oracle API url.
-    #[clap(env = "ORACLE_URL", long, alias = "oracle-url")]
+    #[clap(env = "MADARA_ORACLE_URL", long)]
     pub oracle_url: Option<Url>,
 
     /// Oracle API key.
-    #[clap(env = "ORACLE_API_KEY", long, alias = "oracle-api-key")]
+    #[clap(env = "MADARA_ORACLE_API_KEY", long)]
     pub oracle_api_key: Option<String>,
 
     /// Time in which the gas price worker will fetch the gas price.

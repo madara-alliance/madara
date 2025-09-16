@@ -8,48 +8,48 @@ use starknet_types_core::felt::Felt;
 // class_hash is required for DeclareTransaction
 impl TransactionWithHash {
     pub fn from_broadcasted(
-        tx: mp_rpc::BroadcastedTxn,
+        tx: mp_rpc::v0_7_1::BroadcastedTxn,
         chain_id: Felt,
         starknet_version: StarknetVersion,
         class_hash: Option<Felt>,
     ) -> Self {
         let is_query = is_query(&tx);
         let transaction: Transaction = match tx {
-            mp_rpc::BroadcastedTxn::Invoke(tx) => Transaction::Invoke(tx.into()),
-            mp_rpc::BroadcastedTxn::Declare(tx) => Transaction::Declare(DeclareTransaction::from_broadcasted(
+            mp_rpc::v0_7_1::BroadcastedTxn::Invoke(tx) => Transaction::Invoke(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedTxn::Declare(tx) => Transaction::Declare(DeclareTransaction::from_broadcasted(
                 tx,
                 class_hash.expect("Class hash must be provided for DeclareTransaction"),
             )),
-            mp_rpc::BroadcastedTxn::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedTxn::DeployAccount(tx) => Transaction::DeployAccount(tx.into()),
         };
         let hash = transaction.compute_hash(chain_id, starknet_version, is_query);
         Self { hash, transaction }
     }
 }
 
-impl From<mp_rpc::BroadcastedInvokeTxn> for InvokeTransaction {
-    fn from(tx: mp_rpc::BroadcastedInvokeTxn) -> Self {
+impl From<mp_rpc::v0_7_1::BroadcastedInvokeTxn> for InvokeTransaction {
+    fn from(tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) -> Self {
         match tx {
-            mp_rpc::BroadcastedInvokeTxn::V0(tx) => InvokeTransaction::V0(tx.into()),
-            mp_rpc::BroadcastedInvokeTxn::V1(tx) => InvokeTransaction::V1(tx.into()),
-            mp_rpc::BroadcastedInvokeTxn::V3(tx) => InvokeTransaction::V3(tx.into()),
-            mp_rpc::BroadcastedInvokeTxn::QueryV0(tx) => InvokeTransaction::V0(tx.into()),
-            mp_rpc::BroadcastedInvokeTxn::QueryV1(tx) => InvokeTransaction::V1(tx.into()),
-            mp_rpc::BroadcastedInvokeTxn::QueryV3(tx) => InvokeTransaction::V3(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedInvokeTxn::V0(tx) => InvokeTransaction::V0(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedInvokeTxn::V1(tx) => InvokeTransaction::V1(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedInvokeTxn::V3(tx) => InvokeTransaction::V3(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedInvokeTxn::QueryV0(tx) => InvokeTransaction::V0(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedInvokeTxn::QueryV1(tx) => InvokeTransaction::V1(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedInvokeTxn::QueryV3(tx) => InvokeTransaction::V3(tx.into()),
         }
     }
 }
 
 impl DeclareTransaction {
-    fn from_broadcasted(tx: mp_rpc::BroadcastedDeclareTxn, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: mp_rpc::v0_7_1::BroadcastedDeclareTxn, class_hash: Felt) -> Self {
         match tx {
-            mp_rpc::BroadcastedDeclareTxn::V1(tx) | mp_rpc::BroadcastedDeclareTxn::QueryV1(tx) => {
+            mp_rpc::v0_7_1::BroadcastedDeclareTxn::V1(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV1(tx) => {
                 DeclareTransaction::V1(DeclareTransactionV1::from_broadcasted(tx, class_hash))
             }
-            mp_rpc::BroadcastedDeclareTxn::V2(tx) | mp_rpc::BroadcastedDeclareTxn::QueryV2(tx) => {
+            mp_rpc::v0_7_1::BroadcastedDeclareTxn::V2(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV2(tx) => {
                 DeclareTransaction::V2(DeclareTransactionV2::from_broadcasted(tx, class_hash))
             }
-            mp_rpc::BroadcastedDeclareTxn::V3(tx) | mp_rpc::BroadcastedDeclareTxn::QueryV3(tx) => {
+            mp_rpc::v0_7_1::BroadcastedDeclareTxn::V3(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV3(tx) => {
                 DeclareTransaction::V3(DeclareTransactionV3::from_broadcasted(tx, class_hash))
             }
         }
@@ -67,7 +67,7 @@ impl DeclareTransactionV0 {
 }
 
 impl DeclareTransactionV1 {
-    fn from_broadcasted(tx: mp_rpc::BroadcastedDeclareTxnV1, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: mp_rpc::v0_7_1::BroadcastedDeclareTxnV1, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             max_fee: tx.max_fee,
@@ -79,7 +79,7 @@ impl DeclareTransactionV1 {
 }
 
 impl DeclareTransactionV2 {
-    fn from_broadcasted(tx: mp_rpc::BroadcastedDeclareTxnV2, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: mp_rpc::v0_7_1::BroadcastedDeclareTxnV2, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
@@ -92,7 +92,7 @@ impl DeclareTransactionV2 {
 }
 
 impl DeclareTransactionV3 {
-    fn from_broadcasted(tx: mp_rpc::BroadcastedDeclareTxnV3, class_hash: Felt) -> Self {
+    fn from_broadcasted(tx: mp_rpc::v0_7_1::BroadcastedDeclareTxnV3, class_hash: Felt) -> Self {
         Self {
             sender_address: tx.sender_address,
             compiled_class_hash: tx.compiled_class_hash,
@@ -109,21 +109,19 @@ impl DeclareTransactionV3 {
     }
 }
 
-impl From<mp_rpc::BroadcastedDeployAccountTxn> for DeployAccountTransaction {
-    fn from(tx: mp_rpc::BroadcastedDeployAccountTxn) -> Self {
+impl From<mp_rpc::v0_7_1::BroadcastedDeployAccountTxn> for DeployAccountTransaction {
+    fn from(tx: mp_rpc::v0_7_1::BroadcastedDeployAccountTxn) -> Self {
         match tx {
-            mp_rpc::BroadcastedDeployAccountTxn::V1(tx) | mp_rpc::BroadcastedDeployAccountTxn::QueryV1(tx) => {
-                DeployAccountTransaction::V1(tx.into())
-            }
-            mp_rpc::BroadcastedDeployAccountTxn::V3(tx) | mp_rpc::BroadcastedDeployAccountTxn::QueryV3(tx) => {
-                DeployAccountTransaction::V3(tx.into())
-            }
+            mp_rpc::v0_7_1::BroadcastedDeployAccountTxn::V1(tx)
+            | mp_rpc::v0_7_1::BroadcastedDeployAccountTxn::QueryV1(tx) => DeployAccountTransaction::V1(tx.into()),
+            mp_rpc::v0_7_1::BroadcastedDeployAccountTxn::V3(tx)
+            | mp_rpc::v0_7_1::BroadcastedDeployAccountTxn::QueryV3(tx) => DeployAccountTransaction::V3(tx.into()),
         }
     }
 }
 
-pub(crate) fn is_query(tx: &mp_rpc::BroadcastedTxn) -> bool {
-    use mp_rpc::{BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn};
+pub(crate) fn is_query(tx: &mp_rpc::v0_7_1::BroadcastedTxn) -> bool {
+    use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn};
 
     match tx {
         BroadcastedTxn::Invoke(tx) => matches!(

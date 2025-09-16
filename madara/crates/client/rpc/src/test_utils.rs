@@ -7,19 +7,22 @@ use mp_block::{
     Header, MadaraBlockInfo, MadaraBlockInner, MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo,
     MadaraPendingBlockInfo,
 };
+use mp_chain_config::ChainConfig;
 use mp_chain_config::{L1DataAvailabilityMode, StarknetVersion};
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
-use mp_rpc::{
-    admin::BroadcastedDeclareTxnV0, AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn,
-    BroadcastedInvokeTxn, ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
     StorageEntry,
 };
 use mp_transactions::{InvokeTransaction, InvokeTransactionV0, Transaction};
+use mp_utils::service::ServiceContext;
 use rstest::fixture;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
@@ -64,21 +67,15 @@ impl SubmitTransaction for TestTransactionProvider {
 
 #[fixture]
 pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
-    let chain_config = std::sync::Arc::new(mp_chain_config::ChainConfig::madara_test());
-    let backend = mc_db::MadaraBackend::open_for_testing(chain_config);
-    let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: false };
-    let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
-        std::sync::Arc::clone(&backend),
-        mc_mempool::MempoolConfig::for_testing(),
-    ));
-    let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
-        mempool,
-        std::sync::Arc::clone(&backend),
-        validation,
-    ));
-    let context = mp_utils::service::ServiceContext::new_for_testing();
-    let rpc = Starknet::new(Arc::clone(&backend), mempool_validator, Default::default(), context);
-
+    let chain_config = Arc::new(ChainConfig::madara_test());
+    let backend = MadaraBackend::open_for_testing(chain_config.clone());
+    let rpc = Starknet::new(
+        backend.clone(),
+        Arc::new(TestTransactionProvider),
+        Default::default(),
+        None,
+        ServiceContext::new_for_testing(),
+    );
     (backend, rpc)
 }
 
@@ -86,7 +83,7 @@ pub fn rpc_test_setup() -> (Arc<MadaraBackend>, Starknet) {
 pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
-    pub expected_txs: Vec<mp_rpc::TxnWithHash>,
+    pub expected_txs: Vec<mp_rpc::v0_7_1::TxnWithHash>,
     pub expected_receipts: Vec<TxnReceipt>,
 }
 
@@ -108,7 +105,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         Felt::from_hex_unchecked("0xdd84847784"),
     ];
     let expected_txs = {
-        use mp_rpc::{InvokeTxn, InvokeTxnV0, Txn};
+        use mp_rpc::v0_7_1::{InvokeTxn, InvokeTxnV0, Txn};
         vec![
             TxnWithHash {
                 transaction: Txn::Invoke(InvokeTxn::V0(InvokeTxnV0 {
@@ -153,7 +150,9 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
         ]
     };
     let expected_receipts = {
-        use mp_rpc::{CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt};
+        use mp_rpc::v0_7_1::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
+        };
         vec![
             TxnReceipt::Invoke(InvokeTxnReceipt {
                 common_receipt_properties: CommonReceiptProperties {
@@ -163,7 +162,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L1,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -174,7 +173,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -185,7 +184,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Reverted("too bad".into()),
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Reverted("too bad".into()),
                 },
             }),
             TxnReceipt::Invoke(InvokeTxnReceipt {
@@ -196,7 +195,7 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                     events: vec![],
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
-                    execution_status: mp_rpc::ExecutionStatus::Successful,
+                    execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
                 },
             }),
         ]
@@ -222,11 +221,13 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
                             state_diff_commitment: Some(Felt::from_hex_unchecked("0xb1")),
                             receipt_commitment: Some(Felt::from_hex_unchecked("0xb4")),
                             protocol_version: StarknetVersion::V0_13_1_1,
-                            l1_gas_price: GasPrices {
+                            gas_prices: GasPrices {
                                 eth_l1_gas_price: 123,
                                 strk_l1_gas_price: 12,
                                 eth_l1_data_gas_price: 44,
                                 strk_l1_data_gas_price: 52,
+                                eth_l2_gas_price: 0,
+                                strk_l2_gas_price: 0,
                             },
                             l1_da_mode: L1DataAvailabilityMode::Blob,
                         },
@@ -386,8 +387,8 @@ pub fn make_sample_chain_for_block_getters(backend: &MadaraBackend) -> SampleCha
     SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
 }
 
-fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
-    mp_rpc::ExecutionResources {
+fn defaut_execution_resources() -> mp_rpc::v0_7_1::ExecutionResources {
+    mp_rpc::v0_7_1::ExecutionResources {
         bitwise_builtin_applications: None,
         ec_op_builtin_applications: None,
         ecdsa_builtin_applications: None,
@@ -398,7 +399,7 @@ fn defaut_execution_resources() -> mp_rpc::ExecutionResources {
         range_check_builtin_applications: None,
         segment_arena_builtin: None,
         steps: 0,
-        data_availability: mp_rpc::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
+        data_availability: mp_rpc::v0_7_1::DataAvailability { l1_data_gas: 0, l1_gas: 0 },
     }
 }
 

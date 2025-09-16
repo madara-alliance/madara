@@ -14,8 +14,10 @@ Targets:
 
   [ SETUP ]
 
-  - setup-l2           Setup orchestrator with L2 layer (default)
-  - setup-l3           Setup orchestrator with L3 layer
+  - setup-l2                Setup orchestrator with L2 layer (default)
+  - setup-l3                Setup orchestrator with L3 layer
+  - run-orchestrator-l2     Run the orchestrator with AWS services and Ethereum settlement
+  - run-orchestrator-l3     Run the orchestrator with AWS services and Starknet settlement
 
   [ RUNNING MADARA ]
 
@@ -24,6 +26,7 @@ Targets:
   secrets to `./secrets/`, or the nodes will fail to start.
 
   - start             Starts the Madara node
+  - watch-orchestrator Run orchestrator with auto-restart on code changes
 
   [ STOPPING MADARA ]
 
@@ -84,6 +87,7 @@ Targets:
 
   - help               Show this help message
   - git-hook           Setup git hooks path to .githooks
+  - run-mock-atlantic-server  Run the mock Atlantic server (options: PORT=4002 FAILURE_RATE=0.1 MAX_CONCURRENT_JOBS=5 BIND_ADDR=0.0.0.0)
 
 endef
 export HELP
@@ -180,30 +184,8 @@ frestart: fclean
 
 .PHONY: artifacts
 artifacts:
-	@if [ -d "$(ARTIFACTS)/argent"             ] || \
-			[ -d "$(ARTIFACTS)/bravoos"            ] || \
-			[ -d "$(ARTIFACTS)/cairo_lang"         ] || \
-			[ -d "$(ARTIFACTS)/js_tests"           ] || \
-			[ -d "$(ARTIFACTS)/orchestrator_tests" ] || \
-			[ -d "$(ARTIFACTS)/starkgate_latest"   ] || \
-			[ -d "$(ARTIFACTS)/starkgate_legacy"   ]; \
-	then \
-		echo -e "$(DIM)"artifacts" already exists, do you want to remove it?$(RESET) $(PASS)[y/N] $(RESET)" && \
-		read ans && \
-		case "$$ans" in \
-			[yY]*) true;; \
-		*) false;; \
-	esac \
-	fi
-	@rm -rf "$(ARTIFACTS)/argent"
-	@rm -rf "$(ARTIFACTS)/bravoos"
-	@rm -rf "$(ARTIFACTS)/cairo_lang"
-	@rm -rf "$(ARTIFACTS)/js_tests"
-	@rm -rf "$(ARTIFACTS)/orchestrator_tests"
-	@rm -rf "$(ARTIFACTS)/starkgate_latest"
-	@rm -rf "$(ARTIFACTS)/starkgate_legacy"
-	@docker build -f $(ARTIFACTS)/build.docker -t contracts .
-	@ID=$$(docker create contracts do-nothing) && docker cp $${ID}:/artifacts/. $(ARTIFACTS) && docker rm $${ID} > /dev/null
+	./scripts/artifacts.sh
+	
 
 .PHONY: check
 check:
@@ -213,6 +195,10 @@ check:
 	@npx prettier --check .
 	@echo -e "$(INFO)Running cargo fmt check...$(RESET)"
 	@cargo fmt -- --check
+	@echo -e "$(INFO)Running taplo fmt check...$(RESET)"
+	@taplo fmt --config=./taplo/taplo.toml --check
+	@echo -e "$(INFO)Running markdownlint check...$(RESET)"
+	@npx markdownlint -c .markdownlint.json -q -p .markdownlintignore -f .
 	@echo -e "$(INFO)Running cargo clippy workspace checks...$(RESET)"
 	@cargo clippy --workspace --no-deps -- -D warnings
 	@echo -e "$(INFO)Running cargo clippy workspace tests...$(RESET)"
@@ -252,7 +238,7 @@ test-orchestrator:
 		--lcov \
 		--output-path lcov.info \
 		--test-threads=1 \
-		--package "orchestrator-*" \
+		--package "orchestrator*" \
 		--no-fail-fast
 	@echo -e "$(PASS)Unit tests completed!$(RESET)"
 
@@ -274,9 +260,61 @@ git-hook:
 .PHONY: setup-l2
 setup-l2:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator-core -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@cargo run --package orchestrator-core -- setup  --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
+
+.PHONY: run-orchestrator-l2
+run-orchestrator-l2:
+	@echo -e "$(DIM)Running orchestrator...$(RESET)"
+	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-ethereum --atlantic --da-on-ethereum 2>&1
+
+
+.PHONY: run-orchestrator-l3
+run-orchestrator-l3:
+	@echo -e "$(DIM)Running orchestrator...$(RESET)"
+	@cargo run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet 2>&1
+
+.PHONY: watch-orchestrator
+watch-orchestrator:
+	@echo -e "$(DIM)Watching orchestrator for changes...$(RESET)"
+	@cargo watch -x 'run --release --package orchestrator -- run --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --settle-on-starknet --atlantic --da-on-starknet' 2>&1
+
+# Run the mock Atlantic server with enhanced CLI
+# Usage: make run-mock-atlantic-server
+#        PORT=4002 make run-mock-atlantic-server                    # Custom port
+#        MAX_CONCURRENT_JOBS=5 make run-mock-atlantic-server        # Limit concurrent jobs
+#        PORT=8080 FAILURE_RATE=0.2 MAX_CONCURRENT_JOBS=3 make run-mock-atlantic-server  # All options
+.PHONY: run-mock-atlantic-server
+run-mock-atlantic-server:
+	@echo -e "$(DIM)Starting mock Atlantic server...$(RESET)"
+	@CMD="cargo run --release --package utils-mock-atlantic-server --"; \
+	if [ ! -z "$(PORT)" ]; then \
+		CMD="$$CMD --port $(PORT)"; \
+		echo -e "$(INFO)Using custom port $(PORT)$(RESET)"; \
+	fi; \
+	if [ ! -z "$(FAILURE_RATE)" ]; then \
+		CMD="$$CMD --failure-rate $(FAILURE_RATE)"; \
+		echo -e "$(INFO)Using failure rate $(FAILURE_RATE)$(RESET)"; \
+	fi; \
+	if [ ! -z "$(BIND_ADDR)" ]; then \
+		CMD="$$CMD --bind-addr $(BIND_ADDR)"; \
+		echo -e "$(INFO)Binding to address $(BIND_ADDR)$(RESET)"; \
+	fi; \
+	if [ ! -z "$(MAX_CONCURRENT_JOBS)" ]; then \
+		CMD="$$CMD --max-concurrent-jobs $(MAX_CONCURRENT_JOBS)"; \
+		echo -e "$(INFO)Max concurrent jobs: $(MAX_CONCURRENT_JOBS)$(RESET)"; \
+	fi; \
+	$$CMD
+
+.PHONY: setup-bootstrapper
+setup-bootstrapper:
+	@echo -e "$(DIM)Setting up bootstrapper...$(RESET)"
+	@cp -r ./build-artifacts/bootstrapper/solidity/starkware/ ./bootstrapper-v2/contracts/ethereum/src/starkware/
+	@cp -r ./build-artifacts/bootstrapper/solidity/third_party/ ./bootstrapper-v2/contracts/ethereum/src/third_party/
+	@cp -r ./build-artifacts/bootstrapper/solidity/out/ ./bootstrapper-v2/contracts/ethereum/out/
+	@cp -r ./build-artifacts/bootstrapper/cairo/target/ ./bootstrapper-v2/contracts/madara/target/
+	@echo -e "$(PASS)Bootstrapper setup complete!$(RESET)"

@@ -1,12 +1,16 @@
+pub mod constant;
 pub mod error;
 pub mod mongodb;
 
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
+use ::mongodb::bson::Document;
+use ::mongodb::options::FindOneAndUpdateOptions;
 use async_trait::async_trait;
 pub use error::DatabaseError;
+use std::time::Instant;
 
 /// Trait defining database operations
 #[cfg_attr(test, mockall::automock)]
@@ -18,7 +22,7 @@ pub trait DatabaseClient: Send + Sync {
     /// disconnect - Disconnect from the database
     async fn disconnect(&self) -> Result<(), DatabaseError>;
 
-    /// ENHANCEMENT: following method are supposed to be generic, but we need to figure out how to serialize them
+    /// ENHANCEMENT: the following method is supposed to be generic, but we need to figure out how to serialize them
     /// create_job - Create a new job in the database
     async fn create_job(&self, job: JobItem) -> Result<JobItem, DatabaseError>;
     /// get_job_by_id - Get a job by its ID
@@ -75,10 +79,42 @@ pub trait DatabaseClient: Send + Sync {
 
     /// get_latest_batch - Get the latest batch from DB. Returns `None` if the DB is empty
     async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError>;
+    /// get_batches_by_index - Get all the batches with the given indexes
+    async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError>;
+    async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError>;
+    async fn update_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<Batch, DatabaseError>;
     /// update_batch - Update the bath
-    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError>;
+    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError>;
     /// create_batch - Create a new batch
     async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError>;
+    /// get_batch_for_block - Returns the batch for a given block
+    async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError>;
+    /// get_batches_by_status - Get all the batches by that matches the given status
+    async fn get_batches_by_status(&self, status: BatchStatus, limit: Option<i64>)
+        -> Result<Vec<Batch>, DatabaseError>;
+    async fn get_jobs_between_internal_ids(
+        &self,
+        job_type: JobType,
+        status: JobStatus,
+        gte: u64,
+        lte: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_jobs_by_type_and_statuses - Get jobs by their type and statuses
+    /// This method is used to get jobs by their type and statuses.
+    async fn get_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Vec<JobItem>, DatabaseError>;
     /// get_jobs_by_block_number - Get all jobs for a specific block number
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError>;
+    /// get_orphaned_jobs - Get jobs stuck in LockedForProcessing status beyond timeout for specific job type
+    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError>;
 }

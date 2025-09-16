@@ -8,8 +8,8 @@ use crate::types::constant::{
 use crate::types::jobs::external_id::ExternalId;
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
-    StateUpdateMetadata,
+    AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType,
+    ProvingMetadata, SettlementContext, SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::worker::event_handler::jobs::MockJobHandlerTrait;
@@ -117,15 +117,25 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
                 ..Default::default()
             }),
         },
+        JobType::Aggregator => JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::Aggregator(AggregatorMetadata {
+                batch_num: block_number,
+                num_blocks: 1,
+                ..Default::default()
+            }),
+        },
         JobType::StateTransition => JobMetadata {
             common: CommonMetadata::default(),
             specific: JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
-                blocks_to_settle: vec![block_number],
                 snos_output_paths: vec![format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)],
                 program_output_paths: vec![format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)],
                 blob_data_paths: vec![format!("{}/{}", block_number, BLOB_DATA_FILE_NAME)],
-                last_failed_block_no: None,
                 tx_hashes: Vec::new(),
+                context: SettlementContext::Block(SettlementContextData {
+                    to_settle: vec![block_number],
+                    last_failed: None,
+                }),
             }),
         },
         // For any other job types, use a default metadata structure
@@ -136,7 +146,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
     }
 }
 
-/// Creates and stores both SNOS and DA jobs for a given block number
+/// Creates and stores both SNOS and Aggregator jobs for a given block number
 /// This ensures that the update state worker can find the required jobs
 ///
 /// Arguments:
@@ -146,7 +156,7 @@ fn create_metadata_for_job_type(job_type: JobType, block_number: u64) -> JobMeta
 /// `job_status` - The status to set for the created jobs
 ///
 /// Returns:
-/// A tuple of (SNOS job UUID, DA job UUID)
+/// A tuple of (SNOS job UUID, Aggregator job UUID)
 pub async fn create_and_store_prerequisite_jobs(
     config: Arc<Config>,
     block_number: u64,
@@ -166,15 +176,15 @@ pub async fn create_and_store_prerequisite_jobs(
         updated_at: Utc::now().round_subsecs(0),
     };
 
-    // Create DA job
-    let da_uuid = Uuid::new_v4();
-    let da_job = JobItem {
-        id: da_uuid,
+    // Create Aggregator job
+    let aggregator_uuid = Uuid::new_v4();
+    let aggregator_job = JobItem {
+        id: aggregator_uuid,
         internal_id: block_number.to_string(),
-        job_type: JobType::DataSubmission,
+        job_type: JobType::Aggregator,
         status: job_status,
         external_id: ExternalId::Number(0),
-        metadata: create_metadata_for_job_type(JobType::DataSubmission, block_number),
+        metadata: create_metadata_for_job_type(JobType::Aggregator, block_number),
         version: 0,
         created_at: Utc::now().round_subsecs(0),
         updated_at: Utc::now().round_subsecs(0),
@@ -182,9 +192,9 @@ pub async fn create_and_store_prerequisite_jobs(
 
     // Store jobs in database
     config.database().create_job(snos_job).await?;
-    config.database().create_job(da_job).await?;
+    config.database().create_job(aggregator_job).await?;
 
-    Ok((snos_uuid, da_uuid))
+    Ok((snos_uuid, aggregator_uuid))
 }
 
 pub fn db_checks_proving_worker(id: i32, db: &mut MockDatabaseClient, mock_job: &mut MockJobHandlerTrait) {

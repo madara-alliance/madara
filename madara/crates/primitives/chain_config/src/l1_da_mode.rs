@@ -10,7 +10,7 @@ pub enum L1DataAvailabilityMode {
     Blob,
 }
 
-impl From<L1DataAvailabilityMode> for mp_rpc::L1DaMode {
+impl From<L1DataAvailabilityMode> for mp_rpc::v0_7_1::L1DaMode {
     fn from(value: L1DataAvailabilityMode) -> Self {
         match value {
             L1DataAvailabilityMode::Calldata => Self::Calldata,

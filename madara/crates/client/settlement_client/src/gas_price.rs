@@ -1,13 +1,15 @@
-use crate::client::SettlementClientTrait;
-use bigdecimal::BigDecimal;
-use mc_mempool::{GasPriceProvider, L1DataProvider};
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::Duration;
+use std::time::SystemTime;
 
 use crate::error::SettlementClientError;
-use crate::messaging::L1toL2MessagingEventData;
-use futures::Stream;
+use crate::SettlementLayerProvider;
+
 use mc_analytics::register_gauge_metric_instrument;
+use mc_db::MadaraBackend;
+use mp_block::L1GasQuote;
+use mp_convert::FixedPoint;
+use mp_oracle::Oracle;
 use mp_utils::service::ServiceContext;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, InstrumentationScope, KeyValue};
@@ -20,6 +22,117 @@ pub struct L1BlockMetrics {
     // gas price is also define in sync/metrics/block_metrics.rs but this would be the price from l1
     pub l1_gas_price_wei: Gauge<u64>,
     pub l1_gas_price_strk: Gauge<f64>,
+}
+
+#[derive(Clone)]
+pub struct GasPriceProviderConfig {
+    pub fix_gas_price: Option<u128>,
+    pub fix_data_gas_price: Option<u128>,
+    pub fix_strk_per_eth: Option<FixedPoint>,
+    pub oracle_provider: Option<Arc<dyn Oracle>>,
+    pub poll_interval: Duration,
+}
+
+impl GasPriceProviderConfig {
+    pub fn all_is_fixed(&self) -> bool {
+        self.fix_gas_price.is_some() && self.fix_data_gas_price.is_some() && self.fix_strk_per_eth.is_some()
+    }
+
+    pub fn settlement_and_data_gas_fixed(&self) -> bool {
+        self.fix_gas_price.is_some() && self.fix_data_gas_price.is_some()
+    }
+}
+
+impl From<&GasPriceProviderConfig> for L1GasQuote {
+    fn from(value: &GasPriceProviderConfig) -> Self {
+        Self {
+            l1_gas_price: value.fix_gas_price.unwrap_or_default(),
+            l1_data_gas_price: value.fix_data_gas_price.unwrap_or_default(),
+            strk_per_eth: value.fix_strk_per_eth.unwrap_or(FixedPoint::one()),
+        }
+    }
+}
+
+pub struct GasPriceProviderConfigBuilder {
+    fix_gas_price: Option<u128>,
+    fix_data_gas_price: Option<u128>,
+    fix_strk_per_eth: Option<FixedPoint>,
+    oracle_provider: Option<Arc<dyn Oracle>>,
+    poll_interval: Duration,
+}
+
+impl Default for GasPriceProviderConfigBuilder {
+    fn default() -> Self {
+        Self {
+            fix_gas_price: None,
+            fix_data_gas_price: None,
+            fix_strk_per_eth: None,
+            oracle_provider: None,
+            poll_interval: Duration::from_secs(10),
+        }
+    }
+}
+
+impl GasPriceProviderConfigBuilder {
+    pub fn with_fix_gas_price(mut self, value: u128) -> Self {
+        self.fix_gas_price = Some(value);
+        self
+    }
+
+    pub fn set_fix_gas_price(&mut self, value: u128) {
+        self.fix_gas_price = Some(value);
+    }
+
+    pub fn with_fix_data_gas_price(mut self, value: u128) -> Self {
+        self.fix_data_gas_price = Some(value);
+        self
+    }
+
+    pub fn set_fix_data_gas_price(&mut self, value: u128) {
+        self.fix_data_gas_price = Some(value);
+    }
+
+    pub fn with_fix_strk_per_eth(mut self, value: f64) -> Self {
+        self.fix_strk_per_eth = Some(value.into());
+        self
+    }
+
+    pub fn set_fix_strk_per_eth(&mut self, value: f64) {
+        self.fix_strk_per_eth = Some(value.into());
+    }
+
+    pub fn with_oracle_provider(mut self, provider: Arc<dyn Oracle>) -> Self {
+        self.oracle_provider = Some(provider);
+        self
+    }
+
+    pub fn set_oracle_provider(&mut self, provider: Arc<dyn Oracle>) {
+        self.oracle_provider = Some(provider);
+    }
+
+    pub fn with_poll_interval(mut self, interval: Duration) -> Self {
+        self.poll_interval = interval;
+        self
+    }
+
+    pub fn set_poll_interval(&mut self, interval: Duration) {
+        self.poll_interval = interval;
+    }
+
+    pub fn build(self) -> anyhow::Result<GasPriceProviderConfig> {
+        let needs_oracle = self.fix_strk_per_eth.is_none();
+        if needs_oracle && self.oracle_provider.is_none() {
+            return Err(anyhow::anyhow!("Oracle provider must be set if no fix_strk_per_eth is provided"));
+        }
+
+        Ok(GasPriceProviderConfig {
+            fix_gas_price: self.fix_gas_price,
+            fix_data_gas_price: self.fix_data_gas_price,
+            fix_strk_per_eth: self.fix_strk_per_eth,
+            oracle_provider: self.oracle_provider,
+            poll_interval: self.poll_interval,
+        })
+    }
 }
 
 impl L1BlockMetrics {
@@ -55,383 +168,142 @@ impl L1BlockMetrics {
     }
 }
 
-pub async fn gas_price_worker<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
-    l1_gas_provider: GasPriceProvider,
-    gas_price_poll_ms: Duration,
+pub async fn gas_price_worker(
+    settlement_client: Arc<dyn SettlementLayerProvider>,
+    backend: Arc<MadaraBackend>,
     mut ctx: ServiceContext,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
-    l1_gas_provider.update_last_update_timestamp();
-    let mut interval = tokio::time::interval(gas_price_poll_ms);
-    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    gas_provider_config: GasPriceProviderConfig,
+    _l1_block_metrics: Arc<L1BlockMetrics>,
+) -> Result<(), SettlementClientError> {
+    let mut last_update_timestamp = SystemTime::now();
+    let mut interval = tokio::time::interval(gas_provider_config.poll_interval);
+    interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
 
     while ctx.run_until_cancelled(interval.tick()).await.is_some() {
-        match gas_price_worker_once(
-            Arc::clone(&settlement_client),
-            &l1_gas_provider,
-            gas_price_poll_ms,
-            l1_block_metrics.clone(),
-        )
-        .await
+        let res = tokio::time::timeout(
+            gas_provider_config.poll_interval * 5,
+            update_gas_price(Arc::clone(&settlement_client), &gas_provider_config),
+        );
+
+        match res.await {
+            Ok(Ok(l1_gas_quote)) => {
+                last_update_timestamp = SystemTime::now();
+                backend.set_last_l1_gas_quote(l1_gas_quote);
+                tracing::trace!("Gas prices updated successfully");
+            }
+            Ok(Err(e)) => {
+                tracing::error!("Failed to update gas prices: {:?}", e);
+            }
+            Err(_) => {
+                tracing::warn!("Gas price worker timed out, retrying...");
+            }
+        }
+
+        if SystemTime::now().duration_since(last_update_timestamp).expect("SystemTime::now() < last_update_timestamp")
+            > gas_provider_config.poll_interval * 10
         {
-            Ok(_) => {}
-            Err(e) => return Err(SettlementClientError::GasPrice(format!("Failed to update gas prices: {}", e))),
+            return Err(SettlementClientError::GasPrice(format!(
+                "Failed to update gas prices for more than 10x poll interval: {:?}",
+                gas_provider_config.poll_interval
+            )));
         }
     }
-
     Ok(())
 }
 
-pub async fn gas_price_worker_once<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
-    l1_gas_provider: &GasPriceProvider,
-    gas_price_poll_ms: Duration,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
+pub async fn update_gas_price(
+    settlement_client: Arc<dyn SettlementLayerProvider>,
+    gas_provider_config: &GasPriceProviderConfig,
+) -> Result<L1GasQuote, SettlementClientError>
 where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
 {
-    match update_gas_price(settlement_client, l1_gas_provider, l1_block_metrics).await {
-        Ok(_) => tracing::trace!("Updated gas prices"),
-        Err(e) => tracing::error!("Failed to update gas prices: {:?}", e),
-    }
+    let mut l1_gas_quote: L1GasQuote = gas_provider_config.into();
 
-    let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
-    let duration_since_last_update = SystemTime::now().duration_since(last_update_timestamp).map_err(|e| {
-        SettlementClientError::TimeCalculation(format!("Failed to calculate time since last update: {}", e))
-    })?;
-
-    let last_update_timestamp = last_update_timestamp
-        .duration_since(UNIX_EPOCH)
-        .map_err(|e| {
-            SettlementClientError::TimeCalculation(format!("Failed to calculate timestamp since epoch: {}", e))
-        })?
-        .as_micros();
-
-    if duration_since_last_update > 10 * gas_price_poll_ms {
-        return Err(SettlementClientError::GasPrice(format!(
-            "Gas prices have not been updated for {} ms. Last update was at {}",
-            duration_since_last_update.as_micros(),
-            last_update_timestamp
-        )));
-    }
-
-    Ok(())
-}
-
-pub async fn update_gas_price<C, S>(
-    settlement_client: Arc<dyn SettlementClientTrait<Config = C, StreamType = S>>,
-    l1_gas_provider: &GasPriceProvider,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-) -> Result<(), SettlementClientError>
-where
-    S: Stream<Item = Result<L1toL2MessagingEventData, SettlementClientError>> + Send + 'static,
-{
-    let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await.map_err(|e| {
-        SettlementClientError::GasPrice(format!("Failed to get gas prices from settlement client: {}", e))
-    })?;
-
-    l1_gas_provider.update_eth_l1_gas_price(eth_gas_price);
-    l1_gas_provider.update_eth_l1_data_gas_price(avg_blob_base_fee);
-
-    // fetch eth/strk price and update
-    if let Some(oracle_provider) = &l1_gas_provider.oracle_provider {
-        let (eth_strk_price, decimals) = oracle_provider.fetch_eth_strk_price().await.map_err(|e| {
-            SettlementClientError::PriceOracle(format!("Failed to fetch ETH/STRK price from oracle: {}", e))
+    if !gas_provider_config.settlement_and_data_gas_fixed() {
+        let (eth_gas_price, avg_blob_base_fee) = settlement_client.get_gas_prices().await.map_err(|e| {
+            SettlementClientError::GasPrice(format!("Failed to get gas prices from settlement client: {}", e))
         })?;
-
-        let strk_gas_price = (BigDecimal::new(eth_gas_price.into(), decimals.into())
-            / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent();
-
-        let strk_data_gas_price = (BigDecimal::new(avg_blob_base_fee.into(), decimals.into())
-            / BigDecimal::new(eth_strk_price.into(), decimals.into()))
-        .as_bigint_and_exponent();
-
-        l1_gas_provider.update_strk_l1_gas_price(
-            strk_gas_price.0.to_str_radix(10).parse::<u128>().map_err(|e| {
-                SettlementClientError::ConversionError(format!("Failed to parse STRK gas price: {}", e))
-            })?,
-        );
-        l1_gas_provider.update_strk_l1_data_gas_price(strk_data_gas_price.0.to_str_radix(10).parse::<u128>().map_err(
-            |e| SettlementClientError::ConversionError(format!("Failed to parse STRK data gas price: {}", e)),
-        )?);
+        if gas_provider_config.fix_gas_price.is_none() {
+            l1_gas_quote.l1_gas_price = eth_gas_price;
+        };
+        if gas_provider_config.fix_data_gas_price.is_none() {
+            l1_gas_quote.l1_data_gas_price = avg_blob_base_fee;
+        };
     }
 
-    l1_gas_provider.update_last_update_timestamp();
-
-    // Update block number separately to avoid holding the lock for too long
-    update_l1_block_metrics(
-        settlement_client
-            .get_latest_block_number()
+    if gas_provider_config.fix_strk_per_eth.is_none() {
+        // If no fixed STRK/ETH price is set, fetch it from the oracle
+        let strk_per_eth = gas_provider_config
+            .oracle_provider
+            .as_ref()
+            .expect("Oracle is needed if no fix_strk_per_eth is set") // checked in config builder
+            .fetch_strk_per_eth()
             .await
-            .map_err(|e| SettlementClientError::BlockNumber(format!("Failed to get latest block number: {}", e)))?,
-        l1_block_metrics,
-        l1_gas_provider,
-    )
-    .await
-    .map_err(|e| SettlementClientError::GasPrice(format!("Failed to update L1 block metrics: {}", e)))?;
+            .map_err(|e| {
+                SettlementClientError::PriceOracle(format!("Failed to fetch STRK/ETH price from oracle: {}", e))
+            })?;
+        l1_gas_quote.strk_per_eth = strk_per_eth;
+    }
 
-    Ok(())
-}
-
-async fn update_l1_block_metrics(
-    block_number: u64,
-    l1_block_metrics: Arc<L1BlockMetrics>,
-    l1_gas_provider: &GasPriceProvider,
-) -> Result<(), SettlementClientError> {
-    // Get the current gas price
-    let current_gas_price = l1_gas_provider.get_gas_prices();
-    let eth_gas_price = current_gas_price.eth_l1_gas_price;
-
-    tracing::debug!("Gas price fetched is: {:?}", eth_gas_price);
-
-    // Update the metrics
-    l1_block_metrics.l1_block_number.record(block_number, &[]);
-    l1_block_metrics.l1_gas_price_wei.record(eth_gas_price as u64, &[]);
-
-    // We're ignoring l1_gas_price_strk
-    Ok(())
+    Ok(l1_gas_quote)
 }
 
 #[cfg(test)]
 mod eth_client_gas_price_worker_test {
     use super::*;
     use crate::eth::eth_client_getter_test::{create_ethereum_client, get_anvil_url};
-    use crate::eth::event::EthereumEventStream;
-    use crate::eth::EthereumClientConfig;
-    use httpmock::{MockServer, Regex};
-    use mc_mempool::GasPriceProvider;
-    use std::time::SystemTime;
-    use tokio::task::JoinHandle;
-    use tokio::time::{timeout, Duration};
+    use tokio::time::Duration;
 
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_true_works() {
+    async fn gas_price_update_works() {
         let eth_client = create_ethereum_client(get_anvil_url());
-        let l1_gas_provider = GasPriceProvider::new();
+        let gas_price_provider_config = GasPriceProviderConfigBuilder::default()
+            .with_fix_strk_per_eth(1.0)
+            .with_poll_interval(Duration::from_millis(500))
+            .build()
+            .expect("Failed to build GasPriceProviderConfig");
 
-        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_gas_quote = update_gas_price(Arc::new(eth_client), &gas_price_provider_config)
+            .await
+            .expect("Failed to update gas prices");
 
-        // Spawn the gas_price_worker in a separate task
-        let worker_handle: JoinHandle<Result<(), SettlementClientError>> = tokio::spawn({
-            let eth_client = eth_client.clone();
-            let l1_gas_provider = l1_gas_provider.clone();
-            async move {
-                gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
-                    Arc::new(eth_client),
-                    l1_gas_provider,
-                    Duration::from_millis(200),
-                    ServiceContext::new_for_testing(),
-                    Arc::new(l1_block_metrics),
-                )
-                .await
-            }
-        });
-
-        // Wait for a short duration to allow the worker to run
-        tokio::time::sleep(Duration::from_secs(10)).await;
-
-        // Abort the worker task
-        worker_handle.abort();
-
-        // Wait for the worker to finish (it should be aborted quickly)
-        let timeout_duration = Duration::from_secs(2);
-        let result = timeout(timeout_duration, worker_handle).await;
-
-        match result {
-            Ok(Ok(_)) => println!("Gas price worker completed successfully"),
-            Ok(Err(e)) => println!("Gas price worker encountered an error: {:?}", e),
-            Err(_) => println!("Gas price worker timed out"),
-        }
-
-        // Check if the gas price was updated
-        let updated_price = l1_gas_provider.get_gas_prices();
-        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
-        assert_eq!(updated_price.eth_l1_data_gas_price, 1);
+        assert_eq!(l1_gas_quote.l1_gas_price, 948082986);
+        assert_eq!(l1_gas_quote.l1_data_gas_price, 1);
     }
 
     #[tokio::test]
-    async fn gas_price_worker_when_infinite_loop_false_works() {
+    async fn gas_price_update_when_gas_price_fix_works() {
         let eth_client = create_ethereum_client(get_anvil_url());
-        let l1_gas_provider = GasPriceProvider::new();
+        let gas_price_provider_config = GasPriceProviderConfigBuilder::default()
+            .with_fix_gas_price(20)
+            .with_fix_strk_per_eth(1.0)
+            .with_poll_interval(Duration::from_millis(500))
+            .build()
+            .expect("Failed to build GasPriceProviderConfig");
 
-        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_gas_quote = update_gas_price(Arc::new(eth_client), &gas_price_provider_config)
+            .await
+            .expect("Failed to update gas prices");
 
-        // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Duration::from_millis(200),
-            Arc::new(l1_block_metrics),
-        );
-
-        // Wait for the worker to complete
-        worker_handle.await.expect("issue with the gas worker");
-
-        // Check if the gas price was updated
-        let updated_price = l1_gas_provider.get_gas_prices();
-        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
-        assert_eq!(updated_price.eth_l1_data_gas_price, 1);
+        assert_eq!(l1_gas_quote.l1_gas_price, 20);
+        assert_eq!(l1_gas_quote.l1_data_gas_price, 1);
     }
 
     #[tokio::test]
-    async fn gas_price_worker_when_gas_price_fix_works() {
+    async fn gas_price_update_when_data_gas_price_fix_works() {
         let eth_client = create_ethereum_client(get_anvil_url());
-        let l1_gas_provider = GasPriceProvider::new();
-        l1_gas_provider.update_eth_l1_gas_price(20);
-        l1_gas_provider.set_gas_price_sync_enabled(false);
+        let gas_price_provider_config = GasPriceProviderConfigBuilder::default()
+            .with_fix_data_gas_price(20)
+            .with_fix_strk_per_eth(1.0)
+            .with_poll_interval(Duration::from_millis(500))
+            .build()
+            .expect("Failed to build GasPriceProviderConfig");
 
-        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
+        let l1_gas_quote = update_gas_price(Arc::new(eth_client), &gas_price_provider_config)
+            .await
+            .expect("Failed to update gas prices");
 
-        // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Duration::from_millis(200),
-            Arc::new(l1_block_metrics),
-        );
-
-        // Wait for the worker to complete
-        worker_handle.await.expect("issue with the gas worker");
-
-        // Check if the gas price was updated
-        let updated_price = l1_gas_provider.get_gas_prices();
-        assert_eq!(updated_price.eth_l1_gas_price, 20);
-        assert_eq!(updated_price.eth_l1_data_gas_price, 1);
-    }
-
-    #[tokio::test]
-    async fn gas_price_worker_when_data_gas_price_fix_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
-        let l1_gas_provider = GasPriceProvider::new();
-        l1_gas_provider.update_eth_l1_data_gas_price(20);
-        l1_gas_provider.set_data_gas_price_sync_enabled(false);
-
-        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
-
-        // Run the worker for a short time
-        let worker_handle = gas_price_worker_once::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Duration::from_millis(200),
-            Arc::new(l1_block_metrics),
-        );
-
-        // Wait for the worker to complete
-        worker_handle.await.expect("issue with the gas worker");
-
-        // Check if the gas price was updated
-        let updated_price = l1_gas_provider.get_gas_prices();
-        assert_eq!(updated_price.eth_l1_gas_price, 948082986);
-        assert_eq!(updated_price.eth_l1_data_gas_price, 20);
-    }
-
-    #[tokio::test]
-    async fn gas_price_worker_when_eth_fee_history_fails_should_fails() {
-        let mock_server = MockServer::start();
-        let addr = format!("http://{}", mock_server.address());
-        let eth_client = create_ethereum_client(addr);
-        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
-
-        let mock = mock_server.mock(|when, then| {
-            when.method("POST").path("/").json_body_obj(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "method": "eth_feeHistory",
-                "params": ["0x12c", "0x137368e", []],
-                "id": 1
-            }));
-            then.status(500).json_body_obj(&serde_json::json!({
-                "jsonrpc": "2.0",
-                "error": {
-                    "code": -32000,
-                    "message": "Internal Server Error"
-                },
-                "id": 1
-            }));
-        });
-
-        mock_server.mock(|when, then| {
-            when.method("POST")
-                .path("/")
-                .json_body_obj(&serde_json::json!({"id":0,"jsonrpc":"2.0","method":"eth_blockNumber"}));
-            then.status(200).json_body_obj(&serde_json::json!({"jsonrpc":"2.0","id":1,"result":"0x0137368e"}));
-        });
-
-        let l1_gas_provider = GasPriceProvider::new();
-
-        l1_gas_provider.update_last_update_timestamp();
-
-        let timeout_duration = Duration::from_secs(10);
-
-        let result = timeout(
-            timeout_duration,
-            gas_price_worker::<EthereumClientConfig, EthereumEventStream>(
-                Arc::new(eth_client),
-                l1_gas_provider.clone(),
-                Duration::from_millis(200),
-                ServiceContext::new_for_testing(),
-                Arc::new(l1_block_metrics),
-            ),
-        )
-        .await;
-
-        match result {
-            Ok(Ok(_)) => panic!("Expected gas_price_worker to fail, but it succeeded"),
-            Ok(Err(err)) => match err {
-                SettlementClientError::GasPrice(e) => {
-                    let error_msg = e.to_string();
-                    let re =
-                        Regex::new(r"Gas prices have not been updated for \d+ ms\. Last update was at \d+").unwrap();
-                    assert!(re.is_match(&error_msg), "Error message did not match expected format. Got: {}", error_msg);
-                }
-                other => panic!("Expected Other error variant, got: {:?}", other),
-            },
-            Err(err) => panic!("gas_price_worker timed out: {err}"),
-        }
-
-        // Verify that the mock was called
-        mock.assert();
-    }
-
-    #[tokio::test]
-    async fn update_gas_price_works() {
-        let eth_client = create_ethereum_client(get_anvil_url());
-        let l1_gas_provider = GasPriceProvider::new();
-
-        l1_gas_provider.update_last_update_timestamp();
-        let l1_block_metrics = L1BlockMetrics::register().expect("Failed to register L1 block metrics");
-
-        // Update gas prices
-        update_gas_price::<EthereumClientConfig, EthereumEventStream>(
-            Arc::new(eth_client),
-            &l1_gas_provider,
-            Arc::new(l1_block_metrics),
-        )
-        .await
-        .expect("Failed to update gas prices");
-
-        // Access the updated gas prices
-        let updated_prices = l1_gas_provider.get_gas_prices();
-
-        assert_eq!(
-            updated_prices.eth_l1_gas_price, 948082986,
-            "ETH L1 gas price should be 948082986 in test environment"
-        );
-
-        assert_eq!(updated_prices.eth_l1_data_gas_price, 1, "ETH L1 data gas price should be 1 in test environment");
-
-        // Verify that the last update timestamp is recent
-
-        let last_update_timestamp = l1_gas_provider.get_gas_prices_last_update();
-
-        let time_since_last_update =
-            SystemTime::now().duration_since(last_update_timestamp).expect("issue while getting the time");
-
-        assert!(time_since_last_update.as_secs() < 60, "Last update timestamp should be within the last minute");
+        assert_eq!(l1_gas_quote.l1_gas_price, 948082986);
+        assert_eq!(l1_gas_quote.l1_data_gas_price, 20);
     }
 }

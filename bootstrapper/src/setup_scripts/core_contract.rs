@@ -1,7 +1,5 @@
 use ethers::types::I256;
 use std::str::FromStr;
-use std::time::Duration;
-use tokio::time::sleep;
 
 use crate::contract_clients::config::Clients;
 use crate::contract_clients::core_contract::{CoreContract, CoreContractDeploy};
@@ -47,7 +45,6 @@ impl<'a> CoreContractStarknetL1<'a> {
         //      implementation_address,
         //      finalized_implementation_bool
         // )
-        sleep(Duration::from_secs(5)).await;
         core_contract_client
             .add_implementation_core_contract(
                 // this is to include support for block 0
@@ -62,7 +59,6 @@ impl<'a> CoreContractStarknetL1<'a> {
                 false,
             )
             .await;
-        sleep(Duration::from_secs(5)).await;
         // upgrade_to(
         //      call_data : [
         //        0, : block number
@@ -89,19 +85,15 @@ impl<'a> CoreContractStarknetL1<'a> {
                 false,
             )
             .await;
-        sleep(Duration::from_secs(5)).await;
         core_contract_client
             .register_operator_core_contract(hexstring_to_address(&self.arg_config.operator_address))
             .await;
-        sleep(Duration::from_secs(5)).await;
         core_contract_client
             .nominate_governor_core_contract(hexstring_to_address(&self.arg_config.l1_multisig_address))
             .await;
-        sleep(Duration::from_secs(5)).await;
         core_contract_client
             .nominate_governor_core_contract_proxy(hexstring_to_address(&self.arg_config.l1_multisig_address))
             .await;
-        sleep(Duration::from_secs(5)).await;
 
         CoreContractStarknetL1Output { core_contract_client }
     }

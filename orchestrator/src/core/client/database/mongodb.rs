@@ -1,6 +1,8 @@
 use super::error::DatabaseError;
+use crate::core::client::database::constant::{BATCHES_COLLECTION, JOBS_COLLECTION};
 use crate::core::client::database::DatabaseClient;
-use crate::types::batch::{Batch, BatchUpdates};
+use crate::core::client::lock::constant::LOCKS_COLLECTION;
+use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -73,22 +75,23 @@ impl MongoDbClient {
     }
 
     fn get_job_collection(&self) -> Collection<JobItem> {
-        self.database.collection("jobs")
+        self.database.collection(JOBS_COLLECTION)
     }
 
     fn get_batch_collection(&self) -> Collection<Batch> {
-        self.database.collection("batches")
+        self.database.collection(BATCHES_COLLECTION)
     }
 
-    pub fn get_collection(&self, name: &str) -> Collection<JobItem> {
+    pub fn get_collection<T>(&self, name: &str) -> Collection<T> {
         self.database.collection(name)
     }
+
     pub fn jobs_collection(&self) -> Collection<JobItem> {
-        self.get_collection("jobs")
+        self.get_collection::<JobItem>(JOBS_COLLECTION)
     }
 
     pub fn locks_collection(&self) -> Collection<JobItem> {
-        self.get_collection("locks")
+        self.get_collection(LOCKS_COLLECTION)
     }
 
     /// find_one - Find one document in a collection
@@ -487,7 +490,7 @@ impl DatabaseClient for MongoDbClient {
             // Stage 2: Lookup to find corresponding job_b_type jobs
             doc! {
                 "$lookup": {
-                    "from": "jobs",
+                    "from": JOBS_COLLECTION,
                     "let": { "internal_id": "$internal_id" },
                     "pipeline": [
                         {
@@ -813,18 +816,54 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn update_batch(&self, batch: &Batch, update: BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "index": {
+                "$in": indexes.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
+        };
+
+        let jobs: Vec<Batch> = self.get_batch_collection().find(filter, None).await?.try_collect().await?;
+        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved batch by indexes");
+        let attributes = [KeyValue::new("db_operation_name", "get_batches_by_indexes")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(jobs)
+    }
+
+    /// Update a batch by its index
+    async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! { "index": index as i64 };
+
+        let mut updates_doc = Document::new();
+        updates_doc.insert("status", Bson::String(format!("{:?}", status)));
+        updates_doc.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
+
+        let update = doc! { "$set": updates_doc };
+
+        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        self.update_batch(filter, update, options, start, index).await
+    }
+
+    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "_id": batch.id,
         };
-        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
 
-        let updates = update.to_document()?;
+        let updates = batch.to_document()?;
 
         // remove null values from the updates
         let mut non_null_updates = Document::new();
         updates.iter().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+        update.to_document()?.iter_mut().for_each(|(k, v)| {
             if v != &Bson::Null {
                 non_null_updates.insert(k, v);
             }
@@ -836,13 +875,26 @@ impl DatabaseClient for MongoDbClient {
         }
 
         // Add additional fields that are always updated
-        non_null_updates.insert("size", Bson::Int64(update.end_block as i64 - batch.start_block as i64 + 1));
+        if let Some(end_block) = update.end_block {
+            non_null_updates.insert("num_blocks", Bson::Int64(end_block as i64 - batch.start_block as i64 + 1));
+        }
         non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
 
         let update = doc! {
             "$set": non_null_updates
         };
 
+        self.update_batch(filter, update, options, start, batch.index).await
+    }
+
+    async fn update_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<Batch, DatabaseError> {
         // Find a batch and update it
         let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
         match result {
@@ -855,8 +907,8 @@ impl DatabaseClient for MongoDbClient {
             }
             None => {
                 // Not found
-                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to update batch");
-                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", batch.id)))
+                tracing::error!(index = %index, category = "db_call", "Failed to update batch");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
             }
         }
     }
@@ -883,6 +935,118 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
+    /// get_batch_for_block - Returns the batch for a given block number
+    async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "start_block": { "$lte": block_number as i64 },
+            "end_block": { "$gte": block_number as i64 }
+        };
+
+        let batch = self.get_batch_collection().find_one(filter, None).await?;
+
+        tracing::debug!(category = "db_call", "Retrieved batch by block number");
+        let attributes = [KeyValue::new("db_operation_name", "get_batch_for_block")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(batch)
+    }
+
+    /// get_batches_by_status - Returns a vector of Batch for which the status is the given status
+    async fn get_batches_by_status(
+        &self,
+        status: BatchStatus,
+        limit: Option<i64>,
+    ) -> Result<Vec<Batch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "status": status.to_string(),
+        };
+        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
+        let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
+
+        let batches = self.get_batch_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(category = "db_call", "Retrieved batches by statuses");
+        let attributes = [KeyValue::new("db_operation_name", "get_all_batches_by_status")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(batches)
+    }
+
+    async fn get_jobs_between_internal_ids(
+        &self,
+        job_type: JobType,
+        status: JobStatus,
+        gte: u64,
+        lte: u64,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "job_type": bson::to_bson(&job_type)?,
+            "status": bson::to_bson(&status)?,
+            "$expr": {
+                "$and": [
+                    { "$gte": [{ "$toInt": "$internal_id" }, gte as i64 ] },
+                    { "$lte": [{ "$toInt": "$internal_id" }, lte as i64 ] }
+                ]
+            }
+        };
+
+        let find_options = FindOptions::builder().sort(doc! { "internal_id": 1 }).build();
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            gte = gte,
+            lte = lte,
+            job_count = jobs.len(),
+            category = "db_call",
+            "Fetched jobs between internal IDs"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_between_internal_ids")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_jobs_by_type_and_statuses(
+        &self,
+        job_type: &JobType,
+        job_statuses: Vec<JobStatus>,
+    ) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "job_type": bson::to_bson(job_type)?,
+            "status": {
+                "$in": job_statuses.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
+        };
+
+        let find_options = FindOptions::builder().sort(doc! { "internal_id": -1 }).build();
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            job_count = jobs.len(),
+            category = "db_call",
+            "Retrieved jobs by type and statuses"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_jobs_by_type_and_statuses")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
+    }
+
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
     async fn get_jobs_by_block_number(&self, block_number: u64) -> Result<Vec<JobItem>, DatabaseError> {
         let start = Instant::now();
@@ -897,6 +1061,7 @@ impl DatabaseClient for MongoDbClient {
                     mongodb::bson::to_bson(&JobType::ProofCreation)?,
                     mongodb::bson::to_bson(&JobType::ProofRegistration)?,
                     mongodb::bson::to_bson(&JobType::DataSubmission)?,
+                    mongodb::bson::to_bson(&JobType::Aggregator)?,
                 ]
             }
         };
@@ -904,7 +1069,7 @@ impl DatabaseClient for MongoDbClient {
         // Query for StateTransition jobs where metadata.specific.blocks_to_settle contains the block_number
         let query2 = doc! {
             "job_type": mongodb::bson::to_bson(&JobType::StateTransition)?,
-            "metadata.specific.blocks_to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
+            "metadata.specific.context.to_settle": { "$elemMatch": { "$eq": block_number_i64 } }
         };
 
         let mut results: Vec<JobItem> = Vec::new();
@@ -930,6 +1095,40 @@ impl DatabaseClient for MongoDbClient {
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
         Ok(results)
+    }
+
+    #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
+    async fn get_orphaned_jobs(&self, job_type: &JobType, timeout_seconds: u64) -> Result<Vec<JobItem>, DatabaseError> {
+        let start = Instant::now();
+
+        // Calculate the cutoff time (current time - timeout)
+        let cutoff_time = Utc::now() - chrono::Duration::seconds(timeout_seconds as i64);
+
+        // Query for jobs of specific type in LockedForProcessing status with process_started_at older than cutoff
+        let filter = doc! {
+            "job_type": mongodb::bson::to_bson(job_type)?,
+            "status": mongodb::bson::to_bson(&JobStatus::LockedForProcessing)?,
+            "metadata.common.process_started_at": {
+                "$lt": cutoff_time.timestamp()
+            }
+        };
+
+        let jobs: Vec<JobItem> = self.get_job_collection().find(filter, None).await?.try_collect().await?;
+
+        tracing::debug!(
+            job_type = ?job_type,
+            timeout_seconds = timeout_seconds,
+            cutoff_time = %cutoff_time,
+            orphaned_count = jobs.len(),
+            category = "db_call",
+            "Found orphaned jobs in LockedForProcessing status"
+        );
+
+        let attributes = [KeyValue::new("db_operation_name", "get_orphaned_jobs")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(jobs)
     }
 }
 

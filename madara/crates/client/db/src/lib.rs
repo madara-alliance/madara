@@ -42,6 +42,7 @@ use chain_head::ChainHead;
 use db_metrics::DbMetrics;
 use events::EventChannels;
 use mp_block::EventWithInfo;
+use mp_block::L1GasQuote;
 use mp_block::MadaraBlockInfo;
 use mp_chain_config::ChainConfig;
 use mp_convert::Felt;
@@ -197,8 +198,9 @@ pub enum Column {
     BonsaiClassesFlat,
     BonsaiClassesLog,
 
-    L1Messaging,
-    L1MessagingNonce,
+    CoreContractNonceToTxnHash,
+    // List of pending l1 to l2 messages to handle.
+    CoreContractNonceToPendingMsg,
 
     /// Devnet: stores the private keys for the devnet predeployed contracts
     Devnet,
@@ -245,8 +247,8 @@ impl Column {
             BonsaiClassesTrie,
             BonsaiClassesFlat,
             BonsaiClassesLog,
-            L1Messaging,
-            L1MessagingNonce,
+            CoreContractNonceToTxnHash,
+            CoreContractNonceToPendingMsg,
             PendingContractToClassHashes,
             PendingContractToNonces,
             PendingContractStorage,
@@ -282,8 +284,8 @@ impl Column {
             ContractToClassHashes => "contract_to_class_hashes",
             ContractToNonces => "contract_to_nonces",
             ContractStorage => "contract_storage",
-            L1Messaging => "l1_messaging",
-            L1MessagingNonce => "l1_messaging_nonce",
+            CoreContractNonceToTxnHash => "core_contract_nonce_to_txn_hash",
+            CoreContractNonceToPendingMsg => "core_contract_nonce_to_pending_msg",
             PendingContractToClassHashes => "pending_contract_to_class_hashes",
             PendingContractToNonces => "pending_contract_to_nonces",
             PendingContractStorage => "pending_contract_storage",
@@ -364,6 +366,7 @@ pub struct MadaraBackend {
     head_status: ChainHead,
     watch_events: EventChannels,
     watch_blocks: BlockWatch,
+    watch_gas_quote: tokio::sync::watch::Sender<Option<L1GasQuote>>,
     /// WriteOptions with wal disabled
     writeopts_no_wal: WriteOptions,
     config: MadaraBackendConfig,
@@ -518,6 +521,7 @@ impl MadaraBackend {
             head_status: ChainHead::default(),
             snapshots,
             watch_blocks: BlockWatch::new(),
+            watch_gas_quote: tokio::sync::watch::channel(None).0,
             #[cfg(any(test, feature = "testing"))]
             _temp_dir: None,
         };

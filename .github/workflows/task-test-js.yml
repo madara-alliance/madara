@@ -19,10 +19,12 @@ on:
 
 jobs:
   test-js:
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Download Madara binary
         uses: actions/download-artifact@v4
@@ -58,10 +60,9 @@ jobs:
             --rpc-external \
             --devnet \
             --preset devnet \
-            --gas-price 0 \
+            --l1-gas-price 0 \
             --blob-gas-price 0 \
-            --strk-gas-price 0 \
-            --strk-blob-gas-price 0 \
+            --strk-per-eth 1 \
             --no-l1-sync &
 
           MADARA_PID=$!

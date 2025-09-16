@@ -1,3 +1,4 @@
+use color_eyre::eyre::eyre;
 use std::collections::HashMap;
 use std::env;
 use std::future::Future;
@@ -6,7 +7,6 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::Mutex;
 use std::time::Duration;
-
 use tempfile::TempDir;
 use url::Url;
 
@@ -76,12 +76,9 @@ impl Drop for MadaraCmd {
             Ok::<_, color_eyre::Report>(())
         };
         if let Err(_err) = kill() {
-            match child.kill() {
-                Ok(kill) => kill,
-                Err(e) => {
-                    log::error!("{}", format!("Failed to kill Madara {:?}", e));
-                }
-            }
+            child.kill().unwrap_or_else(|e| {
+                log::error!("{}", eyre!("Failed to kill Madara {:?}", e));
+            })
         }
         match child.wait() {
             Ok(exit_status) => log::debug!("{}", exit_status),
@@ -153,7 +150,12 @@ impl MadaraCmdBuilder {
     }
 
     pub fn run(self) -> MadaraCmd {
-        let target_bin = env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH").expect("failed to get binary path");
+        let target_bin = env::var("MADARA_ORCHESTRATOR_MADARA_BINARY_PATH").unwrap_or_else(|_| {
+            // Use workspace-relative path as fallback
+            let workspace_root = Path::new(env!("CARGO_MANIFEST_DIR")).ancestors().nth(4).unwrap();
+            workspace_root.join("madara/target/debug/madara").to_string_lossy().to_string()
+        });
+        println!("target_bin: {:?}", target_bin);
         let target_bin = PathBuf::from(target_bin);
 
         if !target_bin.exists() {

@@ -77,6 +77,12 @@ pub enum StarknetRpcApiError {
     ClassAlreadyDeclared { error: Cow<'static, str> },
     #[error("Invalid transaction nonce")]
     InvalidTxnNonce { error: Cow<'static, str> },
+    #[error("Invalid subscription id")]
+    InvalidSubscriptionId,
+    #[error("Replacement transaction is underpriced")]
+    ReplacementTxnUnderpriced,
+    #[error("Transaction fee below minimum")]
+    FeeBelowMinimum,
     #[error("Max fee is smaller than the minimal transaction cost (validation plus fee transfer)")]
     InsufficientMaxFee { error: Cow<'static, str> },
     #[error("Account balance is smaller than the transaction's max_fee")]
@@ -166,6 +172,7 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::InvalidContractClass { .. } => 50,
             StarknetRpcApiError::ClassAlreadyDeclared { .. } => 51,
             StarknetRpcApiError::InvalidTxnNonce { .. } => 52,
+            StarknetRpcApiError::InvalidSubscriptionId => 66,
             StarknetRpcApiError::InsufficientMaxFee { .. } => 53,
             StarknetRpcApiError::InsufficientAccountBalance { .. } => 54,
             StarknetRpcApiError::ValidationFailure { .. } => 55,
@@ -177,6 +184,8 @@ impl From<&StarknetRpcApiError> for i32 {
             StarknetRpcApiError::UnsupportedTxnVersion { .. } => 61,
             StarknetRpcApiError::UnsupportedContractClassVersion { .. } => 62,
             StarknetRpcApiError::ErrUnexpectedError { .. } => 63,
+            StarknetRpcApiError::ReplacementTxnUnderpriced => 64,
+            StarknetRpcApiError::FeeBelowMinimum => 65,
             StarknetRpcApiError::InternalServerError => 500,
             StarknetRpcApiError::UnimplementedMethod => 501,
             StarknetRpcApiError::ProofLimitExceeded { .. } => 10000,
@@ -222,6 +231,7 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::InvalidTxnHash
             | StarknetRpcApiError::InvalidBlockHash
             | StarknetRpcApiError::InvalidTxnIndex
+            | StarknetRpcApiError::InvalidSubscriptionId
             | StarknetRpcApiError::TxnHashNotFound
             | StarknetRpcApiError::PageSizeTooBig
             | StarknetRpcApiError::NoBlocks
@@ -229,6 +239,8 @@ impl StarknetRpcApiError {
             | StarknetRpcApiError::TooManyKeysInFilter
             | StarknetRpcApiError::FailedToFetchPendingTransactions
             | StarknetRpcApiError::ContractError
+            | StarknetRpcApiError::ReplacementTxnUnderpriced
+            | StarknetRpcApiError::FeeBelowMinimum
             | StarknetRpcApiError::InternalServerError
             | StarknetRpcApiError::UnimplementedMethod
             | StarknetRpcApiError::CannotMakeProofOnOldBlock => None,
@@ -341,6 +353,8 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
             E::InvalidCompiledClassHash => CompiledClassHashMismatch { error },
             E::NotPermittedContract => NonAccount { error },
             E::InvalidTransactionNonce => InvalidTxnNonce { error },
+            E::ReplacementTransactionUnderpriced => ReplacementTxnUnderpriced,
+            E::FeeBelowMinimum => FeeBelowMinimum,
             E::UninitializedContract => ContractNotFound { error },
             E::UndeclaredClass => ClassHashNotFound { error },
             E::InvalidTransactionVersion

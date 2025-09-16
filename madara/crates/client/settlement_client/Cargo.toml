@@ -23,8 +23,11 @@ mc-analytics.workspace = true
 mc-db.workspace = true
 mc-mempool.workspace = true
 mc-submit-tx.workspace = true
+mp-block.workspace = true
 mp-chain-config.workspace = true
 mp-convert.workspace = true
+mp-oracle.workspace = true
+mp-transactions.workspace = true
 mp-utils.workspace = true
 
 # Starknet
@@ -80,6 +83,7 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 
 [features]
 default = []
+testing = []
 
 [dev-dependencies]
 blockifier = { workspace = true, features = ["testing"] }
@@ -91,6 +95,8 @@ httpmock.workspace = true
 tracing-test.workspace = true
 lazy_static.workspace = true
 mp-utils = { workspace = true, features = ["testing"] }
-mc-mempool = { workspace = true, features = ["testing"] }
-# Compile the test contracts in test cfg.
+mc-db = { workspace = true, features = ["testing"] }
+mp-class.workspace = true
 m-cairo-test-contracts.workspace = true
+mc-e2e-tests.workspace = true
+tokio-util = { workspace = true, features = ["time"] }

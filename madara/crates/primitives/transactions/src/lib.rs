@@ -206,6 +206,15 @@ impl Transaction {
         }
     }
 
+    pub fn tip(&self) -> Option<u64> {
+        match self {
+            Transaction::Invoke(InvokeTransaction::V3(tx)) => Some(tx.tip),
+            Transaction::Declare(DeclareTransaction::V3(tx)) => Some(tx.tip),
+            Transaction::DeployAccount(DeployAccountTransaction::V3(tx)) => Some(tx.tip),
+            _ => None,
+        }
+    }
+
     pub fn is_l1_handler(&self) -> bool {
         matches!(self, Transaction::L1Handler(_))
     }
@@ -255,7 +264,7 @@ impl Transaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum InvokeTransaction {
     V0(InvokeTransactionV0),
     V1(InvokeTransactionV1),
@@ -325,7 +334,7 @@ impl InvokeTransaction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV0 {
     pub max_fee: Felt,
     pub signature: Signature,
@@ -340,7 +349,7 @@ impl InvokeTransactionV0 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV1 {
     pub sender_address: Felt,
     pub calldata: Calldata,
@@ -355,7 +364,7 @@ impl InvokeTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct InvokeTransactionV3 {
     pub sender_address: Felt,
     pub calldata: Calldata,
@@ -376,6 +385,18 @@ impl InvokeTransactionV3 {
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct L1HandlerTransactionWithFee {
+    pub tx: L1HandlerTransaction,
+    pub paid_fee_on_l1: u128,
+}
+
+impl L1HandlerTransactionWithFee {
+    pub fn new(tx: L1HandlerTransaction, paid_fee_on_l1: u128) -> Self {
+        Self { tx, paid_fee_on_l1 }
+    }
+}
+
+#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct L1HandlerTransaction {
     pub version: Felt,
     pub nonce: u64,
@@ -390,14 +411,14 @@ impl L1HandlerTransaction {
     }
 }
 
-impl From<mp_rpc::MsgFromL1> for L1HandlerTransaction {
-    fn from(msg: mp_rpc::MsgFromL1) -> Self {
+impl From<mp_rpc::v0_7_1::MsgFromL1> for L1HandlerTransaction {
+    fn from(msg: mp_rpc::v0_7_1::MsgFromL1) -> Self {
         Self {
             version: Felt::ZERO,
             nonce: 0,
             contract_address: msg.to_address,
             entry_point_selector: msg.entry_point_selector,
-            // TODO: fix type from_address on mp_rpc::MsgFromL1
+            // TODO: fix type from_address on mp_rpc::v0_7_1::MsgFromL1
             calldata: std::iter::once(Felt::from_hex(&msg.from_address).unwrap())
                 .chain(msg.payload)
                 .collect::<Vec<_>>()
@@ -406,7 +427,7 @@ impl From<mp_rpc::MsgFromL1> for L1HandlerTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeclareTransaction {
     V0(DeclareTransactionV0),
     V1(DeclareTransactionV1),
@@ -490,7 +511,7 @@ impl DeclareTransaction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV0 {
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -504,7 +525,7 @@ impl DeclareTransactionV0 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV1 {
     pub sender_address: Felt,
     pub max_fee: Felt,
@@ -519,7 +540,7 @@ impl DeclareTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV2 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
@@ -535,7 +556,7 @@ impl DeclareTransactionV2 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeclareTransactionV3 {
     pub sender_address: Felt,
     pub compiled_class_hash: Felt,
@@ -556,7 +577,7 @@ impl DeclareTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployTransaction {
     pub version: Felt,
     pub contract_address_salt: Felt,
@@ -570,7 +591,7 @@ impl DeployTransaction {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum DeployAccountTransaction {
     V1(DeployAccountTransactionV1),
     V3(DeployAccountTransactionV3),
@@ -631,7 +652,7 @@ impl DeployAccountTransaction {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV1 {
     pub max_fee: Felt,
     pub signature: Signature,
@@ -647,7 +668,7 @@ impl DeployAccountTransactionV1 {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct DeployAccountTransactionV3 {
     pub signature: Signature,
     pub nonce: Felt,
@@ -667,7 +688,7 @@ impl DeployAccountTransactionV3 {
     }
 }
 
-#[derive(Debug, Clone, Default, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Hash, Default, Copy, PartialEq, Eq)]
 pub enum DataAvailabilityMode {
     #[default]
     L1 = 0,
@@ -697,7 +718,7 @@ impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
     }
 }
 
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
@@ -705,7 +726,7 @@ pub struct ResourceBoundsMapping {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, Hash, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct ResourceBounds {
     #[serde_as(as = "U64AsHex")]
     pub max_amount: u64,
@@ -713,31 +734,31 @@ pub struct ResourceBounds {
     pub max_price_per_unit: u128,
 }
 
-impl From<ResourceBoundsMapping> for mp_rpc::ResourceBoundsMapping {
+impl From<ResourceBoundsMapping> for mp_rpc::v0_7_1::ResourceBoundsMapping {
     fn from(resource: ResourceBoundsMapping) -> Self {
         Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
     }
 }
 
-impl From<mp_rpc::ResourceBoundsMapping> for ResourceBoundsMapping {
-    fn from(resource: mp_rpc::ResourceBoundsMapping) -> Self {
+impl From<mp_rpc::v0_7_1::ResourceBoundsMapping> for ResourceBoundsMapping {
+    fn from(resource: mp_rpc::v0_7_1::ResourceBoundsMapping) -> Self {
         Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
     }
 }
 
-impl From<ResourceBounds> for mp_rpc::ResourceBounds {
+impl From<ResourceBounds> for mp_rpc::v0_7_1::ResourceBounds {
     fn from(resource: ResourceBounds) -> Self {
         Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }
     }
 }
 
-impl From<mp_rpc::ResourceBounds> for ResourceBounds {
-    fn from(resource: mp_rpc::ResourceBounds) -> Self {
+impl From<mp_rpc::v0_7_1::ResourceBounds> for ResourceBounds {
+    fn from(resource: mp_rpc::v0_7_1::ResourceBounds) -> Self {
         Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }
     }
 }
 
-impl From<DataAvailabilityMode> for mp_rpc::DaMode {
+impl From<DataAvailabilityMode> for mp_rpc::v0_7_1::DaMode {
     fn from(da_mode: DataAvailabilityMode) -> Self {
         match da_mode {
             DataAvailabilityMode::L1 => Self::L1,
@@ -746,11 +767,11 @@ impl From<DataAvailabilityMode> for mp_rpc::DaMode {
     }
 }
 
-impl From<mp_rpc::DaMode> for DataAvailabilityMode {
-    fn from(da_mode: mp_rpc::DaMode) -> Self {
+impl From<mp_rpc::v0_7_1::DaMode> for DataAvailabilityMode {
+    fn from(da_mode: mp_rpc::v0_7_1::DaMode) -> Self {
         match da_mode {
-            mp_rpc::DaMode::L1 => Self::L1,
-            mp_rpc::DaMode::L2 => Self::L2,
+            mp_rpc::v0_7_1::DaMode::L1 => Self::L1,
+            mp_rpc::v0_7_1::DaMode::L2 => Self::L2,
         }
     }
 }
@@ -987,7 +1008,7 @@ mod tests {
 
     #[test]
     fn test_msg_to_l1_handler() {
-        let msg = mp_rpc::MsgFromL1 {
+        let msg = mp_rpc::v0_7_1::MsgFromL1 {
             from_address: "0x0000000000000000000000000000000000000001".to_string(),
             to_address: Felt::from(2),
             entry_point_selector: Felt::from(3),
@@ -1012,7 +1033,7 @@ mod tests {
             l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
         };
 
-        let starknet_resource_mapping: mp_rpc::ResourceBoundsMapping = resource_mapping.clone().into();
+        let starknet_resource_mapping: mp_rpc::v0_7_1::ResourceBoundsMapping = resource_mapping.clone().into();
         let resource_mapping_back: ResourceBoundsMapping = starknet_resource_mapping.into();
 
         assert_eq!(resource_mapping, resource_mapping_back);
@@ -1021,7 +1042,7 @@ mod tests {
     #[test]
     fn test_data_availability_mode_conversion() {
         let da_mode = DataAvailabilityMode::L1;
-        let starknet_da_mode: mp_rpc::DaMode = da_mode.into();
+        let starknet_da_mode: mp_rpc::v0_7_1::DaMode = da_mode.into();
         let da_mode_back: DataAvailabilityMode = starknet_da_mode.into();
 
         assert_eq!(da_mode, da_mode_back);

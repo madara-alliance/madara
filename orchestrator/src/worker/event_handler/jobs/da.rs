@@ -1,18 +1,18 @@
+use crate::compression::blob::da_word;
 use crate::core::config::Config;
 use crate::error::job::da_error::DaError;
 use crate::error::job::JobError;
 use crate::error::other::OtherError;
+use crate::types::constant::{BLOB_LEN, BLS_MODULUS, GENERATOR};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::metadata::{DaMetadata, JobMetadata, JobSpecificMetadata};
 use crate::types::jobs::status::JobVerificationStatus;
 use crate::types::jobs::types::{JobStatus, JobType};
-use crate::utils::helpers::JobProcessingState;
 use crate::worker::event_handler::jobs::JobHandlerTrait;
 use crate::worker::utils::biguint_vec_to_u8_vec;
 use async_trait::async_trait;
 use color_eyre::eyre::{eyre, Context};
-use lazy_static::lazy_static;
-use num_bigint::{BigUint, ToBigUint};
+use num_bigint::BigUint;
 use num_traits::{Num, Zero};
 use starknet::providers::Provider;
 use starknet_core::types::{
@@ -20,30 +20,9 @@ use starknet_core::types::{
 };
 use std::collections::{HashMap, HashSet};
 use std::ops::{Add, Mul, Rem};
-use std::str::FromStr;
 use std::sync::Arc;
 
 pub struct DAJobHandler;
-
-lazy_static! {
-    /// EIP-4844 BLS12-381 modulus.
-    ///
-    /// As defined in https://eips.ethereum.org/EIPS/eip-4844
-
-    /// Generator of the group of evaluation points (EIP-4844 parameter).
-    pub static ref GENERATOR: BigUint = BigUint::from_str(
-        "39033254847818212395286706435128746857159659164139250548781411570340225835782",
-    )
-    .expect("Failed to convert to biguint");
-
-    pub static ref BLS_MODULUS: BigUint = BigUint::from_str(
-        "52435875175126190479447740508185965837690552500527637822603658699938581184513",
-    )
-    .expect("Failed to convert to biguint");
-    pub static ref TWO: BigUint = 2u32.to_biguint().expect("Failed to convert to biguint");
-
-    pub static ref BLOB_LEN: usize = 4096;
-}
 
 impl DAJobHandler {
     fn refactor_state_update(state_update: &mut StateDiff) {
@@ -63,51 +42,9 @@ impl DAJobHandler {
         );
     }
 
-    /// DA word encoding:
-    /// |---padding---|---class flag---|---new nonce---|---num changes---|
-    ///     127 bits        1 bit           64 bits          64 bits
-    fn da_word(class_flag: bool, nonce_change: Option<Felt>, num_changes: u64) -> Result<Felt, JobError> {
-        // padding of 127 bits
-        let mut binary_string = "0".repeat(127);
-
-        // class flag of one bit
-        if class_flag {
-            binary_string += "1"
-        } else {
-            binary_string += "0"
-        }
-
-        // checking for nonce here
-        if let Some(new_nonce) = nonce_change {
-            let bytes: [u8; 32] = new_nonce.to_bytes_be();
-            let biguint = BigUint::from_bytes_be(&bytes);
-            let binary_string_local = format!("{:b}", biguint);
-            let padded_binary_string = format!("{:0>64}", binary_string_local);
-            binary_string += &padded_binary_string;
-        } else {
-            let binary_string_local = "0".repeat(64);
-            binary_string += &binary_string_local;
-        }
-
-        let binary_representation = format!("{:b}", num_changes);
-        let padded_binary_string = format!("{:0>64}", binary_representation);
-        binary_string += &padded_binary_string;
-
-        let biguint = BigUint::from_str_radix(binary_string.as_str(), 2)
-            .wrap_err("Failed to convert binary string to BigUint")
-            .map_err(|e| JobError::Other(OtherError(e)))?;
-
-        // Now convert the BigUint to a decimal string
-        let decimal_string = biguint.to_str_radix(10);
-
-        Felt::from_dec_str(&decimal_string)
-            .wrap_err("Failed to convert decimal string to FieldElement")
-            .map_err(|e| JobError::Other(OtherError(e)))
-    }
-
     #[tracing::instrument(skip(elements))]
     pub fn fft_transformation(elements: Vec<BigUint>) -> Result<Vec<BigUint>, JobError> {
-        let xs: Vec<BigUint> = (0..*BLOB_LEN)
+        let xs: Vec<BigUint> = (0..BLOB_LEN)
             .map(|i| {
                 let bin = format!("{:012b}", i);
                 let bin_rev = bin.chars().rev().collect::<String>();
@@ -186,7 +123,8 @@ impl DAJobHandler {
 
                 nonce = Some(get_current_nonce_result);
             }
-            let da_word = Self::da_word(class_flag.is_some(), nonce, storage_entries.len() as u64)?;
+            let da_word =
+                da_word(class_flag.is_some(), nonce, storage_entries.len() as u64, config.params.madara_version)?;
             blob_data.push(address);
             blob_data.push(da_word);
 
@@ -416,9 +354,6 @@ impl JobHandlerTrait for DAJobHandler {
     fn verification_polling_delay_seconds(&self) -> u64 {
         60
     }
-    fn job_processing_lock(&self, _config: Arc<Config>) -> Option<Arc<JobProcessingState>> {
-        None
-    }
 }
 
 #[cfg(test)]
@@ -428,6 +363,7 @@ pub mod test {
     use std::fs::File;
     use std::io::Read;
 
+    use crate::core::config::StarknetVersion;
     use crate::worker::event_handler::jobs::da::DAJobHandler;
     use ::serde::{Deserialize, Serialize};
     use color_eyre::Result;
@@ -443,28 +379,6 @@ pub mod test {
     use starknet::providers::jsonrpc::HttpTransport;
     use starknet::providers::JsonRpcClient;
     use url::Url;
-
-    /// Tests `da_word` function with various inputs for class flag, new nonce, and number of
-    /// changes. Verifies that `da_word` produces the correct Felt based on the provided
-    /// parameters. Uses test cases with different combinations of inputs and expected output
-    /// strings. Asserts the function's correctness by comparing the computed and expected
-    /// Felts.
-    #[rstest]
-    #[case(false, 1, 1, "18446744073709551617")]
-    #[case(false, 1, 0, "18446744073709551616")]
-    #[case(false, 0, 6, "6")]
-    #[case(true, 1, 0, "340282366920938463481821351505477763072")]
-    fn test_da_word(
-        #[case] class_flag: bool,
-        #[case] new_nonce: u64,
-        #[case] num_changes: u64,
-        #[case] expected: String,
-    ) {
-        let new_nonce = if new_nonce > 0 { Some(Felt::from(new_nonce)) } else { None };
-        let da_word = DAJobHandler::da_word(class_flag, new_nonce, num_changes).expect("Failed to create DA word");
-        let expected = Felt::from_dec_str(expected.as_str()).unwrap();
-        assert_eq!(da_word, expected);
-    }
 
     /// Tests `state_update_to_blob_data` conversion with different state update files and block
     /// numbers. Mocks DA client and storage client interactions for the test environment.
@@ -531,6 +445,7 @@ pub mod test {
         let services = TestConfigBuilder::new()
             .configure_starknet_client(provider.into())
             .configure_da_client(da_client.into())
+            .configure_madara_version(StarknetVersion::V0_13_2)
             .build()
             .await;
 

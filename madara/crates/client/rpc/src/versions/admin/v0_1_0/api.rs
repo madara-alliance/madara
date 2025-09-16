@@ -1,6 +1,10 @@
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
-use mp_rpc::{admin::BroadcastedDeclareTxnV0, ClassAndTxnHash};
+use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::v0_7_1::{
+    AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
+    ClassAndTxnHash, ContractAndTxnHash,
+};
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
 
@@ -15,12 +19,42 @@ pub enum ServiceRequest {
 /// This is an admin method, so semver is different!
 #[versioned_rpc("V0_1_0", "madara")]
 pub trait MadaraWriteRpcApi {
-    /// Submit a new class v0 declaration transaction
+    /// Submit a new class v0 declaration transaction, bypassing mempool and all validation.
+    /// Only works in block production mode.
     #[method(name = "addDeclareV0Transaction")]
     async fn add_declare_v0_transaction(
         &self,
         declare_v0_transaction: BroadcastedDeclareTxnV0,
     ) -> RpcResult<ClassAndTxnHash>;
+
+    /// Submit a declare transaction, bypassing mempool and all validation.
+    /// Only works in block production mode.
+    #[method(name = "bypassAddDeclareTransaction")]
+    async fn bypass_add_declare_transaction(
+        &self,
+        declare_transaction: BroadcastedDeclareTxn,
+    ) -> RpcResult<ClassAndTxnHash>;
+
+    /// Submit a deploy account transaction, bypassing mempool and all validation.
+    /// Only works in block production mode.
+    #[method(name = "bypassAddDeployAccountTransaction")]
+    async fn bypass_add_deploy_account_transaction(
+        &self,
+        deploy_account_transaction: BroadcastedDeployAccountTxn,
+    ) -> RpcResult<ContractAndTxnHash>;
+
+    /// Submit an invoke transaction, bypassing mempool and all validation.
+    /// Only works in block production mode.
+    #[method(name = "bypassAddInvokeTransaction")]
+    async fn bypass_add_invoke_transaction(
+        &self,
+        invoke_transaction: BroadcastedInvokeTxn,
+    ) -> RpcResult<AddInvokeTransactionResult>;
+
+    /// Force close a block.
+    /// Only works in block production mode.
+    #[method(name = "closeBlock")]
+    async fn close_block(&self) -> RpcResult<()>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

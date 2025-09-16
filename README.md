@@ -49,7 +49,7 @@ Madara is a powerful Starknet client written in Rust.
 
 [⬅️ back to top](#-madara-starknet-client)
 
-> [!TIP]  
+> [!TIP]
 > For an easier time setting up machine for local development, consult [Using Dev Containers](.devcontainer/README.md).
 
 ### Run from Source
@@ -73,7 +73,7 @@ git clone https://github.com/madara-alliance/madara .
 
 #### 2. Build Madara
 
-> [!TIP]  
+> [!TIP]
 > Ensure `make snos` has been run prior to building Madara.
 
 You can choose between different build modes:
@@ -724,7 +724,7 @@ a regular sync.
 Madara supports merkelized state commitments through its own implementation of
 Besu Bonsai Merkle Tries. See the [bonsai lib](https://github.com/madara-alliance/bonsai-trie).
 You can read more about Starknet Block structure and how it affects state
-commitment [here](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
+commitment in the [Starknet documentation](https://docs.starknet.io/architecture-and-concepts/network-architecture/block-structure/).
 
 ## 💬 Get in touch
 

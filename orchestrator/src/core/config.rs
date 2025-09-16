@@ -1,23 +1,30 @@
 #[cfg(feature = "testing")]
 use alloy::providers::RootProvider;
 
+use anyhow::Context;
 use cairo_vm::types::layout_name::LayoutName;
 use orchestrator_atlantic_service::AtlanticProverService;
 use orchestrator_da_client_interface::DaClient;
 use orchestrator_ethereum_da_client::EthereumDaClient;
 use orchestrator_ethereum_settlement_client::EthereumSettlementClient;
-use orchestrator_settlement_client_interface::SettlementClient;
-
 use orchestrator_prover_client_interface::ProverClient;
+use orchestrator_settlement_client_interface::SettlementClient;
 use orchestrator_sharp_service::SharpProverService;
+use orchestrator_starknet_da_client::StarknetDaClient;
 use orchestrator_starknet_settlement_client::StarknetSettlementClient;
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::JsonRpcClient;
+use std::str::FromStr;
 use std::sync::Arc;
+use tracing::{error, info};
 use url::Url;
 
+use crate::core::client::lock::mongodb::MongoLockClient;
+use crate::core::client::lock::LockClient;
 use crate::core::error::OrchestratorCoreResult;
+use crate::types::params::batching::BatchingParams;
 use crate::types::params::database::DatabaseArgs;
+use crate::types::Layer;
 use crate::{
     cli::RunCmd,
     core::client::{
@@ -31,27 +38,90 @@ use crate::{
     types::params::settlement::SettlementConfig,
     types::params::snos::SNOSParams,
     types::params::{AlertArgs, QueueArgs, StorageArgs},
-    utils::helpers::{JobProcessingState, ProcessingLocks},
     OrchestratorError, OrchestratorResult,
 };
+
+/// Starknet versions supported by the service
+macro_rules! versions {
+    ($(($variant:ident, $version:expr)),* $(,)?) => {
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+        pub enum StarknetVersion {
+            $($variant),*
+        }
+
+        impl StarknetVersion {
+            pub fn to_string(&self) -> &'static str {
+                match self {
+                    $(Self::$variant => $version),*
+                }
+            }
+
+            pub fn supported() -> &'static [StarknetVersion] {
+                &[$(Self::$variant),*]
+            }
+
+            pub fn is_supported(&self) -> bool {
+                Self::supported().contains(self)
+            }
+        }
+
+        impl FromStr for StarknetVersion {
+            type Err = String;
+
+            fn from_str(s: &str) -> Result<Self, Self::Err> {
+                match s {
+                    $($version => Ok(Self::$variant),)*
+                    _ => Err(format!("Unknown version: {}", s)),
+                }
+            }
+        }
+
+        /// Making 0.13.3 as the default version for now
+        impl Default for StarknetVersion {
+            fn default() -> Self {
+                Self::V0_13_3
+            }
+        }
+
+        impl std::fmt::Display for StarknetVersion {
+            fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                write!(f, "{}", self.to_string())
+            }
+        }
+    }
+}
+
+// Add more versions here whenever necessary. Follow the following rules:
+// 1. Make sure that the versions are ordered (for e.g., 0.15.0 must come after 0.14.0)
+// 2. In the env, use the dot notation, i.e., if you want to run it for "0.13.2", pass this in env
+versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_5, "0.13.5"), (V0_14_0, "0.14.0"),);
 
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
+    pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
+    pub batching_config: BatchingParams,
     pub service_config: ServiceParams,
     pub server_config: ServerParams,
     /// Layout to use for running SNOS
     pub snos_layout_name: LayoutName,
     /// Layout to use for proving
     pub prover_layout_name: LayoutName,
+    /// Specifies if we should store job artifacts which are not used in the code i.e., not
+    /// necessary for the application, but can be used for auditing purposes.
+    ///
+    /// Currently, being used to check if we should store
+    /// * Aggregator Proof
+    pub store_audit_artifacts: bool,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
-/// by calling `config` function. 33
+/// by calling the ` config ` function. 33
 pub struct Config {
+    layer: Layer,
     /// The orchestrator config
-    params: ConfigParam,
+    pub params: ConfigParam,
     /// The Madara client to get data from the node
     madara_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
@@ -62,85 +132,95 @@ pub struct Config {
     settlement_client: Box<dyn SettlementClient>,
     /// The database client
     database: Box<dyn DatabaseClient>,
+    /// Lock client
+    lock: Box<dyn LockClient>,
     /// Queue client
     queue: Box<dyn QueueClient>,
     /// Storage client
     storage: Box<dyn StorageClient>,
     /// Alerts client
     alerts: Box<dyn AlertClient>,
-    /// Locks
-    processing_locks: ProcessingLocks,
 }
 
 impl Config {
     #[allow(clippy::too_many_arguments)]
     #[cfg(test)]
     pub(crate) fn new(
+        layer: Layer,
         params: ConfigParam,
         madara_client: Arc<JsonRpcClient<HttpTransport>>,
         database: Box<dyn DatabaseClient>,
         storage: Box<dyn StorageClient>,
+        lock: Box<dyn LockClient>,
         alerts: Box<dyn AlertClient>,
         queue: Box<dyn QueueClient>,
         prover_client: Box<dyn ProverClient>,
         da_client: Box<dyn DaClient>,
-        processing_locks: ProcessingLocks,
         settlement_client: Box<dyn SettlementClient>,
     ) -> Self {
         Self {
+            layer,
             params,
             madara_client,
             database,
+            lock,
             storage,
             alerts,
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         }
     }
 
     /// new - create config from the run command
     pub async fn from_run_cmd(run_cmd: &RunCmd) -> OrchestratorResult<Self> {
-        let cloud_provider = CloudProvider::try_from(run_cmd.clone())?;
+        let cloud_provider =
+            CloudProvider::try_from(run_cmd.clone()).context("Failed to create cloud provider from run command")?;
         let provider_config = Arc::new(cloud_provider);
 
-        let db: DatabaseArgs = DatabaseArgs::try_from(run_cmd.clone())?;
-        let storage_args: StorageArgs = StorageArgs::try_from(run_cmd.clone())?;
-        let alert_args: AlertArgs = AlertArgs::try_from(run_cmd.clone())?;
-        let queue_args: QueueArgs = QueueArgs::try_from(run_cmd.clone())?;
+        let db: DatabaseArgs =
+            DatabaseArgs::try_from(run_cmd.clone()).context("Failed to create database args from run command")?;
+        let storage_args: StorageArgs =
+            StorageArgs::try_from(run_cmd.clone()).context("Failed to create storage args from run command")?;
+        let alert_args: AlertArgs =
+            AlertArgs::try_from(run_cmd.clone()).context("Failed to create alert args from run command")?;
+        let queue_args: QueueArgs =
+            QueueArgs::try_from(run_cmd.clone()).context("Failed to create queue args from run command")?;
 
-        let prover_config = ProverConfig::try_from(run_cmd.clone())?;
-        let da_config = DAConfig::try_from(run_cmd.clone())?;
-        let settlement_config = SettlementConfig::try_from(run_cmd.clone())?;
+        let prover_config =
+            ProverConfig::try_from(run_cmd.clone()).context("Failed to create prover config from run command")?;
+        let da_config = DAConfig::try_from(run_cmd.clone()).context("Failed to create DA config from run command")?;
+        let settlement_config = SettlementConfig::try_from(run_cmd.clone())
+            .context("Failed to create settlement config from run command")?;
+
+        let layer = run_cmd.layer.clone();
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
+            batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
             service_config: ServiceParams::from(run_cmd.service_args.clone()),
             server_config: ServerParams::from(run_cmd.server_args.clone()),
-            snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())?,
-            prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())?,
+            snos_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.snos_layout_name.clone().as_str())
+                .context("Failed to get SNOS layout name")?,
+            prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
+                .context("Failed to get prover layout name")?,
+            store_audit_artifacts: run_cmd.store_audit_artifacts,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
 
-        let mut processing_locks = ProcessingLocks::default();
-
-        if let Some(max_concurrent_snos_jobs) = params.service_config.max_concurrent_snos_jobs {
-            processing_locks.snos_job_processing_lock =
-                Some(Arc::new(JobProcessingState::new(max_concurrent_snos_jobs)));
-        }
-
-        if let Some(max_concurrent_proving_jobs) = params.service_config.max_concurrent_proving_jobs {
-            processing_locks.proving_job_processing_lock =
-                Some(Arc::new(JobProcessingState::new(max_concurrent_proving_jobs)));
-        }
-
         let database = Self::build_database_client(&db).await?;
+        let lock = Self::build_lock_client(&db).await?;
         let storage = Self::build_storage_client(&storage_args, provider_config.clone()).await?;
         let alerts = Self::build_alert_client(&alert_args, provider_config.clone()).await?;
         let queue = Self::build_queue_client(&queue_args, provider_config.clone()).await?;
+
+        // Start mock Atlantic server if flag is enabled
+        if run_cmd.mock_atlantic_server {
+            Self::start_mock_atlantic_server(&prover_config, run_cmd.mock_atlantic_server).await;
+        }
 
         // External Clients Initialization
         let prover_client = Self::build_prover_service(&prover_config, &params);
@@ -148,23 +228,35 @@ impl Config {
         let settlement_client = Self::build_settlement_client(&settlement_config).await?;
 
         Ok(Self {
+            layer,
             params,
             madara_client: Arc::new(rpc_client),
             database,
+            lock,
             storage,
             alerts,
             queue,
             prover_client,
             da_client,
-            processing_locks,
             settlement_client,
         })
+    }
+
+    /// Returns the layer of the config
+    pub fn layer(&self) -> &Layer {
+        &self.layer
     }
 
     pub(crate) async fn build_database_client(
         db_args: &DatabaseArgs,
     ) -> OrchestratorCoreResult<Box<dyn DatabaseClient + Send + Sync>> {
         Ok(Box::new(MongoDbClient::new(db_args).await?))
+    }
+
+    pub(crate) async fn build_lock_client(
+        args: &DatabaseArgs,
+    ) -> OrchestratorCoreResult<Box<dyn LockClient + Send + Sync>> {
+        Ok(Box::new(MongoLockClient::new(args).await?))
     }
 
     pub(crate) async fn build_storage_client(
@@ -195,7 +287,6 @@ impl Config {
     ///
     /// # Arguments
     /// * `prover_params` - The proving service parameters
-    /// * `params` - The config parameters
     /// # Returns
     /// * `Box<dyn ProverClient>` - The proving service
     pub(crate) fn build_prover_service(
@@ -212,10 +303,50 @@ impl Config {
         }
     }
 
+    /// start_mock_atlantic_server - Start the mock Atlantic server
+    ///
+    /// # Arguments
+    /// * `prover_params` - The proving service parameters
+    /// * `allow_mock_hash_server` - Whether to allow the mock Atlantic server
+    /// # Returns
+    /// * `Box<dyn ProverClient>` - The proving service
+    ///
+    /// # Notes
+    /// This function is used to start the mock Atlantic server if the flag is enabled and we're in testnet.
+    /// It starts the mock server in a background task and gives it time to start.
+    async fn start_mock_atlantic_server(prover_params: &ProverConfig, allow_mock_hash_server: bool) {
+        match prover_params {
+            ProverConfig::Atlantic(atlantic_params) => {
+                // Start mock Atlantic server if flag is enabled and we're in testnet
+                if allow_mock_hash_server && atlantic_params.atlantic_network == "TESTNET" {
+                    info!("Mock Atlantic server flag is enabled, starting mock server...");
+
+                    // Start the mock server in a background task
+                    tokio::spawn(async move {
+                        info!("Starting mock Atlantic server on port 4001");
+                        if let Err(e) = utils_mock_atlantic_server::start_mock_atlantic_server().await {
+                            error!("Failed to start mock Atlantic server: {}", e);
+                        }
+                    });
+
+                    // Give the mock server time to start
+                    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+                    info!("Mock Atlantic server started successfully");
+                }
+            }
+            ProverConfig::Sharp(_) => {
+                tracing::warn!("Mock Atlantic server flag is enabled, but prover is not Atlantic");
+            }
+        }
+    }
+
     pub(crate) async fn build_da_client(da_params: &DAConfig) -> Box<dyn DaClient + Send + Sync> {
         match da_params {
             DAConfig::Ethereum(ethereum_da_params) => {
                 Box::new(EthereumDaClient::new_with_args(ethereum_da_params).await)
+            }
+            DAConfig::Starknet(starknet_da_params) => {
+                Box::new(StarknetDaClient::new_with_args(starknet_da_params).await)
             }
         }
     }
@@ -303,6 +434,11 @@ impl Config {
         self.database.as_ref()
     }
 
+    /// Returns the Lock Client
+    pub fn lock(&self) -> &dyn LockClient {
+        self.lock.as_ref()
+    }
+
     /// Returns the queue provider
     pub fn queue(&self) -> &dyn QueueClient {
         self.queue.as_ref()
@@ -326,10 +462,5 @@ impl Config {
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
         &self.params.prover_layout_name
-    }
-
-    /// Returns the processing locks
-    pub fn processing_locks(&self) -> &ProcessingLocks {
-        &self.processing_locks
     }
 }

@@ -48,4 +48,14 @@ pub enum FactError {
     TreeStructureRootOffsetInvalid(usize, usize),
     #[error("Program output doesn't match the segment size.")]
     InvalidSegment,
+    #[error("Failed to build OnChainData from Cairo PIE.")]
+    OnChainDataCompute,
+    #[error("Failed to calculate L2 fact.")]
+    L2FactCompute,
+    #[error("Failed to calculate program output.")]
+    ProgramOutputCompute,
+    #[error("Failed to convert felt to usize during parsing of the program output.")]
+    FeltToUsizeConversionError,
+    #[error("Failed to parse the program output from aggregator output")]
+    AggregatorOutputParsingError,
 }

@@ -2,9 +2,12 @@
 members = [
   # "madara",
   "orchestrator",
+  "e2e",
   "e2e-tests",
   "bootstrapper",
   "build-artifacts",
+  "bootstrapper-v2",
+  "test_utils/crates/mock-atlantic-server",
 ]
 # Everything except test-related packages, so that they are not compiled when doing `cargo build`.
 default-members = [
@@ -99,26 +102,31 @@ mc-submit-tx = { path = "madara/crates/client/submit_tx" }
 
 # Madara misc
 m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
+mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
-starknet-accounts = "0.11.0"
-starknet-contract = "0.11.0"
-starknet-core = "0.12"
+cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
+  "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
+] }
+starknet-accounts = "0.13.0"
+starknet-contract = "0.13.0"
+starknet-core = "0.13"
 starknet-crypto = "0.7"
-starknet-providers = "0.12"
-starknet-signers = "0.10"
-starknet = "0.12.0"
+starknet-providers = "0.13"
+starknet-signers = "0.11"
+starknet = "0.14.0"
 
 starknet-types-core = { version = "0.1.7", default-features = false, features = [
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain", features = [
   "testing",
   "concurrency",
 ] }
-starknet_api = "=0.13.0-rc.1"
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
 cairo-lang-starknet-classes = "=2.8.4"
 cairo-lang-utils = "=2.8.4"
 
@@ -205,10 +213,11 @@ twox-hash = "2.1"
 rustc-hash = "2.1"
 highway = "1.3"
 siphasher = "1.0"
+smallvec = "1.15.1"
 
 # Std extensions
 lazy_static = { version = "1.4", default-features = false }
-once_cell = "1.19"
+once_cell = "1.21.3"
 itertools = "0.13.0"
 bitvec = { version = "1.0", default-features = false, features = ["std"] }
 bytes = "1.6.0"
@@ -265,7 +274,6 @@ aws-credential-types = { version = "1.2.1", features = [
 ] }
 aws-sdk-sqs = "1.36.0"
 axum = { version = "0.7.4" }
-axum-macros = "0.4.1"
 color-eyre = "0.6.2"
 chrono = { version = "0.4", features = ["serde"] }
 c-kzg = "1.0.3"
@@ -275,22 +283,23 @@ mongodb = { version = "2.8.1", features = ["bson-chrono-0_4"] }
 omniqueue = { version = "0.2.0" }
 tokio-stream = "0.1.15"
 uuid = { version = "1.7.0", features = ["v4", "serde"] }
-stark_evm_adapter = "0.1.1"
+swiftness_proof_parser = "0.1.0"
 hex = "0.4"
 mockall_double = "0.3.1"
 testcontainers = "0.18.0"
-appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.4" }
+appchain-core-contract-client = { git = "https://github.com/karnotxyz/zaun", tag = "v1.0.9" }
 env_logger = "0.11.5"
 strum_macros = "0.26.4"
 strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
-prove_block = { git = "https://github.com/keep-starknet-strange/snos", branch = "madara-monorepo" }
+starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
+prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
+orchestrator-starknet-da-client = { path = "orchestrator/crates/da-clients/starknet" }
 orchestrator-settlement-client-interface = { path = "orchestrator/crates/settlement-clients/settlement-client-interface" }
 orchestrator-ethereum-settlement-client = { path = "orchestrator/crates/settlement-clients/ethereum" }
 orchestrator-starknet-settlement-client = { path = "orchestrator/crates/settlement-clients/starknet" }
@@ -300,7 +309,11 @@ orchestrator-gps-fact-checker = { path = "orchestrator/crates/prover-clients/gps
 orchestrator-sharp-service = { path = "orchestrator/crates/prover-clients/sharp-service" }
 orchestrator-atlantic-service = { path = "orchestrator/crates/prover-clients/atlantic-service" }
 orchestrator = { path = "orchestrator" }
+
+utils-mock-atlantic-server = { path = "test_utils/crates/mock-atlantic-server" }
+
 base64ct = "=1.6.0"
+zip = "4.3.0"
 
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
@@ -308,9 +321,10 @@ librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", bran
 
 starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
 
-starknet_api = { git = "https://github.com/Moonsong-Labs/sequencer", branch = "madara-monorepo", features = [
-  "testing",
-] }
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
 
-starknet-core = { git = "https://github.com/kasarlabs/starknet-rs.git", branch = "fork" }
-cairo-vm = { git = "https://github.com/Moonsong-Labs/cairo-vm", branch = "madara-monorepo" }
+cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
+  "cairo-1-hints",
+  "extensive_hints",
+  "mod_builtin",
+] }

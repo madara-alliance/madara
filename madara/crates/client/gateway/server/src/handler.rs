@@ -30,7 +30,7 @@ use mp_gateway::{
     error::{StarknetError, StarknetErrorCode},
     user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult},
 };
-use mp_rpc::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
+use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedMempoolTx;
 use mp_utils::service::ServiceContext;
 use serde::Serialize;
@@ -246,7 +246,7 @@ pub async fn handle_get_block_traces(
     }
 
     let traces = v0_7_1_trace_block_transactions(
-        &Starknet::new(backend, add_transaction_provider, Default::default(), ctx),
+        &Starknet::new(backend, add_transaction_provider, Default::default(), None, ctx),
         block_id,
     )
     .await?;

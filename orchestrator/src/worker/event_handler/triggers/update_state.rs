@@ -1,29 +1,49 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use color_eyre::eyre::eyre;
-use opentelemetry::KeyValue;
-
 use crate::core::config::Config;
 use crate::types::jobs::metadata::{
-    CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata, StateUpdateMetadata,
+    AggregatorMetadata, CommonMetadata, DaMetadata, JobMetadata, JobSpecificMetadata, SettlementContext,
+    SettlementContextData, SnosMetadata, StateUpdateMetadata,
 };
 use crate::types::jobs::types::{JobStatus, JobType};
+use crate::utils::constants::STATE_UPDATE_MAX_NO_BLOCK_PROCESSING;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
+use async_trait::async_trait;
+use color_eyre::eyre::eyre;
+use itertools::Itertools;
+use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
+use std::sync::Arc;
 
 pub struct UpdateStateJobTrigger;
 
 #[async_trait]
 impl JobTrigger for UpdateStateJobTrigger {
+    /// This will create new StateTransition jobs for applicable batches
+    /// 1. Get the last batch for which state transition happened
+    /// 2. Get all the parent jobs after that last block/batch that have status as Completed
+    /// 3. Sanitize and Trim this list of batches
+    /// 4. Create a StateTransition job for doing state transitions for all the batches in this list
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::trace!(log_type = "starting", category = "UpdateStateWorker", "UpdateStateWorker started.");
 
+        // Self-healing: recover any orphaned StateTransition jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::StateTransition).await {
+            tracing::error!(error = %e, "Failed to heal orphaned StateTransition jobs, continuing with normal processing");
+        }
+
+        let parent_job_type = match config.layer() {
+            Layer::L2 => JobType::Aggregator,
+            Layer::L3 => JobType::DataSubmission,
+        };
+
+        // Get the latest StateTransition job
         let latest_job = config.database().get_latest_job_by_type(JobType::StateTransition).await?;
-        let (completed_da_jobs, last_block_processed_in_last_job) = match latest_job {
+        // Get the parent jobs that are completed and are ready to get their StateTransition job created
+        let (jobs_to_process, last_processed) = match latest_job {
             Some(job) => {
                 if job.status != JobStatus::Completed {
+                    // If we already have a StateTransition job which is not completed, don't start a new job as it can cause issues
                     tracing::warn!(
                         "There's already a pending update state job. Parallel jobs can cause nonce issues or can \
                          completely fail as the update logic needs to be strictly ordered. Returning safely..."
@@ -31,97 +51,147 @@ impl JobTrigger for UpdateStateJobTrigger {
                     return Ok(());
                 }
 
-                // Extract blocks from state transition metadata
-                let state_metadata: StateUpdateMetadata = job.metadata.specific
+                // Extract blocks/batches from state transition metadata
+                let state_update_metadata: StateUpdateMetadata = job.metadata.specific
                     .try_into()
                     .map_err(|e| {
                         tracing::error!(job_id = %job.internal_id, error = %e, "Invalid metadata type for state transition job");
                         e
                     })?;
 
-                let mut blocks_processed = state_metadata.blocks_to_settle.clone();
-                blocks_processed.sort();
+                let mut processed = match state_update_metadata.context {
+                    SettlementContext::Block(block) => block.to_settle,
+                    SettlementContext::Batch(batch) => batch.to_settle,
+                };
+                processed.sort();
 
-                let last_block_processed = *blocks_processed
+                let last_processed = *processed
                     .last()
-                    .ok_or_else(|| eyre!("No blocks found in previous state transition job"))?;
+                    .ok_or_else(|| eyre!("No blocks/batches found in previous state transition job"))?;
 
                 (
                     config
                         .database()
                         .get_jobs_after_internal_id_by_job_type(
-                            JobType::DataSubmission,
+                            parent_job_type,
                             JobStatus::Completed,
-                            last_block_processed.to_string(),
+                            last_processed.to_string(),
                         )
                         .await?,
-                    Some(last_block_processed),
+                    Some(last_processed),
                 )
             }
             None => {
-                tracing::warn!("No previous state transition job found, fetching latest data submission job");
-                // Getting latest DA job in case no latest state update job is present
+                tracing::warn!("No previous state transition job found, fetching latest parent job");
+                // Getting the latest parent job in case no latest state update job is present
                 (
                     config
                         .database()
-                        .get_jobs_without_successor(
-                            JobType::DataSubmission,
-                            JobStatus::Completed,
-                            JobType::StateTransition,
-                        )
+                        .get_jobs_without_successor(parent_job_type, JobStatus::Completed, JobType::StateTransition)
                         .await?,
                     None,
                 )
             }
         };
 
-        let mut blocks_to_process: Vec<u64> =
-            completed_da_jobs.iter().map(|j| j.internal_id.parse::<u64>().unwrap()).collect();
-        blocks_to_process.sort();
+        let mut to_process: Vec<u64> = jobs_to_process.iter().map(|j| j.internal_id.parse::<u64>()).try_collect()?;
+        to_process.sort();
 
-        // no DA jobs completed after the last settled block
-        if blocks_to_process.is_empty() {
-            tracing::warn!("No DA jobs completed after the last settled block. Returning safely...");
+        // no parent jobs completed after the last settled block
+        if to_process.is_empty() {
+            tracing::warn!("No parent jobs completed after the last settled block/batch. Returning safely...");
             return Ok(());
         }
 
         // Verify block continuity
-        match last_block_processed_in_last_job {
+        match last_processed {
             Some(last_block) => {
-                if blocks_to_process[0] != last_block + 1 {
+                if to_process[0] != last_block + 1 {
                     tracing::warn!(
-                        "DA job for the block just after the last settled block is not yet completed. Returning \
-                         safely..."
+                        "Parent job for the block/batch just after the last settled block/batch ({}) is not yet completed. Returning safely...", last_block
                     );
                     return Ok(());
                 }
             }
             None => {
-                let min_block_to_process = config.service_config().min_block_to_process;
-                if blocks_to_process[0] != min_block_to_process {
-                    tracing::warn!("DA job for the first block is not yet completed. Returning safely...");
-                    return Ok(());
+                match config.layer() {
+                    Layer::L2 => {
+                        // if the last processed batch is not there, (i.e., this is the first StateTransition job), check if the batch being processed is equal to 1
+                        if to_process[0] != 1 {
+                            tracing::warn!("Aggregator job for the first batch is not yet completed. Can't proceed with batch {}, Returning safely...", to_process[0]);
+                            return Ok(());
+                        }
+                    }
+                    Layer::L3 => {
+                        // If the last processed block is not there, check if the first being processed is equal to min_block_to_process (default=0)
+                        let min_block_to_process = config.service_config().min_block_to_process;
+                        if to_process[0] != min_block_to_process {
+                            tracing::warn!("DA job for the first block is not yet completed. Returning safely...");
+                            return Ok(());
+                        }
+                    }
                 }
             }
         }
 
-        let mut blocks_to_process = find_successive_blocks_in_vector(blocks_to_process);
-        if blocks_to_process.len() > 10 {
-            blocks_to_process = blocks_to_process.into_iter().take(10).collect();
-        }
+        // Sanitize the list of blocks/batches to be processed
+        let to_process = find_successive_items_in_vector(to_process, Some(STATE_UPDATE_MAX_NO_BLOCK_PROCESSING));
 
-        // Prepare state transition metadata
-        let mut state_metadata = StateUpdateMetadata {
-            blocks_to_settle: blocks_to_process.clone(),
-            snos_output_paths: Vec::new(),
-            program_output_paths: Vec::new(),
-            blob_data_paths: Vec::new(),
-            last_failed_block_no: None,
-            tx_hashes: Vec::new(),
+        // Getting settlement context
+        let settlement_context = match config.layer() {
+            Layer::L2 => {
+                SettlementContext::Batch(SettlementContextData { to_settle: to_process.clone(), last_failed: None })
+            }
+            Layer::L3 => {
+                SettlementContext::Block(SettlementContextData { to_settle: to_process.clone(), last_failed: None })
+            }
         };
 
-        // Collect paths from SNOS and DA jobs
-        for block_number in &blocks_to_process {
+        // Prepare state transition metadata
+        let mut state_update_metadata = StateUpdateMetadata { context: settlement_context, ..Default::default() };
+
+        // Collect paths for the following - snos output, program output and blob data
+        match config.layer() {
+            Layer::L2 => self.collect_paths_l2(&config, &to_process, &mut state_update_metadata).await?,
+            Layer::L3 => self.collect_paths_l3(&config, &to_process, &mut state_update_metadata).await?,
+        }
+
+        // Create StateTransition job metadata
+        let metadata = JobMetadata {
+            common: CommonMetadata::default(),
+            specific: JobSpecificMetadata::StateUpdate(state_update_metadata),
+        };
+
+        // Create the state transition job
+        let new_job_id = to_process[0].to_string();
+        match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
+            .await
+        {
+            Ok(_) => tracing::info!(job_id = %new_job_id, "Successfully created new state transition job"),
+            Err(e) => {
+                tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
+                let attributes = [
+                    KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
+                    KeyValue::new("operation_type", format!("{:?}", "create_job")),
+                ];
+                ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                return Err(e.into());
+            }
+        }
+
+        tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
+        Ok(())
+    }
+}
+
+impl UpdateStateJobTrigger {
+    async fn collect_paths_l3(
+        &self,
+        config: &Arc<Config>,
+        blocks_to_process: &Vec<u64>,
+        state_metadata: &mut StateUpdateMetadata,
+    ) -> color_eyre::Result<()> {
+        for block_number in blocks_to_process {
             // Get SNOS job paths
             let snos_job = config
                 .database()
@@ -156,42 +226,48 @@ impl JobTrigger for UpdateStateJobTrigger {
                 state_metadata.blob_data_paths.push(blob_path.clone());
             }
         }
-        // Create job metadata
-        let metadata = JobMetadata {
-            common: CommonMetadata::default(),
-            specific: JobSpecificMetadata::StateUpdate(state_metadata),
-        };
 
-        // Create the state transition job
-        let new_job_id = blocks_to_process[0].to_string();
-        match JobHandlerService::create_job(JobType::StateTransition, new_job_id.clone(), metadata, config.clone())
-            .await
-        {
-            Ok(_) => tracing::info!(block_id = %new_job_id, "Successfully created new state transition job"),
-            Err(e) => {
-                tracing::error!(job_id = %new_job_id, error = %e, "Failed to create new state transition job");
-                let attributes = [
-                    KeyValue::new("operation_job_type", format!("{:?}", JobType::StateTransition)),
-                    KeyValue::new("operation_type", format!("{:?}", "create_job")),
-                ];
-                ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
-                return Err(e.into());
-            }
+        Ok(())
+    }
+
+    async fn collect_paths_l2(
+        &self,
+        config: &Arc<Config>,
+        batches_to_process: &Vec<u64>,
+        state_metadata: &mut StateUpdateMetadata,
+    ) -> color_eyre::Result<()> {
+        for batch_no in batches_to_process {
+            // Get the aggregator job metadata for the batch
+            let aggregator_job = config
+                .database()
+                .get_job_by_internal_id_and_type(&batch_no.to_string(), &JobType::Aggregator)
+                .await?
+                .ok_or_else(|| eyre!("SNOS job not found for block {}", batch_no))?;
+            let aggregator_metadata: AggregatorMetadata = aggregator_job.metadata.specific.try_into().map_err(|e| {
+                tracing::error!(job_id = %aggregator_job.internal_id, error = %e, "Invalid metadata type for Aggregator job");
+                e
+            })?;
+
+            // Add the snos output path, program output path and blob data path in state transition metadata
+            state_metadata.snos_output_paths.push(aggregator_metadata.snos_output_path.clone());
+            state_metadata.program_output_paths.push(aggregator_metadata.program_output_path.clone());
+            state_metadata.blob_data_paths.push(aggregator_metadata.blob_data_path.clone());
         }
 
-        tracing::trace!(log_type = "completed", category = "UpdateStateWorker", "UpdateStateWorker completed.");
         Ok(())
     }
 }
 
 /// Gets the successive list of blocks from all the blocks processed in previous jobs
-/// Eg : input_vec : [1,2,3,4,7,8,9,11]
+/// e.g.: input_vec : [1,2,3,4,7,8,9,11]
 /// We will take the first 4 block numbers and send it for processing
-pub fn find_successive_blocks_in_vector(block_numbers: Vec<u64>) -> Vec<u64> {
-    block_numbers
+pub fn find_successive_items_in_vector(items: Vec<u64>, limit: Option<usize>) -> Vec<u64> {
+    items
         .iter()
         .enumerate()
-        .take_while(|(index, block_number)| **block_number == (block_numbers[0] + *index as u64))
+        .take_while(|(index, block_number)| {
+            **block_number == (items[0] + *index as u64) && (limit.is_none() || *index < limit.unwrap())
+        })
         .map(|(_, block_number)| *block_number)
         .collect()
 }
@@ -201,13 +277,14 @@ mod test_update_state_worker_utils {
     use rstest::rstest;
 
     #[rstest]
-    #[case(vec![], vec![])]
-    #[case(vec![1], vec![1])]
-    #[case(vec![1, 2, 3, 4, 5], vec![1, 2, 3, 4, 5])]
-    #[case(vec![1, 2, 3, 4, 7, 8, 9, 11], vec![1, 2, 3, 4])]
-    #[case(vec![1, 3, 5, 7, 9], vec![1])]
-    fn test_find_successive_blocks(#[case] input: Vec<u64>, #[case] expected: Vec<u64>) {
-        let result = super::find_successive_blocks_in_vector(input);
+    #[case(vec![], Some(3), vec![])]
+    #[case(vec![1], None, vec![1])]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], None, vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12])]
+    #[case(vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12], Some(10), vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10])]
+    #[case(vec![1, 2, 3, 4, 5], Some(3), vec![1, 2, 3])] // limit smaller than available
+    #[case(vec![1, 2, 3], Some(5), vec![1, 2, 3])] // limit larger than available
+    fn test_find_successive_items(#[case] input: Vec<u64>, #[case] limit: Option<usize>, #[case] expected: Vec<u64>) {
+        let result = super::find_successive_items_in_vector(input, limit);
         assert_eq!(result, expected);
     }
 }

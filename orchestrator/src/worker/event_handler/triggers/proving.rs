@@ -1,9 +1,5 @@
-use std::sync::Arc;
-
-use async_trait::async_trait;
-use opentelemetry::KeyValue;
-
 use crate::core::config::Config;
+use crate::types::constant::PROOF_FILE_NAME;
 use crate::types::jobs::metadata::{
     CommonMetadata, JobMetadata, JobSpecificMetadata, ProvingInputType, ProvingMetadata, SnosMetadata,
 };
@@ -11,6 +7,10 @@ use crate::types::jobs::types::{JobStatus, JobType};
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;
 use crate::worker::event_handler::triggers::JobTrigger;
+use async_trait::async_trait;
+use opentelemetry::KeyValue;
+use orchestrator_utils::layer::Layer;
+use std::sync::Arc;
 
 pub struct ProvingJobTrigger;
 
@@ -20,6 +20,11 @@ impl JobTrigger for ProvingJobTrigger {
     /// 2. Create a proving job for each SNOS job run
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::info!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
+
+        // Self-healing: recover any orphaned Proving jobs before creating new ones
+        if let Err(e) = self.heal_orphaned_jobs(config.clone(), JobType::ProofCreation).await {
+            tracing::error!(error = %e, "Failed to heal orphaned Proving jobs, continuing with normal processing");
+        }
 
         let successful_snos_jobs = config
             .database()
@@ -35,12 +40,32 @@ impl JobTrigger for ProvingJobTrigger {
                 e
             })?;
 
-            // Get SNOS fact early to handle the error case
-            let snos_fact = match &snos_metadata.snos_fact {
-                Some(fact) => fact.clone(),
-                None => {
-                    tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
-                    continue;
+            let (download_proof, snos_fact, bucket_id, bucket_job_index) = match config.layer() {
+                Layer::L2 => {
+                    // Set the bucket_id and bucket_job_index for Applicative Recursion
+                    match config.database().get_batch_for_block(snos_metadata.block_number).await? {
+                        Some(batch) => (
+                            None,
+                            None,
+                            Some(batch.bucket_id),
+                            Some(snos_metadata.block_number - batch.start_block + 1),
+                        ),
+                        None => {
+                            tracing::warn!(job_id = %snos_job.internal_id, "No batch found for block {}, skipping for now", snos_metadata.block_number);
+                            continue;
+                        }
+                    }
+                }
+                Layer::L3 => {
+                    // Set the snos_fact and path to download proof
+                    let snos_fact = match &snos_metadata.snos_fact {
+                        Some(fact) => fact.clone(),
+                        None => {
+                            tracing::error!(job_id = %snos_job.internal_id, "SNOS fact not found in metadata");
+                            continue;
+                        }
+                    };
+                    (Some(format!("{}/{}", snos_job.internal_id, PROOF_FILE_NAME)), Some(snos_fact), None, None)
                 }
             };
 
@@ -52,10 +77,13 @@ impl JobTrigger for ProvingJobTrigger {
                     // Set input path as CairoPie type
                     input_path: snos_metadata.cairo_pie_path.map(ProvingInputType::CairoPie),
                     // Set a download path if needed
-                    download_proof: None,
+                    download_proof,
                     // Set SNOS fact for on-chain verification
-                    ensure_on_chain_registration: Some(snos_fact),
+                    ensure_on_chain_registration: snos_fact,
                     n_steps: snos_metadata.snos_n_steps,
+                    // Set the bucket_id and bucket_job_index for Applicative Recursion
+                    bucket_id,
+                    bucket_job_index,
                 }),
             };
 

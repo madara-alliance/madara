@@ -5,6 +5,7 @@ use starknet_types_core::{
 
 use crate::{
     convert::{parse_compressed_legacy_class, ParseCompressedLegacyClassError},
+    mainnet_legacy_class_hashes::get_real_class_hash_for_any_block,
     CompressedLegacyContractClass, ContractClass, FlattenedSierraClass, LegacyContractClass, SierraEntryPoint,
 };
 use starknet_core::types::contract::ComputeClassHashError as StarknetComputeClassHashError;
@@ -63,34 +64,44 @@ fn compute_hash_entries_point(entry_points: &[SierraEntryPoint]) -> Felt {
 
 impl LegacyContractClass {
     pub fn class_hash(&self) -> Result<Felt, ComputeClassHashError> {
-        Ok(starknet_core::types::contract::legacy::LegacyContractClass {
+        let computed_class_hash = starknet_core::types::contract::legacy::LegacyContractClass {
             abi: self.abi.clone().unwrap_or_default(),
             entry_points_by_type: self.entry_points_by_type.clone(),
             program: self.program.clone(),
         }
-        .class_hash()?)
+        .class_hash()?;
+        let corrected_class_hash = get_real_class_hash_for_any_block(computed_class_hash);
+        Ok(corrected_class_hash)
     }
 }
 
 impl CompressedLegacyContractClass {
     pub fn compute_class_hash(&self) -> Result<Felt, ComputeClassHashError> {
         let legacy_contract_class = parse_compressed_legacy_class(self.clone().into())?;
-        legacy_contract_class.class_hash().map_err(ComputeClassHashError::from)
+        let class_hash = legacy_contract_class.class_hash().map_err(ComputeClassHashError::from)?;
+        // re-write the class-hash here!
+        let corrected_class_hash = get_real_class_hash_for_any_block(class_hash);
+        Ok(corrected_class_hash)
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use starknet_core::chain_id;
     use starknet_core::types::BlockId;
     use starknet_core::types::BlockTag;
-    use starknet_providers::{Provider, SequencerGatewayProvider};
+    use starknet_providers::{Provider, SequencerGatewayProvider, Url};
     use starknet_types_core::felt::Felt;
 
     use crate::ContractClass;
 
     #[tokio::test]
     async fn test_compute_sierra_class_hash() {
-        let provider = SequencerGatewayProvider::starknet_alpha_mainnet();
+        let provider = SequencerGatewayProvider::new(
+            Url::parse("https://alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
+            chain_id::MAINNET,
+        );
 
         let class_hash = Felt::from_hex_unchecked("0x816dd0297efc55dc1e7559020a3a825e81ef734b558f03c83325d4da7e6253");
 

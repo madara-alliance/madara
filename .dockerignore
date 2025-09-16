@@ -1,8 +1,34 @@
 # Madara docker ignore file
 .devcontainer
 .github
-.vscode
-scripts
+
+# Ignore editor and IDE files
+.vscode/
+.idea/
+.cursor/
+*.swp
+*.swo
+
+# Ignore scripts and target directory
+scripts/
 target/
+**/target/**
+**/node_modules/**
+.venv/
+
+
+# Ignore dockerfiles
+*dockerfile
 *Dockerfile
+
+# Ignore OS specific files
+.DS_Store
+Thumbs.db
 .npm-global
+
+# Bootstrapper
+**/out/**
+bootstrapper-v2/contracts/ethereum/cache/
+bootstrapper-v2/contracts/ethereum/.vscode/
+bootstrapper-v2/contracts/ethereum/.github/
+bootstrapper-v2/contracts/ethereum/out/

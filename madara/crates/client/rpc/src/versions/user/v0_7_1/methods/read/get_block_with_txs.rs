@@ -1,6 +1,6 @@
 use jsonrpsee::core::RpcResult;
 use mp_block::{BlockId, MadaraMaybePendingBlockInfo};
-use mp_rpc::{
+use mp_rpc::v0_7_1::{
     BlockHeader, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockHeader, PendingBlockWithTxs,
     TxnWithHash,
 };
@@ -39,8 +39,8 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                 parent_hash: block.header.parent_block_hash,
                 timestamp: block.header.block_timestamp.0,
                 sequencer_address: block.header.sequencer_address,
-                l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                l1_gas_price: block.header.gas_prices.l1_gas_price(),
+                l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
                 l1_da_mode: block.header.l1_da_mode.into(),
                 starknet_version: block.header.protocol_version.to_string(),
             },
@@ -61,8 +61,8 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> RpcResult<M
                     new_root: block.header.global_state_root,
                     timestamp: block.header.block_timestamp.0,
                     sequencer_address: block.header.sequencer_address,
-                    l1_gas_price: block.header.l1_gas_price.l1_gas_price(),
-                    l1_data_gas_price: block.header.l1_gas_price.l1_data_gas_price(),
+                    l1_gas_price: block.header.gas_prices.l1_gas_price(),
+                    l1_data_gas_price: block.header.gas_prices.l1_data_gas_price(),
                     l1_da_mode: block.header.l1_da_mode.into(),
                     starknet_version: block.header.protocol_version.to_string(),
                 },
@@ -79,7 +79,7 @@ mod tests {
         test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
     };
     use mp_block::BlockTag;
-    use mp_rpc::{L1DaMode, ResourcePrice};
+    use mp_rpc::v0_7_1::{L1DaMode, ResourcePrice};
     use rstest::rstest;
     use starknet_types_core::felt::Felt;
 

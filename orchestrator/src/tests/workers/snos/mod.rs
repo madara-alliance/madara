@@ -2,7 +2,9 @@ use crate::core::client::database::MockDatabaseClient;
 use crate::core::client::queue::MockQueueClient;
 use crate::tests::config::TestConfigBuilder;
 use crate::tests::workers::utils::get_job_item_mock_by_id;
-use crate::types::jobs::metadata::{JobSpecificMetadata, SnosMetadata, StateUpdateMetadata};
+use crate::types::jobs::metadata::{
+    JobSpecificMetadata, SettlementContext, SettlementContextData, SnosMetadata, StateUpdateMetadata,
+};
 use crate::types::jobs::types::{JobStatus, JobType};
 use crate::types::queue::QueueType;
 use crate::worker::event_handler::factory::mock_factory::get_job_handler_context;
@@ -140,6 +142,7 @@ async fn test_snos_worker(
         when.path("/").body_includes("starknet_blockNumber");
         then.status(200).body(serde_json::to_vec(&sequencer_response).unwrap());
     });
+    db.expect_get_orphaned_jobs().returning(|_, _| Ok(Vec::new()));
 
     // Mock latest SNOS job
     let latest_snos_job = latest_snos_completed.map(|block_num| {
@@ -161,8 +164,11 @@ async fn test_snos_worker(
     let latest_state_transition_job = latest_state_transition_completed.map(|max_block| {
         let mut job_item = get_job_item_mock_by_id("state_transition".to_string(), Uuid::new_v4());
         let blocks_to_settle: Vec<u64> = (0..=max_block).collect();
-        job_item.metadata.specific =
-            JobSpecificMetadata::StateUpdate(StateUpdateMetadata { blocks_to_settle, ..Default::default() });
+        job_item.metadata.specific = JobSpecificMetadata::StateUpdate(StateUpdateMetadata {
+            // batches_to_settle: blocks_to_settle,
+            context: SettlementContext::Block(SettlementContextData { to_settle: blocks_to_settle, last_failed: None }),
+            ..Default::default()
+        });
         job_item.status = JobStatus::Completed;
         job_item
     });

@@ -1,6 +1,6 @@
 use mp_block::MadaraMaybePendingBlockInfo;
 use mp_receipt::ExecutionResult;
-use mp_rpc::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
+use mp_rpc::v0_7_1::{TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnStatus};
 use starknet_types_core::felt::Felt;
 
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
@@ -80,8 +80,8 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn tx() -> mp_rpc::BroadcastedInvokeTxn {
-        mp_rpc::BroadcastedInvokeTxn::V0(mp_rpc::InvokeTxnV0 {
+    fn tx() -> mp_rpc::v0_7_1::BroadcastedInvokeTxn {
+        mp_rpc::v0_7_1::BroadcastedInvokeTxn::V0(mp_rpc::v0_7_1::InvokeTxnV0 {
             calldata: Default::default(),
             contract_address: Default::default(),
             entry_point_selector: Default::default(),
@@ -91,7 +91,7 @@ mod tests {
     }
 
     #[rstest::fixture]
-    fn tx_with_receipt(tx: mp_rpc::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
+    fn tx_with_receipt(tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) -> mp_block::TransactionWithReceipt {
         mp_block::TransactionWithReceipt {
             transaction: mp_transactions::Transaction::Invoke(tx.into()),
             receipt: mp_receipt::TransactionReceipt::Invoke(mp_receipt::InvokeTransactionReceipt {
@@ -133,7 +133,7 @@ mod tests {
         let validation = mc_submit_tx::TransactionValidatorConfig { disable_validation: true, disable_fee: false };
         let mempool = std::sync::Arc::new(mc_mempool::Mempool::new(
             std::sync::Arc::clone(&backend),
-            mc_mempool::MempoolConfig::for_testing(),
+            mc_mempool::MempoolConfig::default(),
         ));
         let mempool_validator = std::sync::Arc::new(mc_submit_tx::TransactionValidator::new(
             mempool,
@@ -142,12 +142,12 @@ mod tests {
         ));
         let context = mp_utils::service::ServiceContext::new_for_testing();
 
-        Starknet::new(backend, mempool_validator, Default::default(), context)
+        Starknet::new(backend, mempool_validator, Default::default(), None, context)
     }
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::BroadcastedInvokeTxn) {
+    async fn get_transaction_status_received(_logs: (), starknet: Starknet, tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) {
         let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
         provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
 

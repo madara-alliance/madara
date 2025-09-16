@@ -1,15 +1,21 @@
 use crate::core::config::Config;
+use crate::error::event::EventSystemError;
 use crate::error::event::EventSystemResult;
 use crate::types::queue::QueueType;
+use crate::types::Layer;
 use crate::worker::controller::event_worker::EventWorker;
-use color_eyre::eyre::eyre;
+
 use futures::future::try_join_all;
 use std::sync::Arc;
-use tracing::info;
+use std::sync::Mutex;
+use tokio_util::sync::CancellationToken;
+use tracing::{info, info_span};
 
 #[derive(Clone)]
 pub struct WorkerController {
     config: Arc<Config>,
+    workers: Arc<Mutex<Vec<Arc<EventWorker>>>>,
+    cancellation_token: CancellationToken,
 }
 
 impl WorkerController {
@@ -18,32 +24,69 @@ impl WorkerController {
     /// It returns a new WorkerController instance
     /// # Arguments
     /// * `config` - The configuration for the WorkerController
+    /// * `cancellation_token` - Token for coordinated shutdown
     /// # Returns
     /// * `WorkerController` - A new WorkerController instance
-    pub fn new(config: Arc<Config>) -> Self {
-        Self { config }
+    pub fn new(config: Arc<Config>, cancellation_token: CancellationToken) -> Self {
+        Self { config, workers: Arc::new(Mutex::new(Vec::new())), cancellation_token }
+    }
+
+    /// workers - Get the list of workers
+    /// This function returns the list of workers
+    /// # Returns
+    /// * `Vec<Arc<EventWorker>>` - A list of workers
+    /// # Errors
+    /// * `EventSystemError` - If there is an error during the operation
+    pub fn workers(&self) -> EventSystemResult<Vec<Arc<EventWorker>>> {
+        let workers = self.workers.lock().map_err(|e| EventSystemError::MutexPoisonError(e.to_string()))?;
+        Ok(workers.clone())
     }
 
     /// run - Run the WorkerController
-    /// This function runs the WorkerController and handles events
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// This function starts the WorkerController and spawns workers for each queue type
+    /// It returns immediately after spawning all workers, making it non-blocking
     /// # Returns
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     pub async fn run(&self) -> EventSystemResult<()> {
-        self.run_l2().await
+        let queues = match self.config.layer() {
+            Layer::L2 => Self::get_l2_queues(),
+            Layer::L3 => Self::get_l3_queues(),
+        };
+        let mut worker_set = tokio::task::JoinSet::new();
+        for queue_type in queues.into_iter() {
+            let queue_type = queue_type.clone();
+            let self_clone = self.clone();
+            worker_set.spawn(async move { self_clone.create_span(&queue_type).await });
+        }
+        // since there is not support to join all in futures, we need to join each worker one by one
+        while let Some(result) = worker_set.join_next().await {
+            // If any worker fails (initialization or infrastructure error), propagate the error
+            // This will trigger application shutdown
+            result??;
+        }
+        Ok(())
     }
 
     /// create_event_handler - Create an event handler
     /// This function creates an event handler for the WorkerController
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// It returns a Result<Arc<EventWorker>, EventSystemError> indicating whether the operation was successful or not
     /// # Returns
-    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
+    /// * `Result<Arc<EventWorker>, EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
     async fn create_event_handler(&self, queue_type: &QueueType) -> EventSystemResult<Arc<EventWorker>> {
-        Ok(Arc::new(EventWorker::new(queue_type.clone(), self.config.clone())))
+        // Create a child token for this specific worker
+        let worker_token = self.cancellation_token.child_token();
+        let worker = Arc::new(EventWorker::new(queue_type.clone(), self.config.clone(), worker_token)?);
+
+        // Fix: Properly store the worker by modifying the vector directly
+        let mut workers = self.workers.lock().map_err(|e| EventSystemError::MutexPoisonError(e.to_string()))?;
+        workers.push(worker.clone());
+        drop(workers); // Release the lock explicitly
+
+        Ok(worker)
     }
 
     /// get_l2_queues - Get the list of queues for L2 network
@@ -54,10 +97,31 @@ impl WorkerController {
         vec![
             QueueType::SnosJobProcessing,
             QueueType::ProvingJobProcessing,
+            QueueType::AggregatorJobProcessing,
+            QueueType::UpdateStateJobProcessing,
+            QueueType::SnosJobVerification,
+            QueueType::ProvingJobVerification,
+            QueueType::AggregatorJobVerification,
+            QueueType::UpdateStateJobVerification,
+            QueueType::WorkerTrigger,
+            QueueType::JobHandleFailure,
+        ]
+    }
+
+    /// get_l3_queues - Get the list of queues for L3 network
+    /// This function returns a list of queues for L3 network
+    /// # Returns
+    /// * `Vec<QueueType>` - A list of queues for L3 network
+    fn get_l3_queues() -> Vec<QueueType> {
+        vec![
+            QueueType::SnosJobProcessing,
+            QueueType::ProvingJobProcessing,
+            QueueType::ProofRegistrationJobProcessing,
             QueueType::DataSubmissionJobProcessing,
             QueueType::UpdateStateJobProcessing,
             QueueType::SnosJobVerification,
             QueueType::ProvingJobVerification,
+            QueueType::ProofRegistrationJobVerification,
             QueueType::DataSubmissionJobVerification,
             QueueType::UpdateStateJobVerification,
             QueueType::WorkerTrigger,
@@ -65,63 +129,58 @@ impl WorkerController {
         ]
     }
 
-    /// run_l2 - Run the WorkerController for L2 Madara Network
-    /// This function runs the WorkerController for L2 and handles events
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
-    /// # Returns
-    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
-    /// # Errors
-    /// * `EventSystemError` - If there is an error during the operation
-    pub async fn run_l2(&self) -> EventSystemResult<()> {
-        let mut tokio_threads = vec![];
-        for queue_type in Self::get_l2_queues().into_iter() {
-            let queue_type = queue_type.clone();
-            let self_clone = self.clone();
-            tokio_threads.push(tokio::spawn(async move {
-                self_clone.create_span(&queue_type).await;
-            }));
-        }
-        try_join_all(tokio_threads).await?;
-        Ok(())
-    }
-
     #[tracing::instrument(skip(self), fields(q = %q))]
-    async fn create_span(&self, q: &QueueType) {
-        // info_span!("worker", q = ?q);
-        // let _guard = span_clone.enter();
+    async fn create_span(&self, q: &QueueType) -> EventSystemResult<()> {
+        let span = info_span!("worker", q = ?q);
+        let _guard = span.enter();
         info!("Starting worker for queue type {:?}", q);
 
-        match self.create_event_handler(q).await {
-            Ok(handler) => match handler.run().await {
-                Ok(_) => info!("Worker for queue type {:?} started successfully", q),
-                Err(e) => {
-                    let _ = eyre!("🚨Failed to start worker: {:?}", e);
-                    tracing::error!("🚨Failed to start worker: {:?}", e)
-                }
-            },
-            Err(e) => tracing::error!("🚨Failed to create handler: {:?}", e),
+        // If worker creation fails, this is a critical initialization error
+        let handler = match self.create_event_handler(q).await {
+            Ok(handler) => handler,
+            Err(e) => {
+                tracing::error!("🚨 Critical: Failed to create handler for queue type {:?}: {:?}", q, e);
+                tracing::error!("This is a worker initialization error that requires system shutdown");
+                return Err(e);
+            }
         };
+
+        // Run the worker - job processing errors within the worker are handled internally
+        // Only infrastructure/initialization errors should propagate out
+        match handler.run().await {
+            Ok(_) => {
+                // Worker completed unexpectedly - this should not happen in normal operation
+                // since workers run infinite loops. This indicates a problem.
+                tracing::warn!("Worker for queue type {:?} completed unexpectedly (this is normal during shutdown)", q);
+                Ok(())
+            }
+            Err(e) => {
+                tracing::error!("🚨 Critical: Worker for queue type {:?} failed with infrastructure error: {:?}", q, e);
+                tracing::error!("This indicates a serious system problem that requires shutdown");
+                Err(e)
+            }
+        }
     }
 
-    /// run_l3 - Run the WorkerController for L3 Madara Network
-    /// This function runs the WorkerController for L3 and handles events
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
+    /// shutdown - Trigger a graceful shutdown
+    /// This function triggers a graceful shutdown of all workers
+    /// It waits for workers to complete their current tasks and exit cleanly
     /// # Returns
     /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
     /// # Errors
     /// * `EventSystemError` - If there is an error during the operation
-    pub async fn run_l3(&self) -> EventSystemResult<()> {
-        Ok(())
-    }
+    pub async fn shutdown(&self) -> EventSystemResult<()> {
+        info!("Initiating WorkerController graceful shutdown");
 
-    /// trigger_graceful_shutdown - Trigger a graceful shutdown
-    /// This function triggers a graceful shutdown of the WorkerController
-    /// It returns a Result<(), EventSystemError> indicating whether the operation was successful or not
-    /// # Returns
-    /// * `Result<(), EventSystemError>` - A Result indicating whether the operation was successful or not
-    /// # Errors
-    /// * `EventSystemError` - If there is an error during the operation
-    pub async fn trigger_graceful_shutdown(&self) -> EventSystemResult<()> {
+        // Signal all workers to shutdown gracefully
+        let workers = self.workers()?;
+        info!("Signaling {} workers to shutdown gracefully", workers.len());
+
+        let futures: Vec<_> = workers.iter().map(|worker| worker.shutdown()).collect();
+        info!("All workers signaled to shutdown - they will complete current tasks and exit");
+
+        try_join_all(futures).await?;
+        info!("WorkerController shutdown completed");
         Ok(())
     }
 }

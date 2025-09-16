@@ -1,4 +1,7 @@
-use crate::{into_starknet_api::TransactionApiError, L1HandlerTransaction, Transaction, TransactionWithHash};
+use crate::validated::TxTimestamp;
+use crate::validated::ValidatedMempoolTx;
+use crate::L1HandlerTransactionWithFee;
+use crate::{into_starknet_api::TransactionApiError, Transaction, TransactionWithHash};
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use blockifier::{
     transaction::errors::TransactionExecutionError, transaction::transaction_execution::Transaction as BTransaction,
@@ -9,7 +12,7 @@ use mp_class::{
     LegacyClassInfo, LegacyConvertedClass, SierraClassInfo, SierraConvertedClass,
 };
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::{BroadcastedDeclareTxn, BroadcastedTxn};
+use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, BroadcastedTxn};
 use starknet_api::contract_class::ClassInfo as ApiClassInfo;
 use starknet_api::core::ContractAddress;
 use starknet_api::executable_transaction::{
@@ -68,15 +71,25 @@ impl TransactionWithHash {
     }
 }
 
-pub trait BroadcastedTransactionExt {
+pub trait IntoStarknetApiExt: Sized {
     fn into_starknet_api(
         self,
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError>;
+
+    fn into_validated_tx(
+        self,
+        chain_id: Felt,
+        starknet_version: StarknetVersion,
+        arrived_at: TxTimestamp,
+    ) -> Result<ValidatedMempoolTx, ToBlockifierError> {
+        let (btx, class) = self.into_starknet_api(chain_id, starknet_version)?;
+        Ok(ValidatedMempoolTx::from_starknet_api(btx, arrived_at, class))
+    }
 }
 
-impl BroadcastedTransactionExt for BroadcastedTxn {
+impl IntoStarknetApiExt for BroadcastedTxn {
     fn into_starknet_api(
         self,
         chain_id: Felt,
@@ -132,16 +145,14 @@ impl BroadcastedTransactionExt for BroadcastedTxn {
     }
 }
 
-impl L1HandlerTransaction {
+impl L1HandlerTransactionWithFee {
     pub fn into_blockifier(
         self,
         chain_id: Felt,
         _starknet_version: StarknetVersion,
-        paid_fees_on_l1: u128,
     ) -> Result<(BTransaction, Option<ConvertedClass>), ToBlockifierError> {
-        let transaction = Transaction::L1Handler(self.clone());
-        // TODO: check self.version
-        let hash = self.compute_hash(chain_id, /* offset_version */ false, /* legacy */ false);
+        let hash = self.tx.compute_hash(chain_id, /* offset_version */ false, /* legacy */ false);
+        let transaction = Transaction::L1Handler(self.tx);
         let transaction: starknet_api::transaction::Transaction = transaction.try_into()?;
 
         Ok((
@@ -149,7 +160,7 @@ impl L1HandlerTransaction {
                 transaction,
                 TransactionHash(hash),
                 None,
-                Some(Fee(paid_fees_on_l1)),
+                Some(Fee(self.paid_fee_on_l1)),
                 None,
                 ExecutionFlags::default(),
             )?,
@@ -158,7 +169,7 @@ impl L1HandlerTransaction {
     }
 }
 
-impl BroadcastedTransactionExt for BroadcastedDeclareTxnV0 {
+impl IntoStarknetApiExt for BroadcastedDeclareTxnV0 {
     fn into_starknet_api(
         self,
         chain_id: Felt,

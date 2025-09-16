@@ -33,7 +33,8 @@ starknet-types-core = { workspace = true }
 starknet_api = { workspace = true }
 
 # Other
-
+anyhow = { workspace = true }
+itertools = { workspace = true }
 thiserror = { workspace = true }
 
 
@@ -59,3 +60,4 @@ tracing-subscriber = { workspace = true, features = ["env-filter"] }
 rstest = { workspace = true }
 mc-db = { workspace = true, features = ["testing"] }
 tokio = { workspace = true, features = ["rt-multi-thread"] }
+serde_json = { workspace = true }

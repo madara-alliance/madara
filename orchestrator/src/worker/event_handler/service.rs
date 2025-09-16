@@ -19,6 +19,7 @@ use crate::types::jobs::WorkerTriggerType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 #[double]
 use crate::worker::event_handler::factory::factory;
+use crate::worker::event_handler::triggers::aggregator::AggregatorJobTrigger;
 use crate::worker::event_handler::triggers::batching::BatchingTrigger;
 use crate::worker::event_handler::triggers::data_submission_worker::DataSubmissionJobTrigger;
 use crate::worker::event_handler::triggers::proof_registration::ProofRegistrationJobTrigger;
@@ -165,13 +166,6 @@ impl JobHandlerService {
         }
 
         let job_handler = factory::get_job_handler(&job.job_type).await;
-        let job_processing_locks = job_handler.job_processing_lock(config.clone());
-
-        let permit = if let Some(ref processing_locks) = job_processing_locks {
-            Some(processing_locks.try_acquire_lock(&job, config.clone()).await?)
-        } else {
-            None
-        };
 
         // this updates the version of the job. this ensures that if another thread was about to process
         // the same job, it would fail to update the job in the database because the version would be
@@ -188,16 +182,15 @@ impl JobHandlerService {
                     .build(),
             )
             .await
-            .map_err(|e| {
+            .inspect_err(|e| {
                 tracing::error!(job_id = ?id, error = ?e, "Failed to update job status");
-                e
             })?;
 
         tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
         let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
         {
             Ok(Ok(external_id)) => {
-                tracing::debug!(job_id = ?id, "Successfully processed job");
+                tracing::debug!(job_id = ?id, job_type = ?job.job_type, "Successfully processed job with external ID: {:?}", external_id);
                 // Add the time of processing to the metadata.
                 job.metadata.common.process_completed_at = Some(Utc::now());
 
@@ -279,12 +272,6 @@ impl JobHandlerService {
         ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &attributes);
         ORCHESTRATOR_METRICS.jobs_response_time.record(duration.as_secs_f64(), &attributes);
         Self::register_block_gauge(job.job_type, &job.internal_id, external_id.into(), &attributes)?;
-
-        if let Some(permit) = permit {
-            if let Some(ref processing_locks) = job_processing_locks {
-                processing_locks.try_release_lock(permit).await?;
-            }
-        }
 
         Ok(())
     }
@@ -648,6 +635,7 @@ impl JobHandlerService {
             WorkerTriggerType::ProofRegistration => Box::new(ProofRegistrationJobTrigger),
             WorkerTriggerType::UpdateState => Box::new(UpdateStateJobTrigger),
             WorkerTriggerType::Batching => Box::new(BatchingTrigger),
+            WorkerTriggerType::Aggregator => Box::new(AggregatorJobTrigger),
         }
     }
 }

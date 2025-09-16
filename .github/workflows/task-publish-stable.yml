@@ -36,11 +36,13 @@ permissions:
 
 jobs:
   build-release:
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Get tag info (version)
         id: tag-version

@@ -1,12 +1,12 @@
+use crate::constants::{CAIRO_PIE_PATH, MAX_RETRIES, RETRY_DELAY};
 use cairo_vm::types::layout_name::LayoutName;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use httpmock::MockServer;
+use orchestrator_atlantic_service::types::{AtlanticCairoVm, AtlanticQueryStep};
 use orchestrator_atlantic_service::{AtlanticProverService, AtlanticQueryStatus, AtlanticValidatedArgs};
-use orchestrator_prover_client_interface::{ProverClient, Task};
+use orchestrator_prover_client_interface::{CreateJobInfo, ProverClient, Task};
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use url::Url;
-
-use crate::constants::{CAIRO_PIE_PATH, MAX_RETRIES, RETRY_DELAY};
 mod constants;
 
 #[tokio::test]
@@ -24,6 +24,9 @@ async fn atlantic_client_submit_task_when_mock_works() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
     // Start a mock server
     let mock_server = MockServer::start();
@@ -44,7 +47,14 @@ async fn atlantic_client_submit_task_when_mock_works() {
     let cairo_pie = CairoPie::read_zip_file(cairo_pie_path.as_ref()).expect("failed to read cairo pie zip");
 
     // We don't need to send the steps because it's a mock fact hash.
-    let task_result = atlantic_service.submit_task(Task::CairoPie(Box::new(cairo_pie)), None).await;
+    let task_result = atlantic_service
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+        }))
+        .await;
 
     assert!(task_result.is_ok());
     submit_mock.assert();
@@ -65,11 +75,40 @@ async fn atlantic_client_get_task_status_works() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
     let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
 
     let atlantic_query_id = "01JPMKV7WFP4JTC0TTQSEAM9GW";
     let task_result = atlantic_service.atlantic_client.get_job_status(atlantic_query_id).await;
+    assert!(task_result.is_ok());
+}
+
+#[tokio::test]
+async fn atlantic_client_get_bucket_status_works() {
+    let _ = env_logger::try_init();
+    dotenvy::from_filename_override("../.env.test").expect("Failed to load the .env file");
+    let atlantic_params = AtlanticValidatedArgs {
+        atlantic_api_key: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY"),
+        atlantic_service_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SERVICE_URL")).unwrap(),
+        atlantic_rpc_node_url: Url::parse(&get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL")).unwrap(),
+        atlantic_mock_fact_hash: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH"),
+        atlantic_prover_type: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE"),
+        atlantic_settlement_layer: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_SETTLEMENT_LAYER"),
+        atlantic_verifier_contract_address: get_env_var_or_panic(
+            "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
+        ),
+        atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Python,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
+    };
+    let atlantic_service = AtlanticProverService::new_with_args(&atlantic_params, &LayoutName::dynamic);
+
+    let bucket_id = "01K0RN2JFJW3382CZPHRBC48NR";
+    let task_result = atlantic_service.atlantic_client.get_bucket(bucket_id).await;
     assert!(task_result.is_ok());
 }
 
@@ -90,6 +129,9 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
             "MADARA_ORCHESTRATOR_ATLANTIC_VERIFIER_CONTRACT_ADDRESS",
         ),
         atlantic_network: get_env_var_or_panic("MADARA_ORCHESTRATOR_ATLANTIC_NETWORK"),
+        cairo_verifier_program_hash: None,
+        atlantic_cairo_vm: AtlanticCairoVm::Rust,
+        atlantic_result: AtlanticQueryStep::ProofGeneration,
     };
 
     // Create the Atlantic service with actual configuration
@@ -102,7 +144,12 @@ async fn atlantic_client_submit_task_and_get_job_status_with_mock_fact_hash() {
     // Submit the task to the actual Atlantic service
     let task_result = atlantic_service
         // We don't need to send the steps because it's a mock fact hash.
-        .submit_task(Task::CairoPie(Box::new(cairo_pie)), None)
+        .submit_task(Task::CreateJob(CreateJobInfo {
+            cairo_pie: Box::new(cairo_pie),
+            bucket_id: None,
+            bucket_job_index: None,
+            num_steps: None,
+        }))
         .await
         .expect("Failed to submit task to Atlantic service");
 

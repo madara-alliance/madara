@@ -22,10 +22,12 @@ jobs:
   test-bootstrapper:
     permissions:
       pull-requests: write
-    runs-on: karnot-arc-runner-set
+    runs-on: blacksmith-16vcpu-ubuntu-2204
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Load env
         uses: ./.github/actions/load-env
@@ -39,9 +41,7 @@ jobs:
         uses: ./.github/actions/setup-rust
         with:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
-          cache-location: llvm-cov-target/release
-          cache-key: bootstrapper-test-${{ runner.os }}-rust-1.86
-
+          cache-key: madara-${{ runner.os }}
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@cargo-llvm-cov
 
@@ -55,6 +55,9 @@ jobs:
           path: target/release/
       - name: Make Madara binary executable
         run: chmod +x target/release/madara
+
+      - name: Build artifacts
+        run: yes | make artifacts
 
       - name: Prepare Madara Environment (Bootstrapper)
         run: |
@@ -77,6 +80,7 @@ jobs:
       - name: Start Anvil with fork
         run: |
           nohup anvil \
+            --block-time 0.5 \
             --code-size-limit 300000 \
             --port ${{ env.ANVIL_DEFAULT_PORT }} &
 
@@ -93,6 +97,9 @@ jobs:
             echo "Failed to connect to Anvil within timeout"
             exit 1
           fi
+
+      - name: Run make artifacts
+        run: yes | make artifacts
 
       - name: Run tests with coverage
         continue-on-error: false
