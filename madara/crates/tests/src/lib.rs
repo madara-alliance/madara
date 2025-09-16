@@ -330,6 +330,7 @@ impl MadaraCmdBuilder {
 
         let mut cmd = Command::new(target_bin);
         cmd.envs(self.env)
+            .env("CLICOLOR_FORCE", "1")
             .args(self.args)
             .args(["--base-path".into(), self.tempdir.path().display().to_string()])
             .args(
