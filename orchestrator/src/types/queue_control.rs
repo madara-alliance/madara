@@ -1,8 +1,8 @@
-use std::collections::HashMap;
-use std::sync::LazyLock;
-
 use crate::types::queue::QueueType;
 use crate::types::Layer;
+use orchestrator_utils::env_utils::get_env_var_or_default;
+use std::collections::HashMap;
+use std::sync::LazyLock;
 
 #[derive(Clone)]
 pub struct DlqConfig {
@@ -65,7 +65,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::default_with_message_count(
-                std::env::var("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS").unwrap().parse().unwrap(),
+                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS", "1").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS does not have correct value. Should be a whole number"),
             ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
@@ -85,7 +85,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::default_with_message_count(
-                std::env::var("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS").unwrap().parse().unwrap(),
+                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS", "10").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_PROVING_JOBS does not have correct value. Should be a whole number"),
             ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },

@@ -63,6 +63,9 @@ const TX_WAIT_SLEEP_DELAY_SECS: u64 = 60;
 const GAS_PRICE_MULTIPLIER_START: f64 = 1.2;
 const GAS_PRICE_INCREMENT_PERCENTAGE: f64 = 1.5; // 50%
 const GAS_PRICE_MIN_INCREMENT_PERCENTAGE: f64 = 1.1; // 10%
+/// we noticed Starknet uses the same limit on the mainnet
+/// https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
+const GAS_LIMIT_STATE_UPDATE: u64 = 5_500_000;
 
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
@@ -242,6 +245,15 @@ impl SettlementClient for EthereumSettlementClient {
 
     /// Should be used to update state on core contract when DA is in blobs/alt DA
     /// NOTE: state_diff is a vector of blobs (which in turn is a vector of u8)
+    ///
+    /// The following things are done:
+    /// 1. Check if the current state in Ethereum is more than what the transaction is trying to
+    /// 2. Send the transaction, retrying if the transaction is failing because of low gas price
+    ///
+    /// The transaction is retried when the transaction is rejected because a transaction with the
+    /// same nonce is already in the mempool. In that case, we'll send more transactions with
+    /// an increasing gas price multiplication factor. The multiplication factor is capped by
+    /// `MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR` env variable.
     async fn update_state_with_blobs(
         &self,
         program_output: Vec<[u8; 32]>,
@@ -403,6 +415,7 @@ impl SettlementClient for EthereumSettlementClient {
 }
 
 impl EthereumSettlementClient {
+    /// Method to build the input bytes for a state update transaction
     pub async fn build_input_bytes(program_output: Vec<[u8; 32]>, state_diff: Vec<Vec<u8>>) -> Result<String> {
         let n_blobs = match program_output.get(N_BLOBS_OFFSET) {
             Some(n_blobs) => u64::from_be_bytes(n_blobs[24..32].try_into()?),
@@ -447,6 +460,7 @@ impl EthereumSettlementClient {
         Ok(get_input_data_for_eip_4844(program_output, kzg_proofs_bytes)?)
     }
 
+    /// Method to create a transaction object with gas price limits set using the `mul_factor`
     async fn create_transaction(
         &self,
         program_output: Vec<[u8; 32]>,
@@ -472,9 +486,7 @@ impl EthereumSettlementClient {
         let tx = TxEip4844 {
             chain_id,
             nonce,
-            // we noticed Starknet uses the same limit on the mainnet
-            // https://etherscan.io/tx/0x8a58b936faaefb63ee1371991337ae3b99d74cb3504d73868615bf21fa2f25a1
-            gas_limit: 5_500_000,
+            gas_limit: GAS_LIMIT_STATE_UPDATE,
             max_fee_per_blob_gas,
             max_fee_per_gas,
             max_priority_fee_per_gas,
@@ -523,11 +535,7 @@ impl EthereumSettlementClient {
         }
     }
 
-    /// Method to send transaction with a retry mechanism
-    /// The transaction is retried when the transaction is rejected because a transaction with the
-    /// same nonce is already in the mempool. In that case, we'll send more transactions with
-    /// an increasing gas price multiplication factor. The multiplication factor is capped by
-    /// `MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR` env variable.
+    /// Method to send transaction
     async fn send_transaction(
         &self,
         tx_envelope: TxEnvelope,

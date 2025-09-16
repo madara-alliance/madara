@@ -459,6 +459,7 @@ impl StateUpdateJobHandler {
         if batches.is_empty() {
             return Err(JobError::Other(OtherError(eyre!("Failed to fetch batch {} from database", batch_num))));
         }
+        // Unwrap is safe here as we checked for the batch existence above
         let batch = batches.first().unwrap();
 
         // Get the snos settlement client
