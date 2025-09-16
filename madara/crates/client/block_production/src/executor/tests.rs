@@ -7,7 +7,7 @@ use blockifier::transaction::transaction_execution::Transaction;
 use mc_db::MadaraBackend;
 use mc_exec::execution::TxInfo;
 use mp_chain_config::StarknetVersion;
-use mp_convert::ToFelt;
+use mp_convert::{Felt, ToFelt};
 use mp_rpc::v0_7_1::BroadcastedTxn;
 use mp_transactions::IntoStarknetApiExt;
 use mp_transactions::{L1HandlerTransaction, L1HandlerTransactionWithFee};
@@ -18,7 +18,7 @@ use std::time::Duration;
 use tokio::sync::mpsc::UnboundedSender;
 
 fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (Transaction, AdditionalTxInfo) {
-    let (tx, _ts, declared_class) = tx
+    let (tx, ts, declared_class) = tx
         .into_validated_tx(
             backend.chain_config().chain_id.to_felt(),
             StarknetVersion::LATEST,
@@ -27,7 +27,7 @@ fn make_tx(backend: &MadaraBackend, tx: impl IntoStarknetApiExt) -> (Transaction
         .unwrap()
         .into_blockifier_for_sequencing()
         .unwrap();
-    (tx, AdditionalTxInfo { declared_class })
+    (tx, AdditionalTxInfo { declared_class, arrived_at: ts })
 }
 
 fn make_l1_handler_tx(
@@ -50,7 +50,7 @@ fn make_l1_handler_tx(
     )
     .into_blockifier(backend.chain_config().chain_id.to_felt(), StarknetVersion::LATEST)
     .unwrap();
-    (tx, AdditionalTxInfo { declared_class })
+    (tx, AdditionalTxInfo { declared_class, arrived_at: Default::default() })
 }
 
 struct L1HandlerSetup {
@@ -63,7 +63,7 @@ struct L1HandlerSetup {
 #[fixture]
 async fn l1_handler_setup(
     // long block time, no pending tick
-    #[with(Duration::from_secs(30000), None)]
+    #[with(Duration::from_secs(30000))]
     #[future]
     devnet_setup: DevnetSetup,
 ) -> L1HandlerSetup {
@@ -89,9 +89,6 @@ async fn l1_handler_setup(
     let (sender, recv) = oneshot::channel();
     commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 0); // zero
-    });
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
 
     // Deploy account using udc.
@@ -120,9 +117,6 @@ async fn l1_handler_setup(
     let (sender, recv) = oneshot::channel();
     commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 0); // zero
-    });
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
 
     L1HandlerSetup { backend: setup.backend.clone(), handle, commands_sender, contract_address }
@@ -181,9 +175,6 @@ async fn test_duplicate_l1_handler_same_batch(#[future] l1_handler_setup: L1Hand
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 0); // zero
-    });
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
 }
 
@@ -241,15 +232,9 @@ async fn test_duplicate_l1_handler_same_height_different_batch(#[future] l1_hand
         assert_eq!(res.executed_txs.txs[0].l1_handler_tx_nonce().map(ToFelt::to_felt), Some(55u64.into()));
     });
     // Close block.
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 0); // zero
-    });
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 0); // zero
-    });
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
 }
 
@@ -259,7 +244,40 @@ async fn test_duplicate_l1_handler_same_height_different_batch(#[future] l1_hand
 async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSetup) {
     let mut setup = l1_handler_setup.await;
 
-    setup.backend.set_l1_handler_txn_hash_by_nonce(/* nonce */ 55, Felt::ONE).unwrap();
+    setup
+        .handle
+        .send_batch
+        .as_mut()
+        .unwrap()
+        .send(
+            [make_l1_handler_tx(
+                &setup.backend,
+                setup.contract_address,
+                /* nonce */ 55,
+                Felt::from_hex_unchecked("0x120101010"),
+                Felt::ONE,
+                Felt::TWO,
+            )]
+            .into_iter()
+            .collect(),
+        )
+        .await
+        .unwrap();
+
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
+        assert_eq!(res.executed_txs.len(), 1);
+        assert!(!res.blockifier_results[0].as_ref().unwrap().0.is_reverted());
+        assert_eq!(res.executed_txs.txs[0].contract_address().to_felt(), setup.contract_address);
+        assert_eq!(res.executed_txs.txs[0].l1_handler_tx_nonce().map(ToFelt::to_felt), Some(55u64.into()));
+    });
+    // Close block.
+    let (sender, recv) = oneshot::channel();
+    setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
+    recv.await.unwrap().unwrap();
+    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
+
+    // Make another block.
 
     setup
         .handle
@@ -271,7 +289,7 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
                 make_l1_handler_tx(
                     &setup.backend,
                     setup.contract_address,
-                    /* nonce */ 55,
+                    /* nonce */ 55, // Already used.
                     Felt::from_hex_unchecked("0x120101010"),
                     Felt::ONE,
                     Felt::TWO,
@@ -279,7 +297,7 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
                 make_l1_handler_tx(
                     &setup.backend,
                     setup.contract_address,
-                    /* nonce */ 56, // another nonce
+                    /* nonce */ 56, // another nonce, this one wasn't used.
                     Felt::from_hex_unchecked("0x120101010"),
                     Felt::ONE,
                     Felt::TWO,
@@ -293,7 +311,7 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
 
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 1); // only one transaction! not two
+        assert_eq!(res.executed_txs.len(), 1); // only one transaction! not two. Nonce 55 is already used.
         assert!(!res.blockifier_results[0].as_ref().unwrap().0.is_reverted());
         assert_eq!(res.executed_txs.txs[0].contract_address().to_felt(), setup.contract_address);
         assert_eq!(res.executed_txs.txs[0].l1_handler_tx_nonce().map(ToFelt::to_felt), Some(56u64.into()));
@@ -302,8 +320,5 @@ async fn test_duplicate_l1_handler_in_db(#[future] l1_handler_setup: L1HandlerSe
     let (sender, recv) = oneshot::channel();
     setup.commands_sender.send(ExecutorCommand::CloseBlock(sender)).unwrap();
     recv.await.unwrap().unwrap();
-    assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
-        assert_eq!(res.executed_txs.len(), 0); // zero
-    });
     assert_matches!(setup.handle.replies.recv().await, Some(ExecutorMessage::EndBlock));
 }

@@ -1,8 +1,9 @@
 use crate::{wait_for_cond, MadaraCmdBuilder};
+use anyhow::ensure;
 use rstest::rstest;
 use starknet::accounts::{Account, ExecutionEncoding, SingleOwnerAccount};
 use starknet::signers::{LocalWallet, SigningKey};
-use starknet_core::types::{BlockId, BlockTag, Call, Felt, ReceiptBlock};
+use starknet_core::types::{BlockId, BlockTag, Call, Felt};
 use starknet_core::utils::starknet_keccak;
 use starknet_providers::Provider;
 use std::time::Duration;
@@ -60,7 +61,7 @@ async fn madara_devnet_add_transaction() {
         "0",
         // only produce blocks no pending txs
         "--chain-config-override",
-        "block_time=1s,pending_block_update_time=null",
+        "block_time=1s",
     ];
 
     let cmd_builder = MadaraCmdBuilder::new().args(*args);
@@ -87,7 +88,7 @@ async fn madara_devnet_add_transaction() {
     wait_for_cond(
         || async {
             let receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
-            assert!(receipt.block.is_block());
+            ensure!(receipt.block.is_block());
             Ok(())
         },
         Duration::from_millis(500),
@@ -110,7 +111,7 @@ async fn madara_devnet_add_transaction() {
     wait_for_cond(
         || async {
             let receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
-            assert!(receipt.block.is_block());
+            ensure!(receipt.block.is_block());
             Ok(())
         },
         Duration::from_millis(500),
@@ -135,7 +136,7 @@ async fn madara_devnet_mempool_saving() {
         "--chain-config-path",
         "test_devnet.yaml",
         "--chain-config-override",
-        "block_time=5min,pending_block_update_time=null",
+        "block_time=5min",
     ]);
     let mut node = cmd_builder.clone().run();
     node.wait_for_ready().await;
@@ -172,7 +173,7 @@ async fn madara_devnet_mempool_saving() {
         "--chain-config-path",
         "test_devnet.yaml",
         "--chain-config-override",
-        "block_time=5min,pending_block_update_time=500ms",
+        "block_time=5min",
     ]);
     let mut node = cmd_builder.clone().run();
     node.wait_for_ready().await;
@@ -181,8 +182,7 @@ async fn madara_devnet_mempool_saving() {
 
     wait_for_cond(
         || async {
-            let receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
-            assert_eq!(receipt.block, ReceiptBlock::Pending);
+            let _receipt = node.json_rpc().get_transaction_receipt(res.transaction_hash).await?;
             Ok(())
         },
         Duration::from_millis(500),

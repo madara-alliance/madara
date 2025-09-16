@@ -171,7 +171,7 @@ impl CustomFormatter {
 
     fn format_http_call(
         &self,
-        mut writer: &mut Writer<'_>,
+        writer: &mut Writer<'_>,
         event: &tracing::Event<'_>,
         target: &str,
         ts: &SystemTime,
@@ -181,7 +181,7 @@ impl CustomFormatter {
         event.record(&mut visitor);
         let Some(rpc_call_event) = visitor.get() else {
             // Fallback to normal formatter.
-            return self.format_with_target(&mut writer, event, target, &ts, level, &Style::new().blue());
+            return self.format_with_target(writer, event, target, ts, level, &Style::new().blue());
         };
 
         let status_style = if (400..=600).contains(&rpc_call_event.status) || rpc_call_event.status < 100 {
@@ -195,7 +195,7 @@ impl CustomFormatter {
             writeln!(
                 writer,
                 "{} {} {} {} {} bytes - {:.3?}",
-                self.timestamp_fmt(&ts),
+                self.timestamp_fmt(ts),
                 Style::new().blue().apply_to("GATEWAY"),
                 rpc_call_event.method,
                 status_style.apply_to(&rpc_call_event.status),
@@ -207,7 +207,7 @@ impl CustomFormatter {
             writeln!(
                 writer,
                 "{} {} {} {} {} bytes - {:.3?}",
-                self.timestamp_fmt(&ts),
+                self.timestamp_fmt(ts),
                 Style::new().magenta().apply_to("RPC"),
                 rpc_call_event.method,
                 status_style.apply_to(&rpc_call_event.status),

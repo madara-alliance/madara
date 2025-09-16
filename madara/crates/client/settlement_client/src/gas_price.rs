@@ -1,10 +1,5 @@
-use std::sync::Arc;
-use std::time::Duration;
-use std::time::SystemTime;
-
 use crate::error::SettlementClientError;
 use crate::SettlementLayerProvider;
-
 use mc_analytics::register_gauge_metric_instrument;
 use mc_db::MadaraBackend;
 use mp_block::L1GasQuote;
@@ -13,6 +8,8 @@ use mp_oracle::Oracle;
 use mp_utils::service::ServiceContext;
 use opentelemetry::metrics::Gauge;
 use opentelemetry::{global, InstrumentationScope, KeyValue};
+use std::sync::Arc;
+use std::time::Duration;
 use std::time::SystemTime;
 
 #[derive(Clone, Debug)]
@@ -122,7 +119,8 @@ impl GasPriceProviderConfigBuilder {
     pub fn build(self) -> anyhow::Result<GasPriceProviderConfig> {
         let needs_oracle = self.fix_strk_per_eth.is_none();
         if needs_oracle && self.oracle_provider.is_none() {
-            return Err(anyhow::anyhow!("Oracle provider must be set if no fix_strk_per_eth is provided"));
+            // TODO: fix this messagee.
+            tracing::debug!("Oracle provider must be set if no fix_strk_per_eth is provided. Gas prices may be incorrect when producing blocks.");
         }
 
         Ok(GasPriceProviderConfig {

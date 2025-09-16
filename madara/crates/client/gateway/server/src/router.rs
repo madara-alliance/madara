@@ -4,7 +4,7 @@ use super::handler::{
     handle_get_signature, handle_get_state_update,
 };
 use super::helpers::{not_found_response, service_unavailable_response};
-use crate::handler::handle_add_validated_transaction;
+use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_block};
 use crate::service::GatewayServerConfig;
 use hyper::{body::Incoming, Method, Request, Response};
 use mc_db::MadaraBackend;
@@ -22,7 +22,7 @@ pub(crate) async fn main_router(
     ctx: ServiceContext,
     config: GatewayServerConfig,
 ) -> Result<Response<String>, Infallible> {
-    match (path.as_ref(), config.feeder_gateway_enable, config.gateway_enable) {
+    match (path, config.feeder_gateway_enable, config.gateway_enable) {
         ("health", _, _) => Ok(Response::new("OK".to_string())),
         (path, true, _) if path.starts_with("gateway/") => {
             Ok(gateway_router(req, path, add_transaction_provider).await?)
@@ -54,6 +54,9 @@ async fn feeder_gateway_router(
     ctx: ServiceContext,
 ) -> Result<Response<String>, Infallible> {
     match (req.method(), path) {
+        (&Method::GET, "feeder_gateway/get_preconfirmed_block") => {
+            Ok(handle_get_preconfirmed_block(req, backend).await.unwrap_or_else(Into::into))
+        }
         (&Method::GET, "feeder_gateway/get_block") => {
             Ok(handle_get_block(req, backend).await.unwrap_or_else(Into::into))
         }

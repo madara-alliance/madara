@@ -378,6 +378,7 @@ pub enum MadaraServiceId {
     Gateway,
     Telemetry,
     Analytics,
+    Mempool,
 }
 
 impl ServiceId for MadaraServiceId {
@@ -394,6 +395,7 @@ impl ServiceId for MadaraServiceId {
             MadaraServiceId::Gateway => PowerOfTwo::P6,
             MadaraServiceId::Telemetry => PowerOfTwo::P7,
             MadaraServiceId::Analytics => PowerOfTwo::P8,
+            MadaraServiceId::Mempool => PowerOfTwo::P9,
         }
     }
 }
@@ -414,6 +416,7 @@ impl Display for MadaraServiceId {
                 Self::Gateway => "gateway",
                 Self::Telemetry => "telemetry",
                 Self::Analytics => "analytics",
+                Self::Mempool => "mempool",
             }
         )
     }
@@ -447,7 +450,8 @@ impl From<PowerOfTwo> for MadaraServiceId {
             PowerOfTwo::P5 => Self::RpcAdmin,
             PowerOfTwo::P6 => Self::Gateway,
             PowerOfTwo::P7 => Self::Telemetry,
-            _ => Self::Analytics,
+            PowerOfTwo::P8 => Self::Analytics,
+            _ => Self::Mempool,
         }
     }
 }

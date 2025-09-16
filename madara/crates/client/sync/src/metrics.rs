@@ -1,15 +1,17 @@
 use crate::counter::ThroughputCounter;
 use anyhow::Context;
 use mc_analytics::{register_counter_metric_instrument, register_histogram_metric_instrument};
-use mc_db::db_block_id::RawDbBlockId;
-use mc_db::MadaraBackend;
+use mc_db::{MadaraBackend, MadaraStorageRead};
 use num_traits::cast::FromPrimitive;
 use opentelemetry::{
     global,
     metrics::{Counter, Histogram},
     InstrumentationScope, KeyValue,
 };
-use std::time::{Duration, Instant};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 pub struct SyncMetrics {
     /// Built-in throughput counter, for logging purposes
@@ -26,7 +28,6 @@ pub struct SyncMetrics {
     pub l2_sync_time: Histogram<f64>,
     pub l2_avg_sync_time: Histogram<f64>,
     pub l2_latest_sync_time: Histogram<f64>,
-    pub l2_state_size: Histogram<f64>, // TODO: remove this, as well as the return value from db_metrics update.
     pub transaction_count: Counter<u64>,
     pub event_count: Counter<u64>,
     // L1 network metrics
@@ -71,13 +72,6 @@ impl SyncMetrics {
             "".to_string(),
         );
 
-        let l2_state_size = register_histogram_metric_instrument(
-            &meter,
-            "l2_state_size".to_string(),
-            "Gauge for madara L2 state size".to_string(),
-            "".to_string(),
-        );
-
         let transaction_count = register_counter_metric_instrument(
             &meter,
             "transaction_count".to_string(),
@@ -118,7 +112,6 @@ impl SyncMetrics {
             l2_sync_time,
             l2_avg_sync_time,
             l2_latest_sync_time,
-            l2_state_size,
 
             transaction_count,
             event_count,
@@ -128,7 +121,7 @@ impl SyncMetrics {
         }
     }
 
-    pub fn update(&mut self, block_n: u64, backend: &MadaraBackend) -> anyhow::Result<()> {
+    pub fn update(&mut self, block_n: u64, backend: &Arc<MadaraBackend>) -> anyhow::Result<()> {
         let now = Instant::now();
 
         // Update Block sync time metrics
@@ -139,11 +132,9 @@ impl SyncMetrics {
         self.counter.increment();
 
         let header = backend
-            .get_block_info(&RawDbBlockId::Number(block_n))
-            .context("Getting block info")?
+            .db
+            .get_block_info(block_n)? // Raw get
             .context("No block info")?
-            .into_closed()
-            .context("Block is pending")?
             .header;
 
         let total_sync_time = now.duration_since(self.starting_time).as_secs_f64();
@@ -158,15 +149,6 @@ impl SyncMetrics {
 
         self.l1_gas_price_wei.record(f64::from_u128(header.gas_prices.eth_l1_gas_price).unwrap_or(0f64), &[]);
         self.l1_gas_price_strk.record(f64::from_u128(header.gas_prices.strk_l1_gas_price).unwrap_or(0f64), &[]);
-
-        let last_update_duration = self.last_db_metrics_update_instant.map(|inst| now.duration_since(inst));
-
-        if last_update_duration.is_none() || last_update_duration.is_some_and(|d| d >= Duration::from_secs(5)) {
-            self.last_db_metrics_update_instant = Some(now);
-            let storage_size = backend.update_metrics();
-            let size_gb = storage_size as f64 / (1024 * 1024 * 1024) as f64;
-            self.l2_state_size.record(size_gb, &[]);
-        }
 
         Ok(())
     }
