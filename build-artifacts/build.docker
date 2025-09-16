@@ -245,7 +245,7 @@ FROM builder AS bootstrapper-madara
 
 ARG TARGETOS
 ARG TARGETARCH
-ENV SCARB_VERSION="2.11.3"
+ENV SCARB_VERSION="2.11.4"
 ENV SCARB_RELEASES="https://github.com/software-mansion/scarb/releases/download"
 RUN if [ "$TARGETARCH" = "arm64" ]; then \
     echo "$SCARB_RELEASES/v$SCARB_VERSION/scarb-v$SCARB_VERSION-aarch64-unknown-linux-gnu.tar.gz" > /tmp/scarb_url; \
