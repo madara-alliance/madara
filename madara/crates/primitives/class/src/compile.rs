@@ -454,7 +454,7 @@ mod tests {
     #[tokio::test]
     async fn test_compressed_legacy_class_to_blockifier() {
         let provider = SequencerGatewayProvider::new(
-            Url::parse("https://gatway.alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::parse("https://gateway.alpha-mainnet.starknet.io/gateway").unwrap(),
             Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
             starknet_core::chain_id::MAINNET,
         );
@@ -466,7 +466,7 @@ mod tests {
     #[tokio::test]
     async fn test_flattened_sierra_class_to_blockifier() {
         let provider = SequencerGatewayProvider::new(
-            Url::parse("https://gatway.alpha-mainnet.starknet.io/gateway").unwrap(),
+            Url::parse("https://gateway.alpha-mainnet.starknet.io/gateway").unwrap(),
             Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway").unwrap(),
             starknet_core::chain_id::MAINNET,
         );
