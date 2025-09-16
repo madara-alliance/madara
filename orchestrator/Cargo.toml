@@ -62,14 +62,16 @@ orchestrator-sharp-service = { workspace = true }
 orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
-prove_block = { workspace = true }
 rand = { workspace = true }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
+snos-core = { workspace = true }
 starknet = { workspace = true }
 starknet-core = { workspace = true }
-starknet-os = { workspace = true }
+starknet-crypto = { workspace = true }
+starknet-types-core = { workspace = true }
+starknet_api = { workspace = true }
 strum = { workspace = true }
 strum_macros = { workspace = true }
 swiftness_proof_parser = { workspace = true }

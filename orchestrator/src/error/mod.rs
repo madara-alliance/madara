@@ -9,6 +9,8 @@ use aws_sdk_s3::operation::get_object::GetObjectError;
 use aws_sdk_s3::operation::list_buckets::ListBucketsError;
 use aws_sdk_sqs::operation::set_queue_attributes::SetQueueAttributesError;
 use mongodb::bson;
+use opentelemetry_otlp::ExporterBuildError;
+use opentelemetry_sdk::trace::TraceError;
 use thiserror::Error;
 
 use crate::core::client::alert::AlertError;
@@ -57,11 +59,13 @@ pub enum OrchestratorError {
 
     /// Error while instrumenting the logger
     #[error("OTL Logger Error: {0}")]
-    OTLogError(#[from] opentelemetry::logs::LogError),
+    OTLogError(#[from] opentelemetry_sdk::error::OTelSdkError),
+    #[error("OLT Exporter Build Error: {0}")]
+    ExporterBuildError(#[from] ExporterBuildError),
     #[error("OLT Metrics Error: {0}")]
-    OTLMetricsError(#[from] opentelemetry::metrics::MetricsError),
+    OTLMetricsError(String),
     #[error("OLT Trace Error: {0}")]
-    OLTTraceError(#[from] opentelemetry::trace::TraceError),
+    OLTTraceError(#[from] TraceError),
     #[error("Invalid layout name: {0}")]
     InvalidLayoutError(String),
     /// Configuration error

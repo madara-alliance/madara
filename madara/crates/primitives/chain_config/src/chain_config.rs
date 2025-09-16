@@ -16,7 +16,6 @@ use mp_utils::serde::{deserialize_duration, deserialize_optional_duration};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 use starknet_api::core::{ChainId, ContractAddress, PatriciaKey};
-use starknet_api::execution_resources::GasAmount;
 use starknet_types_core::felt::Felt;
 use std::fmt;
 use std::str::FromStr;
@@ -258,19 +257,8 @@ impl ChainConfig {
             block_time: Duration::from_secs(30),
 
             no_empty_blocks: false,
-
-            bouncer_config: BouncerConfig {
-                block_max_capacity: BouncerWeights {
-                    l1_gas: 5_000_000,
-                    message_segment_length: usize::MAX,
-                    n_events: usize::MAX,
-                    state_diff_size: 131072,
-                    sierra_gas: GasAmount(10_000_000_000),
-                    n_txs: usize::MAX,
-                    proving_gas: GasAmount(10_000_000_000)
-                },
-                builtin_weights: BuiltinWeights::default()
-            },
+            // This is the bouncer config for the version 0.15.0
+            bouncer_config: BouncerConfig::default(),
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
@@ -372,6 +360,7 @@ impl ChainConfig {
                 strk_fee_token_address: self.native_fee_token_address,
                 eth_fee_token_address: self.parent_fee_token_address,
             },
+            is_l3: true
         }
     }
 }

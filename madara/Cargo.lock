@@ -717,8 +717,7 @@ checksum = "e16d2d3311acee920a9eb8d33b8cbc1787ce4a264e85f964c2404b969bdcd487"
 [[package]]
 name = "apollo_compilation_utils"
 version = "0.15.0-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5db3eb3162549ca55a24fcc902b90a6ece672aec83ca870cd75695300433da39"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-sierra 2.12.0-dev.1",
@@ -737,8 +736,7 @@ dependencies = [
 [[package]]
 name = "apollo_compile_to_native"
 version = "0.15.0-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ce72f98e94e249a95dd1bdc95aaf326b4a14c930d8b948864f08734f6526556c"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_compilation_utils",
  "apollo_config",
@@ -752,9 +750,8 @@ dependencies = [
 
 [[package]]
 name = "apollo_config"
-version = "0.15.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "483cc6b6cb527b70d759431e8afa4e77228de139eb7a4fc07e200a25e5ff46ce"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "clap",
@@ -771,11 +768,9 @@ dependencies = [
 
 [[package]]
 name = "apollo_infra_utils"
-version = "0.15.0-rc.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc215a265d7e1120532f86a0a92b6118b975ea776d313a2203fbef9294c9d8ef"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
- "apollo_proc_macros",
  "assert-json-diff",
  "colored 3.0.0",
  "num_enum",
@@ -790,27 +785,14 @@ dependencies = [
 
 [[package]]
 name = "apollo_metrics"
-version = "0.15.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eddd44db0a445e928fd4e78641587ef33e4391f186418089511998a90c2f1f2e"
+version = "0.15.0-rc.2"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "indexmap 2.9.0",
  "metrics",
  "num-traits",
  "paste",
  "regex",
-]
-
-[[package]]
-name = "apollo_proc_macros"
-version = "0.15.0-rc.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a7989de6d0cf43a44d6c69c20f183e23af6959fc2be53f65554e4efaf8e6cb5b"
-dependencies = [
- "lazy_static",
- "proc-macro2",
- "quote",
- "syn 2.0.101",
 ]
 
 [[package]]
@@ -1719,8 +1701,7 @@ dependencies = [
 [[package]]
 name = "blockifier"
 version = "0.15.0-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dbaf04063930d0b2a0cbcb1760a2d1a58abdea5ee0ce78ca261d79f9bfc3430a"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "anyhow",
  "apollo_compilation_utils",
@@ -1769,8 +1750,7 @@ dependencies = [
 [[package]]
 name = "blockifier_test_utils"
 version = "0.15.0-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5812279370f6be789f435ae91dcfdd22f4b5405f2ec2895475a6d65f7e5cbc65"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "cairo-lang-starknet-classes",
@@ -6604,11 +6584,8 @@ dependencies = [
  "bigdecimal",
  "bincode 1.3.3",
  "bitvec",
- "blockifier",
  "bonsai-trie",
- "dashmap",
  "futures",
- "itertools 0.13.0",
  "lazy_static",
  "librocksdb-sys",
  "mc-analytics",
@@ -6636,7 +6613,6 @@ dependencies = [
  "serde",
  "serde_json",
  "siphasher",
- "smallvec",
  "starknet-types-core",
  "starknet_api",
  "tempfile",
@@ -6763,7 +6739,6 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bincode 1.3.3",
- "blockifier",
  "bytes",
  "flate2",
  "futures",
@@ -6796,7 +6771,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "bincode 1.3.3",
- "blockifier",
  "bytes",
  "flate2",
  "http-body-util",
@@ -6829,13 +6803,13 @@ dependencies = [
  "async-trait",
  "bitvec",
  "blockifier",
- "dashmap",
  "futures",
  "lazy_static",
  "mc-analytics",
  "mc-db",
  "mc-devnet",
  "mc-exec",
+ "mc-submit-tx",
  "mockall 0.13.1",
  "mp-block",
  "mp-chain-config",
@@ -6886,7 +6860,6 @@ dependencies = [
  "mc-submit-tx",
  "mp-block",
  "mp-chain-config",
- "mp-class",
  "mp-convert",
  "mp-gateway",
  "mp-receipt",
@@ -6974,7 +6947,6 @@ dependencies = [
  "futures",
  "mc-db",
  "mc-exec",
- "mc-mempool",
  "mp-class",
  "mp-convert",
  "mp-rpc",
@@ -6992,7 +6964,6 @@ version = "0.8.0"
 dependencies = [
  "anyhow",
  "assert_matches",
- "blockifier",
  "futures",
  "httpmock",
  "m-cairo-test-contracts",
@@ -7331,7 +7302,6 @@ name = "mp-gateway"
 version = "0.8.0"
 dependencies = [
  "hyper 1.6.0",
- "itertools 0.13.0",
  "mp-block",
  "mp-chain-config",
  "mp-class",
@@ -7398,7 +7368,6 @@ name = "mp-state-update"
 version = "0.8.0"
 dependencies = [
  "bincode 1.3.3",
- "blockifier",
  "mp-convert",
  "mp-rpc",
  "serde",
@@ -9962,8 +9931,7 @@ dependencies = [
 [[package]]
 name = "starknet_api"
 version = "0.15.0-rc.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d0d5bda9bfa1cf2a0903c975b3b6918dddf3197b467d8de3a1e61c8760bcb2cb"
+source = "git+https://github.com/karnotxyz/sequencer?rev=3c206344dc64b5a0f150ea94cd2623b2a9a7da63#3c206344dc64b5a0f150ea94cd2623b2a9a7da63"
 dependencies = [
  "apollo_infra_utils",
  "base64 0.13.1",

@@ -2,7 +2,10 @@ use super::error::DatabaseError;
 use crate::core::client::database::constant::{BATCHES_COLLECTION, JOBS_COLLECTION};
 use crate::core::client::database::DatabaseClient;
 use crate::core::client::lock::constant::LOCKS_COLLECTION;
-use crate::types::batch::{Batch, BatchStatus, BatchUpdates};
+use crate::types::batch::{
+    AggregatorBatch, AggregatorBatchStatus, AggregatorBatchUpdates, Batch, BatchType, SnosBatch, SnosBatchStatus,
+    SnosBatchUpdates,
+};
 use crate::types::jobs::job_item::JobItem;
 use crate::types::jobs::job_updates::JobItemUpdates;
 use crate::types::jobs::types::{JobStatus, JobType};
@@ -55,6 +58,11 @@ pub struct MissingBlocksResponse {
     pub missing_blocks: Vec<u64>,
 }
 
+#[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
+pub struct MissingBatchIndicesResponse {
+    pub missing_batch_indices: Vec<u64>,
+}
+
 /// MongoDB client implementation
 pub struct MongoDbClient {
     client: Client,
@@ -78,7 +86,11 @@ impl MongoDbClient {
         self.database.collection(JOBS_COLLECTION)
     }
 
-    fn get_batch_collection(&self) -> Collection<Batch> {
+    fn get_aggregator_batch_collection(&self) -> Collection<AggregatorBatch> {
+        self.database.collection(BATCHES_COLLECTION)
+    }
+
+    fn get_snos_batch_collection(&self) -> Collection<SnosBatch> {
         self.database.collection(BATCHES_COLLECTION)
     }
 
@@ -592,13 +604,17 @@ impl DatabaseClient for MongoDbClient {
         Ok(jobs)
     }
 
-    /// function to get missing block numbers for jobs within a specified range.
+    /// function to get missing snos batch indexes for jobs within a specified range.
     ///
     /// `job_type` : Type of job to check for missing blocks.
     /// `lower_cap` : The minimum block number (inclusive).
     /// `upper_cap` : The maximum block number (exclusive, following MongoDB $range behavior).
     ///
-    /// Returns a vector of missing block numbers within the specified range.
+    /// Returns a vector of closed SnosBatch indices that overlap with the specified block range.
+    ///
+    /// This function finds SnosBatch objects with status "Closed" that overlap with the
+    /// specified block range using start_block and end_block fields, then returns their
+    /// batch index values.
     ///
     /// Eg:
     /// Getting missing SNOS jobs between blocks 2000 and 70000
@@ -614,8 +630,6 @@ impl DatabaseClient for MongoDbClient {
         limit: Option<i64>,
     ) -> Result<Vec<u64>, DatabaseError> {
         let start = Instant::now();
-        // Converting params to Bson
-        let job_type_bson = mongodb::bson::to_bson(&job_type)?;
 
         // NOTE: This implementation is limited by mongodb's capbility to not support u64.
         // i.e it will fail if upper_limit / lower_limit exceeds u32::MAX.
@@ -629,67 +643,51 @@ impl DatabaseClient for MongoDbClient {
             DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize: {}", e))
         })?;
 
-        // Constructing the aggregation pipeline
+        let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
+
+        // Use aggregation pipeline to group by index and get unique batch indices
         let mut pipeline = vec![
             doc! {
-                "$facet": {
-                    "existing_data": [
-                        doc! {
-                            "$match": {
-                                "job_type": job_type_bson,
-                                "metadata.specific.block_number": {
-                                    "$gte": lower_limit,
-                                    "$lt": upper_limit
-                                }
+                "$match": {
+                    "status": "Closed",
+                    "$or": [
+                        // Batches that start within the range
+                        {
+                            "start_block": {
+                                "$gte": lower_limit,
+                                "$lt": upper_limit
                             }
                         },
-                        doc! {
-                            "$group": {
-                                "_id": null,
-                                "existing_blocks": {
-                                    "$addToSet": "$metadata.specific.block_number"
-                                }
+                        // Batches that end within the range
+                        {
+                            "end_block": {
+                                "$gte": lower_limit,
+                                "$lt": upper_limit
                             }
+                        },
+                        // Batches that span the entire range
+                        {
+                            "start_block": { "$lte": lower_limit },
+                            "end_block": { "$gte": upper_limit }
                         }
                     ]
                 }
             },
             doc! {
-                "$project": {
-                    "existing_blocks": {
-                        "$ifNull": [
-                            { "$arrayElemAt": ["$existing_data.existing_blocks", 0] },
-                            []
-                        ]
-                    }
+                "$group": {
+                    "_id": "$index"
                 }
             },
             doc! {
-                "$addFields": {
-                    "complete_range": {
-                        "$range": [lower_limit, upper_limit]
-                    }
-                }
-            },
-            doc! {
-                "$project": {
-                    "missing_blocks": {
-                        "$setDifference": [
-                            "$complete_range",
-                            "$existing_blocks"
-                        ]
-                    }
+                "$sort": {
+                    "_id": 1
                 }
             },
         ];
 
         if let Some(limit_value) = limit {
             pipeline.push(doc! {
-                "$project": {
-                    "missing_blocks": {
-                        "$slice": ["$missing_blocks", limit_value]
-                    }
-                }
+                "$limit": limit_value
             });
         }
 
@@ -698,31 +696,26 @@ impl DatabaseClient for MongoDbClient {
             lower_cap = lower_cap,
             upper_cap = upper_cap,
             category = "db_call",
-            "Fetching missing jobs by type and caps"
+            "Fetching closed SNOS batch indices by type and caps"
         );
 
-        let collection: Collection<JobItem> = self.get_job_collection();
+        // Execute aggregation pipeline
+        let mut cursor = collection.aggregate(pipeline, None).await?;
+        let mut batch_indices = Vec::new();
 
-        // Execute pipeline and extract block numbers
-        let missing_blocks_response =
-            self.execute_pipeline::<JobItem, MissingBlocksResponse>(collection, pipeline, None).await?;
+        while let Some(doc) = cursor.try_next().await? {
+            if let Ok(index) = doc.get_i64("_id") {
+                batch_indices.push(index as u64);
+            }
+        }
 
-        tracing::debug!(job_count = missing_blocks_response.len(), category = "db_call", "Retrieved missing jobs");
-
-        // Handle the case where we might not get any results
-        let block_numbers = if missing_blocks_response.is_empty() {
-            Vec::new()
-        } else {
-            let mut block_numbers = missing_blocks_response[0].missing_blocks.clone();
-            block_numbers.sort();
-            block_numbers
-        };
+        tracing::debug!(batch_count = batch_indices.len(), category = "db_call", "Retrieved closed SNOS batch indices");
 
         let attributes = [KeyValue::new("db_operation_name", "get_missing_block_numbers_by_type_and_caps")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
 
-        Ok(block_numbers)
+        Ok(batch_indices)
     }
 
     #[tracing::instrument(skip(self), fields(function_type = "db_call"), ret, err)]
@@ -777,9 +770,30 @@ impl DatabaseClient for MongoDbClient {
         Ok(result)
     }
 
-    async fn get_latest_batch(&self) -> Result<Option<Batch>, DatabaseError> {
+    async fn get_latest_aggregator_batch(&self) -> Result<Option<AggregatorBatch>, DatabaseError> {
+        match self.get_latest_batch(BatchType::AggregatorBatch).await? {
+            Some(Batch::Aggregator(batch)) => Ok(Some(batch)),
+            Some(Batch::Snos(_)) => {
+                // This should never happen since we're filtering by AggregatorBatch
+                Err(DatabaseError::FailedToSerializeDocument("Unexpected batch type returned".to_string()))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn get_latest_batch(&self, batch_type: BatchType) -> Result<Option<Batch>, DatabaseError> {
         let start = Instant::now();
+        let batch_type_str = match batch_type {
+            BatchType::AggregatorBatch => "AggregatorBatch",
+            BatchType::SnosBatch => "SnosBatch",
+        };
+
         let pipeline = vec![
+            doc! {
+                "$match": {
+                    "batch_type": batch_type_str
+                }
+            },
             doc! {
                 "$sort": {
                     "index": -1
@@ -790,52 +804,94 @@ impl DatabaseClient for MongoDbClient {
             },
         ];
 
-        let mut cursor = self.get_batch_collection().aggregate(pipeline, None).await?;
+        let mut cursor = self.get_aggregator_batch_collection().aggregate(pipeline, None).await?;
 
         match cursor.try_next().await? {
             Some(doc) => {
-                // Try to deserialize and log any errors
-                match mongodb::bson::from_document::<Batch>(doc.clone()) {
-                    Ok(batch) => {
-                        let attributes = [KeyValue::new("db_operation_name", "get_latest_batch")];
-                        let duration = start.elapsed();
-                        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-                        Ok(Some(batch))
-                    }
-                    Err(e) => {
-                        tracing::error!(
-                            error = %e,
-                            document = ?doc,
-                            "Failed to deserialize document into Batch"
-                        );
-                        Err(DatabaseError::FailedToSerializeDocument(format!("Failed to deserialize document: {}", e)))
-                    }
+                // Try to deserialize based on batch type
+                match batch_type {
+                    BatchType::AggregatorBatch => match mongodb::bson::from_document::<AggregatorBatch>(doc.clone()) {
+                        Ok(batch) => {
+                            let attributes = [KeyValue::new("db_operation_name", "get_latest_batch")];
+                            let duration = start.elapsed();
+                            ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                            Ok(Some(Batch::Aggregator(batch)))
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                document = ?doc,
+                                "Failed to deserialize document into AggregatorBatch"
+                            );
+                            Err(DatabaseError::FailedToSerializeDocument(format!(
+                                "Failed to deserialize document: {}",
+                                e
+                            )))
+                        }
+                    },
+                    BatchType::SnosBatch => match mongodb::bson::from_document::<SnosBatch>(doc.clone()) {
+                        Ok(batch) => {
+                            let attributes = [KeyValue::new("db_operation_name", "get_latest_batch")];
+                            let duration = start.elapsed();
+                            ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                            Ok(Some(Batch::Snos(batch)))
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                document = ?doc,
+                                "Failed to deserialize document into SnosBatch"
+                            );
+                            Err(DatabaseError::FailedToSerializeDocument(format!(
+                                "Failed to deserialize document: {}",
+                                e
+                            )))
+                        }
+                    },
                 }
             }
             None => Ok(None),
         }
     }
 
-    async fn get_batches_by_indexes(&self, indexes: Vec<u64>) -> Result<Vec<Batch>, DatabaseError> {
+    async fn get_latest_snos_batch(&self) -> Result<Option<SnosBatch>, DatabaseError> {
+        match self.get_latest_batch(BatchType::SnosBatch).await? {
+            Some(Batch::Snos(batch)) => Ok(Some(batch)),
+            Some(Batch::Aggregator(_)) => {
+                // This should never happen since we're filtering by SnosBatch
+                Err(DatabaseError::FailedToSerializeDocument("Unexpected batch type returned".to_string()))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn get_snos_batches_by_indices(&self, indexes: Vec<u64>) -> Result<Vec<SnosBatch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
+            "batch_type": "SnosBatch",
             "index": {
                 "$in": indexes.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
             }
         };
 
-        let jobs: Vec<Batch> = self.get_batch_collection().find(filter, None).await?.try_collect().await?;
-        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved batch by indexes");
-        let attributes = [KeyValue::new("db_operation_name", "get_batches_by_indexes")];
+        let batches: Vec<SnosBatch> = self.get_snos_batch_collection().find(filter, None).await?.try_collect().await?;
+        tracing::debug!(batch_count = batches.len(), category = "db_call", "Retrieved snos batch by indexes");
+        let attributes = [KeyValue::new("db_operation_name", "get_snos_batches_by_indices")];
         let duration = start.elapsed();
         ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
-        Ok(jobs)
+        Ok(batches)
     }
 
-    /// Update a batch by its index
-    async fn update_batch_status_by_index(&self, index: u64, status: BatchStatus) -> Result<Batch, DatabaseError> {
+    async fn update_snos_batch_status_by_index(
+        &self,
+        index: u64,
+        status: SnosBatchStatus,
+    ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
-        let filter = doc! { "index": index as i64 };
+        let filter = doc! {
+            "batch_type": "SnosBatch",
+            "index": index as i64
+        };
 
         let mut updates_doc = Document::new();
         updates_doc.insert("status", Bson::String(format!("{:?}", status)));
@@ -844,10 +900,57 @@ impl DatabaseClient for MongoDbClient {
         let update = doc! { "$set": updates_doc };
 
         let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
-        self.update_batch(filter, update, options, start, index).await
+        self.update_snos_batch(filter, update, options, start, index).await
     }
 
-    async fn update_or_create_batch(&self, batch: &Batch, update: &BatchUpdates) -> Result<Batch, DatabaseError> {
+    async fn get_aggregator_batches_by_indexes(
+        &self,
+        indexes: Vec<u64>,
+    ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "batch_type": "AggregatorBatch",
+            "index": {
+                "$in": indexes.iter().map(|status| bson::to_bson(status).unwrap_or(Bson::Null)).collect::<Vec<Bson>>()
+            }
+        };
+
+        let jobs: Vec<AggregatorBatch> =
+            self.get_aggregator_batch_collection().find(filter, None).await?.try_collect().await?;
+        tracing::debug!(job_count = jobs.len(), category = "db_call", "Retrieved batch by indexes");
+        let attributes = [KeyValue::new("db_operation_name", "get_batches_by_indexes")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+        Ok(jobs)
+    }
+
+    /// Update a batch by its index
+    async fn update_aggregator_batch_status_by_index(
+        &self,
+        index: u64,
+        status: AggregatorBatchStatus,
+    ) -> Result<AggregatorBatch, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "batch_type": "AggregatorBatch",
+            "index": index as i64
+        };
+
+        let mut updates_doc = Document::new();
+        updates_doc.insert("status", Bson::String(format!("{:?}", status)));
+        updates_doc.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
+
+        let update = doc! { "$set": updates_doc };
+
+        let options = FindOneAndUpdateOptions::builder().upsert(false).return_document(ReturnDocument::After).build();
+        self.update_aggregator_batch(filter, update, options, start, index).await
+    }
+
+    async fn update_or_create_aggregator_batch(
+        &self,
+        batch: &AggregatorBatch,
+        update: &AggregatorBatchUpdates,
+    ) -> Result<AggregatorBatch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
             "_id": batch.id,
@@ -884,23 +987,23 @@ impl DatabaseClient for MongoDbClient {
             "$set": non_null_updates
         };
 
-        self.update_batch(filter, update, options, start, batch.index).await
+        self.update_aggregator_batch(filter, update, options, start, batch.index).await
     }
 
-    async fn update_batch(
+    async fn update_aggregator_batch(
         &self,
         filter: Document,
         update: Document,
         options: FindOneAndUpdateOptions,
         start: Instant,
         index: u64,
-    ) -> Result<Batch, DatabaseError> {
+    ) -> Result<AggregatorBatch, DatabaseError> {
         // Find a batch and update it
-        let result = self.get_batch_collection().find_one_and_update(filter, update, options).await?;
+        let result = self.get_aggregator_batch_collection().find_one_and_update(filter, update, options).await?;
         match result {
             Some(updated_batch) => {
                 // Update done
-                let attributes = [KeyValue::new("db_operation_name", "update_batch")];
+                let attributes = [KeyValue::new("db_operation_name", "update_aggregator_batch")];
                 let duration = start.elapsed();
                 ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
                 Ok(updated_batch)
@@ -913,10 +1016,40 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    async fn create_batch(&self, batch: Batch) -> Result<Batch, DatabaseError> {
+    async fn update_snos_batch(
+        &self,
+        filter: Document,
+        update: Document,
+        options: FindOneAndUpdateOptions,
+        start: Instant,
+        index: u64,
+    ) -> Result<SnosBatch, DatabaseError> {
+        // Find a batch and update it
+        let result = self.get_snos_batch_collection().find_one_and_update(filter, update, options).await?;
+        match result {
+            Some(updated_batch) => {
+                // Update done
+                let attributes = [KeyValue::new("db_operation_name", "update_snos_batch")];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(updated_batch)
+            }
+            None => {
+                // Not found
+                tracing::error!(index = %index, category = "db_call", "Failed to update batch");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update batch. Identifier - {}, ", index)))
+            }
+        }
+    }
+
+    async fn create_aggregator_batch(&self, batch: AggregatorBatch) -> Result<AggregatorBatch, DatabaseError> {
         let start = Instant::now();
 
-        match self.get_batch_collection().insert_one(batch.clone(), InsertOneOptions::builder().build()).await {
+        match self
+            .get_aggregator_batch_collection()
+            .insert_one(batch.clone(), InsertOneOptions::builder().build())
+            .await
+        {
             Ok(_) => {
                 let duration = start.elapsed();
                 tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
@@ -935,15 +1068,95 @@ impl DatabaseClient for MongoDbClient {
         }
     }
 
-    /// get_batch_for_block - Returns the batch for a given block number
-    async fn get_batch_for_block(&self, block_number: u64) -> Result<Option<Batch>, DatabaseError> {
+    async fn create_snos_batch(&self, batch: SnosBatch) -> Result<SnosBatch, DatabaseError> {
+        let start = Instant::now();
+        let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
+        match collection.insert_one(batch.clone(), InsertOneOptions::builder().build()).await {
+            Ok(_) => {
+                let duration = start.elapsed();
+                tracing::debug!(duration = %duration.as_millis(), "Batch created in MongoDB successfully");
+                Ok(batch)
+            }
+            Err(err) => {
+                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to insert batch");
+                Err(DatabaseError::InsertFailed(format!(
+                    "Failed to insert batch {} with id {}: {}",
+                    batch.index, batch.id, err
+                )))
+            }
+        }
+    }
+
+    async fn update_or_create_snos_batch(
+        &self,
+        batch: &SnosBatch,
+        update: &SnosBatchUpdates,
+    ) -> Result<SnosBatch, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
+            "_id": batch.id,
+        };
+        let options = FindOneAndUpdateOptions::builder().upsert(true).return_document(ReturnDocument::After).build();
+
+        let updates = batch.to_document()?;
+
+        // remove null values from the updates
+        let mut non_null_updates = Document::new();
+        updates.iter().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+        update.to_document()?.iter_mut().for_each(|(k, v)| {
+            if v != &Bson::Null {
+                non_null_updates.insert(k, v);
+            }
+        });
+
+        // throw an error if there's no field to be updated
+        if non_null_updates.is_empty() {
+            return Err(DatabaseError::NoUpdateFound("No field to be updated, likely a false call".to_string()));
+        }
+
+        // Add additional fields that are always updated
+        if let Some(end_block) = update.end_block {
+            non_null_updates.insert("num_blocks", Bson::Int64(end_block as i64 - batch.start_block as i64 + 1));
+        }
+        non_null_updates.insert("updated_at", Bson::DateTime(Utc::now().round_subsecs(0).into()));
+
+        let update = doc! {
+            "$set": non_null_updates
+        };
+
+        let collection: Collection<SnosBatch> = self.get_snos_batch_collection();
+        let result = collection.find_one_and_update(filter, update, options).await?;
+        match result {
+            Some(updated_batch) => {
+                let attributes = [KeyValue::new("db_operation_name", "update_or_create_snos_batch")];
+                let duration = start.elapsed();
+                ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+                Ok(updated_batch)
+            }
+            None => {
+                tracing::error!(batch_id = %batch.id, category = "db_call", "Failed to update snos batch");
+                Err(DatabaseError::UpdateFailed(format!("Failed to update snos batch. Identifier - {}, ", batch.id)))
+            }
+        }
+    }
+
+    /// get_batch_for_block - Returns the batch for a given block number
+    async fn get_aggregator_batch_for_block(
+        &self,
+        block_number: u64,
+    ) -> Result<Option<AggregatorBatch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "batch_type": "AggregatorBatch",
             "start_block": { "$lte": block_number as i64 },
             "end_block": { "$gte": block_number as i64 }
         };
 
-        let batch = self.get_batch_collection().find_one(filter, None).await?;
+        let batch = self.get_aggregator_batch_collection().find_one(filter, None).await?;
 
         tracing::debug!(category = "db_call", "Retrieved batch by block number");
         let attributes = [KeyValue::new("db_operation_name", "get_batch_for_block")];
@@ -954,19 +1167,44 @@ impl DatabaseClient for MongoDbClient {
     }
 
     /// get_batches_by_status - Returns a vector of Batch for which the status is the given status
-    async fn get_batches_by_status(
+    async fn get_aggregator_batches_by_status(
         &self,
-        status: BatchStatus,
+        status: AggregatorBatchStatus,
         limit: Option<i64>,
-    ) -> Result<Vec<Batch>, DatabaseError> {
+    ) -> Result<Vec<AggregatorBatch>, DatabaseError> {
         let start = Instant::now();
         let filter = doc! {
+            "batch_type": "AggregatorBatch",
             "status": status.to_string(),
         };
         let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
         let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
 
-        let batches = self.get_batch_collection().find(filter, find_options).await?.try_collect().await?;
+        let batches = self.get_aggregator_batch_collection().find(filter, find_options).await?.try_collect().await?;
+
+        tracing::debug!(category = "db_call", "Retrieved batches by statuses");
+        let attributes = [KeyValue::new("db_operation_name", "get_all_batches_by_status")];
+        let duration = start.elapsed();
+        ORCHESTRATOR_METRICS.db_calls_response_time.record(duration.as_secs_f64(), &attributes);
+
+        Ok(batches)
+    }
+
+    /// get_snos_batches_by_status - Get all the snos batches by that matches the given status
+    async fn get_snos_batches_by_status(
+        &self,
+        status: SnosBatchStatus,
+        limit: Option<i64>,
+    ) -> Result<Vec<SnosBatch>, DatabaseError> {
+        let start = Instant::now();
+        let filter = doc! {
+            "batch_type": "SnosBatch",
+            "status": status.to_string(),
+        };
+        let find_options_builder = FindOptions::builder().sort(doc! {"index": 1});
+        let find_options = limit.map(|val| find_options_builder.limit(Some(val)).build());
+
+        let batches = self.get_snos_batch_collection().find(filter, find_options).await?.try_collect().await?;
 
         tracing::debug!(category = "db_call", "Retrieved batches by statuses");
         let attributes = [KeyValue::new("db_operation_name", "get_all_batches_by_status")];

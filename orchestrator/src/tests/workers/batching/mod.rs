@@ -31,14 +31,14 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     if !has_existing_batch {
         // DB does not have an existing batch
         // Returning None to specify no existing batch
-        database.expect_get_latest_batch().returning(|| Ok(None));
+        database.expect_get_latest_batch().returning(|_| Ok(None));
 
         // Batch containing blocks from 0 to 5
         start_block = 0;
         end_block = 5;
     } else {
         // DB does have an existing batch
-        let existing_batch = crate::types::batch::Batch {
+        let existing_batch = crate::types::batch::AggregatorBatch {
             index: 1,
             start_block: 0,
             end_block: 3,
@@ -49,7 +49,9 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
             ..Default::default()
         };
         // Returning Some(existing_batch) to specify an existing batch
-        database.expect_get_latest_batch().returning(move || Ok(Some(existing_batch.clone())));
+        database
+            .expect_get_latest_batch()
+            .returning(move |_| Ok(Some(crate::types::batch::Batch::Aggregator(existing_batch.clone()))));
 
         // Batch containing blocks from 4 to 7
         start_block = 4;
@@ -60,8 +62,8 @@ async fn test_batching_worker(#[case] has_existing_batch: bool) -> Result<(), Bo
     storage.expect_put_data().returning(|_, _| Ok(()));
 
     // Mock database expectations for batching
-    database.expect_create_batch().returning(Ok);
-    database.expect_update_or_create_batch().returning(|batch, _| Ok(batch.clone()));
+    database.expect_create_aggregator_batch().returning(Ok);
+    database.expect_update_or_create_aggregator_batch().returning(|batch, _| Ok(batch.clone()));
 
     if has_existing_batch {
         storage.expect_get_data().returning(|_| Ok(Bytes::from(get_dummy_state_update(1).to_string())));

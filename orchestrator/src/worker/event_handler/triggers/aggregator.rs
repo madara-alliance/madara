@@ -1,5 +1,5 @@
 use crate::core::config::Config;
-use crate::types::batch::BatchStatus;
+use crate::types::batch::AggregatorBatchStatus;
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, PROOF_FILE_NAME, SNOS_OUTPUT_FILE_NAME, STORAGE_ARTIFACTS_DIR,
     STORAGE_BLOB_DIR,
@@ -24,7 +24,8 @@ impl JobTrigger for AggregatorJobTrigger {
         tracing::info!(log_type = "starting", category = "AggregatorWorker", "AggregatorWorker started.");
 
         // Get all the closed batches
-        let closed_batches = config.database().get_batches_by_status(BatchStatus::Closed, Some(10)).await?;
+        let closed_batches =
+            config.database().get_aggregator_batches_by_status(AggregatorBatchStatus::Closed, Some(10)).await?;
 
         tracing::debug!("Found {} closed batches", closed_batches.len());
 
@@ -79,7 +80,10 @@ impl JobTrigger for AggregatorJobTrigger {
                 Ok(_) => {
                     config
                         .database()
-                        .update_batch_status_by_index(batch.index, BatchStatus::PendingAggregatorRun)
+                        .update_aggregator_batch_status_by_index(
+                            batch.index,
+                            AggregatorBatchStatus::PendingAggregatorRun,
+                        )
                         .await?;
                     tracing::info!(batch_id = %batch.id, batch_index = %batch.index, "Successfully created new aggregator job")
                 }
@@ -89,7 +93,7 @@ impl JobTrigger for AggregatorJobTrigger {
                         KeyValue::new("operation_job_type", format!("{:?}", JobType::Aggregator)),
                         KeyValue::new("operation_type", format!("{:?}", "create_job")),
                     ];
-                    ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &attributes);
+                    ORCHESTRATOR_METRICS.failed_job_operations.add(1, &attributes);
                 }
             }
         }

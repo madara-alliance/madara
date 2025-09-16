@@ -3,7 +3,7 @@ use std::sync::Arc;
 use cairo_vm::vm::runners::cairo_pie::CairoPie;
 use chrono::{SubsecRound, Utc};
 use rstest::*;
-use starknet_os::io::output::StarknetOsOutput;
+use starknet_core::types::Felt;
 use url::Url;
 use uuid::Uuid;
 
@@ -86,7 +86,11 @@ async fn test_process_job() -> color_eyre::Result<()> {
     let metadata = JobMetadata {
         common: CommonMetadata::default(),
         specific: JobSpecificMetadata::Snos(SnosMetadata {
-            block_number,
+            snos_batch_index: 1,
+            start_block: block_number,
+            end_block: block_number,
+            num_blocks: 1,
+            full_output: true,
             cairo_pie_path: Some(format!("{}/{}", block_number, CAIRO_PIE_FILE_NAME)),
             snos_output_path: Some(format!("{}/{}", block_number, SNOS_OUTPUT_FILE_NAME)),
             program_output_path: Some(format!("{}/{}", block_number, PROGRAM_OUTPUT_FILE_NAME)),
@@ -118,7 +122,7 @@ async fn test_process_job() -> color_eyre::Result<()> {
 
     // assert that we can build back the Pie & the Snos output
     let _ = CairoPie::from_bytes(&cairo_pie_data)?;
-    let _: StarknetOsOutput = serde_json::from_slice(&snos_output_data)?;
+    let _ = serde_json::from_slice(&snos_output_data)?;
 
     Ok(())
 }

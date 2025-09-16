@@ -44,15 +44,13 @@ async fn handle_process_job_request(
     match JobService::queue_job_for_processing(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job queued for processing successfully");
-            ORCHESTRATOR_METRICS
-                .successful_job_operations
-                .add(1.0, &[KeyValue::new("operation_type", "queue_process")]);
+            ORCHESTRATOR_METRICS.successful_job_operations.add(1, &[KeyValue::new("operation_type", "queue_process")]);
             Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for processing", id))))
                 .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for processing");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_process")]);
+            ORCHESTRATOR_METRICS.failed_job_operations.add(1, &[KeyValue::new("operation_type", "queue_process")]);
             Err(JobRouteError::ProcessingError(e.to_string()))
         }
     }
@@ -87,13 +85,13 @@ async fn handle_verify_job_request(
     match JobService::queue_job_for_verification(job_id, config.clone()).await {
         Ok(_) => {
             info!("Job queued for verification successfully");
-            ORCHESTRATOR_METRICS.successful_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);
+            ORCHESTRATOR_METRICS.successful_job_operations.add(1, &[KeyValue::new("operation_type", "queue_verify")]);
             Ok(Json(ApiResponse::<()>::success(Some(format!("Job with id {} queued for verification", id))))
                 .into_response())
         }
         Err(e) => {
             error!(error = %e, "Failed to queue job for verification");
-            ORCHESTRATOR_METRICS.failed_job_operations.add(1.0, &[KeyValue::new("operation_type", "queue_verify")]);
+            ORCHESTRATOR_METRICS.failed_job_operations.add(1, &[KeyValue::new("operation_type", "queue_verify")]);
             Err(JobRouteError::ProcessingError(e.to_string()))
         }
     }
@@ -128,7 +126,7 @@ async fn handle_retry_job_request(
         Ok(_) => {
             info!("Job retry initiated successfully");
             ORCHESTRATOR_METRICS.successful_job_operations.add(
-                1.0,
+                1,
                 &[KeyValue::new("operation_type", "process_job"), KeyValue::new("operation_info", "retry_job")],
             );
 
@@ -137,7 +135,7 @@ async fn handle_retry_job_request(
         Err(e) => {
             error!(error = %e, "Failed to retry job");
             ORCHESTRATOR_METRICS.failed_job_operations.add(
-                1.0,
+                1,
                 &[KeyValue::new("operation_type", "process_job"), KeyValue::new("operation_info", "retry_job")],
             );
             Err(JobRouteError::ProcessingError(e.to_string()))

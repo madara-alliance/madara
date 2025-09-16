@@ -1,14 +1,13 @@
 use crate::types::params::OTELConfig;
 use crate::OrchestratorResult;
-use opentelemetry::trace::TracerProvider;
+use opentelemetry::trace::TracerProvider as _;
 use opentelemetry::{global, KeyValue};
 use opentelemetry_appender_tracing::layer::OpenTelemetryTracingBridge;
-use opentelemetry_otlp::{ExportConfig, WithExportConfig};
-use opentelemetry_sdk::logs::LoggerProvider;
-use opentelemetry_sdk::metrics::reader::{DefaultAggregationSelector, DefaultTemporalitySelector};
+use opentelemetry_otlp::WithExportConfig;
+use opentelemetry_sdk::logs::SdkLoggerProvider;
 use opentelemetry_sdk::metrics::{PeriodicReader, SdkMeterProvider};
-use opentelemetry_sdk::trace::{BatchConfigBuilder, Config, Tracer};
-use opentelemetry_sdk::{runtime, Resource};
+use opentelemetry_sdk::trace::{SdkTracerProvider, Tracer};
+use opentelemetry_sdk::Resource;
 use std::time::Duration;
 use tracing::warn;
 use tracing_opentelemetry::OpenTelemetryLayer;
@@ -23,13 +22,6 @@ pub struct OrchestratorInstrumentation {
 }
 
 impl OrchestratorInstrumentation {
-    /// setup - Initializes all the analytical instrumentation for the orchestrator
-    ///
-    /// # Arguments
-    /// * `config` - The configuration for the OpenTelemetry exporter.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<OrchestratorInstrumentation>` - The instrumentation for the orchestrator.
     pub fn new(config: &OTELConfig) -> OrchestratorResult<Self> {
         match config.endpoint {
             None => {
@@ -49,7 +41,6 @@ impl OrchestratorInstrumentation {
                     .with(OpenTelemetryLayer::new(tracer))
                     .with(OpenTelemetryTracingBridge::new(&logger));
 
-                // Force overwrite any existing global subscriber
                 let _ = tracing::subscriber::set_global_default(subscriber);
                 warn!("OpenTelemetry tracing subscriber initialized (existing subscriber overwritten if present)");
                 Ok(Self { otel_config: config.clone(), meter_provider: Some(meter_provider) })
@@ -57,88 +48,66 @@ impl OrchestratorInstrumentation {
         }
     }
 
-    /// instrument_logs - This function sets up the logger provider for the orchestrator.
-    /// It configures the logger to use the OpenTelemetry OTLP exporter
-    /// and sets the resource attributes for the logger.
-    ///
-    /// # Arguments
-    /// * `config` - The configuration for the OpenTelemetry exporter.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<LoggerProvider>` - The logger provider for the orchestrator.
-    fn instrument_logger_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<LoggerProvider> {
-        Ok(opentelemetry_otlp::new_pipeline()
-            .logging()
-            .with_resource(Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", config.service_name, "_logs_service"),
-            )]))
-            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(endpoint.to_string()))
-            .install_batch(runtime::Tokio)?)
+    fn instrument_logger_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<SdkLoggerProvider> {
+        let exporter =
+            opentelemetry_otlp::LogExporterBuilder::new().with_tonic().with_endpoint(endpoint.to_string()).build()?;
+
+        let logger_provider = SdkLoggerProvider::builder()
+            .with_resource(
+                Resource::builder_empty()
+                    .with_attributes(vec![KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                        format!("{}{}", config.service_name, "_logs_service"),
+                    )])
+                    .build(),
+            )
+            .with_batch_exporter(exporter)
+            .build();
+
+        Ok(logger_provider)
     }
 
-    /// instrument_metric_provider - Instrumenting the metric provider for the system Analytics
-    ///
-    /// # Arguments
-    /// * `config` - The configuration for the OpenTelemetry exporter.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<SdkMeterProvider>` - The meter provider for the orchestrator.
     fn instrument_metric_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<SdkMeterProvider> {
-        let export_config = ExportConfig { endpoint: endpoint.to_string(), ..ExportConfig::default() };
-        let exporter =
-            opentelemetry_otlp::new_exporter().tonic().with_export_config(export_config).build_metrics_exporter(
-                Box::new(DefaultAggregationSelector::new()),
-                Box::new(DefaultTemporalitySelector::new()),
-            )?;
+        let exporter = opentelemetry_otlp::MetricExporterBuilder::new()
+            .with_tonic()
+            .with_endpoint(endpoint.to_string())
+            .build()?;
 
-        // Creates a periodic reader that exports every 5 seconds
-        let reader = PeriodicReader::builder(exporter, runtime::Tokio).with_interval(Duration::from_secs(5)).build();
+        let reader = PeriodicReader::builder(exporter).with_interval(Duration::from_secs(5)).build();
 
-        // Builds a meter provider with the periodic reader
         let provider = SdkMeterProvider::builder()
             .with_reader(reader)
-            .with_resource(Resource::new(vec![KeyValue::new(
-                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-                format!("{}{}", config.service_name, "_meter_service"),
-            )]))
+            .with_resource(
+                Resource::builder_empty()
+                    .with_attributes(vec![KeyValue::new(
+                        opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                        format!("{}{}", config.service_name, "_meter_service"),
+                    )])
+                    .build(),
+            )
             .build();
+
         global::set_meter_provider(provider.clone());
         Ok(provider)
     }
-    /// instrument_tracer_provider - Instrumenting the tracer provider for the system Analytics
-    ///
-    /// # Arguments
-    /// * `config` - The configuration for the OpenTelemetry exporter.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<Tracer>` - The tracer for the orchestrator.
+
     fn instrument_tracer_provider(config: &OTELConfig, endpoint: &Url) -> OrchestratorResult<Tracer> {
-        // Increasing the queue size and batch size, only increase in queue size delays full channel error.
-        let batch_config = BatchConfigBuilder::default().build();
+        let exporter =
+            opentelemetry_otlp::SpanExporterBuilder::new().with_tonic().with_endpoint(endpoint.to_string()).build()?;
 
-        let resource = Resource::new(vec![KeyValue::new(
-            opentelemetry_semantic_conventions::resource::SERVICE_NAME,
-            format!("{}{}", config.service_name, "_trace_service"),
-        )]);
+        let resource = Resource::builder_empty()
+            .with_attributes(vec![KeyValue::new(
+                opentelemetry_semantic_conventions::resource::SERVICE_NAME,
+                format!("{}{}", config.service_name, "_trace_service"),
+            )])
+            .build();
 
-        let provider = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(opentelemetry_otlp::new_exporter().tonic().with_endpoint(endpoint.to_string()))
-            .with_trace_config(Config::default().with_resource(resource))
-            .with_batch_config(batch_config)
-            .install_batch(runtime::Tokio)?;
+        let provider = SdkTracerProvider::builder().with_resource(resource).with_batch_exporter(exporter).build();
 
         global::set_tracer_provider(provider.clone());
-
         Ok(provider.tracer(format!("{}{}", config.service_name, "_subscriber")))
     }
 
-    /// shutdown - Shuts down the OpenTelemetry meter provider.
-    /// This function is used to clean up resources and stop the OpenTelemetry exporter.
-    ///
-    /// # Returns
-    /// * `OrchestratorResult<()>` - A result indicating the success or failure of the shutdown operation.
     pub fn shutdown(&self) -> OrchestratorResult<()> {
         match self.meter_provider {
             Some(ref meter_provider) => Ok(meter_provider.shutdown()?),
