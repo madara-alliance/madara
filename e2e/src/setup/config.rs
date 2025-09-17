@@ -431,6 +431,15 @@ impl SetupConfigBuilder {
             .logs((false, true))
             .build();
 
+        let madara_config = test_config.madara_config.builder()
+            .database_path(get_database_path(test_name, MADARA_DATABASE_DIR))
+            .l1_endpoint(Some(anvil_config.endpoint()))
+            .build();
+
+        let orchestrator_run_config = test_config.orchestrator_run_config.builder()
+            .ethereum_rpc_url(anvil_config.endpoint())
+            .build();
+
         // Setting some envs
         std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
         std::env::set_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY);
@@ -438,7 +447,7 @@ impl SetupConfigBuilder {
 
         let sconfig = self
             .anvil_config(anvil_config)
-            .madara_config(test_config.madara_config)
+            .madara_config(madara_config)
             .pathfinder_config(test_config.pathfinder_config)
             .mock_verifier_deployer_config(test_config.mock_verifier_deployer_config)
             .orchestrator_setup_config(test_config.orchestrator_setup_config)
@@ -447,7 +456,7 @@ impl SetupConfigBuilder {
             .mock_prover_config(test_config.mock_prover_config)
             .mongo_config(test_config.mongo_config)
             .localstack_config(test_config.localstack_config)
-            .orchestrator_run_config(test_config.orchestrator_run_config)
+            .orchestrator_run_config(orchestrator_run_config)
             .build();
 
         Ok(sconfig)

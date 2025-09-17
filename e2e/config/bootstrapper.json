@@ -24,6 +24,6 @@
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
   "rollup_seq_url": "http://127.0.0.1:9944",
-  "sn_os_program_hash": "0x1e324682835e60c4779a683b32713504aed894fd73842f7d05b18e7bd29cd70",
+  "sn_os_program_hash": "0x54d3603ed14fb897d0925c48f26330ea9950bd4ca95746dad4f7f09febffe0d",
   "verifier_address": "0x5FbDB2315678afecb367f032d93F642f64180aa3"
 }

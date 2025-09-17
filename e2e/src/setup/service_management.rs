@@ -82,7 +82,7 @@ impl ServiceManager {
         self.start_anvil(&mut services).await?;
         self.start_madara(&mut services).await?;
         self.start_pathfinder(&mut services).await?;
-        self.start_mock_prover(&mut services).await?;
+        // self.start_mock_prover(&mut services).await?;
         self.start_orchestrator(&mut services).await?;
 
         Ok(services)

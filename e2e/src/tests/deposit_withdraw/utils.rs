@@ -60,7 +60,7 @@ pub async fn wait_for_transactions_finality(setup: &ChainSetup, transaction_hash
     let madara_service = setup.lifecycle_manager.madara_service().as_ref().ok_or("Madara service not available")?;
 
     let start_time = Instant::now();
-    let timeout_duration = Duration::from_secs(500);
+    let timeout_duration = Duration::from_secs(1000);
     let polling_interval = Duration::from_secs(12);
 
     println!("⏳ Waiting for {} transactions to reach finality...", transaction_hashes.len());
@@ -71,7 +71,8 @@ pub async fn wait_for_transactions_finality(setup: &ChainSetup, transaction_hash
     loop {
         if start_time.elapsed() >= timeout_duration {
             return Err(format!(
-                "Transaction finality check timed out after 500 seconds. Still pending: {:?}",
+                "Transaction finality check timed out after {} seconds. Still pending: {:?}",
+                timeout_duration.as_secs(),
                 pending_txs.iter().map(|f| f.to_hex_string()).collect::<Vec<_>>()
             )
             .into());

@@ -295,7 +295,7 @@ impl AtlanticClient {
         }
     }
 
-    pub async fn submit_l2_query(
+pub async fn submit_l2_query(
         &self,
         proof: &str,
         n_steps: Option<usize>,

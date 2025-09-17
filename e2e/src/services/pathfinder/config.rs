@@ -48,7 +48,7 @@ impl Default for PathfinderConfig {
             port: PATHFINDER_PORT,
             database_path: get_database_path(DATA_DIR, PATHFINDER_DATABASE_DIR),
             binary_path: get_binary_path(PATHFINDER_BINARY),
-            ethereum_url: Url::parse("https://ethereum-sepolia-rpc.publicnode.com").unwrap(),
+            ethereum_url: Url::parse("https://eth-sepolia.public.blastapi.io").unwrap(),
             rpc_root_version: "v07".to_string(),
             network: "custom".to_string(),
             chain_id: "MADARA_DEVNET".to_string(),
