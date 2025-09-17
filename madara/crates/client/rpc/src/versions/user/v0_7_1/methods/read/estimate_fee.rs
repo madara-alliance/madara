@@ -7,9 +7,8 @@ use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
-use mp_block::BlockId;
 use mp_convert::ToFelt;
-use mp_rpc::v0_7_1::{BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
+use mp_rpc::v0_7_1::{BlockId, BroadcastedTxn, FeeEstimate, SimulationFlagForEstimateFee};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 
 /// Estimate the fee associated with transaction
@@ -29,7 +28,7 @@ pub async fn estimate_fee(
     block_id: BlockId,
 ) -> StarknetRpcResult<Vec<FeeEstimate>> {
     tracing::debug!("estimate fee on block_id {block_id:?}");
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
     if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
@@ -69,7 +68,7 @@ pub async fn estimate_fee(
                     error: result.execution_info.revert_error.as_ref().map(|e| e.to_string()).unwrap_or_default(),
                 });
             }
-            Ok(exec_context.execution_result_to_fee_estimate(result, tip)?)
+            Ok(exec_context.execution_result_to_fee_estimate_v0_7(result, tip)?)
         })
         .collect::<Result<_, _>>()?;
 

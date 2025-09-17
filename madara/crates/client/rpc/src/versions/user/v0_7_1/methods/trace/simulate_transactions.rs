@@ -5,9 +5,8 @@ use anyhow::Context;
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::execution::TxInfo;
 use mc_exec::{execution_result_to_tx_trace, MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
-use mp_block::BlockId;
 use mp_convert::ToFelt;
-use mp_rpc::v0_7_1::{BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
+use mp_rpc::v0_7_1::{BlockId, BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 
 pub async fn simulate_transactions(
@@ -16,7 +15,7 @@ pub async fn simulate_transactions(
     transactions: Vec<BroadcastedTxn>,
     simulation_flags: Vec<SimulationFlag>,
 ) -> StarknetRpcResult<Vec<SimulateTransactionsResult>> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     let mut exec_context = view.new_execution_context()?;
 
     if exec_context.protocol_version < EXECUTION_UNSUPPORTED_BELOW_VERSION {
@@ -54,7 +53,7 @@ pub async fn simulate_transactions(
                 transaction_trace: execution_result_to_tx_trace(result)
                     .context("Converting execution infos to tx trace")?,
                 fee_estimation: exec_context
-                    .execution_result_to_fee_estimate(result, tip)
+                    .execution_result_to_fee_estimate_v0_7(result, tip)
                     .context("Converting execution infos to tx trace")?,
             })
         })

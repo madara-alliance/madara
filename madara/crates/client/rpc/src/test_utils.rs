@@ -17,10 +17,10 @@ use mp_class::{
 use mp_receipt::{
     ExecutionResources, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt,
 };
-use mp_rpc::admin::BroadcastedDeclareTxnV0;
+use mp_rpc::{admin::BroadcastedDeclareTxnV0, v0_9_0::ExecutionStatus};
 use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
-    ClassAndTxnHash, ContractAndTxnHash, TxnReceipt, TxnWithHash,
+    ClassAndTxnHash, ContractAndTxnHash, TxnWithHash,
 };
 use mp_state_update::{
     ContractStorageDiffItem, DeclaredClassItem, DeployedContractItem, NonceUpdate, ReplacedClassItem, StateDiff,
@@ -89,7 +89,8 @@ pub struct SampleChainForBlockGetters {
     pub block_hashes: Vec<Felt>,
     pub tx_hashes: Vec<Felt>,
     pub expected_txs: Vec<mp_rpc::v0_7_1::TxnWithHash>,
-    pub expected_receipts: Vec<TxnReceipt>,
+    pub expected_receipts_v0_7: Vec<mp_rpc::v0_7_1::TxnReceipt>,
+    pub expected_receipts_v0_9: Vec<mp_rpc::v0_9_0::TxnReceipt>,
 }
 
 #[fixture]
@@ -154,7 +155,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
             },
         ]
     };
-    let expected_receipts = {
+    let expected_receipts_v0_7 = {
         use mp_rpc::v0_7_1::{
             CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,
         };
@@ -201,6 +202,69 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     execution_resources: defaut_execution_resources(),
                     finality_status: TxnFinalityStatus::L2,
                     execution_status: mp_rpc::v0_7_1::ExecutionStatus::Successful,
+                },
+            }),
+        ]
+    };
+    let expected_receipts_v0_9 = {
+        use mp_rpc::v0_9_0::{
+            CommonReceiptProperties, FeePayment, InvokeTxnReceipt, PriceUnit, TxnFinalityStatus, TxnReceipt,PriceUnitWei, PriceUnitFri
+        };
+        vec![
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0x8888888"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x9"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L1,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd848484"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Successful,
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84848407"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94dd"),
+                        unit: PriceUnit::Fri(PriceUnitFri::Fri),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Reverted("too bad".into()),
+                },
+            }),
+            TxnReceipt::Invoke(InvokeTxnReceipt {
+                common_receipt_properties: CommonReceiptProperties {
+                    transaction_hash: Felt::from_hex_unchecked("0xdd84847784"),
+                    actual_fee: FeePayment {
+                        amount: Felt::from_hex_unchecked("0x94"),
+                        unit: PriceUnit::Wei(PriceUnitWei::Wei),
+                    },
+                    messages_sent: vec![],
+                    events: vec![],
+                    execution_resources: defaut_execution_resources(),
+                    finality_status: TxnFinalityStatus::L2,
+                    execution_status: ExecutionStatus::Successful,
                 },
             }),
         ]
@@ -384,7 +448,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
 
     backend.set_latest_l1_confirmed(Some(0)).unwrap();
 
-    SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts }
+    SampleChainForBlockGetters { block_hashes, tx_hashes, expected_txs, expected_receipts_v0_7, expected_receipts_v0_9 }
 }
 
 fn defaut_execution_resources() -> mp_rpc::v0_7_1::ExecutionResources {

@@ -1,0 +1,160 @@
+use crate::errors::StarknetRpcResult;
+use crate::Starknet;
+use mp_block::MadaraMaybePreconfirmedBlockInfo;
+use mp_rpc::v0_9_0::{
+    BlockId, BlockStatus, BlockWithTxHashes, MaybePreConfirmedBlockWithTxHashes,
+    PreConfirmedBlockWithTxHashes,
+};
+
+/// Get block information with transaction hashes given the block id.
+///
+/// ### Arguments
+///
+/// * `block_id` - The hash of the requested block, or number (height) of the requested block, or a
+///   block tag.
+///
+/// ### Returns
+///
+/// Returns block information with transaction hashes. This includes either a confirmed block or
+/// a pending block with transaction hashes, depending on the state of the requested block.
+/// In case the block is not found, returns a `StarknetRpcApiError` with `BlockNotFound`.
+pub fn get_block_with_tx_hashes(
+    starknet: &Starknet,
+    block_id: BlockId,
+) -> StarknetRpcResult<MaybePreConfirmedBlockWithTxHashes> {
+    let view = starknet.resolve_block_view(block_id)?;
+    let block_info = view.get_block_info()?;
+
+    let status = if view.is_preconfirmed() {
+        BlockStatus::PreConfirmed
+    } else if view.is_on_l1() {
+        BlockStatus::AcceptedOnL1
+    } else {
+        BlockStatus::AcceptedOnL2
+    };
+
+    match block_info {
+        MadaraMaybePreconfirmedBlockInfo::Preconfirmed(block) => {
+            Ok(MaybePreConfirmedBlockWithTxHashes::PreConfirmed(PreConfirmedBlockWithTxHashes {
+                transactions: block.tx_hashes,
+                pre_confirmed_block_header: block.header.to_rpc_v0_9(),
+            }))
+        }
+        MadaraMaybePreconfirmedBlockInfo::Confirmed(block) => {
+            Ok(MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
+                transactions: block.tx_hashes.clone(),
+                status,
+                block_header: block.to_rpc_v0_8(),
+            }))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        errors::StarknetRpcApiError,
+        test_utils::{sample_chain_for_block_getters, SampleChainForBlockGetters},
+    };
+    use mp_rpc::v0_9_0::{BlockHeader, BlockTag, L1DaMode, PreConfirmedBlockHeader, ResourcePrice};
+    use rstest::rstest;
+    use starknet_types_core::felt::Felt;
+
+    #[rstest]
+    fn test_get_block_with_tx_hashes(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { block_hashes, tx_hashes, .. }, rpc) = sample_chain_for_block_getters;
+
+        // Block 0
+        let res = MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
+            transactions: vec![tx_hashes[0]],
+            status: BlockStatus::AcceptedOnL1,
+            block_header: BlockHeader {
+                block_hash: block_hashes[0],
+                parent_hash: Felt::ZERO,
+                block_number: 0,
+                new_root: Felt::from_hex_unchecked("0x0"),
+                timestamp: 43,
+                sequencer_address: Felt::from_hex_unchecked("0xbabaa"),
+                l1_gas_price: ResourcePrice { price_in_fri: 12.into(), price_in_wei: 123.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 52.into(), price_in_wei: 44.into() },
+                l2_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Blob,
+                starknet_version: "0.13.1.1".into(),
+            },
+        });
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Number(0)).unwrap(), res);
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Hash(block_hashes[0])).unwrap(), res);
+
+        // Block 1
+        let res = MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
+            status: BlockStatus::AcceptedOnL2,
+            transactions: vec![],
+            block_header: BlockHeader {
+                block_hash: block_hashes[1],
+                parent_hash: block_hashes[0],
+                block_number: 1,
+                new_root: Felt::ZERO,
+                timestamp: 0,
+                sequencer_address: Felt::ZERO,
+                l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l2_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Calldata,
+                starknet_version: "0.13.2".into(),
+            },
+        });
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Number(1)).unwrap(), res);
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Hash(block_hashes[1])).unwrap(), res);
+
+        // Block 2
+        let res = MaybePreConfirmedBlockWithTxHashes::Block(BlockWithTxHashes {
+            status: BlockStatus::AcceptedOnL2,
+            transactions: vec![tx_hashes[1], tx_hashes[2]],
+            block_header: BlockHeader {
+                block_hash: block_hashes[2],
+                parent_hash: block_hashes[1],
+                block_number: 2,
+                new_root: Felt::ZERO,
+                timestamp: 0,
+                sequencer_address: Felt::ZERO,
+                l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l2_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Blob,
+                starknet_version: "0.13.2".into(),
+            },
+        });
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Tag(BlockTag::Latest)).unwrap(), res);
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Number(2)).unwrap(), res);
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Hash(block_hashes[2])).unwrap(), res);
+
+        // Pending
+        let res = MaybePreConfirmedBlockWithTxHashes::PreConfirmed(PreConfirmedBlockWithTxHashes {
+            transactions: vec![tx_hashes[3]],
+            pre_confirmed_block_header: PreConfirmedBlockHeader {
+                block_number: 3,
+                timestamp: 0,
+                sequencer_address: Felt::ZERO,
+                l1_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_data_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l2_gas_price: ResourcePrice { price_in_fri: 0.into(), price_in_wei: 0.into() },
+                l1_da_mode: L1DaMode::Blob,
+                starknet_version: "0.13.2".into(),
+            },
+        });
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Tag(BlockTag::PreConfirmed)).unwrap(), res);
+    }
+
+    #[rstest]
+    fn test_get_block_with_tx_hashes_not_found(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
+        let (SampleChainForBlockGetters { .. }, rpc) = sample_chain_for_block_getters;
+
+        assert_eq!(get_block_with_tx_hashes(&rpc, BlockId::Number(3)), Err(StarknetRpcApiError::BlockNotFound));
+        let does_not_exist = Felt::from_hex_unchecked("0x7128638126378");
+        assert_eq!(
+            get_block_with_tx_hashes(&rpc, BlockId::Hash(does_not_exist)),
+            Err(StarknetRpcApiError::BlockNotFound)
+        );
+    }
+}

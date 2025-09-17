@@ -1,10 +1,9 @@
-use std::sync::Arc;
-
-use super::{BlockId, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn};
+use super::*;
 use crate::custom_serde::NumAsHex;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+use std::sync::Arc;
 
 pub type Address = Felt;
 

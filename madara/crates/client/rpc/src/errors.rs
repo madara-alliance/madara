@@ -1,5 +1,4 @@
 use crate::utils::display_internal_server_error;
-use mc_db::view::block_id::BlockResolutionError;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::UserTransactionConversionError;
@@ -303,16 +302,6 @@ impl From<anyhow::Error> for StarknetRpcApiError {
     fn from(err: anyhow::Error) -> Self {
         display_internal_server_error(err);
         StarknetRpcApiError::InternalServerError
-    }
-}
-
-impl From<BlockResolutionError> for StarknetRpcApiError {
-    fn from(err: BlockResolutionError) -> Self {
-        match err {
-            BlockResolutionError::NoBlocks => Self::NoBlocks,
-            BlockResolutionError::BlockHashNotFound | BlockResolutionError::BlockNumberNotFound => Self::BlockNotFound,
-            BlockResolutionError::Internal(err) => err.into(),
-        }
     }
 }
 

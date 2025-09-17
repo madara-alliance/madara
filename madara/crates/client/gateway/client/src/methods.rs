@@ -1,5 +1,4 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
-use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
 use mp_gateway::error::{SequencerError, StarknetError};
@@ -13,6 +12,7 @@ use mp_gateway::{
         UserDeclareTransaction, UserDeployAccountTransaction, UserInvokeFunctionTransaction, UserTransaction,
     },
 };
+use mp_rpc::v0_8_1::{BlockId, BlockTag};
 use serde::de::DeserializeOwned;
 use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;

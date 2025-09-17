@@ -2,13 +2,15 @@
 //!
 //! It uses the madara client and backend in order to answer queries.
 
-mod constants;
-mod errors;
 #[cfg(test)]
 pub mod test_utils;
-mod types;
 pub mod utils;
 pub mod versions;
+
+mod block_id;
+mod constants;
+mod errors;
+mod types;
 
 use jsonrpsee::RpcModule;
 use mc_db::MadaraBackend;
@@ -40,6 +42,7 @@ impl Default for StorageProofConfig {
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     ws_handles: Arc<WsSubscribeHandles>,
+    pub(crate) show_preconfirmed_in_pre_v0_9_rpcs: bool,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
@@ -55,7 +58,15 @@ impl Starknet {
         ctx: ServiceContext,
     ) -> Self {
         let ws_handles = Arc::new(WsSubscribeHandles::new());
-        Self { backend, ws_handles, add_transaction_provider, storage_proof_config, block_prod_handle, ctx }
+        Self {
+            backend,
+            ws_handles,
+            add_transaction_provider,
+            storage_proof_config,
+            block_prod_handle,
+            ctx,
+            show_preconfirmed_in_pre_v0_9_rpcs: true,
+        }
     }
 }
 
@@ -65,9 +76,11 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
 
     rpc_api.merge(versions::user::v0_7_1::StarknetReadRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_7_1::StarknetWriteRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_7_1::StarknetTraceRpcApiV0_7_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }
