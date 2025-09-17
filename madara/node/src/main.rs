@@ -15,7 +15,7 @@ use figment::{
     Figment,
 };
 use http::{HeaderName, HeaderValue};
-use mc_analytics::Analytics;
+use mc_analytics::AnalyticsService;
 use mc_db::MadaraBackend;
 use mc_gateway_client::GatewayProvider;
 use mc_settlement_client::gas_price::L1BlockMetrics;
@@ -72,13 +72,9 @@ async fn main() -> anyhow::Result<()> {
     run_cmd.check_mode()?;
 
     // Setting up analytics
-
-    let mut analytics = Analytics::new(
-        run_cmd.analytics_params.analytics_service_name.clone(),
-        run_cmd.analytics_params.analytics_collection_endpoint.clone(),
-    )
-    .context("Initializing analytics service")?;
-    analytics.setup()?;
+    let mut service_analytics = AnalyticsService::new(run_cmd.analytics_params.as_analytics_config())
+        .context("Initializing analytics service")?;
+    service_analytics.setup().context("Setting-up analystics service")?;
 
     // If it's a sequencer or a devnet we set the mandatory chain config. If it's a full node we set the chain config from the network or the custom chain config.
     let chain_config = if run_cmd.is_sequencer() {
@@ -135,6 +131,7 @@ async fn main() -> anyhow::Result<()> {
 
     // Database
 
+    tracing::info!("💾 Opening database at: {}", run_cmd.backend_params.base_path.display());
     let backend = MadaraBackend::open_rocksdb(
         &run_cmd.backend_params.base_path,
         chain_config.clone(),
@@ -290,6 +287,7 @@ async fn main() -> anyhow::Result<()> {
     }
 
     let app = ServiceMonitor::default()
+        .with(service_analytics)?
         .with(service_mempool)?
         .with(service_l1_sync)?
         .with(service_l2_sync)?
@@ -309,6 +307,7 @@ async fn main() -> anyhow::Result<()> {
     let warp_update_receiver = run_cmd.args_preset.warp_update_receiver;
 
     app.activate(MadaraServiceId::Mempool);
+    app.activate(MadaraServiceId::Analytics);
 
     if l1_sync_enabled && (l1_endpoint_some || !run_cmd.devnet) {
         app.activate(MadaraServiceId::L1Sync);
