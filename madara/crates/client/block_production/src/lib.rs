@@ -414,7 +414,7 @@ pub(crate) mod tests {
     use mp_chain_config::ChainConfig;
     use mp_convert::ToFelt;
     use mp_receipt::{Event, ExecutionResult};
-    use mp_rpc::v0_7_1::{
+    use mp_rpc::v0_9_0::{
         BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, DaMode,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
     };
@@ -622,6 +622,7 @@ pub(crate) mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 220000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
             },
             tip: 0,
             paymaster_data: vec![],
@@ -675,6 +676,7 @@ pub(crate) mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
             },
             tip: 0,
             paymaster_data: vec![],

@@ -747,6 +747,26 @@ impl From<mp_rpc::v0_7_1::ResourceBoundsMapping> for ResourceBoundsMapping {
     }
 }
 
+impl From<ResourceBoundsMapping> for mp_rpc::v0_8_1::ResourceBoundsMapping {
+    fn from(resource: ResourceBoundsMapping) -> Self {
+        Self {
+            l1_gas: resource.l1_gas.into(),
+            l2_gas: resource.l2_gas.into(),
+            l1_data_gas: resource.l1_data_gas.unwrap_or_default().into(),
+        }
+    }
+}
+
+impl From<mp_rpc::v0_8_1::ResourceBoundsMapping> for ResourceBoundsMapping {
+    fn from(resource: mp_rpc::v0_8_1::ResourceBoundsMapping) -> Self {
+        Self {
+            l1_gas: resource.l1_gas.into(),
+            l2_gas: resource.l2_gas.into(),
+            l1_data_gas: Some(resource.l1_data_gas.into()),
+        }
+    }
+}
+
 impl From<ResourceBounds> for mp_rpc::v0_7_1::ResourceBounds {
     fn from(resource: ResourceBounds) -> Self {
         Self { max_amount: resource.max_amount, max_price_per_unit: resource.max_price_per_unit }

@@ -18,7 +18,7 @@ use mc_mempool::{MempoolInsertionError, TxInsertionError};
 use mp_class::ConvertedClass;
 use mp_convert::ToFelt;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
-use mp_rpc::v0_7_1::{
+use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash,
 };

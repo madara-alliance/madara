@@ -1,6 +1,206 @@
-use super::*;
+use crate::custom_serde::NumAsHex;
+pub use crate::v0_7_1::{
+    AddDeclareTransactionParams, AddDeployAccountTransactionParams, AddInvokeTransactionParams,
+    AddInvokeTransactionResult, Address, BlockHash, BlockHashAndNumber, BlockHashAndNumberParams, BlockHashHelper,
+    BlockId, BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BroadcastedDeclareTxnV1,
+    BroadcastedDeclareTxnV2, CallParams, CallType, Calldata, ChainId, ChainIdParams, ClassAndTxnHash,
+    ComputationResources, ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractStorageDiffItem,
+    DaMode, DataAvailability, DeclareTransactionTrace, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2,
+    DeployAccountTransactionTrace, DeployAccountTxnV1, DeployTxn, DeployedContractItem, DeprecatedCairoEntryPoint,
+    DeprecatedContractClass, DeprecatedEntryPointsByType, EmittedEvent, EntryPointType, EntryPointsByType,
+    EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event, EventAbiEntry, EventAbiType, EventContent,
+    EventFilterWithPageRequest, EventsChunk, ExecuteInvocation, ExecutionStatus, FeePayment, FunctionAbiEntry,
+    FunctionAbiType, FunctionCall, FunctionInvocation, FunctionStateMutability, GetBlockTransactionCountParams,
+    GetBlockWithReceiptsParams, GetBlockWithTxHashesParams, GetBlockWithTxsParams, GetClassAtParams,
+    GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams, GetStateUpdateParams, GetStorageAtParams,
+    GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams, GetTransactionReceiptParams,
+    GetTransactionStatusParams, InvokeTransactionTrace, InvokeTxnV0, InvokeTxnV1, KeyValuePair, L1DaMode,
+    L1HandlerTransactionTrace, L1HandlerTxn, MaybeDeprecatedContractClass, MaybePendingStateUpdate, MsgFromL1, MsgToL1,
+    NestedCall, NewClasses, NonceUpdate, OrderedEvent, OrderedMessage, PendingStateUpdate, PriceUnit, ReplacedClass,
+    ResourceBounds, ResourcePrice, RevertedInvocation, SierraEntryPoint, Signature, SimulateTransactionsParams,
+    SimulationFlag, SimulationFlagForEstimateFee, SpecVersionParams, StateDiff, StateUpdate, StorageKey,
+    StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus,
+    TraceBlockTransactionsParams, TraceBlockTransactionsResult, TraceTransactionParams, TraceTransactionResult,
+    TransactionTrace, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnStatus,
+    TypedParameter,
+};
 use serde::{Deserialize, Serialize};
 use starknet_types_core::felt::Felt;
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type")]
+pub enum BroadcastedTxn {
+    #[serde(rename = "INVOKE")]
+    Invoke(BroadcastedInvokeTxn),
+    #[serde(rename = "DECLARE")]
+    Declare(BroadcastedDeclareTxn),
+    #[serde(rename = "DEPLOY_ACCOUNT")]
+    DeployAccount(BroadcastedDeployAccountTxn),
+}
+
+impl BroadcastedTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            BroadcastedTxn::Invoke(txn) => txn.is_query(),
+            BroadcastedTxn::Declare(txn) => txn.is_query(),
+            BroadcastedTxn::DeployAccount(txn) => txn.is_query(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version")]
+pub enum BroadcastedInvokeTxn {
+    #[serde(rename = "0x0")]
+    V0(InvokeTxnV0),
+    #[serde(rename = "0x1")]
+    V1(InvokeTxnV1),
+    #[serde(rename = "0x3")]
+    V3(InvokeTxnV3),
+
+    /// Query-only broadcasted invoke transaction.
+    #[serde(rename = "0x100000000000000000000000000000000")]
+    QueryV0(InvokeTxnV0),
+    /// Query-only broadcasted invoke transaction.
+    #[serde(rename = "0x100000000000000000000000000000001")]
+    QueryV1(InvokeTxnV1),
+    /// Query-only broadcasted invoke transaction.
+    #[serde(rename = "0x100000000000000000000000000000003")]
+    QueryV3(InvokeTxnV3),
+}
+
+impl BroadcastedInvokeTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            BroadcastedInvokeTxn::QueryV0(_) | BroadcastedInvokeTxn::QueryV1(_) | BroadcastedInvokeTxn::QueryV3(_) => {
+                true
+            }
+            BroadcastedInvokeTxn::V0(_) | BroadcastedInvokeTxn::V1(_) | BroadcastedInvokeTxn::V3(_) => false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version")]
+pub enum BroadcastedDeclareTxn {
+    #[serde(rename = "0x1")]
+    V1(BroadcastedDeclareTxnV1),
+    #[serde(rename = "0x2")]
+    V2(BroadcastedDeclareTxnV2),
+    #[serde(rename = "0x3")]
+    V3(BroadcastedDeclareTxnV3),
+
+    /// Query-only broadcasted declare transaction.
+    #[serde(rename = "0x100000000000000000000000000000001")]
+    QueryV1(BroadcastedDeclareTxnV1),
+    /// Query-only broadcasted declare transaction.
+    #[serde(rename = "0x100000000000000000000000000000002")]
+    QueryV2(BroadcastedDeclareTxnV2),
+    /// Query-only broadcasted declare transaction.
+    #[serde(rename = "0x100000000000000000000000000000003")]
+    QueryV3(BroadcastedDeclareTxnV3),
+}
+
+impl BroadcastedDeclareTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            BroadcastedDeclareTxn::QueryV1(_)
+            | BroadcastedDeclareTxn::QueryV2(_)
+            | BroadcastedDeclareTxn::QueryV3(_) => true,
+            BroadcastedDeclareTxn::V1(_) | BroadcastedDeclareTxn::V2(_) | BroadcastedDeclareTxn::V3(_) => false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(tag = "version")]
+pub enum BroadcastedDeployAccountTxn {
+    #[serde(rename = "0x1")]
+    V1(DeployAccountTxnV1),
+    #[serde(rename = "0x3")]
+    V3(DeployAccountTxnV3),
+
+    /// Query-only broadcasted deploy account transaction.
+    #[serde(rename = "0x100000000000000000000000000000001")]
+    QueryV1(DeployAccountTxnV1),
+    /// Query-only broadcasted deploy account transaction.
+    #[serde(rename = "0x100000000000000000000000000000003")]
+    QueryV3(DeployAccountTxnV3),
+}
+
+impl BroadcastedDeployAccountTxn {
+    pub fn is_query(&self) -> bool {
+        match self {
+            BroadcastedDeployAccountTxn::QueryV1(_) | BroadcastedDeployAccountTxn::QueryV3(_) => true,
+            BroadcastedDeployAccountTxn::V1(_) | BroadcastedDeployAccountTxn::V3(_) => false,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct BroadcastedDeclareTxnV3 {
+    /// data needed to deploy the account contract from which this tx will be initiated
+    pub account_deployment_data: Vec<Felt>,
+    /// The hash of the Cairo assembly resulting from the Sierra compilation
+    pub compiled_class_hash: Felt,
+    /// The class to be declared
+    pub contract_class: ContractClass,
+    /// The storage domain of the account's balance from which fee will be charged
+    pub fee_data_availability_mode: DaMode,
+    pub nonce: Felt,
+    /// The storage domain of the account's nonce (an account has a nonce per DA mode)
+    pub nonce_data_availability_mode: DaMode,
+    /// data needed to allow the paymaster to pay for the transaction in native tokens
+    pub paymaster_data: Vec<Felt>,
+    /// resource bounds for the transaction execution
+    pub resource_bounds: ResourceBoundsMapping,
+    /// The address of the account contract sending the declaration transaction
+    pub sender_address: Address,
+    pub signature: Signature,
+    /// the tip for the transaction
+    #[serde(with = "NumAsHex")]
+    pub tip: u64,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct TransactionAndReceipt {
+    pub receipt: TxnReceipt,
+    pub transaction: Txn,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct TxnReceiptWithBlockInfo {
+    #[serde(flatten)]
+    pub transaction_receipt: TxnReceipt,
+    /// If this field is missing, it means the receipt belongs to the pending block
+    #[serde(default)]
+    pub block_hash: Option<BlockHash>,
+    /// If this field is missing, it means the receipt belongs to the pending block
+    #[serde(default)]
+    pub block_number: Option<BlockNumber>,
+}
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type")]
+pub enum TxnReceipt {
+    #[serde(rename = "INVOKE")]
+    Invoke(InvokeTxnReceipt),
+    #[serde(rename = "L1_HANDLER")]
+    L1Handler(L1HandlerTxnReceipt),
+    #[serde(rename = "DECLARE")]
+    Declare(DeclareTxnReceipt),
+    #[serde(rename = "DEPLOY")]
+    Deploy(DeployTxnReceipt),
+    #[serde(rename = "DEPLOY_ACCOUNT")]
+    DeployAccount(DeployAccountTxnReceipt),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct TxnWithHash {
+    #[serde(flatten)]
+    pub transaction: Txn,
+    pub transaction_hash: TxnHash,
+}
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct BlockHeader {
@@ -145,6 +345,31 @@ pub struct FeeEstimate {
     pub unit: PriceUnit,
 }
 
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct CommonReceiptProperties {
+    /// The fee that was charged by the sequencer
+    pub actual_fee: FeePayment,
+    /// The events emitted as part of this transaction
+    pub events: Vec<Event>,
+    /// The resources consumed by the transaction
+    pub execution_resources: ExecutionResources,
+    /// finality status of the tx
+    pub finality_status: TxnFinalityStatus,
+    pub messages_sent: Vec<MsgToL1>,
+    /// The hash identifying the transaction
+    pub transaction_hash: TxnHash,
+    #[serde(flatten)]
+    pub execution_status: ExecutionStatus,
+}
+
+/// the resources consumed by the transaction, includes both computation and data
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ExecutionResources {
+    pub l1_gas: u128,
+    pub l2_gas: u128,
+    pub l1_data_gas: u128,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ContractStorageKeysItem {
     pub contract_address: Felt,
@@ -190,4 +415,172 @@ pub struct GetStorageProofResult {
     pub contracts_proof: ContractsProof,
     pub contracts_storage_proofs: Vec<Vec<NodeHashToNodeMappingItem>>,
     pub global_roots: GlobalRoots,
+}
+
+/// The transaction schema, as it appears inside a block
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "type")]
+pub enum Txn {
+    #[serde(rename = "INVOKE")]
+    Invoke(InvokeTxn),
+    #[serde(rename = "L1_HANDLER")]
+    L1Handler(L1HandlerTxn),
+    #[serde(rename = "DECLARE")]
+    Declare(DeclareTxn),
+    #[serde(rename = "DEPLOY")]
+    Deploy(DeployTxn),
+    #[serde(rename = "DEPLOY_ACCOUNT")]
+    DeployAccount(DeployAccountTxn),
+}
+
+/// Initiate a transaction from an account
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "version")]
+pub enum InvokeTxn {
+    #[serde(rename = "0x0")]
+    V0(InvokeTxnV0),
+    #[serde(rename = "0x1")]
+    V1(InvokeTxnV1),
+    #[serde(rename = "0x3")]
+    V3(InvokeTxnV3),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct InvokeTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct InvokeTxnV3 {
+    /// data needed to deploy the account contract from which this tx will be initiated
+    pub account_deployment_data: Vec<Felt>,
+    /// The data expected by the account's `execute` function (in most usecases, this includes the called contract address and a function selector)
+    pub calldata: Calldata,
+    /// The storage domain of the account's balance from which fee will be charged
+    pub fee_data_availability_mode: DaMode,
+    pub nonce: Felt,
+    /// The storage domain of the account's nonce (an account has a nonce per DA mode)
+    pub nonce_data_availability_mode: DaMode,
+    /// data needed to allow the paymaster to pay for the transaction in native tokens
+    pub paymaster_data: Vec<Felt>,
+    /// resource bounds for the transaction execution
+    pub resource_bounds: ResourceBoundsMapping,
+    pub sender_address: Address,
+    pub signature: Signature,
+    /// the tip for the transaction
+    #[serde(with = "NumAsHex")]
+    pub tip: u64,
+}
+
+/// receipt for l1 handler transaction
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct L1HandlerTxnReceipt {
+    /// The message hash as it appears on the L1 core contract
+    pub message_hash: String,
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeployTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+    /// The address of the deployed contract
+    pub contract_address: Felt,
+}
+
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "version")]
+pub enum DeclareTxn {
+    #[serde(rename = "0x0")]
+    V0(DeclareTxnV0),
+    #[serde(rename = "0x1")]
+    V1(DeclareTxnV1),
+    #[serde(rename = "0x2")]
+    V2(DeclareTxnV2),
+    #[serde(rename = "0x3")]
+    V3(DeclareTxnV3),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeclareTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeclareTxnV3 {
+    /// data needed to deploy the account contract from which this tx will be initiated
+    pub account_deployment_data: Vec<Felt>,
+    /// The hash of the declared class
+    pub class_hash: Felt,
+    /// The hash of the Cairo assembly resulting from the Sierra compilation
+    pub compiled_class_hash: Felt,
+    /// The storage domain of the account's balance from which fee will be charged
+    pub fee_data_availability_mode: DaMode,
+    pub nonce: Felt,
+    /// The storage domain of the account's nonce (an account has a nonce per DA mode)
+    pub nonce_data_availability_mode: DaMode,
+    /// data needed to allow the paymaster to pay for the transaction in native tokens
+    pub paymaster_data: Vec<Felt>,
+    /// resource bounds for the transaction execution
+    pub resource_bounds: ResourceBoundsMapping,
+    /// The address of the account contract sending the declaration transaction
+    pub sender_address: Address,
+    pub signature: Signature,
+    /// the tip for the transaction
+    #[serde(with = "NumAsHex")]
+    pub tip: u64,
+}
+/// deploys a new account contract
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[serde(tag = "version")]
+pub enum DeployAccountTxn {
+    #[serde(rename = "0x1")]
+    V1(DeployAccountTxnV1),
+    #[serde(rename = "0x3")]
+    V3(DeployAccountTxnV3),
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeployAccountTxnReceipt {
+    #[serde(flatten)]
+    pub common_receipt_properties: CommonReceiptProperties,
+    /// The address of the deployed contract
+    pub contract_address: Felt,
+}
+
+/// Deploys an account contract, charges fee from the pre-funded account addresses
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct DeployAccountTxnV3 {
+    /// The hash of the deployed contract's class
+    pub class_hash: Felt,
+    /// The parameters passed to the constructor
+    pub constructor_calldata: Vec<Felt>,
+    /// The salt for the address of the deployed contract
+    pub contract_address_salt: Felt,
+    /// The storage domain of the account's balance from which fee will be charged
+    pub fee_data_availability_mode: DaMode,
+    pub nonce: Felt,
+    /// The storage domain of the account's nonce (an account has a nonce per DA mode)
+    pub nonce_data_availability_mode: DaMode,
+    /// data needed to allow the paymaster to pay for the transaction in native tokens
+    pub paymaster_data: Vec<Felt>,
+    /// resource bounds for the transaction execution
+    pub resource_bounds: ResourceBoundsMapping,
+    pub signature: Signature,
+    /// the tip for the transaction
+    #[serde(with = "NumAsHex")]
+    pub tip: u64,
+}
+
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+pub struct ResourceBoundsMapping {
+    /// The max amount and max price per unit of L1 gas used in this tx
+    pub l1_gas: ResourceBounds,
+    /// The max amount and max price per unit of L2 gas used in this tx
+    pub l2_gas: ResourceBounds,
+    /// The max amount and max price per unit of L1 data gas used in this tx
+    pub l1_data_gas: ResourceBounds,
 }

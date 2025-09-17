@@ -45,13 +45,18 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(block_hash_and_number::block_hash_and_number(self)?)
     }
 
+    fn chain_id(&self) -> RpcResult<Felt> {
+        Ok(self.backend.chain_config().chain_id.to_felt())
+    }
+
+    fn syncing(&self) -> RpcResult<SyncingStatus> {
+        Ok(syncing::syncing(self)?)
+    }
+
     async fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>> {
         Ok(call::call(self, request, block_id).await?)
     }
 
-    fn chain_id(&self) -> RpcResult<Felt> {
-        Ok(self.backend.chain_config().chain_id.to_felt())
-    }
 
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
         Ok(get_block_transaction_count::get_block_transaction_count(self, block_id)?)
@@ -120,10 +125,6 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
 
     async fn get_transaction_status(&self, transaction_hash: Felt) -> RpcResult<TxnFinalityAndExecutionStatus> {
         Ok(get_transaction_status::get_transaction_status(self, transaction_hash).await?)
-    }
-
-    fn syncing(&self) -> RpcResult<SyncingStatus> {
-        Ok(syncing::syncing(self)?)
     }
 
     fn get_state_update(&self, block_id: BlockId) -> RpcResult<MaybePendingStateUpdate> {

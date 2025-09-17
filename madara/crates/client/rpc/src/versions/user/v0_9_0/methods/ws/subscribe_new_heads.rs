@@ -1,10 +1,8 @@
-use std::sync::Arc;
-
-use mp_block::{BlockId, BlockTag};
-
-use crate::errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError};
+use mp_rpc::v0_9_0::BlockId;
 
 use super::BLOCK_PAST_LIMIT;
+use crate::errors::{ErrorExtWs, OptionExtWs, StarknetWsApiError};
+use std::sync::Arc;
 
 pub async fn subscribe_new_heads(
     starknet: &crate::Starknet,

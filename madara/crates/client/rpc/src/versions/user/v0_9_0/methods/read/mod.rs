@@ -1,14 +1,11 @@
+use crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server as V0_8_1Impl;
 use crate::versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server;
 use crate::{Starknet, StarknetRpcApiError};
 use jsonrpsee::core::{async_trait, RpcResult};
 use mp_chain_config::RpcVersion;
 use mp_convert::Felt;
 use mp_rpc::v0_9_0::{
-    BlockId, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk, FeeEstimate,
-    FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
-    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1,
-    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, TxnFinalityAndExecutionStatus,
-    TxnReceiptWithBlockInfo, TxnWithHash,
+    BlockHashAndNumber, BlockId, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash
 };
 
 pub mod call;
@@ -34,6 +31,22 @@ pub mod get_transaction_status;
 impl StarknetReadRpcApiV0_9_0Server for Starknet {
     fn spec_version(&self) -> RpcResult<String> {
         Ok(RpcVersion::RPC_VERSION_0_9_0.to_string())
+    }
+
+    fn block_number(&self) -> RpcResult<u64> {
+        V0_8_1Impl::block_number(self)
+    }
+
+    fn block_hash_and_number(&self) -> RpcResult<BlockHashAndNumber> {
+        V0_8_1Impl::block_hash_and_number(self)
+    }
+
+    fn chain_id(&self) -> RpcResult<Felt> {
+        V0_8_1Impl::chain_id(self)
+    }
+
+    fn syncing(&self) -> RpcResult<SyncingStatus> {
+        V0_8_1Impl::syncing(self)
     }
 
     async fn call(&self, request: FunctionCall, block_id: BlockId) -> RpcResult<Vec<Felt>> {
@@ -122,7 +135,7 @@ impl StarknetReadRpcApiV0_9_0Server for Starknet {
         // support the new block id transparently (preconfirmed blocks are not allowed).
         let block_view = self.resolve_view_on(block_id).map_err(StarknetRpcApiError::from)?;
 
-        crate::versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::get_storage_proof(
+        V0_8_1Impl::get_storage_proof(
             self,
             mp_rpc::v0_8_1::BlockId::Number(
                 block_view.latest_confirmed_block_n().ok_or(StarknetRpcApiError::NoBlocks)?,
@@ -131,5 +144,9 @@ impl StarknetReadRpcApiV0_9_0Server for Starknet {
             contract_addresses,
             contracts_storage_keys,
         )
+    }
+
+    fn get_compiled_casm(&self, class_hash: Felt) -> RpcResult<serde_json::Value> {
+        V0_8_1Impl::get_compiled_casm(self, class_hash)
     }
 }

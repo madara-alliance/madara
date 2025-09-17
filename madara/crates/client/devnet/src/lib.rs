@@ -222,7 +222,7 @@ mod tests {
     };
     use mp_class::{ClassInfo, FlattenedSierraClass};
     use mp_receipt::{Event, ExecutionResult, FeePayment, InvokeTransactionReceipt, PriceUnit, TransactionReceipt};
-    use mp_rpc::v0_7_1::{
+    use mp_rpc::v0_9_0::{
         AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeclareTxnV3, BroadcastedDeployAccountTxn,
         BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, DaMode, DeployAccountTxnV3,
         InvokeTxnV3, ResourceBounds, ResourceBoundsMapping,
@@ -394,6 +394,7 @@ mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 220000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
             },
             tip: 0,
             paymaster_data: vec![],
@@ -489,6 +490,7 @@ mod tests {
                         resource_bounds: ResourceBoundsMapping {
                             l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                             l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                            l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
                         },
                         tip: 0,
                         paymaster_data: vec![],
@@ -534,6 +536,7 @@ mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                 l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
             },
             tip: 0,
             paymaster_data: vec![],
@@ -620,6 +623,7 @@ mod tests {
                     resource_bounds: ResourceBoundsMapping {
                         l1_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
                         l2_gas: ResourceBounds { max_amount: 60000, max_price_per_unit: 10000 },
+                        l1_data_gas: ResourceBounds { max_amount: 0, max_price_per_unit: 0 },
                     },
                     tip: 0,
                     paymaster_data: vec![],

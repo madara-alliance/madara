@@ -1,6 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_rpc::v0_9_0::TxnWithHash;
+use mp_rpc::v0_8_1::TxnWithHash;
 use starknet_types_core::felt::Felt;
 
 /// Get the details and status of a submitted transaction.

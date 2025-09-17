@@ -1,6 +1,4 @@
 //! v0.9.0 of the API.
-pub use crate::custom::{BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, SyncingStatus};
-
 mod starknet_api_openrpc;
 mod starknet_trace_api_openrpc;
 mod starknet_ws_api;
@@ -8,32 +6,6 @@ mod starknet_ws_api;
 pub use self::starknet_api_openrpc::*;
 pub use self::starknet_trace_api_openrpc::*;
 pub use self::starknet_ws_api::*;
-
-pub use crate::v0_8_1::{
-    AddDeclareTransactionParams, AddDeployAccountTransactionParams, AddInvokeTransactionParams,
-    AddInvokeTransactionResult, Address, BlockHash, BlockHashAndNumber, BlockHashAndNumberParams, BlockHashHelper,
-    BlockHeader, BlockNumber, BlockNumberHelper, BlockNumberParams, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2,
-    BroadcastedDeclareTxnV3, BroadcastedTxn, CallParams, CallType, ChainId, ChainIdParams, ClassAndTxnHash,
-    ComputationResources, ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractLeavesDataItem,
-    ContractStorageDiffItem, ContractStorageKeysItem, ContractsProof, DaMode, DataAvailability,
-    DeclareTransactionTrace, DeclareTxn, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2, DeclareTxnV3,
-    DeployAccountTransactionTrace, DeployAccountTxn, DeployAccountTxnV1, DeployAccountTxnV3, DeployTxn,
-    DeployedContractItem, DeprecatedCairoEntryPoint, DeprecatedContractClass, DeprecatedEntryPointsByType,
-    EmittedEvent, EntryPointType, EntryPointsByType, EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event,
-    EventAbiEntry, EventAbiType, EventContent, EventsChunk, ExecuteInvocation, ExecutionResources, ExecutionStatus,
-    FunctionAbiEntry, FunctionAbiType, FunctionCall, FunctionInvocation, FunctionStateMutability,
-    GetBlockTransactionCountParams, GetBlockWithReceiptsParams, GetBlockWithTxHashesParams, GetBlockWithTxsParams,
-    GetClassAtParams, GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams, GetStateUpdateParams,
-    GetStorageAtParams, GetStorageProofResult, GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams,
-    GetTransactionReceiptParams, GetTransactionStatusParams, GlobalRoots, InvokeTransactionTrace, InvokeTxn,
-    InvokeTxnV0, InvokeTxnV1, InvokeTxnV3, KeyValuePair, L1DaMode, L1HandlerTransactionTrace, L1HandlerTxn,
-    MaybeDeprecatedContractClass, MerkleNode, MsgFromL1, MsgToL1, NestedCall, NewClasses, NodeHashToNodeMappingItem,
-    NonceUpdate, OrderedEvent, OrderedMessage, ReplacedClass, ResourceBounds, ResourceBoundsMapping, ResourcePrice,
-    RevertedInvocation, SierraEntryPoint, Signature, SimulateTransactionsParams, SimulationFlag,
-    SimulationFlagForEstimateFee, SpecVersionParams, StateDiff, StateUpdate, StorageKey, StructAbiEntry, StructAbiType,
-    StructMember, SyncStatus, SyncingParams, TraceBlockTransactionsParams, TraceBlockTransactionsResult,
-    TraceTransactionParams, TraceTransactionResult, TransactionTrace, Txn, TxnHash, TxnWithHash, TypedParameter,
-};
 
 #[derive(Debug, Clone, Eq, Hash, PartialEq)]
 pub enum BlockId {

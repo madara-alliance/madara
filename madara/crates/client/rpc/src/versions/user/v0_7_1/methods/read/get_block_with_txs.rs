@@ -31,7 +31,7 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpc
     let transactions_with_hash = view
         .get_executed_transactions(..)?
         .into_iter()
-        .map(|tx| TxnWithHash { transaction: tx.transaction.into(), transaction_hash: *tx.receipt.transaction_hash() })
+        .map(|tx| TxnWithHash { transaction: tx.transaction.to_rpc_v0_7(), transaction_hash: *tx.receipt.transaction_hash() })
         .collect();
 
     match block_info {
@@ -70,12 +70,12 @@ mod tests {
 
     #[rstest]
     fn test_get_block_with_txs(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
+        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_7, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0
         let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL1,
-            transactions: vec![expected_txs[0].clone()],
+            transactions: vec![expected_txs_v0_7[0].clone()],
             block_header: BlockHeader {
                 block_hash: block_hashes[0],
                 parent_hash: Felt::ZERO,
@@ -115,7 +115,7 @@ mod tests {
         // Block 2
         let res = MaybePendingBlockWithTxs::Block(BlockWithTxs {
             status: BlockStatus::AcceptedOnL2,
-            transactions: vec![expected_txs[1].clone(), expected_txs[2].clone()],
+            transactions: vec![expected_txs_v0_7[1].clone(), expected_txs_v0_7[2].clone()],
             block_header: BlockHeader {
                 block_hash: block_hashes[2],
                 parent_hash: block_hashes[1],
@@ -135,7 +135,7 @@ mod tests {
 
         // Pending
         let res = MaybePendingBlockWithTxs::Pending(PendingBlockWithTxs {
-            transactions: vec![expected_txs[3].clone()],
+            transactions: vec![expected_txs_v0_7[3].clone()],
             pending_block_header: PendingBlockHeader {
                 parent_hash: block_hashes[2],
                 timestamp: 0,

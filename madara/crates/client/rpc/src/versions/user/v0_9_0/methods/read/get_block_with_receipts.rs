@@ -26,7 +26,7 @@ pub fn get_block_with_receipts(
         .into_iter()
         .map(|tx| TransactionAndReceipt {
             receipt: tx.receipt.to_rpc_v0_9(status.into()),
-            transaction: tx.transaction.into(),
+            transaction: tx.transaction.to_rpc_v0_8(),
         })
         .collect();
 
@@ -72,14 +72,14 @@ mod tests {
 
     #[rstest]
     fn test_get_block_with_receipts(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { block_hashes, expected_txs, expected_receipts_v0_9, .. }, rpc) =
+        let (SampleChainForBlockGetters { block_hashes, expected_txs_v0_8, expected_receipts_v0_9, .. }, rpc) =
             sample_chain_for_block_getters;
 
         // Block 0
         let res = StarknetGetBlockWithTxsAndReceiptsResult::Block(BlockWithReceipts {
             status: BlockStatus::AcceptedOnL1,
             transactions: vec![TransactionAndReceipt {
-                transaction: expected_txs[0].transaction.clone(),
+                transaction: expected_txs_v0_8[0].transaction.clone(),
                 receipt: expected_receipts_v0_9[0].clone(),
             }],
             block_header: BlockHeader {
@@ -125,11 +125,11 @@ mod tests {
             status: BlockStatus::AcceptedOnL2,
             transactions: vec![
                 TransactionAndReceipt {
-                    transaction: expected_txs[1].transaction.clone(),
+                    transaction: expected_txs_v0_8[1].transaction.clone(),
                     receipt: expected_receipts_v0_9[1].clone(),
                 },
                 TransactionAndReceipt {
-                    transaction: expected_txs[2].transaction.clone(),
+                    transaction: expected_txs_v0_8[2].transaction.clone(),
                     receipt: expected_receipts_v0_9[2].clone(),
                 },
             ],
@@ -154,7 +154,7 @@ mod tests {
         // Preconfirmed
         let res = StarknetGetBlockWithTxsAndReceiptsResult::PreConfirmed(PreConfirmedBlockWithReceipts {
             transactions: vec![TransactionAndReceipt {
-                transaction: expected_txs[3].transaction.clone(),
+                transaction: expected_txs_v0_8[3].transaction.clone(),
                 receipt: expected_receipts_v0_9[3].clone(),
             }],
             pre_confirmed_block_header: PreConfirmedBlockHeader {
