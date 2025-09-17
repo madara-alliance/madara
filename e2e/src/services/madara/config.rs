@@ -107,9 +107,7 @@ impl MadaraConfig {
 
     /// Create a builder for MadaraConfig using current configuration values
     pub fn builder(&self) -> MadaraConfigBuilder {
-        MadaraConfigBuilder {
-            config: self.clone()
-        }
+        MadaraConfigBuilder { config: self.clone() }
     }
 
     /// Get the binary path

@@ -431,14 +431,15 @@ impl SetupConfigBuilder {
             .logs((false, true))
             .build();
 
-        let madara_config = test_config.madara_config.builder()
+        let madara_config = test_config
+            .madara_config
+            .builder()
             .database_path(get_database_path(test_name, MADARA_DATABASE_DIR))
             .l1_endpoint(Some(anvil_config.endpoint()))
             .build();
 
-        let orchestrator_run_config = test_config.orchestrator_run_config.builder()
-            .ethereum_rpc_url(anvil_config.endpoint())
-            .build();
+        let orchestrator_run_config =
+            test_config.orchestrator_run_config.builder().ethereum_rpc_url(anvil_config.endpoint()).build();
 
         // Setting some envs
         std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
