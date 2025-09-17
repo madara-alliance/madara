@@ -3,7 +3,7 @@
 // =============================================================================
 
 use fs_extra::dir::{copy, CopyOptions};
-use std::path::PathBuf;
+use std::path::Path;
 use tokio::fs;
 // Import all the services we've created
 pub use super::config::*;
@@ -95,7 +95,7 @@ impl DatabaseManager {
         Ok(())
     }
 
-    fn validate_required_files(&self, data_dir: &PathBuf) -> Result<(), SetupError> {
+    fn validate_required_files(&self, data_dir: &Path) -> Result<(), SetupError> {
         let anvil_json_exists = data_dir.join(ANVIL_DATABASE_FILE).exists();
         let madara_db_exists = data_dir.join(MADARA_DATABASE_DIR).exists();
         let mock_verifier_exists = data_dir.join(MOCK_VERIFIER_ADDRESS_FILE).exists();
