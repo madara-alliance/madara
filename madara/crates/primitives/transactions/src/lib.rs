@@ -723,6 +723,7 @@ impl<'de> serde::Deserialize<'de> for DataAvailabilityMode {
 pub struct ResourceBoundsMapping {
     pub l1_gas: ResourceBounds,
     pub l2_gas: ResourceBounds,
+    pub l1_data_gas: Option<ResourceBounds>,
 }
 
 #[serde_as]
@@ -742,7 +743,7 @@ impl From<ResourceBoundsMapping> for mp_rpc::v0_7_1::ResourceBoundsMapping {
 
 impl From<mp_rpc::v0_7_1::ResourceBoundsMapping> for ResourceBoundsMapping {
     fn from(resource: mp_rpc::v0_7_1::ResourceBoundsMapping) -> Self {
-        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into() }
+        Self { l1_gas: resource.l1_gas.into(), l2_gas: resource.l2_gas.into(), l1_data_gas: None }
     }
 }
 
@@ -1031,6 +1032,7 @@ mod tests {
         let resource_mapping = ResourceBoundsMapping {
             l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
             l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+            l1_data_gas: None,
         };
 
         let starknet_resource_mapping: mp_rpc::v0_7_1::ResourceBoundsMapping = resource_mapping.clone().into();
@@ -1077,6 +1079,7 @@ mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
                 l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+                l1_data_gas: None,
             },
             tip: 7,
             paymaster_data: vec![Felt::from(8), Felt::from(9)],
@@ -1136,6 +1139,7 @@ mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
                 l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+                l1_data_gas: None,
             },
             tip: 7,
             paymaster_data: vec![Felt::from(8), Felt::from(9)],
@@ -1175,6 +1179,7 @@ mod tests {
             resource_bounds: ResourceBoundsMapping {
                 l1_gas: ResourceBounds { max_amount: 1, max_price_per_unit: 2 },
                 l2_gas: ResourceBounds { max_amount: 3, max_price_per_unit: 4 },
+                l1_data_gas: None,
             },
             tip: 8,
             paymaster_data: vec![Felt::from(9), Felt::from(10)],
