@@ -76,9 +76,6 @@ impl Default for BlockProductionConfig {
 fn starknet_version_latest() -> StarknetVersion {
     StarknetVersion::LATEST
 }
-fn default_pending_block_update_time() -> Option<Duration> {
-    Some(Duration::from_millis(500))
-}
 fn default_block_time() -> Duration {
     Duration::from_secs(30)
 }
@@ -138,13 +135,6 @@ pub struct ChainConfig {
     pub no_empty_blocks: bool,
 
     /// Only used for block production.
-    /// Block time is divided into "ticks": everytime this duration elapses, the pending block is updated.
-    /// When none, no pending block will be produced.
-    /// Default: 500ms.
-    #[serde(default = "default_pending_block_update_time", deserialize_with = "deserialize_optional_duration")]
-    pub pending_block_update_time: Option<Duration>,
-
-    /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
     pub bouncer_config: BouncerConfig,
 
@@ -183,12 +173,12 @@ pub struct ChainConfig {
     #[serde(deserialize_with = "deserialize_optional_duration")]
     pub mempool_ttl: Option<Duration>,
     /// The target gas usage per block for the block production. This is used to estimate the l2 gas price for the next block.
-    pub l2_gas_target: u64,
+    pub l2_gas_target: u128,
     /// The minimum l2 gas price for the block production. This is used to ensure that the l2 gas price does not go below this value.
     pub min_l2_gas_price: u128,
     /// The maximum change in l2 gas price per block. This is used to ensure that the l2 gas price does not change too much between blocks.
     /// EIP-1559
-    pub l2_gas_price_max_change_denominator: u64,
+    pub l2_gas_price_max_change_denominator: u128,
 
     /// Configuration for parallel execution in Blockifier. Only used for block production.
     #[serde(default)]
@@ -230,9 +220,6 @@ impl ChainConfig {
         if self.block_time.is_zero() {
             bail!("Block time cannot be zero for block production.")
         }
-        if self.pending_block_update_time.is_some_and(|t| t.is_zero()) {
-            bail!("Pending block update time cannot be zero for block production.")
-        }
         Ok(())
     }
 
@@ -241,7 +228,6 @@ impl ChainConfig {
         // - https://docs.starknet.io/tools/important-addresses
         // - https://docs.starknet.io/tools/limits-and-triggers (bouncer & block times)
         // - state_diff_size is the blob size limit of ethereum
-        // - pending_block_update_time: educated guess
         // - bouncer builtin_count, message_segment_length, n_events, state_diff_size are probably wrong
         Self {
             chain_name: "Starknet Mainnet".into(),
@@ -270,7 +256,6 @@ impl ChainConfig {
 
             latest_protocol_version: StarknetVersion::V0_13_2,
             block_time: Duration::from_secs(30),
-            pending_block_update_time: Some(Duration::from_millis(500)),
 
             no_empty_blocks: false,
 
@@ -546,7 +531,6 @@ mod tests {
 
         assert_eq!(chain_config.latest_protocol_version, StarknetVersion::from_str("0.13.2").unwrap());
         assert_eq!(chain_config.block_time, Duration::from_secs(30));
-        assert_eq!(chain_config.pending_block_update_time, Some(Duration::from_secs(2)));
 
         assert_eq!(
             chain_config.sequencer_address,

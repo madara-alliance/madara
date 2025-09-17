@@ -6,8 +6,10 @@ use mc_db::MadaraBackend;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_utils::service::ServiceContext;
 use std::{
+    convert::Infallible,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
+    time::Instant,
 };
 use tokio::net::TcpListener;
 
@@ -66,14 +68,46 @@ pub async fn start_server(
 
             tokio::task::spawn(async move {
                 let service = service_fn(move |req| {
-                    main_router(
-                        req,
-                        Arc::clone(&db_backend),
-                        add_transaction_provider.clone(),
-                        submit_validated.clone(),
-                        ctx.clone(),
-                        config.clone(),
-                    )
+                    let db_backend = Arc::clone(&db_backend);
+                    let add_transaction_provider = add_transaction_provider.clone();
+                    let submit_validated = submit_validated.clone();
+                    let ctx = ctx.clone();
+                    let config = config.clone();
+                    async move {
+                        let path = req
+                            .uri()
+                            .path()
+                            .split('/')
+                            .filter(|segment| !segment.is_empty())
+                            .collect::<Vec<_>>()
+                            .join("/");
+                        let start = Instant::now();
+                        let Ok(res) = main_router(
+                            req,
+                            &path,
+                            db_backend,
+                            add_transaction_provider,
+                            submit_validated,
+                            ctx,
+                            config,
+                        )
+                        .await;
+
+                        let status = res.status().as_u16() as i64;
+                        let res_len = res.body().len() as u64;
+                        let response_time = start.elapsed().as_micros();
+
+                        tracing::info!(
+                            target: "gateway_calls",
+                            method = &path,
+                            status = status,
+                            res_len = res_len,
+                            response_time = response_time,
+                            "{path} {status} {res_len} - {response_time} micros"
+                        );
+
+                        Ok::<_, Infallible>(res)
+                    }
                 });
 
                 if let Err(err) = http1::Builder::new().serve_connection(io, service).await {

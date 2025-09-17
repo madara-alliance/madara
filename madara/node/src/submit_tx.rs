@@ -5,7 +5,7 @@ use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
-use mp_transactions::validated::ValidatedMempoolTx;
+use mp_transactions::validated::ValidatedTransaction;
 use mp_utils::service::{MadaraServiceId, ServiceContext};
 use starknet_core::types::Felt;
 use std::sync::Arc;
@@ -108,7 +108,7 @@ impl SubmitValidatedTransactionSwitch {
 
 #[async_trait]
 impl SubmitValidatedTransaction for SubmitValidatedTransactionSwitch {
-    async fn submit_validated_transaction(&self, tx: ValidatedMempoolTx) -> Result<(), SubmitTransactionError> {
+    async fn submit_validated_transaction(&self, tx: ValidatedTransaction) -> Result<(), SubmitTransactionError> {
         self.validated_provider()?.submit_validated_transaction(tx).await
     }
 

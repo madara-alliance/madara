@@ -1,4 +1,4 @@
-use crate::Transaction;
+use crate::{Transaction, TransactionWithHash};
 use blockifier::transaction::errors::TransactionExecutionError;
 use blockifier::transaction::transaction_execution::Transaction as BTransaction;
 use mp_class::ConvertedClass;
@@ -12,7 +12,7 @@ use starknet_api::transaction::{fields::Fee, TransactionHash};
 use std::time::{Duration, SystemTime};
 
 /// Timestamp, in millis.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
+#[derive(Default, Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, serde::Serialize, serde::Deserialize)]
 #[serde(transparent)]
 pub struct TxTimestamp(pub u64);
 impl TxTimestamp {
@@ -48,25 +48,35 @@ impl TxTimestamp {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TransactionWithHashAndContractAddress {
+    pub transaction: TransactionWithHash,
+    /// This field is always filled in with the sender_address, but it is the deployed
+    /// contract address in case of DeployAccount. For L1HandlerTransactions this is the
+    /// contract address receiving the l1 message.
+    pub contract_address: Felt,
+}
+
 /// A transaction that has been validated, but not yet included into a block.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ValidatedMempoolTx {
-    pub tx: Transaction,
+pub struct ValidatedTransaction {
+    pub transaction: Transaction,
     /// Only filled in for L1HandlerTransaction.
     pub paid_fee_on_l1: Option<u128>,
     /// This field is always filled in with the sender_address, but it is the deployed
     /// contract address in case of DeployAccount. For L1HandlerTransactions this is the
     /// contract address receiving the l1 message.
+    // TODO: this field is redundant, it's already included in the transaction.
     pub contract_address: Felt,
     /// Timestamp.
     pub arrived_at: TxTimestamp,
     /// Compiled class in case of a Declare transaction.
-    pub converted_class: Option<ConvertedClass>,
+    pub declared_class: Option<ConvertedClass>,
     /// Computed transaction hash.
-    pub tx_hash: Felt,
+    pub hash: Felt,
 }
 
-impl ValidatedMempoolTx {
+impl ValidatedTransaction {
     pub fn from_starknet_api(
         tx: ApiAccountTransaction,
         arrived_at: TxTimestamp,
@@ -74,19 +84,19 @@ impl ValidatedMempoolTx {
     ) -> Self {
         Self {
             contract_address: tx.contract_address().to_felt(),
-            tx_hash: tx.tx_hash().to_felt(),
-            tx: tx.into(),
+            hash: tx.tx_hash().to_felt(),
+            transaction: tx.into(),
             paid_fee_on_l1: None,
             arrived_at,
-            converted_class,
+            declared_class: converted_class,
         }
     }
 
     pub fn into_blockifier_for_sequencing(
         self,
     ) -> Result<(BTransaction, TxTimestamp, Option<ConvertedClass>), ValidatedToBlockifierTxError> {
-        let tx_hash = TransactionHash(self.tx_hash);
-        let tx = match self.tx {
+        let tx_hash = TransactionHash(self.hash);
+        let tx = match self.transaction {
             Transaction::L1Handler(tx) => {
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
                 let paid_fee_on_l1 =
@@ -99,8 +109,10 @@ impl ValidatedMempoolTx {
                 })
             }
             Transaction::Declare(tx) => {
-                let converted_class =
-                    self.converted_class.as_ref().ok_or(ValidatedToBlockifierTxError::MissingField("class_info"))?;
+                let converted_class = self
+                    .declared_class
+                    .as_ref()
+                    .ok_or(ValidatedToBlockifierTxError::MissingField("converted_class"))?;
                 let class_info =
                     converted_class.try_into().map_err(ValidatedToBlockifierTxError::ClassCompilationError)?;
                 let tx = tx.try_into().map_err(|_| ValidatedToBlockifierTxError::InvalidContractAddress)?;
@@ -131,7 +143,7 @@ impl ValidatedMempoolTx {
         };
 
         let tx = BTransaction::new_for_sequencing(tx);
-        Ok((tx, self.arrived_at, self.converted_class))
+        Ok((tx, self.arrived_at, self.declared_class))
     }
 }
 
