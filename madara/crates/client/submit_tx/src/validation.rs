@@ -110,13 +110,13 @@ impl From<TransactionExecutionError> for SubmitTransactionError {
             | E::InvalidValidateReturnData { .. }
             | E::StarknetApiError(_)
             | E::TransactionFeeError(_)
-            | E::TransactionPreValidationError(_)
             | E::TryFromIntError(_)
             | E::TransactionTooLarge { .. }) => rejected(ValidateFailure, format!("{err:#}")),
             err @ E::InvalidVersion { .. } => rejected(InvalidTransactionVersion, format!("{err:#}")),
             err @ (E::InvalidSegmentStructure(_, _) | E::ProgramError { .. }) => {
                 rejected(InvalidProgram, format!("{err:#}"))
             }
+            E::TransactionPreValidationError(err) => (*err).into(),
             E::StateError(err) => err.into(),
         }
     }

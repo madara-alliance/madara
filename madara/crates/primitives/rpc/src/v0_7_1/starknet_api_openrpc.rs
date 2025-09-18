@@ -292,7 +292,7 @@ pub enum ExecutionStatus {
 }
 
 /// The resources consumed by the VM
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 pub struct ComputationResources {
     /// the number of BITWISE builtin instances
     #[serde(default)]

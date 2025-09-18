@@ -1,10 +1,10 @@
 use crate::errors::StarknetRpcResult;
-use crate::versions::user::v0_7_1::methods::trace::trace_block_transactions::prepare_tx_for_reexecution;
+use crate::versions::user::v0_9_0::methods::trace::trace_block_transactions::prepare_tx_for_reexecution;
 use crate::{Starknet, StarknetRpcApiError};
 use anyhow::Context;
-use mc_exec::trace::execution_result_to_tx_trace_v0_7;
+use mc_exec::trace::execution_result_to_tx_trace_v0_9;
 use mc_exec::{MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
-use mp_rpc::v0_7_1::TraceTransactionResult;
+use mp_rpc::v0_9_0::TraceTransactionResult;
 use starknet_types_core::felt::Felt;
 
 pub async fn trace_transaction(
@@ -41,7 +41,7 @@ pub async fn trace_transaction(
 
     let execution_result = executions_results.pop().context("No execution info returned")?;
 
-    let trace = execution_result_to_tx_trace_v0_7(&execution_result, exec_context.block_context.versioned_constants())
+    let trace = execution_result_to_tx_trace_v0_9(&execution_result, exec_context.block_context.versioned_constants())
         .context("Converting execution infos to tx trace")?;
 
     Ok(TraceTransactionResult { trace })

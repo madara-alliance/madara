@@ -56,10 +56,9 @@ async fn madara_devnet_add_transaction() {
         "--devnet",
         "--no-l1-sync",
         "--l1-gas-price",
-        "0",
+        "1",
         "--blob-gas-price",
-        "0",
-        // only produce blocks no pending txs
+        "1",
         "--chain-config-override",
         "block_time=1s",
     ];

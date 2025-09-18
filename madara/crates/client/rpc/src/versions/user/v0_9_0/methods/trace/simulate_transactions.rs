@@ -4,10 +4,10 @@ use crate::Starknet;
 use anyhow::Context;
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::execution::TxInfo;
-use mc_exec::trace::execution_result_to_tx_trace_v0_7;
+use mc_exec::trace::execution_result_to_tx_trace_v0_9;
 use mc_exec::{MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_convert::ToFelt;
-use mp_rpc::v0_7_1::{BlockId, BroadcastedTxn, SimulateTransactionsResult, SimulationFlag};
+use mp_rpc::v0_9_0::{BlockId, BroadcastedTxn, FeeEstimate, PriceUnitFri, SimulateTransactionsResult, SimulationFlag};
 use mp_transactions::{IntoStarknetApiExt, ToBlockifierError};
 
 pub async fn simulate_transactions(
@@ -51,14 +51,17 @@ pub async fn simulate_transactions(
         .zip(tips)
         .map(|(result, tip)| {
             Ok(SimulateTransactionsResult {
-                transaction_trace: execution_result_to_tx_trace_v0_7(
+                transaction_trace: execution_result_to_tx_trace_v0_9(
                     result,
                     exec_context.block_context.versioned_constants(),
                 )
                 .context("Converting execution infos to tx trace")?,
-                fee_estimation: exec_context
-                    .execution_result_to_fee_estimate_v0_7(result, tip)
+                fee_estimation: FeeEstimate {
+                    common: exec_context
+                    .execution_result_to_fee_estimate_v0_9(result, tip)
                     .context("Converting execution infos to tx trace")?,
+                    unit: PriceUnitFri::Fri,
+                }
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;

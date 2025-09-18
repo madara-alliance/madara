@@ -363,7 +363,7 @@ pub fn make_sample_chain_for_block_getters(backend: &Arc<MadaraBackend>) -> Samp
                     messages_sent: vec![],
                     events: vec![],
                     execution_resources: defaut_execution_resources_v0_8(),
-                    finality_status: TxnFinalityStatus::L2,
+                    finality_status: TxnFinalityStatus::PreConfirmed,
                     execution_status: ExecutionStatus::Successful,
                 },
             }),

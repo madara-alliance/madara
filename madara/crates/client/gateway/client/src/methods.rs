@@ -474,7 +474,7 @@ mod tests {
         let _ = client_mainnet_fixture
             .get_class_by_hash(Felt::from_hex_unchecked(CLASS_NO_ABI), BlockId::Number(20734))
             .await
-            .unwrap_or_else(|_| panic!("Getting class {CLASS_NO_ABI} at block number 0"));
+            .expect("Getting class CLASS_NO_ABI at block number 0");
     }
 
     #[rstest]

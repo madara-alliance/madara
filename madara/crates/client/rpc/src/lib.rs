@@ -81,10 +81,12 @@ pub fn rpc_api_user(starknet: &Starknet) -> anyhow::Result<RpcModule<()>> {
     rpc_api.merge(versions::user::v0_8_1::StarknetReadRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetWriteRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_8_1::StarknetWsRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_8_1::StarknetTraceRpcApiV0_8_1Server::into_rpc(starknet.clone()))?;
 
     rpc_api.merge(versions::user::v0_9_0::StarknetReadRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_9_0::StarknetWriteRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
     rpc_api.merge(versions::user::v0_9_0::StarknetWsRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
+    rpc_api.merge(versions::user::v0_9_0::StarknetTraceRpcApiV0_9_0Server::into_rpc(starknet.clone()))?;
 
     Ok(rpc_api)
 }

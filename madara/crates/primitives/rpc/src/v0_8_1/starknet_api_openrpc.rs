@@ -1,31 +1,27 @@
 use crate::custom_serde::NumAsHex;
+use serde::{Deserialize, Serialize};
+use starknet_types_core::felt::Felt;
+
 pub use crate::v0_7_1::{
     AddDeclareTransactionParams, AddDeployAccountTransactionParams, AddInvokeTransactionParams,
     AddInvokeTransactionResult, Address, BlockHash, BlockHashAndNumber, BlockHashAndNumberParams, BlockHashHelper,
     BlockId, BlockNumber, BlockNumberHelper, BlockNumberParams, BlockStatus, BlockTag, BroadcastedDeclareTxnV1,
-    BroadcastedDeclareTxnV2, CallParams, CallType, Calldata, ChainId, ChainIdParams, ClassAndTxnHash,
-    ComputationResources, ContractAbi, ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractStorageDiffItem,
-    DaMode, DataAvailability, DeclareTransactionTrace, DeclareTxnV0, DeclareTxnV1, DeclareTxnV2,
-    DeployAccountTransactionTrace, DeployAccountTxnV1, DeployTxn, DeployedContractItem, DeprecatedCairoEntryPoint,
-    DeprecatedContractClass, DeprecatedEntryPointsByType, EmittedEvent, EntryPointType, EntryPointsByType,
+    BroadcastedDeclareTxnV2, CallParams, Calldata, ChainId, ChainIdParams, ClassAndTxnHash, ContractAbi,
+    ContractAbiEntry, ContractAndTxnHash, ContractClass, ContractStorageDiffItem, DaMode, DataAvailability,
+    DeclareTxnV0, DeclareTxnV1, DeclareTxnV2, DeployAccountTxnV1, DeployTxn, DeployedContractItem,
+    DeprecatedCairoEntryPoint, DeprecatedContractClass, DeprecatedEntryPointsByType, EmittedEvent, EntryPointsByType,
     EstimateFeeParams, EstimateMessageFeeParams, EthAddress, Event, EventAbiEntry, EventAbiType, EventContent,
-    EventFilterWithPageRequest, EventsChunk, ExecuteInvocation, ExecutionStatus, FeePayment, FunctionAbiEntry,
-    FunctionAbiType, FunctionCall, FunctionInvocation, FunctionStateMutability, GetBlockTransactionCountParams,
-    GetBlockWithReceiptsParams, GetBlockWithTxHashesParams, GetBlockWithTxsParams, GetClassAtParams,
-    GetClassHashAtParams, GetClassParams, GetEventsParams, GetNonceParams, GetStateUpdateParams, GetStorageAtParams,
-    GetTransactionByBlockIdAndIndexParams, GetTransactionByHashParams, GetTransactionReceiptParams,
-    GetTransactionStatusParams, InvokeTransactionTrace, InvokeTxnV0, InvokeTxnV1, KeyValuePair, L1DaMode,
-    L1HandlerTransactionTrace, L1HandlerTxn, MaybeDeprecatedContractClass, MaybePendingStateUpdate, MsgFromL1, MsgToL1,
-    NestedCall, NewClasses, NonceUpdate, OrderedEvent, OrderedMessage, PendingStateUpdate, PriceUnit, ReplacedClass,
-    ResourceBounds, ResourcePrice, RevertedInvocation, SierraEntryPoint, Signature, SimulateTransactionsParams,
-    SimulationFlag, SimulationFlagForEstimateFee, SpecVersionParams, StateDiff, StateUpdate, StorageKey,
-    StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus,
-    TraceBlockTransactionsParams, TraceBlockTransactionsResult, TraceTransactionParams, TraceTransactionResult,
-    TransactionTrace, TxnExecutionStatus, TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnStatus,
-    TypedParameter,
+    EventFilterWithPageRequest, EventsChunk, ExecutionStatus, FeePayment, FunctionAbiEntry, FunctionAbiType,
+    FunctionCall, FunctionStateMutability, GetBlockTransactionCountParams, GetBlockWithReceiptsParams,
+    GetBlockWithTxHashesParams, GetBlockWithTxsParams, GetClassAtParams, GetClassHashAtParams, GetClassParams,
+    GetEventsParams, GetNonceParams, GetStateUpdateParams, GetStorageAtParams, GetTransactionByBlockIdAndIndexParams,
+    GetTransactionByHashParams, GetTransactionReceiptParams, GetTransactionStatusParams, InvokeTxnV0, InvokeTxnV1,
+    KeyValuePair, L1DaMode, L1HandlerTxn, MaybeDeprecatedContractClass, MaybePendingStateUpdate, MsgFromL1, MsgToL1,
+    NewClasses, NonceUpdate, PendingStateUpdate, PriceUnit, ReplacedClass, ResourceBounds, ResourcePrice,
+    SierraEntryPoint, Signature, SimulationFlagForEstimateFee, SpecVersionParams, StateDiff, StateUpdate, StorageKey,
+    StructAbiEntry, StructAbiType, StructMember, SyncStatus, SyncingParams, SyncingStatus, TxnExecutionStatus,
+    TxnFinalityAndExecutionStatus, TxnFinalityStatus, TxnHash, TxnStatus, TypedParameter,
 };
-use serde::{Deserialize, Serialize};
-use starknet_types_core::felt::Felt;
 
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]

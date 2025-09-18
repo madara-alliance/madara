@@ -1,3 +1,4 @@
 pub mod read;
-pub mod ws;
+pub mod trace;
 pub mod write;
+pub mod ws;

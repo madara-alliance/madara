@@ -111,6 +111,7 @@ async fn l1_handler_setup(
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::StartNewBlock { .. }));
     assert_matches!(handle.replies.recv().await, Some(ExecutorMessage::BatchExecuted(res)) => {
         assert_eq!(res.executed_txs.len(), 1);
+        tracing::debug!("res = {:?}", res.blockifier_results[0].as_ref().unwrap());
         assert!(!res.blockifier_results[0].as_ref().unwrap().0.is_reverted());
     });
     // Close block.

@@ -2,11 +2,11 @@ use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
 use anyhow::Context;
 use mc_db::{MadaraBlockView, MadaraStateView};
-use mc_exec::trace::execution_result_to_tx_trace_v0_7;
+use mc_exec::trace::execution_result_to_tx_trace_v0_8;
 use mc_exec::{MadaraBlockViewExecutionExt, EXECUTION_UNSUPPORTED_BELOW_VERSION};
 use mp_block::TransactionWithReceipt;
 use mp_convert::ToFelt;
-use mp_rpc::v0_7_1::{BlockId, TraceBlockTransactionsResult};
+use mp_rpc::v0_8_1::{BlockId, TraceBlockTransactionsResult};
 use mp_transactions::TransactionWithHash;
 
 pub(super) fn prepare_tx_for_reexecution(
@@ -53,7 +53,7 @@ pub async fn trace_block_transactions_view(
         .map(|result| {
             let transaction_hash = result.hash.to_felt();
             let trace_root =
-                execution_result_to_tx_trace_v0_7(&result, exec_context.block_context.versioned_constants())
+                execution_result_to_tx_trace_v0_8(&result, exec_context.block_context.versioned_constants())
                     .context("Converting execution infos to tx trace")?;
             Ok(TraceBlockTransactionsResult { trace_root, transaction_hash })
         })

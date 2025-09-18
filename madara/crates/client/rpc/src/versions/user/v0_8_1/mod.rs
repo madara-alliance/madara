@@ -5,7 +5,8 @@ use mp_rpc::v0_8_1::{
     BroadcastedInvokeTxn, BroadcastedTxn, ClassAndTxnHash, ContractAndTxnHash, ContractStorageKeysItem,
     EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult,
     MaybeDeprecatedContractClass, MaybePendingBlockWithTxHashes, MaybePendingBlockWithTxs, MaybePendingStateUpdate,
-    MsgFromL1, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
+    MsgFromL1, SimulateTransactionsResult, SimulationFlag, SimulationFlagForEstimateFee,
+    StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TraceBlockTransactionsResult, TraceTransactionResult,
     TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
 };
 use starknet_types_core::felt::Felt;
@@ -190,4 +191,24 @@ pub trait StarknetWriteRpcApi {
     /// Submit a new class declaration transaction
     #[method(name = "addDeclareTransaction")]
     async fn add_declare_transaction(&self, declare_transaction: BroadcastedDeclareTxn) -> RpcResult<ClassAndTxnHash>;
+}
+
+#[versioned_rpc("V0_8_1", "starknet")]
+pub trait StarknetTraceRpcApi {
+    /// Returns the execution trace of a transaction by simulating it in the runtime.
+    #[method(name = "simulateTransactions")]
+    async fn simulate_transactions(
+        &self,
+        block_id: BlockId,
+        transactions: Vec<BroadcastedTxn>,
+        simulation_flags: Vec<SimulationFlag>,
+    ) -> RpcResult<Vec<SimulateTransactionsResult>>;
+
+    #[method(name = "traceBlockTransactions")]
+    /// Returns the execution traces of all transactions included in the given block
+    async fn trace_block_transactions(&self, block_id: BlockId) -> RpcResult<Vec<TraceBlockTransactionsResult>>;
+
+    #[method(name = "traceTransaction")]
+    /// Returns the execution trace of a transaction
+    async fn trace_transaction(&self, transaction_hash: Felt) -> RpcResult<TraceTransactionResult>;
 }

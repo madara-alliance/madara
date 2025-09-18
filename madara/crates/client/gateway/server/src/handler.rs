@@ -12,7 +12,7 @@ use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
-use mc_rpc::versions::user::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_7_1_trace_block_transactions;
+use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
@@ -176,7 +176,7 @@ pub async fn handle_get_block_traces(
         traces: Vec<TraceBlockTransactionsResult>,
     }
 
-    let traces = v0_7_1_trace_block_transactions(&block).await?;
+    let traces = v0_9_0_trace_block_transactions(&block).await?;
     let block_traces = BlockTraces { traces };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block_traces))
