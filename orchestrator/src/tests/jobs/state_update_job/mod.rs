@@ -302,9 +302,7 @@ async fn process_job_works_unit_test() {
         settlement_client
             .expect_update_state_with_blobs()
             .with(eq(deserialized_program_output), eq(vec![blob_data_vec_clone]), always())
-            .returning(|_, _, _| {
-                Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442"))
-            });
+            .returning(|_, _, _| Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442")));
 
         // mocking the finality too
         settlement_client
