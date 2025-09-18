@@ -65,7 +65,7 @@ pub static QUEUES: LazyLock<HashMap<QueueType, QueueConfig>> = LazyLock::new(|| 
             visibility_timeout: 300,
             dlq_config: Some(DlqConfig { max_receive_count: 5, dlq_name: QueueType::JobHandleFailure }),
             queue_control: QueueControlConfig::default_with_message_count(
-                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS", "1").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS does not have correct value. Should be a whole number"),
+                get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS", "5").parse().expect("MADARA_ORCHESTRATOR_MAX_CONCURRENT_SNOS_JOBS does not have correct value. Should be a whole number"),
             ),
             supported_layers: vec![Layer::L2, Layer::L3],
         },
