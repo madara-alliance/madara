@@ -18,15 +18,15 @@ url = "2.4.1"
 
 
 # Zaun Deps
-ethereum-instance = { git = "https://github.com/karnotxyz/zaun", package = "ethereum-instance", tag = "v1.0.4" }
-starkgate-manager-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-manager-client", tag = "v1.0.4" }
-starkgate-registry-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-registry-client", tag = "v1.0.4" }
-starknet-core-contract-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-core-contract-client", tag = "v1.0.4" }
-starknet-erc20-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-erc20-client", tag = "v1.0.4" }
-starknet-eth-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-eth-bridge-client", tag = "v1.0.4" }
-starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-proxy-client", tag = "v1.0.4" }
-starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-token-bridge-client", tag = "v1.0.4" }
-zaun-utils = { git = "https://github.com/karnotxyz/zaun", package = "utils", tag = "v1.0.4" }
+ethereum-instance = { git = "https://github.com/karnotxyz/zaun", package = "ethereum-instance", branch = "update/cc-remove-l1-l2-message-check" }
+starkgate-manager-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-manager-client", branch = "update/cc-remove-l1-l2-message-check" }
+starkgate-registry-client = { git = "https://github.com/karnotxyz/zaun", package = "starkgate-registry-client", branch = "update/cc-remove-l1-l2-message-check" }
+starknet-core-contract-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-core-contract-client", branch = "update/cc-remove-l1-l2-message-check" }
+starknet-erc20-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-erc20-client", branch = "update/cc-remove-l1-l2-message-check" }
+starknet-eth-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-eth-bridge-client", branch = "update/cc-remove-l1-l2-message-check" }
+starknet-proxy-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-proxy-client", branch = "update/cc-remove-l1-l2-message-check" }
+starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", package = "starknet-token-bridge-client", branch = "update/cc-remove-l1-l2-message-check" }
+zaun-utils = { git = "https://github.com/karnotxyz/zaun", package = "utils", branch = "update/cc-remove-l1-l2-message-check" }
 
 # Starknet Deps
 starknet = "0.11.0"

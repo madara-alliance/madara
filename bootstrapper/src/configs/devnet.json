@@ -1,4 +1,6 @@
 {
+  "eth_rpc": "",
+  "eth_priv_key": "",
   "rollup_seq_url": "http://127.0.0.1:9944",
   "rollup_declare_v0_seq_url": "http://127.0.0.1:9943",
   "rollup_priv_key": "0xabcd",
@@ -18,5 +20,5 @@
   "dev": false,
   "core_contract_address": "0xe7f1725e7734ce288f8367e1bb143e90bb3f0512",
   "core_contract_implementation_address": "0x5fbdb2315678afecb367f032d93f642f64180aa3",
-  "core_contract_mode": "Dev"
+  "core_contract_mode": "Production"
 }
