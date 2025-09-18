@@ -170,7 +170,7 @@ fn collect_call_info_ordered_messages(call_info: &CallInfo) -> Vec<mp_rpc::v0_7_
             order: index as u64,
             msg_to_l_1: MsgToL1 {
                 payload: message.message.payload.0.to_vec(),
-                to_address: message.message.to_address.0.to_felt(),
+                to_address: message.message.to_address.to_felt(),
                 from_address: call_info.call.storage_address.to_felt(),
             },
         })

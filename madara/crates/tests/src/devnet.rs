@@ -146,7 +146,7 @@ async fn madara_devnet_mempool_saving() {
     let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(ACCOUNT_SECRET));
     let mut account =
         SingleOwnerAccount::new(node.json_rpc(), signer, ACCOUNT_ADDRESS, chain_id, ExecutionEncoding::New);
-    account.set_block_id(BlockId::Tag(BlockTag::Pending));
+    account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
 
     let res = account
         .execute_v3(vec![Call {

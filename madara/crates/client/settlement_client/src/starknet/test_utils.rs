@@ -69,7 +69,7 @@ pub async fn get_test_context() -> TestContext {
         cmd.json_rpc().chain_id().await.unwrap(),
         ExecutionEncoding::New,
     );
-    account.set_block_id(BlockId::Tag(BlockTag::Pending));
+    account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
 
     let (deployed_appchain_contract_address, deployed_messaging_contract_address) = (
         deploy_contract(&account, APPCHAIN_CONTRACT_SIERRA).await,
@@ -97,7 +97,7 @@ pub async fn send_state_update(
     update: StateUpdate,
 ) -> anyhow::Result<u64> {
     let call = account
-        .execute_v1(vec![Call {
+        .execute_v3(vec![Call {
             to: appchain_contract_address,
             selector: get_selector_from_name("update_state")?,
             calldata: vec![Felt::from(update.block_number.unwrap_or(0)), update.global_root, update.block_hash],
@@ -106,18 +106,13 @@ pub async fn send_state_update(
         .await?;
     let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await?;
 
-    let latest_block_number_recorded = account.provider().block_number().await?;
-
-    match receipt.block.block_number() {
-        Some(block_number) => Ok(block_number),
-        None => Ok(latest_block_number_recorded + 1),
-    }
+    Ok(receipt.block.block_number())
 }
 
 /// Get the message hash as calculated within cairo.
 pub async fn get_message_hash_from_cairo(account: &StarknetAccount, appchain_contract_address: Felt) -> Felt {
     let TransactionTrace::Invoke(call) = account
-        .execute_v1(vec![Call {
+        .execute_v3(vec![Call {
             to: appchain_contract_address,
             selector: get_selector_from_name("get_l1_to_l2_msg_hash").unwrap(),
             calldata: vec![],
@@ -150,7 +145,7 @@ pub async fn get_message_hash_from_cairo(account: &StarknetAccount, appchain_con
 /// Returns an error if the transaction fails
 pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> u64 {
     let call = account
-        .execute_v1(vec![Call {
+        .execute_v3(vec![Call {
             to: appchain_contract_address,
             selector: get_selector_from_name("fire_event").unwrap(),
             calldata: vec![],
@@ -161,12 +156,7 @@ pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_a
     let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await.unwrap();
     assert_eq!(receipt.receipt.execution_result(), &ExecutionResult::Succeeded);
 
-    let latest_block_number_recorded = account.provider().block_number().await.unwrap();
-
-    match receipt.block.block_number() {
-        Some(block_number) => block_number,
-        None => latest_block_number_recorded + 1,
-    }
+    receipt.block.block_number()
 }
 
 /// Cancels a messaging event in the messaging contract
@@ -182,7 +172,7 @@ pub async fn fire_messaging_event(account: &StarknetAccount, appchain_contract_a
 /// Returns an error if the transaction fails
 pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract_address: Felt) -> u64 {
     let call = account
-        .execute_v1(vec![Call {
+        .execute_v3(vec![Call {
             to: appchain_contract_address,
             selector: get_selector_from_name("cancel_event").unwrap(),
             calldata: vec![],
@@ -192,12 +182,7 @@ pub async fn cancel_messaging_event(account: &StarknetAccount, appchain_contract
         .unwrap();
     let receipt = get_transaction_receipt(account.provider(), call.transaction_hash).await.unwrap();
 
-    let latest_block_number_recorded = account.provider().block_number().await.unwrap();
-
-    match receipt.block.block_number() {
-        Some(block_number) => block_number,
-        None => latest_block_number_recorded + 1,
-    }
+    receipt.block.block_number()
 }
 
 /// Deploys a contract to Starknet
@@ -219,7 +204,7 @@ pub async fn deploy_contract(account: &StarknetAccount, sierra: &[u8]) -> Felt {
     let (compiled_class_hash, _compiled_class) =
         mp_class::FlattenedSierraClass::from(flattened_class.clone()).compile_to_casm().unwrap();
 
-    let result = account.declare_v2(Arc::new(flattened_class), compiled_class_hash).send().await.unwrap();
+    let result = account.declare_v3(Arc::new(flattened_class), compiled_class_hash).send().await.unwrap();
     // wait one block
     let start = account.provider().block_number().await.unwrap();
     while account.provider().block_number().await.unwrap() <= start {

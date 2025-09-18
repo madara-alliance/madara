@@ -328,18 +328,25 @@ pub enum MaybePendingBlockWithTxs {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct FeeEstimate {
     /// The Ethereum gas consumption of the transaction, charged for L1->L2 messages and, depending on the block's DA_MODE, state diffs
+    #[serde(with = "NumAsHex")]
     pub l1_gas_consumed: u64,
     /// The gas price (in wei or fri, depending on the tx version) that was used in the cost estimation
+    #[serde(with = "NumAsHex")]
     pub l1_gas_price: u128,
     /// The L2 gas consumption of the transaction
+    #[serde(with = "NumAsHex")]
     pub l2_gas_consumed: u64,
     /// The L2 gas price (in wei or fri, depending on the tx version) that was used in the cost estimation
+    #[serde(with = "NumAsHex")]
     pub l2_gas_price: u128,
     /// The Ethereum data gas consumption of the transaction
+    #[serde(with = "NumAsHex")]
     pub l1_data_gas_consumed: u64,
     /// The data gas price (in wei or fri, depending on the tx version) that was used in the cost estimation
+    #[serde(with = "NumAsHex")]
     pub l1_data_gas_price: u128,
     /// The estimated fee for the transaction (in wei or fri, depending on the tx version), equals to l1_gas_consumed*l1_gas_price + l1_data_gas_consumed*l1_data_gas_price + l2_gas_consumed*l2_gas_price
+    #[serde(with = "NumAsHex")]
     pub overall_fee: u128,
     /// units in which the fee is given
     pub unit: PriceUnit,

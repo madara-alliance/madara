@@ -408,7 +408,7 @@ impl ExecutorThread {
             tracing::debug!("Stats: {:?}", stats);
             tracing::debug!(
                 "Weights: {:?}",
-                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_accumulated_weights()
+                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
             );
             tracing::debug!("Block now full: {:?}", block_full);
 
