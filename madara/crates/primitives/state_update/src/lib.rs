@@ -1,8 +1,8 @@
+use mp_convert::ToFelt;
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
-use mp_convert::ToFelt;
 use std::collections::HashMap;
 mod into_starknet_types;
 
@@ -312,7 +312,6 @@ impl StateDiff {
             .collect()
     }
 }
-
 
 // Add conversion from blockifier::state::cached_state::CommitmentStateDiff
 impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {

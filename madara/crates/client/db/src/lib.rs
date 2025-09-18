@@ -69,13 +69,12 @@ pub mod sync_status;
 pub mod tests;
 pub mod view;
 
+use blockifier::bouncer::BouncerWeights;
 pub use storage::{
     DevnetPredeployedContractAccount, DevnetPredeployedKeys, EventFilter, MadaraStorage, MadaraStorageRead,
     MadaraStorageWrite, StorageTxIndex,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
-use blockifier::bouncer::BouncerWeights;
-
 
 /// Current chain tip.
 #[derive(Default, Clone)]
