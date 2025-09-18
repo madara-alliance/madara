@@ -3,6 +3,7 @@ use crate::{
     import::BlockImporter,
     metrics::SyncMetrics,
     probe::ThrottledRepeatedFuture,
+    reorg::{detect_reorg, ReorgError},
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
@@ -77,6 +78,7 @@ pub struct GatewayForwardSync {
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
     backend: Arc<MadaraBackend>,
+    client: Arc<GatewayProvider>,
 }
 
 impl GatewayForwardSync {
@@ -87,6 +89,7 @@ impl GatewayForwardSync {
         config: ForwardSyncConfig,
     ) -> Self {
         let starting_block_n = backend.head_status().next_full_block();
+        // this is the place where the latest block is fetched from the backend / database
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -112,7 +115,7 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
+        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client }
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -146,11 +149,59 @@ impl ForwardPipeline for GatewayForwardSync {
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
+        // // Check for reorg on existing blocks when starting sync
+        // // This is crucial when switching gateways or restarting
+        // if let Some(latest_block_n) = self.backend.head_status().latest_full_block_n() {
+        //     // Check last few blocks to detect if we're on a different chain
+        //     let blocks_to_check = 10u64.min(latest_block_n + 1); // Check up to 10 recent blocks
+        //     let start_check = latest_block_n.saturating_sub(blocks_to_check - 1);
+
+        //     tracing::info!("🔍 Checking blocks {}..={} for reorg on sync start", start_check, latest_block_n);
+
+        //     for block_n in start_check..=latest_block_n {
+        //         tracing::debug!("Checking block #{} for reorg", block_n);
+        //         if let Some(common_ancestor) = detect_reorg(
+        //             block_n,
+        //             &self.backend,
+        //             &self.client,
+        //         ).await? {
+        //             tracing::error!("⚠️ REORG DETECTED on sync start at block {} - common ancestor: {}", block_n, common_ancestor);
+        //             let our_hash = self.backend.get_block_hash(&mc_db::db_block_id::RawDbBlockId::Number(block_n))?.unwrap_or(starknet_core::types::Felt::ZERO);
+        //             return Err(ReorgError::ReorgDetected {
+        //                 block_n,
+        //                 our_hash,
+        //                 gateway_hash: starknet_core::types::Felt::ZERO, // Will be filled with actual gateway hash
+        //                 common_ancestor: Some(common_ancestor),
+        //             }.into());
+        //         }
+        //     }
+        //     tracing::info!("✅ No reorg detected on startup");
+        // } else {
+        //     tracing::info!("No blocks in database - starting fresh sync");
+        // }
+
         let mut done = false;
         while !done {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
+
+                // Check for reorg before scheduling parallel work
+                if let Some(common_ancestor) = detect_reorg(
+                    target_height,
+                    &self.backend,
+                    &self.client,
+                ).await? {
+                    // Reorg detected! Return error to trigger handling
+                    let our_hash = self.backend.get_block_hash(&mc_db::db_block_id::RawDbBlockId::Number(next_input_block_n))?.unwrap_or(starknet_core::types::Felt::ZERO);
+                    return Err(ReorgError::ReorgDetected {
+                        block_n: next_input_block_n,
+                        our_hash,
+                        gateway_hash: starknet_core::types::Felt::ZERO, // Will be filled with actual gateway hash
+                        common_ancestor: Some(common_ancestor),
+                    }.into());
+                }
+
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 

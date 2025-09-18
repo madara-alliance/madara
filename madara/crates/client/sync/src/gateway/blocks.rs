@@ -183,6 +183,8 @@ pub fn gateway_pending_block_sync(
 
                 if block.block.parent_block_hash != parent_hash {
                     tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
+                    //this is the place where the latest block is fetched from the backend / database
+                    
                     return Ok(None);
                 }
 
