@@ -27,7 +27,6 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     Address::from_str(&run_cmd.ethereum_settlement_args.l1_core_contract_address.clone().ok_or(
                         OrchestratorError::SetupCommandError("L1 core contract address is required".to_string()),
                     )?)?;
-                let max_gas_price_mul_factor = run_cmd.ethereum_settlement_args.max_gas_price_mul_factor;
                 let ethereum_operator_address = Address::from_slice(
                     &hex::decode(
                         run_cmd
@@ -56,7 +55,7 @@ impl TryFrom<RunCmd> for SettlementConfig {
                     )?,
                     l1_core_contract_address,
                     starknet_operator_address: ethereum_operator_address,
-                    max_gas_price_mul_factor,
+                    max_gas_price_mul_factor: run_cmd.ethereum_settlement_args.max_gas_price_mul_factor,
                 };
                 Ok(Self::Ethereum(ethereum_params))
             }
