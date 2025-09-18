@@ -74,8 +74,6 @@ where
                 "{method} {status} {res_len} - {response_time} micros"
             );
 
-            tracing::info!("{:?}", rp.as_result());
-
             metrics.on_response(&req, &rp, now);
 
             rp

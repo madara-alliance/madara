@@ -269,5 +269,5 @@ chrono = { version = "0.4", features = ["serde"] }
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 
-blockifier = { git = "https://github.com/starkware-libs/sequencer", branch = "dori/merge-main-v0.14.0-into-main-v0.14.1-1758113551" }
-starknet_api = { git = "https://github.com/starkware-libs/sequencer", branch = "dori/merge-main-v0.14.0-into-main-v0.14.1-1758113551" }
+blockifier = { git = "https://github.com/starkware-libs/sequencer", rev = "a1c2488" }
+starknet_api = { git = "https://github.com/starkware-libs/sequencer", rev = "a1c2488" }
