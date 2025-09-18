@@ -180,41 +180,87 @@ impl GatewayMock {
         });
     }
 
-    pub fn mock_block_pending(&self, parent_hash: Felt) -> Mock {
-        self.mock_block_pending_with_ts(parent_hash, 1725950824)
+    pub fn mock_block_pending(&self, block_number: u64) -> Mock {
+        self.mock_block_pending_with_ts(block_number, 1725950824)
     }
 
     /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
-    pub fn mock_block_pending_with_ts(&self, parent_hash: Felt, timestamp: usize) -> Mock {
+    pub fn mock_block_pending_with_ts(&self, block_number: u64, timestamp: usize) -> Mock {
         // block alpha-sepolia 171544
         self.mock_server.mock(|when, then| {
-            when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
+            when.method("GET")
+                .path_contains("get_preconfirmed_block")
+                .query_param("blockNumber", block_number.to_string());
             then.status(200).header("content-type", "application/json").json_body(json!({
-                "block": {
-                    "parent_block_hash": format!("{parent_hash:#x}"),
-                    "status": "PENDING",
-                    "l1_da_mode": "CALLDATA",
-                    "l1_gas_price": {
-                        "price_in_wei": "0x274287586",
-                        "price_in_fri": "0x363cc34e29f8"
-                    },
-                    "l1_data_gas_price": {
-                        "price_in_wei": "0x2bc1e42413",
-                        "price_in_fri": "0x3c735d85586c2"
-                    },
-                    "l2_gas_price": {
-                        "price_in_wei": "0x1",
-                        "price_in_fri": "0x1"
-                    },
-                    "transactions": [],
-                    "timestamp": timestamp,
-                    "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                    "transaction_receipts": [],
-                    "starknet_version": "0.13.2.1",
+                "status": "PRE_CONFIRMED",
+                "starknet_version": "0.13.2.1",
+                "l1_da_mode": "CALLDATA",
+                "l1_gas_price": {
+                    "price_in_wei": "0x274287586",
+                    "price_in_fri": "0x363cc34e29f8"
                 },
-                "state_update": {
-                    "old_root": "0x37817010d31db557217addb3b4357c2422c8d8de0290c3f6a867bbdc49c32a0",
-                    "state_diff": {
+                "l1_data_gas_price": {
+                    "price_in_wei": "0x2bc1e42413",
+                    "price_in_fri": "0x3c735d85586c2"
+                },
+                "l2_gas_price": {
+                    "price_in_wei": "0x1",
+                    "price_in_fri": "0x1"
+                },
+                "l1_data_gas_price": {
+                    "price_in_wei": "0x1",
+                    "price_in_fri": "0x1"
+                },
+                "timestamp": timestamp,
+                "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
+                "transactions": [
+                    {
+                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                        "version": "0x1",
+                        "max_fee": "0x0",
+                        "signature": [
+                            "0x357dbb6c509a7d4b58f8ee7151236278b7959b39f7d05b8f7e2ef20593bdf7e",
+                            "0x64d5f748eef19ca7f1c8cc533e5c9c85f80ef4f040c75da67bda82f5c58328d"
+                        ],
+                        "nonce": "0x1",
+                        "sender_address": "0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8",
+                        "calldata": [
+                            "0x1",
+                            "0x43abaa073c768ebf039c0c4f46db9acc39e9ec165690418060a652aab39e7d8",
+                            "0x2730079d734ee55315f4f141eaed376bddd8c2133523d223a344c5604e0f7f8",
+                            "0x0",
+                            "0x5",
+                            "0x5",
+                            "0xd0e183745e9dae3e4e78a8ffedcce0903fc4900beace4e0abf192d4c202da3",
+                            "0x322c2610264639f6b2cee681ac53fa65c37e187ea24292d1b21d859c55e1a78",
+                            "0x1",
+                            "0x0",
+                            "0x1"
+                        ],
+                        "type": "INVOKE_FUNCTION"
+                    },
+                ],
+                "transaction_receipts": [
+                    {
+                        "execution_status": "SUCCEEDED",
+                        "transaction_index": 3,
+                        "transaction_hash": "0x6a5a493cf33919e58aa4c75777bffdef97c0e39cac968896d7bee8cc67905a1",
+                        "l2_to_l1_messages": [],
+                        "events": [],
+                        "execution_resources": {
+                            "n_steps": 5617,
+                            "builtin_instance_counter": {
+                                "pedersen_builtin": 23,
+                                "ecdsa_builtin": 1,
+                                "range_check_builtin": 122
+                            },
+                            "n_memory_holes": 0
+                        },
+                        "actual_fee": "0x0"
+                    },
+                ],
+                "transaction_state_diffs": [
+                    {
                         "storage_diffs": {
                             "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d": [
                                 {
@@ -245,75 +291,7 @@ impl GatewayMock {
                         "declared_classes": [],
                         "replaced_classes": []
                     }
-                }
-            }));
-        })
-    }
-
-    /// Ts is timestamp. We use that to differentiate pending blocks in the tests.
-    pub fn mock_block_pending_with_declared_class(&self, parent_hash: Felt, timestamp: usize) -> Mock {
-        self.mock_server.mock(|when, then| {
-            when.method("GET").path_contains("get_state_update").query_param("blockNumber", "pending");
-            then.status(200).header("content-type", "application/json").json_body(json!({
-                "block": {
-                    "parent_block_hash": format!("{parent_hash:#x}"),
-                    "status": "PENDING",
-                    "l1_da_mode": "CALLDATA",
-                    "l1_gas_price": {
-                        "price_in_wei": "0x274287586",
-                        "price_in_fri": "0x363cc34e29f8"
-                    },
-                    "l1_data_gas_price": {
-                        "price_in_wei": "0x2bc1e42413",
-                        "price_in_fri": "0x3c735d85586c2"
-                    },
-                    "l2_gas_price": {
-                        "price_in_wei": "0x1",
-                        "price_in_fri": "0x1"
-                    },
-                    "transactions": [],
-                    "timestamp": timestamp,
-                    "sequencer_address": "0x1176a1bd84444c89232ec27754698e5d2e7e1a7f1539f12027f28b23ec9f3d8",
-                    "transaction_receipts": [],
-                    "starknet_version": "0.13.2.1",
-                },
-                "state_update": {
-                    "old_root": "0x37817010d31db557217addb3b4357c2422c8d8de0290c3f6a867bbdc49c32a0",
-                    "state_diff": {
-                        "storage_diffs": {
-                            "0x4718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d": [
-                                {
-                                    "key": "0x5496768776e3db30053404f18067d81a6e06f5a2b0de326e21298fd9d569a9a",
-                                    "value": "0x1b7622454b6cea6e76bb2"
-                                },
-                                {
-                                    "key": "0x5928e5598505749c60b49cc98e3acd5f3faa4a36910f50824395385b3c3a5c6",
-                                    "value": "0xdefb9937f1c6af5096"
-                                }
-                            ]
-                        },
-                        "nonces": {
-                            "0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c": "0x2",
-                            "0x2bb8a1f5a1241c1ebe8e10ff93b38ab097b1a20f77517997f8799829e096535": "0x18ab"
-                        },
-                        "deployed_contracts": [
-                            {
-                                "address": "0x596d7421536f9d895015f207a6a349f54081634a25d4b403d3cd0363208ee1c",
-                                "class_hash": "0x36078334509b514626504edc9fb252328d1a240e4e948bef8d0c08dff45927f"
-                            },
-                            {
-                                "address": "0x7ab19cc28b12535df410edd1dbaad521ee83479b5936e00decdde5dd566c8b7",
-                                "class_hash": "0x4ccf6144da19dc18c9f109a8a46e66ea2e08b2f22b03f895a715968d26622ea"
-                            }
-                        ],
-                        "old_declared_contracts": [],
-                        "declared_classes": [{
-                            "class_hash": "0x40fe2533528521fc49a8ad8440f8a1780c50337a94d0fce43756015fa816a8a",
-                            "compiled_class_hash": "0x7d24ab3a5277e064c65b37f2bd4b118050a9f1864bd3f74beeb3e84b2213692"
-                        }],
-                        "replaced_classes": []
-                    }
-                }
+                ],
             }));
         })
     }

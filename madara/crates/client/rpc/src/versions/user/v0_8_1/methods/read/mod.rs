@@ -26,6 +26,12 @@ impl StarknetReadRpcApiV0_8_1Server for Starknet {
         contract_addresses: Option<Vec<Felt>>,
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
-        get_storage_proof::get_storage_proof(self, block_id, class_hashes, contract_addresses, contracts_storage_keys)
+        Ok(get_storage_proof::get_storage_proof(
+            self,
+            block_id,
+            class_hashes,
+            contract_addresses,
+            contracts_storage_keys,
+        )?)
     }
 }

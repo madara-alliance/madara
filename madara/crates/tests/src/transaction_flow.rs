@@ -54,13 +54,12 @@ enum TestSetup {
 struct SetupBuilder {
     setup: TestSetup,
     block_time: String,
-    pending_update_time: String,
     block_production_disabled: bool,
 }
 
 impl SetupBuilder {
     pub fn new(setup: TestSetup) -> Self {
-        Self { setup, block_time: "2s".into(), pending_update_time: "500ms".into(), block_production_disabled: false }
+        Self { setup, block_time: "2s".into(), block_production_disabled: false }
     }
     pub fn with_block_production_disabled(mut self, disabled: bool) -> Self {
         self.block_production_disabled = disabled;
@@ -68,11 +67,6 @@ impl SetupBuilder {
     }
     pub fn with_block_time(mut self, block_time: impl Into<String>) -> Self {
         self.block_time = block_time.into();
-        self
-    }
-    #[allow(unused)]
-    pub fn with_pending_update_time(mut self, pending_update_time: impl Into<String>) -> Self {
-        self.pending_update_time = pending_update_time.into();
         self
     }
 
@@ -85,7 +79,7 @@ impl SetupBuilder {
             "--chain-config-path".into(),
             "test_devnet.yaml".into(),
             "--chain-config-override".into(),
-            format!("block_time={},pending_block_update_time={}", self.block_time, self.pending_update_time),
+            format!("block_time={}", self.block_time),
             "--gateway".into(),
         ]
         .into_iter()
@@ -359,7 +353,7 @@ async fn normal_transfer(#[case] setup: TestSetup) {
 #[case::single_node(SequencerOnly)]
 /// Test more transfers, with some concurrency, across some block boundaries
 async fn more_transfers(#[case] setup: TestSetup) {
-    let setup = SetupBuilder::new(setup).with_block_time("4s").run().await;
+    let setup = SetupBuilder::new(setup).with_block_time("2s").run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(
         setup: &RunningTestSetup,
@@ -650,24 +644,16 @@ async fn deploy_account_wrong_order_works(#[case] setup: TestSetup) {
 
 #[tokio::test]
 #[rstest]
-#[case::full_node_rpc(FullNodeAndSequencer, false, false)]
-#[case::full_node(FullNodeAndSequencer, false, true)]
-#[case::full_node_rpc_no_pending(FullNodeAndSequencer, true, false)]
-#[case::gateway_and_sequencer_rpc(GatewayAndSequencer, false, false)]
-#[case::gateway_and_sequencer(GatewayAndSequencer, true, false)]
-#[case::gateway_and_sequencer_no_pending(GatewayAndSequencer, false, true)]
-#[case::single_node_rpc(SequencerOnly, false, false)]
-#[case::single_node(SequencerOnly, false, true)]
-/// Declare a contract, then
-/// no_pending_block: when enabled, and wait_for_txs true, this means there can only be one tx per block. allows testing
-///  that state rolls over block boundaries correctly.
-async fn declare_sierra_then_deploy(
-    #[case] setup: TestSetup,
-    #[case] no_pending_block: bool,
-    #[case] via_gateway_api: bool,
-) {
-    let setup =
-        SetupBuilder::new(setup).with_block_time(if !no_pending_block { "500min" } else { "500ms" }).run().await;
+#[case::full_node_rpc(FullNodeAndSequencer, false)]
+#[case::full_node(FullNodeAndSequencer, true)]
+#[case::full_node_rpc_no_pending(FullNodeAndSequencer, false)]
+#[case::gateway_and_sequencer_rpc(GatewayAndSequencer, false)]
+#[case::gateway_and_sequencer(GatewayAndSequencer, false)]
+#[case::gateway_and_sequencer_no_pending(GatewayAndSequencer, true)]
+#[case::single_node_rpc(SequencerOnly, false)]
+#[case::single_node(SequencerOnly, true)]
+async fn declare_sierra_then_deploy(#[case] setup: TestSetup, #[case] via_gateway_api: bool) {
+    let setup = SetupBuilder::new(setup).with_block_time("500ms").run().await;
 
     async fn perform_test<P: Provider + Sync + Send>(setup: &RunningTestSetup, provider: &P) {
         let mut nonce = setup.get_nonce(ACCOUNTS[0]).await;
@@ -692,6 +678,9 @@ async fn declare_sierra_then_deploy(
         setup.expect_tx_receipt_successful(res.transaction_hash).await;
         nonce += Felt::ONE;
         let class_hash = res.class_hash;
+
+        // The class will not be available until the next block unfortunately.
+        wait_for_next_block(&provider).await;
 
         let res = provider.get_class(BlockId::Tag(BlockTag::Pending), class_hash).await.unwrap();
         let ContractClass::Sierra(class) = res else {

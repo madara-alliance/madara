@@ -1,11 +1,7 @@
-use mp_block::MadaraMaybePendingBlockInfo;
+use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
+use crate::Starknet;
 use mp_rpc::v0_7_1::{TxnFinalityStatus, TxnReceiptWithBlockInfo};
 use starknet_types_core::felt::Felt;
-
-use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
-
-use crate::utils::ResultExt;
-use crate::Starknet;
 
 /// Get the transaction receipt by the transaction hash.
 ///
@@ -33,35 +29,26 @@ pub fn get_transaction_receipt(
     starknet: &Starknet,
     transaction_hash: Felt,
 ) -> StarknetRpcResult<TxnReceiptWithBlockInfo> {
-    tracing::debug!("get_transaction_receipt {:#x}", transaction_hash);
-    let (block, tx_index) = starknet
-        .backend
-        .find_tx_hash_block(&transaction_hash)
-        .or_internal_server_error("Error getting block from tx_hash")?
-        .ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    tracing::debug!("get tx receipt {transaction_hash:#x}");
+    let view = starknet.backend.view_on_latest();
+    let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
+    let transaction = res.get_transaction()?;
 
-    let is_on_l1 = if let Some(block_n) = block.info.block_n() {
-        block_n <= starknet.get_l1_last_confirmed_block()?
+    if let Some(confirmed) = res.block.as_confirmed() {
+        let finality_status = if res.block.is_on_l1() { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
+        let block_hash = confirmed.get_block_info()?.block_hash;
+
+        let transaction_receipt = transaction.receipt.clone().to_starknet_types(finality_status);
+        Ok(TxnReceiptWithBlockInfo {
+            transaction_receipt,
+            block_hash: Some(block_hash),
+            block_number: Some(confirmed.block_number()),
+        })
     } else {
-        false
-    };
-
-    let finality_status = if is_on_l1 { TxnFinalityStatus::L1 } else { TxnFinalityStatus::L2 };
-
-    let transaction_receipt = block
-        .inner
-        .receipts
-        .get(tx_index.0 as usize)
-        .ok_or(StarknetRpcApiError::TxnHashNotFound)?
-        .clone()
-        .to_starknet_types(finality_status);
-
-    let (block_number, block_hash) = match block.info {
-        MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
-        MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.header.block_number), Some(block.block_hash)),
-    };
-
-    Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash, block_number })
+        // TODO: block_number should not be an Option in rpc v0.9, and new finality status.
+        let transaction_receipt = transaction.receipt.clone().to_starknet_types(TxnFinalityStatus::L2);
+        Ok(TxnReceiptWithBlockInfo { transaction_receipt, block_hash: None, block_number: None })
+    }
 }
 
 #[cfg(test)]

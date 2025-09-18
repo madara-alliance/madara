@@ -103,10 +103,13 @@ async fn sync_inner(
         .map_err(|e| SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e)))?
     {
         block_n
-    } else {
+    } else if !replay_max_duration.is_zero() {
+        tracing::debug!("Getting latest block_n from settlement layer.");
         let latest_block_n = settlement_client.get_latest_block_number().await?;
         tracing::debug!("Find start, latest {latest_block_n}...");
         find_start_block::find_replay_block_n_start(&settlement_client, replay_max_duration, latest_block_n).await?
+    } else {
+        settlement_client.get_latest_block_number().await?
     };
 
     tracing::info!("⟠  Starting L1 Messages Syncing from block #{from_l1_block_n}...");
@@ -130,7 +133,7 @@ async fn sync_inner(
                     .with_context(|| format!("Checking validity for message in {}, {}", message.l1_transaction_hash, message.l1_block_number))? {
                     // Add the pending message to db.
                     backend
-                        .add_pending_message_to_l2(message.message)
+                        .write_pending_message_to_l2(&message.message)
                         .map_err(|e| SettlementClientError::DatabaseError(format!("Adding l1 to l2 message to db: {}", e)))?;
                 }
                 anyhow::Ok((message.l1_transaction_hash, message.l1_block_number))
@@ -148,9 +151,9 @@ async fn sync_inner(
                 match block_n {
                     Err(err) => tracing::debug!("Error while parsing the next ethereum message: {err:#}"),
                     Ok((tx_hash, block_n)) => {
-                        tracing::debug!("Processed {tx_hash} {block_n}");
+                        tracing::debug!("Processed {tx_hash:#x} {block_n}");
                         tracing::debug!("Set l1_messaging_sync_tip={block_n}");
-                        backend.set_l1_messaging_sync_tip(block_n).map_err(|e| {
+                        backend.write_l1_messaging_sync_tip(Some(block_n)).map_err(|e| {
                             SettlementClientError::DatabaseError(format!("Failed to get last synced event block: {}", e))
                         })?;
                         notify_consumer.notify_waiters(); // notify
@@ -167,7 +170,6 @@ mod messaging_module_tests {
     use super::*;
     use crate::client::MockSettlementLayerProvider;
     use futures::stream;
-    use mc_db::DatabaseService;
     use mockall::predicate;
     use mp_chain_config::ChainConfig;
     use mp_transactions::L1HandlerTransaction;
@@ -195,23 +197,27 @@ mod messaging_module_tests {
 
     struct MessagingTestRunner {
         client: MockSettlementLayerProvider,
-        db: Arc<DatabaseService>,
+        db: Arc<MadaraBackend>,
         ctx: ServiceContext,
     }
 
     #[fixture]
-    async fn setup_messaging_tests() -> MessagingTestRunner {
+    async fn setup_messaging_tests(#[default(false)] msg_replay_enabled: bool) -> MessagingTestRunner {
         let _ = tracing_subscriber::fmt()
             .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
             .with_test_writer()
             .try_init();
         // Set up chain info
         let mut chain_config = ChainConfig::madara_test();
-        chain_config.l1_messages_replay_max_duration = Duration::from_secs(30);
+        if msg_replay_enabled {
+            chain_config.l1_messages_replay_max_duration = Duration::from_secs(30);
+        } else {
+            chain_config.l1_messages_replay_max_duration = Default::default();
+        }
         let chain_config = Arc::new(chain_config);
 
         // Initialize database service
-        let db = Arc::new(DatabaseService::open_for_testing(chain_config.clone()));
+        let db = MadaraBackend::open_for_testing(chain_config.clone());
 
         // Create a mock client directly
         let mut mock_client = MockSettlementLayerProvider::new();
@@ -226,6 +232,7 @@ mod messaging_module_tests {
     }
 
     fn mock_l1_handler_tx(mock: &mut MockSettlementLayerProvider, nonce: u64, is_pending: bool, has_cancel_req: bool) {
+        tracing::debug!("{:?}", create_mock_event(0, nonce).message);
         mock.expect_calculate_message_hash()
             .with(predicate::eq(create_mock_event(0, nonce).message))
             .returning(move |_| Ok(vec![nonce as u8; 32]));
@@ -238,7 +245,7 @@ mod messaging_module_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn test_sync_processes_new_messages(
         #[future] setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
@@ -246,24 +253,13 @@ mod messaging_module_tests {
 
         // Setup mock event and configure backend
         let mock_event1 = create_mock_event(100, 1);
-        let mock_event2 = create_mock_event(100, 2);
-        let mock_event3 = create_mock_event(100, 5);
-        let mock_event4 = create_mock_event(103, 10);
-        let mock_event5 = create_mock_event(103, 18);
-        let backend = db.backend();
         let notify = Arc::new(Notify::new());
 
         // Setup mock for last synced block
-        backend.set_l1_messaging_sync_tip(99)?;
+        db.write_l1_messaging_sync_tip(Some(99))?;
 
         // Mock get_messaging_stream
-        let events = vec![
-            mock_event1.clone(),
-            mock_event2.clone(),
-            mock_event3.clone(),
-            mock_event4.clone(),
-            mock_event5.clone(),
-        ];
+        let events = vec![mock_event1.clone()];
         client
             .expect_messages_to_l2_stream()
             .times(1)
@@ -271,7 +267,7 @@ mod messaging_module_tests {
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
         mock_l1_handler_tx(&mut client, 1, true, false);
-        backend.set_l1_handler_txn_hash_by_nonce(18, Felt::ONE).unwrap();
+        db.write_l1_handler_txn_hash_by_nonce(18, &Felt::ONE).unwrap();
 
         // Mock get_client_type
         client.expect_get_client_type().returning(|| ClientType::Eth);
@@ -281,7 +277,7 @@ mod messaging_module_tests {
 
         // Keep a reference to context for cancellation
         let ctx_clone = ctx.clone();
-        let db_backend_clone = backend.clone();
+        let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
@@ -292,10 +288,7 @@ mod messaging_module_tests {
         // Verify the message was processed
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
-        assert_eq!(
-            backend.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(),
-            mock_event1.message
-        );
+        assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
 
         // Clean up: cancel context and abort task
         ctx_clone.cancel_global();
@@ -305,15 +298,16 @@ mod messaging_module_tests {
     }
 
     #[rstest]
-    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[tokio::test]
     async fn test_sync_catches_earlier_messages(
-        #[future] setup_messaging_tests: MessagingTestRunner,
+        #[future]
+        #[with(/* enable replay */ true)]
+        setup_messaging_tests: MessagingTestRunner,
     ) -> anyhow::Result<()> {
         let MessagingTestRunner { mut client, db, ctx } = setup_messaging_tests.await;
 
         // Setup mock event and configure backend
         let mock_event1 = create_mock_event(55, 1);
-        let backend = db.backend();
         let notify = Arc::new(Notify::new());
 
         let current_timestamp_secs = SystemTime::now()
@@ -350,7 +344,7 @@ mod messaging_module_tests {
 
         // Keep a reference to context for cancellation
         let ctx_clone = ctx.clone();
-        let db_backend_clone = backend.clone();
+        let db_backend_clone = db.clone();
 
         // Spawn the sync task in a separate thread
         let sync_handle = tokio::spawn(async move { sync(client, db_backend_clone, notify, ctx).await });
@@ -361,10 +355,7 @@ mod messaging_module_tests {
         // Verify the message was processed
 
         // nonce 1, is pending, not being cancelled, not consumed in db. => OK
-        assert_eq!(
-            backend.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(),
-            mock_event1.message
-        );
+        assert_eq!(db.get_pending_message_to_l2(mock_event1.message.tx.nonce).unwrap().unwrap(), mock_event1.message);
         // Clean up: cancel context and abort task
         ctx_clone.cancel_global();
         sync_handle.abort();
