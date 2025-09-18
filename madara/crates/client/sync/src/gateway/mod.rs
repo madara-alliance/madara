@@ -93,6 +93,11 @@ impl GatewayForwardSync {
         // Log the gateway we're syncing from
         tracing::info!("🌐 Initializing sync from gateway");
         
+        // Ensure we flush any pending writes before reading head status
+        if let Err(e) = backend.flush() {
+            tracing::warn!("Failed to flush database before reading head status: {}", e);
+        }
+        
         let latest_full_block = backend.head_status().latest_full_block_n();
         let starting_block_n = backend.head_status().next_full_block();
         
@@ -234,27 +239,31 @@ impl ForwardPipeline for GatewayForwardSync {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
 
                 // Check for reorg before scheduling each block
-                if next_input_block_n > 0 {
-                    if let Some(common_ancestor) = detect_reorg(
-                        next_input_block_n,
-                        &self.backend,
-                        &self.client,
-                    ).await? {
-                        // Reorg detected during sync!
-                        tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
-                        tracing::warn!("🔄 Switching from previous chain to new chain from gateway");
+                // Only check if we have blocks in the database (i.e., we're past genesis)
+                if let Some(latest_block) = self.backend.head_status().latest_full_block_n() {
+                    // Only check blocks that are within our stored range
+                    if next_input_block_n <= latest_block + 1 {
+                        if let Some(common_ancestor) = detect_reorg(
+                            next_input_block_n,
+                            &self.backend,
+                            &self.client,
+                        ).await? {
+                            // Reorg detected during sync!
+                            tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
+                            tracing::warn!("🔄 Switching from previous chain to new chain from gateway");
 
-                        // Perform rollback
-                        self.backend.rollback_to_block(common_ancestor)?;
+                            // Perform rollback
+                            self.backend.rollback_to_block(common_ancestor)?;
 
-                        tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
-                            common_ancestor, common_ancestor + 1);
+                            tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
+                                common_ancestor, common_ancestor + 1);
 
-                        // Reinitialize pipelines from the new position after rollback
-                        self.reinit_pipelines_from_current_position();
-                        
-                        // Continue with the sync from the new position
-                        // Don't return - let the loop continue with the updated pipelines
+                            // Reinitialize pipelines from the new position after rollback
+                            self.reinit_pipelines_from_current_position();
+                            
+                            // Continue with the sync from the new position
+                            // Don't return - let the loop continue with the updated pipelines
+                        }
                     }
                 }
 

@@ -617,12 +617,17 @@ impl MadaraBackend {
 
         self.save_head_status_to_db()?;
 
+        // Always flush after saving head status to ensure it's persisted
+        // This is critical for restart scenarios where we need to know the last synced block
+        self.flush().context("Flushing database after head status update")?;
+
+        // Also flush based on the configured interval if set
         if self
             .config
             .flush_every_n_blocks
             .is_some_and(|every_n_blocks| every_n_blocks != 0 && block_n % every_n_blocks == 0)
         {
-            self.flush().context("Flushing database")?;
+            self.flush().context("Periodic database flush")?;
         }
 
         if self
