@@ -1,6 +1,7 @@
 pub mod constants;
 pub mod helpers;
 pub mod instrument;
+pub mod job_status_metrics;
 pub mod logging;
 pub mod metrics;
 pub mod metrics_recorder;

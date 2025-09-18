@@ -92,6 +92,15 @@ impl JobHandlerService {
         // Record metrics for job creation
         MetricsRecorder::record_job_created(&job_item);
 
+        // Update job status tracking metrics
+        let block_num = parse_string(&internal_id).unwrap_or(0.0) as u64;
+        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
+            block_num,
+            &job_type,
+            &JobStatus::Created,
+            &job_item.id.to_string(),
+        );
+
         JobService::add_job_to_process_queue(job_item.id, &job_type, config.clone()).await?;
 
         let attributes = [
@@ -235,6 +244,15 @@ impl JobHandlerService {
                 error!(job_id = ?id, error = ?e, "Failed to update job status");
             })?;
 
+        // Update job status tracking metrics for LockedForProcessing
+        let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
+        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
+            block_num,
+            &job.job_type,
+            &JobStatus::LockedForProcessing,
+            &job.id.to_string(),
+        );
+
         debug!(job_id = ?id, job_type = ?job.job_type, "Getting job handler");
         let external_id = match AssertUnwindSafe(job_handler.process_job(config.clone(), &mut job)).catch_unwind().await
         {
@@ -289,6 +307,15 @@ impl JobHandlerService {
                 error!(job_id = ?id, error = ?e, "Failed to update job status");
                 JobError::from(e)
             })?;
+
+        // Update job status tracking metrics for PendingVerification
+        let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
+        ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
+            block_num,
+            &job.job_type,
+            &JobStatus::PendingVerification,
+            &job.id.to_string(),
+        );
 
         // Add to the verification queue
         debug!(job_id = ?id, "Adding job to verification queue");
@@ -435,6 +462,16 @@ impl JobHandlerService {
                         error!(job_id = ?id, error = ?e, "Failed to update job status to Completed");
                         e
                     })?;
+
+                // Update job status tracking metrics for Completed
+                let block_num = parse_string(&job.internal_id).unwrap_or(0.0) as u64;
+                ORCHESTRATOR_METRICS.job_status_tracker.update_job_status(
+                    block_num,
+                    &job.job_type,
+                    &JobStatus::Completed,
+                    &job.id.to_string(),
+                );
+
                 operation_job_status = Some(JobStatus::Completed);
             }
             JobVerificationStatus::Rejected(e) => {

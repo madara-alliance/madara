@@ -1,4 +1,5 @@
 use crate::core::client::database::constant::JOBS_COLLECTION;
+use crate::utils::job_status_metrics::JobStatusTracker;
 use once_cell;
 use once_cell::sync::Lazy;
 use opentelemetry::metrics::{Counter, Gauge};
@@ -43,6 +44,8 @@ pub struct OrchestratorMetrics {
     pub job_age_p99: Gauge<f64>,
     pub batching_rate: Gauge<f64>,
     pub batch_creation_time: Gauge<f64>,
+    // Job Status Tracking
+    pub job_status_tracker: JobStatusTracker,
 }
 
 impl Metrics for OrchestratorMetrics {
@@ -254,6 +257,30 @@ impl Metrics for OrchestratorMetrics {
             "s".to_string(),
         );
 
+        // Job Status Tracking Metrics
+        let job_status_gauge = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "job_status_current".to_string(),
+            "Current status of jobs by block, type, and status".to_string(),
+            "status".to_string(),
+        );
+
+        let job_transition_gauge = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "job_status_transitions".to_string(),
+            "Job status transitions".to_string(),
+            "transitions".to_string(),
+        );
+
+        let job_details_gauge = register_gauge_metric_instrument(
+            &orchestrator_meter,
+            "job_details".to_string(),
+            "Detailed job information with job_id and status".to_string(),
+            "jobs".to_string(),
+        );
+
+        let job_status_tracker = JobStatusTracker { job_status_gauge, job_transition_gauge, job_details_gauge };
+
         Self {
             block_gauge,
             successful_job_operations,
@@ -282,6 +309,7 @@ impl Metrics for OrchestratorMetrics {
             job_age_p99,
             batching_rate,
             batch_creation_time,
+            job_status_tracker,
         }
     }
 }

@@ -5,7 +5,7 @@ use axum::response::IntoResponse;
 use axum::routing::get;
 use axum::{Json, Router};
 use opentelemetry::KeyValue;
-use tracing::{error, info, instrument};
+use tracing::{error, info, Span};
 use uuid::Uuid;
 
 use super::super::error::JobRouteError;
@@ -39,6 +39,8 @@ async fn handle_process_job_request(
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
+    // Record job_id in the current request span for consistent logging
+    Span::current().record("job_id", tracing::field::display(job_id));
 
     match JobService::queue_job_for_processing(job_id, config.clone()).await {
         Ok(_) => {
@@ -81,6 +83,8 @@ async fn handle_verify_job_request(
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
+    // Record job_id in the current request span for consistent logging
+    Span::current().record("job_id", tracing::field::display(job_id));
 
     match JobService::queue_job_for_verification(job_id, config.clone()).await {
         Ok(_) => {
@@ -120,6 +124,8 @@ async fn handle_retry_job_request(
     State(config): State<Arc<Config>>,
 ) -> JobRouteResult {
     let job_id = Uuid::parse_str(&id).map_err(|_| JobRouteError::InvalidId(id.clone()))?;
+    // Record job_id in the current request span for consistent logging
+    Span::current().record("job_id", tracing::field::display(job_id));
 
     match JobHandlerService::retry_job(job_id, config.clone()).await {
         Ok(_) => {
