@@ -1,6 +1,8 @@
 use crate::util::{BatchToExecute, BlockExecutionContext, ExecutionStats};
 use anyhow::Context;
-use blockifier::blockifier::transaction_executor::{BlockExecutionSummary, TransactionExecutionOutput, TransactionExecutorResult};
+use blockifier::blockifier::transaction_executor::{
+    BlockExecutionSummary, TransactionExecutionOutput, TransactionExecutorResult,
+};
 use mc_db::MadaraBackend;
 use std::{any::Any, panic::AssertUnwindSafe, sync::Arc};
 use tokio::sync::{

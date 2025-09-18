@@ -1,5 +1,6 @@
 use crate::preconfirmed::PreconfirmedExecutedTransaction;
 use crate::prelude::*;
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{
     header::PreconfirmedHeader, BlockHeaderWithSignatures, EventWithInfo, MadaraBlockInfo, TransactionWithReceipt,
 };
@@ -8,8 +9,6 @@ use mp_receipt::{Event, EventWithTransactionHash};
 use mp_state_update::StateDiff;
 use mp_transactions::{validated::ValidatedTransaction, L1HandlerTransactionWithFee};
 use starknet_api::core::ChainId;
-use blockifier::bouncer::BouncerWeights;
-
 
 #[derive(Debug, Clone)]
 pub struct EventFilter {

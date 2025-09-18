@@ -8,7 +8,7 @@ use crate::{L1DataAvailabilityMode, StarknetVersion};
 use anyhow::{bail, Context, Result};
 use blockifier::blockifier::config::ConcurrencyConfig;
 use blockifier::blockifier_versioned_constants::{RawVersionedConstants, VersionedConstants};
-use blockifier::bouncer::{BouncerConfig, BouncerWeights, BuiltinWeights};
+use blockifier::bouncer::BouncerConfig;
 use blockifier::context::{ChainInfo, FeeTokenAddresses};
 use lazy_static::__Deref;
 use mp_utils::crypto::ZeroingPrivateKey;
@@ -360,7 +360,7 @@ impl ChainConfig {
                 strk_fee_token_address: self.native_fee_token_address,
                 eth_fee_token_address: self.parent_fee_token_address,
             },
-            is_l3: true
+            is_l3: true,
         }
     }
 }

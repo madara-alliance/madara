@@ -1,3 +1,4 @@
+use blockifier::bouncer::BouncerWeights;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
@@ -7,7 +8,6 @@ use mp_rpc::v0_7_1::{
 };
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
-use blockifier::bouncer::BouncerWeights;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -63,10 +63,7 @@ pub trait MadaraWriteRpcApi {
 pub trait MadaraReadRpcApi {
     /// Get the builtins  for the given block number
     #[method(name = "getBlockBuiltinWeights")]
-    async fn get_block_builtin_weights(
-        &self,
-        block_number: u64,
-    ) -> RpcResult<BouncerWeights>;
+    async fn get_block_builtin_weights(&self, block_number: u64) -> RpcResult<BouncerWeights>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

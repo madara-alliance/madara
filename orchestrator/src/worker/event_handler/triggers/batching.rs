@@ -529,37 +529,6 @@ impl BatchingTrigger {
         100
     }
 
-    async fn check_and_close_batches(
-        &self,
-        config: &Arc<Config>,
-        aggregator_batch: &AggregatorBatch,
-        snos_batch: &SnosBatch,
-    ) -> Result<(), JobError> {
-        // Sending None for state update len since this won't be the reason to close an already existing batch
-        if self.should_close_aggregator_batch(config, None, aggregator_batch) {
-            config
-                .database()
-                .update_or_create_aggregator_batch(
-                    aggregator_batch,
-                    &AggregatorBatchUpdates {
-                        end_block: Some(aggregator_batch.end_block),
-                        is_batch_ready: Some(true),
-                        status: Some(AggregatorBatchStatus::Closed),
-                    },
-                )
-                .await?;
-
-            config
-                .database()
-                .update_or_create_snos_batch(
-                    snos_batch,
-                    &SnosBatchUpdates { end_block: Some(snos_batch.end_block), status: Some(SnosBatchStatus::Closed) },
-                )
-                .await?;
-        }
-
-        Ok(())
-    }
 
     /// Determines whether a new batch should be started based on the size of the compressed
     /// state-update and the batch.

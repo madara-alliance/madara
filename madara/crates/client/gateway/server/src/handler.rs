@@ -90,13 +90,12 @@ pub async fn handle_get_block_bouncer_config(
         .parse()
         .map_err(|e: std::num::ParseIntError| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
 
-    let block =
-        backend.block_view_on_confirmed(block_number).ok_or_else(|| {
-            StarknetError::new(
-                StarknetErrorCode::BlockNotFound,
-                format!("Pre-confirmed block with number {block_number} was not found."),
-            )
-        })?;
+    let block = backend.block_view_on_confirmed(block_number).ok_or_else(|| {
+        StarknetError::new(
+            StarknetErrorCode::BlockNotFound,
+            format!("Pre-confirmed block with number {block_number} was not found."),
+        )
+    })?;
 
     let bouncer_weights = block.get_bouncer_weights()?;
 

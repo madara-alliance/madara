@@ -1,9 +1,9 @@
+use mp_convert::ToFelt;
 use starknet_types_core::{
     felt::Felt,
     hash::{Poseidon, StarkHash},
 };
 use std::collections::HashMap;
-use mp_convert::ToFelt;
 mod into_starknet_types;
 
 #[derive(Copy, Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
@@ -171,19 +171,11 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
 
         // Convert storage updates
         for (address, updates) in commitment_state_diff.storage_updates {
-            let storage_entries: Vec<StorageEntry> = updates
-                .into_iter()
-                .map(|(key, value)| StorageEntry {
-                    key: key.to_felt(),
-                    value,
-                })
-                .collect();
-            
+            let storage_entries: Vec<StorageEntry> =
+                updates.into_iter().map(|(key, value)| StorageEntry { key: key.to_felt(), value }).collect();
+
             if !storage_entries.is_empty() {
-                storage_diffs.push(ContractStorageDiffItem {
-                    address: address.to_felt(),
-                    storage_entries,
-                });
+                storage_diffs.push(ContractStorageDiffItem { address: address.to_felt(), storage_entries });
             }
         }
 
@@ -191,10 +183,8 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
         for (address, class_hash) in commitment_state_diff.address_to_class_hash {
             // Check if this is a new deployment or class replacement
             // For simplicity, we'll treat all as deployed contracts
-            deployed_contracts.push(DeployedContractItem {
-                address: address.to_felt(),
-                class_hash: class_hash.to_felt(),
-            });
+            deployed_contracts
+                .push(DeployedContractItem { address: address.to_felt(), class_hash: class_hash.to_felt() });
         }
 
         // Convert declared classes
@@ -207,10 +197,7 @@ impl From<blockifier::state::cached_state::CommitmentStateDiff> for StateDiff {
 
         // Convert nonces
         for (address, nonce) in commitment_state_diff.address_to_nonce {
-            nonces.push(NonceUpdate {
-                contract_address: address.to_felt(),
-                nonce: nonce.to_felt(),
-            });
+            nonces.push(NonceUpdate { contract_address: address.to_felt(), nonce: nonce.to_felt() });
         }
 
         StateDiff {

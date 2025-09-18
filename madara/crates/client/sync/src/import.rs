@@ -1,4 +1,5 @@
 use anyhow::Context;
+use blockifier::bouncer::BouncerWeights;
 use mc_db::{MadaraBackend, MadaraStorageRead};
 use mp_block::{
     commitments::{compute_event_commitment, compute_receipt_commitment, compute_transaction_commitment},
@@ -17,7 +18,6 @@ use rayon::iter::{IndexedParallelIterator, IntoParallelIterator, IntoParallelRef
 use starknet_api::core::ChainId;
 use starknet_core::types::Felt;
 use std::{borrow::Cow, collections::HashMap, ops::Range, sync::Arc};
-use blockifier::bouncer::BouncerWeights;
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
 pub struct BlockValidationConfig {

@@ -61,7 +61,11 @@ impl PipelineSteps for GatewaySyncSteps {
                     .await
                     .with_context(|| format!("Getting state update with block_n={block_n}"))?;
 
-                let bouncer_weights = self.client.get_block_bouncer_weights(block_n).await.with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?;
+                let bouncer_weights = self
+                    .client
+                    .get_block_bouncer_weights(block_n)
+                    .await
+                    .with_context(|| format!("Getting bouncer weights with block_n={block_n}"))?;
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
 

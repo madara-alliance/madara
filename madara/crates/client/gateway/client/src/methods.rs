@@ -1,4 +1,5 @@
 use super::{builder::GatewayProvider, request_builder::RequestBuilder};
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{BlockId, BlockTag};
 use mp_class::{ContractClass, FlattenedSierraClass};
 use mp_gateway::block::ProviderBlockPreConfirmed;
@@ -18,8 +19,6 @@ use serde_json::Value;
 use starknet_core::types::contract::legacy::LegacyContractClass;
 use starknet_types_core::felt::Felt;
 use std::{borrow::Cow, sync::Arc};
-use blockifier::bouncer::BouncerWeights;
-
 
 impl GatewayProvider {
     pub async fn get_block(&self, block_id: BlockId) -> Result<ProviderBlock, SequencerError> {

@@ -3,14 +3,13 @@ use crate::{
     rocksdb::{iter_pinned::DBIterator, Column, RocksDBStorageInner, WriteBatchWithTransaction},
     storage::StorageTxIndex,
 };
+use blockifier::bouncer::BouncerWeights;
 use itertools::{Either, Itertools};
 use mp_block::{BlockHeaderWithSignatures, MadaraBlockInfo, TransactionWithReceipt};
 use mp_convert::Felt;
 use mp_state_update::StateDiff;
 use rocksdb::{IteratorMode, ReadOptions};
 use std::iter;
-use blockifier::bouncer::BouncerWeights;
-
 
 /// <block_hash 32 bytes> => bincode(block_n)
 pub const BLOCK_HASH_TO_BLOCK_N_COLUMN: Column = Column::new("block_hash_to_block_n").set_point_lookup();
@@ -78,7 +77,8 @@ impl RocksDBStorageInner {
     #[tracing::instrument(skip(self))]
     pub(super) fn get_block_bouncer_weight(&self, block_n: u64) -> Result<Option<BouncerWeights>> {
         let Some(block_n) = u32::try_from(block_n).ok() else { return Ok(None) }; // Every OOB block_n returns not found.
-        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN), block_n.to_be_bytes())? else {
+        let Some(res) = self.db.get_pinned_cf(&self.get_column(BLOCK_BOUNCER_WEIGHT_COLUMN), block_n.to_be_bytes())?
+        else {
             return Ok(None);
         };
         Ok(Some(super::deserialize(&res)?))

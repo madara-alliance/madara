@@ -24,7 +24,6 @@ use std::mem;
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::mpsc;
-use tracing::log;
 
 mod batcher;
 mod executor;
@@ -226,7 +225,9 @@ impl BlockProductionTask {
             global_spawn_rayon_task(move || {
                 backend
                     .write_access()
-                    .close_preconfirmed(/* pre_v0_13_2_hash_override */ true, None /*this won't be none in ideal case*/)
+                    .close_preconfirmed(
+                        /* pre_v0_13_2_hash_override */ true, None, /*this won't be none in ideal case*/
+                    )
                     .context("Closing preconfirmed block on startup")
             })
             .await?;
@@ -301,7 +302,10 @@ impl BlockProductionTask {
                             .context("Removing pending message to l2 from database")?;
                     }
 
-                    backend.write_access().write_bouncer_weights(state.block_number, &block_exec_summary.bouncer_weights).context("Saving Bouncer Weights for SNOS")?;
+                    backend
+                        .write_access()
+                        .write_bouncer_weights(state.block_number, &block_exec_summary.bouncer_weights)
+                        .context("Saving Bouncer Weights for SNOS")?;
 
                     let state_diff: mp_state_update::StateDiff = block_exec_summary.state_diff.into();
                     backend

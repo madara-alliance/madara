@@ -1,4 +1,8 @@
-use super::handler::{handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_traces, handle_get_class_by_hash, handle_get_compiled_class_by_class_hash, handle_get_contract_addresses, handle_get_public_key, handle_get_signature, handle_get_state_update};
+use super::handler::{
+    handle_add_transaction, handle_get_block, handle_get_block_bouncer_config, handle_get_block_traces,
+    handle_get_class_by_hash, handle_get_compiled_class_by_class_hash, handle_get_contract_addresses,
+    handle_get_public_key, handle_get_signature, handle_get_state_update,
+};
 use super::helpers::{not_found_response, service_unavailable_response};
 use crate::handler::{handle_add_validated_transaction, handle_get_preconfirmed_block};
 use crate::service::GatewayServerConfig;

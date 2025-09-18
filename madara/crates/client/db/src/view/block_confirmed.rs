@@ -1,7 +1,7 @@
 use crate::{prelude::*, rocksdb::RocksDBStorage};
+use blockifier::bouncer::BouncerWeights;
 use mp_block::{MadaraBlockInfo, TransactionWithReceipt};
 use mp_state_update::StateDiff;
-use blockifier::bouncer::BouncerWeights;
 
 #[derive(Debug)]
 pub struct MadaraConfirmedBlockView<D: MadaraStorageRead = RocksDBStorage> {
