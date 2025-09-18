@@ -16,8 +16,8 @@ targets = ["x86_64-unknown-linux-gnu"]
 
 [dependencies]
 # Madara
-mp-rpc = { workspace = true }
 mp-convert = { workspace = true }
+mp-rpc = { workspace = true }
 
 # Starknet
 starknet-types-core = { workspace = true }
