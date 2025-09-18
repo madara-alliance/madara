@@ -4,7 +4,7 @@ use crate::batcher::Batcher;
 use crate::metrics::BlockProductionMetrics;
 use anyhow::Context;
 use blockifier::state::cached_state::{StateMaps, StorageEntry};
-use executor::{BatchExecutionResult, ExecutorMessage};
+use executor::ExecutorMessage;
 use futures::future::OptionFuture;
 use mc_db::db_block_id::DbBlockId;
 use mc_db::MadaraBackend;
@@ -35,6 +35,7 @@ mod executor;
 mod handle;
 pub mod metrics;
 mod util;
+pub use executor::BatchExecutionResult;
 
 pub use handle::BlockProductionHandle;
 

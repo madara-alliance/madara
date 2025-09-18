@@ -135,7 +135,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     let root = &root.0;
 
     // Download image
-    let mut docker = std::process::Command::new("docker");
+    let mut docker = std::process::Command::new("/usr/local/bin/docker");
     let cmd = docker.args(["pull", &image]);
     cmd.status()
         .expect(err_msg)
@@ -144,7 +144,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
         .ok_or_else(|| err_handl(cmd, "Failed to download artifacts"))?;
 
     // Create extraction container
-    let mut docker = std::process::Command::new("docker");
+    let mut docker = std::process::Command::new("/usr/local/bin/docker");
     let cmd = docker.args(["create", &image, "do-nothing"]);
     cmd.status()
         .expect(err_msg)
@@ -157,7 +157,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     let container = container.trim_end_matches("\n");
 
     // Copy artifacts from container
-    let mut docker = std::process::Command::new("docker");
+    let mut docker = std::process::Command::new("/usr/local/bin/docker");
     let cmd = docker.args(["cp", &format!("{container}:/artifacts.tar.gz"), &root.to_string_lossy()]);
     cmd.status()
         .expect(err_msg)
@@ -172,7 +172,7 @@ fn get_artifacts(root: &RootDir, artifacts: &VersionFileArtifacts) -> Result<(),
     archive.unpack(root).map_err(BuildError::Io)?;
 
     // Remove container
-    let mut docker = std::process::Command::new("docker");
+    let mut docker = std::process::Command::new("/usr/local/bin/docker");
     let cmd = docker.args(["rm", container]);
     cmd.status()
         .expect(err_msg)

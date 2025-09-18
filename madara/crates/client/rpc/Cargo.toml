@@ -41,7 +41,7 @@ mp-transactions = { workspace = true }
 mp-utils = { workspace = true }
 
 # Starknet
-blockifier = { workspace = true, default-features = true }
+blockifier = { workspace = true, default-features = true, features = ["transaction_serde"] }
 starknet-types-core = { workspace = true }
 starknet_api = { workspace = true, default-features = true }
 

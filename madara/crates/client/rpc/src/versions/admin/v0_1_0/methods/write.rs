@@ -1,4 +1,6 @@
 use crate::{utils::ResultExt, versions::admin::v0_1_0::MadaraWriteRpcApiV0_1_0Server, Starknet, StarknetRpcApiError};
+use blockifier::state::cached_state::CommitmentStateDiff;
+use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::{async_trait, RpcResult};
 use mc_submit_tx::SubmitTransaction;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
@@ -6,6 +8,8 @@ use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
+use starknet_api::core::StateDiffCommitment;
+use starknet_api::executable_transaction::AccountTransaction;
 
 #[async_trait]
 impl MadaraWriteRpcApiV0_1_0Server for Starknet {
@@ -79,5 +83,15 @@ impl MadaraWriteRpcApiV0_1_0Server for Starknet {
             .close_block()
             .await
             .or_internal_server_error("Force-closing block")?)
+    }
+
+    async fn append_batch(&self, transactions: Vec<AccountTransaction>, transaction_results: Vec<(TransactionExecutionInfo, CommitmentStateDiff)>) -> RpcResult<()> {
+        Ok(self
+            .block_prod_handle
+            .as_ref()
+            .ok_or(StarknetRpcApiError::UnimplementedMethod)?
+            .append_batch(transactions, transaction_results)
+            .await
+            .or_internal_server_error("Appending batch")?)
     }
 }

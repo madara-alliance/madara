@@ -36,6 +36,8 @@ pub enum ExecutorCommandError {
 pub enum ExecutorCommand {
     /// Force close the current block.
     CloseBlock(oneshot::Sender<Result<(), ExecutorCommandError>>),
+    /// Append Executed Txs
+    AppendExecutedBatch((BatchExecutionResult, oneshot::Sender<Result<(), ExecutorCommandError>>)),
 }
 
 #[derive(Debug)]

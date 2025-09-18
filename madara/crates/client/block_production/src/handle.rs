@@ -1,5 +1,11 @@
 use crate::executor::{self, ExecutorCommand, ExecutorCommandError};
+use crate::util::{AdditionalTxInfo, BatchToExecute, ExecutionStats};
+use crate::BatchExecutionResult;
 use async_trait::async_trait;
+use blockifier::blockifier::transaction_executor::{TransactionExecutionOutput, TransactionExecutorResult};
+use blockifier::state::cached_state::{CommitmentStateDiff, StateMaps};
+use blockifier::transaction::account_transaction::ExecutionFlags;
+use blockifier::transaction::objects::{TransactionExecutionInfo, TransactionExecutionResult};
 use mc_db::MadaraBackend;
 use mc_submit_tx::{
     SubmitTransaction, SubmitTransactionError, SubmitValidatedTransaction, TransactionValidator,
@@ -11,7 +17,12 @@ use mp_rpc::v0_7_1::{
     ClassAndTxnHash, ContractAndTxnHash,
 };
 use mp_transactions::validated::ValidatedMempoolTx;
+use starknet_api::core::StateDiffCommitment;
+use starknet_api::executable_transaction::AccountTransaction;
+use starknet_api::state::StateDiff;
+use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Duration;
 use tokio::sync::{mpsc, oneshot};
 
 struct BypassInput(mpsc::Sender<ValidatedMempoolTx>);
@@ -64,6 +75,77 @@ impl BlockProductionHandle {
         let (sender, recv) = oneshot::channel();
         self.executor_commands
             .send(ExecutorCommand::CloseBlock(sender))
+            .map_err(|_| ExecutorCommandError::ChannelClosed)?;
+        recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
+    }
+
+    pub async fn append_batch(
+        &self,
+        transactions: Vec<AccountTransaction>,
+        transaction_results: Vec<(TransactionExecutionInfo, CommitmentStateDiff)>,
+    ) -> Result<(), ExecutorCommandError> {
+        let (sender, recv) = oneshot::channel();
+
+        // Create BatchToExecute
+        let mut batch_to_execute = BatchToExecute::default();
+
+        // Convert AccountTransaction to Transaction and create AdditionalTxInfo
+        for tx in transactions {
+            let blockifier_tx = blockifier::transaction::transaction_execution::Transaction::Account(
+                blockifier::transaction::account_transaction::AccountTransaction {
+                    tx,
+                    execution_flags: ExecutionFlags {
+                        only_query: false,
+                        charge_fee: true,
+                        validate: true,
+                        strict_nonce_check: true,
+                    },
+                },
+            ); // Assuming From trait is implemented
+            let additional_info = AdditionalTxInfo::default(); // We can add declared class if needed
+            batch_to_execute.push(blockifier_tx, additional_info);
+        }
+
+        // Create blockifier results
+        let blockifier_results: Vec<TransactionExecutorResult<TransactionExecutionOutput>> = transaction_results
+            .into_iter()
+            .map(|(execution_info, state_diff)| {
+                // Convert StateDiffCommitment to StateMaps
+                let state_maps = StateMaps {
+                    nonces: state_diff.address_to_nonce.into_iter().collect(),
+                    class_hashes: state_diff.address_to_class_hash.into_iter().collect(),
+                    storage: state_diff
+                        .storage_updates
+                        .into_iter()
+                        .flat_map(|(addr, storage_map)| {
+                            storage_map.into_iter().map(move |(key, value)| ((addr, key), value))
+                        })
+                        .collect(),
+                    compiled_class_hashes: state_diff.class_hash_to_compiled_class_hash.into_iter().collect(),
+                    declared_contracts: HashMap::new(), // Assuming we don't have this for now
+                };
+
+                Ok((execution_info, state_maps))
+            })
+            .collect();
+
+        // Create basic execution stats
+        let stats = ExecutionStats {
+            n_batches: 1, // Since we're processing one batch
+            n_added_to_block: batch_to_execute.len(),
+            n_executed: batch_to_execute.len(),
+            n_reverted: 0,       // Assuming no reverted transactions
+            n_rejected: 0,       // Assuming no rejected transactions
+            declared_classes: 0, // Can be updated if we have declare transactions
+            l2_gas_consumed: 0,
+            exec_duration: Duration::from_secs(0), // Can be set to actual duration if available
+        };
+
+        let batch_execution_result: BatchExecutionResult =
+            BatchExecutionResult { executed_txs: batch_to_execute, blockifier_results, stats };
+
+        self.executor_commands
+            .send(ExecutorCommand::AppendExecutedBatch((batch_execution_result, sender)))
             .map_err(|_| ExecutorCommandError::ChannelClosed)?;
         recv.await.map_err(|_| ExecutorCommandError::ChannelClosed)?
     }

@@ -1,5 +1,8 @@
+use blockifier::state::cached_state::CommitmentStateDiff;
+use blockifier::transaction::objects::TransactionExecutionInfo;
 use jsonrpsee::core::RpcResult;
 use m_proc_macros::versioned_rpc;
+use mc_block_production::BatchExecutionResult;
 use mp_rpc::admin::BroadcastedDeclareTxnV0;
 use mp_rpc::v0_7_1::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
@@ -7,6 +10,8 @@ use mp_rpc::v0_7_1::{
 };
 use mp_utils::service::{MadaraServiceId, MadaraServiceStatus};
 use serde::{Deserialize, Serialize};
+use starknet_api::core::StateDiffCommitment;
+use starknet_api::executable_transaction::AccountTransaction;
 
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(rename_all = "snake_case")]
@@ -55,6 +60,10 @@ pub trait MadaraWriteRpcApi {
     /// Only works in block production mode.
     #[method(name = "closeBlock")]
     async fn close_block(&self) -> RpcResult<()>;
+
+    /// Append an executed batch of transactions
+    #[method(name = "appendBatch")]
+    async fn append_batch(&self, transactions: Vec<AccountTransaction>, transaction_results: Vec<(TransactionExecutionInfo, CommitmentStateDiff)>) -> RpcResult<()>;
 }
 
 #[versioned_rpc("V0_1_0", "madara")]

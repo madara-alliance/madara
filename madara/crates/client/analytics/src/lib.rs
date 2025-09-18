@@ -299,7 +299,7 @@ where
 
                 writeln!(
                     writer,
-                    "{} {} {} {} {} {} {} {} bytes - {} ms",
+                    "{} {} {} {} {} {} {} {} bytes - {} micros",
                     brackets_style.apply_to(format!("[{ts}]")),
                     brackets_style.apply_to(format!("[{level}]")),
                     brackets_style.apply_to("["),

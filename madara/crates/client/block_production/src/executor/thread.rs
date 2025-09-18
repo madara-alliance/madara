@@ -22,7 +22,10 @@ use mc_db::{db_block_id::DbBlockId, MadaraBackend};
 use mc_exec::{execution::TxInfo, LayeredStateAdapter, MadaraBackendExecutionExt};
 use mp_convert::{Felt, ToFelt};
 
-use crate::util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats};
+use crate::{
+    batcher,
+    util::{create_execution_context, BatchToExecute, BlockExecutionContext, ExecutionStats},
+};
 
 struct ExecutorStateExecuting {
     exec_ctx: BlockExecutionContext,
@@ -309,6 +312,48 @@ impl ExecutorThread {
                             let _ = callback.send(Ok(()));
                             Default::default()
                         }
+                        super::ExecutorCommand::AppendExecutedBatch((exec_result, callback)) => {
+                            // let executor_state_new_block = ExecutorStateNewBlock {
+                            //     state_adaptor: LayeredStateAdapter::new(Arc::clone(&self.backend))?,
+                            //     consumed_l1_to_l2_nonces: HashSet::new(),
+                            // };
+                            let executor_state_new_block = match state {
+                                ExecutorThreadState::NewBlock(state_new_block) => state_new_block,
+                                ExecutorThreadState::Executing(executor_state_executing) => {
+                                    panic!("Should be in new block state!")
+                                }
+                            };
+                            let (mut execution_state, initial_state_diffs_storage) = self
+                                .create_execution_state(executor_state_new_block, l2_gas_consumed_block)
+                                .context("Creating execution state")?;
+                            if self
+                                .replies_sender
+                                .blocking_send(super::ExecutorMessage::StartNewBlock {
+                                    initial_state_diffs_storage,
+                                    exec_ctx: execution_state.exec_ctx.clone(),
+                                })
+                                .is_err()
+                            {
+                                // Receiver closed
+                                break Ok(());
+                            }
+                            if self
+                                .replies_sender
+                                .blocking_send(super::ExecutorMessage::BatchExecuted(exec_result))
+                                .is_err()
+                            {
+                                // Receiver closed
+                                break Ok(());
+                            }
+                            if self.replies_sender.blocking_send(super::ExecutorMessage::EndBlock).is_err() {
+                                // Receiver closed
+                                break Ok(());
+                            }
+                            let _ = callback.send(Ok(()));
+                            state = self.end_block(&mut execution_state).context("Ending block")?;
+                            tracing::info!("Completed append batch");
+                            continue;
+                        }
                     },
                     // Channel closed. Exit gracefully.
                     WaitTxBatchOutcome::Exit => return Ok(()),
@@ -333,6 +378,8 @@ impl ExecutorThread {
                     to_exec.push(tx, additional_info)
                 }
             }
+
+            // COMMENTING ALL CODE BELOW SO THAT AppendExecutedBatch IS THE ONLY WAY TO CREATE BLOCKS!
 
             // Create a new execution state (new block) if it does not already exist.
             // This transitions the state machine from ExecutorState::NewBlock to ExecutorState::Executing, and
