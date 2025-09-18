@@ -124,8 +124,12 @@ mod tests {
 
     #[tokio::test]
     #[rstest::rstest]
-    async fn get_transaction_status_received(_logs: (), _starknet: Starknet, _tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn) {
-        // TODO: v0_7 types can't be used for submission anymore. 
+    async fn get_transaction_status_received(
+        _logs: (),
+        _starknet: Starknet,
+        _tx: mp_rpc::v0_7_1::BroadcastedInvokeTxn,
+    ) {
+        // TODO: v0_7 types can't be used for submission anymore.
         // let provider = std::sync::Arc::clone(&starknet.add_transaction_provider);
         // provider.submit_invoke_transaction(tx).await.expect("Failed to submit invoke transaction");
 

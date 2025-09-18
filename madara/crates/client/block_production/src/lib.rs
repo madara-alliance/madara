@@ -909,9 +909,9 @@ pub(crate) mod tests {
                 async move { block_production_task.run(ServiceContext::new_for_testing()).await.unwrap() },
             );
 
-            tokio::time::sleep(Duration::from_secs(5)).await;
-    
-            tracing::debug!("{:?}", devnet_setup.backend.block_view_on_latest().map(|l| l.get_executed_transactions(..)));
+        tokio::time::sleep(Duration::from_secs(5)).await;
+
+        tracing::debug!("{:?}", devnet_setup.backend.block_view_on_latest().map(|l| l.get_executed_transactions(..)));
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::ClosedBlock);
         assert_eq!(notifications.recv().await.unwrap(), BlockProductionStateNotification::BatchExecuted);

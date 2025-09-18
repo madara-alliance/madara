@@ -1,7 +1,7 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
 use anyhow::Context;
-use mp_rpc::v0_7_1::{MaybeDeprecatedContractClass, BlockId};
+use mp_rpc::v0_7_1::{BlockId, MaybeDeprecatedContractClass};
 use starknet_types_core::felt::Felt;
 
 /// Get the Contract Class Definition at a Given Address in a Specific Block

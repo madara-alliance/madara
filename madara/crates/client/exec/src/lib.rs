@@ -1,11 +1,13 @@
+#![allow(clippy::result_large_err)]
+
 use blockifier::{
     state::cached_state::CommitmentStateDiff,
     transaction::{errors::TransactionExecutionError, objects::TransactionExecutionInfo},
 };
 use mp_chain_config::StarknetVersion;
-use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
 use starknet_api::transaction::TransactionHash;
 use starknet_api::{block::FeeType, executable_transaction::TransactionType};
+use starknet_api::{execution_resources::GasVector, transaction::fields::GasVectorComputationMode};
 use starknet_types_core::felt::Felt;
 
 mod block_context;
@@ -86,4 +88,3 @@ pub struct ExecutionResult {
     pub state_diff: CommitmentStateDiff,
     pub gas_vector_computation_mode: GasVectorComputationMode,
 }
-

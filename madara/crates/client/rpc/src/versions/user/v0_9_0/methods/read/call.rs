@@ -3,7 +3,7 @@ use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use mc_exec::MadaraBlockViewExecutionExt;
 use mc_exec::EXECUTION_UNSUPPORTED_BELOW_VERSION;
-use mp_rpc::v0_9_0::{FunctionCall, BlockId};
+use mp_rpc::v0_9_0::{BlockId, FunctionCall};
 use starknet_types_core::felt::Felt;
 
 /// Call a Function in a Contract Without Creating a Transaction

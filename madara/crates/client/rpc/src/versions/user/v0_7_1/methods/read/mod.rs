@@ -57,7 +57,6 @@ impl StarknetReadRpcApiV0_7_1Server for Starknet {
         Ok(call::call(self, request, block_id).await?)
     }
 
-
     fn get_block_transaction_count(&self, block_id: BlockId) -> RpcResult<u128> {
         Ok(get_block_transaction_count::get_block_transaction_count(self, block_id)?)
     }

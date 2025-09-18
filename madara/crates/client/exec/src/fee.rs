@@ -73,12 +73,12 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         };
 
         Ok(mp_rpc::v0_8_1::FeeEstimate {
-            l1_gas_consumed: gas_vector.l1_gas.0.into(),
-            l1_gas_price: gas_price_vector.l1_gas_price.get().0.into(),
-            l2_gas_consumed: gas_vector.l2_gas.0.into(),
-            l2_gas_price: gas_price_vector.l2_gas_price.get().0.into(),
-            l1_data_gas_consumed: gas_vector.l1_data_gas.0.into(),
-            l1_data_gas_price: gas_price_vector.l1_data_gas_price.get().0.into(),
+            l1_gas_consumed: gas_vector.l1_gas.0,
+            l1_gas_price: gas_price_vector.l1_gas_price.get().0,
+            l2_gas_consumed: gas_vector.l2_gas.0,
+            l2_gas_price: gas_price_vector.l2_gas_price.get().0,
+            l1_data_gas_consumed: gas_vector.l1_data_gas.0,
+            l1_data_gas_price: gas_price_vector.l1_data_gas_price.get().0,
             overall_fee: overall_fee.0,
             unit,
         })
@@ -109,12 +109,12 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         let overall_fee = gas_vector.cost(gas_price_vector, tip);
 
         Ok(mp_rpc::v0_9_0::FeeEstimateCommon {
-            l1_gas_consumed: gas_vector.l1_gas.0.into(),
-            l1_gas_price: gas_price_vector.l1_gas_price.get().0.into(),
-            l2_gas_consumed: gas_vector.l2_gas.0.into(),
-            l2_gas_price: gas_price_vector.l2_gas_price.get().0.into(),
-            l1_data_gas_consumed: gas_vector.l1_data_gas.0.into(),
-            l1_data_gas_price: gas_price_vector.l1_data_gas_price.get().0.into(),
+            l1_gas_consumed: gas_vector.l1_gas.0,
+            l1_gas_price: gas_price_vector.l1_gas_price.get().0,
+            l2_gas_consumed: gas_vector.l2_gas.0,
+            l2_gas_price: gas_price_vector.l2_gas_price.get().0,
+            l1_data_gas_consumed: gas_vector.l1_data_gas.0,
+            l1_data_gas_price: gas_price_vector.l1_data_gas_price.get().0,
             overall_fee: overall_fee.0,
         })
     }

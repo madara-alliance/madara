@@ -1,7 +1,8 @@
 use crate::{versions::user::v0_9_0::StarknetTraceRpcApiV0_9_0Server, Starknet};
 use jsonrpsee::core::{async_trait, RpcResult};
-use mp_rpc::v0_9_0::{BlockId,
-    BroadcastedTxn, SimulateTransactionsResult, SimulationFlag, TraceBlockTransactionsResult, TraceTransactionResult,
+use mp_rpc::v0_9_0::{
+    BlockId, BroadcastedTxn, SimulateTransactionsResult, SimulationFlag, TraceBlockTransactionsResult,
+    TraceTransactionResult,
 };
 use simulate_transactions::simulate_transactions;
 use starknet_types_core::felt::Felt;

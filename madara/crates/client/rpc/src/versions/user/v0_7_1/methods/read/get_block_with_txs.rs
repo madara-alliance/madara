@@ -1,10 +1,7 @@
 use crate::{Starknet, StarknetRpcResult};
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_convert::Felt;
-use mp_rpc::v0_7_1::{
-    BlockId, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockWithTxs,
-    TxnWithHash,
-};
+use mp_rpc::v0_7_1::{BlockId, BlockStatus, BlockWithTxs, MaybePendingBlockWithTxs, PendingBlockWithTxs, TxnWithHash};
 
 /// Get block information with full transactions given the block id.
 ///
@@ -31,7 +28,10 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpc
     let transactions_with_hash = view
         .get_executed_transactions(..)?
         .into_iter()
-        .map(|tx| TxnWithHash { transaction: tx.transaction.to_rpc_v0_7(), transaction_hash: *tx.receipt.transaction_hash() })
+        .map(|tx| TxnWithHash {
+            transaction: tx.transaction.to_rpc_v0_7(),
+            transaction_hash: *tx.receipt.transaction_hash(),
+        })
         .collect();
 
     match block_info {

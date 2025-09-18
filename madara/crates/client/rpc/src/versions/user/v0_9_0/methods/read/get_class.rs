@@ -1,6 +1,6 @@
 use crate::errors::{StarknetRpcApiError, StarknetRpcResult};
 use crate::Starknet;
-use mp_rpc::v0_9_0::{MaybeDeprecatedContractClass, BlockId};
+use mp_rpc::v0_9_0::{BlockId, MaybeDeprecatedContractClass};
 use starknet_types_core::felt::Felt;
 
 pub fn get_class(

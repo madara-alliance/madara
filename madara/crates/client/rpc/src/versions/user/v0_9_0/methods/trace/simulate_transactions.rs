@@ -58,10 +58,10 @@ pub async fn simulate_transactions(
                 .context("Converting execution infos to tx trace")?,
                 fee_estimation: FeeEstimate {
                     common: exec_context
-                    .execution_result_to_fee_estimate_v0_9(result, tip)
-                    .context("Converting execution infos to tx trace")?,
+                        .execution_result_to_fee_estimate_v0_9(result, tip)
+                        .context("Converting execution infos to tx trace")?,
                     unit: PriceUnitFri::Fri,
-                }
+                },
             })
         })
         .collect::<Result<Vec<_>, StarknetRpcApiError>>()?;

@@ -2,8 +2,7 @@ use crate::errors::StarknetRpcResult;
 use crate::Starknet;
 use mp_block::MadaraMaybePreconfirmedBlockInfo;
 use mp_rpc::v0_9_0::{
-    BlockId, BlockStatus, BlockWithTxHashes, MaybePreConfirmedBlockWithTxHashes,
-    PreConfirmedBlockWithTxHashes,
+    BlockId, BlockStatus, BlockWithTxHashes, MaybePreConfirmedBlockWithTxHashes, PreConfirmedBlockWithTxHashes,
 };
 
 /// Get block information with transaction hashes given the block id.

@@ -243,7 +243,11 @@ impl BlockImporterCtx {
                     /* is_query */ false,
                 );
                 if !self.config.no_check && !is_pre_v0_13_2_special_case && got != *tx.receipt.transaction_hash() {
-                    return Err(BlockImportError::TransactionHash { index, got, expected: *tx.receipt.transaction_hash() });
+                    return Err(BlockImportError::TransactionHash {
+                        index,
+                        got,
+                        expected: *tx.receipt.transaction_hash(),
+                    });
                 }
                 Ok((tx.transaction.compute_hash_with_signature(got, starknet_version), tx.receipt.compute_hash()))
             })

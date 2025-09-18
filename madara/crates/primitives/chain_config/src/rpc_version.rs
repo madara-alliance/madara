@@ -1,8 +1,12 @@
 use std::hash::Hash;
 use std::str::FromStr;
 
-const SUPPORTED_RPC_VERSIONS: [RpcVersion; 3] =
-    [RpcVersion::RPC_VERSION_0_7_1, RpcVersion::RPC_VERSION_0_8_1, RpcVersion::RPC_VERSION_ADMIN_0_1_0];
+const SUPPORTED_RPC_VERSIONS: [RpcVersion; 4] = [
+    RpcVersion::RPC_VERSION_0_7_1,
+    RpcVersion::RPC_VERSION_0_8_1,
+    RpcVersion::RPC_VERSION_0_9_0,
+    RpcVersion::RPC_VERSION_ADMIN_0_1_0,
+];
 
 #[derive(Default, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, serde::Serialize, serde::Deserialize, Hash)]
 pub struct RpcVersion([u8; 3]);

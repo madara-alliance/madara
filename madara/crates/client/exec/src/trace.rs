@@ -55,15 +55,13 @@ impl FunctionInvocation {
             .summarize(versioned_constants)
             .to_partial_gas_vector(versioned_constants, gas_vector_computation_mode);
 
-        let messages = collect_call_info_ordered_messages(&call_info);
+        let messages = collect_call_info_ordered_messages(call_info);
         let events = collect_call_info_ordered_events(&call_info.execution.events);
 
         let internal_calls = call_info
             .inner_calls
             .iter()
-            .map(|call_info| {
-                Self::from_call_info(call_info, versioned_constants, gas_vector_computation_mode)
-            })
+            .map(|call_info| Self::from_call_info(call_info, versioned_constants, gas_vector_computation_mode))
             .collect();
 
         Self {
@@ -605,7 +603,7 @@ fn agregate_execution_ressources_v0_7(
             Some(sum)
         }
     }
-    let abc = [a, b, c].into_iter().filter_map(|c| c);
+    let abc = [a, b, c].into_iter().flatten();
     mp_rpc::v0_7_1::ComputationResources {
         steps: abc.clone().map(|x| x.steps).sum(),
         memory_holes: sum(abc.clone(), |x| x.memory_holes),

@@ -80,15 +80,9 @@ pub async fn start_server(
                             .collect::<Vec<_>>()
                             .join("/");
                         let start = Instant::now();
-                        let Ok(res) = main_router(
-                            req,
-                            &path,
-                            db_backend,
-                            add_transaction_provider,
-                            submit_validated,
-                            config,
-                        )
-                        .await;
+                        let Ok(res) =
+                            main_router(req, &path, db_backend, add_transaction_provider, submit_validated, config)
+                                .await;
 
                         let status = res.status().as_u16() as i64;
                         let res_len = res.body().len() as u64;

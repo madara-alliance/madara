@@ -29,7 +29,10 @@ pub fn get_block_with_txs(starknet: &Starknet, block_id: BlockId) -> StarknetRpc
     let transactions_with_hash = view
         .get_executed_transactions(..)?
         .into_iter()
-        .map(|tx| TxnWithHash { transaction: tx.transaction.to_rpc_v0_8(), transaction_hash: *tx.receipt.transaction_hash() })
+        .map(|tx| TxnWithHash {
+            transaction: tx.transaction.to_rpc_v0_8(),
+            transaction_hash: *tx.receipt.transaction_hash(),
+        })
         .collect();
 
     let status = if view.is_preconfirmed() {

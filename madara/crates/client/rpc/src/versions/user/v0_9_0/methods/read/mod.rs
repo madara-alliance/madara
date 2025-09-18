@@ -5,7 +5,11 @@ use jsonrpsee::core::{async_trait, RpcResult};
 use mp_chain_config::RpcVersion;
 use mp_convert::Felt;
 use mp_rpc::v0_9_0::{
-    BlockHashAndNumber, BlockId, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk, FeeEstimate, FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes, MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1, SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus, TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash
+    BlockHashAndNumber, BlockId, BroadcastedTxn, ContractStorageKeysItem, EventFilterWithPageRequest, EventsChunk,
+    FeeEstimate, FunctionCall, GetStorageProofResult, MaybeDeprecatedContractClass, MaybePreConfirmedBlockWithTxHashes,
+    MaybePreConfirmedBlockWithTxs, MaybePreConfirmedStateUpdate, MessageFeeEstimate, MsgFromL1,
+    SimulationFlagForEstimateFee, StarknetGetBlockWithTxsAndReceiptsResult, SyncingStatus,
+    TxnFinalityAndExecutionStatus, TxnReceiptWithBlockInfo, TxnWithHash,
 };
 
 pub mod call;
@@ -133,7 +137,7 @@ impl StarknetReadRpcApiV0_9_0Server for Starknet {
         contracts_storage_keys: Option<Vec<ContractStorageKeysItem>>,
     ) -> RpcResult<GetStorageProofResult> {
         // support the new block id transparently (preconfirmed blocks are not allowed).
-        let block_view = self.resolve_view_on(block_id).map_err(StarknetRpcApiError::from)?;
+        let block_view = self.resolve_view_on(block_id)?;
 
         V0_8_1Impl::get_storage_proof(
             self,

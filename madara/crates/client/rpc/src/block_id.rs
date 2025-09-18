@@ -85,7 +85,6 @@ impl StateViewResolvable for mp_rpc::v0_9_0::BlockId {
                 .backend
                 .latest_l1_confirmed_block_n()
                 .and_then(|block_number| starknet.backend.view_on_confirmed(block_number))
-                .map(|b| b.into())
                 .ok_or(StarknetRpcApiError::NoBlocks),
             Self::Hash(hash) => {
                 if let Some(block_n) = starknet.backend.view_on_latest().find_block_by_hash(hash)? {
