@@ -446,12 +446,14 @@ impl<D: MadaraStorage> MadaraBackendWriter<D> {
     }
 
     /// Returns an error if there is no preconfirmed block. Returns the block hash for the closed block.
-    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool) -> Result<AddFullBlockResult> {
-        let (block, classes) = self
+    pub fn close_preconfirmed(&self, pre_v0_13_2_hash_override: bool, state_diff: Option<StateDiff>) -> Result<AddFullBlockResult> {
+        let (mut block, classes) = self
             .inner
             .block_view_on_preconfirmed()
             .context("There is no current preconfirmed block")?
             .get_full_block_with_classes()?;
+
+        block.state_diff = state_diff.unwrap();
 
         // Write the block & apply to global trie
 

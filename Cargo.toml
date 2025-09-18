@@ -120,7 +120,6 @@ starknet-types-core = { version = "0.1.7", default-features = false, features = 
 
 blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = [
   "testing",
-  "concurrency",
 ] }
 starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = [
   "testing",

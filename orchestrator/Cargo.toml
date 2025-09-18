@@ -33,6 +33,7 @@ aws-sdk-sns = { workspace = true, features = ["behavior-version-latest"] }
 aws-sdk-sqs = { workspace = true, features = ["behavior-version-latest"] }
 axum = { workspace = true, features = ["macros"] }
 bincode = { workspace = true }
+blockifier = { workspace = true }
 bytes.workspace = true
 cairo-vm = { workspace = true }
 chrono = { workspace = true }
@@ -63,6 +64,7 @@ orchestrator-starknet-da-client = { workspace = true, optional = true }
 orchestrator-starknet-settlement-client = { workspace = true }
 orchestrator-utils = { workspace = true }
 rand = { workspace = true }
+reqwest = { workspace = true, features = ["json"] }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
@@ -110,8 +112,6 @@ tracing-subscriber = { workspace = true, features = [
   "json",
   "time",
   "default",
-  "env-filter",
-  "fmt",
 ] }
 
 anyhow = { workspace = true }

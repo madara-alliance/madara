@@ -127,7 +127,7 @@ pub fn init_logging() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| {
         // Fallback if RUST_LOG is not set or invalid
         EnvFilter::builder()
-            .with_default_directive(Level::DEBUG.into())
+            .with_default_directive(Level::INFO.into())
             .parse("orchestrator=trace")
             .expect("Invalid filter directive and Logger control")
     });

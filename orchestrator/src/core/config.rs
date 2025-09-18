@@ -41,6 +41,8 @@ use crate::{
     OrchestratorError, OrchestratorResult,
 };
 
+use blockifier::bouncer::BouncerWeights;
+
 /// Starknet versions supported by the service
 macro_rules! versions {
     ($(($variant:ident, $version:expr)),* $(,)?) => {
@@ -99,6 +101,7 @@ versions!((V0_13_2, "0.13.2"), (V0_13_3, "0.13.3"), (V0_13_4, "0.13.4"), (V0_13_
 #[derive(Debug, Clone)]
 pub struct ConfigParam {
     pub madara_rpc_url: Url,
+    pub madara_admin_rpc_url: Url,
     pub madara_version: StarknetVersion,
     pub snos_config: SNOSParams,
     pub batching_config: BatchingParams,
@@ -114,6 +117,7 @@ pub struct ConfigParam {
     /// Currently, being used to check if we should store
     /// * Aggregator Proof
     pub store_audit_artifacts: bool,
+    pub bouncer_weights_limit: BouncerWeights,
 }
 
 /// The app config. It can be accessed from anywhere inside the service
@@ -124,6 +128,8 @@ pub struct Config {
     pub params: ConfigParam,
     /// The Madara client to get data from the node
     madara_client: Arc<JsonRpcClient<HttpTransport>>,
+    /// The Madara admin client for admin operations
+    madara_admin_client: Arc<JsonRpcClient<HttpTransport>>,
     /// The DA client to interact with the DA layer
     da_client: Box<dyn DaClient>,
     /// The service that produces proof and registers it onchain
@@ -198,6 +204,10 @@ impl Config {
 
         let params = ConfigParam {
             madara_rpc_url: run_cmd.madara_rpc_url.clone(),
+            madara_admin_rpc_url: run_cmd
+                .madara_admin_rpc_url
+                .clone()
+                .unwrap_or_else(|| run_cmd.madara_rpc_url.clone()),
             madara_version: run_cmd.madara_version,
             snos_config: SNOSParams::from(run_cmd.snos_args.clone()),
             batching_config: BatchingParams::from(run_cmd.batching_args.clone()),
@@ -208,8 +218,10 @@ impl Config {
             prover_layout_name: Self::get_layout_name(run_cmd.proving_layout_args.prover_layout_name.clone().as_str())
                 .context("Failed to get prover layout name")?,
             store_audit_artifacts: run_cmd.store_audit_artifacts,
+            bouncer_weights_limit: Self::load_bouncer_weights_limit(&run_cmd.bouncer_weights_limit_file)?,
         };
         let rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_rpc_url.clone()));
+        let admin_rpc_client = JsonRpcClient::new(HttpTransport::new(params.madara_admin_rpc_url.clone()));
 
         let database = Self::build_database_client(&db).await?;
         let lock = Self::build_lock_client(&db).await?;
@@ -231,6 +243,7 @@ impl Config {
             layer,
             params,
             madara_client: Arc::new(rpc_client),
+            madara_admin_client: Arc::new(admin_rpc_client),
             database,
             lock,
             storage,
@@ -399,6 +412,11 @@ impl Config {
         &self.madara_client
     }
 
+    /// Returns the Madara admin client
+    pub fn madara_admin_client(&self) -> &Arc<JsonRpcClient<HttpTransport>> {
+        &self.madara_admin_client
+    }
+
     /// Returns the server config
     pub fn server_config(&self) -> &ServerParams {
         &self.params.server_config
@@ -462,5 +480,63 @@ impl Config {
     /// Returns the snos proof layout
     pub fn prover_layout_name(&self) -> &LayoutName {
         &self.params.prover_layout_name
+    }
+
+    /// Returns the bouncer weights limit
+    pub fn bouncer_weights_limit(&self) -> &BouncerWeights {
+        &self.params.bouncer_weights_limit
+    }
+
+    /// Load bouncer weights limit from file or use defaults
+    fn load_bouncer_weights_limit(file_path: &Option<std::path::PathBuf>) -> OrchestratorCoreResult<BouncerWeights> {
+        match file_path {
+            Some(path) => {
+                tracing::info!(file_path = %path.display(), "Loading bouncer weights limit from file");
+
+                match std::fs::read_to_string(path) {
+                    Ok(content) => match serde_json::from_str::<BouncerWeights>(&content) {
+                        Ok(weights) => {
+                            tracing::info!("Successfully loaded bouncer weights limit from file");
+                            Ok(weights)
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                error = %e,
+                                file_path = %path.display(),
+                                "Failed to parse bouncer weights limit file, using defaults"
+                            );
+                            Ok(Self::default_bouncer_weights_limit())
+                        }
+                    },
+                    Err(e) => {
+                        tracing::error!(
+                            error = %e,
+                            file_path = %path.display(),
+                            "Failed to read bouncer weights limit file, using defaults"
+                        );
+                        Ok(Self::default_bouncer_weights_limit())
+                    }
+                }
+            }
+            None => {
+                tracing::warn!("No bouncer weights limit file provided, using default values");
+                Ok(Self::default_bouncer_weights_limit())
+            }
+        }
+    }
+
+    /// Default bouncer weights limit values
+    fn default_bouncer_weights_limit() -> BouncerWeights {
+        use starknet_api::execution_resources::GasAmount;
+
+        BouncerWeights {
+            l1_gas: 1_000_000,                 // 1M L1 gas
+            message_segment_length: 100_000,   // 100K message segment length
+            n_events: 5_000,                   // 5K events
+            state_diff_size: 100_000,          // 100K state diff size
+            sierra_gas: GasAmount(10_000_000), // 10M sierra gas
+            n_txs: 1_000,                      // 1K transactions
+            proving_gas: GasAmount(5_000_000), // 5M proving gas
+        }
     }
 }

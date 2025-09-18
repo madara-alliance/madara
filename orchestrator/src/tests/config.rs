@@ -604,6 +604,15 @@ pub(crate) fn get_env_params() -> EnvParams {
         batching_worker_lock_duration: get_env_var_or_panic("MADARA_ORCHESTRATOR_BATCHING_LOCK_DURATION_SECONDS")
             .parse::<u64>()
             .unwrap(),
+        max_blocks_per_snos_batch: get_env_var_or_default("MADARA_ORCHESTRATOR_MAX_BLOCKS_PER_SNOS_BATCH", "10")
+            .parse::<u64>()
+            .unwrap(),
+        max_snos_batches_per_aggregator_batch: get_env_var_or_default(
+            "MADARA_ORCHESTRATOR_MAX_SNOS_BATCHES_PER_AGGREGATOR_BATCH",
+            "50",
+        )
+        .parse::<u64>()
+        .unwrap(),
     };
 
     let env = get_env_var_or_panic("MADARA_ORCHESTRATOR_MAX_BLOCK_NO_TO_PROCESS");
