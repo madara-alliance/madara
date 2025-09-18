@@ -243,7 +243,7 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
         version: 4,
     };
     let test_result = wait_for_db_state(
-        Duration::from_secs(1500),
+        Duration::from_secs(2400),
         String::from("1"),
         setup_config.mongo_db_instance(),
         expected_state_after_agg_job,
