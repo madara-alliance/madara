@@ -93,8 +93,11 @@ impl GatewayForwardSync {
         // Log the gateway we're syncing from
         tracing::info!("🌐 Initializing sync from gateway");
         
+        let latest_full_block = backend.head_status().latest_full_block_n();
         let starting_block_n = backend.head_status().next_full_block();
-        tracing::info!("📊 Starting sync from block #{}", starting_block_n);
+        
+        tracing::info!("📊 Database head status: latest_full_block={:?}, starting sync from block #{}", 
+            latest_full_block, starting_block_n);
         // this is the place where the latest block is fetched from the backend / database
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
@@ -279,6 +282,8 @@ impl ForwardPipeline for GatewayForwardSync {
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
+                tracing::info!("📊 Block #{} has passed through all 3 pipelines (blocks, classes, state) - marking as fully imported", block_n);
+                
                 let block_info = self
                     .backend
                     .get_block_info(&RawDbBlockId::Number(block_n))
@@ -295,6 +300,7 @@ impl ForwardPipeline for GatewayForwardSync {
                 let block_events = inner.events();
 
                 self.backend.on_full_block_imported(block_info.into(), block_events).await?;
+                tracing::info!("💾 Block #{} head status saved to database", block_n);
                 metrics.update(block_n, &self.backend).context("Updating metrics")?;
             }
         }
@@ -317,6 +323,15 @@ impl ForwardPipeline for GatewayForwardSync {
             self.classes_pipeline.status(),
             self.apply_state_pipeline.status(),
         );
+        
+        // Log the current pipeline positions to understand the lag
+        let status = self.pipeline_status();
+        if let Some(min_block) = status.min() {
+            tracing::debug!(
+                "Pipeline positions - Blocks: {:?}, Classes: {:?}, State: {:?}, Min (fully processed): {}",
+                status.blocks, status.classes, status.apply_state, min_block
+            );
+        }
     }
 
     fn latest_block(&self) -> Option<u64> {

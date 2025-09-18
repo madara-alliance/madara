@@ -790,6 +790,31 @@ impl MadaraBackend {
             self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
         }
         
+        // Revert bonsai tries to the target block (critical for state consistency)
+        // This is the key addition from PR #296
+        tracing::info!("🔄 Reverting bonsai tries to block #{}", target_block_n);
+        
+        let target_block_id = BasicId::new(target_block_n);
+        let current_block_id = BasicId::new(current_block);
+        
+        // Revert contract trie
+        self.contract_trie()
+            .revert_to(target_block_id, current_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {}", e))?;
+        tracing::debug!("✓ Contract trie reverted to block #{}", target_block_n);
+        
+        // Revert contract storage trie  
+        self.contract_storage_trie()
+            .revert_to(target_block_id, current_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {}", e))?;
+        tracing::debug!("✓ Contract storage trie reverted to block #{}", target_block_n);
+        
+        // Revert class trie
+        self.class_trie()
+            .revert_to(target_block_id, current_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {}", e))?;
+        tracing::debug!("✓ Class trie reverted to block #{}", target_block_n);
+        
         // Update head status
         self.head_status.set_latest_full_block_n(Some(target_block_n));
         self.head_status.headers.set_current(Some(target_block_n));
