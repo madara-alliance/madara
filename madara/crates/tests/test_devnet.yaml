@@ -19,7 +19,7 @@ bouncer_config:
     n_txs: 600
     proving_gas: 5500000000
   blake_weight: 5263
-  builtin_weights: 
+  builtin_weights:
     gas_costs:
       pedersen: 4769
       range_check: 70
