@@ -19,7 +19,7 @@ parent_fee_token_address: "0x047adc7dee88eec362d71a52c25d40559a921434b2d90e75b6a
 eth_core_contract_address: "0xF338cad020D506e8e3d9B4854986E0EcE6C23640"
 
 # Most recent Starknet version supported
-latest_protocol_version: "0.13.5"
+latest_protocol_version: "0.13.2"
 block_time: "180h"
 pending_block_update_time: "100ms"
 
@@ -37,9 +37,6 @@ l2_gas_price_max_change_denominator: 48
 # UNSURE
 eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
 sequencer_address: "0xdeadbeef"
-
-versioned_constants_path:
-  "0.13.5": "/Users/heemankverma/Work/Karnot/madara/madara/crates/primitives/chain_config/resources/versioned_constants_13_5.json"
 
 # Only for block production
 

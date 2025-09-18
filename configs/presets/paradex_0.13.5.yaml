@@ -1,0 +1,62 @@
+# Human readable chain name, for displaying to the console.
+chain_name: "Paradex Mainnet"
+
+# Old Chain ID : PRIVATE_SN_POTC_MAINNET
+# New Chain ID : PRIVATE_SN_PARACLEAR_MAINNET
+chain_id: "PRIVATE_SN_PARACLEAR_MAINNET"
+
+# The URL of the gateway and Feeder Gateway your nodes should sync from.
+feeder_gateway_url: "https://paraclear-mainnet.starknet.io/feeder_gateway/"
+gateway_url: "https://paraclear-mainnet.starknet.io/gateway"
+
+# For starknet, this is the STRK ERC-20 contract on starknet.
+native_fee_token_address: "0x047adc7dee88eec362d71a52c25d40559a921434b2d90e75b6a4a6e4e9fb9ab1"
+
+# For starknet, this is the ETH ERC-20 contract on starknet.
+parent_fee_token_address: "0x047adc7dee88eec362d71a52c25d40559a921434b2d90e75b6a4a6e4e9fb9ab1"
+
+# The Starknet core contract address for the L1 watcher.
+eth_core_contract_address: "0xF338cad020D506e8e3d9B4854986E0EcE6C23640"
+
+# Most recent Starknet version supported
+latest_protocol_version: "0.13.5"
+block_time: "180h"
+pending_block_update_time: "100ms"
+
+# Transaction limit in the mempool.
+mempool_max_transactions: 1000000000
+# Transaction limit in the mempool, additional limit for declare transactions.
+mempool_max_declare_transactions: 2000000
+# Max age of a transaction in the mempool. Null for no age limit.
+# mempool_tx_max_age: "5h"
+mempool_ttl: null
+l2_gas_target: 200000000000000
+min_l2_gas_price: 10000000000
+l2_gas_price_max_change_denominator: 48
+
+# UNSURE
+eth_gps_statement_verifier: "0xf294781D719D2F4169cE54469C28908E6FA752C1"
+sequencer_address: "0xdeadbeef"
+
+# Only for block production
+
+bouncer_config:
+  block_max_capacity:
+    sierra_gas: 50000000000000
+    message_segment_length: 18446744073709551615
+    n_events: 18446744073709551615
+    state_diff_size: 13107200000
+    l1_gas: 5000000
+    n_txs: 18446744073709551615
+    proving_gas: 100000000000000
+  builtin_weights:
+    pedersen: 8100
+    range_check: 70
+    ecdsa: 1333333
+    ec_op: 571900
+    bitwise: 583
+    keccak: 408566
+    poseidon: 8334
+    add_mod: 250
+    mul_mod: 604
+    range_check96: 56
