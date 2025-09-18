@@ -271,6 +271,6 @@ pub fn gateway_preconfirmed_block_sync(
                 Ok(Some(()))
             }
         },
-        Duration::from_millis(200),
+        Duration::from_millis(500),
     )
 }

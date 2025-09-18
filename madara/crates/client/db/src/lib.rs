@@ -43,7 +43,6 @@ use crate::rocksdb::RocksDBStorage;
 use crate::storage::StorageChainTip;
 use crate::storage::StoredChainInfo;
 use crate::sync_status::SyncStatusCell;
-use blockifier::bouncer::BouncerWeights;
 use mp_block::commitments::BlockCommitments;
 use mp_block::commitments::CommitmentComputationContext;
 use mp_block::BlockHeaderWithSignatures;
@@ -75,6 +74,8 @@ pub use storage::{
     MadaraStorageWrite, StorageTxIndex,
 };
 pub use view::{MadaraBlockView, MadaraConfirmedBlockView, MadaraPreconfirmedBlockView, MadaraStateView};
+use blockifier::bouncer::BouncerWeights;
+
 
 /// Current chain tip.
 #[derive(Default, Clone)]

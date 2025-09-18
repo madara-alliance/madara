@@ -17,6 +17,7 @@
     "base_path": "../madara-db",
     "backup_dir": null,
     "restore_from_latest_backup": false,
+    "no_save_preconfirmed": false,
     "db_max_saved_trie_logs": 0,
     "db_max_kept_snapshots": 0,
     "db_snapshot_interval": 5,

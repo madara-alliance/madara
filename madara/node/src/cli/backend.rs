@@ -50,10 +50,10 @@ pub struct BackendParams {
     #[clap(env = "MADARA_BACKUP_DIR", long, value_name = "PATH")]
     pub backup_dir: Option<PathBuf>,
 
-    /// Save the preconfirmed block to database. This may slow down block production a bit.
-    /// Default: true
-    #[clap(env = "MADARA_SAVE_PRECONFIRMED", long, default_value_t = true)]
-    pub save_preconfirmed: bool,
+    /// Disable saving the preconfirmed block to database. This may speed up block production a bit.
+    #[clap(env = "MADARA_SAVE_PRECONFIRMED", long)]
+    #[serde(default)]
+    pub no_save_preconfirmed: bool,
 
     /// Restore the database at startup from the latest backup version. Use it with `--backup-dir <PATH>`
     #[clap(env = "MADARA_RESTORE_FROM_LATEST_BACKUP", long)]
@@ -135,7 +135,7 @@ impl BackendParams {
     pub fn backend_config(&self) -> MadaraBackendConfig {
         MadaraBackendConfig {
             flush_every_n_blocks: self.flush_every_n_blocks,
-            save_preconfirmed: self.save_preconfirmed,
+            save_preconfirmed: !self.no_save_preconfirmed,
             unsafe_starting_block: self.unsafe_starting_block,
         }
     }
