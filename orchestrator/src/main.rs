@@ -26,7 +26,7 @@ const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
 async fn main() {
     dotenv().ok();
     init_logging();
-    info!("Starting orchestrator with new prakhar code #22");
+    info!("Starting orchestrator");
     let cli = Cli::parse();
 
     match &cli.command {
