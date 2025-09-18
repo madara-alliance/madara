@@ -588,6 +588,7 @@ pub(crate) fn get_env_params() -> EnvParams {
             "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
         ))
         .expect("Invalid Starknet operator address"),
+        txn_wait_sleep_delay_secs: 60u64,
     });
 
     let snos_config = SNOSParams {
