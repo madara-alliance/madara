@@ -24,6 +24,6 @@ pub struct EthereumSettlementCliArgs {
     #[arg(env = "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS", long)]
     pub starknet_operator_address: Option<String>,
 
-    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long)]
+    #[arg(env = "MADARA_ORCHESTRATOR_EIP1559_MAX_GAS_MUL_FACTOR", long, default_value = "1.5")]
     pub max_gas_price_mul_factor: f64,
 }
