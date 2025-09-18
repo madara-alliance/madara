@@ -165,17 +165,23 @@ impl ForwardPipeline for GatewayForwardSync {
         //             &self.backend,
         //             &self.client,
         //         ).await? {
-        //             tracing::error!("⚠️ REORG DETECTED on sync start at block {} - common ancestor: {}", block_n, common_ancestor);
-        //             let our_hash = self.backend.get_block_hash(&mc_db::db_block_id::RawDbBlockId::Number(block_n))?.unwrap_or(starknet_core::types::Felt::ZERO);
-        //             return Err(ReorgError::ReorgDetected {
-        //                 block_n,
-        //                 our_hash,
-        //                 gateway_hash: starknet_core::types::Felt::ZERO, // Will be filled with actual gateway hash
-        //                 common_ancestor: Some(common_ancestor),
-        //             }.into());
+        //             tracing::warn!("⚠️ REORG DETECTED on sync start at block {} - common ancestor: {}", block_n, common_ancestor);
+
+        //             // Perform rollback
+        //             tracing::info!("🔄 Rolling back to common ancestor block {}", common_ancestor);
+        //             self.backend.rollback_to_block(common_ancestor)?;
+
+        //             tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
+        //                 common_ancestor, common_ancestor + 1);
+
+        //             // The pipelines will naturally start from the new head position
+        //             // after the rollback, so we don't need to recreate them
+        //             return Ok(()); // Return to let the sync controller restart the sync
         //         }
         //     }
-        //     tracing::info!("✅ No reorg detected on startup");
+        //     if !self.backend.head_status().latest_full_block_n().is_some_and(|n| n < start_check) {
+        //         tracing::info!("✅ No reorg detected on startup");
+        //     }
         // } else {
         //     tracing::info!("No blocks in database - starting fresh sync");
         // }
@@ -186,20 +192,25 @@ impl ForwardPipeline for GatewayForwardSync {
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
 
-                // Check for reorg before scheduling parallel work
-                if let Some(common_ancestor) = detect_reorg(
-                    target_height,
-                    &self.backend,
-                    &self.client,
-                ).await? {
-                    // Reorg detected! Return error to trigger handling
-                    let our_hash = self.backend.get_block_hash(&mc_db::db_block_id::RawDbBlockId::Number(next_input_block_n))?.unwrap_or(starknet_core::types::Felt::ZERO);
-                    return Err(ReorgError::ReorgDetected {
-                        block_n: next_input_block_n,
-                        our_hash,
-                        gateway_hash: starknet_core::types::Felt::ZERO, // Will be filled with actual gateway hash
-                        common_ancestor: Some(common_ancestor),
-                    }.into());
+                // Check for reorg before scheduling each block
+                if next_input_block_n > 0 {
+                    if let Some(common_ancestor) = detect_reorg(
+                        next_input_block_n,
+                        &self.backend,
+                        &self.client,
+                    ).await? {
+                        // Reorg detected during sync!
+                        tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
+
+                        // Perform rollback
+                        self.backend.rollback_to_block(common_ancestor)?;
+
+                        tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
+                            common_ancestor, common_ancestor + 1);
+
+                        // Return to let the sync controller restart with the new state
+                        return Ok(());
+                    }
                 }
 
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));

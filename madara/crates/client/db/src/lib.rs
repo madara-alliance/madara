@@ -708,6 +708,107 @@ impl MadaraBackend {
     pub fn update_metrics(&self) -> u64 {
         self.db_metrics.update(&self.db)
     }
+
+    /// Rollback the database to a specific block number
+    /// This removes all blocks after the specified block number
+    pub fn rollback_to_block(&self, target_block_n: u64) -> anyhow::Result<()> {
+        tracing::warn!("⏮️ Rolling back database to block #{}", target_block_n);
+        
+        // Get the current latest block from head_status
+        let current_block = self.head_status.latest_full_block_n();
+        
+        // If no blocks found in head_status, try to find the actual latest block from database
+        let current_block = if let Some(block) = current_block {
+            block
+        } else {
+            // Look for the highest block number in the database
+            // We'll iterate from target_block_n upwards to find the actual latest
+            let mut latest = target_block_n;
+            let col = self.db.get_column(Column::BlockNToBlockInfo);
+            
+            // Check if we have any blocks at all by checking block 0 (genesis)
+            if self.db.get_cf(&col, 0u64.to_be_bytes())?.is_none() {
+                tracing::warn!("No blocks found in database, cannot rollback");
+                return Ok(());
+            }
+            
+            // Find the actual latest block by probing upwards
+            loop {
+                let next_block = latest + 100; // Check in increments of 100
+                if self.db.get_cf(&col, next_block.to_be_bytes())?.is_some() {
+                    latest = next_block;
+                } else {
+                    // Binary search between latest and next_block
+                    let mut left = latest;
+                    let mut right = next_block;
+                    while left < right {
+                        let mid = (left + right + 1) / 2;
+                        if self.db.get_cf(&col, mid.to_be_bytes())?.is_some() {
+                            left = mid;
+                        } else {
+                            right = mid - 1;
+                        }
+                    }
+                    latest = left;
+                    break;
+                }
+            }
+            
+            tracing::info!("Found actual latest block in database: {}", latest);
+            latest
+        };
+        
+        if target_block_n >= current_block {
+            tracing::info!("Target block {} is >= current block {}, nothing to rollback", target_block_n, current_block);
+            return Ok(());
+        }
+        
+        // Clear all blocks after target_block_n
+        for block_n in (target_block_n + 1)..=current_block {
+            tracing::debug!("Removing block #{}", block_n);
+            
+            // Remove block info
+            let col = self.db.get_column(Column::BlockNToBlockInfo);
+            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
+            
+            // Remove block inner
+            let col = self.db.get_column(Column::BlockNToBlockInner);
+            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
+            
+            // Remove state diff
+            let col = self.db.get_column(Column::BlockNToStateDiff);
+            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
+            
+            // Remove block hash mapping
+            if let Some(hash) = self.get_block_hash(&db_block_id::RawDbBlockId::Number(block_n))? {
+                let col = self.db.get_column(Column::BlockHashToBlockN);
+                self.db.delete_cf_opt(&col, hash.to_bytes_be(), &self.writeopts_no_wal)?;
+            }
+            
+            // Remove event bloom filter
+            let col = self.db.get_column(Column::EventBloom);
+            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
+        }
+        
+        // Update head status
+        self.head_status.set_latest_full_block_n(Some(target_block_n));
+        self.head_status.headers.set_current(Some(target_block_n));
+        self.head_status.state_diffs.set_current(Some(target_block_n));
+        self.head_status.transactions.set_current(Some(target_block_n));
+        self.head_status.events.set_current(Some(target_block_n));
+        
+        // Save updated head status
+        self.save_head_status_to_db()?;
+        
+        // Clear pending block as it's now invalid
+        self.clear_pending_block()?;
+        
+        // Flush to ensure consistency
+        self.flush()?;
+        
+        tracing::info!("✅ Rollback complete. Database now at block #{}", target_block_n);
+        Ok(())
+    }
 }
 
 pub mod bonsai_identifier {
