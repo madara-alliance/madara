@@ -262,12 +262,12 @@ git-hook:
 .PHONY: setup-l2
 setup-l2:
 	@echo -e "$(DIM)Setting up orchestrator with L2 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup  --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l2 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: setup-l3
 setup-l3:
 	@echo -e "$(DIM)Setting up orchestrator with L3 layer...$(RESET)"
-	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type rule
+	@cargo run --package orchestrator -- setup --layer l3 --aws --aws-s3 --aws-sqs --aws-sns --aws-event-bridge --event-bridge-type schedule
 
 .PHONY: run-orchestrator-l2
 run-orchestrator-l2:

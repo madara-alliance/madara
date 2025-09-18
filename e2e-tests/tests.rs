@@ -292,7 +292,7 @@ async fn wait_for_db_state(
                 }
             }
             None => {
-                println!("Expected state not found yet for {:?}. Waiting..", expected_db_state.job_type);
+                println!("⏳ Expected state not found yet for {:?}. Waiting..", expected_db_state.job_type);
             }
         }
         tokio::time::sleep(Duration::from_millis(5000)).await;
@@ -318,7 +318,7 @@ async fn wait_for_batch_state(timeout: Duration, index: u64, mongo_db_server: &M
                 }
             }
             None => {
-                println!("Expected state not found yet for Batching. Waiting..");
+                println!("⏳ Expected state not found yet for Batching. Waiting..");
             }
         }
         tokio::time::sleep(Duration::from_millis(5000)).await;

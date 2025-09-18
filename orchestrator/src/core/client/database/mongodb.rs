@@ -964,7 +964,14 @@ impl DatabaseClient for MongoDbClient {
 
         let jobs: Vec<JobItem> = self.get_job_collection().find(filter, find_options).await?.try_collect().await?;
 
-        debug!(job_count = jobs.len(), "Fetched jobs between internal IDs");
+        debug!(
+            job_type = ?job_type,
+            gte = gte,
+            lte = lte,
+            job_count = jobs.len(),
+            category = "db_call",
+            "Fetched jobs between internal IDs"
+        );
 
         let attributes = [KeyValue::new("db_operation_name", "get_jobs_between_internal_ids")];
         let duration = start.elapsed();

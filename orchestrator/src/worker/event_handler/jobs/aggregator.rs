@@ -25,21 +25,9 @@ pub struct AggregatorJobHandler;
 impl JobHandlerTrait for AggregatorJobHandler {
     #[tracing::instrument(fields(category = "aggregator"), skip(self, metadata), ret, err)]
     async fn create_job(&self, internal_id: String, metadata: JobMetadata) -> Result<JobItem, JobError> {
-        info!(
-            log_type = "starting",
-            category = "aggregator",
-            function_type = "create_job",
-            block_no = %internal_id,
-            "Aggregator job creation started."
-        );
+        info!(log_type = "starting", "Aggregator job creation started.");
         let job_item = JobItem::create(internal_id.clone(), JobType::Aggregator, JobStatus::Created, metadata);
-        info!(
-            log_type = "completed",
-            category = "aggregator",
-            function_type = "create_job",
-            block_no = %internal_id,
-            "Aggregator job creation completed."
-        );
+        info!(log_type = "completed", "Aggregator job creation completed.");
         Ok(job_item)
     }
 
