@@ -259,7 +259,6 @@ impl SettlementClient for EthereumSettlementClient {
         program_output: Vec<[u8; 32]>,
         state_diff: Vec<Vec<u8>>,
         _nonce: u64,
-        to_block_num: u64,
     ) -> Result<String> {
         tracing::info!(
             log_type = "starting",
@@ -267,18 +266,6 @@ impl SettlementClient for EthereumSettlementClient {
             function_type = "blobs",
             "Updating state with blobs."
         );
-
-        #[cfg(not(feature = "testing"))]
-        if let Some(last_settled_block) = self.get_last_settled_block().await? {
-            if last_settled_block >= to_block_num {
-                warn!(
-                    "Contract state ({}) already ahead of the block to be settled ({}). Skipping update state call.",
-                    last_settled_block, to_block_num
-                );
-                // Send a dummy txn hash
-                return Ok(format!("0x{:x}", B256::from_str("0")?));
-            }
-        }
 
         let mut mul_factor = GAS_PRICE_MULTIPLIER_START;
 

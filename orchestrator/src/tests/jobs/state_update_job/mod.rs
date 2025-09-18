@@ -107,9 +107,9 @@ async fn test_process_job_works(
 
         settlement_client
             .expect_update_state_with_blobs()
-            .with(eq(program_output_data_vec), eq(blob_data_vec), always(), always())
+            .with(eq(program_output_data_vec), eq(blob_data_vec), always())
             .times(1)
-            .returning(|_, _, _, _| Ok("0xbeef".to_string()));
+            .returning(|_, _, _| Ok("0xbeef".to_string()));
 
         settlement_client.expect_wait_for_tx_finality().with(eq("0xbeef")).times(1).returning(|_| Ok(Some(1)));
     }
@@ -301,8 +301,8 @@ async fn process_job_works_unit_test() {
             bincode::deserialize(&bincode::serialize(&program_output_clone).unwrap()).unwrap();
         settlement_client
             .expect_update_state_with_blobs()
-            .with(eq(deserialized_program_output), eq(vec![blob_data_vec_clone]), always(), always())
-            .returning(|_, _, _, _| {
+            .with(eq(deserialized_program_output), eq(vec![blob_data_vec_clone]), always())
+            .returning(|_, _, _| {
                 Ok(String::from("0x5d17fac98d9454030426606019364f6e68d915b91f6210ef1e2628cd6987442"))
             });
 

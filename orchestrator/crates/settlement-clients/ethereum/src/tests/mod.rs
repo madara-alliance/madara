@@ -226,7 +226,7 @@ mod settlement_client_tests {
 
         // Calling update_state_with_blobs
         let update_state_result = ethereum_settlement_client
-            .update_state_with_blobs(program_output, blob_data_vec, nonce, 0)
+            .update_state_with_blobs(program_output, blob_data_vec, nonce)
             .await
             .expect("Could not go through update_state_with_blobs.");
 
@@ -314,7 +314,7 @@ mod settlement_client_tests {
 
         // Calling update_state_with_blobs
         let update_state_result = ethereum_settlement_client
-            .update_state_with_blobs(program_output.clone(), blob_data_vec, nonce, 0) // Keeping `to_block_num=0` so that the transaction is actually made
+            .update_state_with_blobs(program_output.clone(), blob_data_vec, nonce)
             .await
             .expect("Could not go through update_state_with_blobs.");
 
