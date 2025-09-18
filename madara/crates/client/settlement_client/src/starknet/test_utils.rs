@@ -56,7 +56,7 @@ pub async fn get_test_context() -> TestContext {
             "--chain-config-path",
             MADARA_CONFIG_PATH,
             "--no-l1-sync",
-            "--chain-config-override=block_time=5s,pending_block_update_time=1s",
+            "--chain-config-override=block_time=5s",
         ])
         .label("settlement_layer")
         .run();

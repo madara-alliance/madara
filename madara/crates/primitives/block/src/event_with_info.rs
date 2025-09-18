@@ -1,7 +1,5 @@
 use starknet_types_core::felt::Felt;
 
-use crate::{MadaraMaybePendingBlock, MadaraMaybePendingBlockInfo};
-
 /// Represents a Starknet event along with contextual metadata.
 ///
 /// This structure is useful for scenarios where the raw event data needs to be enriched with additional context — particularly when the event is not retrieved directly from a transaction receipt or block.
@@ -10,18 +8,24 @@ pub struct EventWithInfo {
     /// The raw event data.
     pub event: mp_receipt::Event,
 
-    /// The number of the block in which the event was emitted, None for pending blocks.
-    pub block_number: Option<u64>,
+    /// The number of the block in which the event was emitted.
+    pub block_number: u64,
 
-    /// The hash of the block where the event occurred, None for pending blocks.
+    /// The hash of the block where the event occurred, None for preconfirmed blocks.
     pub block_hash: Option<Felt>,
 
     /// The hash of the transaction that emitted this event.
     pub transaction_hash: Felt,
 
+    /// The index of the transaction that emitted this event.
+    pub transaction_index: u64,
+
     /// The index of the event in the block (not in the transaction).
     /// This allows deterministic ordering of events within the block.
-    pub event_index_in_block: usize,
+    pub event_index_in_block: u64,
+
+    /// Whether or not the event was found in the preconfirmed block.
+    pub in_preconfirmed: bool,
 }
 
 impl From<EventWithInfo> for mp_rpc::v0_7_1::EmittedEvent {
@@ -29,46 +33,11 @@ impl From<EventWithInfo> for mp_rpc::v0_7_1::EmittedEvent {
         mp_rpc::v0_7_1::EmittedEvent {
             event: event_with_info.event.into(),
             block_hash: event_with_info.block_hash,
-            block_number: event_with_info.block_number,
+            // v0_7_1 expects None when the event is in the pending block.
+            block_number: if event_with_info.in_preconfirmed { None } else { Some(event_with_info.block_number) },
             transaction_hash: event_with_info.transaction_hash,
         }
     }
-}
-
-/// Extracts and iterates over all events emitted within a block.
-///
-/// This function processes all transactions in a given block (whether pending or confirmed)
-/// and returns an iterator over their emitted events. Each event is enriched with its
-/// contextual information including block details and the transaction that generated it.
-///
-/// # Arguments
-///
-/// * `block` - A reference to either a pending or confirmed block (`MadaraMaybePendingBlock`)
-///
-/// # Returns
-///
-/// Returns an iterator yielding `EmittedEvent` items. Each item contains:
-/// - The event data (from address, keys, and associated data)
-/// - Block context (hash and number, if the block is confirmed)
-/// - Transaction hash that generated the event
-pub fn drain_block_events(block: MadaraMaybePendingBlock) -> impl Iterator<Item = EventWithInfo> {
-    let (block_hash, block_number) = match &block.info {
-        MadaraMaybePendingBlockInfo::Pending(_) => (None, None),
-        MadaraMaybePendingBlockInfo::NotPending(block) => (Some(block.block_hash), Some(block.header.block_number)),
-    };
-
-    let tx_hash_and_events = block.inner.receipts.into_iter().flat_map(|receipt| {
-        let tx_hash = receipt.transaction_hash();
-        receipt.into_events().into_iter().map(move |events| (tx_hash, events))
-    });
-
-    tx_hash_and_events.enumerate().map(move |(event_index, (transaction_hash, event))| EventWithInfo {
-        event,
-        block_number,
-        event_index_in_block: event_index,
-        block_hash,
-        transaction_hash,
-    })
 }
 
 /// Filters events based on the provided address and keys.

@@ -2,13 +2,12 @@
 
 use crate::header::GasPrices;
 use commitments::{BlockCommitments, CommitmentComputationContext};
-use header::{BlockTimestamp, PendingHeader};
-
+use header::{BlockTimestamp, PreconfirmedHeader};
+use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::StarknetVersion;
 use mp_convert::FixedPoint;
 use mp_receipt::{EventWithTransactionHash, TransactionReceipt};
 use mp_state_update::StateDiff;
-use mp_transactions::Transaction;
 use starknet_types_core::felt::Felt;
 
 pub mod commitments;
@@ -18,16 +17,31 @@ pub mod to_rpc;
 
 pub use event_with_info::EventWithInfo;
 pub use header::Header;
+pub use mp_transactions::Transaction;
 pub use primitive_types::{H160, U256};
 
 pub type BlockId = mp_rpc::v0_7_1::BlockId;
 pub type BlockTag = mp_rpc::v0_7_1::BlockTag;
 
 // TODO: where should we put that?
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct TransactionWithReceipt {
     pub transaction: Transaction,
     pub receipt: TransactionReceipt,
+}
+
+impl TransactionWithReceipt {
+    pub fn contract_address(&self) -> &Felt {
+        match &self.transaction {
+            Transaction::Invoke(tx) => tx.sender_address(),
+            Transaction::L1Handler(tx) => &tx.contract_address,
+            Transaction::Declare(tx) => tx.sender_address(),
+            // Hash is in the receipt for DeployAccount.
+            Transaction::Deploy(_) | Transaction::DeployAccount(_) => {
+                self.receipt.contract_address().expect("Malformated receipt")
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -51,105 +65,118 @@ impl BlockHeaderWithSignatures {
 
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 #[allow(clippy::large_enum_variant)]
-pub enum MadaraMaybePendingBlockInfo {
-    Pending(MadaraPendingBlockInfo),
-    NotPending(MadaraBlockInfo),
+pub enum MadaraMaybePreconfirmedBlockInfo {
+    Preconfirmed(MadaraPreconfirmedBlockInfo),
+    Confirmed(MadaraBlockInfo),
 }
 
-impl MadaraMaybePendingBlockInfo {
+impl MadaraMaybePreconfirmedBlockInfo {
     pub fn as_closed(&self) -> Option<&MadaraBlockInfo> {
         match self {
-            MadaraMaybePendingBlockInfo::Pending(_) => None,
-            MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
+            Self::Preconfirmed(_) => None,
+            Self::Confirmed(v) => Some(v),
         }
     }
 
     pub fn into_closed(self) -> Option<MadaraBlockInfo> {
         match self {
-            MadaraMaybePendingBlockInfo::Pending(_) => None,
-            MadaraMaybePendingBlockInfo::NotPending(v) => Some(v),
+            Self::Preconfirmed(_) => None,
+            Self::Confirmed(v) => Some(v),
         }
     }
 
-    pub fn as_pending(&self) -> Option<&MadaraPendingBlockInfo> {
+    pub fn as_pending(&self) -> Option<&MadaraPreconfirmedBlockInfo> {
         match self {
-            MadaraMaybePendingBlockInfo::Pending(v) => Some(v),
-            MadaraMaybePendingBlockInfo::NotPending(_) => None,
+            Self::Preconfirmed(v) => Some(v),
+            Self::Confirmed(_) => None,
         }
     }
 
-    pub fn into_pending(self) -> Option<MadaraPendingBlockInfo> {
+    pub fn into_pending(self) -> Option<MadaraPreconfirmedBlockInfo> {
         match self {
-            MadaraMaybePendingBlockInfo::Pending(v) => Some(v),
-            MadaraMaybePendingBlockInfo::NotPending(_) => None,
+            Self::Preconfirmed(v) => Some(v),
+            Self::Confirmed(_) => None,
         }
     }
 
     pub fn block_id(&self) -> BlockId {
         match self {
-            MadaraMaybePendingBlockInfo::Pending(_) => BlockId::Tag(BlockTag::Pending),
-            MadaraMaybePendingBlockInfo::NotPending(info) => BlockId::Number(info.header.block_number),
+            Self::Preconfirmed(_) => BlockId::Tag(BlockTag::Pending),
+            Self::Confirmed(info) => BlockId::Number(info.header.block_number),
         }
     }
 
-    pub fn block_n(&self) -> Option<u64> {
-        self.as_closed().map(|v| v.header.block_number)
+    pub fn block_number(&self) -> u64 {
+        match self {
+            Self::Preconfirmed(info) => info.header.block_number,
+            Self::Confirmed(info) => info.header.block_number,
+        }
     }
 
-    pub fn block_hash(&self) -> Option<Felt> {
-        self.as_closed().map(|v| v.block_hash)
+    pub fn block_hash(&self) -> Option<&Felt> {
+        self.as_closed().map(|v| &v.block_hash)
     }
 
     pub fn tx_hashes(&self) -> &[Felt] {
         match self {
-            MadaraMaybePendingBlockInfo::NotPending(block) => &block.tx_hashes,
-            MadaraMaybePendingBlockInfo::Pending(block) => &block.tx_hashes,
+            Self::Confirmed(block) => &block.tx_hashes,
+            Self::Preconfirmed(block) => &block.tx_hashes,
         }
     }
 
     pub fn protocol_version(&self) -> &StarknetVersion {
         match self {
-            MadaraMaybePendingBlockInfo::NotPending(block) => &block.header.protocol_version,
-            MadaraMaybePendingBlockInfo::Pending(block) => &block.header.protocol_version,
+            Self::Confirmed(block) => &block.header.protocol_version,
+            Self::Preconfirmed(block) => &block.header.protocol_version,
         }
     }
-
-    pub fn block_timestamp(&self) -> BlockTimestamp {
+    pub fn sequencer_address(&self) -> &Felt {
         match self {
-            MadaraMaybePendingBlockInfo::NotPending(block) => block.header.block_timestamp,
-            MadaraMaybePendingBlockInfo::Pending(block) => block.header.block_timestamp,
+            Self::Confirmed(block) => &block.header.sequencer_address,
+            Self::Preconfirmed(block) => &block.header.sequencer_address,
         }
     }
-
+    pub fn l1_da_mode(&self) -> &L1DataAvailabilityMode {
+        match self {
+            Self::Confirmed(block) => &block.header.l1_da_mode,
+            Self::Preconfirmed(block) => &block.header.l1_da_mode,
+        }
+    }
     pub fn gas_prices(&self) -> &GasPrices {
         match self {
-            MadaraMaybePendingBlockInfo::NotPending(block) => &block.header.gas_prices,
-            MadaraMaybePendingBlockInfo::Pending(block) => &block.header.gas_prices,
+            Self::Confirmed(block) => &block.header.gas_prices,
+            Self::Preconfirmed(block) => &block.header.gas_prices,
+        }
+    }
+    pub fn block_timestamp(&self) -> &BlockTimestamp {
+        match self {
+            Self::Confirmed(block) => &block.header.block_timestamp,
+            Self::Preconfirmed(block) => &block.header.block_timestamp,
         }
     }
 }
 
-impl From<MadaraPendingBlockInfo> for MadaraMaybePendingBlockInfo {
-    fn from(value: MadaraPendingBlockInfo) -> Self {
-        Self::Pending(value)
+impl From<MadaraPreconfirmedBlockInfo> for MadaraMaybePreconfirmedBlockInfo {
+    fn from(value: MadaraPreconfirmedBlockInfo) -> Self {
+        Self::Preconfirmed(value)
     }
 }
 
-impl From<MadaraBlockInfo> for MadaraMaybePendingBlockInfo {
+impl From<MadaraBlockInfo> for MadaraMaybePreconfirmedBlockInfo {
     fn from(value: MadaraBlockInfo) -> Self {
-        Self::NotPending(value)
+        Self::Confirmed(value)
     }
 }
 
 // Light version of the block with block_hash
 #[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct MadaraPendingBlockInfo {
-    pub header: PendingHeader,
+pub struct MadaraPreconfirmedBlockInfo {
+    pub header: PreconfirmedHeader,
     pub tx_hashes: Vec<Felt>,
 }
 
-impl MadaraPendingBlockInfo {
-    pub fn new(header: PendingHeader, tx_hashes: Vec<Felt>) -> Self {
+impl MadaraPreconfirmedBlockInfo {
+    pub fn new(header: PreconfirmedHeader, tx_hashes: Vec<Felt>) -> Self {
         Self { header, tx_hashes }
     }
 }
@@ -159,12 +186,13 @@ impl MadaraPendingBlockInfo {
 pub struct MadaraBlockInfo {
     pub header: Header,
     pub block_hash: Felt,
+    pub total_l2_gas_used: u128,
     pub tx_hashes: Vec<Felt>,
 }
 
 impl MadaraBlockInfo {
-    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt) -> Self {
-        Self { header, block_hash, tx_hashes }
+    pub fn new(header: Header, tx_hashes: Vec<Felt>, block_hash: Felt, total_l2_gas_used: u128) -> Self {
+        Self { header, block_hash, tx_hashes, total_l2_gas_used }
     }
 }
 
@@ -193,7 +221,7 @@ impl MadaraBlockInner {
             r.events()
                 .iter()
                 .cloned()
-                .map(|event| EventWithTransactionHash { transaction_hash: r.transaction_hash(), event })
+                .map(|event| EventWithTransactionHash { transaction_hash: *r.transaction_hash(), event })
         })
     }
 }
@@ -201,13 +229,13 @@ impl MadaraBlockInner {
 /// Starknet block definition.
 #[derive(Clone, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct MadaraMaybePendingBlock {
-    pub info: MadaraMaybePendingBlockInfo,
+    pub info: MadaraMaybePreconfirmedBlockInfo,
     pub inner: MadaraBlockInner,
 }
 
 impl MadaraMaybePendingBlock {
     pub fn is_pending(&self) -> bool {
-        matches!(self.info, MadaraMaybePendingBlockInfo::Pending(_))
+        matches!(self.info, MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_))
     }
 
     pub fn into_pending(self) -> Option<MadaraPendingBlock> {
@@ -239,19 +267,19 @@ impl MadaraBlock {
 /// Starknet block definition.
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct MadaraPendingBlock {
-    pub info: MadaraPendingBlockInfo,
+    pub info: MadaraPreconfirmedBlockInfo,
     pub inner: MadaraBlockInner,
 }
 
 impl MadaraPendingBlock {
     /// Creates a new block.
-    pub fn new(info: MadaraPendingBlockInfo, inner: MadaraBlockInner) -> Self {
+    pub fn new(info: MadaraPreconfirmedBlockInfo, inner: MadaraBlockInner) -> Self {
         Self { info, inner }
     }
 
-    pub fn new_empty(header: PendingHeader) -> Self {
+    pub fn new_empty(header: PreconfirmedHeader) -> Self {
         Self {
-            info: MadaraPendingBlockInfo { header, tx_hashes: vec![] },
+            info: MadaraPreconfirmedBlockInfo { header, tx_hashes: vec![] },
             inner: MadaraBlockInner { receipts: vec![], transactions: vec![] },
         }
     }
@@ -269,8 +297,8 @@ impl TryFrom<MadaraMaybePendingBlock> for MadaraBlock {
     type Error = BlockIsPendingError;
     fn try_from(value: MadaraMaybePendingBlock) -> Result<Self, Self::Error> {
         match value.info {
-            MadaraMaybePendingBlockInfo::Pending(_) => Err(BlockIsPendingError(())),
-            MadaraMaybePendingBlockInfo::NotPending(info) => Ok(MadaraBlock { info, inner: value.inner }),
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(_) => Err(BlockIsPendingError(())),
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(info) => Ok(MadaraBlock { info, inner: value.inner }),
         }
     }
 }
@@ -283,8 +311,8 @@ impl TryFrom<MadaraMaybePendingBlock> for MadaraPendingBlock {
     type Error = BlockIsNotPendingError;
     fn try_from(value: MadaraMaybePendingBlock) -> Result<Self, Self::Error> {
         match value.info {
-            MadaraMaybePendingBlockInfo::NotPending(_) => Err(BlockIsNotPendingError(())),
-            MadaraMaybePendingBlockInfo::Pending(info) => Ok(MadaraPendingBlock { info, inner: value.inner }),
+            MadaraMaybePreconfirmedBlockInfo::Confirmed(_) => Err(BlockIsNotPendingError(())),
+            MadaraMaybePreconfirmedBlockInfo::Preconfirmed(info) => Ok(MadaraPendingBlock { info, inner: value.inner }),
         }
     }
 }
@@ -320,26 +348,25 @@ pub struct FullBlock {
     pub events: Vec<EventWithTransactionHash>,
 }
 
-/// A pending block is a block that has not yet been closed.
-#[derive(Clone, Debug)]
-pub struct PendingFullBlock {
-    pub header: PendingHeader,
+#[derive(Clone, Debug, Default)]
+pub struct FullBlockWithoutCommitments {
+    pub header: PreconfirmedHeader,
     pub state_diff: StateDiff,
     pub transactions: Vec<TransactionWithReceipt>,
     pub events: Vec<EventWithTransactionHash>,
 }
 
-impl PendingFullBlock {
+impl FullBlockWithoutCommitments {
     /// Uses the rayon thread pool.
     pub fn close_block(
         self,
         ctx: &CommitmentComputationContext,
-        block_number: u64,
+        parent_block_hash: Felt,
         new_global_state_root: Felt,
         pre_v0_13_2_override: bool,
     ) -> FullBlock {
         let commitments = BlockCommitments::compute(ctx, &self.transactions, &self.state_diff, &self.events);
-        let header = self.header.to_closed_header(commitments, new_global_state_root, block_number);
+        let header = self.header.into_confirmed_header(parent_block_hash, commitments, new_global_state_root);
         FullBlock {
             block_hash: header.compute_hash(ctx.chain_id, pre_v0_13_2_override),
             header,
@@ -352,7 +379,7 @@ impl PendingFullBlock {
 
 /// Gas quote for calculating gas prices.
 /// It's represents an instantaneous quote of current L1 network fees.
-#[derive(Clone, Default)]
+#[derive(Clone, Default, Debug)]
 pub struct L1GasQuote {
     pub l1_gas_price: u128,
     pub l1_data_gas_price: u128,
@@ -366,11 +393,11 @@ mod tests {
     #[test]
     fn test_maybe_pending_block_info() {
         let tx_hashes_pending = vec![Felt::from(1), Felt::from(2)];
-        let pending = MadaraPendingBlockInfo::new(PendingHeader::default(), tx_hashes_pending.clone());
-        let pending_as_maybe_pending: MadaraMaybePendingBlockInfo = pending.clone().into();
+        let pending = MadaraPreconfirmedBlockInfo::new(PreconfirmedHeader::default(), tx_hashes_pending.clone());
+        let pending_as_maybe_pending: MadaraMaybePreconfirmedBlockInfo = pending.clone().into();
         let tx_hashes_not_pending = vec![Felt::from(3), Felt::from(4)];
-        let not_pending = MadaraBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5));
-        let not_pending_as_maybe_pending: MadaraMaybePendingBlockInfo = not_pending.clone().into();
+        let not_pending = MadaraBlockInfo::new(Header::default(), tx_hashes_not_pending.clone(), Felt::from(5), 0);
+        let not_pending_as_maybe_pending: MadaraMaybePreconfirmedBlockInfo = not_pending.clone().into();
 
         assert_eq!(not_pending_as_maybe_pending.as_closed(), Some(&not_pending));
         assert!(pending_as_maybe_pending.as_closed().is_none());
@@ -381,8 +408,8 @@ mod tests {
         assert_eq!(pending_as_maybe_pending.block_id(), BlockId::Tag(BlockTag::Pending));
         assert_eq!(not_pending_as_maybe_pending.block_id(), BlockId::Number(0));
 
-        assert_eq!(pending_as_maybe_pending.block_n(), None);
-        assert_eq!(not_pending_as_maybe_pending.block_n(), Some(0));
+        assert_eq!(pending_as_maybe_pending.block_number(), 0);
+        assert_eq!(not_pending_as_maybe_pending.block_number(), 0);
 
         assert_eq!(pending_as_maybe_pending.tx_hashes(), &tx_hashes_pending);
         assert_eq!(not_pending_as_maybe_pending.tx_hashes(), &tx_hashes_not_pending);
@@ -390,7 +417,8 @@ mod tests {
         assert_eq!(pending_as_maybe_pending.protocol_version(), &StarknetVersion::LATEST);
         assert_eq!(not_pending_as_maybe_pending.protocol_version(), &StarknetVersion::LATEST);
 
-        let maybe_pending: MadaraMaybePendingBlock = MadaraPendingBlock::new_empty(PendingHeader::default()).into();
+        let maybe_pending: MadaraMaybePendingBlock =
+            MadaraPendingBlock::new_empty(PreconfirmedHeader::default()).into();
         assert!(MadaraBlock::try_from(maybe_pending.clone()).is_err());
         assert!(MadaraPendingBlock::try_from(maybe_pending.clone()).is_ok());
     }

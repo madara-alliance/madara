@@ -1,10 +1,16 @@
 use super::{receipt::ConfirmedReceipt, transaction::Transaction};
-use mp_block::{header::PendingHeader, FullBlock, PendingFullBlock, TransactionWithReceipt};
+use crate::state_update::StateDiff;
+use itertools::Itertools;
+use mp_block::header::PreconfirmedHeader;
+use mp_block::Header;
+use mp_block::{FullBlock, TransactionWithReceipt};
 use mp_chain_config::L1DataAvailabilityMode;
 use mp_chain_config::{StarknetVersion, StarknetVersionError};
 use mp_convert::hex_serde::U128AsHex;
 use mp_receipt::EventWithTransactionHash;
-use mp_state_update::StateDiff;
+use mp_state_update::TransactionStateUpdate;
+use mp_transactions::validated::{TransactionWithHashAndContractAddress, ValidatedTransaction};
+use mp_transactions::TransactionWithHash;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use starknet_types_core::felt::Felt;
@@ -22,9 +28,6 @@ pub enum FromGatewayError {
     FromMainnetStarknetVersion(Felt),
 }
 
-fn protocol_version_pending(starknet_version: Option<&str>) -> Result<StarknetVersion, FromGatewayError> {
-    Ok(starknet_version.ok_or(FromGatewayError::NoProtocolVersion)?.parse()?)
-}
 fn protocol_version(
     starknet_version: Option<&str>,
     block_number: u64,
@@ -42,51 +45,6 @@ fn protocol_version(
 pub struct ProviderBlockHeader {
     pub block_number: u64,
     pub block_hash: Felt,
-}
-
-#[derive(Debug, Clone, PartialEq, Serialize)] // no Deserialize because it's untagged
-#[serde(untagged)]
-#[allow(clippy::large_enum_variant)]
-pub enum ProviderBlockPendingMaybe {
-    NonPending(ProviderBlock),
-    Pending(ProviderBlockPending),
-}
-
-impl ProviderBlockPendingMaybe {
-    pub fn non_pending(&self) -> Option<&ProviderBlock> {
-        match self {
-            ProviderBlockPendingMaybe::NonPending(non_pending) => Some(non_pending),
-            ProviderBlockPendingMaybe::Pending(_) => None,
-        }
-    }
-
-    pub fn non_pending_owned(self) -> Option<ProviderBlock> {
-        match self {
-            ProviderBlockPendingMaybe::NonPending(non_pending) => Some(non_pending),
-            ProviderBlockPendingMaybe::Pending(_) => None,
-        }
-    }
-
-    pub fn pending(&self) -> Option<&ProviderBlockPending> {
-        match self {
-            ProviderBlockPendingMaybe::NonPending(_) => None,
-            ProviderBlockPendingMaybe::Pending(pending) => Some(pending),
-        }
-    }
-
-    pub fn pending_owned(self) -> Option<ProviderBlockPending> {
-        match self {
-            ProviderBlockPendingMaybe::NonPending(_) => None,
-            ProviderBlockPendingMaybe::Pending(pending) => Some(pending),
-        }
-    }
-
-    pub fn parent_block_hash(&self) -> Felt {
-        match self {
-            ProviderBlockPendingMaybe::NonPending(non_pending) => non_pending.parent_block_hash,
-            ProviderBlockPendingMaybe::Pending(pending) => pending.parent_block_hash,
-        }
-    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -125,62 +83,65 @@ pub struct ProviderBlock {
 }
 
 impl ProviderBlock {
-    pub fn new(block: mp_block::MadaraBlock, status: BlockStatus) -> Self {
-        let starknet_version = starknet_version(block.info.header.protocol_version);
+    pub fn new(block_hash: Felt, header: Header, content: Vec<TransactionWithReceipt>, status: BlockStatus) -> Self {
+        let starknet_version = starknet_version(header.protocol_version);
 
-        let transactions: Vec<_> = block
-            .inner
-            .transactions
+        let (transactions, transaction_receipts): (Vec<_>, Vec<_>) = content
             .into_iter()
-            .zip(block.inner.receipts.iter().map(|receipt| (receipt.transaction_hash(), receipt.contract_address())))
-            .map(|(transaction, (hash, contract_address))| {
-                let transaction_with_hash = mp_transactions::TransactionWithHash { transaction, hash };
-                Transaction::new(transaction_with_hash, contract_address)
+            .enumerate()
+            .map(|(index, tx)| {
+                let l1_to_l2_consumed_message = match &tx.transaction {
+                    mp_block::Transaction::L1Handler(l1_handler) => {
+                        mp_receipt::MsgToL2::try_from(&l1_handler.clone()).ok()
+                    }
+                    _ => None,
+                };
+                (
+                    Transaction::new(
+                        TransactionWithHash { transaction: tx.transaction, hash: *tx.receipt.transaction_hash() },
+                        tx.receipt.contract_address().copied(),
+                    ),
+                    ConfirmedReceipt::new(tx.receipt, l1_to_l2_consumed_message, index as u64),
+                )
             })
-            .collect();
+            .unzip();
 
-        let transaction_receipts = receipts(block.inner.receipts, &transactions);
-
-        let sequencer_address = if block.info.header.sequencer_address == Felt::ZERO {
-            None
-        } else {
-            Some(block.info.header.sequencer_address)
-        };
+        let sequencer_address =
+            if header.sequencer_address == Felt::ZERO { None } else { Some(header.sequencer_address) };
 
         // TODO(compute_v0_13_2_hashes): once `compute_v0_13_2_hashes` becomes the default, we should show all post-v0.13.2 commitments
         // in the block including receipt and state_diff commitments.
-        let (receipt_commitment, state_diff_commitment) =
-            if block.info.header.protocol_version >= StarknetVersion::V0_13_2 {
-                (block.info.header.receipt_commitment, block.info.header.state_diff_commitment)
-            } else {
-                (None, None)
-            };
+        let (receipt_commitment, state_diff_commitment) = if header.protocol_version >= StarknetVersion::V0_13_2 {
+            (header.receipt_commitment, header.state_diff_commitment)
+        } else {
+            (None, None)
+        };
 
         Self {
-            block_hash: block.info.block_hash,
-            block_number: block.info.header.block_number,
-            parent_block_hash: block.info.header.parent_block_hash,
-            timestamp: block.info.header.block_timestamp.0,
+            block_hash,
+            block_number: header.block_number,
+            parent_block_hash: header.parent_block_hash,
+            timestamp: header.block_timestamp.0,
             sequencer_address,
-            state_root: block.info.header.global_state_root,
-            transaction_commitment: block.info.header.transaction_commitment,
-            event_commitment: block.info.header.event_commitment,
+            state_root: header.global_state_root,
+            transaction_commitment: header.transaction_commitment,
+            event_commitment: header.event_commitment,
             receipt_commitment,
             state_diff_commitment,
-            state_diff_length: block.info.header.state_diff_length,
+            state_diff_length: header.state_diff_length,
             status,
-            l1_da_mode: block.info.header.l1_da_mode,
+            l1_da_mode: header.l1_da_mode,
             l1_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.gas_prices.eth_l1_gas_price,
-                price_in_fri: block.info.header.gas_prices.strk_l1_gas_price,
+                price_in_wei: header.gas_prices.eth_l1_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_gas_price,
             },
             l1_data_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.gas_prices.eth_l1_data_gas_price,
-                price_in_fri: block.info.header.gas_prices.strk_l1_data_gas_price,
+                price_in_wei: header.gas_prices.eth_l1_data_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_data_gas_price,
             },
             l2_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.gas_prices.eth_l2_gas_price,
-                price_in_fri: block.info.header.gas_prices.strk_l2_gas_price,
+                price_in_wei: header.gas_prices.eth_l2_gas_price,
+                price_in_fri: header.gas_prices.strk_l2_gas_price,
             },
             transactions,
             transaction_receipts,
@@ -188,7 +149,7 @@ impl ProviderBlock {
         }
     }
 
-    pub fn into_full_block(self, state_diff: StateDiff) -> Result<FullBlock, FromGatewayError> {
+    pub fn into_full_block(self, state_diff: mp_state_update::StateDiff) -> Result<FullBlock, FromGatewayError> {
         if self.transactions.len() != self.transaction_receipts.len() {
             return Err(FromGatewayError::TransactionCountNotEqualToReceiptCount);
         }
@@ -198,7 +159,7 @@ impl ProviderBlock {
         Ok(FullBlock { block_hash: self.block_hash, header, transactions, events, state_diff })
     }
 
-    pub fn header(&self, state_diff: &StateDiff) -> Result<mp_block::Header, FromGatewayError> {
+    pub fn header(&self, state_diff: &mp_state_update::StateDiff) -> Result<mp_block::Header, FromGatewayError> {
         Ok(mp_block::Header {
             parent_block_hash: self.parent_block_hash,
             sequencer_address: self.sequencer_address.unwrap_or_default(),
@@ -229,69 +190,91 @@ impl ProviderBlock {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 #[cfg_attr(test, derive(Eq))]
-pub struct ProviderBlockPending {
-    pub parent_block_hash: Felt,
+pub struct ProviderBlockPreConfirmed {
     pub status: BlockStatus,
+    pub starknet_version: String,
     pub l1_da_mode: L1DataAvailabilityMode,
     pub l1_gas_price: ResourcePrice,
     pub l1_data_gas_price: ResourcePrice,
     pub l2_gas_price: ResourcePrice,
-    pub transactions: Vec<Transaction>,
     pub timestamp: u64,
-    #[serde(default)]
     pub sequencer_address: Felt,
-    pub transaction_receipts: Vec<ConfirmedReceipt>,
-    #[serde(default)]
-    pub starknet_version: Option<String>,
+    pub transactions: Vec<Transaction>,
+    pub transaction_receipts: Vec<Option<ConfirmedReceipt>>,
+    pub transaction_state_diffs: Vec<Option<StateDiff>>,
 }
 
-impl ProviderBlockPending {
-    pub fn new(block: mp_block::MadaraPendingBlock) -> Self {
-        let starknet_version = starknet_version(block.info.header.protocol_version);
-
-        let transactions: Vec<_> = block
-            .inner
-            .transactions
+impl ProviderBlockPreConfirmed {
+    pub fn new<'a>(
+        header: &PreconfirmedHeader,
+        executed_txs: impl IntoIterator<Item = (&'a TransactionWithReceipt, &'a TransactionStateUpdate)>,
+        candidates: impl IntoIterator<Item = &'a ValidatedTransaction>,
+        status: BlockStatus,
+    ) -> Self {
+        let (transactions, transaction_receipts, transaction_state_diffs): (Vec<_>, Vec<_>, Vec<_>) = executed_txs
             .into_iter()
-            .zip(block.inner.receipts.iter().map(|receipt| (receipt.transaction_hash(), receipt.contract_address())))
-            .map(|(transaction, (hash, contract_address))| {
-                let transaction_with_hash = mp_transactions::TransactionWithHash { transaction, hash };
-                Transaction::new(transaction_with_hash, contract_address)
-            })
-            .collect();
+            .enumerate()
+            .map(|(index, (tx, state_diff))| {
+                let l1_to_l2_consumed_message = match &tx.transaction {
+                    mp_block::Transaction::L1Handler(l1_handler) => {
+                        mp_receipt::MsgToL2::try_from(&l1_handler.clone()).ok()
+                    }
+                    _ => None,
+                };
 
-        let transaction_receipts = receipts(block.inner.receipts, &transactions);
+                (
+                    Transaction::new(
+                        TransactionWithHash {
+                            transaction: tx.transaction.clone(),
+                            hash: *tx.receipt.transaction_hash(),
+                        },
+                        tx.receipt.contract_address().copied(),
+                    ),
+                    Some(ConfirmedReceipt::new(tx.receipt.clone(), l1_to_l2_consumed_message, index as u64)),
+                    Some(state_diff.to_state_diff().into()),
+                )
+            })
+            .chain(candidates.into_iter().map(|tx| {
+                (
+                    Transaction::new(
+                        TransactionWithHash { transaction: tx.transaction.clone(), hash: tx.hash },
+                        Some(tx.contract_address),
+                    ),
+                    None,
+                    None,
+                )
+            }))
+            .multiunzip();
 
         Self {
-            parent_block_hash: block.info.header.parent_block_hash,
-            status: BlockStatus::Pending,
-            l1_da_mode: block.info.header.l1_da_mode,
+            timestamp: header.block_timestamp.0,
+            sequencer_address: header.sequencer_address,
+            status,
+            l1_da_mode: header.l1_da_mode,
             l1_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.gas_prices.eth_l1_gas_price,
-                price_in_fri: block.info.header.gas_prices.strk_l1_gas_price,
+                price_in_wei: header.gas_prices.eth_l1_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_gas_price,
             },
             l1_data_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.gas_prices.eth_l1_data_gas_price,
-                price_in_fri: block.info.header.gas_prices.strk_l1_data_gas_price,
+                price_in_wei: header.gas_prices.eth_l1_data_gas_price,
+                price_in_fri: header.gas_prices.strk_l1_data_gas_price,
             },
             l2_gas_price: ResourcePrice {
-                price_in_wei: block.info.header.gas_prices.eth_l2_gas_price,
-                price_in_fri: block.info.header.gas_prices.strk_l2_gas_price,
+                price_in_wei: header.gas_prices.eth_l2_gas_price,
+                price_in_fri: header.gas_prices.strk_l2_gas_price,
             },
             transactions,
-            timestamp: block.info.header.block_timestamp.0,
-            sequencer_address: block.info.header.sequencer_address,
             transaction_receipts,
-            starknet_version,
+            transaction_state_diffs,
+            starknet_version: header.protocol_version.to_string(),
         }
     }
 
-    pub fn header(&self) -> Result<PendingHeader, FromGatewayError> {
-        Ok(PendingHeader {
-            parent_block_hash: self.parent_block_hash,
+    pub fn header(&self, block_number: u64) -> Result<PreconfirmedHeader, FromGatewayError> {
+        Ok(PreconfirmedHeader {
             sequencer_address: self.sequencer_address,
             block_timestamp: mp_block::header::BlockTimestamp(self.timestamp),
-            protocol_version: protocol_version_pending(self.starknet_version.as_deref())?,
+            protocol_version: self.starknet_version.parse()?,
             gas_prices: mp_block::header::GasPrices {
                 eth_l1_gas_price: self.l1_gas_price.price_in_wei,
                 strk_l1_gas_price: self.l1_gas_price.price_in_fri,
@@ -301,14 +284,51 @@ impl ProviderBlockPending {
                 strk_l2_gas_price: self.l2_gas_price.price_in_fri,
             },
             l1_da_mode: self.l1_da_mode,
+            block_number,
         })
     }
 
-    pub fn into_full_block(self, state_diff: StateDiff) -> Result<PendingFullBlock, FromGatewayError> {
-        let header = self.header()?;
-        let TransactionsReceiptsAndEvents { transactions, events } =
-            convert_txs(self.transactions, self.transaction_receipts);
-        Ok(PendingFullBlock { header, transactions, events, state_diff })
+    pub fn num_executed_transactions(&self) -> usize {
+        self.transaction_receipts
+            .iter()
+            .zip(&self.transaction_state_diffs)
+            .take_while(|(receipt, state_diff)| receipt.is_some() && state_diff.is_some())
+            .count()
+    }
+
+    pub fn into_transactions(
+        self,
+        skip_first_n: usize,
+    ) -> (Vec<(TransactionWithReceipt, TransactionStateUpdate)>, Vec<TransactionWithHashAndContractAddress>) {
+        let mut transactions = self
+            .transactions
+            .into_iter()
+            .zip(self.transaction_receipts)
+            .zip(self.transaction_state_diffs)
+            .skip(skip_first_n)
+            .peekable();
+
+        let executed = transactions
+            .peeking_take_while(|((_transaction, receipt), state_diff)| receipt.is_some() && state_diff.is_some())
+            .map(|((transaction, receipt), state_diff)| {
+                (
+                    TransactionWithReceipt {
+                        receipt: receipt.expect("Should not be empty").into_mp(&transaction),
+                        transaction: transaction.into(),
+                    },
+                    mp_state_update::StateDiff::from(state_diff.expect("Should not be empty")).into(),
+                )
+            })
+            .collect();
+
+        let candidates = transactions
+            .map(|((tx, _), _)| TransactionWithHashAndContractAddress {
+                contract_address: *tx.contract_address(),
+                transaction: TransactionWithHash { hash: *tx.transaction_hash(), transaction: tx.into() },
+            })
+            .collect();
+
+        (executed, candidates)
     }
 }
 
@@ -335,9 +355,7 @@ pub struct ResourcePrice {
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 #[cfg_attr(feature = "deny_unknown_fields", serde(deny_unknown_fields))]
 pub enum BlockStatus {
-    Pending,
-    Aborted,
-    Reverted,
+    PreConfirmed,
     AcceptedOnL2,
     AcceptedOnL1,
 }
@@ -347,24 +365,6 @@ fn starknet_version(version: StarknetVersion) -> Option<String> {
         version if version < StarknetVersion::V0_9_1 => None,
         version => Some(version.to_string()),
     }
-}
-
-fn receipts(receipts: Vec<mp_receipt::TransactionReceipt>, transaction: &[Transaction]) -> Vec<ConfirmedReceipt> {
-    receipts
-        .into_iter()
-        .zip(transaction.iter())
-        .enumerate()
-        .map(|(index, (receipt, tx))| {
-            let l1_to_l2_consumed_message = match tx {
-                Transaction::L1Handler(l1_handler) => {
-                    let mp_l1_handler: mp_transactions::L1HandlerTransaction = l1_handler.clone().into();
-                    mp_receipt::MsgToL2::try_from(&mp_l1_handler).ok()
-                }
-                _ => None,
-            };
-            ConfirmedReceipt::new(receipt, l1_to_l2_consumed_message, index as u64)
-        })
-        .collect()
 }
 
 struct TransactionsReceiptsAndEvents {

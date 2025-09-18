@@ -588,9 +588,9 @@ pub struct ExecutionResources {
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
 pub struct DataAvailability {
     /// the data gas consumed by this transaction's data, 0 if it uses gas for DA
-    pub l1_data_gas: u64,
+    pub l1_data_gas: u128,
     /// the gas consumed by this transaction's data, 0 if it uses data gas for DA
-    pub l1_gas: u64,
+    pub l1_gas: u128,
 }
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
@@ -988,7 +988,7 @@ pub enum TxnExecutionStatus {
 }
 
 /// The finality status of the transaction
-#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
+#[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug, Copy)]
 pub enum TxnFinalityStatus {
     #[serde(rename = "ACCEPTED_ON_L1")]
     L1,
