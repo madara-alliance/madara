@@ -79,6 +79,8 @@ pub struct GatewayForwardSync {
     apply_state_pipeline: ApplyStateSync,
     backend: Arc<MadaraBackend>,
     client: Arc<GatewayProvider>,
+    importer: Arc<BlockImporter>,
+    config: ForwardSyncConfig,
 }
 
 impl GatewayForwardSync {
@@ -88,7 +90,11 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
+        // Log the gateway we're syncing from
+        tracing::info!("🌐 Initializing sync from gateway");
+        
         let starting_block_n = backend.head_status().next_full_block();
+        tracing::info!("📊 Starting sync from block #{}", starting_block_n);
         // this is the place where the latest block is fetched from the backend / database
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
@@ -115,7 +121,39 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client }
+        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client, importer, config }
+    }
+    
+    fn reinit_pipelines_from_current_position(&mut self) {
+        // Reinitialize pipelines from the current database position
+        let starting_block_n = self.backend.head_status().next_full_block();
+        tracing::info!("📊 Reinitializing pipelines from block #{} after rollback", starting_block_n);
+        
+        self.blocks_pipeline = blocks::block_with_state_update_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            self.config.block_parallelization,
+            self.config.block_batch_size,
+            self.config.keep_pre_v0_13_2_hashes,
+        );
+        self.classes_pipeline = classes::classes_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            self.config.classes_parallelization,
+            self.config.classes_batch_size,
+        );
+        self.apply_state_pipeline = super::apply_state::apply_state_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            starting_block_n,
+            self.config.apply_state_parallelization,
+            self.config.apply_state_batch_size,
+            self.config.disable_tries,
+        );
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -201,6 +239,7 @@ impl ForwardPipeline for GatewayForwardSync {
                     ).await? {
                         // Reorg detected during sync!
                         tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
+                        tracing::warn!("🔄 Switching from previous chain to new chain from gateway");
 
                         // Perform rollback
                         self.backend.rollback_to_block(common_ancestor)?;
@@ -208,8 +247,11 @@ impl ForwardPipeline for GatewayForwardSync {
                         tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
                             common_ancestor, common_ancestor + 1);
 
-                        // Return to let the sync controller restart with the new state
-                        return Ok(());
+                        // Reinitialize pipelines from the new position after rollback
+                        self.reinit_pipelines_from_current_position();
+                        
+                        // Continue with the sync from the new position
+                        // Don't return - let the loop continue with the updated pipelines
                     }
                 }
 
