@@ -3,9 +3,7 @@ use crate::types::batch::{SnosBatchStatus, SnosBatchUpdates};
 use crate::types::constant::{
     CAIRO_PIE_FILE_NAME, ON_CHAIN_DATA_FILE_NAME, PROGRAM_OUTPUT_FILE_NAME, SNOS_OUTPUT_FILE_NAME,
 };
-use crate::types::jobs::metadata::{
-    CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata,
-};
+use crate::types::jobs::metadata::{CommonMetadata, JobMetadata, JobSpecificMetadata, SnosMetadata};
 use crate::types::jobs::types::JobType;
 use crate::utils::metrics::ORCHESTRATOR_METRICS;
 use crate::worker::event_handler::service::JobHandlerService;

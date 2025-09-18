@@ -529,7 +529,6 @@ impl BatchingTrigger {
         100
     }
 
-
     /// Determines whether a new batch should be started based on the size of the compressed
     /// state-update and the batch.
     /// Returns true if a new batch should be started, false otherwise.
