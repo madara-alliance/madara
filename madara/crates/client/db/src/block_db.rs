@@ -12,7 +12,7 @@ use mp_block::{
     MadaraPendingBlock, MadaraPendingBlockInfo,
 };
 use mp_state_update::StateDiff;
-use rocksdb::{Direction, IteratorMode};
+use rocksdb::{Direction, IteratorMode, WriteOptions};
 use starknet_api::core::ChainId;
 use starknet_types_core::felt::Felt;
 
@@ -29,6 +29,7 @@ const ROW_PENDING_INFO: &[u8] = b"pending_info";
 const ROW_PENDING_STATE_UPDATE: &[u8] = b"pending_state_update";
 const ROW_PENDING_INNER: &[u8] = b"pending";
 const ROW_L1_LAST_CONFIRMED_BLOCK: &[u8] = b"l1_last";
+const ROW_SYNC_TIP: &[u8] = b"sync_tip";
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct TxIndex(pub u64);
@@ -314,6 +315,75 @@ impl MadaraBackend {
 
         self.db.write_opt(tx, &self.writeopts_no_wal)?;
         Ok(())
+    }
+
+
+    /// Reverts the tip of the chain back to the given block.
+    ///
+    /// In addition, this removes all historical data (chain state, transactions, state diffs,
+    /// etc.) from the database. `ROW_SYNC_TIP` is set to the new tip.
+    ///
+    /// Does not clear pending info; caller should do this if needed.
+    ///
+    /// Returns a Vec of `(block_number, state_diff)` where the Vec is in reverse order (the first
+    /// element is the current tip of the chain and the last is `revert_to`).
+    pub(crate) fn block_db_revert(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
+        let mut tx = WriteBatchWithTransaction::default();
+
+        let tx_hash_to_block_n = self.db.get_column(Column::TxHashToBlockN);
+        let block_hash_to_block_n = self.db.get_column(Column::BlockHashToBlockN);
+        let block_n_to_block = self.db.get_column(Column::BlockNToBlockInfo);
+        let block_n_to_block_inner = self.db.get_column(Column::BlockNToBlockInner);
+        let block_n_to_state_diff = self.db.get_column(Column::BlockNToStateDiff);
+        let meta = self.db.get_column(Column::BlockStorageMeta);
+
+        let latest_block_n = self.get_latest_block_n()?.unwrap(); // TODO: unwrap
+        let mut state_diffs = Vec::with_capacity((latest_block_n - revert_to) as usize);
+        for block_n in (revert_to + 1..=latest_block_n).rev() {
+            let block_n_encoded = bincode::serialize(&block_n)?;
+
+            let res = self.db.get_cf(&block_n_to_block, &block_n_encoded)?;
+            let block_info: MadaraBlockInfo = match res {
+                Some(data) => bincode::deserialize(&data)?,
+                None => {
+                    tracing::warn!("Block {} not found during revert, skipping", block_n);
+                    continue;
+                }
+            };
+
+            // clear all txns from this block
+            for txn_hash in block_info.tx_hashes {
+                let txn_hash_encoded = bincode::serialize(&txn_hash)?;
+                tx.delete_cf(&tx_hash_to_block_n, &txn_hash_encoded);
+            }
+
+            let block_hash_encoded = bincode::serialize(&block_info.block_hash)?;
+
+            // get state diff for this block before removing it
+            let state_diff_serialized = self.db.get_cf(&block_n_to_state_diff, block_n_encoded.clone())?;
+            if let Some(state_diff_data) = state_diff_serialized {
+                match bincode::deserialize::<StateDiff>(&state_diff_data) {
+                    Ok(state_diff) => state_diffs.push((block_n, state_diff)),
+                    Err(e) => tracing::warn!("Failed to deserialize state diff for block {}: {}", block_n, e),
+                }
+            } else {
+                tracing::warn!("Block {} has no StateDiff during revert, skipping", block_n);
+            }
+
+            tx.delete_cf(&block_n_to_block, &block_n_encoded);
+            tx.delete_cf(&block_hash_to_block_n, &block_hash_encoded);
+            tx.delete_cf(&block_n_to_block_inner, &block_n_encoded);
+            tx.delete_cf(&block_n_to_state_diff, &block_n_encoded);
+        }
+
+        let latest_block_n_encoded = bincode::serialize(&revert_to)?;
+        tx.put_cf(&meta, ROW_SYNC_TIP, latest_block_n_encoded);
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        self.db.write_opt(tx, &writeopts)?;
+
+        Ok(state_diffs)
     }
 
     // Convenience functions

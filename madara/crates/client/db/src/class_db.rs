@@ -3,7 +3,9 @@ use crate::{
     Column, DatabaseExt, MadaraBackend, MadaraStorageError, WriteBatchWithTransaction, DB_UPDATES_BATCH_SIZE,
 };
 use mp_class::{ClassInfo, CompiledSierra, ConvertedClass, LegacyConvertedClass, SierraConvertedClass};
+use mp_state_update::StateDiff;
 use rayon::{iter::ParallelIterator, slice::ParallelSlice};
+use rocksdb::WriteOptions;
 use starknet_types_core::felt::Felt;
 use std::sync::Arc;
 
@@ -147,6 +149,49 @@ impl MadaraBackend {
                 Ok(Some(ConvertedClass::Legacy(LegacyConvertedClass { class_hash: *class_hash, info })))
             }
         }
+    }
+
+    /// Revert items in the class db.
+    ///
+    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
+    /// to be reverted in that block.
+    ///
+    /// **Warning:** While not enforced, the following should be true:
+    ///  * Each `StateDiff` should include all deployed classes for its block
+    ///  * `state_diffs` should form a contiguous range of blocks
+    ///  * that range should end with the current blockchain tip
+    ///
+    /// If this isn't the case, the db could end up storing classes that aren't canonically
+    /// deployed.
+    ///
+    /// Does not clear pending info; caller should do this if needed.
+    pub(crate) fn class_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<(), MadaraStorageError> {
+        let classes_info_col = self.db.get_column(Column::ClassInfo);
+        let classes_compiled_col = self.db.get_column(Column::ClassCompiled);
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        let mut batch = WriteBatchWithTransaction::default();
+
+        // find all class_hashes that we want to remove
+        for (_, diff) in state_diffs {
+            for class_hash in &diff.deprecated_declared_classes {
+                let key = bincode::serialize(&class_hash)?;
+                batch.delete_cf(&classes_info_col, key);
+            }
+
+            for declared_class in &diff.declared_classes {
+                let ch_key = bincode::serialize(&declared_class.class_hash)?;
+                batch.delete_cf(&classes_info_col, ch_key);
+
+                let cch_key = bincode::serialize(&declared_class.compiled_class_hash)?;
+                batch.delete_cf(&classes_compiled_col, cch_key);
+            }
+        }
+
+        self.db.write_opt(batch, &writeopts)?;
+
+        Ok(())
     }
 
     /// NB: This functions needs to run on the rayon thread pool

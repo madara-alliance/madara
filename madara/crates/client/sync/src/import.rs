@@ -575,6 +575,9 @@ impl BlockImporterCtx {
                 .global_state_root;
 
             if expected != got {
+                tracing::error!("🔴 State root mismatch for block #{}: expected={:#x}, got={:#x}", 
+                    last_block_n, expected, got);
+                tracing::error!("This usually indicates the tries are not properly synced after rollback");
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
             }
         }

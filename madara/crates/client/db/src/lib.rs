@@ -665,6 +665,17 @@ impl MadaraBackend {
         Ok(())
     }
 
+
+    /// A testing-only fn to query the number of k:v pairs in a column.
+    /// This iterates through all entries, so it does not scale well.
+    #[cfg(any(test, feature = "testing"))]
+    pub fn query_column_count(&self, column: Column) -> usize {
+        use rocksdb::IteratorMode;
+
+        self.db.iterator_cf(&self.db.get_column(column), IteratorMode::Start).count()
+    }
+
+
     // tries
 
     pub(crate) fn get_bonsai<H: StarkHash + Send + Sync>(
@@ -714,14 +725,127 @@ impl MadaraBackend {
         self.db_metrics.update(&self.db)
     }
 
+    /// Remove all data associated with a specific block
+    fn remove_block_data(&self, block_n: u64) -> anyhow::Result<()> {
+        tracing::debug!("Removing all data for block #{}", block_n);
+
+        // Get block hash before removing anything
+        let block_hash = self.get_block_hash(&db_block_id::RawDbBlockId::Number(block_n))?;
+
+        // Remove block info
+        let col = self.db.get_column(Column::BlockNToBlockInfo);
+        self.db.delete_cf_opt(&col, bincode::serialize(&block_n)?, &self.writeopts_no_wal)?;
+
+        // Remove block inner
+        let col = self.db.get_column(Column::BlockNToBlockInner);
+        self.db.delete_cf_opt(&col, bincode::serialize(&block_n)?, &self.writeopts_no_wal)?;
+
+        // Remove state diff
+        let col = self.db.get_column(Column::BlockNToStateDiff);
+        self.db.delete_cf_opt(&col, bincode::serialize(&block_n)?, &self.writeopts_no_wal)?;
+
+        // Remove block hash mapping
+        if let Some(hash) = block_hash {
+            let col = self.db.get_column(Column::BlockHashToBlockN);
+            self.db.delete_cf_opt(&col, bincode::serialize(&hash)?, &self.writeopts_no_wal)?;
+        }
+
+        // Remove event bloom filter
+        let col = self.db.get_column(Column::EventBloom);
+        self.db.delete_cf_opt(&col, bincode::serialize(&block_n)?, &self.writeopts_no_wal)?;
+
+        // Remove transactions and their mappings
+        self.remove_block_transactions(block_n)?;
+
+        // Remove classes
+        self.remove_block_classes(block_n)?;
+
+        // Remove events
+        self.remove_block_events(block_n)?;
+
+        Ok(())
+    }
+
+    /// Remove all transactions and their mappings for a block
+    fn remove_block_transactions(&self, block_n: u64) -> anyhow::Result<()> {
+        // Get the block inner to find all transactions
+        let col = self.db.get_column(Column::BlockNToBlockInner);
+        if let Some(inner_bytes) = self.db.get_cf(&col, bincode::serialize(&block_n)?)? {
+            let inner: mp_block::MadaraBlockInner = bincode::deserialize(&inner_bytes)?;
+
+            // Remove transaction hash mappings
+            // Use receipts to get transaction hashes since they have the hash field
+            let tx_col = self.db.get_column(Column::TxHashToBlockN);
+            for receipt in inner.receipts.iter() {
+                let tx_hash = receipt.transaction_hash();
+                self.db.delete_cf_opt(&tx_col, bincode::serialize(&tx_hash)?, &self.writeopts_no_wal)?;
+                tracing::trace!("Removed tx hash mapping for {:#x}", tx_hash);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Remove all classes associated with a block
+    fn remove_block_classes(&self, block_n: u64) -> anyhow::Result<()> {
+        // Get state diff to find all declared classes
+        let col = self.db.get_column(Column::BlockNToStateDiff);
+        if let Some(state_diff_bytes) = self.db.get_cf(&col, bincode::serialize(&block_n)?)? {
+            let state_diff: mp_state_update::StateDiff = bincode::deserialize(&state_diff_bytes)?;
+
+            // Remove class info and compiled class data
+            let class_info_col = self.db.get_column(Column::ClassInfo);
+            let class_compiled_col = self.db.get_column(Column::ClassCompiled);
+
+            for declared_item in state_diff.declared_classes.iter() {
+                self.db.delete_cf_opt(&class_info_col, bincode::serialize(&declared_item.class_hash)?, &self.writeopts_no_wal)?;
+                self.db.delete_cf_opt(&class_compiled_col, bincode::serialize(&declared_item.compiled_class_hash)?, &self.writeopts_no_wal)?;
+                tracing::trace!("Removed class {:#x}", declared_item.class_hash);
+            }
+
+            // Remove deprecated declared classes
+            for class_hash in state_diff.deprecated_declared_classes.iter() {
+                self.db.delete_cf_opt(&class_info_col, bincode::serialize(&class_hash)?, &self.writeopts_no_wal)?;
+                self.db.delete_cf_opt(&class_compiled_col, bincode::serialize(&class_hash)?, &self.writeopts_no_wal)?;
+                tracing::trace!("Removed deprecated class {:#x}", class_hash);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Remove all events associated with a block
+    fn remove_block_events(&self, _block_n: u64) -> anyhow::Result<()> {
+        // Events are stored by block number, so just remove the entire block's events
+        // This is handled by remove_block_data when removing the block inner
+        // which contains the events
+        Ok(())
+    }
+
     /// Rollback the database to a specific block number
     /// This removes all blocks after the specified block number
     pub fn rollback_to_block(&self, target_block_n: u64) -> anyhow::Result<()> {
         tracing::warn!("⏮️ Rolling back database to block #{}", target_block_n);
-        
+
+
+        self.clear_pending_block()?;
+        let state_diffs = self.block_db_revert(target_block_n)?;
+        self.contract_db_revert(&state_diffs)?;
+        self.class_db_revert(&state_diffs)?;
+
         // Get the current latest block from head_status
         let current_block = self.head_status.latest_full_block_n();
-        
+
+        tracing::info!(">>>>>> Rollback completed basanth {:?}", current_block);
+        let contract_root = self.contract_trie().root_hash(bonsai_identifier::CONTRACT)
+            .map_err(|e| anyhow::anyhow!("Failed to get contract root after rollback: {}", e))?;
+        let class_root = self.class_trie().root_hash(bonsai_identifier::CLASS)
+            .map_err(|e| anyhow::anyhow!("Failed to get class root after rollback: {}", e))?;
+
+
+        tracing::info!(">>>>>> 📊 After rollback to block #{}: contract_root={:#x}, class_root={:#x}",
+            target_block_n, contract_root, class_root);
+
         // If no blocks found in head_status, try to find the actual latest block from database
         let current_block = if let Some(block) = current_block {
             block
@@ -730,13 +854,13 @@ impl MadaraBackend {
             // We'll iterate from target_block_n upwards to find the actual latest
             let mut latest = target_block_n;
             let col = self.db.get_column(Column::BlockNToBlockInfo);
-            
+
             // Check if we have any blocks at all by checking block 0 (genesis)
             if self.db.get_cf(&col, 0u64.to_be_bytes())?.is_none() {
                 tracing::warn!("No blocks found in database, cannot rollback");
                 return Ok(());
             }
-            
+
             // Find the actual latest block by probing upwards
             loop {
                 let next_block = latest + 100; // Check in increments of 100
@@ -758,53 +882,31 @@ impl MadaraBackend {
                     break;
                 }
             }
-            
+
             tracing::info!("Found actual latest block in database: {}", latest);
             latest
         };
-        
+
         if target_block_n >= current_block {
             tracing::info!("Target block {} is >= current block {}, nothing to rollback", target_block_n, current_block);
             return Ok(());
         }
-        
-        // Clear all blocks after target_block_n
+
+        // Clear all blocks after target_block_n using comprehensive removal
         for block_n in (target_block_n + 1)..=current_block {
-            tracing::debug!("Removing block #{}", block_n);
-            
-            // Remove block info
-            let col = self.db.get_column(Column::BlockNToBlockInfo);
-            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
-            
-            // Remove block inner
-            let col = self.db.get_column(Column::BlockNToBlockInner);
-            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
-            
-            // Remove state diff
-            let col = self.db.get_column(Column::BlockNToStateDiff);
-            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
-            
-            // Remove block hash mapping
-            if let Some(hash) = self.get_block_hash(&db_block_id::RawDbBlockId::Number(block_n))? {
-                let col = self.db.get_column(Column::BlockHashToBlockN);
-                self.db.delete_cf_opt(&col, hash.to_bytes_be(), &self.writeopts_no_wal)?;
-            }
-            
-            // Remove event bloom filter
-            let col = self.db.get_column(Column::EventBloom);
-            self.db.delete_cf_opt(&col, block_n.to_be_bytes(), &self.writeopts_no_wal)?;
+            // Use the comprehensive removal method that cleans up EVERYTHING
+            // self.remove_block_data(block_n)?;
         }
-        
+
         // Revert bonsai tries to the target block (critical for state consistency)
         // This is the key addition from PR #296
         tracing::info!("🔄 Reverting bonsai tries to block #{}", target_block_n);
-        
+
         let target_block_id = BasicId::new(target_block_n);
-        
-        // IMPORTANT: When reverting, we need to ensure we're reverting far enough back
-        // If we rolled back from block 52 to block 23, we need to revert from 52 to 23
-        // not from current_block (which might be stale)
-        let revert_from_block = current_block.max(target_block_n + 100); // Ensure we revert from a high enough block
+
+        // IMPORTANT: When reverting, we need to revert from the current block to the target block
+        // If we're rolling back from block 52 to block 23, we need to revert from 52 to 23
+        let revert_from_block = current_block;
         let revert_from_id = BasicId::new(revert_from_block);
         
         // Revert contract trie
@@ -833,25 +935,26 @@ impl MadaraBackend {
             .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {}", e))?;
         self.class_trie().commit(target_block_id)
             .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {}", e))?;
-        
-        // Double-commit to ensure the state is fully persisted
-        // This is necessary because Bonsai tries can have pending changes
-        self.contract_trie().commit(target_block_id)
-            .map_err(|e| anyhow::anyhow!("Failed second commit of contract trie: {}", e))?;
-        self.contract_storage_trie().commit(target_block_id)
-            .map_err(|e| anyhow::anyhow!("Failed second commit of storage trie: {}", e))?;
-        self.class_trie().commit(target_block_id)
-            .map_err(|e| anyhow::anyhow!("Failed second commit of class trie: {}", e))?;
-        
-        tracing::debug!("✓ All tries committed at block #{}", target_block_n);
-        
+
+        // tracing::debug!("✓ All tries committed at block #{}", target_block_n);
+
+        // CRITICAL: Get the state roots at target block for verification
+        let contract_root = self.contract_trie().root_hash(bonsai_identifier::CONTRACT)
+            .map_err(|e| anyhow::anyhow!("Failed to get contract root after rollback: {}", e))?;
+        let class_root = self.class_trie().root_hash(bonsai_identifier::CLASS)
+            .map_err(|e| anyhow::anyhow!("Failed to get class root after rollback: {}", e))?;
+
+
+        tracing::info!("📊 After rollback to block #{}: contract_root={:#x}, class_root={:#x}",
+            target_block_n, contract_root, class_root);
+
         // Log that rollback is complete with tries committed
         tracing::info!("State tries rolled back and committed at block {}", target_block_n);
-        
+
         // Update snapshots head to match the rollback target
         self.snapshots.set_new_head(db_block_id::DbBlockId::Number(target_block_n));
         tracing::debug!("✓ Snapshots head updated to block #{}", target_block_n);
-        
+
         // Update head status - MUST update all pipeline heads including global_trie and classes
         self.head_status.set_latest_full_block_n(Some(target_block_n));
         self.head_status.headers.set_current(Some(target_block_n));
@@ -860,16 +963,16 @@ impl MadaraBackend {
         self.head_status.transactions.set_current(Some(target_block_n));
         self.head_status.events.set_current(Some(target_block_n));
         self.head_status.global_trie.set_current(Some(target_block_n));
-        
+
         // Save updated head status
         self.save_head_status_to_db()?;
-        
+
         // Clear pending block as it's now invalid
         self.clear_pending_block()?;
-        
+
         // Flush to ensure consistency
         self.flush()?;
-        
+
         tracing::info!("✅ Rollback complete. Database now at block #{}", target_block_n);
         Ok(())
     }

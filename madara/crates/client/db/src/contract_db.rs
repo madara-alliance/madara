@@ -124,6 +124,74 @@ impl MadaraBackend {
         }
     }
 
+    /// Revert items in the contract db.
+    ///
+    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
+    /// to be reverted in that block.
+    ///
+    /// **Warning:** While not enforced, the following should be true:
+    ///  * Each `StateDiff` should include the entire state for its block
+    ///  * `state_diffs` should form a contiguous range of blocks
+    ///  * that range should end with the current blockchain tip
+    ///
+    /// If this isn't the case, the blockchain will store inconsistent state for some blocks.
+    ///
+    /// Does not clear pending info; caller should do this if needed.
+    pub(crate) fn contract_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<(), MadaraStorageError> {
+        if state_diffs.is_empty() {
+            return Ok(());
+        }
+
+        let contract_to_class_hashes_col = self.db.get_column(Column::ContractToClassHashes);
+        let contract_to_nonces_col = self.db.get_column(Column::ContractToNonces);
+        let contract_storage_col = self.db.get_column(Column::ContractStorage);
+
+        let mut writeopts = WriteOptions::new();
+        writeopts.disable_wal(true);
+        let mut batch = WriteBatchWithTransaction::default();
+
+        // Remove each item in each state diff.
+        //
+        // We could use e.g. batch.delete_range_cf() and perhaps fewer db calls, but this isn't
+        // guaranteed to perform better and is more complex.
+        for (block_n, diff) in state_diffs {
+            // important: `block_n` needs to be 4 bytes when serialized into part of the db key
+            let block_n = *block_n as u32;
+
+            diff.deployed_contracts
+                .iter()
+                .map(|item| item.address)
+                .chain(diff.replaced_classes.iter().map(|item| item.contract_address))
+                .for_each(|contract_address| {
+                    let contract_key = [&contract_address.to_bytes_be()[..], &block_n.to_be_bytes() as &[u8]].concat();
+                    batch.delete_cf(&contract_to_class_hashes_col, contract_key);
+                });
+
+            diff.nonces.iter().for_each(|update| {
+                let contract_key =
+                    [&update.contract_address.to_bytes_be()[..], &block_n.to_be_bytes() as &[u8]].concat();
+                batch.delete_cf(&contract_to_nonces_col, contract_key);
+            });
+
+            // contract storage is a compound key (contract_address:storage_address)
+            diff.storage_diffs.iter().for_each(|diff_item| {
+                diff_item.storage_entries.iter().for_each(|entry| {
+                    let contract_key = [
+                        &diff_item.address.to_bytes_be()[..],
+                        &entry.key.to_bytes_be()[..],
+                        &block_n.to_be_bytes() as &[u8],
+                    ]
+                    .concat();
+                    batch.delete_cf(&contract_storage_col, contract_key);
+                });
+            });
+        }
+
+        self.db.write_opt(batch, &writeopts)?;
+
+        Ok(())
+    }
+
     #[tracing::instrument(skip(self, id), fields(module = "ContractDB"))]
     pub fn is_contract_deployed_at(
         &self,
