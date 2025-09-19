@@ -3,24 +3,6 @@ use mc_db::{db_block_id::RawDbBlockId, MadaraBackend};
 use mc_gateway_client::GatewayProvider;
 use mp_block::BlockId;
 use mp_gateway::block::ProviderBlockPendingMaybe;
-use starknet_core::types::Felt;
-
-#[derive(Debug, thiserror::Error)]
-pub enum ReorgError {
-    #[error("Reorganization detected at block {block_n}: our hash {our_hash:#x} != gateway hash {gateway_hash:#x}")]
-    ReorgDetected {
-        block_n: u64,
-        our_hash: Felt,
-        gateway_hash: Felt,
-        common_ancestor: Option<u64>,
-    },
-    #[error("Parent hash mismatch at block {block_n}: expected {expected:#x}, got {actual:#x}")]
-    ParentHashMismatch {
-        block_n: u64,
-        expected: Felt,
-        actual: Felt,
-    },
-}
 
 /// Detects if a reorganization has occurred by comparing local and gateway block hashes
 ///

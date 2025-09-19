@@ -800,32 +800,66 @@ impl MadaraBackend {
         tracing::info!("🔄 Reverting bonsai tries to block #{}", target_block_n);
         
         let target_block_id = BasicId::new(target_block_n);
-        let current_block_id = BasicId::new(current_block);
+        
+        // IMPORTANT: When reverting, we need to ensure we're reverting far enough back
+        // If we rolled back from block 52 to block 23, we need to revert from 52 to 23
+        // not from current_block (which might be stale)
+        let revert_from_block = current_block.max(target_block_n + 100); // Ensure we revert from a high enough block
+        let revert_from_id = BasicId::new(revert_from_block);
         
         // Revert contract trie
         self.contract_trie()
-            .revert_to(target_block_id, current_block_id)
+            .revert_to(target_block_id, revert_from_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {}", e))?;
-        tracing::debug!("✓ Contract trie reverted to block #{}", target_block_n);
+        tracing::debug!("✓ Contract trie reverted from block #{} to block #{}", revert_from_block, target_block_n);
         
         // Revert contract storage trie  
         self.contract_storage_trie()
-            .revert_to(target_block_id, current_block_id)
+            .revert_to(target_block_id, revert_from_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {}", e))?;
-        tracing::debug!("✓ Contract storage trie reverted to block #{}", target_block_n);
+        tracing::debug!("✓ Contract storage trie reverted from block #{} to block #{}", revert_from_block, target_block_n);
         
         // Revert class trie
         self.class_trie()
-            .revert_to(target_block_id, current_block_id)
+            .revert_to(target_block_id, revert_from_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {}", e))?;
-        tracing::debug!("✓ Class trie reverted to block #{}", target_block_n);
+        tracing::debug!("✓ Class trie reverted from block #{} to block #{}", revert_from_block, target_block_n);
         
-        // Update head status
+        // CRITICAL: Commit all tries after reverting to ensure consistency
+        // This ensures the tries are in a clean state before applying new state diffs
+        self.contract_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit contract trie after revert: {}", e))?;
+        self.contract_storage_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit contract storage trie after revert: {}", e))?;
+        self.class_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed to commit class trie after revert: {}", e))?;
+        
+        // Double-commit to ensure the state is fully persisted
+        // This is necessary because Bonsai tries can have pending changes
+        self.contract_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed second commit of contract trie: {}", e))?;
+        self.contract_storage_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed second commit of storage trie: {}", e))?;
+        self.class_trie().commit(target_block_id)
+            .map_err(|e| anyhow::anyhow!("Failed second commit of class trie: {}", e))?;
+        
+        tracing::debug!("✓ All tries committed at block #{}", target_block_n);
+        
+        // Log that rollback is complete with tries committed
+        tracing::info!("State tries rolled back and committed at block {}", target_block_n);
+        
+        // Update snapshots head to match the rollback target
+        self.snapshots.set_new_head(db_block_id::DbBlockId::Number(target_block_n));
+        tracing::debug!("✓ Snapshots head updated to block #{}", target_block_n);
+        
+        // Update head status - MUST update all pipeline heads including global_trie and classes
         self.head_status.set_latest_full_block_n(Some(target_block_n));
         self.head_status.headers.set_current(Some(target_block_n));
         self.head_status.state_diffs.set_current(Some(target_block_n));
+        self.head_status.classes.set_current(Some(target_block_n));
         self.head_status.transactions.set_current(Some(target_block_n));
         self.head_status.events.set_current(Some(target_block_n));
+        self.head_status.global_trie.set_current(Some(target_block_n));
         
         // Save updated head status
         self.save_head_status_to_db()?;

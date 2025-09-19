@@ -3,7 +3,7 @@ use crate::{
     import::BlockImporter,
     metrics::SyncMetrics,
     probe::ThrottledRepeatedFuture,
-    reorg::{detect_reorg, ReorgError},
+    reorg::{detect_reorg},
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
@@ -92,16 +92,16 @@ impl GatewayForwardSync {
     ) -> Self {
         // Log the gateway we're syncing from
         tracing::info!("🌐 Initializing sync from gateway");
-        
+
         // Ensure we flush any pending writes before reading head status
         if let Err(e) = backend.flush() {
             tracing::warn!("Failed to flush database before reading head status: {}", e);
         }
-        
+
         let latest_full_block = backend.head_status().latest_full_block_n();
         let starting_block_n = backend.head_status().next_full_block();
-        
-        tracing::info!("📊 Database head status: latest_full_block={:?}, starting sync from block #{}", 
+
+        tracing::info!("📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
             latest_full_block, starting_block_n);
         // this is the place where the latest block is fetched from the backend / database
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
@@ -131,12 +131,12 @@ impl GatewayForwardSync {
         );
         Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client, importer, config }
     }
-    
+
     fn reinit_pipelines_from_current_position(&mut self) {
         // Reinitialize pipelines from the current database position
         let starting_block_n = self.backend.head_status().next_full_block();
         tracing::info!("📊 Reinitializing pipelines from block #{} after rollback", starting_block_n);
-        
+
         self.blocks_pipeline = blocks::block_with_state_update_pipeline(
             self.backend.clone(),
             self.importer.clone(),
@@ -260,7 +260,7 @@ impl ForwardPipeline for GatewayForwardSync {
 
                             // Reinitialize pipelines from the new position after rollback
                             self.reinit_pipelines_from_current_position();
-                            
+
                             // Continue with the sync from the new position
                             // Don't return - let the loop continue with the updated pipelines
                         }
@@ -292,7 +292,7 @@ impl ForwardPipeline for GatewayForwardSync {
             for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
                 tracing::info!("📊 Block #{} has passed through all 3 pipelines (blocks, classes, state) - marking as fully imported", block_n);
-                
+
                 let block_info = self
                     .backend
                     .get_block_info(&RawDbBlockId::Number(block_n))
@@ -332,7 +332,7 @@ impl ForwardPipeline for GatewayForwardSync {
             self.classes_pipeline.status(),
             self.apply_state_pipeline.status(),
         );
-        
+
         // Log the current pipeline positions to understand the lag
         let status = self.pipeline_status();
         if let Some(min_block) = status.min() {
