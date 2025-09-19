@@ -3719,7 +3719,7 @@ dependencies = [
 [[package]]
 name = "cairo-type-derive"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#abdcccaa4aff764c4da2b17a4763d99685c54611"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -6347,7 +6347,7 @@ dependencies = [
  "httpdate",
  "itoa",
  "pin-project-lite",
- "socket2 0.5.7",
+ "socket2 0.4.10",
  "tokio",
  "tower-service",
  "tracing",
@@ -9248,7 +9248,7 @@ dependencies = [
 [[package]]
 name = "prove_block"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#abdcccaa4aff764c4da2b17a4763d99685c54611"
 dependencies = [
  "anyhow",
  "blockifier",
@@ -9754,7 +9754,7 @@ dependencies = [
 [[package]]
 name = "rpc-client"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#abdcccaa4aff764c4da2b17a4763d99685c54611"
 dependencies = [
  "log",
  "reqwest 0.11.27",
@@ -9769,7 +9769,7 @@ dependencies = [
 [[package]]
 name = "rpc-replay"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#abdcccaa4aff764c4da2b17a4763d99685c54611"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
@@ -11497,7 +11497,7 @@ dependencies = [
 [[package]]
 name = "starknet-os"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#abdcccaa4aff764c4da2b17a4763d99685c54611"
 dependencies = [
  "anyhow",
  "ark-ec",
@@ -11546,7 +11546,7 @@ dependencies = [
 [[package]]
 name = "starknet-os-types"
 version = "0.1.0"
-source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#2aca38c15fafd6241fe6b6066dd09312a0a26b67"
+source = "git+https://github.com/karnotxyz/snos?tag=v0.13.3#abdcccaa4aff764c4da2b17a4763d99685c54611"
 dependencies = [
  "blockifier",
  "cairo-lang-starknet-classes 2.8.4",
