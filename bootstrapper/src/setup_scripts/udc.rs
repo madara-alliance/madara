@@ -21,11 +21,7 @@ pub struct UdcSetupOutput {
 }
 
 impl<'a> UdcSetup<'a> {
-    pub fn new(
-        account: RpcAccount<'a>,
-        account_address: Felt,
-        clients: &'a Clients,
-    ) -> Self {
+    pub fn new(account: RpcAccount<'a>, account_address: Felt, clients: &'a Clients) -> Self {
         Self { account, account_address, clients }
     }
 

@@ -48,11 +48,14 @@ impl<'a> Erc20Bridge<'a> {
     }
 
     pub async fn setup(&self) -> Erc20BridgeSetupOutput {
-        let erc20_cairo_one_class_hash = declare_contract(self.clients, DeclarationInput::DeclarationInputs(
-            String::from(ERC20_SIERRA_PATH),
-            String::from(ERC20_CASM_PATH),
-            self.account.clone(),
-        ))
+        let erc20_cairo_one_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::DeclarationInputs(
+                String::from(ERC20_SIERRA_PATH),
+                String::from(ERC20_CASM_PATH),
+                self.account.clone(),
+            ),
+        )
         .await;
         log::info!("🌗 ERC20 Class Hash declared : {:?}", erc20_cairo_one_class_hash);
         save_to_json("erc20_cairo_one_class_hash", &JsonValueType::StringType(erc20_cairo_one_class_hash.to_string()))

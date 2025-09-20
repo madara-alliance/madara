@@ -108,18 +108,17 @@ impl StarknetTokenBridge {
         self.erc20.client()
     }
 
-    pub async fn deploy_l2_contracts(
-        clients: &Clients,
-        priv_key: &str,
-        l2_deployer_address: &str,
-    ) -> Felt {
+    pub async fn deploy_l2_contracts(clients: &Clients, priv_key: &str, l2_deployer_address: &str) -> Felt {
         let account = build_single_owner_account(clients.provider_l2(), priv_key, l2_deployer_address, false).await;
 
-        let token_bridge_class_hash = declare_contract(clients, DeclarationInput::DeclarationInputs(
-            String::from(TOKEN_BRIDGE_SIERRA_PATH),
-            String::from(TOKEN_BRIDGE_CASM_PATH),
-            account.clone(),
-        ))
+        let token_bridge_class_hash = declare_contract(
+            clients,
+            DeclarationInput::DeclarationInputs(
+                String::from(TOKEN_BRIDGE_SIERRA_PATH),
+                String::from(TOKEN_BRIDGE_CASM_PATH),
+                account.clone(),
+            ),
+        )
         .await;
         save_to_json("L2_token_bridge_class_hash", &JsonValueType::StringType(token_bridge_class_hash.to_string()))
             .unwrap();

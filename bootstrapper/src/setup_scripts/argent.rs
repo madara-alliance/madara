@@ -21,11 +21,14 @@ impl<'a> ArgentSetup<'a> {
     }
 
     pub async fn setup(&self) -> ArgentSetupOutput {
-        let argent_class_hash = declare_contract(self.clients, DeclarationInput::DeclarationInputs(
-            String::from(ARGENT_ACCOUNT_SIERRA_PATH),
-            String::from(ARGENT_ACCOUNT_CASM_PATH),
-            self.account.clone(),
-        ))
+        let argent_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::DeclarationInputs(
+                String::from(ARGENT_ACCOUNT_SIERRA_PATH),
+                String::from(ARGENT_ACCOUNT_CASM_PATH),
+                self.account.clone(),
+            ),
+        )
         .await;
         log::info!("📣 Argent Hash Declared");
         save_to_json("argent_class_hash", &JsonValueType::StringType(argent_class_hash.to_string())).unwrap();

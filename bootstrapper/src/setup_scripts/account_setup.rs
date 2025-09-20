@@ -28,11 +28,14 @@ pub async fn account_init<'a>(clients: &'a Clients, arg_config: &'a ConfigFile) 
         false,
     )
     .await;
-    let oz_account_caio_1_class_hash = declare_contract(clients, DeclarationInput::DeclarationInputs(
-        OZ_ACCOUNT_SIERRA_PATH.to_string(),
-        OZ_ACCOUNT_CASM_PATH.to_string(),
-        user_account_temp.clone(),
-    ))
+    let oz_account_caio_1_class_hash = declare_contract(
+        clients,
+        DeclarationInput::DeclarationInputs(
+            OZ_ACCOUNT_SIERRA_PATH.to_string(),
+            OZ_ACCOUNT_CASM_PATH.to_string(),
+            user_account_temp.clone(),
+        ),
+    )
     .await;
     save_to_json("oz_account_caio_1_class_hash", &JsonValueType::StringType(oz_account_caio_1_class_hash.to_string()))
         .unwrap();

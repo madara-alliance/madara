@@ -104,10 +104,7 @@ where
 
 type TransactionReceiptResult = Result<TransactionReceiptWithBlockInfo, ProviderError>;
 
-pub async fn get_transaction_receipt(
-    rpc: &RpcClientProvider,
-    transaction_hash: Felt,
-) -> TransactionReceiptResult {
+pub async fn get_transaction_receipt(rpc: &RpcClientProvider, transaction_hash: Felt) -> TransactionReceiptResult {
     // there is a delay between the transaction being available at the client
     // and the sealing of the block, hence sleeping for 500ms
     assert_poll(|| async { rpc.get_transaction_receipt(transaction_hash).await.is_ok() }, 500, 20).await;
