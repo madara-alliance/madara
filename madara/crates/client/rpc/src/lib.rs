@@ -42,7 +42,7 @@ impl Default for StorageProofConfig {
 pub struct Starknet {
     backend: Arc<MadaraBackend>,
     ws_handles: Arc<WsSubscribeHandles>,
-    pub(crate) show_preconfirmed_in_pre_v0_9_rpcs: bool,
+    pub(crate) pre_v0_9_preconfirmed_as_pending: bool,
     pub(crate) add_transaction_provider: Arc<dyn SubmitTransaction>,
     storage_proof_config: StorageProofConfig,
     pub(crate) block_prod_handle: Option<mc_block_production::BlockProductionHandle>,
@@ -65,8 +65,12 @@ impl Starknet {
             storage_proof_config,
             block_prod_handle,
             ctx,
-            show_preconfirmed_in_pre_v0_9_rpcs: true,
+            pre_v0_9_preconfirmed_as_pending: false,
         }
+    }
+
+    pub fn set_pre_v0_9_preconfirmed_as_pending(&mut self, value: bool) {
+        self.pre_v0_9_preconfirmed_as_pending = value;
     }
 }
 

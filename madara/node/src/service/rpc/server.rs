@@ -7,6 +7,7 @@ use crate::service::rpc::middleware::RpcMiddlewareServiceVersion;
 use anyhow::Context;
 use mc_rpc::versions::user::v0_7_1::methods::read::syncing::syncing;
 use mc_rpc::Starknet;
+use mp_chain_config::RpcVersion;
 use mp_rpc::v0_7_1::SyncingStatus;
 use mp_utils::service::ServiceContext;
 use std::convert::Infallible;
@@ -34,6 +35,7 @@ pub struct ServerConfig {
     pub methods: jsonrpsee::Methods,
     /// Batch request config.
     pub batch_config: jsonrpsee::server::BatchRequestConfig,
+    pub supported_versions: Vec<RpcVersion>,
 }
 
 #[derive(Debug, Clone)]
@@ -66,6 +68,7 @@ pub async fn start_server(
         message_buffer_capacity,
         methods,
         batch_config,
+        supported_versions,
     } = config;
 
     let listener = tokio::net::TcpListener::bind(addr)
@@ -177,9 +180,11 @@ pub async fn start_server(
         .serve(make_service);
 
     tracing::info!(
-        "📱 Running {name} server at {} (allowed origins={})",
+        "📱 Running {name} server at http://{}/rpc/v{}/ (allowed origins={}, supported versions={})",
         local_addr.to_string(),
-        format_cors(cors.as_ref())
+        config.rpc_version_default,
+        format_cors(cors.as_ref()),
+        format_rpc_versions(&supported_versions),
     );
 
     server
@@ -275,4 +280,7 @@ pub(crate) fn format_cors(maybe_cors: Option<&Vec<String>>) -> String {
     } else {
         format!("{:?}", ["*"])
     }
+}
+pub(crate) fn format_rpc_versions(versions: &[RpcVersion]) -> String {
+    format!("{:?}", versions.iter().map(|v| format!("/rpc/v{v}/")).collect::<Vec<_>>())
 }

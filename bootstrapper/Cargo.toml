@@ -15,6 +15,7 @@ serde_json = { version = "1.0.108", default-features = false, features = [
 ] }
 serde_with = { version = "2.3.3", default-features = false }
 url = "2.4.1"
+futures.workspace = true
 
 
 # Zaun Deps
@@ -29,12 +30,12 @@ starknet-token-bridge-client = { git = "https://github.com/karnotxyz/zaun", bran
 zaun-utils = { git = "https://github.com/karnotxyz/zaun", branch = "v3-tx", package = "utils" }
 
 # Starknet Deps
-starknet = "0.11.0"
-starknet-accounts = "0.11.0"
-starknet-core = "0.11"
+starknet = "0.14.0"
+starknet-accounts = "0.13.0"
+starknet-core = "0.13"
 starknet-crypto = "0.7"
-starknet-providers = "0.11"
-starknet-signers = "0.9"
+starknet-providers = "0.13"
+starknet-signers = "0.11"
 starknet-types-core = { version = "0.1.5", default-features = false, features = [
   "hash",
 ] }

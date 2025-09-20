@@ -1,22 +1,25 @@
-use std::future::Future;
-
+use crate::contract_clients::config::RpcClientProvider;
+use crate::contract_clients::utils::RpcAccount;
+use crate::utils::wait_for_transaction;
 use assert_matches::assert_matches;
 use async_trait::async_trait;
-use starknet::accounts::{Account, Call, ExecutionV1, SingleOwnerAccount};
 use starknet::core::types::contract::legacy::LegacyContractClass;
 use starknet::core::types::{Felt, FlattenedSierraClass, TransactionReceipt};
 use starknet::core::utils::get_selector_from_name;
-use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::signers::LocalWallet;
+use starknet::{
+    accounts::{Account, SingleOwnerAccount},
+    core::types::Call,
+};
+use starknet_accounts::ExecutionV3;
 use starknet_core::types::contract::{CompiledClass, SierraClass};
 use starknet_core::types::{InvokeTransactionResult, TransactionReceiptWithBlockInfo};
+use starknet_core::utils::starknet_keccak;
 use starknet_providers::ProviderError;
+use std::future::Future;
 
-use crate::contract_clients::utils::RpcAccount;
-use crate::utils::wait_for_transaction;
-
-pub type TransactionExecution<'a> = ExecutionV1<'a, RpcAccount<'a>>;
+pub type TransactionExecution<'a> = ExecutionV3<'a, RpcAccount<'a>>;
 
 #[async_trait]
 pub trait AccountActions {
@@ -30,9 +33,11 @@ pub trait AccountActions {
 
     fn declare_contract_params_sierra(&self, path_to_sierra: &str, path_to_casm: &str) -> (Felt, FlattenedSierraClass);
     fn declare_contract_params_legacy(&self, path_to_compiled_contract: &str) -> LegacyContractClass;
+
+    fn transfer(&self, erc20_addr: Felt, receiver: Felt, amount: u128) -> TransactionExecution;
 }
 
-impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalWallet> {
+impl AccountActions for SingleOwnerAccount<&RpcClientProvider, LocalWallet> {
     fn invoke_contract(
         &self,
         address: Felt,
@@ -41,12 +46,9 @@ impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalW
         nonce: Option<u64>,
     ) -> TransactionExecution {
         let calls = vec![Call { to: address, selector: get_selector_from_name(method).unwrap(), calldata }];
-
-        // TODO: if we have the madara with fee flag set as 0, it shouldn't matter
-        let max_fee = Felt::ZERO;
         match nonce {
-            Some(nonce) => self.execute_v1(calls).max_fee(max_fee).nonce(nonce.into()),
-            None => self.execute_v1(calls).max_fee(max_fee),
+            Some(nonce) => self.execute_v3(calls).nonce(nonce.into()),
+            None => self.execute_v3(calls),
         }
     }
 
@@ -74,6 +76,14 @@ impl AccountActions for SingleOwnerAccount<&JsonRpcClient<HttpTransport>, LocalW
 
         contract_artifact
     }
+
+    fn transfer(&self, erc20_addr: Felt, receiver: Felt, amount: u128) -> TransactionExecution {
+        self.execute_v3(vec![Call {
+            to: erc20_addr,
+            selector: starknet_keccak(b"transfer"),
+            calldata: vec![receiver, amount.into(), Felt::ZERO],
+        }])
+    }
 }
 
 pub async fn assert_poll<F, Fut>(f: F, polling_time_ms: u64, max_poll_count: u32)
@@ -95,7 +105,7 @@ where
 type TransactionReceiptResult = Result<TransactionReceiptWithBlockInfo, ProviderError>;
 
 pub async fn get_transaction_receipt(
-    rpc: &JsonRpcClient<HttpTransport>,
+    rpc: &RpcClientProvider,
     transaction_hash: Felt,
 ) -> TransactionReceiptResult {
     // there is a delay between the transaction being available at the client
@@ -105,7 +115,7 @@ pub async fn get_transaction_receipt(
     rpc.get_transaction_receipt(transaction_hash).await
 }
 
-pub async fn wait_at_least_block(rpc: &JsonRpcClient<HttpTransport>, blocks_to_wait_for: Option<u64>) {
+pub async fn wait_at_least_block(rpc: &RpcClientProvider, blocks_to_wait_for: Option<u64>) {
     // If options is none, we wait for 1 block
     let current_block = rpc.block_number().await.unwrap();
     let target_block = match blocks_to_wait_for {
@@ -117,7 +127,7 @@ pub async fn wait_at_least_block(rpc: &JsonRpcClient<HttpTransport>, blocks_to_w
 }
 
 pub async fn get_contract_address_from_deploy_tx(
-    rpc: &JsonRpcClient<HttpTransport>,
+    rpc: &RpcClientProvider,
     tx: &InvokeTransactionResult,
 ) -> Result<Felt, ProviderError> {
     let deploy_tx_hash = tx.transaction_hash;

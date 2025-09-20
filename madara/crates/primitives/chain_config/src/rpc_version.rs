@@ -110,7 +110,7 @@ impl FromStr for RpcVersion {
     type Err = RpcVersionError;
 
     fn from_str(version_str: &str) -> Result<Self, Self::Err> {
-        let mut parts = version_str.split('_');
+        let mut parts = version_str.split(['_', '.']);
 
         let mut version = [0u8; 3];
         for (i, part) in parts.by_ref().take(3).enumerate() {

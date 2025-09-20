@@ -17,7 +17,7 @@ impl StateViewResolvable for mp_rpc::v0_7_1::BlockId {
         match self {
             Self::Tag(mp_rpc::v0_7_1::BlockTag::Pending) => {
                 let mut view = starknet.backend.view_on_latest();
-                if !starknet.show_preconfirmed_in_pre_v0_9_rpcs {
+                if !starknet.pre_v0_9_preconfirmed_as_pending {
                     view = view.view_on_latest_confirmed()
                 }
                 Ok(view)
@@ -44,7 +44,7 @@ impl BlockViewResolvable for mp_rpc::v0_7_1::BlockId {
         match self {
             Self::Tag(mp_rpc::v0_7_1::BlockTag::Pending) => {
                 let mut view = starknet.backend.block_view_on_preconfirmed_or_fake()?;
-                if !starknet.show_preconfirmed_in_pre_v0_9_rpcs {
+                if !starknet.pre_v0_9_preconfirmed_as_pending {
                     view.trim_view_to_start() // None of the pre-confirmed transactions should be shown in the RPCs.
                 }
                 Ok(view.into())

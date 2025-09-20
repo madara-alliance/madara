@@ -18,8 +18,6 @@ use starknet_core::types::Felt;
 use starknet_erc20_client::clients::erc20::ERC20ContractClient;
 use starknet_erc20_client::deploy_dai_test_erc20_behind_unsafe_proxy;
 use starknet_erc20_client::interfaces::erc20::ERC20TokenTrait;
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::JsonRpcClient;
 use starknet_proxy_client::interfaces::proxy::ProxySupport5_0_0Trait;
 use starknet_token_bridge_client::clients::token_bridge::StarknetTokenBridgeContractClient;
 use starknet_token_bridge_client::interfaces::token_bridge::StarknetTokenBridgeTrait;
@@ -28,6 +26,7 @@ use starknet_token_bridge_client::{
 };
 use zaun_utils::{LocalWalletSignerMiddleware, StarknetContractClient};
 
+use crate::contract_clients::config::{Clients, RpcClientProvider};
 use crate::contract_clients::eth_bridge::BridgeDeployable;
 use crate::contract_clients::utils::{
     build_single_owner_account, declare_contract, field_element_to_u256, DeclarationInput, RpcAccount,
@@ -110,13 +109,13 @@ impl StarknetTokenBridge {
     }
 
     pub async fn deploy_l2_contracts(
-        rpc_provider_l2: &JsonRpcClient<HttpTransport>,
+        clients: &Clients,
         priv_key: &str,
         l2_deployer_address: &str,
     ) -> Felt {
-        let account = build_single_owner_account(rpc_provider_l2, priv_key, l2_deployer_address, false).await;
+        let account = build_single_owner_account(clients.provider_l2(), priv_key, l2_deployer_address, false).await;
 
-        let token_bridge_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
+        let token_bridge_class_hash = declare_contract(clients, DeclarationInput::DeclarationInputs(
             String::from(TOKEN_BRIDGE_SIERRA_PATH),
             String::from(TOKEN_BRIDGE_CASM_PATH),
             account.clone(),
@@ -330,7 +329,7 @@ impl StarknetTokenBridge {
 
     pub async fn setup_l2_bridge(
         &self,
-        rpc_provider_l2: &JsonRpcClient<HttpTransport>,
+        rpc_provider_l2: &RpcClientProvider,
         l2_bridge: Felt,
         l2_address: &str,
         account: &RpcAccount<'_>,

@@ -915,7 +915,7 @@ pub enum PriceUnit {
     Wei,
 }
 
-#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, Eq, Hash, PartialEq, Serialize, Deserialize, Default)]
 pub struct ResourceBounds {
     /// the max amount of the resource that can be used in the tx
     #[serde(with = "NumAsHex")]
