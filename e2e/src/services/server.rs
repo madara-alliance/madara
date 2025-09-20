@@ -103,8 +103,7 @@ impl Server {
 
         // Extract stdout and stderr for log monitoring
         if config.logs.0 {
-            let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            let stdout = process.stdout.take().ok_or(ServerError::StartupFailed(std::io::Error::other(
                 "Failed to capture stdout",
             )))?;
 
@@ -126,8 +125,7 @@ impl Server {
         }
 
         if config.logs.1 {
-            let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(std::io::Error::new(
-                std::io::ErrorKind::Other,
+            let stderr = process.stderr.take().ok_or(ServerError::StartupFailed(std::io::Error::other(
                 "Failed to capture stderr",
             )))?;
 

@@ -100,7 +100,7 @@ async function declareContract({ provider, account }: TestContext) {
     expect(response.sierra_program).toEqual(sierra.sierra_program);
     expect(response.abi).toEqual(sierra.abi);
     expect(response.contract_class_version).toEqual(
-      sierra.contract_class_version
+      sierra.contract_class_version,
     );
     expect(response.entry_points_by_type).toEqual(sierra.entry_points_by_type);
   } else {
@@ -132,7 +132,7 @@ async function deployContract({ provider, account }: TestContext) {
 
   // Retrieve the class hash for the deployed contract
   let response = await provider.getClassHashAt(
-    deployResult.contract_address[0]
+    deployResult.contract_address[0],
   );
 
   // Verify that the retrieved class hash matches the computed class hash
@@ -152,7 +152,7 @@ async function deployContract({ provider, account }: TestContext) {
 async function deployAccount({ provider, account }: TestContext) {
   // Read the Sierra contract class for the account
   const sierra = readContractSierraInArtifacts(
-    "openzeppelin_AccountUpgradeable"
+    "openzeppelin_AccountUpgradeable",
   );
 
   // Compute the class hash of the account contract
@@ -172,7 +172,7 @@ async function deployAccount({ provider, account }: TestContext) {
     publicKey,
     classHash,
     calldata,
-    0
+    0,
   );
 
   // Transfert funds to pay deployement fee
@@ -197,7 +197,7 @@ async function deployAccount({ provider, account }: TestContext) {
       classHash: classHash,
       constructorCalldata: calldata,
       addressSalt: publicKey,
-    }
+    },
   );
 
   // Wait for the transaction to be confirmed and get the receipt
@@ -224,14 +224,14 @@ async function transferFunds({ provider, account }: TestContext) {
 
   // Read the ERC20 contract class
   const erc20ContractData = readContractSierraInArtifacts(
-    "openzeppelin_ERC20Upgradeable"
+    "openzeppelin_ERC20Upgradeable",
   );
 
   // Create an instance of the ERC20 contract
   const erc20Instance = new Contract(
     erc20ContractData.abi,
     ERC20_CONTRACT_ADDRESS,
-    provider
+    provider,
   );
 
   // Connect the account to the ERC20 contract instance
@@ -239,11 +239,10 @@ async function transferFunds({ provider, account }: TestContext) {
 
   // Get the initial balances of sender and receiver
   const preTransactSenderBalance = await erc20Instance.balance_of(
-    SIGNER_CONTRACT_ADDRESS
+    SIGNER_CONTRACT_ADDRESS,
   );
-  const preTransactReceiverBalance = await erc20Instance.balance_of(
-    RECEIVER_ADDRESS
-  );
+  const preTransactReceiverBalance =
+    await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
   // Execute the transfer
   const transferResponse = await account.execute({
@@ -257,19 +256,18 @@ async function transferFunds({ provider, account }: TestContext) {
 
   // Wait for the transfer transaction to be confirmed
   const res = await provider.waitForTransaction(
-    transferResponse.transaction_hash
+    transferResponse.transaction_hash,
   );
   expect(res.isSuccess()).toBe(true);
   const receipt = res.value as SuccessfulTransactionReceiptResponse;
 
   // Get the final balances of sender and receiver
   const postTransactSenderBalance = await erc20Instance.balance_of(
-    SIGNER_CONTRACT_ADDRESS
+    SIGNER_CONTRACT_ADDRESS,
   );
   const paidFee = BigInt(receipt.actual_fee.amount);
-  const postTransactReceiverBalance = await erc20Instance.balance_of(
-    RECEIVER_ADDRESS
-  );
+  const postTransactReceiverBalance =
+    await erc20Instance.balance_of(RECEIVER_ADDRESS);
 
   // Verify that the balances have been updated correctly
   // Note: In real world case, the sender balance would be
@@ -279,6 +277,6 @@ async function transferFunds({ provider, account }: TestContext) {
   //   preTransactSenderBalance - TRANSFER_AMOUNT - paidFee,
   // );
   expect(postTransactReceiverBalance).toBe(
-    preTransactReceiverBalance + TRANSFER_AMOUNT
+    preTransactReceiverBalance + TRANSFER_AMOUNT,
   );
 }
