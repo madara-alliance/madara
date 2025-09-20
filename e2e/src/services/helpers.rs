@@ -400,32 +400,24 @@ pub fn docker_url_conversion(url: &Url) -> Url {
 // Generic retry function that works with any async operation (timeout-based)
 pub async fn retry_with_timeout<T, E, F, Fut>(delay: Duration, timeout: Duration, mut operation: F) -> Result<T, E>
 where
-    F: FnMut() -> Fut, // Now takes attempt count as parameter
+    F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, E>>,
 {
     let start_time = tokio::time::Instant::now();
-    let mut last_error = None;
+
     loop {
         match operation().await {
             Ok(result) => return Ok(result),
             Err(e) => {
-                last_error = Some(e);
                 let elapsed = start_time.elapsed();
 
-                // Check if we've exceeded the timeout
-                if elapsed >= timeout {
-                    break;
-                }
-
-                // Check if we have enough time for another attempt
-                if elapsed + delay >= timeout {
-                    break;
+                // Check if we've exceeded the timeout or don't have time for another attempt
+                if elapsed >= timeout || elapsed + delay >= timeout {
+                    return Err(e);
                 }
 
                 tokio::time::sleep(delay).await;
             }
         }
     }
-
-    Err(last_error.unwrap())
 }

@@ -207,9 +207,9 @@ impl ServiceManager {
         .map_err(|_| SetupError::Timeout("Pathfinder syncing timed out".to_string()))?
     }
 
-    async fn setup_mock_prover(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        self.start_mock_prover(services).await
-    }
+    // async fn setup_mock_prover(&self, services: &mut RunningServices) -> Result<(), SetupError> {
+    //     self.start_mock_prover(services).await
+    // }
 
     async fn setup_orchestration(&self, services: &mut RunningServices) -> Result<(), SetupError> {
         println!("🎯 Starting Orchestration...");
@@ -311,21 +311,21 @@ impl ServiceManager {
         Ok(())
     }
 
-    async fn start_mock_prover(&self, services: &mut RunningServices) -> Result<(), SetupError> {
-        println!("🔔 Starting Mock Prover Service");
+    // async fn start_mock_prover(&self, services: &mut RunningServices) -> Result<(), SetupError> {
+    //     println!("🔔 Starting Mock Prover Service");
 
-        let duration = self.config.get_timeouts().start_mock_prover;
+    //     let duration = self.config.get_timeouts().start_mock_prover;
 
-        timeout(duration, async {
-            let mock_prover_config = self.config.get_mock_prover_config().clone();
-            let mock_prover_service = MockProverService::start(mock_prover_config).await?;
-            services.mock_prover_service = Some(mock_prover_service);
-            println!("✅ Mock Prover Service started");
-            Ok(())
-        })
-        .await
-        .map_err(|_| SetupError::Timeout("Mock Prover startup timed out".to_string()))?
-    }
+    //     timeout(duration, async {
+    //         let mock_prover_config = self.config.get_mock_prover_config().clone();
+    //         let mock_prover_service = MockProverService::start(mock_prover_config).await?;
+    //         services.mock_prover_service = Some(mock_prover_service);
+    //         println!("✅ Mock Prover Service started");
+    //         Ok(())
+    //     })
+    //     .await
+    //     .map_err(|_| SetupError::Timeout("Mock Prover startup timed out".to_string()))?
+    // }
 
     // Deployment and bootstrap methods
     async fn deploy_mock_verifier(&self) -> Result<(), SetupError> {

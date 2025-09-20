@@ -140,6 +140,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
+            txn_wait_sleep_delay_secs: 10,
         }
     }
 

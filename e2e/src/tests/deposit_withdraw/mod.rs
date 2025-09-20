@@ -27,6 +27,8 @@ use starknet::{
 };
 
 use crate::setup::ChainSetup;
+
+#[allow(unused_imports)]
 use crate::tests::setup::setup_chain;
 
 // Define the ERC20Token contract interface
@@ -87,6 +89,7 @@ async fn test_bridge_deposit_and_withdraw(
     }
 }
 
+#[allow(dead_code)]
 async fn run_bridge_test(setup: ChainSetup) -> TestResult<()> {
     let test_config = setup.config().clone();
 
@@ -108,6 +111,7 @@ async fn run_bridge_test(setup: ChainSetup) -> TestResult<()> {
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn setup_l2_context(test_config: &SetupConfig) -> TestResult<L2Context> {
     let provider = JsonRpcClient::new(HttpTransport::new(test_config.get_madara_config().rpc_endpoint()));
 
@@ -141,6 +145,7 @@ async fn setup_l2_context(test_config: &SetupConfig) -> TestResult<L2Context> {
     Ok(L2Context { account, address, eth_token_address, eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
 
+#[allow(dead_code)]
 async fn setup_l1_context() -> TestResult<L1Context> {
     let eth_bridge_address = Address::from_str(L1_ETH_BRIDGE_ADDRESS)
         .map_err(|e| format!("Failed to parse L1 ETH bridge address: {}", e))?;
@@ -154,6 +159,7 @@ async fn setup_l1_context() -> TestResult<L1Context> {
     Ok(L1Context { eth_bridge_address, erc20_token_address, erc20_bridge_address })
 }
 
+#[allow(dead_code)]
 async fn test_eth_deposit_flow(
     l1_context: &L1Context,
     l2_context: &mut L2Context,
@@ -189,6 +195,7 @@ async fn test_eth_deposit_flow(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn test_erc20_deposit_flow(
     l1_context: &L1Context,
     l2_context: &mut L2Context,
@@ -224,6 +231,7 @@ async fn test_erc20_deposit_flow(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn execute_eth_l1_deposit(
     l1_context: &L1Context,
     deposit_amount: U256,
@@ -269,6 +277,7 @@ async fn execute_eth_l1_deposit(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn execute_erc20_l1_deposit(
     l1_context: &L1Context,
     deposit_amount: U256,
@@ -330,6 +339,7 @@ async fn execute_erc20_l1_deposit(
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> TestResult<()> {
     println!("🔄 Starting ETH & ERC20 withdrawal flow test (L2 -> L1)");
 
@@ -380,6 +390,7 @@ async fn test_withdrawal_flow(l2_context: &L2Context, setup: &ChainSetup) -> Tes
     Ok(())
 }
 
+#[allow(dead_code)]
 async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     let l1_recipient_felt =
         Felt::from_hex(L1_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
@@ -411,6 +422,7 @@ async fn execute_eth_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     Ok(result.transaction_hash)
 }
 
+#[allow(dead_code)]
 async fn execute_erc20_l2_withdrawal(l2_context: &L2Context) -> TestResult<Felt> {
     let l1_recipient_felt =
         Felt::from_hex(L1_ACCOUNT_ADDRESS).map_err(|e| format!("Failed to parse L1 recipient address: {}", e))?;
