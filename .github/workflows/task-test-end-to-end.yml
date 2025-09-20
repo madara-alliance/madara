@@ -85,15 +85,15 @@ jobs:
           tar -xf pathfinder.tar.gz -C target/release/
           rm pathfinder.tar.gz
 
-      - name: Build Mock Atlantic Server
-        run: CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml --bin mock-atlantic-server --release
+      # - name: Build Mock Atlantic Server
+      #   run: CARGO_TARGET_DIR=target cargo build --manifest-path test_utils/crates/mock-atlantic-server/Cargo.toml --bin mock-atlantic-server --release
+      # chmod +x target/release/mock-atlantic-server
 
       - name: Make binaries executable
         run: |
           chmod +x target/release/madara
           chmod +x target/release/bootstrapper
           chmod +x target/release/pathfinder
-          chmod +x target/release/mock-atlantic-server
           chmod +x target/release/orchestrator
           chmod +x test_utils/scripts/deploy_dummy_verifier.sh
 
