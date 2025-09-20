@@ -39,20 +39,20 @@ pub async fn detect_reorg(
     if let Some(local_hash) = local_hash {
         // Log the comparison
         tracing::info!(
-            "Checking block #{}: local_hash={:#x}, gateway_hash={:#x}",
             block_n,
-            local_hash,
-            gateway_block.block_hash
+            ?local_hash,
+            gateway_hash = ?gateway_block.block_hash,
+            "Checking block hashes"
         );
 
         // We have a block at this height - check if it matches
         if local_hash != gateway_block.block_hash {
             // Reorg detected! Find common ancestor
             tracing::warn!(
-                "⚠️ REORG DETECTED at block {}: local {:#x} != gateway {:#x}",
                 block_n,
-                local_hash,
-                gateway_block.block_hash
+                ?local_hash,
+                gateway_hash = ?gateway_block.block_hash,
+                "⚠️ REORG DETECTED - block hashes mismatch"
             );
 
             let common_ancestor = find_common_ancestor(
@@ -63,10 +63,10 @@ pub async fn detect_reorg(
 
             return Ok(Some(common_ancestor));
         } else {
-            tracing::debug!("Block #{} hashes match - no reorg", block_n);
+            tracing::debug!(block_n, "Block hashes match - no reorg");
         }
     } else {
-        tracing::debug!("Block #{} not found locally - skipping reorg check", block_n);
+        tracing::debug!(block_n, "Block not found locally - skipping reorg check");
     }
 
     // Also check parent hash consistency if we have the parent
@@ -84,10 +84,10 @@ pub async fn detect_reorg(
                 ).await?;
 
                 tracing::warn!(
-                    "⚠️ Parent hash mismatch at block {}: expected {} != actual {}",
                     block_n,
-                    local_parent,
-                    gateway_block.parent_block_hash
+                    expected = ?local_parent,
+                    actual = ?gateway_block.parent_block_hash,
+                    "⚠️ Parent hash mismatch"
                 );
 
                 return Ok(Some(common_ancestor));
@@ -106,7 +106,7 @@ pub async fn find_common_ancestor(
 ) -> anyhow::Result<u64> {
     let mut check_block = start_block;
 
-    tracing::info!("🔍 Finding common ancestor starting from block {}", start_block);
+    tracing::info!(start_block, "🔍 Finding common ancestor");
 
     while check_block > 0 {
         check_block -= 1;
@@ -129,7 +129,7 @@ pub async fn find_common_ancestor(
 
         if local_hash.unwrap() == gateway_block.block_hash {
             // Found common ancestor!
-            tracing::info!("✅ Found common ancestor at block {}", check_block);
+            tracing::info!(check_block, "✅ Found common ancestor");
             return Ok(check_block);
         }
     }

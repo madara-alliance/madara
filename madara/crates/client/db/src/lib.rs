@@ -727,7 +727,7 @@ impl MadaraBackend {
 
     /// Remove all data associated with a specific block
     fn remove_block_data(&self, block_n: u64) -> anyhow::Result<()> {
-        tracing::debug!("Removing all data for block #{}", block_n);
+        tracing::debug!(block_n, "Removing all data for block");
 
         // Get block hash before removing anything
         let block_hash = self.get_block_hash(&db_block_id::RawDbBlockId::Number(block_n))?;
@@ -779,7 +779,7 @@ impl MadaraBackend {
             for receipt in inner.receipts.iter() {
                 let tx_hash = receipt.transaction_hash();
                 self.db.delete_cf_opt(&tx_col, bincode::serialize(&tx_hash)?, &self.writeopts_no_wal)?;
-                tracing::trace!("Removed tx hash mapping for {:#x}", tx_hash);
+                tracing::trace!(?tx_hash, "Removed tx hash mapping");
             }
         }
 
@@ -800,14 +800,14 @@ impl MadaraBackend {
             for declared_item in state_diff.declared_classes.iter() {
                 self.db.delete_cf_opt(&class_info_col, bincode::serialize(&declared_item.class_hash)?, &self.writeopts_no_wal)?;
                 self.db.delete_cf_opt(&class_compiled_col, bincode::serialize(&declared_item.compiled_class_hash)?, &self.writeopts_no_wal)?;
-                tracing::trace!("Removed class {:#x}", declared_item.class_hash);
+                tracing::trace!(class_hash = ?declared_item.class_hash, "Removed class");
             }
 
             // Remove deprecated declared classes
             for class_hash in state_diff.deprecated_declared_classes.iter() {
                 self.db.delete_cf_opt(&class_info_col, bincode::serialize(&class_hash)?, &self.writeopts_no_wal)?;
                 self.db.delete_cf_opt(&class_compiled_col, bincode::serialize(&class_hash)?, &self.writeopts_no_wal)?;
-                tracing::trace!("Removed deprecated class {:#x}", class_hash);
+                tracing::trace!(?class_hash, "Removed deprecated class");
             }
         }
 
@@ -825,7 +825,7 @@ impl MadaraBackend {
     /// Rollback the database to a specific block number
     /// This removes all blocks after the specified block number
     pub fn rollback_to_block(&self, target_block_n: u64) -> anyhow::Result<()> {
-        tracing::warn!("⏮️ Rolling back database to block #{}", target_block_n);
+        tracing::warn!(target_block_n, "⏮️ Rolling back database to block");
 
 
         self.clear_pending_block()?;
@@ -836,15 +836,18 @@ impl MadaraBackend {
         // Get the current latest block from head_status
         let current_block = self.head_status.latest_full_block_n();
 
-        tracing::info!(">>>>>> Rollback completed basanth {:?}", current_block);
+        tracing::debug!("Rollback completed to block {:?}", current_block);
         let contract_root = self.contract_trie().root_hash(bonsai_identifier::CONTRACT)
             .map_err(|e| anyhow::anyhow!("Failed to get contract root after rollback: {}", e))?;
         let class_root = self.class_trie().root_hash(bonsai_identifier::CLASS)
             .map_err(|e| anyhow::anyhow!("Failed to get class root after rollback: {}", e))?;
 
-
-        tracing::info!(">>>>>> 📊 After rollback to block #{}: contract_root={:#x}, class_root={:#x}",
-            target_block_n, contract_root, class_root);
+        tracing::info!(
+            target_block_n,
+            ?contract_root,
+            ?class_root,
+            "State roots after rollback"
+        );
 
         // If no blocks found in head_status, try to find the actual latest block from database
         let current_block = if let Some(block) = current_block {
@@ -883,12 +886,12 @@ impl MadaraBackend {
                 }
             }
 
-            tracing::info!("Found actual latest block in database: {}", latest);
+            tracing::info!(latest, "Found actual latest block in database");
             latest
         };
 
         if target_block_n >= current_block {
-            tracing::info!("Target block {} is >= current block {}, nothing to rollback", target_block_n, current_block);
+            tracing::info!(target_block_n, current_block, "Target block is >= current block, nothing to rollback");
             return Ok(());
         }
 
@@ -900,7 +903,7 @@ impl MadaraBackend {
 
         // Revert bonsai tries to the target block (critical for state consistency)
         // This is the key addition from PR #296
-        tracing::info!("🔄 Reverting bonsai tries to block #{}", target_block_n);
+        tracing::info!(target_block_n, "🔄 Reverting bonsai tries to block");
 
         let target_block_id = BasicId::new(target_block_n);
 
@@ -913,19 +916,19 @@ impl MadaraBackend {
         self.contract_trie()
             .revert_to(target_block_id, revert_from_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert contract trie: {}", e))?;
-        tracing::debug!("✓ Contract trie reverted from block #{} to block #{}", revert_from_block, target_block_n);
+        tracing::debug!(revert_from_block, target_block_n, "✓ Contract trie reverted");
         
         // Revert contract storage trie  
         self.contract_storage_trie()
             .revert_to(target_block_id, revert_from_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert contract storage trie: {}", e))?;
-        tracing::debug!("✓ Contract storage trie reverted from block #{} to block #{}", revert_from_block, target_block_n);
+        tracing::debug!(revert_from_block, target_block_n, "✓ Contract storage trie reverted");
         
         // Revert class trie
         self.class_trie()
             .revert_to(target_block_id, revert_from_id)
             .map_err(|e| anyhow::anyhow!("Failed to revert class trie: {}", e))?;
-        tracing::debug!("✓ Class trie reverted from block #{} to block #{}", revert_from_block, target_block_n);
+        tracing::debug!(revert_from_block, target_block_n, "✓ Class trie reverted");
         
         // CRITICAL: Commit all tries after reverting to ensure consistency
         // This ensures the tries are in a clean state before applying new state diffs

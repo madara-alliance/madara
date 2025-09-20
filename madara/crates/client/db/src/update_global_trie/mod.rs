@@ -40,9 +40,14 @@ impl MadaraBackend {
             let class_root = class_trie_root?;
             let calculated_root = crate::update_global_trie::calculate_state_root(contract_root, class_root);
             state_root = Some(calculated_root);
-            
-            tracing::info!("📊 Block #{} state root calculation: contract_root={:#x}, class_root={:#x}, global_root={:#x}",
-                block_n, contract_root, class_root, calculated_root);
+
+            tracing::info!(
+                block_n,
+                ?contract_root,
+                ?class_root,
+                ?calculated_root,
+                "State root calculation complete"
+            );
 
             self.head_status().global_trie.set_current(Some(block_n));
             self.save_head_status_to_db()?;

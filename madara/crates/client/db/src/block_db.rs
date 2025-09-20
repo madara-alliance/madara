@@ -346,7 +346,7 @@ impl MadaraBackend {
             let block_info: MadaraBlockInfo = match res {
                 Some(data) => bincode::deserialize(&data)?,
                 None => {
-                    tracing::warn!("Block {} not found during revert, skipping", block_n);
+                    tracing::warn!(block_n, "Block not found during revert, skipping");
                     continue;
                 }
             };
@@ -364,10 +364,10 @@ impl MadaraBackend {
             if let Some(state_diff_data) = state_diff_serialized {
                 match bincode::deserialize::<StateDiff>(&state_diff_data) {
                     Ok(state_diff) => state_diffs.push((block_n, state_diff)),
-                    Err(e) => tracing::warn!("Failed to deserialize state diff for block {}: {}", block_n, e),
+                    Err(e) => tracing::warn!(block_n, ?e, "Failed to deserialize state diff for block"),
                 }
             } else {
-                tracing::warn!("Block {} has no StateDiff during revert, skipping", block_n);
+                tracing::warn!(block_n, "Block has no StateDiff during revert, skipping");
             }
 
             tx.delete_cf(&block_n_to_block, &block_n_encoded);

@@ -52,7 +52,6 @@ impl EventWorker {
     /// Triggers a graceful shutdown
     pub async fn shutdown(&self) -> EventSystemResult<()> {
         info!("Triggering shutdown for {} worker", self.queue_type);
-        self.cancellation_token.cancel();
         Ok(())
     }
 
