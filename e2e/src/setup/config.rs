@@ -438,6 +438,14 @@ impl SetupConfigBuilder {
             .l1_endpoint(Some(anvil_config.endpoint()))
             .build();
 
+        let pathfinder_config = PathfinderConfigBuilder::new()
+            .port(get_free_port().await?)
+            .gateway_url(Some(madara_config.gateway_endpoint()))
+            .database_path(get_database_path(test_name, PATHFINDER_DATABASE_DIR))
+            .feeder_gateway_url(Some(madara_config.feeder_gateway_endpoint()))
+            .logs((true, true))
+            .build();
+
         let orchestrator_run_config =
             test_config.orchestrator_run_config.builder().ethereum_rpc_url(anvil_config.endpoint()).build();
 
@@ -445,11 +453,12 @@ impl SetupConfigBuilder {
         std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());
         std::env::set_var("ETH_PRIVATE_KEY", ANVIL_PRIVATE_KEY);
         std::env::set_var("ROLLUP_SEQ_URL", test_config.madara_config.rpc_endpoint().to_string());
+        // std::env::set_var("MADARA_NO_MEMPOOL_SAVING", "true");
 
         let sconfig = self
             .anvil_config(anvil_config)
             .madara_config(madara_config)
-            .pathfinder_config(test_config.pathfinder_config)
+            .pathfinder_config(pathfinder_config)
             .mock_verifier_deployer_config(test_config.mock_verifier_deployer_config)
             .orchestrator_setup_config(test_config.orchestrator_setup_config)
             .bootstrapper_setup_l1_config(test_config.bootstrapper_setup_l1_config)

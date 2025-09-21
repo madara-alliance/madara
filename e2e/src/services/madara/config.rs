@@ -259,6 +259,9 @@ impl MadaraConfig {
         cmd.arg("--blob-gas-price").arg(self.blob_gas_price.to_string());
         cmd.arg("--strk-per-eth").arg(self.strk_per_eth.to_string());
 
+        // Flush every n blocks
+        cmd.arg("--flush-every-n-blocks").arg("1".to_string());
+
         // Charge fee flag (inverted logic)
         if !self.charge_fee {
             cmd.arg("--no-charge-fee");

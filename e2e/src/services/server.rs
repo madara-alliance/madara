@@ -66,6 +66,7 @@ impl ServerConfig {
 }
 
 // Generic server struct that can be used by any service
+#[derive(Debug)]
 pub struct Server {
     config: ServerConfig,
     process: Child,
@@ -224,37 +225,40 @@ impl Server {
     /// This function should not be turned async since it's used within Drop.
     /// And drop impl doesn't handle async functions.
     pub fn stop(&mut self) -> Result<(), ServerError> {
-        if self.config.rpc_port.is_none() {
-            return Ok(());
-        }
-        if let Some(task) = self.stderr_task.take() {
-            task.abort();
-        }
-
         // Check if already exited
         if self.has_exited()?.is_some() {
             return Ok(());
         }
 
         // Try graceful shutdown first - this works cross-platform
-        #[cfg(unix)]
-        {
-            let pid = self.process.id();
-            if let Some(pid) = pid {
-                if let Ok(mut kill_process) =
-                    tokio::process::Command::new("kill").args(["-s", "TERM", &pid.to_string()]).spawn()
-                {
-                    // Spawn a task to wait for kill completion, but don't block on it
-                    tokio::spawn(async move {
-                        let _ = kill_process.wait().await;
-                    });
-                }
-            }
-        }
+        let pid = self.process.id();
+        if let Some(pid) = pid {
+            // Send SIGTERM signal to gracefully terminate the process
+            let termination_result =
+                std::process::Command::new("kill").arg("-s").arg("TERM").arg(pid.to_string()).status();
 
-        // Cross-platform forceful termination as fallback
-        let _ = self.process.start_kill();
-        let _ = self.process.try_wait();
+            // Force kill if graceful termination failed
+            if termination_result.is_err() {
+                let _ = self.process.start_kill();
+            }
+
+            // Make sure it's not running anymore
+            let grace_period = Duration::from_secs(5);
+            let termination_start = std::time::Instant::now();
+            // Wait for process exit or force kill after grace period
+            while let Ok(None) = self.process.try_wait() {
+                if termination_start.elapsed() >= grace_period {
+                    let _ = self.process.start_kill();
+                    break;
+                }
+                std::thread::sleep(Duration::from_millis(100));
+            }
+
+        } else {
+            // Cross-platform way to stop the process
+            let _ = self.process.start_kill();
+            let _ = self.process.try_wait();
+        }
 
         // Clean up tasks
         if let Some(task) = self.stdout_task.take() {
