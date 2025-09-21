@@ -157,7 +157,7 @@ impl AtlanticClient {
             .body(AtlanticCreateBucketRequest {
                 external_id: None,
                 node_width: None,
-                aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_3,
+                aggregator_version: AtlanticAggregatorVersion::SnosAggregator0_13_2,
                 aggregator_params: AtlanticAggregatorParams {
                     use_kzg_da: AGGREGATOR_USE_KZG_DA,
                     full_output: AGGREGATOR_FULL_OUTPUT,
