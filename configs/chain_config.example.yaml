@@ -38,7 +38,7 @@ execution_batch_size: 16
 bouncer_config:
   block_max_capacity:
     # Maximum gas limit per block
-    sierra_gas: 500000000
+    sierra_gas: 5000000000
     # Maximum length of message segments
     message_segment_length: 3700
     # Maximum number of events per block
@@ -46,9 +46,24 @@ bouncer_config:
     # Maximum size of state differences per block
     state_diff_size: 4000
     # Maximum L1 gas
-    l1_gas: 18446744073709551615
+    l1_gas: 2500000
     # Maximum number of transactions per block
-    n_txs: 18446744073709551615
+    n_txs: 600
+    # Maximum proving gas
+    proving_gas: 5500000000
+  blake_weight: 5263
+  builtin_weights:
+    gas_costs:
+      pedersen: 4769
+      range_check: 70
+      ecdsa: 1666666
+      ecop: 714875
+      bitwise: 583
+      keccak: 510707
+      poseidon: 10000
+      add_mod: 312
+      mul_mod: 604
+      range_check96: 56
 
 # /!\ Only used for block production.
 # Address of the sequencer (0x0 for a full node).

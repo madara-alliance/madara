@@ -30,7 +30,7 @@ pub fn get_transaction_by_hash(starknet: &Starknet, transaction_hash: Felt) -> S
     let view = starknet.backend.view_on_latest();
     let res = view.find_transaction_by_hash(&transaction_hash)?.ok_or(StarknetRpcApiError::TxnHashNotFound)?;
     let transaction = res.get_transaction()?;
-    Ok(TxnWithHash { transaction: transaction.transaction.into(), transaction_hash })
+    Ok(TxnWithHash { transaction: transaction.transaction.to_rpc_v0_7(), transaction_hash })
 }
 
 #[cfg(test)]
@@ -41,19 +41,19 @@ mod tests {
 
     #[rstest]
     fn test_get_transaction_by_hash(sample_chain_for_block_getters: (SampleChainForBlockGetters, Starknet)) {
-        let (SampleChainForBlockGetters { tx_hashes, expected_txs, .. }, rpc) = sample_chain_for_block_getters;
+        let (SampleChainForBlockGetters { tx_hashes, expected_txs_v0_7, .. }, rpc) = sample_chain_for_block_getters;
 
         // Block 0
-        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[0]).unwrap(), expected_txs[0]);
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[0]).unwrap(), expected_txs_v0_7[0]);
 
         // Block 1
 
         // Block 2
-        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[1]).unwrap(), expected_txs[1]);
-        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[2]).unwrap(), expected_txs[2]);
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[1]).unwrap(), expected_txs_v0_7[1]);
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[2]).unwrap(), expected_txs_v0_7[2]);
 
         // Pending
-        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[3]).unwrap(), expected_txs[3]);
+        assert_eq!(get_transaction_by_hash(&rpc, tx_hashes[3]).unwrap(), expected_txs_v0_7[3]);
     }
 
     #[rstest]

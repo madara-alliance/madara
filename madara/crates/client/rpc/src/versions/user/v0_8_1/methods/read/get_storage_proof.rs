@@ -8,10 +8,9 @@ use mc_db::rocksdb::{
     trie::{BasicId, GlobalTrie, ProofNode},
     update_global_trie::bonsai_identifier,
 };
-use mp_block::{BlockId, BlockTag};
 use mp_rpc::v0_8_1::{
-    ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult, GlobalRoots, MerkleNode,
-    NodeHashToNodeMappingItem,
+    BlockId, BlockTag, ContractLeavesDataItem, ContractStorageKeysItem, ContractsProof, GetStorageProofResult,
+    GlobalRoots, MerkleNode, NodeHashToNodeMappingItem,
 };
 use starknet_types_core::felt::Felt;
 use starknet_types_core::hash::StarkHash;
@@ -88,7 +87,7 @@ pub fn get_storage_proof(
     };
 
     let block_view =
-        starknet.backend.block_view(block_id)?.into_confirmed().context("View cannot be preconfirmed here")?;
+        starknet.resolve_block_view(block_id)?.into_confirmed().context("View cannot be preconfirmed here")?;
 
     let Some(latest) = starknet.backend.latest_confirmed_block_n() else {
         return Err(StarknetRpcApiError::NoBlocks);

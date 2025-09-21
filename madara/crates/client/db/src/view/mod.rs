@@ -2,7 +2,6 @@ use crate::{preconfirmed::PreconfirmedBlock, prelude::*, ChainTip};
 
 mod block;
 mod block_confirmed;
-pub mod block_id;
 mod block_preconfirmed;
 mod state;
 

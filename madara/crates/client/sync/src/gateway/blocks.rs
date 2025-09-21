@@ -8,8 +8,8 @@ use mc_db::{
     preconfirmed::{PreconfirmedBlock, PreconfirmedExecutedTransaction},
     MadaraBackend,
 };
-use mc_gateway_client::GatewayProvider;
-use mp_block::{BlockHeaderWithSignatures, BlockId, FullBlock, Header};
+use mc_gateway_client::{BlockId, GatewayProvider};
+use mp_block::{BlockHeaderWithSignatures, FullBlock, Header};
 use mp_gateway::error::{SequencerError, StarknetErrorCode};
 use mp_state_update::StateDiff;
 use mp_transactions::validated::{TxTimestamp, ValidatedTransaction};

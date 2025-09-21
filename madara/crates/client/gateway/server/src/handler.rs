@@ -1,23 +1,19 @@
 use super::{
     error::GatewayError,
     helpers::{
-        block_id_from_params, create_json_response, create_response_with_json_body, create_string_response,
-        get_params_from_request, include_block_params,
+        create_json_response, create_response_with_json_body, create_string_response, get_params_from_request,
+        include_block_params,
     },
 };
-use crate::helpers::not_found_response;
+use crate::helpers::{block_view_from_params, not_found_response, view_from_params};
 use anyhow::Context;
 use bincode::Options;
 use bytes::Buf;
 use http_body_util::BodyExt;
 use hyper::{body::Incoming, Request, Response, StatusCode};
 use mc_db::MadaraBackend;
-use mc_rpc::{
-    versions::user::v0_7_1::methods::trace::trace_block_transactions::trace_block_transactions as v0_7_1_trace_block_transactions,
-    Starknet,
-};
+use mc_rpc::versions::user::v0_9_0::methods::trace::trace_block_transactions::trace_block_transactions_view as v0_9_0_trace_block_transactions;
 use mc_submit_tx::{SubmitTransaction, SubmitValidatedTransaction};
-use mp_block::{BlockId, BlockTag};
 use mp_class::{ClassInfo, ContractClass};
 use mp_gateway::{
     block::ProviderBlockPreConfirmed,
@@ -34,9 +30,8 @@ use mp_gateway::{
     error::{StarknetError, StarknetErrorCode},
     user_transaction::{AddDeclareTransactionResult, AddDeployAccountTransactionResult, AddInvokeTransactionResult},
 };
-use mp_rpc::v0_7_1::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
+use mp_rpc::v0_9_0::{BroadcastedDeclareTxn, TraceBlockTransactionsResult};
 use mp_transactions::validated::ValidatedTransaction;
-use mp_utils::service::ServiceContext;
 use serde::Serialize;
 use serde_json::json;
 use starknet_types_core::felt::Felt;
@@ -82,9 +77,7 @@ pub async fn handle_get_block(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params)?;
-
-    let block = backend.block_view(&block_id)?;
+    let block = block_view_from_params(&backend, &params)?;
 
     if params.get("headerOnly").map(|s| s.as_ref()) == Some("true") {
         let Some(confirmed) = block.as_confirmed() else {
@@ -118,9 +111,8 @@ pub async fn handle_get_signature(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params)?;
 
-    let block = backend.block_view(&block_id)?;
+    let block = block_view_from_params(&backend, &params)?;
 
     let Some(confirmed) = block.as_confirmed() else {
         return Err(StarknetError::no_signature_for_pending_block().into());
@@ -140,9 +132,8 @@ pub async fn handle_get_state_update(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params)?;
 
-    let block = backend.block_view(&block_id)?;
+    let block = block_view_from_params(&backend, &params)?;
 
     let Some(block) = block.as_confirmed() else {
         return Err(StarknetError::block_not_found().into());
@@ -176,22 +167,16 @@ pub async fn handle_get_state_update(
 pub async fn handle_get_block_traces(
     req: Request<Incoming>,
     backend: Arc<MadaraBackend>,
-    add_transaction_provider: Arc<dyn SubmitTransaction>,
-    ctx: ServiceContext,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params)?;
+    let block = block_view_from_params(&backend, &params)?;
 
     #[derive(Serialize)]
     struct BlockTraces {
         traces: Vec<TraceBlockTransactionsResult>,
     }
 
-    let traces = v0_7_1_trace_block_transactions(
-        &Starknet::new(backend, add_transaction_provider, Default::default(), None, ctx),
-        block_id,
-    )
-    .await?;
+    let traces = v0_9_0_trace_block_transactions(&block).await?;
     let block_traces = BlockTraces { traces };
 
     Ok(create_json_response(hyper::StatusCode::OK, &block_traces))
@@ -202,12 +187,11 @@ pub async fn handle_get_class_by_hash(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
+
+    let view = view_from_params(&backend, &params)?;
 
     let class_hash = params.get("classHash").ok_or(StarknetError::missing_class_hash())?;
     let class_hash = Felt::from_hex(class_hash).map_err(StarknetError::invalid_class_hash)?;
-
-    let view = backend.view_on(&block_id)?;
 
     let class_info = view.get_class_info(&class_hash)?.ok_or(StarknetError::class_not_found(class_hash))?;
 
@@ -232,12 +216,10 @@ pub async fn handle_get_compiled_class_by_class_hash(
     backend: Arc<MadaraBackend>,
 ) -> Result<Response<String>, GatewayError> {
     let params = get_params_from_request(&req);
-    let block_id = block_id_from_params(&params).unwrap_or(BlockId::Tag(BlockTag::Latest));
+    let view = view_from_params(&backend, &params)?;
 
     let class_hash = params.get("classHash").ok_or(StarknetError::missing_class_hash())?;
     let class_hash = Felt::from_hex(class_hash).map_err(StarknetError::invalid_class_hash)?;
-
-    let view = backend.view_on(&block_id)?;
 
     let class_info = view.get_class_info(&class_hash)?.ok_or(StarknetError::class_not_found(class_hash))?;
 

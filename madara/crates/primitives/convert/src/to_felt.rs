@@ -1,21 +1,25 @@
 use alloy::primitives::U256;
-use primitive_types::H160;
-
 use core::fmt;
-use std::ops::Deref;
-
+use primitive_types::H160;
 use starknet_api::block::BlockHash;
 use starknet_api::core::{
-    ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, Nonce, PatriciaKey,
+    ChainId, ClassHash, CompiledClassHash, ContractAddress, EntryPointSelector, L1Address, Nonce, PatriciaKey,
 };
 use starknet_api::transaction::fields::ContractAddressSalt;
 use starknet_api::transaction::{EventKey, TransactionHash};
 use starknet_core::types::EthAddress;
+use std::ops::Deref;
 
 pub use starknet_types_core::felt::Felt;
 
 pub trait ToFelt {
     fn to_felt(self) -> Felt;
+}
+
+impl ToFelt for L1Address {
+    fn to_felt(self) -> Felt {
+        self.into()
+    }
 }
 
 impl ToFelt for EthAddress {

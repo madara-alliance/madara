@@ -249,6 +249,7 @@ mod events_logic_tests {
             l2_to_l1_messages: vec![],
             failed: false,
             gas_consumed: Default::default(),
+            cairo_native: false,
         }
     }
 

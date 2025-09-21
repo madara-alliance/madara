@@ -37,7 +37,7 @@ use std::sync::Arc;
 
 use mp_class::{CompressedLegacyContractClass, CompressedSierraClass, FlattenedSierraClass};
 use mp_convert::hex_serde::U64AsHex;
-use mp_rpc::v0_7_1::{
+use mp_rpc::v0_9_0::{
     BroadcastedDeclareTxn, BroadcastedDeclareTxnV1, BroadcastedDeclareTxnV2, BroadcastedDeclareTxnV3,
     BroadcastedDeployAccountTxn, BroadcastedInvokeTxn, BroadcastedTxn, DeployAccountTxnV1, DeployAccountTxnV3,
     InvokeTxnV0, InvokeTxnV1, InvokeTxnV3,

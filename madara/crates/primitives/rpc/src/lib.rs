@@ -1,4 +1,3 @@
-mod custom;
 mod custom_serde;
 
 pub mod admin;

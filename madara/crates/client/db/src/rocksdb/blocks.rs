@@ -204,7 +204,7 @@ impl RocksDBStorageInner {
         let block_txs_col = self.get_column(BLOCK_TRANSACTIONS_COLUMN);
 
         for (tx_index, transaction) in self.get_block_transactions(block_n, /* from_tx_index */ 0).enumerate() {
-            let mut transaction = transaction?;
+            let mut transaction = transaction.with_context(|| format!("Parsing transaction {tx_index}"))?;
             let transaction_hash = *transaction.receipt.transaction_hash();
 
             transaction.receipt.events_mut().clear();

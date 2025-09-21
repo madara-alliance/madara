@@ -1,18 +1,15 @@
-use std::path::Path;
-use std::str::FromStr;
-use std::{fs, io};
-
+use crate::contract_clients::config::RpcClientProvider;
+use crate::contract_clients::utils::RpcAccount;
+use crate::helpers::account_actions::{get_transaction_receipt, AccountActions};
 use ethers::abi::Address;
 use ethers::types::U256;
 use num_bigint::BigUint;
 use serde_json::{Map, Value};
 use starknet::accounts::ConnectedAccount;
 use starknet::core::types::{ExecutionResult, Felt, InvokeTransactionResult, TransactionReceipt};
-use starknet_providers::jsonrpc::HttpTransport;
-use starknet_providers::JsonRpcClient;
-
-use crate::contract_clients::utils::RpcAccount;
-use crate::helpers::account_actions::{get_transaction_receipt, AccountActions};
+use std::path::Path;
+use std::str::FromStr;
+use std::{fs, io};
 
 pub mod banner;
 pub mod constants;
@@ -51,7 +48,7 @@ pub fn hexstring_to_address(hex: &str) -> ethers::abi::Address {
 }
 
 pub async fn wait_for_transaction(
-    provider_l2: &JsonRpcClient<HttpTransport>,
+    provider_l2: &RpcClientProvider,
     transaction_hash: Felt,
     tag: &str,
 ) -> Result<(), anyhow::Error> {

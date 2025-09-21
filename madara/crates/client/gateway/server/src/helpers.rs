@@ -1,10 +1,11 @@
-use std::collections::HashMap;
-
 use hyper::{body::Incoming, header, Request, Response, StatusCode};
-use mp_block::{BlockId, BlockTag};
+use mc_db::{MadaraBackend, MadaraBlockView, MadaraStateView};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use serde::Serialize;
 use starknet_types_core::felt::Felt;
+use std::{collections::HashMap, sync::Arc};
+
+use crate::error::GatewayError;
 
 pub(crate) fn service_unavailable_response(service_name: &str) -> Response<String> {
     Response::builder()
@@ -92,25 +93,62 @@ pub(crate) fn get_params_from_request(req: &Request<Incoming>) -> HashMap<String
     query_params
 }
 
-pub(crate) fn block_id_from_params(params: &HashMap<String, String>) -> Result<BlockId, StarknetError> {
+pub(crate) fn block_view_from_params(
+    backend: &Arc<MadaraBackend>,
+    params: &HashMap<String, String>,
+) -> Result<MadaraBlockView, GatewayError> {
     if let Some(block_number) = params.get("blockNumber") {
         match block_number.as_str() {
-            "latest" => Ok(BlockId::Tag(BlockTag::Latest)),
-            "pending" => Ok(BlockId::Tag(BlockTag::Pending)),
+            "latest" => Ok(backend.block_view_on_last_confirmed().ok_or_else(StarknetError::block_not_found)?.into()),
+            "pending" => Ok(backend.block_view_on_latest().ok_or_else(StarknetError::block_not_found)?),
             _ => {
                 let block_number = block_number.parse().map_err(|e: std::num::ParseIntError| {
                     StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string())
                 })?;
-                Ok(BlockId::Number(block_number))
+                Ok(backend.block_view_on_confirmed(block_number).ok_or_else(StarknetError::block_not_found)?.into())
             }
         }
     } else if let Some(block_hash) = params.get("blockHash") {
         let block_hash = Felt::from_hex(block_hash)
             .map_err(|e| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
-        Ok(BlockId::Hash(block_hash))
+        Ok(backend
+            .view_on_latest()
+            .find_block_by_hash(&block_hash)?
+            .and_then(|n| backend.block_view_on_confirmed(n))
+            .ok_or_else(StarknetError::block_not_found)?
+            .into())
     } else {
         // latest is implicit
-        Ok(BlockId::Tag(BlockTag::Latest))
+        Ok(backend.block_view_on_last_confirmed().ok_or_else(StarknetError::block_not_found)?.into())
+    }
+}
+
+pub(crate) fn view_from_params(
+    backend: &Arc<MadaraBackend>,
+    params: &HashMap<String, String>,
+) -> Result<MadaraStateView, GatewayError> {
+    if let Some(block_number) = params.get("blockNumber") {
+        match block_number.as_str() {
+            "latest" => Ok(backend.view_on_latest_confirmed()),
+            "pending" => Ok(backend.view_on_latest()),
+            _ => {
+                let block_number = block_number.parse().map_err(|e: std::num::ParseIntError| {
+                    StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string())
+                })?;
+                Ok(backend.view_on_confirmed(block_number).ok_or_else(StarknetError::block_not_found)?)
+            }
+        }
+    } else if let Some(block_hash) = params.get("blockHash") {
+        let block_hash = Felt::from_hex(block_hash)
+            .map_err(|e| StarknetError::new(StarknetErrorCode::MalformedRequest, e.to_string()))?;
+        Ok(backend
+            .view_on_latest()
+            .find_block_by_hash(&block_hash)?
+            .and_then(|n| backend.view_on_confirmed(n))
+            .ok_or_else(StarknetError::block_not_found)?)
+    } else {
+        // latest is implicit
+        Ok(backend.view_on_latest_confirmed())
     }
 }
 

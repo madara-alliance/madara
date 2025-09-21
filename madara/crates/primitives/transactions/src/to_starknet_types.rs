@@ -5,194 +5,267 @@ use crate::{
     Transaction,
 };
 
-impl From<Transaction> for mp_rpc::v0_7_1::Txn {
-    fn from(tx: Transaction) -> Self {
-        match tx {
-            Transaction::Invoke(tx) => mp_rpc::v0_7_1::Txn::Invoke(tx.into()),
-            Transaction::L1Handler(tx) => mp_rpc::v0_7_1::Txn::L1Handler(tx.into()),
-            Transaction::Declare(tx) => mp_rpc::v0_7_1::Txn::Declare(tx.into()),
-            Transaction::Deploy(tx) => mp_rpc::v0_7_1::Txn::Deploy(tx.into()),
-            Transaction::DeployAccount(tx) => mp_rpc::v0_7_1::Txn::DeployAccount(tx.into()),
+impl Transaction {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::Txn {
+        match self {
+            Transaction::Invoke(tx) => mp_rpc::v0_7_1::Txn::Invoke(tx.to_rpc_v0_7()),
+            Transaction::L1Handler(tx) => mp_rpc::v0_7_1::Txn::L1Handler(tx.to_rpc_v0_7()),
+            Transaction::Declare(tx) => mp_rpc::v0_7_1::Txn::Declare(tx.to_rpc_v0_7()),
+            Transaction::Deploy(tx) => mp_rpc::v0_7_1::Txn::Deploy(tx.to_rpc_v0_7()),
+            Transaction::DeployAccount(tx) => mp_rpc::v0_7_1::Txn::DeployAccount(tx.to_rpc_v0_7()),
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::Txn {
+        match self {
+            Transaction::Invoke(tx) => mp_rpc::v0_8_1::Txn::Invoke(tx.to_rpc_v0_8()),
+            Transaction::L1Handler(tx) => mp_rpc::v0_8_1::Txn::L1Handler(tx.to_rpc_v0_7()),
+            Transaction::Declare(tx) => mp_rpc::v0_8_1::Txn::Declare(tx.to_rpc_v0_8()),
+            Transaction::Deploy(tx) => mp_rpc::v0_8_1::Txn::Deploy(tx.to_rpc_v0_7()),
+            Transaction::DeployAccount(tx) => mp_rpc::v0_8_1::Txn::DeployAccount(tx.to_rpc_v0_8()),
         }
     }
 }
 
-impl From<InvokeTransaction> for mp_rpc::v0_7_1::InvokeTxn {
-    fn from(tx: InvokeTransaction) -> Self {
-        match tx {
-            InvokeTransaction::V0(tx) => mp_rpc::v0_7_1::InvokeTxn::V0(tx.into()),
-            InvokeTransaction::V1(tx) => mp_rpc::v0_7_1::InvokeTxn::V1(tx.into()),
-            InvokeTransaction::V3(tx) => mp_rpc::v0_7_1::InvokeTxn::V3(tx.into()),
+impl InvokeTransaction {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::InvokeTxn {
+        match self {
+            InvokeTransaction::V0(tx) => mp_rpc::v0_7_1::InvokeTxn::V0(tx.to_rpc_v0_7()),
+            InvokeTransaction::V1(tx) => mp_rpc::v0_7_1::InvokeTxn::V1(tx.to_rpc_v0_7()),
+            InvokeTransaction::V3(tx) => mp_rpc::v0_7_1::InvokeTxn::V3(tx.to_rpc_v0_7()),
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::InvokeTxn {
+        match self {
+            InvokeTransaction::V0(tx) => mp_rpc::v0_8_1::InvokeTxn::V0(tx.to_rpc_v0_7()),
+            InvokeTransaction::V1(tx) => mp_rpc::v0_8_1::InvokeTxn::V1(tx.to_rpc_v0_7()),
+            InvokeTransaction::V3(tx) => mp_rpc::v0_8_1::InvokeTxn::V3(tx.to_rpc_v0_8()),
         }
     }
 }
 
-impl From<InvokeTransactionV0> for mp_rpc::v0_7_1::InvokeTxnV0 {
-    fn from(tx: InvokeTransactionV0) -> Self {
-        Self {
-            calldata: tx.calldata,
-            contract_address: tx.contract_address,
-            entry_point_selector: tx.entry_point_selector,
-            max_fee: tx.max_fee,
-            signature: tx.signature,
+impl InvokeTransactionV0 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::InvokeTxnV0 {
+        mp_rpc::v0_7_1::InvokeTxnV0 {
+            calldata: self.calldata,
+            contract_address: self.contract_address,
+            entry_point_selector: self.entry_point_selector,
+            max_fee: self.max_fee,
+            signature: self.signature,
         }
     }
 }
 
-impl From<InvokeTransactionV1> for mp_rpc::v0_7_1::InvokeTxnV1 {
-    fn from(tx: InvokeTransactionV1) -> Self {
-        Self {
-            calldata: tx.calldata,
-            max_fee: tx.max_fee,
-            nonce: tx.nonce,
-            sender_address: tx.sender_address,
-            signature: tx.signature,
+impl InvokeTransactionV1 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::InvokeTxnV1 {
+        mp_rpc::v0_7_1::InvokeTxnV1 {
+            calldata: self.calldata,
+            max_fee: self.max_fee,
+            nonce: self.nonce,
+            sender_address: self.sender_address,
+            signature: self.signature,
         }
     }
 }
 
-impl From<InvokeTransactionV3> for mp_rpc::v0_7_1::InvokeTxnV3 {
-    fn from(tx: InvokeTransactionV3) -> Self {
-        Self {
-            account_deployment_data: tx.account_deployment_data,
-            calldata: tx.calldata,
-            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            nonce: tx.nonce,
-            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
-            paymaster_data: tx.paymaster_data,
-            resource_bounds: tx.resource_bounds.into(),
-            sender_address: tx.sender_address,
-            signature: tx.signature,
-            tip: tx.tip,
+impl InvokeTransactionV3 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::InvokeTxnV3 {
+        mp_rpc::v0_7_1::InvokeTxnV3 {
+            account_deployment_data: self.account_deployment_data,
+            calldata: self.calldata,
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
+            nonce: self.nonce,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            paymaster_data: self.paymaster_data,
+            resource_bounds: self.resource_bounds.into(),
+            sender_address: self.sender_address,
+            signature: self.signature,
+            tip: self.tip,
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::InvokeTxnV3 {
+        mp_rpc::v0_8_1::InvokeTxnV3 {
+            account_deployment_data: self.account_deployment_data,
+            calldata: self.calldata,
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
+            nonce: self.nonce,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            paymaster_data: self.paymaster_data,
+            resource_bounds: self.resource_bounds.into(),
+            sender_address: self.sender_address,
+            signature: self.signature,
+            tip: self.tip,
         }
     }
 }
 
-impl From<L1HandlerTransaction> for mp_rpc::v0_7_1::L1HandlerTxn {
-    fn from(tx: L1HandlerTransaction) -> Self {
-        Self {
-            nonce: tx.nonce,
-            version: tx.version.to_hex_string(),
+impl L1HandlerTransaction {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::L1HandlerTxn {
+        mp_rpc::v0_7_1::L1HandlerTxn {
+            nonce: self.nonce,
+            version: self.version.to_hex_string(),
             function_call: mp_rpc::v0_7_1::FunctionCall {
-                calldata: tx.calldata,
-                contract_address: tx.contract_address,
-                entry_point_selector: tx.entry_point_selector,
+                calldata: self.calldata,
+                contract_address: self.contract_address,
+                entry_point_selector: self.entry_point_selector,
             },
         }
     }
 }
 
-impl From<DeclareTransaction> for mp_rpc::v0_7_1::DeclareTxn {
-    fn from(tx: DeclareTransaction) -> Self {
-        match tx {
-            DeclareTransaction::V0(tx) => mp_rpc::v0_7_1::DeclareTxn::V0(tx.into()),
-            DeclareTransaction::V1(tx) => mp_rpc::v0_7_1::DeclareTxn::V1(tx.into()),
-            DeclareTransaction::V2(tx) => mp_rpc::v0_7_1::DeclareTxn::V2(tx.into()),
-            DeclareTransaction::V3(tx) => mp_rpc::v0_7_1::DeclareTxn::V3(tx.into()),
+impl DeclareTransaction {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeclareTxn {
+        match self {
+            DeclareTransaction::V0(tx) => mp_rpc::v0_7_1::DeclareTxn::V0(tx.to_rpc_v0_7()),
+            DeclareTransaction::V1(tx) => mp_rpc::v0_7_1::DeclareTxn::V1(tx.to_rpc_v0_7()),
+            DeclareTransaction::V2(tx) => mp_rpc::v0_7_1::DeclareTxn::V2(tx.to_rpc_v0_7()),
+            DeclareTransaction::V3(tx) => mp_rpc::v0_7_1::DeclareTxn::V3(tx.to_rpc_v0_7()),
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::DeclareTxn {
+        match self {
+            DeclareTransaction::V0(tx) => mp_rpc::v0_8_1::DeclareTxn::V0(tx.to_rpc_v0_7()),
+            DeclareTransaction::V1(tx) => mp_rpc::v0_8_1::DeclareTxn::V1(tx.to_rpc_v0_7()),
+            DeclareTransaction::V2(tx) => mp_rpc::v0_8_1::DeclareTxn::V2(tx.to_rpc_v0_7()),
+            DeclareTransaction::V3(tx) => mp_rpc::v0_8_1::DeclareTxn::V3(tx.to_rpc_v0_8()),
         }
     }
 }
 
-impl From<DeclareTransactionV0> for mp_rpc::v0_7_1::DeclareTxnV0 {
-    fn from(tx: DeclareTransactionV0) -> Self {
-        Self {
-            class_hash: tx.class_hash,
-            max_fee: tx.max_fee,
-            sender_address: tx.sender_address,
-            signature: tx.signature,
+impl DeclareTransactionV0 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeclareTxnV0 {
+        mp_rpc::v0_7_1::DeclareTxnV0 {
+            class_hash: self.class_hash,
+            max_fee: self.max_fee,
+            sender_address: self.sender_address,
+            signature: self.signature,
         }
     }
 }
 
-impl From<DeclareTransactionV1> for mp_rpc::v0_7_1::DeclareTxnV1 {
-    fn from(tx: DeclareTransactionV1) -> Self {
-        Self {
-            class_hash: tx.class_hash,
-            max_fee: tx.max_fee,
-            nonce: tx.nonce,
-            sender_address: tx.sender_address,
-            signature: tx.signature,
+impl DeclareTransactionV1 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeclareTxnV1 {
+        mp_rpc::v0_7_1::DeclareTxnV1 {
+            class_hash: self.class_hash,
+            max_fee: self.max_fee,
+            nonce: self.nonce,
+            sender_address: self.sender_address,
+            signature: self.signature,
         }
     }
 }
 
-impl From<DeclareTransactionV2> for mp_rpc::v0_7_1::DeclareTxnV2 {
-    fn from(tx: DeclareTransactionV2) -> Self {
-        Self {
-            class_hash: tx.class_hash,
-            compiled_class_hash: tx.compiled_class_hash,
-            max_fee: tx.max_fee,
-            nonce: tx.nonce,
-            sender_address: tx.sender_address,
-            signature: tx.signature,
+impl DeclareTransactionV2 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeclareTxnV2 {
+        mp_rpc::v0_7_1::DeclareTxnV2 {
+            class_hash: self.class_hash,
+            compiled_class_hash: self.compiled_class_hash,
+            max_fee: self.max_fee,
+            nonce: self.nonce,
+            sender_address: self.sender_address,
+            signature: self.signature,
         }
     }
 }
 
-impl From<DeclareTransactionV3> for mp_rpc::v0_7_1::DeclareTxnV3 {
-    fn from(tx: DeclareTransactionV3) -> Self {
-        Self {
-            account_deployment_data: tx.account_deployment_data,
-            class_hash: tx.class_hash,
-            compiled_class_hash: tx.compiled_class_hash,
-            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            nonce: tx.nonce,
-            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
-            paymaster_data: tx.paymaster_data,
-            resource_bounds: tx.resource_bounds.into(),
-            sender_address: tx.sender_address,
-            signature: tx.signature,
-            tip: tx.tip,
+impl DeclareTransactionV3 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeclareTxnV3 {
+        mp_rpc::v0_7_1::DeclareTxnV3 {
+            account_deployment_data: self.account_deployment_data,
+            class_hash: self.class_hash,
+            compiled_class_hash: self.compiled_class_hash,
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
+            nonce: self.nonce,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            paymaster_data: self.paymaster_data,
+            resource_bounds: self.resource_bounds.into(),
+            sender_address: self.sender_address,
+            signature: self.signature,
+            tip: self.tip,
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::DeclareTxnV3 {
+        mp_rpc::v0_8_1::DeclareTxnV3 {
+            account_deployment_data: self.account_deployment_data,
+            class_hash: self.class_hash,
+            compiled_class_hash: self.compiled_class_hash,
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
+            nonce: self.nonce,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            paymaster_data: self.paymaster_data,
+            resource_bounds: self.resource_bounds.into(),
+            sender_address: self.sender_address,
+            signature: self.signature,
+            tip: self.tip,
         }
     }
 }
 
-impl From<DeployTransaction> for mp_rpc::v0_7_1::DeployTxn {
-    fn from(tx: DeployTransaction) -> Self {
-        Self {
-            class_hash: tx.class_hash,
-            constructor_calldata: tx.constructor_calldata,
-            contract_address_salt: tx.contract_address_salt,
-            version: tx.version,
+impl DeployTransaction {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeployTxn {
+        mp_rpc::v0_7_1::DeployTxn {
+            class_hash: self.class_hash,
+            constructor_calldata: self.constructor_calldata,
+            contract_address_salt: self.contract_address_salt,
+            version: self.version,
         }
     }
 }
 
-impl From<DeployAccountTransaction> for mp_rpc::v0_7_1::DeployAccountTxn {
-    fn from(tx: DeployAccountTransaction) -> Self {
-        match tx {
-            DeployAccountTransaction::V1(tx) => mp_rpc::v0_7_1::DeployAccountTxn::V1(tx.into()),
-            DeployAccountTransaction::V3(tx) => mp_rpc::v0_7_1::DeployAccountTxn::V3(tx.into()),
+impl DeployAccountTransaction {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeployAccountTxn {
+        match self {
+            DeployAccountTransaction::V1(tx) => mp_rpc::v0_7_1::DeployAccountTxn::V1(tx.to_rpc_v0_7()),
+            DeployAccountTransaction::V3(tx) => mp_rpc::v0_7_1::DeployAccountTxn::V3(tx.to_rpc_v0_7()),
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::DeployAccountTxn {
+        match self {
+            DeployAccountTransaction::V1(tx) => mp_rpc::v0_8_1::DeployAccountTxn::V1(tx.to_rpc_v0_7()),
+            DeployAccountTransaction::V3(tx) => mp_rpc::v0_8_1::DeployAccountTxn::V3(tx.to_rpc_v0_8()),
         }
     }
 }
 
-impl From<DeployAccountTransactionV1> for mp_rpc::v0_7_1::DeployAccountTxnV1 {
-    fn from(tx: DeployAccountTransactionV1) -> Self {
-        Self {
-            class_hash: tx.class_hash,
-            constructor_calldata: tx.constructor_calldata,
-            contract_address_salt: tx.contract_address_salt,
-            max_fee: tx.max_fee,
-            nonce: tx.nonce,
-            signature: tx.signature,
+impl DeployAccountTransactionV1 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeployAccountTxnV1 {
+        mp_rpc::v0_7_1::DeployAccountTxnV1 {
+            class_hash: self.class_hash,
+            constructor_calldata: self.constructor_calldata,
+            contract_address_salt: self.contract_address_salt,
+            max_fee: self.max_fee,
+            nonce: self.nonce,
+            signature: self.signature,
         }
     }
 }
 
-impl From<DeployAccountTransactionV3> for mp_rpc::v0_7_1::DeployAccountTxnV3 {
-    fn from(tx: DeployAccountTransactionV3) -> Self {
-        Self {
-            class_hash: tx.class_hash,
-            constructor_calldata: tx.constructor_calldata,
-            contract_address_salt: tx.contract_address_salt,
-            fee_data_availability_mode: tx.fee_data_availability_mode.into(),
-            nonce: tx.nonce,
-            nonce_data_availability_mode: tx.nonce_data_availability_mode.into(),
-            paymaster_data: tx.paymaster_data,
-            resource_bounds: tx.resource_bounds.into(),
-            signature: tx.signature,
-            tip: tx.tip,
+impl DeployAccountTransactionV3 {
+    pub fn to_rpc_v0_7(self) -> mp_rpc::v0_7_1::DeployAccountTxnV3 {
+        mp_rpc::v0_7_1::DeployAccountTxnV3 {
+            class_hash: self.class_hash,
+            constructor_calldata: self.constructor_calldata,
+            contract_address_salt: self.contract_address_salt,
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
+            nonce: self.nonce,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            paymaster_data: self.paymaster_data,
+            resource_bounds: self.resource_bounds.into(),
+            signature: self.signature,
+            tip: self.tip,
+        }
+    }
+    pub fn to_rpc_v0_8(self) -> mp_rpc::v0_8_1::DeployAccountTxnV3 {
+        mp_rpc::v0_8_1::DeployAccountTxnV3 {
+            class_hash: self.class_hash,
+            constructor_calldata: self.constructor_calldata,
+            contract_address_salt: self.contract_address_salt,
+            fee_data_availability_mode: self.fee_data_availability_mode.into(),
+            nonce: self.nonce,
+            nonce_data_availability_mode: self.nonce_data_availability_mode.into(),
+            paymaster_data: self.paymaster_data,
+            resource_bounds: self.resource_bounds.into(),
+            signature: self.signature,
+            tip: self.tip,
         }
     }
 }

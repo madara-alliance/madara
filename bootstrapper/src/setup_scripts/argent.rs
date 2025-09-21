@@ -1,3 +1,4 @@
+use crate::contract_clients::config::Clients;
 use crate::contract_clients::utils::{declare_contract, DeclarationInput, RpcAccount};
 use crate::utils::constants::{ARGENT_ACCOUNT_CASM_PATH, ARGENT_ACCOUNT_SIERRA_PATH};
 use crate::utils::{save_to_json, JsonValueType};
@@ -6,6 +7,7 @@ use starknet::core::types::Felt;
 
 pub struct ArgentSetup<'a> {
     account: RpcAccount<'a>,
+    clients: &'a Clients,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -14,16 +16,19 @@ pub struct ArgentSetupOutput {
 }
 
 impl<'a> ArgentSetup<'a> {
-    pub fn new(account: RpcAccount<'a>) -> Self {
-        Self { account }
+    pub fn new(account: RpcAccount<'a>, clients: &'a Clients) -> Self {
+        Self { account, clients }
     }
 
     pub async fn setup(&self) -> ArgentSetupOutput {
-        let argent_class_hash = declare_contract(DeclarationInput::DeclarationInputs(
-            String::from(ARGENT_ACCOUNT_SIERRA_PATH),
-            String::from(ARGENT_ACCOUNT_CASM_PATH),
-            self.account.clone(),
-        ))
+        let argent_class_hash = declare_contract(
+            self.clients,
+            DeclarationInput::DeclarationInputs(
+                String::from(ARGENT_ACCOUNT_SIERRA_PATH),
+                String::from(ARGENT_ACCOUNT_CASM_PATH),
+                self.account.clone(),
+            ),
+        )
         .await;
         log::info!("📣 Argent Hash Declared");
         save_to_json("argent_class_hash", &JsonValueType::StringType(argent_class_hash.to_string())).unwrap();

@@ -62,7 +62,7 @@ impl<D: MadaraStorageRead> ExecutionContext<D> {
         let res = entrypoint
             .execute(&mut self.state, &mut entry_point_execution_context, &mut remaining_gas)
             .map_err(|error| TransactionExecutionError::ExecutionError {
-                error,
+                error: Box::new(error),
                 class_hash,
                 storage_address,
                 selector: entry_point_selector,

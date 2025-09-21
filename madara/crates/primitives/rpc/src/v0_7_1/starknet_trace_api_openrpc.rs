@@ -77,10 +77,10 @@ pub enum SimulationFlag {
     SkipValidate,
 }
 
+/// the execution trace of an invoke transaction
 #[derive(Eq, Hash, PartialEq, Serialize, Deserialize, Clone, Debug)]
 #[serde(tag = "type")]
 pub enum TransactionTrace {
-    /// the execution trace of an invoke transaction
     #[serde(rename = "INVOKE")]
     Invoke(InvokeTransactionTrace),
     /// the execution trace of a declare transaction

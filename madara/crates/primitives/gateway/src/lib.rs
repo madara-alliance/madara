@@ -1,4 +1,5 @@
 pub mod block;
+pub mod class;
 pub mod error;
 pub mod receipt;
 pub mod state_update;

@@ -1,7 +1,6 @@
 use crate::errors::StarknetRpcResult;
 use crate::Starknet;
-use mp_block::BlockId;
-use mp_rpc::v0_7_1::{MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
+use mp_rpc::v0_7_1::{BlockId, MaybePendingStateUpdate, PendingStateUpdate, StateUpdate};
 use starknet_types_core::felt::Felt;
 
 /// Get the information about the result of executing the requested block.
@@ -23,7 +22,7 @@ use starknet_types_core::felt::Felt;
 /// state update or a pending state update. If the block is not found, returns a
 /// `StarknetRpcApiError` with `BlockNotFound`.
 pub fn get_state_update(starknet: &Starknet, block_id: BlockId) -> StarknetRpcResult<MaybePendingStateUpdate> {
-    let view = starknet.backend.block_view(block_id)?;
+    let view = starknet.resolve_block_view(block_id)?;
     let state_diff = view.get_state_diff()?;
     let old_root = if let Some(parent) = view.parent_block() {
         parent.get_block_info()?.header.global_state_root
@@ -51,7 +50,7 @@ mod tests {
         test_utils::{sample_chain_for_state_updates, SampleChainForStateUpdates},
         StarknetRpcApiError,
     };
-    use mp_block::BlockTag;
+    use mp_rpc::v0_7_1::BlockTag;
     use rstest::rstest;
 
     #[rstest]
