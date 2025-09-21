@@ -189,21 +189,21 @@ impl MadaraCmd {
             let mut gateway_port = None;
 
             for line in reader.lines().map_while(Result::ok) {
+                // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
+                // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
                 fn get_port(line: &str, prefix: &str) -> Option<u16> {
-                    if let Some(addr_part) = line.split(prefix).nth(1) {
-                        if let Some(ip_port) = addr_part.split_whitespace().next() {
-                            if let Some(port_str) = ip_port.rsplit(':').next() {
-                                if let Ok(port) = port_str.parse::<u16>() {
-                                    return Some(port);
-                                }
-                            }
-                        }
-                    }
-                    None
+                    line.split_once(prefix).map(|(_, rest)| rest.split_once([' ']).unwrap_or((rest, ""))).and_then(
+                        |(url, _)| {
+                            Url::parse(url)
+                                .ok()
+                                .and_then(|url| url.port())
+                                .or_else(|| url.split_once(':').and_then(|(_, port)| port.parse().ok()))
+                        },
+                    )
                 }
 
-                rpc_port = rpc_port.or(get_port(&line, "Running JSON-RPC server at "));
-                gateway_port = gateway_port.or(get_port(&line, "Gateway endpoint started at "));
+                rpc_port = rpc_port.or_else(|| get_port(&line, "Running JSON-RPC server at "));
+                gateway_port = gateway_port.or_else(|| get_port(&line, "Gateway endpoint started at "));
 
                 if (!rpc && rpc_port.is_some()) || (!gateway && gateway_port.is_some()) {
                     panic!(
