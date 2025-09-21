@@ -446,12 +446,13 @@ impl SetupConfigBuilder {
             .logs((true, true))
             .build();
 
-        let orchestrator_run_config =
-            test_config.orchestrator_run_config.builder()
-                .ethereum_rpc_url(anvil_config.endpoint())
-                .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
-                .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
-                .build();
+        let orchestrator_run_config = test_config
+            .orchestrator_run_config
+            .builder()
+            .ethereum_rpc_url(anvil_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
+            .build();
 
         // Setting some envs
         std::env::set_var("ETH_RPC", anvil_config.endpoint().as_str());

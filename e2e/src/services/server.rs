@@ -253,7 +253,6 @@ impl Server {
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
-
         } else {
             // Cross-platform way to stop the process
             let _ = self.process.start_kill();
