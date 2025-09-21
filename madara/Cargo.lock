@@ -7051,6 +7051,7 @@ dependencies = [
  "mp-convert",
  "mp-rpc",
  "mp-transactions",
+ "mp-utils",
  "starknet-types-core",
  "starknet_api",
  "thiserror 2.0.12",

@@ -257,7 +257,7 @@ impl TransactionValidator {
         let tx_hash = tx.tx_hash().to_felt();
 
         if tx.tx_type() == TransactionType::L1Handler {
-            // L1HandlerTransactions don't have nonces.
+            // L1HandlerTransactions don't have nonces. They can't be added to the mempool.
             return Err(RejectedTransactionError::new(
                 RejectedTransactionErrorKind::ValidateFailure,
                 "Cannot submit l1 handler transactions",
@@ -268,14 +268,14 @@ impl TransactionValidator {
         // the account is not deployed yet but the tx should be accepted.
         let validate = !(tx.tx_type() == TransactionType::InvokeFunction && tx.nonce().to_felt() == Felt::ONE);
 
-        // No charge_fee for Admin DeclareV0
-        let charge_fee = !((tx.tx_type() == TransactionType::Declare
-            && tx.version() == TransactionVersion(Felt::ZERO))
-            || self.config.disable_fee);
-
         let account_tx = AccountTransaction {
             tx,
-            execution_flags: ExecutionFlags { only_query: false, charge_fee, validate, strict_nonce_check: false },
+            execution_flags: ExecutionFlags {
+                only_query: false,
+                charge_fee: true,
+                validate,
+                strict_nonce_check: false,
+            },
         };
 
         if !self.config.disable_validation {
@@ -290,10 +290,12 @@ impl TransactionValidator {
 
             tracing::debug!("Mempool verify tx_hash={:#x}", tx_hash);
             // Perform validations
+            let account_tx = account_tx.clone();
             let mut validator = MadaraBlockView::from(self.backend.block_view_on_preconfirmed_or_fake()?)
                 .new_execution_context()?
                 .into_transaction_validator();
-            validator.perform_validations(account_tx.clone())?
+            // spawn_blocking: avoid starving the tokio workers during execution.
+            mp_utils::spawn_blocking(move || validator.perform_validations(account_tx)).await?;
         }
 
         // Forward the validated tx.
