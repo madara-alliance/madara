@@ -260,7 +260,7 @@ impl MadaraConfig {
         cmd.arg("--strk-per-eth").arg(self.strk_per_eth.to_string());
 
         // Flush every n blocks
-        cmd.arg("--flush-every-n-blocks").arg("1".to_string());
+        cmd.arg("--flush-every-n-blocks").arg("1");
 
         // Charge fee flag (inverted logic)
         if !self.charge_fee {
