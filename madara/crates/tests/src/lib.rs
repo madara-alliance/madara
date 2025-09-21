@@ -192,7 +192,7 @@ impl MadaraCmd {
                 // [2025-09-21 11:20:05:203] INFO 📱 Running JSON-RPC server at http://127.0.0.1:61598/rpc/v0.9.0/ [...]
                 // [2025-09-21 11:29:28:156] INFO 🌐 Gateway endpoint started at 0.0.0.0:54489
                 fn get_port(line: &str, prefix: &str) -> Option<u16> {
-                    line.split_once(prefix).map(|(_, rest)| rest.split_once([' ']).unwrap_or((rest, ""))).and_then(
+                    line.split_once(prefix).map(|(_, rest)| rest.split_once(' ').unwrap_or((rest, ""))).and_then(
                         |(url, _)| {
                             Url::parse(url)
                                 .ok()

@@ -2,6 +2,7 @@ use crate::utils::display_internal_server_error;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
 use mp_gateway::user_transaction::UserTransactionConversionError;
+use mp_transactions::ToBlockifierError;
 use serde::Serialize;
 use serde_json::json;
 use starknet_api::StarknetApiError;
@@ -371,10 +372,15 @@ impl From<RejectedTransactionError> for StarknetRpcApiError {
     }
 }
 
+impl From<ToBlockifierError> for StarknetRpcApiError {
+    fn from(value: ToBlockifierError) -> Self {
+        SubmitTransactionError::from(value).into()
+    }
+}
+
 impl From<SubmitTransactionError> for StarknetRpcApiError {
     fn from(value: SubmitTransactionError) -> Self {
         use SubmitTransactionError as E;
-
         match value {
             E::Unsupported => StarknetRpcApiError::UnimplementedMethod,
             E::Rejected(error) => error.into(),

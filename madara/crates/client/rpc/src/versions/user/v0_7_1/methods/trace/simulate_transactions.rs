@@ -35,8 +35,7 @@ pub async fn simulate_transactions(
             let execution_flags = ExecutionFlags { only_query, charge_fee, validate, strict_nonce_check: true };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
-        .collect::<Result<Vec<_>, ToBlockifierError>>()
-        .context("Failed to convert broadcasted transaction to blockifier")?;
+        .collect::<Result<Vec<_>, ToBlockifierError>>()?;
 
     let tips = user_transactions.iter().map(|tx| tx.tip().unwrap_or_default()).collect::<Vec<_>>();
 

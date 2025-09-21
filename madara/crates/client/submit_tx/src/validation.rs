@@ -129,6 +129,7 @@ impl From<ToBlockifierError> for SubmitTransactionError {
 
         // These are not always precise or accurate.
         match value {
+            E::UnsupportedTransactionVersion => rejected(InvalidTransactionVersion, "Unsupported transaction version"),
             E::CompilationFailed(class_compilation_error) => {
                 rejected(CompilationFailed, format!("{class_compilation_error:#}"))
             }

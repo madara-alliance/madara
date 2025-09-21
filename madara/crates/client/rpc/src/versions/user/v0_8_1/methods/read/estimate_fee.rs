@@ -2,7 +2,6 @@ use crate::errors::StarknetRpcApiError;
 use crate::errors::StarknetRpcResult;
 use crate::utils::tx_api_to_blockifier;
 use crate::Starknet;
-use anyhow::Context;
 use blockifier::transaction::account_transaction::ExecutionFlags;
 use mc_exec::execution::TxInfo;
 use mc_exec::MadaraBlockViewExecutionExt;
@@ -46,8 +45,7 @@ pub async fn estimate_fee(
             let execution_flags = ExecutionFlags { only_query, charge_fee: false, validate, strict_nonce_check: true };
             Ok(tx_api_to_blockifier(api_tx, execution_flags)?)
         })
-        .collect::<Result<Vec<_>, ToBlockifierError>>()
-        .context("Failed to convert BroadcastedTransaction to AccountTransaction")?;
+        .collect::<Result<Vec<_>, ToBlockifierError>>()?;
 
     let tips = transactions.iter().map(|tx| tx.tip().unwrap_or_default()).collect::<Vec<_>>();
 

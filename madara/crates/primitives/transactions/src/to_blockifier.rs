@@ -94,6 +94,10 @@ impl IntoStarknetApiExt for mp_rpc::v0_8_1::BroadcastedTxn {
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        if starknet_version >= StarknetVersion::V0_14_0 && self.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion);
+        }
+
         let (class_info, converted_class, class_hash) = match &self {
             mp_rpc::v0_8_1::BroadcastedTxn::Declare(tx) => match tx {
                 mp_rpc::v0_8_1::BroadcastedDeclareTxn::V1(tx) | mp_rpc::v0_8_1::BroadcastedDeclareTxn::QueryV1(tx) => {
@@ -150,6 +154,10 @@ impl IntoStarknetApiExt for mp_rpc::v0_7_1::BroadcastedTxn {
         chain_id: Felt,
         starknet_version: StarknetVersion,
     ) -> Result<(ApiAccountTransaction, Option<ConvertedClass>), ToBlockifierError> {
+        if starknet_version >= StarknetVersion::V0_14_0 && self.version() != Felt::THREE {
+            return Err(ToBlockifierError::UnsupportedTransactionVersion);
+        }
+
         let (class_info, converted_class, class_hash) = match &self {
             mp_rpc::v0_7_1::BroadcastedTxn::Declare(tx) => match tx {
                 mp_rpc::v0_7_1::BroadcastedDeclareTxn::V1(tx) | mp_rpc::v0_7_1::BroadcastedDeclareTxn::QueryV1(tx) => {
@@ -252,6 +260,8 @@ impl IntoStarknetApiExt for BroadcastedDeclareTxnV0 {
 
 #[derive(thiserror::Error, Debug)]
 pub enum ToBlockifierError {
+    #[error("Unsupported transaction version")]
+    UnsupportedTransactionVersion,
     #[error("Failed to compile contract class: {0}")]
     CompilationFailed(#[from] ClassCompilationError),
     #[error("Failed to convert program: {0}")]

@@ -165,9 +165,16 @@ pub enum BroadcastedTxn {
 impl BroadcastedTxn {
     pub fn is_query(&self) -> bool {
         match self {
-            BroadcastedTxn::Invoke(txn) => txn.is_query(),
-            BroadcastedTxn::Declare(txn) => txn.is_query(),
-            BroadcastedTxn::DeployAccount(txn) => txn.is_query(),
+            Self::Invoke(txn) => txn.is_query(),
+            Self::Declare(txn) => txn.is_query(),
+            Self::DeployAccount(txn) => txn.is_query(),
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::Invoke(txn) => txn.version(),
+            Self::Declare(txn) => txn.version(),
+            Self::DeployAccount(txn) => txn.version(),
         }
     }
 }
@@ -196,10 +203,15 @@ pub enum BroadcastedInvokeTxn {
 impl BroadcastedInvokeTxn {
     pub fn is_query(&self) -> bool {
         match self {
-            BroadcastedInvokeTxn::QueryV0(_) | BroadcastedInvokeTxn::QueryV1(_) | BroadcastedInvokeTxn::QueryV3(_) => {
-                true
-            }
-            BroadcastedInvokeTxn::V0(_) | BroadcastedInvokeTxn::V1(_) | BroadcastedInvokeTxn::V3(_) => false,
+            Self::QueryV0(_) | Self::QueryV1(_) | Self::QueryV3(_) => true,
+            Self::V0(_) | Self::V1(_) | Self::V3(_) => false,
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::V0(_) | Self::QueryV0(_) => Felt::ZERO,
+            Self::V1(_) | Self::QueryV1(_) => Felt::ONE,
+            Self::V3(_) | Self::QueryV3(_) => Felt::THREE,
         }
     }
 }
@@ -228,10 +240,15 @@ pub enum BroadcastedDeclareTxn {
 impl BroadcastedDeclareTxn {
     pub fn is_query(&self) -> bool {
         match self {
-            BroadcastedDeclareTxn::QueryV1(_)
-            | BroadcastedDeclareTxn::QueryV2(_)
-            | BroadcastedDeclareTxn::QueryV3(_) => true,
-            BroadcastedDeclareTxn::V1(_) | BroadcastedDeclareTxn::V2(_) | BroadcastedDeclareTxn::V3(_) => false,
+            Self::QueryV1(_) | Self::QueryV2(_) | Self::QueryV3(_) => true,
+            Self::V1(_) | Self::V2(_) | Self::V3(_) => false,
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::V1(_) | Self::QueryV1(_) => Felt::ONE,
+            Self::V2(_) | Self::QueryV2(_) => Felt::TWO,
+            Self::V3(_) | Self::QueryV3(_) => Felt::THREE,
         }
     }
 }
@@ -255,8 +272,14 @@ pub enum BroadcastedDeployAccountTxn {
 impl BroadcastedDeployAccountTxn {
     pub fn is_query(&self) -> bool {
         match self {
-            BroadcastedDeployAccountTxn::QueryV1(_) | BroadcastedDeployAccountTxn::QueryV3(_) => true,
-            BroadcastedDeployAccountTxn::V1(_) | BroadcastedDeployAccountTxn::V3(_) => false,
+            Self::QueryV1(_) | Self::QueryV3(_) => true,
+            Self::V1(_) | Self::V3(_) => false,
+        }
+    }
+    pub fn version(&self) -> Felt {
+        match self {
+            Self::V1(_) | Self::QueryV1(_) => Felt::ONE,
+            Self::V3(_) | Self::QueryV3(_) => Felt::THREE,
         }
     }
 }
