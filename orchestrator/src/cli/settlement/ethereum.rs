@@ -2,7 +2,7 @@ use clap::Args;
 use url::Url;
 
 #[derive(Debug, Clone, Args)]
-#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address", "ethereum_settlement_txn_wait_sleep_delay_secs"])]
+#[group(requires_all = ["ethereum_rpc_url", "ethereum_private_key", "l1_core_contract_address", "starknet_operator_address"])]
 pub struct EthereumSettlementCliArgs {
     /// Use the Ethereum settlement layer.
     #[arg(long)]
