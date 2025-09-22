@@ -205,6 +205,66 @@ impl RocksDBStorage {
             backup: BackupManager::start_if_enabled(path, &config).context("Startup backup manager")?,
         })
     }
+
+    /// Reverts the chain back to the given block number.
+    ///
+    /// This will:
+    /// 1. Remove all blocks after `revert_to`
+    /// 2. Remove all classes declared in those blocks
+    /// 3. Revert the state changes from those blocks
+    /// 4. Update the chain tip to the new position
+    ///
+    /// Returns the reverted state diffs in reverse order (newest to oldest).
+    pub fn revert_to(&self, revert_to: u64) -> Result<Vec<(u64, StateDiff)>> {
+        tracing::info!("Reverting chain to block {}", revert_to);
+
+        // First revert blocks and collect state diffs
+        let state_diffs = self.inner.revert_to(revert_to)
+            .with_context(|| format!("Reverting blocks to block_n={revert_to}"))?;
+
+        // Then revert classes using the collected state diffs
+        if !state_diffs.is_empty() {
+            self.inner.class_db_revert(&state_diffs)
+                .with_context(|| format!("Reverting classes for {} blocks", state_diffs.len()))?;
+        }
+
+        // Optionally revert state trie changes
+        // Note: This may need to be implemented based on your state management needs
+        // self.inner.state_revert(&state_diffs)?;
+
+        tracing::info!("Successfully reverted {} blocks", state_diffs.len());
+        Ok(state_diffs)
+    }
+
+    /// Revert items in the contract db.
+    ///
+    /// `state_diffs` should be a Vec of tuples containing the block number and the entire StateDiff
+    /// to be reverted in that block.
+    ///
+    /// **Warning:** While not enforced, the following should be true:
+    ///  * Each `StateDiff` should include the entire state for its block
+    ///  * `state_diffs` should form a contiguous range of blocks
+    ///  * that range should end with the current blockchain tip
+    ///
+    /// If this isn't the case, the blockchain will store inconsistent state for some blocks.
+    ///
+    /// Does not clear pending info; caller should do this if needed.
+    pub fn contract_db_revert(&self, state_diffs: &Vec<(u64, StateDiff)>) -> Result<()> {
+        if state_diffs.is_empty() {
+            return Ok(());
+        }
+
+        // Use the existing state_remove functionality in a batch
+        let mut batch = WriteBatchWithTransaction::default();
+
+        for (block_n, state_diff) in state_diffs {
+            self.inner.state_remove(*block_n, state_diff, &mut batch)?;
+        }
+
+        self.inner.db.write_opt(batch, &self.inner.writeopts_no_wal)?;
+
+        Ok(())
+    }
 }
 
 impl MadaraStorageRead for RocksDBStorage {

@@ -3,6 +3,7 @@ use crate::{
     import::BlockImporter,
     metrics::SyncMetrics,
     probe::ThrottledRepeatedFuture,
+    reorg::{detect_reorg},
     sync::{ForwardPipeline, SyncController, SyncControllerConfig},
 };
 use anyhow::Context;
@@ -77,6 +78,9 @@ pub struct GatewayForwardSync {
     classes_pipeline: ClassesSync,
     apply_state_pipeline: ApplyStateSync,
     backend: Arc<MadaraBackend>,
+    client: Arc<GatewayProvider>,
+    importer: Arc<BlockImporter>,
+    config: ForwardSyncConfig,
 }
 
 impl GatewayForwardSync {
@@ -112,7 +116,39 @@ impl GatewayForwardSync {
             config.apply_state_batch_size,
             config.disable_tries,
         );
-        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend }
+        Self { blocks_pipeline, classes_pipeline, apply_state_pipeline, backend, client, importer, config }
+    }
+
+    fn reinit_pipelines_from_current_position(&mut self) {
+        // Reinitialize pipelines from the current database position
+        let starting_block_n = self.backend.latest_confirmed_block_n().map(|n| n + 1).unwrap_or(0);
+        tracing::info!("📊 Reinitializing pipelines from block #{} after rollback", starting_block_n);
+
+        self.blocks_pipeline = blocks::block_with_state_update_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            self.config.block_parallelization,
+            self.config.block_batch_size,
+            self.config.keep_pre_v0_13_2_hashes,
+        );
+        self.classes_pipeline = classes::classes_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            self.client.clone(),
+            starting_block_n,
+            self.config.classes_parallelization,
+            self.config.classes_batch_size,
+        );
+        self.apply_state_pipeline = super::apply_state::apply_state_pipeline(
+            self.backend.clone(),
+            self.importer.clone(),
+            starting_block_n,
+            self.config.apply_state_parallelization,
+            self.config.apply_state_batch_size,
+            self.config.disable_tries,
+        );
     }
 
     fn pipeline_status(&self) -> PipelineStatus {
@@ -151,6 +187,36 @@ impl ForwardPipeline for GatewayForwardSync {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
             {
                 let next_input_block_n = self.blocks_pipeline.next_input_block_n();
+                
+                // Check for reorg before scheduling each block
+                // Only check if we have blocks in the database (i.e., we're past genesis)
+                if let Some(latest_block) = self.backend.latest_confirmed_block_n() {
+                    // Only check blocks that are within our stored range
+                    if next_input_block_n <= latest_block + 1 {
+                        if let Some(common_ancestor) = detect_reorg(
+                            next_input_block_n,
+                            &self.backend,
+                            &self.client,
+                        ).await? {
+                            // Reorg detected during sync!
+                            tracing::warn!("⚠️ REORG DETECTED during sync at block {} - common ancestor: {}", next_input_block_n, common_ancestor);
+                            tracing::warn!("🔄 Switching from previous chain to new chain from gateway");
+
+                            // Perform rollback
+                            self.backend.rollback_to_block(common_ancestor)?;
+
+                            tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
+                                common_ancestor, common_ancestor + 1);
+
+                            // Reinitialize pipelines from the new position after rollback
+                            self.reinit_pipelines_from_current_position();
+
+                            // Continue with the sync from the new position
+                            // Don't return - let the loop continue with the updated pipelines
+                        }
+                    }
+                }
+                
                 self.blocks_pipeline.push(next_input_block_n..next_input_block_n + 1, iter::once(()));
             }
 

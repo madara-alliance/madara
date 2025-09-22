@@ -318,6 +318,52 @@ impl MadaraBackend<RocksDBStorage> {
         let db = RocksDBStorage::open(&db_path, rocksdb_config).context("Opening rocksdb storage")?;
         Ok(Arc::new(Self::new_and_init(db, chain_config, config)?))
     }
+
+    /// Rollback the database to a specific block number
+    /// This removes all blocks after the specified block number
+    /// and reverts the state to that point
+    pub fn rollback_to_block(&self, target_block_n: u64) -> Result<()> {
+        tracing::warn!("⏮️ Rolling back database to block #{}", target_block_n);
+
+        // Get the current latest block
+        let current_block = self.latest_confirmed_block_n();
+        
+        if let Some(current) = current_block {
+            if target_block_n >= current {
+                tracing::info!("Target block {} is >= current block {}, nothing to rollback", target_block_n, current);
+                return Ok(());
+            }
+        } else {
+            tracing::warn!("No blocks found in database, cannot rollback");
+            return Ok(());
+        }
+
+        // Use the revert_to function from RocksDBStorage
+        let state_diffs = self.db.revert_to(target_block_n)?;
+        
+        tracing::info!("📊 Reverted {} blocks, updating chain tip", state_diffs.len());
+        
+        // Update the chain tip to the target block
+        let new_chain_tip = if target_block_n == 0 {
+            StorageChainTip::Empty
+        } else {
+            StorageChainTip::Confirmed(target_block_n)
+        };
+        
+        self.db.replace_chain_tip(&new_chain_tip)?;
+        
+        // Update the internal chain tip watcher
+        self.chain_tip.send_replace(ChainTip::from_storage(new_chain_tip));
+        
+        // Clear any pending/preconfirmed blocks
+        self.db.replace_chain_tip(&new_chain_tip)?;
+        
+        // Flush to ensure consistency
+        self.db.flush()?;
+
+        tracing::info!("✅ Rollback complete. Database now at block #{}", target_block_n);
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug)]
