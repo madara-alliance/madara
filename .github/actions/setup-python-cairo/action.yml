@@ -1,0 +1,108 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-action.json
+name: Action - Setup Python Cairo
+description: Sets up Python virtual environment with cairo0 tools for apollo_starknet_os_program
+
+inputs:
+  python-version:
+    description: Python version to set up
+    required: false
+    default: "3.9"
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
+
+    - name: Setup Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Cache Python dependencies
+      uses: actions/cache@v4
+      with:
+        path: |
+          sequencer_venv
+          ~/.cache/pip
+        key: python-cairo-${{ runner.os }}-${{ inputs.python-version }}-v3
+        restore-keys: |
+          python-cairo-${{ runner.os }}-${{ inputs.python-version }}-
+
+    - name: Fetch Cargo dependencies to get sequencer requirements.txt
+      shell: bash
+      run: |
+        # First, run cargo fetch to ensure all dependencies are downloaded
+        # This will populate the .cargo/git/checkouts directory
+        echo "Fetching Cargo dependencies..."
+        cargo fetch --manifest-path Cargo.toml
+
+    - name: Setup Python virtual environment with sequencer requirements
+      shell: bash
+      run: |
+        # Create virtual environment
+        python3 -m venv sequencer_venv
+        source sequencer_venv/bin/activate
+        
+        # Now look for the requirements.txt file in the cargo checkouts
+        REQUIREMENTS_FILE=""
+        
+        # Look for requirements.txt in sequencer checkout directories
+        if [ -d "$HOME/.cargo/git/checkouts" ]; then
+          echo "Searching for sequencer requirements.txt in cargo checkouts..."
+          REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | grep -i sequencer | head -1)
+        fi
+        
+        # Alternative search - look more broadly in cargo git checkouts
+        if [ -z "$REQUIREMENTS_FILE" ]; then
+          echo "Broad search in cargo git checkouts..."
+          REQUIREMENTS_FILE=$(find "$HOME/.cargo/git/checkouts" -name "requirements.txt" 2>/dev/null | head -1)
+        fi
+        
+        # Last resort - check if running inside GitHub Actions and look in runner's cargo directory
+        if [ -z "$REQUIREMENTS_FILE" ] && [ -n "$GITHUB_WORKSPACE" ]; then
+          echo "Searching in GitHub runner cargo directory..."
+          REQUIREMENTS_FILE=$(find /home/runner/.cargo -name "requirements.txt" -path "*/scripts/requirements.txt" 2>/dev/null | head -1)
+        fi
+        
+        if [ -n "$REQUIREMENTS_FILE" ] && [ -f "$REQUIREMENTS_FILE" ]; then
+          echo "✓ Found requirements.txt at: $REQUIREMENTS_FILE"
+          echo "Contents of requirements.txt:"
+          cat "$REQUIREMENTS_FILE"
+          echo ""
+          echo "Installing dependencies from requirements.txt..."
+          pip install --upgrade pip
+          pip install -r "$REQUIREMENTS_FILE"
+        else
+          echo "❌ Could not find sequencer requirements.txt file"
+          echo "Searched in the following locations:"
+          echo "  - $HOME/.cargo/git/checkouts"
+          echo "  - /home/runner/.cargo (if in GitHub Actions)"
+          echo ""
+          echo "Available files in cargo checkouts:"
+          find "$HOME/.cargo/git/checkouts" -name "*.txt" 2>/dev/null | head -10 || echo "No .txt files found"
+          echo ""
+          exit 1
+        fi
+        
+        # Verify cairo-compile is available
+        if command -v cairo-compile >/dev/null 2>&1; then
+          echo "✓ cairo-compile is available at: $(which cairo-compile)"
+          cairo-compile --version
+        else
+          echo "❌ cairo-compile not found in PATH after installing requirements"
+          echo "Installed Python packages:"
+          pip list
+          exit 1
+        fi
+        
+        echo "✓ Python virtual environment setup complete with sequencer requirements"
+
+    - name: Add virtual environment to PATH
+      shell: bash
+      run: |
+        # Add the virtual environment to PATH so cairo-compile is available
+        echo "$(pwd)/sequencer_venv/bin" >> $GITHUB_PATH
+        echo "VIRTUAL_ENV=$(pwd)/sequencer_venv" >> $GITHUB_ENV 

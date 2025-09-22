@@ -18,6 +18,11 @@ jobs:
       - name: Load env
         uses: ./.github/actions/load-env
 
+      - name: Python Cairo setup
+        uses: ./.github/actions/setup-python-cairo
+        with:
+          python-version: ${{ env.BUILD_PYTHON_VERSION }}
+
       - name: Rust setup
         uses: ./.github/actions/setup-rust
         with:
