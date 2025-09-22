@@ -496,12 +496,9 @@ impl EthereumSettlementClient {
     async fn get_gas_price_estimates(&self, mul_factor: f64) -> Result<(u128, u128, u128)> {
         let eip1559_est = self.provider.estimate_eip1559_fees(None).await?;
 
-        let max_fee_per_gas: u128 =
-            self.add_safety_margin(eip1559_est.max_fee_per_gas.to_string().parse()?, mul_factor);
-        let max_priority_fee_per_gas: u128 =
-            self.add_safety_margin(eip1559_est.max_priority_fee_per_gas.to_string().parse()?, mul_factor);
-        let max_fee_per_blob_gas: u128 =
-            self.add_safety_margin(self.provider.get_blob_base_fee().await?.to_string().parse()?, mul_factor);
+        let max_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_fee_per_gas, mul_factor);
+        let max_priority_fee_per_gas: u128 = self.add_safety_margin(eip1559_est.max_priority_fee_per_gas, mul_factor);
+        let max_fee_per_blob_gas: u128 = self.add_safety_margin(self.provider.get_blob_base_fee().await?, mul_factor);
 
         Ok((max_fee_per_gas, max_priority_fee_per_gas, max_fee_per_blob_gas))
     }
