@@ -171,8 +171,12 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // Put SNOS job data in DB
     let snos_job_id = put_job_data_in_db_snos(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
 
-    // Put Proving job data in DB
-    put_job_data_in_db_proving(setup_config.mongo_db_instance(), l2_block_number.clone()).await;
+    // Put Proving job data in DB for all blocks that will be batched
+    let min_block = l2_block_number.parse::<u64>().unwrap();
+    let max_block = min_block + 2;
+    for block_num in min_block..=max_block {
+        put_job_data_in_db_proving(setup_config.mongo_db_instance(), block_num.to_string()).await;
+    }
 
     // Mocking SHARP client responses
     mock_add_job_endpoint_output(setup_config.sharp_client()).await;
@@ -218,12 +222,13 @@ async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     assert!(test_result.is_ok(), "❌ After Snos Job state DB state assertion failed.");
     println!("✅ Snos Job state DB state assertion passed");
 
-    // Check 2: Check that the Proof Creation Job has been completed correctly
+    // Check 2: Check that the Proof Creation Jobs have been completed correctly
+    // We check for the first block in the batch
     let expected_state_after_proving_job = ExpectedDBState {
         internal_id: l2_block_number.clone(),
         job_type: JobType::ProofCreation,
         job_status: JobStatus::Completed,
-        version: 4,
+        version: 0, // These are pre-created jobs with version 0
     };
     let test_result = wait_for_db_state(
         Duration::from_secs(1500),
@@ -660,7 +665,7 @@ pub async fn put_job_data_in_db_update_state(mongo_db: &MongoDbServer, l2_block_
 
 /// Puts after SNOS job state into the database
 pub async fn put_job_data_in_db_proving(mongo_db: &MongoDbServer, l2_block_number: String) {
-    let block_number = l2_block_number.parse::<u64>().unwrap() - 1;
+    let block_number = l2_block_number.parse::<u64>().unwrap();
 
     // Create the Proving-specific metadata
     let proving_metadata = ProvingMetadata { block_number, ..Default::default() };

@@ -258,6 +258,7 @@ impl JobHandlerService {
         {
             Ok(Ok(external_id)) => {
                 debug!(job_id = ?id, job_type = ?job.job_type, "Successfully processed job with external ID: {:?}", external_id);
+                Span::current().record("external_id", format!("{:?}", external_id).as_str());
                 // Add the time of processing to the metadata.
                 job.metadata.common.process_completed_at = Some(Utc::now());
 
@@ -384,6 +385,9 @@ impl JobHandlerService {
         let start = Instant::now();
         let mut job = JobService::get_job(id, config.clone()).await?;
         let internal_id = job.internal_id.clone();
+        if !matches!(job.external_id, ExternalId::Number(0)) {
+            Span::current().record("external_id", format!("{:?}", job.external_id).as_str());
+        }
         info!(log_type = "starting", category = "general", function_type = "verify_job", block_no = %internal_id, "General verify job started for block");
 
         match job.status {

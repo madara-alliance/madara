@@ -118,6 +118,9 @@ impl BatchingTrigger {
                 start_block_number
             ))));
         }
+
+        tracing::Span::current().record("block_start", start_block_number);
+        tracing::Span::current().record("block_end", end_block_number);
         // Get the database
         let database = config.database();
 
@@ -147,6 +150,7 @@ impl BatchingTrigger {
         // Assign batches to all the blocks
         for block_number in start_block_number..end_block_number + 1 {
             (state_update, batch) = self.assign_batch(block_number, state_update, batch, &config).await?;
+            tracing::Span::current().record("batch_id", batch.index);
         }
 
         if let Some(state_update) = state_update {

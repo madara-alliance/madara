@@ -85,9 +85,17 @@ impl JobHandlerTrait for StateUpdateJobHandler {
             SettlementContext::Block(data) => {
                 self.validate_block_numbers(config.clone(), &data.to_settle).await?;
                 debug!(blocks = ?data.to_settle, "Validated block numbers");
+                if !data.to_settle.is_empty() {
+                    tracing::Span::current().record("block_start", data.to_settle[0]);
+                    tracing::Span::current().record("block_end", data.to_settle[data.to_settle.len() - 1]);
+                }
                 (data.to_settle, data.last_failed.unwrap_or(0))
             }
             SettlementContext::Batch(data) => {
+                if !data.to_settle.is_empty() {
+                    tracing::Span::current().record("batch_start", data.to_settle[0]);
+                    tracing::Span::current().record("batch_end", data.to_settle[data.to_settle.len() - 1]);
+                }
                 (data.to_settle, data.last_failed.unwrap_or(1)) // The lowest possible batch number is 1
             }
         };

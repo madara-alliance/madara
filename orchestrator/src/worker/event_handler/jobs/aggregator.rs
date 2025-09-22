@@ -45,6 +45,9 @@ impl JobHandlerTrait for AggregatorJobHandler {
         // Get aggregator metadata
         let metadata: AggregatorMetadata = job.metadata.specific.clone().try_into()?;
 
+        tracing::Span::current().record("batch_id", metadata.batch_num);
+        tracing::Span::current().record("bucket_id", metadata.bucket_id.as_str());
+
         debug!(bucket_id = %metadata.bucket_id, "Closing bucket");
 
         // Call close bucket
@@ -108,6 +111,8 @@ impl JobHandlerTrait for AggregatorJobHandler {
                             JobError::Other(OtherError(eyre!(e)))
                         },
                     )?;
+
+                tracing::Span::current().record("aggregator_query_id", aggregator_query_id.as_str());
 
                 // Fetch aggregator cairo pie and store it in storage
                 let cairo_pie_bytes = AggregatorJobHandler::fetch_and_store_artifact(
