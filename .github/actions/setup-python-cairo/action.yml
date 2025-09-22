@@ -31,13 +31,16 @@ runs:
         restore-keys: |
           python-cairo-${{ runner.os }}-${{ inputs.python-version }}-
 
-    - name: Fetch Cargo dependencies to get sequencer requirements.txt
+    - name: Ensure Cargo dependencies are available
       shell: bash
       run: |
-        # First, run cargo fetch to ensure all dependencies are downloaded
-        # This will populate the .cargo/git/checkouts directory
-        echo "Fetching Cargo dependencies..."
-        cargo fetch --manifest-path Cargo.toml
+        # Check if cargo dependencies are already fetched (e.g., by Rust setup action)
+        if [ -d "$HOME/.cargo/git/checkouts" ] && [ "$(find "$HOME/.cargo/git/checkouts" -name "*.toml" 2>/dev/null | wc -l)" -gt 0 ]; then
+          echo "✓ Cargo dependencies already available from previous step"
+        else
+          echo "Fetching Cargo dependencies to get sequencer requirements.txt..."
+          cargo fetch --manifest-path Cargo.toml
+        fi
 
     - name: Setup Python virtual environment with sequencer requirements
       shell: bash
@@ -100,9 +103,24 @@ runs:
         
         echo "✓ Python virtual environment setup complete with sequencer requirements"
 
-    - name: Add virtual environment to PATH
+    - name: Activate virtual environment for subsequent steps
       shell: bash
       run: |
-        # Add the virtual environment to PATH so cairo-compile is available
-        echo "$(pwd)/sequencer_venv/bin" >> $GITHUB_PATH
-        echo "VIRTUAL_ENV=$(pwd)/sequencer_venv" >> $GITHUB_ENV 
+        # Get the absolute path to the virtual environment
+        VENV_PATH="$(pwd)/sequencer_venv"
+        
+        # Add virtual environment to PATH for subsequent steps
+        echo "$VENV_PATH/bin" >> $GITHUB_PATH
+        
+        # Set environment variables that indicate we're in a virtual environment
+        echo "VIRTUAL_ENV=$VENV_PATH" >> $GITHUB_ENV
+        echo "PATH=$VENV_PATH/bin:$PATH" >> $GITHUB_ENV
+        
+        # Also set Python-specific environment variables
+        echo "PYTHONPATH=$VENV_PATH/lib/python${{ inputs.python-version }}/site-packages" >> $GITHUB_ENV
+        
+        # Verify the setup
+        echo "✓ Virtual environment activated for subsequent workflow steps"
+        echo "VENV_PATH: $VENV_PATH"
+        echo "Python executable will be: $VENV_PATH/bin/python"
+        echo "Cairo-compile will be: $VENV_PATH/bin/cairo-compile" 
