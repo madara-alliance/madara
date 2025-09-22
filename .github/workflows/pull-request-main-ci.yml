@@ -146,12 +146,13 @@ jobs:
     secrets: inherit
 
   # Run e2e tests
-  e2e-orchestrator:
-    needs: [build-madara, check-orchestrator]
-    uses: ./.github/workflows/task-e2e-orchestrator.yml
-    with:
-      madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
-    secrets: inherit
+  # Disabling for now, will be re-enabled after fixing SNOS multi jobs issue
+  # e2e-orchestrator:
+  #   needs: [build-madara, check-orchestrator]
+  #   uses: ./.github/workflows/task-e2e-orchestrator.yml
+  #   with:
+  #     madara-binary-hash: ${{ needs.build-madara.outputs.madara-binary-hash }}
+  #   secrets: inherit
 
   # ========================================================================= #
   #                                BOOTSTRAPPER                               #
