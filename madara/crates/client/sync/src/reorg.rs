@@ -15,12 +15,9 @@ pub async fn detect_reorg(
     backend: &MadaraBackend,
     client: &GatewayProvider,
 ) -> anyhow::Result<Option<u64>> {
-    // Skip genesis block
     if block_n == 0 {
         return Ok(None);
     }
-
-    // Fetch block header from gateway
     let gateway_block = client
         .get_block(BlockId::Number(block_n))
         .await
@@ -33,21 +30,15 @@ pub async fn detect_reorg(
         }
     };
 
-    // Check if we have this block locally
     let local_hash = backend.get_block_hash(&RawDbBlockId::Number(block_n))?;
-
     if let Some(local_hash) = local_hash {
-        // Log the comparison
-        tracing::info!(
+        tracing::debug!(
             "Checking block #{}: local_hash={:#x}, gateway_hash={:#x}",
             block_n,
             local_hash,
             gateway_block.block_hash
         );
-
-        // We have a block at this height - check if it matches
         if local_hash != gateway_block.block_hash {
-            // Reorg detected! Find common ancestor
             tracing::warn!(
                 "⚠️ REORG DETECTED at block {}: local {:#x} != gateway {:#x}",
                 block_n,
@@ -69,14 +60,12 @@ pub async fn detect_reorg(
         tracing::debug!("Block #{} not found locally - skipping reorg check", block_n);
     }
 
-    // Also check parent hash consistency if we have the parent
     if block_n > 0 {
         let parent_n = block_n - 1;
         let local_parent_hash = backend.get_block_hash(&RawDbBlockId::Number(parent_n))?;
 
         if let Some(local_parent) = local_parent_hash {
             if local_parent != gateway_block.parent_block_hash {
-                // Parent mismatch - this is also a reorg
                 let common_ancestor = find_common_ancestor(
                     parent_n,
                     backend,
@@ -98,7 +87,30 @@ pub async fn detect_reorg(
     Ok(None)
 }
 
-/// Finds the common ancestor between local chain and gateway chain
+/// Finds the common ancestor block between the local chain and gateway chain during a reorg
+///
+/// This function walks backwards from a given starting block, comparing block hashes
+/// between the local database and the gateway provider until it finds a block where
+/// both chains agree (same hash). This block becomes the common ancestor from which
+/// the chains diverged.
+///
+/// # Arguments
+///
+/// * `start_block` - The block number to start searching backwards from (typically where reorg was detected)
+/// * `backend` - Reference to the local Madara backend for accessing local blockchain data
+/// * `client` - Reference to the gateway provider for fetching remote chain data
+///
+/// # Returns
+///
+/// * `Ok(u64)` - The block number of the common ancestor
+/// * `Err` - If there's an error accessing local or remote blockchain data
+///
+/// #####
+///
+/// 1. Starting from `start_block - 1`, walks backwards through the chain
+/// 2. For each block, compares local hash with gateway hash
+/// 3. Returns the first block where hashes match (common ancestor)
+/// 4. If no match found all the way to genesis, returns 0
 pub async fn find_common_ancestor(
     start_block: u64,
     backend: &MadaraBackend,
@@ -113,7 +125,8 @@ pub async fn find_common_ancestor(
 
         let local_hash = backend.get_block_hash(&RawDbBlockId::Number(check_block))?;
         if local_hash.is_none() {
-            // We don't have this block locally
+            // Block not found locally - continue searching backwards
+            // This can occur when the local node hasn't synced this far yet
             continue;
         }
 
@@ -128,13 +141,10 @@ pub async fn find_common_ancestor(
         };
 
         if local_hash.unwrap() == gateway_block.block_hash {
-            // Found common ancestor!
             tracing::info!("✅ Found common ancestor at block {}", check_block);
             return Ok(check_block);
         }
     }
-
-    // If we get here, reorg goes all the way to genesis
     tracing::warn!("⚠️ Reorg extends all the way to genesis!");
     Ok(0)
 }

@@ -533,29 +533,14 @@ impl BlockImporterCtx {
         // don't re-import the blocks we've already imported.
         let next_to_import = self.db.head_status().global_trie.next();
         let already_imported_count = next_to_import.saturating_sub(block_range.start);
-        
-        tracing::debug!("apply_to_global_trie: original block_range={:?}, next_to_import={}, already_imported_count={}",
-            block_range, next_to_import, already_imported_count);
-        
-        // Collect state_diffs to check the count
-        let state_diffs: Vec<_> = state_diffs.into_iter().skip(already_imported_count as usize).collect();
-        let state_diffs_count = state_diffs.len();
+        let state_diffs = state_diffs.iter().skip(already_imported_count as _);
         block_range.start += already_imported_count;
-        
-        tracing::debug!("apply_to_global_trie: adjusted block_range={:?}, state_diffs count={}",
-            block_range, state_diffs_count);
 
         let Some(last_block_n) = block_range.clone().last() else {
-            tracing::debug!("apply_to_global_trie: block range is empty after adjustment, skipping");
             return Ok(()); // range is empty
         };
-        
-        if state_diffs_count == 0 {
-            tracing::debug!("apply_to_global_trie: no state diffs to apply after skipping already imported blocks");
-            return Ok(());
-        }
 
-        let got = self.db.apply_to_global_trie(block_range.start, state_diffs.iter()).map_err(|error| {
+        let got = self.db.apply_to_global_trie(block_range.start, state_diffs).map_err(|error| {
             BlockImportError::InternalDb { error, context: "Applying state diff to global trie".into() }
         })?;
 
@@ -575,9 +560,8 @@ impl BlockImporterCtx {
                 .global_state_root;
 
             if expected != got {
-                tracing::error!("🔴 State root mismatch for block #{}: expected={:#x}, got={:#x}", 
+                tracing::error!("🔴 State root mismatch for block #{}: expected={:#x}, got={:#x}",
                     last_block_n, expected, got);
-                tracing::error!("This usually indicates the tries are not properly synced after rollback");
                 return Err(BlockImportError::GlobalStateRoot { got, expected });
             }
         }

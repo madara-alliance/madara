@@ -72,7 +72,7 @@ fi
 
 echo -e "${GREEN}Step 1: Creating genesis state${NC}"
 echo "Starting a temporary sequencer to create genesis block"
-RUST_LOG=info $MADARA \
+MADARA_DB_MAX_SAVED_TRIE_LOGS=1000 RUST_LOG=info $MADARA \
     --name genesis \
     --devnet \
     --base-path "$GENESIS_DB" \
@@ -82,12 +82,12 @@ RUST_LOG=info $MADARA \
     --gateway-enable \
     --gateway-external \
     --chain-config-override chain_id=MADARA_CHAIN \
-    --chain-config-override block_time=10s \
+    --chain-config-override block_time=1s \
     2>&1 &
 GENESIS_PID=$!
 
 echo "Waiting for genesis to be created..."
-sleep 15
+sleep 25
 
 # Get and log the genesis block details before shutdown
 echo -e "${YELLOW}Capturing genesis block details:${NC}"
@@ -122,7 +122,7 @@ cp -r "$GENESIS_DB" "$SEQ2_DB"
 
 echo -e "${GREEN}Step 3: Starting Sequencer 1 (Primary chain)${NC}"
 echo "This will create the first fork of the chain"
-RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
+MADARA_DB_MAX_SAVED_TRIE_LOGS=1000 RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     --name sequencer1 \
     --devnet \
     --base-path "$SEQ1_DB" \
@@ -146,7 +146,7 @@ echo
 
 echo -e "${GREEN}Step 4: Starting Sequencer 2 (Divergent chain)${NC}"
 echo "This will create a different fork from the same genesis"
-RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
+MADARA_DB_MAX_SAVED_TRIE_LOGS=1000 RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     --name sequencer2 \
     --devnet \
     --base-path "$SEQ2_DB" \
@@ -156,7 +156,7 @@ RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     --gateway-enable \
     --gateway-external \
     --chain-config-override chain_id=MADARA_CHAIN \
-    --chain-config-override block_time=3s \
+    --chain-config-override block_time=1s \
     2>&1 | tee "$SEQ2_LOG" &
 SEQ2_PID=$!
 
@@ -236,7 +236,7 @@ echo
 
 echo -e "${GREEN}Step 5: Starting Full Node syncing from Sequencer 1${NC}"
 echo "Full node will initially sync from Sequencer 1's gateway"
-RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
+MADARA_DB_MAX_SAVED_TRIE_LOGS=1000 RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     --name fullnode \
     --base-path "$FULLNODE_DB" \
     --rpc-port 4444 \
@@ -248,11 +248,16 @@ RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     2>&1 | tee "$FULLNODE_LOG" &
 FULLNODE_PID=$!
 
-echo "Letting full node sync from Sequencer 1 for 15 seconds..."
-sleep 15
+echo "Letting full node sync from Sequencer 1 for 30 seconds to ensure blocks are fully processed..."
+echo "This gives time for all 3 pipelines (blocks, classes, state) to complete"
+sleep 30
 
-# Check sync status
+# Check sync status and look for fully imported blocks
 echo -e "${YELLOW}Checking full node sync status from Sequencer 1:${NC}"
+echo "Looking for 'fully imported' messages:"
+grep "fully imported\|head status saved" "$FULLNODE_LOG" | tail -5 || echo "No fully imported messages found yet"
+echo
+echo "Current sync status:"
 tail -5 "$FULLNODE_LOG" | grep -E "(Blocks:|Sync is at)" || true
 echo
 
@@ -300,7 +305,7 @@ fi
 
 echo -e "${GREEN}Step 7: Restarting full node to sync from Sequencer 2${NC}"
 echo "This should trigger reorg detection as chains have diverged"
-RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
+MADARA_DB_MAX_SAVED_TRIE_LOGS=1000 RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     --name fullnode \
     --base-path "$FULLNODE_DB" \
     --rpc-port 4444 \
@@ -312,8 +317,9 @@ RUST_LOG=info,mc_sync=debug,mc_import=debug $MADARA \
     2>&1 | tee -a "$FULLNODE_LOG" &
 FULLNODE_PID=$!
 
-echo "Waiting for reorg detection (15 seconds)..."
-sleep 15
+echo "Waiting for reorg detection and sync (25 seconds)..."
+echo "This gives time for reorg detection, rollback, and resync from the new chain"
+sleep 25
 
 echo -e "${YELLOW}=== Checking for Reorg Detection ===${NC}"
 echo "Looking for reorg-related messages in the log:"

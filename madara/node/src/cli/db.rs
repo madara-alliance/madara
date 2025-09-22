@@ -52,7 +52,7 @@ pub struct DbParams {
     /// This is the number of blocks for which you can get storage proofs using the storage proof endpoints.
     /// Blocks older than this limit will not be stored for retrieving historical merkle trie state. By default,
     /// the value 0 means that no historical merkle trie state access is allowed.
-    #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value_t = 189)]
+    #[clap(env = "MADARA_DB_MAX_SAVED_TRIE_LOGS", long, default_value_t = 0)]
     pub db_max_saved_trie_logs: usize,
 
     /// This affects the performance of the storage proof endpoint.

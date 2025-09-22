@@ -90,20 +90,11 @@ impl GatewayForwardSync {
         client: Arc<GatewayProvider>,
         config: ForwardSyncConfig,
     ) -> Self {
-        // Log the gateway we're syncing from
-        tracing::info!("🌐 Initializing sync from gateway");
-
-        // Ensure we flush any pending writes before reading head status
         if let Err(e) = backend.flush() {
             tracing::warn!("Failed to flush database before reading head status: {}", e);
         }
 
-        let latest_full_block = backend.head_status().latest_full_block_n();
         let starting_block_n = backend.head_status().next_full_block();
-
-        tracing::info!("📊 Database head status: latest_full_block={:?}, starting sync from block #{}",
-            latest_full_block, starting_block_n);
-        // this is the place where the latest block is fetched from the backend / database
         let blocks_pipeline = blocks::block_with_state_update_pipeline(
             backend.clone(),
             importer.clone(),
@@ -195,43 +186,6 @@ impl ForwardPipeline for GatewayForwardSync {
     ) -> anyhow::Result<()> {
         tracing::debug!("Run pipeline to height={target_height:?}");
 
-        // // Check for reorg on existing blocks when starting sync
-        // // This is crucial when switching gateways or restarting
-        // if let Some(latest_block_n) = self.backend.head_status().latest_full_block_n() {
-        //     // Check last few blocks to detect if we're on a different chain
-        //     let blocks_to_check = 10u64.min(latest_block_n + 1); // Check up to 10 recent blocks
-        //     let start_check = latest_block_n.saturating_sub(blocks_to_check - 1);
-
-        //     tracing::info!("🔍 Checking blocks {}..={} for reorg on sync start", start_check, latest_block_n);
-
-        //     for block_n in start_check..=latest_block_n {
-        //         tracing::debug!("Checking block #{} for reorg", block_n);
-        //         if let Some(common_ancestor) = detect_reorg(
-        //             block_n,
-        //             &self.backend,
-        //             &self.client,
-        //         ).await? {
-        //             tracing::warn!("⚠️ REORG DETECTED on sync start at block {} - common ancestor: {}", block_n, common_ancestor);
-
-        //             // Perform rollback
-        //             tracing::info!("🔄 Rolling back to common ancestor block {}", common_ancestor);
-        //             self.backend.rollback_to_block(common_ancestor)?;
-
-        //             tracing::info!("✅ Rollback complete. Database now at block {}. Sync will continue from block {}",
-        //                 common_ancestor, common_ancestor + 1);
-
-        //             // The pipelines will naturally start from the new head position
-        //             // after the rollback, so we don't need to recreate them
-        //             return Ok(()); // Return to let the sync controller restart the sync
-        //         }
-        //     }
-        //     if !self.backend.head_status().latest_full_block_n().is_some_and(|n| n < start_check) {
-        //         tracing::info!("✅ No reorg detected on startup");
-        //     }
-        // } else {
-        //     tracing::info!("No blocks in database - starting fresh sync");
-        // }
-
         let mut done = false;
         while !done {
             while self.blocks_pipeline.can_schedule_more() && self.blocks_pipeline.next_input_block_n() <= target_height
@@ -291,8 +245,6 @@ impl ForwardPipeline for GatewayForwardSync {
             let new_next_block = self.pipeline_status().min().map(|n| n + 1).unwrap_or(0);
             for block_n in start_next_block..new_next_block {
                 // Notify of a new full block here.
-                tracing::info!("📊 Block #{} has passed through all 3 pipelines (blocks, classes, state) - marking as fully imported", block_n);
-
                 let block_info = self
                     .backend
                     .get_block_info(&RawDbBlockId::Number(block_n))
@@ -321,10 +273,6 @@ impl ForwardPipeline for GatewayForwardSync {
         self.blocks_pipeline.next_input_block_n()
     }
 
-    fn is_empty(&self) -> bool {
-        self.blocks_pipeline.is_empty() && self.classes_pipeline.is_empty() && self.apply_state_pipeline.is_empty()
-    }
-
     fn show_status(&self) {
         tracing::info!(
             "📥 Blocks: {} | Classes: {} | State: {}",
@@ -332,15 +280,10 @@ impl ForwardPipeline for GatewayForwardSync {
             self.classes_pipeline.status(),
             self.apply_state_pipeline.status(),
         );
+    }
 
-        // Log the current pipeline positions to understand the lag
-        let status = self.pipeline_status();
-        if let Some(min_block) = status.min() {
-            tracing::debug!(
-                "Pipeline positions - Blocks: {:?}, Classes: {:?}, State: {:?}, Min (fully processed): {}",
-                status.blocks, status.classes, status.apply_state, min_block
-            );
-        }
+    fn is_empty(&self) -> bool {
+        self.blocks_pipeline.is_empty() && self.classes_pipeline.is_empty() && self.apply_state_pipeline.is_empty()
     }
 
     fn latest_block(&self) -> Option<u64> {

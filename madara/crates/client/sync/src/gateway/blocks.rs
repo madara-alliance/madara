@@ -55,9 +55,6 @@ impl PipelineSteps for GatewaySyncSteps {
             let mut out = vec![];
             tracing::debug!("Gateway sync parallel step {:?}", block_range);
             for block_n in block_range {
-                // Log which gateway we're fetching from
-                tracing::info!("🔄 Fetching block #{} from gateway", block_n);
-                
                 let block = self
                     .client
                     .get_state_update_with_block(BlockId::Number(block_n))
@@ -69,10 +66,6 @@ impl PipelineSteps for GatewaySyncSteps {
                 };
 
                 let gateway_block: FullBlock = block.into_full_block().context("Parsing gateway block")?;
-                
-                // Log the block hash we received
-                tracing::info!("📦 Received block #{} with hash: {:#x}", 
-                    block_n, gateway_block.block_hash);
 
                 let keep_pre_v0_13_2_hashes = self.keep_pre_v0_13_2_hashes;
 
@@ -118,14 +111,10 @@ impl PipelineSteps for GatewaySyncSteps {
                         }
                         importer.verify_header(block_n, &signed_header)?;
 
-                        importer.save_header(block_n, signed_header.clone())?;
+                        importer.save_header(block_n, signed_header)?;
                         importer.save_state_diff(block_n, gateway_block.state_diff.clone())?;
                         importer.save_transactions(block_n, gateway_block.transactions)?;
                         importer.save_events(block_n, gateway_block.events)?;
-                        
-                        // Log successful block storage
-                        tracing::info!("✅ Stored block #{} (hash: {:#x}) from gateway", 
-                            block_n, signed_header.block_hash);
 
                         anyhow::Ok(gateway_block.state_diff)
                     })
@@ -194,8 +183,6 @@ pub fn gateway_pending_block_sync(
 
                 if block.block.parent_block_hash != parent_hash {
                     tracing::debug!("Expected parent_hash={parent_hash:#x}, got {:#x}", block.block.parent_block_hash);
-                    //this is the place where the latest block is fetched from the backend / database
-                    
                     return Ok(None);
                 }
 
