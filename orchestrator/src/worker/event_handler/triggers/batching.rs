@@ -22,7 +22,7 @@ use starknet::core::types::{BlockId, StateUpdate};
 use starknet::providers::jsonrpc::HttpTransport;
 use starknet::providers::{JsonRpcClient, Provider};
 use starknet_core::types::Felt;
-use starknet_core::types::MaybePendingStateUpdate::{PendingUpdate, Update};
+use starknet_core::types::MaybePreConfirmedStateUpdate::{PreConfirmedUpdate, Update};
 use std::cmp::{max, min};
 use std::sync::Arc;
 use tokio::try_join;
@@ -323,7 +323,7 @@ impl BatchingTrigger {
                     }
                 }
             }
-            PendingUpdate(_) => {
+            PreConfirmedUpdate(_) => {
                 tracing::info!("Skipping batching for block {} as it is still pending", block_number);
                 Ok((prev_state_update, current_aggregator_batch, current_snos_batch))
             }

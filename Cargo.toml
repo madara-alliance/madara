@@ -4,7 +4,7 @@ members = [
   "orchestrator",
   "e2e",
   "e2e-tests",
-  "bootstrapper",
+  # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
   "build-artifacts",
   "bootstrapper-v2",
   "test_utils/crates/mock-atlantic-server",
@@ -13,7 +13,7 @@ members = [
 default-members = [
   # "madara",
   "orchestrator",
-  "bootstrapper",
+  # "bootstrapper",  # Temporarily disabled due to zaun dependency issues
 ]
 resolver = "2"
 
@@ -105,27 +105,27 @@ m-cairo-test-contracts = { path = "madara/crates/cairo-test-contracts" }
 mc-e2e-tests = { path = "madara/crates/tests" }
 
 # Starknet dependencies
-cairo-vm = "=2.2.0"
-starknet-accounts = "0.13.0"
-starknet-contract = "0.13.0"
-starknet-core = "0.13"
-starknet-crypto = "0.7"
-starknet-providers = "0.13"
-starknet-signers = "0.11"
-starknet = "0.14.0"
+cairo-vm = "=2.5.0"
+starknet-accounts = "0.16.0"
+starknet-contract = "0.16.0"
+starknet-core = "0.16.0"
+starknet-crypto = "0.8.1"
+starknet-providers = "0.16.0"
+starknet-signers = "0.14.0"
+starknet = "0.17.0"
 
-starknet-types-core = { version = "0.1.7", default-features = false, features = [
+starknet-types-core = { version = "0.2.1", default-features = false, features = [
   "hash",
 ] }
 
-blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = [
+blockifier = { git = "https://github.com/karnotxyz/sequencer", rev = "efe029ab5c3aeedc553c68d71bd7526e95ac6a20", features = [
   "testing",
 ] }
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "3c206344dc64b5a0f150ea94cd2623b2a9a7da63", features = [
+starknet_api = { git = "https://github.com/karnotxyz/sequencer", rev = "efe029ab5c3aeedc553c68d71bd7526e95ac6a20", features = [
   "testing",
 ] }
-cairo-lang-starknet-classes = "=2.8.4"
-cairo-lang-utils = "=2.8.4"
+cairo-lang-starknet-classes = "=2.12.3"
+cairo-lang-utils = "=2.12.3"
 
 alloy = { version = "0.8.3", features = [
   "node-bindings",
@@ -290,9 +290,7 @@ strum = "0.26.3"
 async-std = { version = "1.13.0", features = ["attributes"] }
 majin-blob-core = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
 majin-blob-types = { git = "https://github.com/AbdelStark/majin-blob", branch = "main" }
-starknet-os = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
-prove_block = { git = "https://github.com/karnotxyz/snos", branch = "release/v0.13.3" }
-snos-core = { git = "https://github.com/Mohiiit/snos-poc", rev = "7f85f06546e27a8dd397f11544d79717db78a394" }
+generate-pie = { git = "https://github.com/keep-starknet-strange/snos", rev = "1bffdacf7abb5abb846d098a1c6f36af4ff5e453" }
 
 orchestrator-da-client-interface = { path = "orchestrator/crates/da-clients/da-client-interface" }
 orchestrator-ethereum-da-client = { path = "orchestrator/crates/da-clients/ethereum" }
@@ -315,13 +313,3 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-
-starknet-types-core = { git = "https://github.com/kasarlabs/types-rs.git", branch = "feat-deserialize-v0.1.7" }
-
-starknet_api = { git = "https://github.com/karnotxyz/sequencer", branch = "release/0.13.2-appchain" }
-
-cairo-vm = { git = "https://github.com/karnotxyz/cairo-vm", branch = "release/0.13.2", features = [
-  "cairo-1-hints",
-  "extensive_hints",
-  "mod_builtin",
-] }

@@ -68,7 +68,7 @@ reqwest = { workspace = true, features = ["json"] }
 rstest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
-snos-core = { workspace = true }
+generate-pie = { workspace = true }
 starknet = { workspace = true }
 starknet-core = { workspace = true }
 starknet-crypto = { workspace = true }

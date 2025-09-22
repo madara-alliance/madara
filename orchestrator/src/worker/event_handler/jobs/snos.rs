@@ -21,14 +21,10 @@ use color_eyre::eyre::eyre;
 use color_eyre::Result;
 use orchestrator_utils::env_utils::get_env_var_or_panic;
 use orchestrator_utils::layer::Layer;
-use snos_core::{
-    generate_pie, // The main function
-    // PieGenerationError,     // Error enum - Unused
-    ChainConfig,          // Chain configuration
-    OsHintsConfiguration, // OS hints configuration
-    PieGenerationInput,   // Input struct
-    PieGenerationResult,  // Result struct
-};
+use generate_pie::generate_pie;
+use generate_pie::types::chain_config::ChainConfig;
+use generate_pie::types::os_hints::OsHintsConfiguration;
+use generate_pie::types::pie::{PieGenerationInput, PieGenerationResult};
 use starknet::providers::jsonrpc::{HttpTransport, JsonRpcClient};
 use starknet::providers::Provider;
 use starknet::providers::Url;
@@ -68,7 +64,8 @@ impl ChainConfigFromExt for ChainConfig {
             get_env_var_or_panic("MADARA_ORCHESTRATOR_STARKNET_NATIVE_FEE_TOKEN_ADDRESS");
         let strk_fee_token_address =
             ContractAddress::try_from(Felt::from_hex_unchecked(&strk_fee_token_address_env_var))?;
-        Ok(ChainConfig { chain_id, strk_fee_token_address })
+        // TODO: is_l3 should be updated from the config ideally!!!
+        Ok(ChainConfig { chain_id, strk_fee_token_address, is_l3: false })
     }
 }
 
@@ -154,7 +151,10 @@ impl JobHandlerTrait for SnosJobHandler {
         debug!(job_id = %job.internal_id, "prove_block function completed successfully");
 
         let cairo_pie = snos_output.output.cairo_pie;
-        let os_output = snos_output.output.os_output;
+
+        // TODO: currently we are getting the Vec<Felt> but ideally we should get a struct, fix it once it available upstream
+        //       maybe we can add our own struct meanwhile in the snos code? something to think about!!!
+        let os_output = snos_output.output.raw_os_output;
         // We use KZG_DA flag in order to determine whether we are using L1 or L2 as
         // settlement layer. On L1 settlement we have blob based DA, while on L2 we have
         // calldata based DA.
