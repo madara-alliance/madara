@@ -16,6 +16,7 @@ use crate::services::{
     orchestrator::{OrchestratorConfig, OrchestratorConfigBuilder, OrchestratorError, OrchestratorMode},
     pathfinder::{PathfinderConfig, PathfinderConfigBuilder, PathfinderError},
 };
+use std::env;
 use std::time::Duration;
 
 #[derive(Debug, PartialEq, serde::Serialize)]
@@ -402,6 +403,7 @@ impl SetupConfigBuilder {
             .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_ETHEREUM_SETTLEMENT_RPC_URL", anvil_config.endpoint().as_str())
+            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY", env::var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY").unwrap_or_default())
             .logs((true, true))
             .build();
 
@@ -450,8 +452,14 @@ impl SetupConfigBuilder {
             .orchestrator_run_config
             .builder()
             .ethereum_rpc_url(anvil_config.endpoint())
+            .env_var("MADARA_ORCHESTRATOR_ATLANTIC_RPC_NODE_URL", anvil_config.endpoint().as_str())
+            .env_var("MADARA_ORCHESTRATOR_ETHEREUM_DA_RPC_URL", anvil_config.endpoint().as_str())
             .env_var("MADARA_ORCHESTRATOR_MADARA_RPC_URL", pathfinder_config.endpoint())
             .env_var("MADARA_ORCHESTRATOR_RPC_FOR_SNOS", pathfinder_config.endpoint())
+            .env_var(
+                "MADARA_ORCHESTRATOR_ATLANTIC_API_KEY",
+                env::var("MADARA_ORCHESTRATOR_ATLANTIC_API_KEY").unwrap_or_default(),
+            )
             .build();
 
         // Setting some envs
