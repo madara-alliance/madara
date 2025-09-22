@@ -81,3 +81,7 @@ jobs:
   # Run CLI tests
   test-cli:
     uses: ./.github/workflows/task-do-nothing-test-cli.yml
+
+  # End-to-end tests
+  test-end-to-end:
+    uses: ./.github/workflows/task-test-end-to-end.yml

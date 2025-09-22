@@ -5,25 +5,7 @@ name: Task - Test E2E
 # This workflow runs end-to-end tests for the Madara System
 # against the Madara, Orchestrator, Bootstrapper binaries to ensure e2e testing
 on:
-  workflow_dispatch:
   workflow_call:
-    inputs:
-      madara-binary-hash:
-        description: "Hash used to retrieve the madara artifact"
-        required: true
-        type: string
-      orchestrator-binary-hash:
-        description: "Hash used to retrieve the orchestrator artifact"
-        required: true
-        type: string
-      bootstrapper-binary-hash:
-        description: "Hash used to retrieve the bootstrapper artifact"
-        required: true
-        type: string
-      cairo-artifacts-hash:
-        description: "Hash used to retrieve the cairo artifacts"
-        required: true
-        type: string
 
 jobs:
   e2e-full:
@@ -54,28 +36,45 @@ jobs:
           rust-version: ${{ env.BUILD_RUST_VERSION }}
           extra-cache: false
 
+      # Calculate expected hashes for artifact downloads
+      - name: Calculate expected binary hashes
+        id: calculate-hashes
+        run: |
+          COMMIT_HASH=${{ github.sha }}
+
+          # Calculate the same hashes as build workflows (component-commithash pattern)
+          MADARA_HASH=$(echo "madara-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          ORCHESTRATOR_HASH=$(echo "orchestrator-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          BOOTSTRAPPER_HASH=$(echo "bootstrapper-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          CAIRO_HASH=$(echo "cairo-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+
+          echo "madara-hash=$MADARA_HASH" >> $GITHUB_OUTPUT
+          echo "orchestrator-hash=$ORCHESTRATOR_HASH" >> $GITHUB_OUTPUT
+          echo "bootstrapper-hash=$BOOTSTRAPPER_HASH" >> $GITHUB_OUTPUT
+          echo "cairo-hash=$CAIRO_HASH" >> $GITHUB_OUTPUT
+
       - name: Download Madara binary
         uses: actions/download-artifact@v4
         with:
-          name: madara-binary-${{ inputs.madara-binary-hash }}
+          name: madara-binary-${{ steps.calculate-hashes.outputs.madara-hash }}
           path: target/release/
 
       - name: Download Orchestrator binary
         uses: actions/download-artifact@v4
         with:
-          name: orchestrator-binary-${{ inputs.orchestrator-binary-hash }}
+          name: orchestrator-binary-${{ steps.calculate-hashes.outputs.orchestrator-hash }}
           path: target/release/
 
       - name: Download Bootstrapper binary
         uses: actions/download-artifact@v4
         with:
-          name: bootstrapper-binary-${{ inputs.bootstrapper-binary-hash }}
+          name: bootstrapper-binary-${{ steps.calculate-hashes.outputs.bootstrapper-hash }}
           path: target/release/
 
-      - name: Download Cairo artiracts
+      - name: Download Cairo artifacts
         uses: actions/download-artifact@v4
         with:
-          name: build-artifacts-${{ inputs.cairo-artifacts-hash }}
+          name: build-artifacts-${{ steps.calculate-hashes.outputs.cairo-hash }}
           path: build-artifacts/
 
       - name: Download and extract Pathfinder binary

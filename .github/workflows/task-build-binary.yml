@@ -51,14 +51,13 @@ jobs:
       - name: Generate binary hash
         id: generate-binary-hash
         run: |
-          # Get current Unix timestamp for uniqueness
-          TIMESTAMP=$(date +%s)
+          # Use commit SHA with component name for deterministic hashing across workflows
+          COMMIT_HASH=${{ github.sha }}
 
-          # Path to the compiled binary
-          BINARY_PATH=./target/release/${{ inputs.binary-name }}
-          HASH=$(echo "$TIMESTAMP" | cat - $BINARY_PATH | sha256sum | awk '{ print $1 }')
-          echo "binary-hash=$HASH" >> $GITHUB_OUTPUT
-          echo "Hash of the ${{ inputs.binary-name }} is: $HASH (with timestamp: $TIMESTAMP)"
+          # Create hash using component name + commit hash (same pattern as Madara)
+          BINARY_HASH=$(echo "${{ inputs.binary-name }}-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          echo "binary-hash=$BINARY_HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the ${{ inputs.binary-name }} is: $BINARY_HASH (commit: $COMMIT_HASH)"
 
       # Upload binary as artifact
       - name: Upload ${{ inputs.binary-name }} binary
