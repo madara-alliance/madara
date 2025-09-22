@@ -193,3 +193,6 @@ jobs:
 
   build-nightly-and-publish-bootstrapper:
     uses: ./.github/workflows/task-do-nothing-build-nightly-and-publish.yml
+
+  test-end-to-end:
+    uses: ./.github/workflows/task-do-nothing-test-end-to-end.yml
