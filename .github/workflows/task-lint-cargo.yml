@@ -56,11 +56,27 @@ jobs:
         run: cargo fmt -- --check
 
       - name: Cargo Clippy
+        env:
+          # Explicitly ensure the virtual environment PATH is set
+          PATH: ${{ env.VIRTUAL_ENV }}/bin:${{ env.PATH }}
         run: |
-          # Verify cairo-compile is available (virtual environment should already be active)
+          # Debug environment
+          echo "=== Debug Environment ==="
+          echo "VIRTUAL_ENV: $VIRTUAL_ENV"
+          echo "PATH: $PATH"
+          echo "=========================="
+          
+          # Verify cairo-compile is available
           echo "Verifying cairo-compile availability..."
-          which cairo-compile
-          cairo-compile --version
+          which cairo-compile || echo "cairo-compile not found in PATH"
+          if command -v cairo-compile >/dev/null 2>&1; then
+            cairo-compile --version
+          else
+            echo "cairo-compile command not available"
+            echo "Contents of VIRTUAL_ENV/bin:"
+            ls -la "$VIRTUAL_ENV/bin/" | grep cairo || echo "No cairo files found"
+          fi
+          
           echo "Running cargo clippy..."
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
