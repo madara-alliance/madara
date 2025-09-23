@@ -200,6 +200,7 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            txn_wait_sleep_delay_secs: 10,
         };
 
         // Deploying a dummy contract
@@ -280,6 +281,7 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            txn_wait_sleep_delay_secs: 60u64,
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
@@ -352,6 +354,7 @@ mod settlement_client_tests {
                 "MADARA_ORCHESTRATOR_STARKNET_OPERATOR_ADDRESS",
             ))
             .expect("Invalid Starknet operator address"),
+            txn_wait_sleep_delay_secs: 60u64,
         };
 
         let ethereum_settlement_client = EthereumSettlementClient::with_test_params(
