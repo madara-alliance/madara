@@ -21,7 +21,7 @@ impl JobTrigger for ProvingJobTrigger {
     async fn run_worker(&self, config: Arc<Config>) -> color_eyre::Result<()> {
         tracing::info!(log_type = "starting", category = "ProvingWorker", "ProvingWorker started.");
 
-        // Self-healing: We intentionally do not heal orphaned Proving jobs as 
+        // Self-healing: We intentionally do not heal orphaned Proving jobs as
         // they might create inconsistent state on the atlantic side,
         // sending request twice, opening the same bucket again, adding the the
         // same block again etc.

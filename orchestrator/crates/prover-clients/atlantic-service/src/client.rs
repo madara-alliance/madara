@@ -114,7 +114,9 @@ impl AtlanticClient {
             let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text.to_vec())
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            ))
         }
     }
 
@@ -132,7 +134,9 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            )),
         }
     }
 
@@ -171,7 +175,10 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CreateBucketFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => {
+                let error_text = response.text().await.unwrap_or_else(|_| "No response text available".to_string());
+                Err(AtlanticError::AtlanticService(error_text))
+            }
         }
     }
 
@@ -199,7 +206,9 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CloseBucketFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            )),
         }
     }
 
@@ -250,7 +259,9 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            )),
         }
     }
 
@@ -269,7 +280,9 @@ impl AtlanticClient {
         if response.status().is_success() {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            ))
         }
     }
 
@@ -291,7 +304,9 @@ impl AtlanticClient {
             let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text)
         } else {
-            Err(AtlanticError::AtlanticService(response.status()))
+            Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            ))
         }
     }
 
@@ -324,7 +339,9 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(response.status())),
+            false => Err(AtlanticError::AtlanticService(
+                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
+            )),
         }
     }
 
