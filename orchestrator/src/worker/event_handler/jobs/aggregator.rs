@@ -195,7 +195,7 @@ impl JobHandlerTrait for AggregatorJobHandler {
     }
 
     fn verification_polling_delay_seconds(&self) -> u64 {
-        300
+        30
     }
 }
 

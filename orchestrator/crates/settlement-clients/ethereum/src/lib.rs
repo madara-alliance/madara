@@ -54,7 +54,6 @@ pub const Y_HIGH_POINT_OFFSET: usize = Y_LOW_POINT_OFFSET + 1;
 // Ethereum Transaction Finality
 const MAX_TX_FINALISATION_ATTEMPTS: usize = 30;
 const REQUIRED_BLOCK_CONFIRMATIONS: u64 = 3;
-const TX_WAIT_SLEEP_DELAY_SECS: u64 = 60;
 
 lazy_static! {
     pub static ref PROJECT_ROOT: PathBuf = PathBuf::from(format!("{}/../../../", env!("CARGO_MANIFEST_DIR")));
@@ -73,6 +72,8 @@ pub struct EthereumSettlementValidatedArgs {
     pub l1_core_contract_address: Address,
 
     pub starknet_operator_address: Address,
+
+    pub txn_wait_sleep_delay_secs: u64,
 }
 
 #[allow(dead_code)]
@@ -82,6 +83,7 @@ pub struct EthereumSettlementClient {
     wallet_address: Address,
     provider: Arc<RootProvider<Http<Client>>>,
     impersonate_account: Option<Address>,
+    txn_wait_sleep_delay_secs: u64,
 }
 
 impl EthereumSettlementClient {
@@ -105,7 +107,14 @@ impl EthereumSettlementClient {
         let core_contract_client =
             StarknetValidityContractClient::new(settlement_cfg.l1_core_contract_address, filler_provider);
 
-        EthereumSettlementClient { provider, core_contract_client, wallet, wallet_address, impersonate_account: None }
+        EthereumSettlementClient {
+            provider,
+            core_contract_client,
+            wallet,
+            wallet_address,
+            impersonate_account: None,
+            txn_wait_sleep_delay_secs: settlement_cfg.txn_wait_sleep_delay_secs,
+        }
     }
 
     #[cfg(feature = "testing")]
@@ -131,6 +140,7 @@ impl EthereumSettlementClient {
             wallet,
             wallet_address,
             impersonate_account,
+            txn_wait_sleep_delay_secs: 10,
         }
     }
 
@@ -368,7 +378,8 @@ impl SettlementClient for EthereumSettlementClient {
                     }
                 }
             }
-            sleep(Duration::from_secs(TX_WAIT_SLEEP_DELAY_SECS)).await;
+            // Defaults to 60 seconds
+            sleep(Duration::from_secs(self.txn_wait_sleep_delay_secs)).await;
         }
         Ok(None)
     }

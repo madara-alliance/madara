@@ -1,0 +1,67 @@
+---
+# yaml-language-server: $schema=https://raw.githubusercontent.com/SchemaStore/schemastore/refs/heads/master/src/schemas/json/github-workflow.json
+name: Task - Build Binary (Reusable)
+
+# Reusable workflow for building Rust binaries (Bootstrapper, Orchestrator, etc.)
+on:
+  workflow_call:
+    inputs:
+      binary-name:
+        description: "Name of the binary to build (e.g., bootstrapper, orchestrator)"
+        required: true
+        type: string
+      cache-key-suffix:
+        description: "Additional suffix for the cache key (optional)"
+        required: false
+        type: string
+        default: ""
+    outputs:
+      binary-hash:
+        description: "Hash of the built binary"
+        value: ${{ jobs.build-binary.outputs.binary-hash }}
+
+jobs:
+  build-binary:
+    runs-on: blacksmith-16vcpu-ubuntu-2204
+    outputs:
+      binary-hash: ${{ steps.generate-binary-hash.outputs.binary-hash }}
+    permissions:
+      pull-requests: write
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Load env
+        uses: ./.github/actions/load-env
+
+      - name: Rust setup
+        uses: ./.github/actions/setup-rust
+        with:
+          rust-version: ${{ env.BUILD_RUST_VERSION }}
+          cache-key: ${{ inputs.binary-name }}-${{ runner.os }}-rust-1.86${{ inputs.cache-key-suffix }}
+
+      # Build the specified binary
+      - name: Cargo build ${{ inputs.binary-name }}
+        run: |
+          export GIT_COMMIT_HASH=$GITHUB_SHA
+          cargo build --release --bin ${{ inputs.binary-name }}
+
+      # Generate hash for the binary
+      - name: Generate binary hash
+        id: generate-binary-hash
+        run: |
+          # Use commit SHA with component name for deterministic hashing across workflows
+          COMMIT_HASH=${{ github.sha }}
+
+          # Create hash using component name + commit hash (same pattern as Madara)
+          BINARY_HASH=$(echo "${{ inputs.binary-name }}-${COMMIT_HASH}" | sha256sum | awk '{ print $1 }')
+          echo "binary-hash=$BINARY_HASH" >> $GITHUB_OUTPUT
+          echo "Hash of the ${{ inputs.binary-name }} is: $BINARY_HASH (commit: $COMMIT_HASH)"
+
+      # Upload binary as artifact
+      - name: Upload ${{ inputs.binary-name }} binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.binary-name }}-binary-${{ steps.generate-binary-hash.outputs.binary-hash }}
+          path: target/release/${{ inputs.binary-name }}
