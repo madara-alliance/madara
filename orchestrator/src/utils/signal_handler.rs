@@ -131,13 +131,25 @@ impl SignalHandler {
         info!("Starting graceful shutdown (triggered by: {})", signal);
         info!("Shutdown timeout: {} seconds", timeout_secs);
 
-        // Try graceful shutdown with timeout
-        let shutdown_future = shutdown_fn();
+        // Record start time to ensure we wait at least the full timeout duration
+        let start_time = std::time::Instant::now();
         let timeout_duration = tokio::time::Duration::from_secs(timeout_secs);
 
-        match tokio::time::timeout(timeout_duration, shutdown_future).await {
+        // Try graceful shutdown with timeout
+        let shutdown_future = shutdown_fn();
+        let shutdown_result = tokio::time::timeout(timeout_duration, shutdown_future).await;
+
+        // Calculate remaining time to ensure we wait at least the full timeout duration
+        let elapsed = start_time.elapsed();
+        let remaining_time = timeout_duration.saturating_sub(elapsed);
+
+        match shutdown_result {
             Ok(Ok(())) => {
                 info!("✅ Graceful shutdown completed successfully");
+                if remaining_time > tokio::time::Duration::from_secs(0) {
+                    info!("Waiting remaining {:?} to ensure full timeout duration", remaining_time);
+                    tokio::time::sleep(remaining_time).await;
+                }
                 Ok(())
             }
             Ok(Err(e)) => {

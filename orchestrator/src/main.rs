@@ -10,6 +10,7 @@ use orchestrator::utils::logging::init_logging;
 use orchestrator::utils::signal_handler::SignalHandler;
 use orchestrator::worker::initialize_worker;
 use orchestrator::OrchestratorResult;
+use orchestrator_utils::env_utils::get_env_var_or_default;
 use std::sync::Arc;
 use tracing::{debug, error, info};
 
@@ -19,7 +20,7 @@ static A: jemallocator::Jemalloc = jemallocator::Jemalloc;
 /// Default graceful shutdown timeout in seconds
 /// This matches Docker's default graceful shutdown period and provides sufficient time
 /// for workers to complete their current tasks before forcing termination
-const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 300;
+const DEFAULT_SHUTDOWN_TIMEOUT_SECS: u64 = 120;
 
 /// Start the server
 #[tokio::main]
@@ -90,6 +91,10 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
 
     info!("Initiating orchestrator shutdown sequence (triggered by: {})", shutdown_signal);
 
+    let shutdown_timeout = get_env_var_or_default(
+        "MADARA_ORCHESTRATOR_SHUTDOWN_TIMEOUT",
+        DEFAULT_SHUTDOWN_TIMEOUT_SECS.to_string().as_str(),
+    );
     // Perform graceful shutdown with timeout
     let shutdown_result = signal_handler
         .handle_graceful_shutdown(
@@ -103,7 +108,7 @@ async fn run_orchestrator(run_cmd: &RunCmd) -> OrchestratorResult<()> {
                 info!("All components shutdown successfully");
                 Ok(())
             },
-            DEFAULT_SHUTDOWN_TIMEOUT_SECS,
+            shutdown_timeout.parse::<u64>().unwrap(),
         )
         .await;
 
