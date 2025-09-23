@@ -77,6 +77,11 @@ pub struct AtlanticClient {
 }
 
 impl AtlanticClient {
+    /// Helper method to extract error text from response with context
+    async fn extract_error_text(response: reqwest::Response, operation: &str) -> String {
+        response.text().await.unwrap_or_else(|_| format!("No response text available for {} operation", operation))
+    }
+
     /// We need to set up the client with the API_KEY.
     pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Self {
         let mock_fact_hash = atlantic_params.atlantic_mock_fact_hash.clone();
@@ -114,9 +119,7 @@ impl AtlanticClient {
             let response_text = response.bytes().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text.to_vec())
         } else {
-            Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            ))
+            Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "get artifacts").await))
         }
     }
 
@@ -134,9 +137,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::GetBucketStatusFailure),
-            false => Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            )),
+            false => Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "get bucket").await)),
         }
     }
 
@@ -176,7 +177,7 @@ impl AtlanticClient {
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CreateBucketFailure),
             false => {
-                let error_text = response.text().await.unwrap_or_else(|_| "No response text available".to_string());
+                let error_text = Self::extract_error_text(response, "create bucket").await;
                 Err(AtlanticError::AtlanticService(error_text))
             }
         }
@@ -206,9 +207,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::CloseBucketFailure),
-            false => Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            )),
+            false => Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "close bucket").await)),
         }
     }
 
@@ -259,9 +258,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            )),
+            false => Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "add job").await)),
         }
     }
 
@@ -280,9 +277,7 @@ impl AtlanticClient {
         if response.status().is_success() {
             response.json().await.map_err(AtlanticError::GetJobStatusFailure)
         } else {
-            Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            ))
+            Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "get job status").await))
         }
     }
 
@@ -304,9 +299,7 @@ impl AtlanticClient {
             let response_text = response.text().await.map_err(AtlanticError::GetJobArtifactsFailure)?;
             Ok(response_text)
         } else {
-            Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            ))
+            Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "get proof by task id").await))
         }
     }
 
@@ -339,9 +332,7 @@ impl AtlanticClient {
 
         match response.status().is_success() {
             true => response.json().await.map_err(AtlanticError::AddJobFailure),
-            false => Err(AtlanticError::AtlanticService(
-                response.text().await.unwrap_or_else(|_| "No response text available".to_string()),
-            )),
+            false => Err(AtlanticError::AtlanticService(Self::extract_error_text(response, "submit L2 query").await)),
         }
     }
 

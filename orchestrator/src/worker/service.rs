@@ -201,10 +201,7 @@ impl JobService {
                 // Send SNS alert for job failure
                 let alert_message = format!(
                     "Job Failed Alert: Job ID: {}, Type: {:?}, Block: {}, Reason: {}",
-                    job.id,
-                    job.job_type,
-                    internal_id,
-                    reason
+                    job.id, job.job_type, internal_id, reason
                 );
 
                 if let Err(e) = config.alerts().send_message(alert_message).await {

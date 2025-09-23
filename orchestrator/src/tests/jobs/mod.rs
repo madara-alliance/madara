@@ -871,7 +871,6 @@ async fn test_retry_job_invalid_status(#[case] initial_status: JobStatus) {
 /// 4. The SNS integration works correctly (verified by successful function completion)
 #[tokio::test]
 async fn move_job_to_failed_sends_sns_alert() {
-
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_alerts(ConfigType::Actual)
