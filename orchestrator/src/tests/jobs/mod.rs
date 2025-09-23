@@ -6,8 +6,9 @@ use mongodb::bson::doc;
 use rstest::rstest;
 use tokio::time::sleep;
 
+use crate::core::client::alert::MockAlertClient;
 use crate::tests::common::MessagePayloadType;
-use crate::tests::config::{ConfigType, TestConfigBuilder};
+use crate::tests::config::{ConfigType, MockType, TestConfigBuilder};
 use crate::tests::utils::build_job_item;
 
 #[cfg(test)]
@@ -237,9 +238,16 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 #[tokio::test]
 async fn process_job_handles_panic() {
     // Building config
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client
+        .expect_send_message()
+        .times(1)
+        .returning(|_| Ok(()));
+    
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
 
@@ -412,9 +420,16 @@ async fn process_job_job_handler_returns_error_works() {
     ctx.expect().times(1).with(eq(JobType::SnosRun)).returning(move |_| Arc::clone(&job_handler));
 
     // building config
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client
+        .expect_send_message()
+        .times(1)
+        .returning(|_| Ok(()));
+    
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
     let db_client = services.config.database();
@@ -527,9 +542,16 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
 #[tokio::test]
 async fn verify_job_with_rejected_status_works() {
     // Building config
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client
+        .expect_send_message()
+        .times(1)
+        .returning(|_| Ok(()));
+    
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
 
@@ -724,9 +746,16 @@ async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobTy
 #[case::verification_timeout(JobType::SnosRun, JobStatus::VerificationTimeout)]
 #[tokio::test]
 async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobType, #[case] job_status: JobStatus) {
+    let mut mock_alert_client = MockAlertClient::new();
+    mock_alert_client
+        .expect_send_message()
+        .times(1)
+        .returning(|_| Ok(()));
+    
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
+        .configure_alerts(ConfigType::Mock(MockType::Alerts(Box::new(mock_alert_client))))
         .build()
         .await;
 
