@@ -57,5 +57,9 @@ jobs:
 
       - name: Cargo Clippy
         run: |
+          # Explicitly activate the virtual environment before running cargo
+          source sequencer_venv/bin/activate
+          which cairo-compile
+          cairo-compile --version
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
