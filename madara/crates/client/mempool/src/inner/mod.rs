@@ -12,7 +12,7 @@ use starknet_api::{
     core::{ContractAddress, Nonce},
     transaction::TransactionHash,
 };
-use std::time::Duration;
+use std::{fmt, time::Duration};
 
 pub(crate) mod accounts;
 pub(crate) mod by_tx_hash_index;
@@ -338,5 +338,39 @@ impl InnerMempool {
 
     pub fn is_empty(&self) -> bool {
         self.accounts.is_empty()
+    }
+
+    pub fn num_transactions(&self) -> usize {
+        self.limiter.num_transactions()
+    }
+
+    pub fn num_accounts(&self) -> usize {
+        self.accounts.num_accounts()
+    }
+
+    pub fn summary(&self) -> MempoolStateSummary {
+        MempoolStateSummary {
+            num_transactions: self.num_transactions(),
+            ready_transactions: self.ready_transactions(),
+            transaction_capacity: self.config.max_transactions,
+            num_accounts: self.num_accounts(),
+        }
+    }
+}
+
+pub struct MempoolStateSummary {
+    pub num_transactions: usize,
+    pub transaction_capacity: usize,
+    pub num_accounts: usize,
+    pub ready_transactions: usize,
+}
+
+impl fmt::Display for MempoolStateSummary {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(
+            f,
+            "{}/{} transaction(s), {} account(s), {} ready",
+            self.num_transactions, self.transaction_capacity, self.num_accounts, self.ready_transactions
+        )
     }
 }

@@ -347,7 +347,7 @@ impl MadaraStorageWrite for RocksDBStorage {
     }
 
     fn write_transactions(&self, block_n: u64, txs: &[TransactionWithReceipt]) -> Result<()> {
-        tracing::debug!("Writing transactions {block_n} {txs:?}");
+        tracing::debug!("Writing transactions {block_n}");
         // Save l1 core contract nonce to tx mapping.
         self.inner
             .messages_to_l2_write_trasactions(

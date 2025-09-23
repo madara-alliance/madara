@@ -56,10 +56,9 @@ async fn madara_devnet_add_transaction() {
         "--devnet",
         "--no-l1-sync",
         "--l1-gas-price",
-        "0",
+        "1",
         "--blob-gas-price",
-        "0",
-        // only produce blocks no pending txs
+        "1",
         "--chain-config-override",
         "block_time=1s",
     ];
@@ -146,7 +145,7 @@ async fn madara_devnet_mempool_saving() {
     let signer = LocalWallet::from_signing_key(SigningKey::from_secret_scalar(ACCOUNT_SECRET));
     let mut account =
         SingleOwnerAccount::new(node.json_rpc(), signer, ACCOUNT_ADDRESS, chain_id, ExecutionEncoding::New);
-    account.set_block_id(BlockId::Tag(BlockTag::Pending));
+    account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
 
     let res = account
         .execute_v3(vec![Call {

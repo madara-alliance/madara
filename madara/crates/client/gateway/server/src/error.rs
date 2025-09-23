@@ -1,7 +1,6 @@
 use super::helpers::internal_error_response;
 use crate::helpers::{create_json_response, not_found_response};
 use hyper::Response;
-use mc_db::view::block_id::BlockResolutionError;
 use mc_rpc::StarknetRpcApiError;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransactionError};
 use mp_gateway::error::{StarknetError, StarknetErrorCode};
@@ -15,18 +14,6 @@ pub enum GatewayError {
     StarknetError(#[from] StarknetError),
     #[error("Internal server error")]
     InternalServerError,
-}
-
-impl From<BlockResolutionError> for GatewayError {
-    fn from(value: BlockResolutionError) -> Self {
-        match value {
-            BlockResolutionError::NoBlocks => todo!(),
-            BlockResolutionError::BlockHashNotFound | BlockResolutionError::BlockNumberNotFound => {
-                StarknetError::block_not_found().into()
-            }
-            BlockResolutionError::Internal(error) => error.into(),
-        }
-    }
 }
 
 impl From<anyhow::Error> for GatewayError {

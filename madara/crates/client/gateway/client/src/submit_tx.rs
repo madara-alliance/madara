@@ -1,13 +1,12 @@
-use std::borrow::Cow;
-
 use crate::GatewayProvider;
 use async_trait::async_trait;
 use mc_submit_tx::{RejectedTransactionError, RejectedTransactionErrorKind, SubmitTransaction, SubmitTransactionError};
 use mp_gateway::{error::SequencerError, user_transaction::UserTransactionConversionError};
-use mp_rpc::v0_7_1::{
+use mp_rpc::v0_9_0::{
     AddInvokeTransactionResult, BroadcastedDeclareTxn, BroadcastedDeployAccountTxn, BroadcastedInvokeTxn,
     ClassAndTxnHash, ContractAndTxnHash,
 };
+use std::borrow::Cow;
 
 fn rejected(kind: RejectedTransactionErrorKind, message: impl Into<Cow<'static, str>>) -> SubmitTransactionError {
     SubmitTransactionError::Rejected(RejectedTransactionError::new(kind, message))

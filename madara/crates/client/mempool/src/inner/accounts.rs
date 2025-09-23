@@ -401,4 +401,7 @@ impl Accounts {
     pub fn is_empty(&self) -> bool {
         self.accounts.is_empty()
     }
+    pub fn num_accounts(&self) -> usize {
+        self.accounts.len()
+    }
 }

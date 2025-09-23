@@ -113,10 +113,22 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
         let account_nonce =
             self.backend.view_on_latest().get_contract_nonce(&tx.contract_address)?.unwrap_or(Felt::ZERO);
         let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
-        // Guard is immediately dropped.
-        let ret = self.inner.write().await.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
+
+        let (ret, summary) = {
+            let mut lock = self.inner.write().await;
+            let ret = lock.insert_tx(now, tx.clone(), Nonce(account_nonce), &mut removed_txs);
+            (ret, lock.summary())
+        };
+
         self.on_txs_removed(&removed_txs);
         if ret.is_ok() {
+            if removed_txs.is_empty() {
+                tracing::info!("🔖 Inserted 1 transaction to the mempool [{summary}]");
+            } else if removed_txs.len() == 1 {
+                tracing::info!("🔖 Replaced 1 transaction in the mempool [{summary}]");
+            } else {
+                tracing::info!("🔖 Inserted 1 and removed {} transactions from the mempool [{summary}]", removed_txs.len());
+            }
             self.on_tx_added(&tx, is_new_tx);
         }
         ret.map_err(Into::into)
@@ -166,11 +178,16 @@ impl<D: MadaraStorageRead + MadaraStorageWrite> Mempool<D> {
     async fn remove_ttl_exceeded_txs(&self) -> anyhow::Result<()> {
         let mut removed_txs = smallvec::SmallVec::<[ValidatedTransaction; 1]>::new();
         let now = TxTimestamp::now();
-        {
+        let summary = {
             let mut lock = self.inner.write().await;
             lock.remove_all_ttl_exceeded_txs(now, &mut removed_txs);
-        }
+            lock.summary()
+        };
         self.on_txs_removed(&removed_txs);
+        if !removed_txs.is_empty() {
+            tracing::info!("🔖 Removed {} transactions from the mempool due to TTL limit [{summary}]", removed_txs.len());
+        }
+
         Ok(())
     }
 

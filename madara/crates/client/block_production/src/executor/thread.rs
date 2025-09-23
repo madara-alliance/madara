@@ -40,6 +40,7 @@ struct ExecutorStateNewBlock {
 ///
 /// At that point, the gas prices would be all wrong! In order to support no_empty_block correctly, we have to delay execution context creation
 /// until the first transaction has arrived.
+#[allow(clippy::large_enum_variant)]
 enum ExecutorThreadState {
     /// A block has been started.
     Executing(ExecutorStateExecuting),
@@ -408,7 +409,7 @@ impl ExecutorThread {
             tracing::debug!("Stats: {:?}", stats);
             tracing::debug!(
                 "Weights: {:?}",
-                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_accumulated_weights()
+                execution_state.executor.bouncer.lock().expect("Bouncer lock poisoned").get_bouncer_weights()
             );
             tracing::debug!("Block now full: {:?}", block_full);
 

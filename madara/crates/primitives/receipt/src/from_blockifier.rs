@@ -250,6 +250,7 @@ mod events_logic_tests {
             cairo_native: false,
             failed: false,
             gas_consumed: Default::default(),
+            cairo_native: false,
         }
     }
 

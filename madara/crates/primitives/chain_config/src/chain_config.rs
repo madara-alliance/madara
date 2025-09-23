@@ -96,6 +96,13 @@ pub enum MempoolMode {
     Tip,
 }
 
+#[derive(Debug, Serialize, Deserialize, Default, Clone, Copy, PartialEq, Eq)]
+pub enum SettlementChainKind {
+    #[default]
+    Ethereum,
+    Starknet,
+}
+
 #[derive(Debug, Deserialize)]
 pub struct ChainConfig {
     /// Human readable chain name, for displaying to the console.
@@ -105,6 +112,9 @@ pub struct ChainConfig {
     /// The DA mode supported by L1.
     #[serde(default)]
     pub l1_da_mode: L1DataAvailabilityMode,
+
+    #[serde(default)]
+    pub settlement_chain_kind: SettlementChainKind,
 
     // The Gateway URLs are the URLs of the endpoint that the node will use to sync blocks in full mode.
     pub feeder_gateway_url: Url,
@@ -135,6 +145,7 @@ pub struct ChainConfig {
 
     /// Only used for block production.
     /// The bouncer is in charge of limiting block sizes. This is where the max number of step per block, gas etc are.
+    #[serde(default)]
     pub bouncer_config: BouncerConfig,
 
     /// Only used for block production.
@@ -233,6 +244,7 @@ impl ChainConfig {
             chain_id: ChainId::Mainnet,
             // Since L1 here is Ethereum, that supports Blob.
             l1_da_mode: L1DataAvailabilityMode::Blob,
+            settlement_chain_kind: SettlementChainKind::Ethereum,
             feeder_gateway_url: Url::parse("https://feeder.alpha-mainnet.starknet.io/feeder_gateway/").unwrap(),
             gateway_url: Url::parse("https://alpha-mainnet.starknet.io/gateway/").unwrap(),
             native_fee_token_address: ContractAddress(
@@ -253,12 +265,13 @@ impl ChainConfig {
 
             eth_gps_statement_verifier: eth_gps_statement_verifier::MAINNET.parse().expect("parsing a constant"),
 
-            latest_protocol_version: StarknetVersion::V0_13_2,
+            latest_protocol_version: StarknetVersion::LATEST,
             block_time: Duration::from_secs(30),
 
             no_empty_blocks: false,
-            // This is the bouncer config for the version 0.15.0
+
             bouncer_config: BouncerConfig::default(),
+
             // We are not producing blocks for these chains.
             sequencer_address: ContractAddress(
                 PatriciaKey::try_from(Felt::from_hex_unchecked(
@@ -360,7 +373,8 @@ impl ChainConfig {
                 strk_fee_token_address: self.native_fee_token_address,
                 eth_fee_token_address: self.parent_fee_token_address,
             },
-            is_l3: true,
+            // Is l3 for blockifier means L1 addresses are starknet addresses.
+            is_l3: self.settlement_chain_kind == SettlementChainKind::Starknet,
         }
     }
 }
