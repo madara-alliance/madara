@@ -57,9 +57,10 @@ jobs:
 
       - name: Cargo Clippy
         run: |
-          # Explicitly activate the virtual environment before running cargo
-          source $VIRTUAL_ENV/bin/activate
+          # Verify cairo-compile is available (virtual environment should already be active)
+          echo "Verifying cairo-compile availability..."
           which cairo-compile
           cairo-compile --version
+          echo "Running cargo clippy..."
           cargo clippy --workspace --no-deps -- -D warnings
           cargo clippy --workspace --tests --no-deps -- -D warnings
