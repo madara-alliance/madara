@@ -239,11 +239,8 @@ async fn process_job_with_job_exists_in_db_and_valid_job_processing_status_works
 async fn process_job_handles_panic() {
     // Building config
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client
-        .expect_send_message()
-        .times(1)
-        .returning(|_| Ok(()));
-    
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -421,11 +418,8 @@ async fn process_job_job_handler_returns_error_works() {
 
     // building config
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client
-        .expect_send_message()
-        .times(1)
-        .returning(|_| Ok(()));
-    
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -543,11 +537,8 @@ async fn verify_job_with_rejected_status_adds_to_queue_works() {
 async fn verify_job_with_rejected_status_works() {
     // Building config
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client
-        .expect_send_message()
-        .times(1)
-        .returning(|_| Ok(()));
-    
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
@@ -747,11 +738,8 @@ async fn handle_job_failure_with_failed_job_status_works(#[case] job_type: JobTy
 #[tokio::test]
 async fn handle_job_failure_with_correct_job_status_works(#[case] job_type: JobType, #[case] job_status: JobStatus) {
     let mut mock_alert_client = MockAlertClient::new();
-    mock_alert_client
-        .expect_send_message()
-        .times(1)
-        .returning(|_| Ok(()));
-    
+    mock_alert_client.expect_send_message().times(1).returning(|_| Ok(()));
+
     let services = TestConfigBuilder::new()
         .configure_database(ConfigType::Actual)
         .configure_queue_client(ConfigType::Actual)
