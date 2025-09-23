@@ -72,7 +72,6 @@ pub static MADARA_WAITING_DURATION: LazyLock<Duration> = LazyLock::new(|| Durati
 // MOCK PROVER SERVICE
 // =============================================================================
 pub const MOCK_PROVER_BINARY: &str = "mock-atlantic-server";
-pub const MOCK_PROVER_VERIFIER_ADDRESS_FILE: &str = "verifier_address.txt";
 pub const MOCK_PROVER_PORT: u16 = 3001;
 
 // =============================================================================

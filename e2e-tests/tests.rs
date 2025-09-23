@@ -136,7 +136,7 @@ impl Setup {
 }
 
 #[rstest]
-#[case("309146".to_string())]
+#[case("525593".to_string())]
 #[tokio::test]
 async fn test_orchestrator_workflow(#[case] l2_block_number: String) {
     // Fetching the env vars from the test env file as these will be used in
