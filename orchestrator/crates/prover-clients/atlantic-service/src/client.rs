@@ -79,10 +79,9 @@ pub struct AtlanticClient {
 impl AtlanticClient {
     /// We need to set up the client with the API_KEY.
     pub fn new_with_args(url: Url, atlantic_params: &AtlanticValidatedArgs) -> Self {
-        let mock_fact_hash = atlantic_params.atlantic_mock_fact_hash.clone();
         let client = HttpClient::builder(url.as_str())
             .expect("Failed to create HTTP client builder")
-            .default_form_data("mockFactHash", &mock_fact_hash)
+            .default_form_data("mockFactHash", atlantic_params.atlantic_mock_fact_hash.to_string().as_str())
             .build()
             .expect("Failed to build HTTP client");
 

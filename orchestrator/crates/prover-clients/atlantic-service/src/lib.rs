@@ -28,7 +28,7 @@ pub struct AtlanticValidatedArgs {
     pub atlantic_rpc_node_url: Url,
     pub atlantic_verifier_contract_address: String,
     pub atlantic_settlement_layer: String,
-    pub atlantic_mock_fact_hash: String,
+    pub atlantic_mock_fact_hash: bool,
     pub atlantic_prover_type: String,
     pub atlantic_network: String,
     pub cairo_verifier_program_hash: Option<String>,
@@ -311,7 +311,7 @@ impl AtlanticProverService {
                 network: atlantic_params.atlantic_network.clone(),
             },
             fact_checker,
-            atlantic_params.atlantic_mock_fact_hash.eq("true"),
+            atlantic_params.atlantic_mock_fact_hash,
             atlantic_params.cairo_verifier_program_hash.clone(),
         )
     }
@@ -332,13 +332,13 @@ impl AtlanticProverService {
                 network: "TESTNET".to_string(),
             },
             fact_checker,
-            atlantic_params.atlantic_mock_fact_hash.eq("true"),
+            atlantic_params.atlantic_mock_fact_hash,
             None,
         )
     }
 
     fn get_fact_checker(atlantic_params: &AtlanticValidatedArgs) -> Option<FactChecker> {
-        if atlantic_params.atlantic_mock_fact_hash.eq("true") {
+        if atlantic_params.atlantic_mock_fact_hash {
             None
         } else {
             Some(FactChecker::new(

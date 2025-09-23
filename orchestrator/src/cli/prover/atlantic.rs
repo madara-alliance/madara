@@ -27,7 +27,7 @@ pub struct AtlanticCliArgs {
     /// Enable mock mode for Atlantic prover (set to "true" to enable).
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_MOCK_FACT_HASH", long)]
     #[arg(required_if_eq("atlantic", "true"))]
-    pub atlantic_mock_fact_hash: Option<String>,
+    pub atlantic_mock_fact_hash: Option<bool>,
 
     /// The type of prover to use.
     #[arg(env = "MADARA_ORCHESTRATOR_ATLANTIC_PROVER_TYPE", long)]
@@ -60,7 +60,7 @@ pub struct AtlanticCliArgs {
 
     /// Network being used for the prover.
     #[arg(
-        env = "MADARA_ORCHESTRATOR_ATLANTIC_NETWORK", 
+        env = "MADARA_ORCHESTRATOR_ATLANTIC_NETWORK",
         long,
         value_parser = ["MAINNET", "TESTNET"]
     )]
