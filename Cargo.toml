@@ -35,6 +35,15 @@ print_stderr = "warn"
 # unwrap_used = "warn"
 # missing_docs = "warn"
 
+# Allow large error types - common with AWS SDK which has inherently large error variants
+result-large-err = "allow"
+# Allow needless struct updates for clarity in initialization
+needless-update = "allow"
+# Allow redundant closures when they improve readability
+redundant-closure = "allow"
+# Allow non-minimal boolean expressions when they're clearer
+nonminimal-bool = "allow"
+
 [workspace.metadata.build]
 rustflags = ["-C", "symbol-mangling-version=v0"]
 
@@ -315,13 +324,3 @@ zip = "4.3.0"
 [patch.crates-io]
 rocksdb = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
 librocksdb-sys = { git = "https://github.com/madara-alliance/rust-rocksdb", branch = "read-options-set-raw-snapshot" }
-
-[workspace.lints.clippy]
-# Allow large error types - common with AWS SDK which has inherently large error variants
-result-large-err = "allow"
-# Allow needless struct updates for clarity in initialization
-needless-update = "allow"
-# Allow redundant closures when they improve readability
-redundant-closure = "allow"
-# Allow non-minimal boolean expressions when they're clearer
-nonminimal-bool = "allow"
