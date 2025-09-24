@@ -164,7 +164,6 @@ impl AggregatorBatch {
             updated_at: Utc::now().round_subsecs(0),
             bucket_id,
             status: AggregatorBatchStatus::Open,
-            ..Self::default()
         }
     }
 }
@@ -260,7 +259,6 @@ impl SnosBatch {
             status: SnosBatchStatus::Open,
             created_at: Utc::now().round_subsecs(0),
             updated_at: Utc::now().round_subsecs(0),
-            ..Self::default()
         }
     }
 
