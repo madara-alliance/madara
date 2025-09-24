@@ -6,9 +6,7 @@ name: Workflow - Pull Request Main
 # It uses reusable workflows to keep the configuration DRY
 on:
   workflow_dispatch:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+  merge_group:
 
 # Use concurrency to prevent multiple workflows running on the same PR
 concurrency:
