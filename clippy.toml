@@ -1,2 +1,9 @@
 allow-print-in-tests = true
 allow-unwrap-in-tests = true
+
+# Suppress large error type warnings - these are common with AWS SDK errors
+# and would require significant refactoring to fix properly
+too-large-for-stack = 1000
+
+# Allow needless updates - sometimes used for clarity in struct initialization
+# Even when all fields are specified, ..Default::default() can make intent clearer
