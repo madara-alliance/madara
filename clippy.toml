@@ -7,3 +7,7 @@ too-large-for-stack = 1000
 
 # Allow needless updates - sometimes used for clarity in struct initialization
 # Even when all fields are specified, ..Default::default() can make intent clearer
+
+# Set a higher threshold for result-large-err to accommodate AWS SDK errors
+# which are inherently large due to comprehensive error handling
+type-complexity-threshold = 250
