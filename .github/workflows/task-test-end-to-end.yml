@@ -8,7 +8,7 @@ on:
   workflow_call:
 
 jobs:
-  e2e-full:
+  test-end-to-end:
     runs-on: blacksmith-16vcpu-ubuntu-2204
 
     steps:
